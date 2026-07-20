@@ -11,6 +11,9 @@ import asyncio
 import functools
 import inspect
 import logging
+import os
+from pathlib import Path
+import re
 from typing import Any
 
 from gateway.platforms import api_server as upstream
@@ -21,6 +24,33 @@ from .nine_router import NineRouterAPIError, NineRouterManager
 
 
 logger = logging.getLogger(__name__)
+_PROFILE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9]{5}$")
+_UPSTREAM_API_SERVER_ADAPTER = upstream.APIServerAdapter
+
+
+def _install_flat_profile_skill_storage(skill_manager=None) -> None:
+    """Keep agent-authored skills in Open Lumora's canonical flat directory.
+
+    Hermes supports optional category directories, but Open Lumora exposes a
+    stable ``skills/<skill-id>`` resource contract. Ignoring the storage
+    category here preserves frontmatter metadata while preventing API paths
+    from disagreeing with the file that Hermes created.
+    """
+    if skill_manager is None:
+        from tools import skill_manager_tool as skill_manager
+
+    if getattr(skill_manager, "_open_lumora_flat_skill_storage", False):
+        return
+
+    original_resolve_skill_dir = skill_manager._resolve_skill_dir
+
+    @functools.wraps(original_resolve_skill_dir)
+    def resolve_skill_dir(name: str, category: str | None = None):
+        del category
+        return original_resolve_skill_dir(name, None)
+
+    skill_manager._resolve_skill_dir = resolve_skill_dir
+    skill_manager._open_lumora_flat_skill_storage = True
 
 
 def _api_write_approval_callback(
@@ -57,7 +87,7 @@ def _api_write_approval_callback(
         return ""
 
 
-class ExtendedAPIServerAdapter(upstream.APIServerAdapter):
+class ExtendedAPIServerAdapter(_UPSTREAM_API_SERVER_ADAPTER):
     """Upstream adapter plus the local named-agent management routes."""
 
     def __init__(self, *args: Any, **kwargs: Any):
@@ -81,6 +111,33 @@ class ExtendedAPIServerAdapter(upstream.APIServerAdapter):
         if self._custom_nine_router_manager is None:
             self._custom_nine_router_manager = NineRouterManager()
         return self._custom_nine_router_manager
+
+    def _resolve_request_profile(self, request):
+        """Resolve Open Lumora's external named-profile directory safely."""
+        profile = str(request.match_info.get("profile") or "").strip()
+        profiles_root = str(os.environ.get("HERMES_PROFILES_ROOT") or "").strip()
+        if not profile or not profiles_root:
+            return super()._resolve_request_profile(request)
+        if not _PROFILE_ID_PATTERN.fullmatch(profile):
+            return upstream._PROFILE_REJECTED
+        root = Path(profiles_root).resolve()
+        candidate = (root / profile).resolve()
+        if candidate.parent != root or not candidate.is_dir():
+            return upstream._PROFILE_REJECTED
+        return profile
+
+    @staticmethod
+    def _profile_scope(profile):
+        """Run upstream Hermes under the selected Open Lumora profile."""
+        profiles_root = str(os.environ.get("HERMES_PROFILES_ROOT") or "").strip()
+        if profile and profiles_root and _PROFILE_ID_PATTERN.fullmatch(str(profile)):
+            root = Path(profiles_root).resolve()
+            candidate = (root / str(profile)).resolve()
+            if candidate.parent == root and candidate.is_dir():
+                from gateway.run import _profile_runtime_scope
+
+                return _profile_runtime_scope(candidate)
+        return _UPSTREAM_API_SERVER_ADAPTER._profile_scope(profile)
 
     def _create_agent(self, *args: Any, **kwargs: Any):
         """Create an API agent that resumes the named Hermes session.
@@ -749,5 +806,6 @@ class ExtendedAPIServerAdapter(upstream.APIServerAdapter):
 
 def install() -> None:
     """Install the extended adapter into this gateway process."""
+    _install_flat_profile_skill_storage()
     if upstream.APIServerAdapter is not ExtendedAPIServerAdapter:
         upstream.APIServerAdapter = ExtendedAPIServerAdapter

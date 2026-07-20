@@ -20,12 +20,12 @@ For roadmap work, also read `docs/implementation/README.md`, the assigned number
 - Start every Go file with a short `<Summary>` block explaining why an agent should open or modify it.
 - Preserve structured zerolog fields, OpenTelemetry spans/propagation, and the Hermes Runs API approval path.
 - Keep `extensions/hermes_api` aligned with the read-only `sandboxes` runtime contract when Hermes changes.
-- Docker starts in `START_MODE=local`: Traefik exposes only Studio, Studio calls
-  the enterprise gateway, and the gateway calls the private Hermes/9router
-  runtime. Cloud mode replaces the local gateway/runtime profile with an HTTPS
-  `CONTROL_GATEWAY_URL`.
-- `make build` builds only the public Studio binary/image. OCI transfer bundles
-  belong under `bin/images` and every generated part must remain below 50 MB.
+- Docker starts in `START_MODE=local`: Traefik exposes only the public frontend
+  and Studio backend. Studio calls `open-lumora-gateway` on the external private
+  `open-lumora-control` network. Gateway, runtime, PostgreSQL, ClickHouse, and
+  workers are enterprise-owned artifacts.
+- `make build` builds only the public Studio backend and frontend images. Their
+  OCI transfer bundle belongs under `bin/images`; every part stays below 50 MB.
 
 ## Validation
 

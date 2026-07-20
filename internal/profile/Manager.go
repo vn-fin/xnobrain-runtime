@@ -124,6 +124,12 @@ func NewManager(root string) (*Manager, error) {
 		if writeErr := manager.writeYAML(configPath, config); writeErr != nil {
 			return nil, fmt.Errorf("migrate profile %s: %w", entry.Name(), writeErr)
 		}
+		if migrateErr := manager.migrateCategorizedSkills(entry.Name()); migrateErr != nil {
+			return nil, fmt.Errorf("migrate profile %s skills: %w", entry.Name(), migrateErr)
+		}
+		if reconcileErr := manager.ReconcileSnapshots(entry.Name()); reconcileErr != nil {
+			return nil, fmt.Errorf("reconcile profile %s snapshots: %w", entry.Name(), reconcileErr)
+		}
 	}
 	return manager, nil
 }

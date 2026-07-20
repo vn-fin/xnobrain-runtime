@@ -1,5 +1,5 @@
 // <Summary>
-// Gateway resolves plan limits from the private enterprise gateway while
+// Gateway resolves plan limits from the private Open Lumora gateway while
 // falling back to the explicit local Free policy whenever it is unavailable.
 // </Summary>
 package edition

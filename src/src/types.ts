@@ -152,7 +152,7 @@ export type ChatMessage = {
 };
 
 export type ChatRunStepStatus = 'running' | 'completed' | 'error' | 'interrupted' | 'cancelled';
-export type RunApprovalChoice = 'once' | 'session' | 'always' | 'deny';
+export type RunApprovalChoice = 'once' | 'always' | 'deny';
 
 export type ChatRunApproval = {
   command: string;

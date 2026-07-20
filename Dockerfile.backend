@@ -16,8 +16,7 @@ RUN apt-get update \
     && mkdir -p /opt/data/open-lumora /opt/open-lumora/frontend \
     && chown -R lumora:lumora /opt/data /opt/open-lumora
 COPY --from=studio-build /out/open-lumora /usr/local/bin/open-lumora
-COPY --from=enterprise bin/open-lumora-enterprise /usr/local/bin/open-lumora-enterprise
 COPY deploy/backend-entrypoint.sh /usr/local/bin/open-lumora-entrypoint
 RUN chmod 0755 /usr/local/bin/open-lumora-entrypoint
 ENTRYPOINT ["/usr/local/bin/open-lumora-entrypoint"]
-EXPOSE 3000 3100
+EXPOSE 3000

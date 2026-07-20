@@ -105,7 +105,7 @@ func NewCommunity(config Config) (*Application, error) {
 	if config.ControlGatewayURL != "" {
 		gatewayPolicy, err := edition.NewGateway(config.ControlGatewayURL, fallbackPolicy)
 		if err != nil {
-			return nil, fmt.Errorf("configure enterprise gateway policy: %w", err)
+			return nil, fmt.Errorf("configure Open Lumora gateway policy: %w", err)
 		}
 		policy = gatewayPolicy
 	}

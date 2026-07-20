@@ -83,7 +83,7 @@ describe('reduceRunEvent (live API format)', () => {
     expect(waiting?.approval).toEqual({
       command: 'python manage.py migrate',
       description: 'Run a database migration',
-      choices: ['once', 'session', 'deny'],
+      choices: ['once', 'deny'],
       allowPermanent: false,
     });
 

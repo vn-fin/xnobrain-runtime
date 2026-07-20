@@ -19,10 +19,9 @@ import { formatRunDuration, formatStepDuration, previewCode, stepLabel, toolGrou
 import type { ChatRun, ChatRunStep, RunApprovalChoice } from '../types';
 import { Markdown } from './Markdown';
 
-const APPROVAL_ORDER: RunApprovalChoice[] = ['once', 'session', 'always', 'deny'];
+const APPROVAL_ORDER: RunApprovalChoice[] = ['once', 'always', 'deny'];
 const APPROVAL_LABELS: Record<RunApprovalChoice, string> = {
   once: 'Allow once',
-  session: 'Allow and remember',
   always: 'Always allow',
   deny: 'Deny',
 };

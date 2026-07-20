@@ -789,15 +789,32 @@ func eventPayload(event runtimeadapter.Event) map[string]any {
 	} else if event.Type == "error" || event.Type == "run.failed" {
 		payload["message"] = event.Text
 	} else if event.Type == "approval.required" || event.Type == "approval.request" {
+		allowPermanent := event.AllowPermanent || profileWriteApproval(event)
 		payload["event"] = "approval.request"
 		payload["command"] = event.Command
 		payload["description"] = event.Description
 		payload["pattern_key"] = event.PatternKey
 		payload["pattern_keys"] = event.PatternKeys
-		payload["allow_permanent"] = event.AllowPermanent
-		payload["choices"] = []string{"once", "session", "always", "deny"}
+		payload["allow_permanent"] = allowPermanent
+		payload["choices"] = approvalChoices(allowPermanent)
 	}
 	return payload
+}
+
+func profileWriteApproval(event runtimeadapter.Event) bool {
+	for _, key := range append(append([]string{}, event.PatternKeys...), event.PatternKey) {
+		if key == "memory_write" || key == "skills_write" {
+			return true
+		}
+	}
+	return false
+}
+
+func approvalChoices(allowPermanent bool) []string {
+	if allowPermanent {
+		return []string{"once", "always", "deny"}
+	}
+	return []string{"once", "deny"}
 }
 func conversationDTO(item models.Conversation) map[string]any {
 	return map[string]any{"id": item.ID, "title": item.Title, "model": item.Model, "preview": item.Preview, "message_count": item.Messages, "tool_call_count": item.Tools, "started_at": float64(item.CreatedAt.UnixNano()) / 1e9, "last_active_at": float64(item.UpdatedAt.UnixNano()) / 1e9}

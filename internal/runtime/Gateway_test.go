@@ -22,10 +22,10 @@ func TestGatewayRunStreamsAndResolvesApproval(t *testing.T) {
 			t.Fatalf("authorization = %q", request.Header.Get("Authorization"))
 		}
 		switch request.Method + " " + request.URL.Path {
-		case "POST /v1/runs":
+		case "POST /p/agent1/v1/runs":
 			writer.WriteHeader(http.StatusAccepted)
 			_, _ = writer.Write([]byte(`{"run_id":"hermes-run","status":"started"}`))
-		case "GET /v1/runs/hermes-run/events":
+		case "GET /p/agent1/v1/runs/hermes-run/events":
 			writer.Header().Set("Content-Type", "text/event-stream")
 			flusher := writer.(http.Flusher)
 			_, _ = fmt.Fprint(writer, "data: {\"event\":\"approval.request\",\"pattern_key\":\"memory_write\",\"allow_permanent\":true}\n\n")
@@ -38,7 +38,7 @@ func TestGatewayRunStreamsAndResolvesApproval(t *testing.T) {
 			_, _ = fmt.Fprint(writer, "data: {\"event\":\"assistant.delta\",\"delta\":\"done\",\"session_id\":\"session-1\"}\n\n")
 			_, _ = fmt.Fprint(writer, "data: {\"event\":\"run.completed\",\"output\":\"done\"}\n\n")
 			flusher.Flush()
-		case "POST /v1/runs/hermes-run/approval":
+		case "POST /p/agent1/v1/runs/hermes-run/approval":
 			var body map[string]any
 			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 				t.Fatal(err)
@@ -59,7 +59,7 @@ func TestGatewayRunStreamsAndResolvesApproval(t *testing.T) {
 	result := make(chan Result, 1)
 	errors := make(chan error, 1)
 	go func() {
-		value, err := gateway.Run(context.Background(), Request{RunID: "studio-run", ConversationID: "session-1", Input: "hello"}, func(event Event) { events <- event })
+		value, err := gateway.Run(context.Background(), Request{RunID: "studio-run", ProfilePath: "/profiles/agent1", ConversationID: "session-1", Input: "hello"}, func(event Event) { events <- event })
 		result <- value
 		errors <- err
 	}()
@@ -81,5 +81,13 @@ func TestGatewayRunStreamsAndResolvesApproval(t *testing.T) {
 	got := <-result
 	if got.Output != "done" || got.RuntimeSessionID != "session-1" {
 		t.Fatalf("result = %#v", got)
+	}
+}
+
+func TestRemoteGatewayRejectsRunWithoutAgentProfile(t *testing.T) {
+	gateway := NewRemoteGateway("http://127.0.0.1:1", "test-token", time.Second)
+	_, err := gateway.Run(context.Background(), Request{RunID: "studio-run", Input: "hello"}, func(Event) {})
+	if err == nil || err.Error() != "remote Hermes run requires a valid agent profile" {
+		t.Fatalf("error = %v", err)
 	}
 }

@@ -39,8 +39,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATA_DIR: /opt/data/open-lumora
       FRONTEND_DIR: /opt/open-lumora/frontend
-      CONTROL_GATEWAY_URL: ${CONTROL_GATEWAY_URL:-http://enterprise-gateway:3100}
-      HERMES_RUNTIME_TOKEN: ${HERMES_RUNTIME_TOKEN:-open-lumora-local-runtime}
+      CONTROL_GATEWAY_URL: ${OPEN_LUMORA_GATEWAY_URL:-http://open-lumora-gateway:3100}
+      HERMES_RUNTIME_TOKEN: ${OPEN_LUMORA_GATEWAY_TOKEN:-open-lumora-local-runtime}
       NINE_ROUTER_DATA_DIR: /opt/data/.9router
       DEVICE_CLOUD_URL: ${DEVICE_CLOUD_URL:-}
       DEVICE_SIGNING_PUBLIC_KEY: ${DEVICE_SIGNING_PUBLIC_KEY:-}
@@ -65,112 +65,12 @@ services:
       retries: 20
     restart: unless-stopped
 
-  enterprise-gateway:
-    image: ${OPEN_LUMORA_BACKEND_IMAGE:-open-lumora-backend:local}
-    command: ["/usr/local/bin/open-lumora-enterprise"]
-    profiles: ["local"]
-    environment:
-      START_MODE: local
-      HTTP_PORT: 3100
-      DATA_DIR: /opt/open-lumora/data
-      HERMES_RUNTIME_URL: http://runtime:8642
-      HERMES_RUNTIME_TOKEN: ${HERMES_RUNTIME_TOKEN:-open-lumora-local-runtime}
-      NINE_ROUTER_URL: http://runtime:20128
-      DASHBOARD_ENABLED: ${DASHBOARD_ENABLED:-true}
-      DASHBOARD_SMOKE_DATA_ENABLED: ${DASHBOARD_SMOKE_DATA_ENABLED:-true}
-      CLICKHOUSE_URL: http://clickhouse:8123
-      CLICKHOUSE_DATABASE: open_lumora
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-open-lumora-local}
-      CLICKHOUSE_RETENTION_DAYS: ${CLICKHOUSE_RETENTION_DAYS:-7}
-    volumes:
-      - gateway_data:/opt/open-lumora/data
-    depends_on:
-      clickhouse:
-        condition: service_healthy
-    networks:
-      - control
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3100/api/v1/ready"]
-      interval: 10s
-      timeout: 3s
-      retries: 20
-    restart: unless-stopped
-
-  scheduler:
-    image: ${OPEN_LUMORA_BACKEND_IMAGE:-open-lumora-backend:local}
-    command: ["/usr/local/bin/open-lumora", "scheduler-worker"]
-    profiles: ["local"]
-    environment:
-      START_MODE: local
-      DATA_DIR: /opt/data/open-lumora
-      HERMES_RUNTIME_URL: http://runtime:8642
-      HERMES_RUNTIME_TOKEN: ${HERMES_RUNTIME_TOKEN:-open-lumora-local-runtime}
-      CONTROL_GATEWAY_URL: http://enterprise-gateway:3100
-      NINE_ROUTER_DATA_DIR: /opt/data/.9router
-      SCHEDULER_ENABLED: "false"
-    volumes:
-      - open_lumora_data:/opt/data
-    depends_on:
-      enterprise-gateway:
-        condition: service_started
-      runtime:
-        condition: service_started
-    networks:
-      - control
-    restart: unless-stopped
-
-  runtime:
-    image: ${OPEN_LUMORA_HERMES_IMAGE:-open-lumora-hermes-runtime:compatible}
-    profiles: ["local"]
-    user: "10001:10001"
-    environment:
-      HERMES_HOME: /opt/data/open-lumora/root
-      HERMES_ROOT_PROFILE: /opt/data/open-lumora/root
-      HERMES_PROFILES_ROOT: /opt/data/open-lumora/profiles
-      NINE_ROUTER_DATA_DIR: /opt/data/.9router
-      API_SERVER_ENABLED: "true"
-      API_SERVER_HOST: 0.0.0.0
-      API_SERVER_PORT: 8642
-      HERMES_RUNTIME_TOKEN: ${HERMES_RUNTIME_TOKEN:-open-lumora-local-runtime}
-    volumes:
-      - open_lumora_data:/opt/data
-    depends_on:
-      studio:
-        condition: service_healthy
-    networks:
-      - control
-      # OAuth exchanges and provider API calls require outbound internet when
-      # the host is online. This network publishes no runtime ports.
-      - runtime-egress
-    restart: unless-stopped
-
-  clickhouse:
-    image: clickhouse/clickhouse-server:25.8-alpine
-    profiles: ["local"]
-    environment:
-      CLICKHOUSE_DB: open_lumora
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-open-lumora-local}
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
-    volumes:
-      - clickhouse_data:/var/lib/clickhouse
-    healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --user default --password $$CLICKHOUSE_PASSWORD --query 'SELECT 1' | grep -q 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    networks:
-      - control
-    restart: unless-stopped
-
 networks:
   edge:
   control:
-    internal: true
-  runtime-egress:
+    name: open-lumora-control
+    external: true
 
 volumes:
   open_lumora_data:
-  gateway_data:
-  clickhouse_data:
+    name: open-lumora_open_lumora_data

@@ -1,6 +1,6 @@
 // <Summary>
 // Config tests lock local as the default startup mode and derive private runtime
-// routes from the single enterprise gateway URL.
+// routes from the single Open Lumora gateway URL.
 // </Summary>
 package config
 

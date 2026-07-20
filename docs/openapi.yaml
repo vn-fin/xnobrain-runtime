@@ -264,7 +264,7 @@ paths:
               schema: { type: string }
   /conversations/v1/conversations/{conversation_id}/runs/{run_id}/approval:
     post:
-      summary: Resolve a run approval and persist session/always profile choices
+      summary: Resolve a run approval and persist always-allow profile choices
       parameters:
         - $ref: "#/components/parameters/ConversationID"
         - $ref: "#/components/parameters/RunID"
@@ -277,7 +277,7 @@ paths:
               type: object
               required: [choice]
               properties:
-                choice: { type: string, enum: [once, session, always, deny] }
+                choice: { type: string, enum: [once, always, deny] }
                 resolve_all: { type: boolean }
       responses:
         "200": { $ref: "#/components/responses/Success" }

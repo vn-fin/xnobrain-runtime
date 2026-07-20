@@ -2,7 +2,7 @@
 
 Open Lumora is a modular monolith. The browser calls one Fiber application. The API invokes Go services as functions rather than making internal HTTP calls, and those services own agent lifecycle, conversations, cron scheduling, profile files, snapshots, and edition limits.
 
-The frontend lives in `frontend/` and is compiled into static assets served by the Go binary. The backend entrypoint is `cmd/main.go`. Business rules live under `services/<service_name>`; safe profile I/O is concentrated in `internal/profile`; runtime execution is behind `internal/runtime`; persistence is behind `internal/repositories`; transport code is under `internal/api`, with centralized route assembly in `internal/v1/routes/SetupRoutes.go`.
+The frontend lives in `src/` and ships as its own container. The backend entrypoint is `cmd/main.go`. Business rules live under `services/<service_name>`; safe profile I/O is concentrated in `internal/profile`; runtime execution is behind `internal/runtime`; persistence is behind `internal/repositories`; transport code is under `internal/api`, with centralized route assembly in `internal/v1/routes/SetupRoutes.go`.
 
 Community storage is file-only. Versioned agent metadata lives in each profile `config.yaml`, conversations and messages live in the profile session tree, cron definitions are individual YAML files, usage is one atomically replaced user aggregate, and notifications are individual JSON files. Writes use same-directory temporary files, fsync, rename, and a process lock. PostgreSQL, Redis, and Kafka dependencies live only in `open-lumora-enterprise`; neither the Community binary nor its Go module depends on them. No ORM is used in either repository.
 
@@ -35,12 +35,12 @@ Runtime approval events include a subsystem key such as `memory_write` or `skill
 
 ## Runtime and providers
 
-Host development defaults to the Hermes CLI adapter. The Docker deployment
-uses a separate extended Hermes runtime image. Studio calls only the enterprise
-gateway; the gateway privately proxies Hermes `/v1/runs`, `/events`, `/stop`,
-and `/approval` plus the 9router API. Studio, gateway, and runtime share the
-profile volume so every absolute profile path has the same meaning without
-granting the browser or host direct runtime access.
+Studio calls only `open-lumora-gateway`; the gateway privately proxies Hermes
+`/v1/runs`, `/events`, `/stop`, and `/approval` plus the 9router API. The public
+repository builds no runtime or enterprise binary. Studio, gateway, and the
+enterprise-built runtime share the external `open-lumora_open_lumora_data` volume so every
+absolute profile path has the same meaning without granting the browser direct
+runtime access. Private HTTP travels on `open-lumora-control`.
 
 The gateway adapter starts a profile API server lazily and reuses it for that profile until the Go process stops. `CONTAINER_IDLE_ENABLED` and `CONTAINER_IDLE_TIMEOUT_MINUTES` remain policy metadata for a future managed-container controller; the local OSS application container does not stop itself because doing so would also remove its UI and API.
 

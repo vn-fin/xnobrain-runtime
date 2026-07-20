@@ -1,28 +1,31 @@
 # Local and cloud deployment
 
 Open Lumora starts in `local` mode unless `START_MODE=cloud` is selected. The
-browser reaches only Traefik. Studio, the enterprise gateway, Hermes, and
-9router have no host port mappings.
+public repository owns only the frontend and Studio backend images. The
+enterprise repository owns `open-lumora-gateway`, the Hermes/9router runtime,
+PostgreSQL, ClickHouse, and enterprise worker processes. The browser reaches
+only Traefik; private services have no public ingress.
 
 ```text
 Browser
   -> Traefik
     -> Open Lumora Studio (UI + public API)
-      -> Enterprise gateway (limits + private proxy)
+      -> open-lumora-gateway (limits + private proxy)
         -> Hermes runtime API and 9router
 ```
 
-Local mode starts the gateway and runtime Compose profiles. The gateway stores
-only its installation identity, Free plan, and trust metadata in SQLite. It
-does not require a login, PostgreSQL, or internet access after the images are
-available. Studio reads its limits from the gateway and falls back to the same
-compiled Free limits if the gateway is temporarily unavailable. Agent/profile
-state remains in the shared Open Lumora volume.
+The two Compose projects meet on the external, internal-only
+`open-lumora-control` network. The enterprise deployment must give its gateway the network
+alias `open-lumora-gateway`; the enterprise runtime must mount the established
+external `open-lumora_open_lumora_data` volume that Studio owns. Studio reads limits from the
+gateway and falls back to compiled Free limits while it is unavailable.
+Agent/profile state remains in the shared volume.
 
-Cloud mode sets `COMPOSE_PROFILES=cloud`, `START_MODE=cloud`, and
-`CONTROL_GATEWAY_URL=https://...`. The local gateway and runtime profiles are
-then omitted. The gateway URL is also the private runtime and 9router route
-prefix, so users do not configure separate internal endpoints.
+For a remote cloud gateway, set `OPEN_LUMORA_GATEWAY_URL=https://...` in the
+public Compose environment. For host development use
+`CONTROL_GATEWAY_URL=http://localhost:3100`. The gateway URL is also the
+private runtime and 9router route prefix, so users do not configure separate
+internal endpoints.
 
 ## Build and transfer images
 
@@ -32,34 +35,43 @@ In `open-lumora`:
 make build
 ```
 
-This builds the native binary and `open-lumora-studio:local` image. In
-`open-lumora-enterprise`:
+This builds and bundles only `open-lumora-backend:local` and
+`open-lumora-frontend:local`. In `open-lumora-enterprise`:
 
 ```bash
 make build
 ```
 
-This builds the enterprise gateway and extended Hermes runtime images. The
-enterprise repository also provides:
+This must build `open-lumora-gateway`, the extended Hermes runtime, and its
+PostgreSQL/ClickHouse deployment dependencies. The enterprise repository also
+provides:
 
 ```bash
 python build_docker.py --path open-lumora-hermes-runtime:local
 python build_vm.py
 ```
 
-After all OCI images exist in the local daemon, run `make bundle` in the public
-repository. It writes checksummed gzip parts below 50 MB under `bin/images/`.
-Copy the complete directory and run `make load-bundle` on the target machine.
-Never create or commit an unsplit Docker image tarball.
+The public `make build` writes its two images as checksummed gzip parts below
+50 MB under `bin/images/`. Enterprise runtime, gateway, PostgreSQL, and
+ClickHouse transfer artifacts belong to the enterprise repository. Never
+create or commit an unsplit Docker image tarball.
 
 ## Start
 
-Copy `.env.example` to `.env`, keep `COMPOSE_PROFILES=local`, select a domain,
-and run:
+Copy `.env.example` to `.env`, select a domain and gateway endpoint, then run:
 
 ```bash
-docker compose up -d
+make install
 ```
 
 The default is `http://localhost`. Change `OPEN_LUMORA_DOMAIN` and configure
 Traefik TLS separately when using a real domain.
+
+## Enterprise gateway environment contract
+
+The enterprise deployment owns authentication. Its gateway environment must
+expose `AUTH_SERVICE_BASE_URL` as the canonical external-auth endpoint, with
+`AUTH_TIMEOUT` controlling request deadlines. Local no-login mode may leave
+the base URL empty; authenticated cloud mode must reject startup when it is
+missing. Existing gRPC-specific settings are enterprise implementation details
+and must not leak into the public frontend/backend image.

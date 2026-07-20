@@ -2,7 +2,7 @@ import type { SSEEvent } from '../api/stream';
 import type { ChatMessage, ChatRun, ChatRunStep, RunApprovalChoice, RunTimelineItem } from '../types';
 
 type Data = Record<string, unknown>;
-const APPROVAL_CHOICES: RunApprovalChoice[] = ['once', 'session', 'always', 'deny'];
+const APPROVAL_CHOICES: RunApprovalChoice[] = ['once', 'always', 'deny'];
 
 function record(value: unknown): Data {
   return value && typeof value === 'object' ? value as Data : {};

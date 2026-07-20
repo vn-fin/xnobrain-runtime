@@ -32,8 +32,8 @@ describe('RunSteps', () => {
           approval: {
             command: 'Save to memory: apply 1 op(s) to user profile',
             description: 'Memory write requires approval',
-            choices: ['once', 'session', 'deny'],
-            allowPermanent: false,
+            choices: ['once', 'always', 'deny'],
+            allowPermanent: true,
           },
         })}
         onResolveApproval={resolve}
@@ -42,5 +42,6 @@ describe('RunSteps', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Allow once' }));
     await waitFor(() => expect(resolve).toHaveBeenCalledWith('run-42', 'once'));
+    expect(screen.queryByRole('button', { name: 'Allow and remember' })).not.toBeInTheDocument();
   });
 });

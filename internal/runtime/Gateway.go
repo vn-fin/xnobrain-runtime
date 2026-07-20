@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -38,7 +39,10 @@ type gatewayEndpoint struct {
 type gatewayRun struct {
 	endpoint *gatewayEndpoint
 	runID    string
+	prefix   string
 }
+
+var remoteProfileIDPattern = regexp.MustCompile(`^[a-z][a-z0-9]{5}$`)
 
 type Gateway struct {
 	launcher    string
@@ -68,6 +72,10 @@ func (g *Gateway) Run(ctx context.Context, request Request, emit func(Event)) (R
 	if err != nil {
 		return Result{}, err
 	}
+	prefix, err := g.profilePrefix(request)
+	if err != nil {
+		return Result{}, err
+	}
 	startBody := map[string]any{"input": request.Input, "session_id": request.ConversationID}
 	if request.RuntimeSessionID != "" {
 		startBody["session_id"] = request.RuntimeSessionID
@@ -82,14 +90,14 @@ func (g *Gateway) Run(ctx context.Context, request Request, emit func(Event)) (R
 		RunID  string `json:"run_id"`
 		Status string `json:"status"`
 	}
-	if err := g.doJSON(runContext, endpoint, http.MethodPost, "/v1/runs", startBody, &started); err != nil {
+	if err := g.doJSON(runContext, endpoint, http.MethodPost, prefix+"/v1/runs", startBody, &started); err != nil {
 		return Result{}, fmt.Errorf("start Hermes run: %w", err)
 	}
 	if strings.TrimSpace(started.RunID) == "" {
 		return Result{}, fmt.Errorf("start Hermes run: response did not include run_id")
 	}
 	g.mu.Lock()
-	g.runs[request.RunID] = gatewayRun{endpoint: endpoint, runID: started.RunID}
+	g.runs[request.RunID] = gatewayRun{endpoint: endpoint, runID: started.RunID, prefix: prefix}
 	g.mu.Unlock()
 	defer func() {
 		g.mu.Lock()
@@ -97,7 +105,7 @@ func (g *Gateway) Run(ctx context.Context, request Request, emit func(Event)) (R
 		g.mu.Unlock()
 	}()
 
-	streamPath := "/v1/runs/" + url.PathEscape(started.RunID) + "/events"
+	streamPath := prefix + "/v1/runs/" + url.PathEscape(started.RunID) + "/events"
 	req, err := http.NewRequestWithContext(runContext, http.MethodGet, endpoint.baseURL+streamPath, nil)
 	if err != nil {
 		return Result{}, err
@@ -150,7 +158,7 @@ func (g *Gateway) Run(ctx context.Context, request Request, emit func(Event)) (R
 	})
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(runContext.Err(), context.Canceled) || errors.Is(runContext.Err(), context.DeadlineExceeded) {
-			_ = g.stop(context.Background(), endpoint, started.RunID)
+			_ = g.stop(context.Background(), endpoint, prefix, started.RunID)
 		}
 		return Result{}, err
 	}
@@ -167,7 +175,18 @@ func (g *Gateway) ResolveApproval(ctx context.Context, externalRunID string, cho
 	if !ok {
 		return fmt.Errorf("run not found")
 	}
-	return g.doJSON(ctx, run.endpoint, http.MethodPost, "/v1/runs/"+url.PathEscape(run.runID)+"/approval", map[string]any{"choice": choice, "resolve_all": resolveAll}, nil)
+	return g.doJSON(ctx, run.endpoint, http.MethodPost, run.prefix+"/v1/runs/"+url.PathEscape(run.runID)+"/approval", map[string]any{"choice": choice, "resolve_all": resolveAll}, nil)
+}
+
+func (g *Gateway) profilePrefix(request Request) (string, error) {
+	if g.remote == nil {
+		return "", nil
+	}
+	profileID := filepath.Base(filepath.Clean(request.ProfilePath))
+	if !remoteProfileIDPattern.MatchString(profileID) {
+		return "", fmt.Errorf("remote Hermes run requires a valid agent profile")
+	}
+	return "/p/" + url.PathEscape(profileID), nil
 }
 
 func (g *Gateway) Close() {
@@ -258,8 +277,8 @@ func (g *Gateway) startProfileGateway(ctx context.Context, request Request) (*ga
 	return nil, fmt.Errorf("Hermes profile API server did not become ready; see %s", filepath.Join(request.ProfilePath, "logs", "api-server.log"))
 }
 
-func (g *Gateway) stop(ctx context.Context, endpoint *gatewayEndpoint, runID string) error {
-	return g.doJSON(ctx, endpoint, http.MethodPost, "/v1/runs/"+url.PathEscape(runID)+"/stop", nil, nil)
+func (g *Gateway) stop(ctx context.Context, endpoint *gatewayEndpoint, prefix string, runID string) error {
+	return g.doJSON(ctx, endpoint, http.MethodPost, prefix+"/v1/runs/"+url.PathEscape(runID)+"/stop", nil, nil)
 }
 
 func (g *Gateway) doJSON(ctx context.Context, endpoint *gatewayEndpoint, method string, path string, input any, output any) error {

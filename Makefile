@@ -5,11 +5,9 @@ CONTAINER_CLI ?= docker
 IMAGE_TAG ?= local
 OPEN_LUMORA_BACKEND_IMAGE ?= open-lumora-backend:$(IMAGE_TAG)
 OPEN_LUMORA_FRONTEND_IMAGE ?= open-lumora-frontend:$(IMAGE_TAG)
-OPEN_LUMORA_HERMES_BASE_IMAGE ?= open-lumora-hermes-runtime:local
-OPEN_LUMORA_HERMES_IMAGE ?= open-lumora-hermes-runtime:compatible
-ENTERPRISE_CONTEXT ?= ../open-lumora-enterprise
+OPEN_LUMORA_CONTROL_NETWORK ?= open-lumora-control
 
-.PHONY: dev backend src test check smoke-api binary build image backend-image frontend-image runtime-image support-images bundle load-bundle install
+.PHONY: dev backend src test check smoke-api binary build image backend-image frontend-image bundle load-bundle network install
 
 dev:
 	./scripts/dev.sh
@@ -42,31 +40,25 @@ binary:
 	mkdir -p bin
 	$(GO_BIN) build -o bin/open-lumora ./cmd
 
-build: binary backend-image frontend-image runtime-image support-images
+build: binary backend-image frontend-image
 	$(MAKE) bundle
 
 image: backend-image frontend-image
 
 backend-image:
-	test -x $(ENTERPRISE_CONTEXT)/bin/open-lumora-enterprise || { echo "Build the enterprise binary first: make -C $(ENTERPRISE_CONTEXT) binary" >&2; exit 2; }
-	$(CONTAINER_CLI) build --build-context enterprise=$(ENTERPRISE_CONTEXT) -f Dockerfile.backend -t $(OPEN_LUMORA_BACKEND_IMAGE) .
+	$(CONTAINER_CLI) build -f Dockerfile.backend -t $(OPEN_LUMORA_BACKEND_IMAGE) .
 
 frontend-image:
 	$(CONTAINER_CLI) build -f Dockerfile.frontend -t $(OPEN_LUMORA_FRONTEND_IMAGE) .
 
-runtime-image:
-	$(CONTAINER_CLI) image inspect $(OPEN_LUMORA_HERMES_BASE_IMAGE) >/dev/null
-	$(CONTAINER_CLI) build --build-arg RUNTIME_BASE_IMAGE=$(OPEN_LUMORA_HERMES_BASE_IMAGE) -f Dockerfile.runtime -t $(OPEN_LUMORA_HERMES_IMAGE) .
-
-support-images:
-	$(CONTAINER_CLI) pull traefik:v3.6.16
-	$(CONTAINER_CLI) pull clickhouse/clickhouse-server:25.8-alpine
-
 bundle:
-	CONTAINER_CLI=$(CONTAINER_CLI) IMAGE_TAG=$(IMAGE_TAG) OPEN_LUMORA_HERMES_IMAGE=$(OPEN_LUMORA_HERMES_IMAGE) ./scripts/BundleImages.sh
+	CONTAINER_CLI=$(CONTAINER_CLI) IMAGE_TAG=$(IMAGE_TAG) ./scripts/BundleImages.sh
 
 load-bundle:
 	CONTAINER_CLI=$(CONTAINER_CLI) ./scripts/LoadImages.sh
 
-install: load-bundle
+network:
+	$(CONTAINER_CLI) network inspect $(OPEN_LUMORA_CONTROL_NETWORK) >/dev/null 2>&1 || $(CONTAINER_CLI) network create --internal $(OPEN_LUMORA_CONTROL_NETWORK)
+
+install: load-bundle network
 	$(CONTAINER_CLI) compose --profile local up -d --no-build

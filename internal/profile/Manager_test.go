@@ -52,6 +52,62 @@ func TestSkillWritesStayInsideAgentProfileAndSnapshotEveryVersion(t *testing.T) 
 	}
 }
 
+func TestManagerMigratesCategorizedSkillsToCanonicalProfilePath(t *testing.T) {
+	root := t.TempDir()
+	manager, err := NewManager(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Create("m12345", "Migrated"); err != nil {
+		t.Fatal(err)
+	}
+	profilePath, _ := manager.ProfilePath("m12345")
+	legacyDir := filepath.Join(profilePath, "skills", "research", "google-news-digest")
+	if err := os.MkdirAll(filepath.Join(legacyDir, "references"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nname: google-news-digest\ndescription: News summary\ncategory: research\n---\n# News\n"
+	if err := os.WriteFile(filepath.Join(legacyDir, "SKILL.md"), []byte(content), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "references", "feeds.md"), []byte("feeds"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := NewManager(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalDir := filepath.Join(profilePath, "skills", "google-news-digest")
+	payload, err := os.ReadFile(filepath.Join(canonicalDir, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(payload) != content {
+		t.Fatalf("migrated content = %q", payload)
+	}
+	if _, err := os.Stat(filepath.Join(canonicalDir, "references", "feeds.md")); err != nil {
+		t.Fatalf("support file was not migrated: %v", err)
+	}
+	if _, err := os.Stat(legacyDir); !os.IsNotExist(err) {
+		t.Fatalf("legacy skill directory remains: %v", err)
+	}
+	skills, err := reloaded.ListSkills("m12345")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skills) != 1 || skills[0].Path != "skills/google-news-digest" {
+		t.Fatalf("skills = %#v", skills)
+	}
+	snapshots, err := reloaded.ListSnapshots("m12345", "skills")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 1 || snapshots[0].Target != "google-news-digest" {
+		t.Fatalf("snapshots = %#v", snapshots)
+	}
+}
+
 func TestSessionApprovalPersistsToAgentConfigFile(t *testing.T) {
 	root := t.TempDir()
 	manager, err := NewManager(root)

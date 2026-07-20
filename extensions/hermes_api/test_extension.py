@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from pathlib import Path
+import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -25,6 +29,37 @@ class _FakeAgent:
 
 @unittest.skipIf(extension is None, f"Hermes upstream runtime unavailable: {_IMPORT_ERROR}")
 class ExtendedAPIServerAdapterTests(unittest.TestCase):
+    def test_skill_categories_keep_metadata_but_not_storage_directories(self):
+        calls = []
+        skill_manager = SimpleNamespace(
+            _resolve_skill_dir=lambda name, category=None: (
+                calls.append((name, category))
+                or Path("/profiles/agent1/skills") / (category or "") / name
+            ),
+        )
+
+        extension._install_flat_profile_skill_storage(skill_manager)
+        resolved = skill_manager._resolve_skill_dir("google-news-digest", "research")
+        extension._install_flat_profile_skill_storage(skill_manager)
+
+        self.assertEqual(resolved, Path("/profiles/agent1/skills/google-news-digest"))
+        self.assertEqual(calls, [("google-news-digest", None)])
+
+    def test_external_profile_is_resolved_from_managed_profiles_root(self):
+        adapter = object.__new__(extension.ExtendedAPIServerAdapter)
+        with tempfile.TemporaryDirectory() as root:
+            Path(root, "agent1").mkdir()
+            with patch.dict(os.environ, {"HERMES_PROFILES_ROOT": root}):
+                resolved = adapter._resolve_request_profile(
+                    SimpleNamespace(match_info={"profile": "agent1"})
+                )
+                rejected = adapter._resolve_request_profile(
+                    SimpleNamespace(match_info={"profile": "../root"})
+                )
+
+        self.assertEqual(resolved, "agent1")
+        self.assertIs(rejected, extension.upstream._PROFILE_REJECTED)
+
     def test_empty_run_history_is_hydrated_from_profile_session(self):
         adapter = object.__new__(extension.ExtendedAPIServerAdapter)
         adapter._conversation_history_for_session = lambda session_id: [

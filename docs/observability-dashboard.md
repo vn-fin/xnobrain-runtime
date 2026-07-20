@@ -6,12 +6,12 @@ The public Studio remains the user-facing process and data/profile owner. In a
 local installation every browser request follows this private chain:
 
 ```text
-browser -> Traefik -> frontend or Studio API -> enterprise gateway -> Hermes runtime
+browser -> Traefik -> frontend or Studio API -> open-lumora-gateway -> Hermes runtime
                                                 |
                                                 +-> ClickHouse aggregates
 ```
 
-The browser cannot address the enterprise gateway, runtime, or ClickHouse.
+The browser cannot address `open-lumora-gateway`, runtime, or ClickHouse.
 Traefik is the only service with a host port. Studio exposes two narrow proxy
 reads for the dashboard:
 
@@ -56,26 +56,26 @@ seven days by default and can be changed with `CLICKHOUSE_RETENTION_DAYS`.
 
 ## Build and offline install
 
-The enterprise repository builds the host gateway binary and Hermes runtime
-image. The public repository then builds separate backend and frontend images,
-applies a small runtime compatibility layer that pins 9Router 0.5.40, pulls the
-pinned Traefik and ClickHouse images, and writes one compressed image bundle
-under `bin/images`. Every bundle part is 47 MB and is checksum verified.
+The enterprise repository builds the gateway and Hermes runtime images and
+owns PostgreSQL and ClickHouse. The public repository builds only separate
+backend and frontend images and writes those two images into a compressed
+bundle under `bin/images`. Every bundle part is 47 MB and checksum verified.
 
 ```bash
-make -C ../open-lumora-enterprise build
 make build
+make -C ../open-lumora-enterprise build
 make install
 ```
 
-`make install` checks and concatenates the parts, restores all images into the
-local Docker engine, and starts the local Compose profile. It requires no image
-registry or account after the repository and image parts are present.
+Public `make install` checks and concatenates only the frontend/backend bundle,
+ensures the shared private network exists, and starts Traefik, frontend, and
+Studio. The enterprise installation independently restores and starts the
+gateway, runtime, PostgreSQL, ClickHouse, and workers.
 
 Run `make smoke-api` after startup to validate safe read/status endpoints and
 all six provider contracts through Traefik. OAuth starts are checked for a
 non-empty authorization URL without changing any provider credentials.
 
-The local schedule listener is a separate container. Studio serves CRUD/API
-requests while the listener evaluates due work against the same profile volume
-and sends executions through the private enterprise gateway/runtime chain.
+The schedule listener is an enterprise-owned process. Studio serves CRUD/API
+requests while the listener evaluates due work against the shared profile
+volume and sends executions through the private gateway/runtime chain.

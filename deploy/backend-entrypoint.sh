@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
 # <Summary>
-# Initializes named-volume ownership, then drops privileges for Studio or the
-# enterprise gateway binary selected by the Compose command.
+# Initializes the public profile-volume ownership, then starts Studio without
+# carrying or selecting any enterprise executable.
 # </Summary>
 set -eu
 
-mkdir -p /opt/data /opt/open-lumora/data
-chown -R lumora:lumora /opt/data /opt/open-lumora/data
+mkdir -p /opt/data
+chown -R lumora:lumora /opt/data
 exec runuser -u lumora -- "$@"

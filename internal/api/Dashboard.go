@@ -1,6 +1,6 @@
 // <Summary>
 // Dashboard proxies aggregate-only observability reads through Studio to the
-// private enterprise gateway. ClickHouse is never exposed to the browser.
+// private Open Lumora gateway. ClickHouse is never exposed to the browser.
 // </Summary>
 package api
 
@@ -24,7 +24,7 @@ func (s *Server) DashboardDependencies(c fiber.Ctx) error {
 
 func (s *Server) proxyDashboard(c fiber.Ctx, path string) error {
 	if strings.TrimSpace(s.config.ControlGatewayURL) == "" {
-		return sendError(c, fmt.Errorf("enterprise gateway is not configured"))
+		return sendError(c, fmt.Errorf("Open Lumora gateway is not configured"))
 	}
 	target := strings.TrimRight(s.config.ControlGatewayURL, "/") + path
 	if query := string(c.Request().URI().QueryString()); query != "" {

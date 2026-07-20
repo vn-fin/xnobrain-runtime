@@ -1,8 +1,5 @@
 format=open-lumora-image-bundle-v1
 tag=local
 part_size=47m
-image=traefik:v3.6.16
-image=clickhouse/clickhouse-server:25.8-alpine
 image=open-lumora-backend:local
 image=open-lumora-frontend:local
-image=open-lumora-hermes-runtime:compatible
