@@ -6,7 +6,6 @@ package edition
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -38,26 +37,7 @@ func (g *Gateway) Principal(ctx context.Context, authorization string) (Principa
 }
 
 func (g *Gateway) Limits(ctx context.Context, principal Principal) (Limits, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, g.endpoint+"/api/v1/limits/current", nil)
-	if err != nil {
-		return g.fallback.Limits(ctx, principal)
-	}
-	response, err := g.client.Do(request)
-	if err != nil {
-		return g.fallback.Limits(ctx, principal)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return g.fallback.Limits(ctx, principal)
-	}
-	var envelope struct {
-		Success bool `json:"success"`
-		Data    struct {
-			Limits Limits `json:"limits"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil || !envelope.Success || envelope.Data.Limits.Agents == 0 {
-		return g.fallback.Limits(ctx, principal)
-	}
-	return envelope.Data.Limits, nil
+	// The Enterprise service may gate its own authenticated extensions, but it
+	// never governs local Hermes capabilities in a self-hosted installation.
+	return g.fallback.Limits(ctx, principal)
 }

@@ -33,6 +33,8 @@
 - Resolve and validate every user-controlled path beneath its profile root.
 - Use temp-file-plus-rename for config and content writes.
 - Never return or log credentials, runtime tokens, or provider keys.
-- Open-source requests use the local principal. Enterprise authentication is supplied by an edition extension.
-- The offline enterprise gateway may supply Free limits, but loss of that
-  gateway must fall back to the exact same local Free policy.
+- Open-source requests use an unrestricted local principal. Enterprise
+  authentication applies only to Enterprise API features and managed cloud
+  resources.
+- Loss of the Enterprise API must not restrict agents, skills, MCP, providers,
+  profiles, teams, or local cron in a self-hosted deployment.

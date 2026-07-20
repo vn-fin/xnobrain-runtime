@@ -1,62 +1,41 @@
-# Repository and image ownership
+# Repository and artifact ownership
 
-This contract prevents public and enterprise builds from embedding one
-another's executables or rebuilding the same infrastructure.
+| Repository | Builds | Owns persistent data |
+|---|---|---|
+| `open-lumora` | Frontend, Studio API, Hermes/9router Docker image, Hermes/9router Incus image | Profiles, skills, memory, conversations, local cron, provider configuration |
+| `open-lumora-enterprise` | `open-lumora-gateway` only | Accounts/tenants/plans in PostgreSQL; traces and metrics in ClickHouse |
 
-| Repository | Owned build artifacts | Owned deployment state |
-| --- | --- | --- |
-| `open-lumora` | `open-lumora-frontend`, `open-lumora-backend` | Agent profiles in `open-lumora_open_lumora_data`, public Traefik routes |
-| `open-lumora-enterprise` | `open-lumora-gateway`, `open-lumora-hermes-runtime` | PostgreSQL, ClickHouse, gateway keys/state, scheduler and retention workers |
+The public repository is the single source of truth for `extensions/`,
+`runtime/`, `build_docker.py`, and `build_vm.py`. Enterprise deployments pull a
+released OSS runtime image or launch the corresponding OSS Incus image.
 
-Hermes extensions, launchers, and runtime packaging live exclusively in the
-Enterprise repository. The public repository retains only Studio's runtime
-client contracts and never invokes a runtime Dockerfile or Enterprise build
-context.
+The self-hosted Compose stack contains Traefik, frontend, Studio API, OSS Hermes
+runtime, PostgreSQL, and a pulled Enterprise API image. Only Traefik publishes a
+host port. Studio talks directly to Hermes on the private control network. The
+Enterprise API is used only for authenticated extensions such as observability.
 
-## Private deployment contract
-
-Both Compose projects attach to the external Docker network
-`open-lumora-control`. The enterprise gateway has the network alias
-`open-lumora-gateway` and listens privately on port `3100`. Enterprise Hermes
-workers mount the external `open-lumora_open_lumora_data` volume at `/opt/data`, matching
-Studio's absolute profile paths.
-
-The only supported Studio control-plane setting in Compose is:
-
-```dotenv
-OPEN_LUMORA_GATEWAY_URL=http://open-lumora-gateway:3100
+```text
+browser -> Traefik -> frontend / Studio API -> OSS Hermes runtime
+                                  |
+                                  +-> Enterprise API (authenticated features)
+Studio/runtime -> OTel Collector -> Enterprise API -> ClickHouse
 ```
 
-Studio derives the private runtime and 9router paths from that base URL. The
-browser never receives a gateway, runtime, database, or ClickHouse address.
+Signed-out self-hosting remains fully functional without the Enterprise API or
+Internet. Signing in enables plan-scoped extensions but never imposes limits on
+local Hermes capabilities. Cloud always requires login and uses managed Incus
+runtimes; its resource limits are enforced by Enterprise services.
 
-## Enterprise authentication environment
+Build ownership:
 
-Authentication belongs exclusively to `open-lumora-gateway`. The Enterprise
-configuration and Compose files provide:
+```bash
+# public repository
+make build
+python build_docker.py --path open-lumora-hermes-runtime:local
+python build_vm.py
 
-```dotenv
-AUTH_SERVICE_BASE_URL=https://auth.example.com
-AUTH_TIMEOUT=3s
+# enterprise repository
+make build
 ```
 
-`AUTH_SERVICE_BASE_URL` is empty in local no-login mode. Cloud mode must
-validate it during startup and use it as the canonical endpoint for token and
-session verification. Credentials must not appear in this URL, logs, traces,
-or the public frontend/backend environment. Transport-specific options such as
-TLS or gRPC remain private enterprise settings.
-
-## Enterprise build contract
-
-The Enterprise `make build`:
-
-1. Build the Go gateway as the `open-lumora-gateway` executable/image.
-2. Run `python build_docker.py --path open-lumora-hermes-runtime:<tag>`.
-3. Keep `python build_vm.py` as the Incus runtime build.
-4. Package PostgreSQL and ClickHouse deployment images and migrations.
-5. Start the scheduler listener from the enterprise backend image.
-
-The enterprise Compose stack starts before the public stack. Studio remains
-healthy with compiled Free-limit fallback when the gateway is unavailable,
-but agent runs, providers, telemetry dashboards, and managed scheduling require
-the gateway/runtime stack.
+Neither repository may introduce an ORM.

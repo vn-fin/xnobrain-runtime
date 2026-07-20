@@ -4,7 +4,11 @@ Open Lumora is a modular monolith. The browser calls one Fiber application. The 
 
 The frontend lives in `src/` and ships as its own container. The backend entrypoint is `cmd/main.go`. Business rules live under `services/<service_name>`; safe profile I/O is concentrated in `internal/profile`; runtime execution is behind `internal/runtime`; persistence is behind `internal/repositories`; transport code is under `internal/api`, with centralized route assembly in `internal/v1/routes/SetupRoutes.go`.
 
-Community storage is file-only. Versioned agent metadata lives in each profile `config.yaml`, conversations and messages live in the profile session tree, cron definitions are individual YAML files, usage is one atomically replaced user aggregate, and notifications are individual JSON files. Writes use same-directory temporary files, fsync, rename, and a process lock. PostgreSQL, Redis, and Kafka dependencies live only in `open-lumora-enterprise`; neither the Community binary nor its Go module depends on them. No ORM is used in either repository.
+Hermes-owned state is file-backed. Versioned agent metadata lives in each
+profile `config.yaml`, conversations and messages live in the profile session
+tree, cron definitions are individual YAML files, and notifications are
+individual JSON files. Self-hosted Compose also starts PostgreSQL for the
+pulled Enterprise API; the OSS backend does not query it. No ORM is used.
 
 ## Agent profiles
 
@@ -35,18 +39,21 @@ Runtime approval events include a subsystem key such as `memory_write` or `skill
 
 ## Runtime and providers
 
-Studio calls only `open-lumora-gateway`; the gateway privately proxies Hermes
-`/v1/runs`, `/events`, `/stop`, and `/approval` plus the 9router API. The public
-repository builds no runtime or enterprise binary. Studio, gateway, and the
-enterprise-built runtime share the external `open-lumora_open_lumora_data` volume so every
-absolute profile path has the same meaning without granting the browser direct
-runtime access. Private HTTP travels on `open-lumora-control`.
+Studio calls the OSS Hermes runtime directly for `/v1/runs`, `/events`,
+`/stop`, `/approval`, and 9router operations. The public repository builds the
+runtime and owns its extensions. Studio and runtime share
+`open-lumora_open_lumora_data`; private HTTP travels on
+`open-lumora-control`. The browser never receives a runtime address.
 
 The gateway adapter starts a profile API server lazily and reuses it for that profile until the Go process stops. `CONTAINER_IDLE_ENABLED` and `CONTAINER_IDLE_TIMEOUT_MINUTES` remain policy metadata for a future managed-container controller; the local OSS application container does not stop itself because doing so would also remove its UI and API.
 
 ## Editions and quotas
 
-`pkg/studio` is the public application-composition seam and `pkg/studio/contract` contains downstream-safe repository, runtime, lifecycle, and DTO contracts. The open-source policy returns a local principal and explicit limits for agents, cron definitions, parallel cron runs, daily/monthly cron runs, and provider connections. HTTP middleware exposes consistent `429` responses and rate-limit headers; services repeat enforcement for schedulers and other non-HTTP callers. Daily and monthly usage reserve together in one atomic file mutation, and parallel execution is isolated per principal.
+`internal/studio` is the application-composition seam and
+`internal/studio/contract` contains repository, runtime, lifecycle, and DTO
+contracts. The open-source policy returns an unrestricted local principal.
+Enterprise plans govern only authenticated extension APIs and managed cloud
+resources; they never reduce self-hosted Hermes access.
 
 A downstream enterprise composition can implement the same policy with gRPC token verification, tenant-aware plan lookup, RBAC, audit, and licensed limits. `-1` means unlimited for numeric limits. The enterprise control plane remains responsible for distributed reservations, container resource classes, billing, and managed telemetry; the local application remains usable without that control plane.
 

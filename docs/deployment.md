@@ -1,77 +1,70 @@
 # Local and cloud deployment
 
-Open Lumora starts in `local` mode unless `START_MODE=cloud` is selected. The
-public repository owns only the frontend and Studio backend images. The
-enterprise repository owns `open-lumora-gateway`, the Hermes/9router runtime,
-PostgreSQL, ClickHouse, and enterprise worker processes. The browser reaches
-only Traefik; private services have no public ingress.
+## Self-hosted
+
+The public Compose project owns the complete installation:
 
 ```text
-Browser
-  -> Traefik
-    -> Open Lumora Studio (UI + public API)
-      -> open-lumora-gateway (limits + private proxy)
-        -> Hermes runtime API and 9router
+Traefik -> frontend
+        -> Studio API -> OSS Hermes/9router runtime
+                      -> pulled Enterprise API (authenticated extensions)
 ```
 
-The two Compose projects meet on the external, internal-only
-`open-lumora-control` network. The enterprise deployment must give its gateway the network
-alias `open-lumora-gateway`; the enterprise runtime must mount the established
-external `open-lumora_open_lumora_data` volume that Studio owns. Studio reads limits from the
-gateway and falls back to compiled Free limits while it is unavailable.
-Agent/profile state remains in the shared volume.
+It starts Traefik, frontend, Studio API, OSS runtime, PostgreSQL, and the pulled
+Enterprise API image. Only Traefik exposes a host port. The optional
+`authenticated` profile starts the local OTel Collector.
 
-For a remote cloud gateway, set `OPEN_LUMORA_GATEWAY_URL=https://...` in the
-public Compose environment. For host development use
-`CONTROL_GATEWAY_URL=http://localhost:3100`. The gateway URL is also the
-private runtime and 9router route prefix, so users do not configure separate
-internal endpoints.
+Signed-out mode is the default and needs neither Internet nor authentication.
+All Hermes features are unrestricted. Signed-in mode preserves that access and
+adds plan-scoped Enterprise features such as usage and trace dashboards.
 
-## Build and transfer images
+```bash
+make build
+make install
+```
+
+Open <http://localhost>.
+
+## Cloud
+
+Cloud always requires login. It uses the same public runtime contract but
+launches the OSS Incus image. The Enterprise API owns tenant plans, managed
+resource limits, PostgreSQL metadata, ClickHouse telemetry, and future RBAC or
+workspace sharing.
+
+## Build ownership
 
 In `open-lumora`:
 
 ```bash
 make build
+python build_docker.py --path open-lumora-hermes-runtime:local
+python build_vm.py
 ```
 
-This builds and bundles only `open-lumora-backend:local` and
-`open-lumora-frontend:local`. In `open-lumora-enterprise`:
+`make build` produces backend, frontend, and runtime images, then stores their
+offline bundle as checksummed parts smaller than 50 MB under `bin/images`.
+
+In `open-lumora-enterprise`:
 
 ```bash
 make build
 ```
 
-This must build `open-lumora-gateway`, the extended Hermes runtime, and its
-PostgreSQL/ClickHouse deployment dependencies. The enterprise repository also
-provides:
+This builds only the Enterprise API image. It never builds or contains Hermes
+extensions or runtime packaging.
 
-```bash
-python build_docker.py --path open-lumora-hermes-runtime:local
-python build_vm.py
-```
+## Authentication and telemetry
 
-The public `make build` writes its two images as checksummed gzip parts below
-50 MB under `bin/images/`. Enterprise runtime, gateway, PostgreSQL, and
-ClickHouse transfer artifacts belong to the enterprise repository. Never
-create or commit an unsplit Docker image tarball.
+Set `AUTH_SERVICE_BASE_URL` only when enabling signed-in mode. The Enterprise
+API fails closed for dashboard and ingestion routes without a valid account or
+claimed device. New testing tenants resolve the Basic plan (`free` ID).
 
-## Start
+## Migrating from the previous two-Compose layout
 
-Copy `.env.example` to `.env`, select a domain and gateway endpoint, then run:
-
-```bash
-make install
-```
-
-The default is `http://localhost`. Change `OPEN_LUMORA_DOMAIN` and configure
-Traefik TLS separately when using a real domain.
-
-## Enterprise gateway environment contract
-
-The enterprise deployment owns authentication. Its gateway environment must
-expose `AUTH_SERVICE_BASE_URL` as the canonical external-auth endpoint, with
-`AUTH_TIMEOUT` controlling request deadlines. Local no-login mode may leave
-the base URL empty; authenticated cloud mode must reject startup when it is
-missing. Existing gRPC-specific settings are enterprise implementation details
-and must not leak into the public frontend/backend image.
+Build or pull the OSS runtime before removing the old
+`open-lumora-enterprise-runtime-1` container. On the next coordinated maintenance
+window, remove that one obsolete runtime container and run `make install` from
+this repository; Compose will create `open-lumora-runtime-1` on the same named
+profile volume. Do not run both runtime containers after migration because they
+would share the `runtime` DNS alias and profile files.

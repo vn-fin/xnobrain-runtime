@@ -19,33 +19,33 @@ import (
 )
 
 type Config struct {
-	StartMode                        string
-	Edition                          string
-	HTTPPort                         int
-	LogLevel                         string
-	CORSAllowedOrigins               []string
-	DataDir                          string
-	FrontendDir                      string
-	HermesBin                        string
-	HermesGatewayBin                 string
-	HermesRuntimeMode                string
-	HermesRuntimeURL                 string
-	HermesRuntimeToken               string
-	ControlGatewayURL                string
-	NineRouterURL                    string
-	NineRouterDataDir                string
-	RuntimeTimeout                   time.Duration
-	ContainerIdleEnabled             bool
-	ContainerIdleTimeout             time.Duration
-	PermissionGRPCHost               string
-	AuthTimeout                      time.Duration
-	OTLPEndpoint                     string
-	DeviceCloudURL                   string
-	DeviceSigningPublicKey           string
-	DevicePollInterval               time.Duration
-	TelemetryDiskCapBytes            int64
-	ManagedWorkerToken               string
-	SchedulerEnabled                 bool
+	StartMode              string
+	Edition                string
+	HTTPPort               int
+	LogLevel               string
+	CORSAllowedOrigins     []string
+	DataDir                string
+	FrontendDir            string
+	HermesBin              string
+	HermesGatewayBin       string
+	HermesRuntimeMode      string
+	HermesRuntimeURL       string
+	HermesRuntimeToken     string
+	ControlGatewayURL      string
+	NineRouterURL          string
+	NineRouterDataDir      string
+	RuntimeTimeout         time.Duration
+	ContainerIdleEnabled   bool
+	ContainerIdleTimeout   time.Duration
+	PermissionGRPCHost     string
+	AuthTimeout            time.Duration
+	OTLPEndpoint           string
+	DeviceCloudURL         string
+	DeviceSigningPublicKey string
+	DevicePollInterval     time.Duration
+	TelemetryDiskCapBytes  int64
+	ManagedWorkerToken     string
+	SchedulerEnabled       bool
 }
 
 func Load() (Config, error) {
@@ -79,33 +79,33 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		StartMode:                        startMode,
-		Edition:                          value("OPEN_LUMORA_EDITION", "opensource"),
-		HTTPPort:                         integer("HTTP_PORT", 3000),
-		LogLevel:                         value("LOG_LEVEL", "debug"),
-		CORSAllowedOrigins:               list("CORS_ALLOWED_ORIGINS", []string{"http://localhost:5173", "http://localhost:3000"}),
-		DataDir:                          dataDir,
-		FrontendDir:                      frontendDir,
-		HermesBin:                        value("HERMES_BIN", "hermes"),
-		HermesGatewayBin:                 value("HERMES_GATEWAY_BIN", "hermes-custom-gateway"),
-		HermesRuntimeMode:                value("HERMES_RUNTIME_MODE", "cli"),
-		HermesRuntimeURL:                 hermesRuntimeURL,
-		HermesRuntimeToken:               strings.TrimSpace(os.Getenv("HERMES_RUNTIME_TOKEN")),
-		ControlGatewayURL:                controlGatewayURL,
-		NineRouterURL:                    nineRouterURL,
-		NineRouterDataDir:                nineRouterDataDir,
-		RuntimeTimeout:                   time.Duration(integer("RUNTIME_TIMEOUT_SECONDS", 900)) * time.Second,
-		ContainerIdleEnabled:             boolean("CONTAINER_IDLE_ENABLED", true),
-		ContainerIdleTimeout:             time.Duration(integer("CONTAINER_IDLE_TIMEOUT_MINUTES", 30)) * time.Minute,
-		PermissionGRPCHost:               strings.TrimSpace(os.Getenv("PERMISSION_GRPC_HOST")),
-		AuthTimeout:                      time.Duration(integer("AUTH_TIMEOUT_SECONDS", 1)) * time.Second,
-		OTLPEndpoint:                     strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
-		DeviceCloudURL:                   strings.TrimRight(strings.TrimSpace(os.Getenv("DEVICE_CLOUD_URL")), "/"),
-		DeviceSigningPublicKey:           strings.TrimSpace(os.Getenv("DEVICE_SIGNING_PUBLIC_KEY")),
-		DevicePollInterval:               time.Duration(integer("DEVICE_POLL_INTERVAL_SECONDS", 20)) * time.Second,
-		TelemetryDiskCapBytes:            int64(integer("OTEL_DISK_BUFFER_BYTES", 64*1024*1024)),
-		ManagedWorkerToken:               strings.TrimSpace(os.Getenv("MANAGED_WORKER_TOKEN")),
-		SchedulerEnabled:                 boolean("SCHEDULER_ENABLED", true),
+		StartMode:              startMode,
+		Edition:                value("OPEN_LUMORA_EDITION", "opensource"),
+		HTTPPort:               integer("HTTP_PORT", 3000),
+		LogLevel:               value("LOG_LEVEL", "debug"),
+		CORSAllowedOrigins:     list("CORS_ALLOWED_ORIGINS", []string{"http://localhost:5173", "http://localhost:3000"}),
+		DataDir:                dataDir,
+		FrontendDir:            frontendDir,
+		HermesBin:              value("HERMES_BIN", "hermes"),
+		HermesGatewayBin:       value("HERMES_GATEWAY_BIN", "hermes-custom-gateway"),
+		HermesRuntimeMode:      value("HERMES_RUNTIME_MODE", "cli"),
+		HermesRuntimeURL:       hermesRuntimeURL,
+		HermesRuntimeToken:     strings.TrimSpace(os.Getenv("HERMES_RUNTIME_TOKEN")),
+		ControlGatewayURL:      controlGatewayURL,
+		NineRouterURL:          nineRouterURL,
+		NineRouterDataDir:      nineRouterDataDir,
+		RuntimeTimeout:         time.Duration(integer("RUNTIME_TIMEOUT_SECONDS", 900)) * time.Second,
+		ContainerIdleEnabled:   boolean("CONTAINER_IDLE_ENABLED", true),
+		ContainerIdleTimeout:   time.Duration(integer("CONTAINER_IDLE_TIMEOUT_MINUTES", 30)) * time.Minute,
+		PermissionGRPCHost:     strings.TrimSpace(os.Getenv("PERMISSION_GRPC_HOST")),
+		AuthTimeout:            time.Duration(integer("AUTH_TIMEOUT_SECONDS", 1)) * time.Second,
+		OTLPEndpoint:           strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
+		DeviceCloudURL:         strings.TrimRight(strings.TrimSpace(os.Getenv("DEVICE_CLOUD_URL")), "/"),
+		DeviceSigningPublicKey: strings.TrimSpace(os.Getenv("DEVICE_SIGNING_PUBLIC_KEY")),
+		DevicePollInterval:     time.Duration(integer("DEVICE_POLL_INTERVAL_SECONDS", 20)) * time.Second,
+		TelemetryDiskCapBytes:  int64(integer("OTEL_DISK_BUFFER_BYTES", 64*1024*1024)),
+		ManagedWorkerToken:     strings.TrimSpace(os.Getenv("MANAGED_WORKER_TOKEN")),
+		SchedulerEnabled:       boolean("SCHEDULER_ENABLED", true),
 	}, nil
 }
 

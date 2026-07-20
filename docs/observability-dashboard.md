@@ -8,9 +8,9 @@ mode does not export telemetry or expose a local usage dashboard. An
 authenticated installation follows this private chain:
 
 ```text
-browser -> Traefik -> frontend or Studio API -> open-lumora-gateway -> Hermes runtime
-                                                |
-                                                +-> ClickHouse aggregates
+browser -> Traefik -> frontend or Studio API -> OSS Hermes runtime
+                              |
+                              +-> Enterprise API -> ClickHouse aggregates
 ```
 
 The browser cannot address `open-lumora-gateway`, runtime, or ClickHouse.
@@ -21,12 +21,13 @@ reads for the dashboard:
 - `GET /api/v1/dashboard/dependencies?window=24h|7d|30d|90d|365d`
 - `GET /api/v1/observability/traces?window=...`
 - `GET /api/v1/observability/traces/:trace_id`
+- `GET /api/v1/observability/metrics?window=...&metric=...&runtime_id=...&container=...&limit=...`
 
 The UI displays run success, agents and teams, tokens, estimated cost, p95
 latency, errors, time-bucketed usage, CPU/memory/block-I/O/network, agent usage,
 skills, tools, models, and a team/agent/skill/tool dependency graph. All time bucketing,
 quantiles, sums, counts, and top-N reduction happen in ClickHouse. Raw spans,
-logs, and metric samples are never sent to the frontend. The trace explorer is
+log bodies, and metric samples are never sent to the frontend. The trace explorer is
 the bounded exception: it returns at most 1,000 sanitized span metadata rows for
 one authorized trace so the UI can render its waterfall and dependency graph.
 
@@ -49,7 +50,7 @@ as Unicode response characters. No response content is retained. Conversation
 messages keep `trace_id` and `run_id` metadata so users can correlate chat and
 execution without copying chat content into telemetry.
 
-Claimed Studio exports only to the private Enterprise-owned OTel Collector. The
+Claimed Studio exports through the OSS deployment's private OTel Collector. The
 Collector batches and compresses OTLP into the gateway. The gateway acknowledges
 after authentication, sanitization, plan retention assignment, and enqueue into
 a bounded Go channel. Fixed workers retry ClickHouse inserts. There is no Kafka,
@@ -71,15 +72,15 @@ spans. The UI always marks these results as **Demo data**. Set the option to
 `false` before a production release; it never replaces or alters real rows.
 
 `DASHBOARD_ENABLED=true` controls the server capability. Retention is assigned
-per accepted row from the user plan: Free 7 days, Pro 90 days, and Enterprise
-365 days for traces, safe span events, and runtime resource metrics.
+per accepted row from the user plan: Basic 7 days, Pro 90 days, Pro Max 180
+days, and Enterprise 365 days for traces, safe span events, and runtime metrics.
 
 ## Build and offline install
 
-The enterprise repository builds the gateway and Hermes runtime images and
-owns PostgreSQL and ClickHouse. The public repository builds only separate
-backend and frontend images and writes those two images into a compressed
-bundle under `bin/images`. Every bundle part is 47 MB and checksum verified.
+The public repository builds backend, frontend, and Hermes runtime images. The
+Enterprise repository builds only its API image and owns the ClickHouse schema.
+The public images are written into a compressed bundle under `bin/images`; each
+part is 47 MB and checksum verified.
 
 ```bash
 make build
@@ -87,15 +88,14 @@ make -C ../open-lumora-enterprise build
 make install
 ```
 
-Public `make install` checks and concatenates only the frontend/backend bundle,
-ensures the shared private network exists, and starts Traefik, frontend, and
-Studio. The enterprise installation independently restores and starts the
-gateway, runtime, PostgreSQL, ClickHouse, and workers.
+Public `make install` checks and concatenates the public image bundle, ensures
+the private network exists, and starts the complete self-hosted stack. Use the
+`authenticated` Compose profile to start its local Collector after configuring
+login and tenant-bound telemetry credentials.
 
 Run `make smoke-api` after startup to validate safe read/status endpoints and
 all six provider contracts through Traefik. OAuth starts are checked for a
 non-empty authorization URL without changing any provider credentials.
 
-The schedule listener is an enterprise-owned process. Studio serves CRUD/API
-requests while the listener evaluates due work against the shared profile
-volume and sends executions through the private gateway/runtime chain.
+Local scheduling is OSS-owned and unrestricted. Managed cloud scheduling and
+future collaboration policy remain Enterprise API concerns.

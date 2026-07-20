@@ -30,6 +30,100 @@ services:
       - edge
     restart: unless-stopped
 
+  runtime:
+    image: ${HERMES_RUNTIME_IMAGE:-open-lumora-hermes-runtime:local}
+    user: "10001:10001"
+    environment:
+      HERMES_HOME: /opt/data/open-lumora/root
+      HERMES_ROOT_PROFILE: /opt/data/open-lumora/root
+      HERMES_PROFILES_ROOT: /opt/data/open-lumora/profiles
+      NINE_ROUTER_DATA_DIR: /opt/data/.9router
+      NINE_ROUTER_INTERNAL_SECRET: ${NINE_ROUTER_INTERNAL_SECRET:-open-lumora-local-9router}
+      API_SERVER_ENABLED: "true"
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: 8642
+      HERMES_RUNTIME_TOKEN: ${HERMES_RUNTIME_TOKEN:-open-lumora-local-runtime}
+    volumes:
+      - open_lumora_data:/opt/data
+    networks:
+      - control
+      - runtime-egress
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import os,urllib.request; t=os.environ.get('HERMES_RUNTIME_TOKEN',''); r=urllib.request.Request('http://127.0.0.1:8642/health',headers={'Authorization':'Bearer '+t}); urllib.request.urlopen(r,timeout=2)"]
+      interval: 15s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: open_lumora
+      POSTGRES_USER: open_lumora
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-open_lumora}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - control
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U open_lumora -d open_lumora"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  open-lumora-gateway:
+    # Pulled Enterprise API artifact. It exposes no authenticated extensions in
+    # local/no-login mode; set START_MODE=cloud plus auth/ClickHouse endpoints
+    # when this self-hosted installation is attached to an account.
+    image: ${OPEN_LUMORA_ENTERPRISE_API_IMAGE:-open-lumora-gateway:local}
+    environment:
+      START_MODE: ${START_MODE:-local}
+      HTTP_PORT: 3100
+      DATA_DIR: /opt/open-lumora/data
+      DATABASE_URL: postgres://open_lumora:${POSTGRES_PASSWORD:-open_lumora}@postgres:5432/open_lumora?sslmode=disable
+      AUTH_SERVICE_BASE_URL: ${AUTH_SERVICE_BASE_URL:-}
+      AUTH_GRPC_INSECURE: ${AUTH_GRPC_INSECURE:-false}
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-open_lumora}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      DASHBOARD_ENABLED: ${DASHBOARD_ENABLED:-true}
+      DASHBOARD_SMOKE_DATA_ENABLED: ${DASHBOARD_SMOKE_DATA_ENABLED:-true}
+      TELEMETRY_RESOURCE_TOKEN: ${TELEMETRY_RESOURCE_TOKEN:-}
+      TELEMETRY_RESOURCE_TENANT_ID: ${TELEMETRY_RESOURCE_TENANT_ID:-}
+    volumes:
+      - enterprise_api_data:/opt/open-lumora/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - control
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3100/api/v1/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.136.0
+    profiles: ["authenticated"]
+    user: "0:0"
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      TELEMETRY_RESOURCE_TOKEN: ${TELEMETRY_RESOURCE_TOKEN:-}
+    volumes:
+      - ./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - otel_collector_data:/var/lib/otelcol
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      open-lumora-gateway:
+        condition: service_healthy
+    networks:
+      - control
+    restart: unless-stopped
+
   studio:
     image: ${OPEN_LUMORA_BACKEND_IMAGE:-open-lumora-backend:local}
     command: ["/usr/local/bin/open-lumora"]
@@ -40,7 +134,9 @@ services:
       DATA_DIR: /opt/data/open-lumora
       FRONTEND_DIR: /opt/open-lumora/frontend
       CONTROL_GATEWAY_URL: ${OPEN_LUMORA_GATEWAY_URL:-http://open-lumora-gateway:3100}
-      HERMES_RUNTIME_TOKEN: ${OPEN_LUMORA_GATEWAY_TOKEN:-open-lumora-local-runtime}
+      HERMES_RUNTIME_URL: http://runtime:8642
+      HERMES_RUNTIME_TOKEN: ${HERMES_RUNTIME_TOKEN:-open-lumora-local-runtime}
+      NINE_ROUTER_URL: http://runtime:20128
       NINE_ROUTER_DATA_DIR: /opt/data/.9router
       DEVICE_CLOUD_URL: ${DEVICE_CLOUD_URL:-}
       DEVICE_SIGNING_PUBLIC_KEY: ${DEVICE_SIGNING_PUBLIC_KEY:-}
@@ -58,6 +154,11 @@ services:
     networks:
       - edge
       - control
+    depends_on:
+      runtime:
+        condition: service_healthy
+      open-lumora-gateway:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/v1/health"]
       interval: 10s
@@ -70,7 +171,11 @@ networks:
   control:
     name: open-lumora-control
     external: true
+  runtime-egress:
 
 volumes:
   open_lumora_data:
     name: open-lumora_open_lumora_data
+  postgres_data:
+  enterprise_api_data:
+  otel_collector_data:

@@ -97,6 +97,9 @@ func NewApp(cfg config.Config, server *Server) *fiber.App {
 		}),
 	))
 	app.Use(server.loggingMiddleware)
+	if strings.EqualFold(cfg.StartMode, "cloud") {
+		app.Use(server.cloudAuthentication)
+	}
 	return app
 }
 

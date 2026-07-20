@@ -11,24 +11,32 @@ import (
 )
 
 type Config struct {
-	StartMode                        string
-	Edition                          string
-	HTTPPort                         int
-	LogLevel                         string
-	CORSAllowedOrigins               []string
-	DataDir                          string
-	FrontendDir                      string
-	HermesBin                        string
-	HermesGatewayBin                 string
-	HermesRuntimeMode                string
-	HermesRuntimeURL                 string
-	HermesRuntimeToken               string
-	ControlGatewayURL                string
-	NineRouterURL                    string
-	NineRouterDataDir                string
-	RuntimeTimeout                   time.Duration
-	ContainerIdleEnabled             bool
-	ContainerIdleTimeout             time.Duration
+	StartMode            string
+	Edition              string
+	HTTPPort             int
+	LogLevel             string
+	CORSAllowedOrigins   []string
+	DataDir              string
+	FrontendDir          string
+	HermesBin            string
+	HermesGatewayBin     string
+	HermesRuntimeMode    string
+	HermesRuntimeURL     string
+	HermesRuntimeToken   string
+	ControlGatewayURL    string
+	NineRouterURL        string
+	NineRouterDataDir    string
+	RuntimeTimeout       time.Duration
+	ContainerIdleEnabled bool
+	ContainerIdleTimeout time.Duration
+	// Deprecated compatibility fields. Self-hosted composition ignores these
+	// values and always grants unrestricted local Hermes access.
+	MaxOpenSourceAgents              int
+	MaxOpenSourceCronJobs            int
+	MaxOpenSourceConcurrency         int
+	MaxOpenSourceCronRunsPerDay      int
+	MaxOpenSourceCronRunsPerMonth    int
+	MaxOpenSourceProviderConnections int
 	PermissionGRPCHost               string
 	AuthTimeout                      time.Duration
 	OTLPEndpoint                     string
@@ -36,6 +44,10 @@ type Config struct {
 	DeviceSigningPublicKey           string
 	DevicePollInterval               time.Duration
 	TelemetryDiskCapBytes            int64
+	MaxOpenSourceTeams               int
+	MaxOpenSourceAgentsPerTeam       int
+	MaxOpenSourceDelegatedWorkers    int
+	MaxOpenSourceDelegationDepth     int
 	ManagedWorkerToken               string
 	SchedulerEnabled                 bool
 }
@@ -56,10 +68,10 @@ func configFromInternal(config internalconfig.Config) Config {
 		HermesRuntimeURL: config.HermesRuntimeURL, HermesRuntimeToken: config.HermesRuntimeToken, ControlGatewayURL: config.ControlGatewayURL,
 		NineRouterURL: config.NineRouterURL, NineRouterDataDir: config.NineRouterDataDir, RuntimeTimeout: config.RuntimeTimeout,
 		ContainerIdleEnabled: config.ContainerIdleEnabled, ContainerIdleTimeout: config.ContainerIdleTimeout,
-		PermissionGRPCHost:               config.PermissionGRPCHost, AuthTimeout: config.AuthTimeout, OTLPEndpoint: config.OTLPEndpoint,
+		PermissionGRPCHost: config.PermissionGRPCHost, AuthTimeout: config.AuthTimeout, OTLPEndpoint: config.OTLPEndpoint,
 		DeviceCloudURL: config.DeviceCloudURL, DeviceSigningPublicKey: config.DeviceSigningPublicKey, DevicePollInterval: config.DevicePollInterval,
 		TelemetryDiskCapBytes: config.TelemetryDiskCapBytes,
-		ManagedWorkerToken: config.ManagedWorkerToken, SchedulerEnabled: config.SchedulerEnabled,
+		ManagedWorkerToken:    config.ManagedWorkerToken, SchedulerEnabled: config.SchedulerEnabled,
 	}
 }
 
@@ -71,9 +83,9 @@ func (c Config) internal() internalconfig.Config {
 		HermesRuntimeURL: c.HermesRuntimeURL, HermesRuntimeToken: c.HermesRuntimeToken, ControlGatewayURL: c.ControlGatewayURL,
 		NineRouterURL: c.NineRouterURL, NineRouterDataDir: c.NineRouterDataDir, RuntimeTimeout: c.RuntimeTimeout,
 		ContainerIdleEnabled: c.ContainerIdleEnabled, ContainerIdleTimeout: c.ContainerIdleTimeout,
-		PermissionGRPCHost:               c.PermissionGRPCHost, AuthTimeout: c.AuthTimeout, OTLPEndpoint: c.OTLPEndpoint,
+		PermissionGRPCHost: c.PermissionGRPCHost, AuthTimeout: c.AuthTimeout, OTLPEndpoint: c.OTLPEndpoint,
 		DeviceCloudURL: c.DeviceCloudURL, DeviceSigningPublicKey: c.DeviceSigningPublicKey, DevicePollInterval: c.DevicePollInterval,
 		TelemetryDiskCapBytes: c.TelemetryDiskCapBytes,
-		ManagedWorkerToken: c.ManagedWorkerToken, SchedulerEnabled: c.SchedulerEnabled,
+		ManagedWorkerToken:    c.ManagedWorkerToken, SchedulerEnabled: c.SchedulerEnabled,
 	}
 }

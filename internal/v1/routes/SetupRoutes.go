@@ -18,6 +18,7 @@ func SetupRoutes(app *fiber.App, server *api.Server) {
 	app.Get("/api/v1/observability/traces", server.DashboardTraces)
 	app.Get("/api/v1/observability/traces/:trace_id", server.DashboardTrace)
 	app.Get("/api/v1/observability/traces/:trace_id/graph", server.DashboardTraceGraph)
+	app.Get("/api/v1/observability/metrics", server.DashboardMetrics)
 	app.Get("/agent-gateway/v1/ping", server.Health)
 	server.RegisterAgentRoutes(app)
 	server.RegisterConversationRoutes(app)
