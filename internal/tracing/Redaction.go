@@ -56,7 +56,19 @@ func (s safeSpan) Attributes() []attribute.KeyValue {
 	return safeAttributes(s.ReadOnlySpan.Attributes())
 }
 
-func (s safeSpan) Events() []sdktrace.Event { return nil }
+func (s safeSpan) Events() []sdktrace.Event {
+	events := s.ReadOnlySpan.Events()
+	result := make([]sdktrace.Event, 0, len(events))
+	for _, event := range events {
+		name := strings.ToLower(strings.TrimSpace(event.Name))
+		if !strings.HasPrefix(name, "gen_ai.stream.") && !strings.HasPrefix(name, "lumora.approval.") && !strings.HasPrefix(name, "lumora.scheduler.") {
+			continue
+		}
+		event.Attributes = safeAttributes(event.Attributes)
+		result = append(result, event)
+	}
+	return result
+}
 
 func (s safeSpan) Links() []sdktrace.Link {
 	links := s.ReadOnlySpan.Links()
@@ -101,7 +113,7 @@ func safeAttributes(attributes []attribute.KeyValue) []attribute.KeyValue {
 }
 
 func allowedAttribute(key string) bool {
-	if key == "http.request.method" || key == "http.route" || key == "http.response.status_code" || key == "http.status_code" || key == "run.interactive" || key == "run.status" || key == "runtime.class" || key == "tool.category" || key == "error.code" || key == "error.type" || key == "agent.name" || key == "team.name" || key == "skill.name" || key == "tool.name" || key == "lumora.node.kind" || key == "lumora.node.label" || key == "gen_ai.provider.name" || key == "gen_ai.request.model" || key == "gen_ai.usage.input_tokens" || key == "gen_ai.usage.output_tokens" || key == "gen_ai.usage.cached_tokens" || key == "gen_ai.usage.cost_usd" {
+	if key == "http.request.method" || key == "http.route" || key == "http.response.status_code" || key == "http.status_code" || key == "run.interactive" || key == "run.status" || key == "runtime.class" || key == "tool.category" || key == "error.code" || key == "error.type" || key == "agent.name" || key == "team.name" || key == "skill.name" || key == "tool.name" || key == "lumora.node.kind" || key == "lumora.node.label" || key == "lumora.response.chars" || key == "lumora.stream.time_to_first_token_ms" || key == "lumora.stream.duration_ms" || key == "lumora.stream.event_count" || key == "lumora.approval.decision" || key == "gen_ai.prompt.length" || key == "gen_ai.provider.name" || key == "gen_ai.request.model" || key == "gen_ai.response.model" || key == "gen_ai.usage.input_tokens" || key == "gen_ai.usage.output_tokens" || key == "gen_ai.usage.cached_tokens" || key == "gen_ai.usage.cache_read_tokens" || key == "gen_ai.usage.cache_write_tokens" || key == "gen_ai.usage.reasoning_tokens" || key == "gen_ai.usage.cost_usd" {
 		return true
 	}
 	for _, prefix := range []string{"limits.", "quota."} {

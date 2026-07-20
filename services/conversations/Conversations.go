@@ -119,6 +119,7 @@ func (s *Conversations) stream(ctx context.Context, userID string, agentID strin
 	ctx, span := otel.Tracer("open-lumora/services/conversations").Start(ctx, "Conversations.Stream")
 	metrics := newRunTelemetry(agentID)
 	defer func() {
+		metrics.Close()
 		metrics.Apply(span)
 		if streamErr != nil {
 			span.SetAttributes(attribute.String("run.status", "error"), attribute.String("error.type", "agent_run_failed"))
@@ -127,7 +128,8 @@ func (s *Conversations) stream(ctx context.Context, userID string, agentID strin
 		}
 		span.End()
 	}()
-	span.SetAttributes(attribute.String("agent.id_hash", safetracing.HashID(agentID)), attribute.String("conversation.id_hash", safetracing.HashID(conversationID)), attribute.Bool("run.interactive", interactive), attribute.String("lumora.node.kind", "agent"))
+	agentIDHash := safetracing.HashID(agentID)
+	span.SetAttributes(attribute.String("agent.id_hash", agentIDHash), attribute.String("conversation.id_hash", safetracing.HashID(conversationID)), attribute.Bool("run.interactive", interactive), attribute.String("lumora.node.kind", "agent"), attribute.String("lumora.node.id_hash", agentIDHash), attribute.Int("gen_ai.prompt.length", len([]rune(strings.TrimSpace(input)))))
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return fmt.Errorf("input is required")
@@ -193,7 +195,8 @@ func (s *Conversations) stream(ctx context.Context, userID string, agentID strin
 			defer func() { _, _ = s.agents.UpdateConfig(context.Background(), userID, agentID, restore) }()
 		}
 	}
-	_, err = s.repository.AddMessage(ctx, conversationID, models.Message{Role: "user", Content: input, CreatedAt: time.Now().UTC(), Metadata: map[string]any{}})
+	traceID := span.SpanContext().TraceID().String()
+	_, err = s.repository.AddMessage(ctx, conversationID, models.Message{Role: "user", Content: input, CreatedAt: time.Now().UTC(), Metadata: map[string]any{"run_id": runID, "trace_id": traceID}})
 	if err != nil {
 		return err
 	}
@@ -220,7 +223,8 @@ func (s *Conversations) stream(ctx context.Context, userID string, agentID strin
 		emit(runtimeadapter.Event{Type: "run.failed", RunID: runID, Text: err.Error()})
 		return err
 	}
-	_, err = s.repository.AddMessage(ctx, conversationID, models.Message{Role: "assistant", Content: result.Output, CreatedAt: time.Now().UTC(), Metadata: map[string]any{"run_id": runID}})
+	span.SetAttributes(attribute.Int("lumora.response.chars", len([]rune(result.Output))))
+	_, err = s.repository.AddMessage(ctx, conversationID, models.Message{Role: "assistant", Content: result.Output, CreatedAt: time.Now().UTC(), Metadata: map[string]any{"run_id": runID, "trace_id": traceID}})
 	if err != nil {
 		return err
 	}

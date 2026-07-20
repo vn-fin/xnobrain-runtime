@@ -22,6 +22,18 @@ func (s *Server) DashboardDependencies(c fiber.Ctx) error {
 	return s.proxyDashboard(c, "/api/v1/dashboard/dependencies")
 }
 
+func (s *Server) DashboardTraces(c fiber.Ctx) error {
+	return s.proxyDashboard(c, "/api/v1/observability/traces")
+}
+
+func (s *Server) DashboardTrace(c fiber.Ctx) error {
+	return s.proxyDashboard(c, "/api/v1/observability/traces/"+c.Params("trace_id"))
+}
+
+func (s *Server) DashboardTraceGraph(c fiber.Ctx) error {
+	return s.proxyDashboard(c, "/api/v1/observability/traces/"+c.Params("trace_id")+"/graph")
+}
+
 func (s *Server) proxyDashboard(c fiber.Ctx, path string) error {
 	if strings.TrimSpace(s.config.ControlGatewayURL) == "" {
 		return sendError(c, fmt.Errorf("Open Lumora gateway is not configured"))

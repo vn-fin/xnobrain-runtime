@@ -88,7 +88,14 @@ func NewApp(cfg config.Config, server *Server) *fiber.App {
 	// Fiber's send-file response body is a pooled stream. The current OTel
 	// metrics wrapper closes that stream twice; retain tracing and disable only
 	// the middleware's body-size metrics until upstream removes the wrapper.
-	app.Use(otelfiber.Middleware(otelfiber.WithoutMetrics(true)))
+	app.Use(otelfiber.Middleware(
+		otelfiber.WithoutMetrics(true),
+		otelfiber.WithNext(func(c fiber.Ctx) bool {
+			// Docker health probes are operational noise and otherwise create a
+			// new trace every few seconds for no user-visible action.
+			return c.Path() == "/api/v1/health"
+		}),
+	))
 	app.Use(server.loggingMiddleware)
 	return app
 }

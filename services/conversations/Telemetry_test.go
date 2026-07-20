@@ -31,6 +31,7 @@ func TestRunTelemetryAggregatesUsageAndCreatesToolSpan(t *testing.T) {
 	metrics.Observe(ctx, runtimeadapter.Event{Type: "tool.completed", Payload: map[string]any{
 		"tool_name": "browser.search",
 		"arguments": map[string]any{"query": "must not be exported"},
+		"result":    "Xin chào 🌏",
 		"usage":     map[string]any{"input_tokens": float64(120), "output_tokens": float64(30), "cache_read_tokens": float64(20), "cache_write_tokens": float64(5), "cost_usd": 0.012},
 	}})
 	metrics.Apply(root)
@@ -47,6 +48,9 @@ func TestRunTelemetryAggregatesUsageAndCreatesToolSpan(t *testing.T) {
 	toolAttributes := attributeMap(spans[0].Attributes())
 	if toolAttributes["tool.name"] != "browser.search" || toolAttributes["lumora.node.kind"] != "tool" {
 		t.Fatalf("tool attributes = %#v", toolAttributes)
+	}
+	if toolAttributes["lumora.response.chars"] != int64(10) {
+		t.Fatalf("response chars = %#v", toolAttributes["lumora.response.chars"])
 	}
 	if _, leaked := toolAttributes["arguments"]; leaked {
 		t.Fatal("tool arguments were exported")

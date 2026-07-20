@@ -49,7 +49,7 @@ func Setup(ctx context.Context, endpoint string, dataDir string, diskCapBytes in
 			return nil, err
 		}
 		var durable trace.SpanExporter = exporter
-		if strings.TrimSpace(dataDir) != "" && diskCapBytes > 0 {
+		if strings.TrimSpace(dataDir) != "" && diskCapBytes > 0 && !strings.EqualFold(hostOnly(address), "otel-collector") {
 			spool, err := NewSpoolExporter(exporter, filepath.Join(dataDir, "telemetry"), diskCapBytes)
 			if err != nil {
 				return nil, err
@@ -98,7 +98,15 @@ func collectorAddress(endpoint string) (string, bool, error) {
 }
 
 func isLocalCollector(host string) bool {
-	return strings.EqualFold(host, "localhost") || net.ParseIP(host) != nil && net.ParseIP(host).IsLoopback()
+	return strings.EqualFold(host, "localhost") || strings.EqualFold(host, "otel-collector") || net.ParseIP(host) != nil && net.ParseIP(host).IsLoopback()
+}
+
+func hostOnly(address string) string {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return address
+	}
+	return host
 }
 
 func otlpHeaders(raw string) map[string]string {
