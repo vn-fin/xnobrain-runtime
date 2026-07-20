@@ -101,7 +101,7 @@ func safeAttributes(attributes []attribute.KeyValue) []attribute.KeyValue {
 }
 
 func allowedAttribute(key string) bool {
-	if key == "http.request.method" || key == "http.route" || key == "http.response.status_code" || key == "http.status_code" || key == "run.interactive" || key == "runtime.class" || key == "tool.category" || key == "error.code" {
+	if key == "http.request.method" || key == "http.route" || key == "http.response.status_code" || key == "http.status_code" || key == "run.interactive" || key == "run.status" || key == "runtime.class" || key == "tool.category" || key == "error.code" || key == "error.type" || key == "agent.name" || key == "team.name" || key == "skill.name" || key == "tool.name" || key == "lumora.node.kind" || key == "lumora.node.label" || key == "gen_ai.provider.name" || key == "gen_ai.request.model" || key == "gen_ai.usage.input_tokens" || key == "gen_ai.usage.output_tokens" || key == "gen_ai.usage.cached_tokens" || key == "gen_ai.usage.cost_usd" {
 		return true
 	}
 	for _, prefix := range []string{"limits.", "quota."} {

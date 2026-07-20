@@ -55,6 +55,7 @@ type Config struct {
 	MaxOpenSourceDelegatedWorkers    int
 	MaxOpenSourceDelegationDepth     int
 	ManagedWorkerToken               string
+	SchedulerEnabled                 bool
 }
 
 func Load() (Config, error) {
@@ -124,6 +125,7 @@ func Load() (Config, error) {
 		MaxOpenSourceDelegatedWorkers:    integer("MAX_OPEN_SOURCE_DELEGATED_WORKERS", 1),
 		MaxOpenSourceDelegationDepth:     integer("MAX_OPEN_SOURCE_DELEGATION_DEPTH", 1),
 		ManagedWorkerToken:               strings.TrimSpace(os.Getenv("MANAGED_WORKER_TOKEN")),
+		SchedulerEnabled:                 boolean("SCHEDULER_ENABLED", true),
 	}, nil
 }
 

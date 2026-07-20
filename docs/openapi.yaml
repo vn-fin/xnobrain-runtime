@@ -287,6 +287,24 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Success" }
   /agent-gateway/v1/providers/{provider_id}/connect:
+    get:
+      summary: Read provider connection status and available models
+      parameters:
+        - name: provider_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+    post:
+      summary: Start OAuth or API-key provider connection flow
+      parameters:
+        - name: provider_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
     put:
       summary: Submit provider credentials or an OAuth callback
       description: Replaces the current account by default. Set replace=false for an additive connection subject to the per-provider-type limit.
@@ -301,6 +319,26 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Success" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /agent-gateway/v1/providers/{provider_id}/models:
+    get:
+      summary: List provider models
+      parameters:
+        - name: provider_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /agent-gateway/v1/providers/{provider_id}/test:
+    post:
+      summary: Test the active provider connection
+      parameters:
+        - name: provider_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
   /agent-gateway/v1/cron/jobs:
     get:
       summary: List cron jobs

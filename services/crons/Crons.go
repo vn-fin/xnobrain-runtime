@@ -249,10 +249,17 @@ func (s *Crons) runDue(ctx context.Context, userID string) {
 	}
 }
 
-func (s *Crons) execute(ctx context.Context, userID string, job models.CronJob, manual bool) error {
+func (s *Crons) execute(ctx context.Context, userID string, job models.CronJob, manual bool) (runErr error) {
 	ctx, span := otel.Tracer("open-lumora/services/crons").Start(ctx, "Crons.Execute")
-	defer span.End()
-	span.SetAttributes(attribute.String("cron.id_hash", safetracing.HashID(job.ID)), attribute.String("agent.id_hash", safetracing.HashID(job.AgentID)))
+	defer func() {
+		if runErr != nil {
+			span.SetAttributes(attribute.String("run.status", "error"), attribute.String("error.type", "cron_run_failed"))
+		} else {
+			span.SetAttributes(attribute.String("run.status", "ok"))
+		}
+		span.End()
+	}()
+	span.SetAttributes(attribute.String("cron.id_hash", safetracing.HashID(job.ID)), attribute.String("agent.id_hash", safetracing.HashID(job.AgentID)), attribute.String("lumora.node.kind", "cron"), attribute.String("lumora.node.label", job.Name))
 	if _, loaded := s.running.LoadOrStore(job.ID, true); loaded {
 		return fmt.Errorf("cron job is already running")
 	}

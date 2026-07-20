@@ -3,7 +3,7 @@
 // swapped from mock data to real fetch calls without touching components.
 
 export type RightView = 'workspace' | 'skills' | 'cron' | 'runtime';
-export type CenterView = 'chat' | 'sandbox' | 'connections' | 'skills' | 'teams' | 'data';
+export type CenterView = 'chat' | 'dashboard' | 'sandbox' | 'connections' | 'skills' | 'teams' | 'data';
 
 export type ConnectionMode = 'device-code' | 'cli' | 'api-key';
 export type ProviderBrand = 'openai' | 'claude' | 'anthropic' | 'gemini' | 'openrouter';

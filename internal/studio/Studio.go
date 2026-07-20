@@ -192,7 +192,9 @@ func (a *Application) Serve(ctx context.Context, listener net.Listener) error {
 	runContext, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
 	a.startMu.Unlock()
-	go a.crons.Run(runContext)
+	if a.config.SchedulerEnabled {
+		go a.crons.Run(runContext)
+	}
 	if a.connector != nil {
 		go func() { _ = a.connector.Start(runContext) }()
 	}
@@ -219,6 +221,10 @@ func (a *Application) Serve(ctx context.Context, listener net.Listener) error {
 		return nil
 	}
 	return listenErr
+}
+
+func (a *Application) RunScheduler(ctx context.Context) {
+	a.crons.Run(ctx)
 }
 
 func (a *Application) Close() error {

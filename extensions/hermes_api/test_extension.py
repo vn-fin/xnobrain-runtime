@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import threading
 import unittest
 from unittest.mock import patch
@@ -53,6 +54,31 @@ class ExtendedAPIServerAdapterTests(unittest.TestCase):
             created.run_conversation("next", supplied)
 
         self.assertIs(agent.calls[0][0][1], supplied)
+
+    def test_async_run_history_is_resolved_before_agent_call(self):
+        async def scenario():
+            adapter = object.__new__(extension.ExtendedAPIServerAdapter)
+
+            async def load_history(session_id):
+                await asyncio.sleep(0)
+                return [{"role": "user", "content": f"history for {session_id}"}]
+
+            adapter._conversation_history_for_session = load_history
+            agent = _FakeAgent()
+            with patch.object(extension.upstream.APIServerAdapter, "_create_agent", return_value=agent):
+                created = adapter._create_agent(session_id="session-async")
+                await asyncio.to_thread(
+                    created.run_conversation,
+                    user_message="next",
+                    conversation_history=[],
+                )
+            return agent
+
+        agent = asyncio.run(scenario())
+        self.assertEqual(
+            agent.calls[0][1]["conversation_history"],
+            [{"role": "user", "content": "history for session-async"}],
+        )
 
     def test_memory_write_approval_blocks_until_run_choice(self):
         from tools.approval import (

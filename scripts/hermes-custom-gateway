@@ -22,18 +22,9 @@ if [ -n "$hermes_path" ]; then
   if [ -x "$hermes_python" ]; then
     exec "$hermes_python" "$extension" "$@"
   fi
-  first_line="$(sed -n '1p' "$hermes_path" 2>/dev/null || true)"
-  case "$first_line" in
-    '#!'*)
-      interpreter="${first_line#\#!}"
-      if [ -x "$interpreter" ]; then
-        exec "$interpreter" "$extension" "$@"
-      fi
-      ;;
-  esac
 fi
 
-for candidate in /opt/hermes/.venv/bin/python /root/.local/share/hermes/venv/bin/python /usr/local/bin/python3 /usr/bin/python3; do
+for candidate in /opt/hermes/.venv/bin/python3 /opt/hermes/.venv/bin/python /root/.local/share/hermes/venv/bin/python /usr/local/bin/python3 /usr/bin/python3; do
   if [ -x "$candidate" ] && "$candidate" -c 'import hermes_cli.main' >/dev/null 2>&1; then
     exec "$candidate" "$extension" "$@"
   fi

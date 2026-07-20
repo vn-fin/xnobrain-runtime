@@ -115,10 +115,19 @@ func (s *Conversations) StreamDelegated(ctx context.Context, userID string, agen
 	return s.stream(ctx, userID, agentID, conversationID, input, false, append([]string(nil), toolsets...), emit)
 }
 
-func (s *Conversations) stream(ctx context.Context, userID string, agentID string, conversationID string, input string, interactive bool, toolsets []string, emit func(runtimeadapter.Event)) error {
+func (s *Conversations) stream(ctx context.Context, userID string, agentID string, conversationID string, input string, interactive bool, toolsets []string, emit func(runtimeadapter.Event)) (streamErr error) {
 	ctx, span := otel.Tracer("open-lumora/services/conversations").Start(ctx, "Conversations.Stream")
-	defer span.End()
-	span.SetAttributes(attribute.String("agent.id_hash", safetracing.HashID(agentID)), attribute.String("conversation.id_hash", safetracing.HashID(conversationID)), attribute.Bool("run.interactive", interactive))
+	metrics := newRunTelemetry(agentID)
+	defer func() {
+		metrics.Apply(span)
+		if streamErr != nil {
+			span.SetAttributes(attribute.String("run.status", "error"), attribute.String("error.type", "agent_run_failed"))
+		} else {
+			span.SetAttributes(attribute.String("run.status", "ok"))
+		}
+		span.End()
+	}()
+	span.SetAttributes(attribute.String("agent.id_hash", safetracing.HashID(agentID)), attribute.String("conversation.id_hash", safetracing.HashID(conversationID)), attribute.Bool("run.interactive", interactive), attribute.String("lumora.node.kind", "agent"))
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return fmt.Errorf("input is required")
@@ -127,6 +136,8 @@ func (s *Conversations) stream(ctx context.Context, userID string, agentID strin
 	if err != nil {
 		return err
 	}
+	metrics.Configure(agent.Name, agent.Config.Provider, agent.Config.Model)
+	span.SetAttributes(attribute.String("agent.name", agent.Name), attribute.String("lumora.node.label", agent.Name), attribute.String("gen_ai.provider.name", agent.Config.Provider), attribute.String("gen_ai.request.model", agent.Config.Model))
 	conversation, err := s.Get(ctx, userID, agentID, conversationID)
 	if err != nil {
 		return err
@@ -191,6 +202,7 @@ func (s *Conversations) stream(ctx context.Context, userID string, agentID strin
 		RunID: runID, ProfilePath: profilePath, WorkspacePath: profilePath + "/workspace", ConversationID: conversationID,
 		RuntimeSessionID: conversation.RuntimeSessionID, Input: input, Model: agent.Config.Model, Toolsets: toolsets,
 	}, func(event runtimeadapter.Event) {
+		metrics.Observe(ctx, event)
 		if event.RunID == "" {
 			event.RunID = runID
 		}

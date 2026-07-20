@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1.7
+# <Summary>
+# Applies the public compatibility pin to the enterprise Hermes runtime without
+# rebuilding or modifying the enterprise source repository.
+# </Summary>
+ARG RUNTIME_BASE_IMAGE=open-lumora-hermes-runtime:local
+FROM ${RUNTIME_BASE_IMAGE}
+
+USER root
+ARG NINE_ROUTER_VERSION=0.5.40
+RUN npm install -g --include=optional "9router@${NINE_ROUTER_VERSION}" \
+    && test "$(9router --version)" = "${NINE_ROUTER_VERSION}"
+COPY --chown=10001:10001 extensions/hermes_api/extension.py /opt/open-lumora/extensions/hermes_api/extension.py
+USER 10001:10001

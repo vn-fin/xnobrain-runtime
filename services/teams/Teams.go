@@ -20,7 +20,10 @@ import (
 	"github.com/xno/open-lumora/internal/models"
 	"github.com/xno/open-lumora/internal/repositories"
 	"github.com/xno/open-lumora/internal/studio/contract"
+	safetracing "github.com/xno/open-lumora/internal/tracing"
 	"github.com/xno/open-lumora/services/agents"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var safeToolsets = map[string]struct{}{
@@ -139,12 +142,23 @@ func (s *Teams) Delete(ctx context.Context, userID string, teamID string) error 
 	return s.store.DeleteTeam(ctx, userID, teamID)
 }
 
-func (s *Teams) Run(ctx context.Context, userID string, teamID string, task string, depth int) (RunResult, error) {
+func (s *Teams) Run(ctx context.Context, userID string, teamID string, task string, depth int) (result RunResult, runErr error) {
+	ctx, span := otel.Tracer("open-lumora/services/teams").Start(ctx, "Teams.Run")
+	span.SetAttributes(attribute.String("team.id_hash", safetracing.HashID(teamID)), attribute.String("lumora.node.kind", "team"))
+	defer func() {
+		if runErr != nil {
+			span.SetAttributes(attribute.String("run.status", "error"), attribute.String("error.type", "team_run_failed"))
+		} else {
+			span.SetAttributes(attribute.String("run.status", "ok"))
+		}
+		span.End()
+	}()
 	startedAt := time.Now().UTC()
 	team, err := s.store.GetTeam(ctx, userID, teamID)
 	if err != nil {
 		return RunResult{}, err
 	}
+	span.SetAttributes(attribute.String("team.name", team.Name), attribute.String("lumora.node.label", team.Name))
 	if !team.Enabled {
 		return RunResult{}, fmt.Errorf("team is disabled")
 	}
@@ -206,7 +220,7 @@ func (s *Teams) Run(ctx context.Context, userID string, teamID string, task stri
 	}
 	orchestratorInput := synthesisPrompt(task, results)
 	orchestratorSummary, err := s.delegator.Delegate(ctx, userID, team.OrchestratorID, orchestratorInput, DelegationPolicy{Role: "orchestrator", Toolsets: []string{"todo"}, NoClarification: true, FinalSummaryOnly: true, NoMemoryWrites: true})
-	result := RunResult{TeamID: team.ID, MemberResults: results, OrchestratorSummary: orchestratorSummary, StartedAt: startedAt, CompletedAt: time.Now().UTC()}
+	result = RunResult{TeamID: team.ID, MemberResults: results, OrchestratorSummary: orchestratorSummary, StartedAt: startedAt, CompletedAt: time.Now().UTC()}
 	return result, err
 }
 

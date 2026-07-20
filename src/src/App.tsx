@@ -18,6 +18,7 @@ import { SkillsView } from './components/SkillsView';
 import { Onboarding } from './components/Onboarding';
 import { SystemView } from './features/system/SystemView';
 import { TeamsView } from './components/TeamsView';
+import { DashboardView } from './features/dashboard/DashboardView';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
 import type { Agent } from './types';
@@ -135,8 +136,10 @@ export default function App() {
   if (assistants.status === 'loading') return <AsyncState status="loading" />;
   if (assistants.status === 'error') return <AsyncState status="error" error={assistants.error} onRetry={assistants.refresh} />;
   if (!activeAgent) {
+    if (centerView === 'dashboard') return <DashboardView onClose={() => router.setCenterView('chat')} />;
     return (
       <div className="empty-app">
+        <button className="onboarding-dashboard-link" onClick={() => router.setCenterView('dashboard')}>View observability dashboard</button>
         <Onboarding
           sandboxStatus={sandbox.status}
           sandboxProvisioned={sandbox.provisioned}
@@ -182,7 +185,9 @@ export default function App() {
       />
 
       <main className={centerView === 'chat' ? 'chat-area' : 'chat-area sandbox-mode'}>
-        {centerView === 'sandbox' ? (
+        {centerView === 'dashboard' ? (
+          <DashboardView onClose={() => router.setCenterView('chat')} />
+        ) : centerView === 'sandbox' ? (
           <SandboxView
             data={sandbox.data}
             provisioned={sandbox.provisioned}

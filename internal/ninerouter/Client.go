@@ -261,12 +261,22 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 		}
 		return fmt.Errorf("9router: %s", text)
 	}
-	if output != nil && len(payload) > 0 {
+	if output != nil {
+		if len(bytes.TrimSpace(payload)) == 0 {
+			return fmt.Errorf("9router returned an empty response for %s %s", method, pathWithoutQuery(path))
+		}
 		if err := json.Unmarshal(payload, output); err != nil {
 			return fmt.Errorf("decode 9router response: %w", err)
 		}
 	}
 	return nil
+}
+
+func pathWithoutQuery(path string) string {
+	if index := strings.IndexByte(path, '?'); index >= 0 {
+		return path[:index]
+	}
+	return path
 }
 
 func (c *Client) cliToken() (string, error) {

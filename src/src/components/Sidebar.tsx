@@ -19,6 +19,7 @@ import {
   Sun,
   Trash2,
   Network,
+  ChartNoAxesCombined,
 } from 'lucide-react';
 import { SUPPORTED_LANGUAGES } from '../i18n';
 import { useTheme } from '../theme';
@@ -26,6 +27,7 @@ import type { Agent, CenterView, Conversation } from '../types';
 
 const navItems = [
   { id: 'skills', label: 'skills', icon: Sparkles },
+  { id: 'dashboard', label: 'dashboard', icon: ChartNoAxesCombined },
   { id: 'sandbox', label: 'runtime', icon: Server },
   { id: 'teams', label: 'teams', icon: Network },
   { id: 'connections', label: 'connections', icon: KeyRound },
@@ -97,6 +99,7 @@ export function Sidebar({
         {navItems.map((item) => {
           const Icon = item.icon;
           const active =
+            (item.id === 'dashboard' && centerView === 'dashboard') ||
             (item.id === 'sandbox' && centerView === 'sandbox') ||
             (item.id === 'skills' && centerView === 'skills') ||
             (item.id === 'teams' && centerView === 'teams') ||

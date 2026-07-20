@@ -47,6 +47,7 @@ type Config struct {
 	MaxOpenSourceDelegatedWorkers    int
 	MaxOpenSourceDelegationDepth     int
 	ManagedWorkerToken               string
+	SchedulerEnabled                 bool
 }
 
 func LoadConfig() (Config, error) {
@@ -73,7 +74,7 @@ func configFromInternal(config internalconfig.Config) Config {
 		TelemetryDiskCapBytes: config.TelemetryDiskCapBytes,
 		MaxOpenSourceTeams:    config.MaxOpenSourceTeams, MaxOpenSourceAgentsPerTeam: config.MaxOpenSourceAgentsPerTeam,
 		MaxOpenSourceDelegatedWorkers: config.MaxOpenSourceDelegatedWorkers, MaxOpenSourceDelegationDepth: config.MaxOpenSourceDelegationDepth,
-		ManagedWorkerToken: config.ManagedWorkerToken,
+		ManagedWorkerToken: config.ManagedWorkerToken, SchedulerEnabled: config.SchedulerEnabled,
 	}
 }
 
@@ -93,6 +94,6 @@ func (c Config) internal() internalconfig.Config {
 		TelemetryDiskCapBytes: c.TelemetryDiskCapBytes,
 		MaxOpenSourceTeams:    c.MaxOpenSourceTeams, MaxOpenSourceAgentsPerTeam: c.MaxOpenSourceAgentsPerTeam,
 		MaxOpenSourceDelegatedWorkers: c.MaxOpenSourceDelegatedWorkers, MaxOpenSourceDelegationDepth: c.MaxOpenSourceDelegationDepth,
-		ManagedWorkerToken: c.ManagedWorkerToken,
+		ManagedWorkerToken: c.ManagedWorkerToken, SchedulerEnabled: c.SchedulerEnabled,
 	}
 }

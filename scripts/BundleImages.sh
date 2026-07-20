@@ -7,9 +7,11 @@ output_dir="${BUNDLE_OUTPUT_DIR:-bin/images}"
 part_size="${IMAGE_BUNDLE_PART_SIZE:-47m}"
 bundle="open-lumora-images-${image_tag}"
 images=(
-  "${OPEN_LUMORA_IMAGE:-open-lumora-studio:${image_tag}}"
-  "${OPEN_LUMORA_ENTERPRISE_IMAGE:-open-lumora-enterprise-gateway:${image_tag}}"
-  "${OPEN_LUMORA_HERMES_IMAGE:-open-lumora-hermes-runtime:${image_tag}}"
+  "traefik:v3.6.16"
+  "clickhouse/clickhouse-server:25.8-alpine"
+  "${OPEN_LUMORA_BACKEND_IMAGE:-open-lumora-backend:${image_tag}}"
+  "${OPEN_LUMORA_FRONTEND_IMAGE:-open-lumora-frontend:${image_tag}}"
+  "${OPEN_LUMORA_HERMES_IMAGE:-open-lumora-hermes-runtime:compatible}"
 )
 
 command -v "$container_cli" >/dev/null 2>&1 || { echo "Container CLI '$container_cli' is not installed." >&2; exit 2; }

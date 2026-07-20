@@ -95,6 +95,29 @@ func TestSpoolCapDropsOldestWithoutReturningFailure(t *testing.T) {
 	}
 }
 
+func TestSafeSpanKeepsAggregateAIMetricsAndDropsContent(t *testing.T) {
+	span := safeSpan{ReadOnlySpan: testSpan("run",
+		attribute.String("agent.name", "Researcher"),
+		attribute.String("gen_ai.request.model", "gpt-5"),
+		attribute.Int64("gen_ai.usage.input_tokens", 42),
+		attribute.String("prompt", "secret"),
+		attribute.String("tool.arguments", "secret"),
+	)}
+	values := map[string]any{}
+	for _, item := range span.Attributes() {
+		values[string(item.Key)] = item.Value.AsInterface()
+	}
+	if values["agent.name"] != "Researcher" || values["gen_ai.request.model"] != "gpt-5" || values["gen_ai.usage.input_tokens"] != int64(42) {
+		t.Fatalf("aggregate attributes = %#v", values)
+	}
+	if _, exists := values["prompt"]; exists {
+		t.Fatal("prompt survived redaction")
+	}
+	if _, exists := values["tool.arguments"]; exists {
+		t.Fatal("tool arguments survived redaction")
+	}
+}
+
 func testSpan(name string, attributes ...attribute.KeyValue) sdktrace.ReadOnlySpan {
 	traceID := trace.TraceID{1}
 	spanID := trace.SpanID{2}

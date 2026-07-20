@@ -7,6 +7,7 @@ with the target agent profile as ``HERMES_HOME`` and the agent workspace as cwd.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import inspect
 import logging
@@ -103,14 +104,27 @@ class ExtendedAPIServerAdapter(upstream.APIServerAdapter):
         if not session_id or not callable(run_conversation):
             return agent
 
+        try:
+            owner_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            owner_loop = None
+
+        def load_session_history():
+            history = self._conversation_history_for_session(session_id)
+            if not inspect.isawaitable(history):
+                return history
+            if owner_loop is not None and owner_loop.is_running():
+                return asyncio.run_coroutine_threadsafe(history, owner_loop).result()
+            return asyncio.run(history)
+
         @functools.wraps(run_conversation)
         def run_conversation_with_session_history(*run_args: Any, **run_kwargs: Any):
             hydrated_args = list(run_args)
             if len(hydrated_args) > 1:
                 if not hydrated_args[1]:
-                    hydrated_args[1] = self._conversation_history_for_session(session_id)
+                    hydrated_args[1] = load_session_history()
             elif not run_kwargs.get("conversation_history"):
-                run_kwargs["conversation_history"] = self._conversation_history_for_session(session_id)
+                run_kwargs["conversation_history"] = load_session_history()
 
             try:
                 from tools.terminal_tool import _get_approval_callback, set_approval_callback

@@ -20,7 +20,8 @@ export function parseRoute(pathname: string, search: string): RouteState {
   let conversationId = '';
   let rightView: RightView = 'workspace';
 
-  if (seg[0] === 'sandbox') centerView = 'sandbox';
+  if (seg[0] === 'dashboard') centerView = 'dashboard';
+  else if (seg[0] === 'sandbox') centerView = 'sandbox';
   else if (seg[0] === 'connections') centerView = 'connections';
   else if (seg[0] === 'skills') centerView = 'skills';
   else if (seg[0] === 'teams') centerView = 'teams';
@@ -54,6 +55,7 @@ export function reconcileSelection(agentId: string, conversationId: string, agen
 
 export function computeUrl(state: RouteState): string {
   const params = new URLSearchParams();
+  if (state.centerView === 'dashboard') return '/dashboard';
   if (state.centerView === 'sandbox') return '/sandbox';
   if (state.centerView === 'connections') return '/connections';
   if (state.centerView === 'data') return '/settings';
