@@ -30,8 +30,9 @@ enterprise services.
 | Scheduling | CRUD and local policy contracts | Schedule listener, execution workers, missed-run delivery |
 | Commercial plans | Public interfaces and Free defaults | Plans, tenants, billing, RBAC, SSO, quotas, audit |
 
-The public repository never embeds an enterprise executable or runtime image.
-Its `extensions/` source is consumed by the Enterprise runtime build.
+The public repository never embeds an Enterprise executable, extension, or
+runtime image. Hermes extensions, launchers, and runtime packaging are owned
+and tested exclusively by the Enterprise repository.
 
 ## Runtime architecture
 
@@ -243,8 +244,9 @@ Implemented and verified in the public repository:
 - Traefik routing and gateway network contract.
 - Full tests, frontend build, Docker build, and public API smoke checks.
 
-Remaining Enterprise handoff work is to rename the private binary/service to
-`open-lumora-gateway`, attach the Enterprise Compose stack to
-`open-lumora-control`, mount `open-lumora_open_lumora_data`, add
-`AUTH_SERVICE_BASE_URL`, and package the runtime, PostgreSQL, ClickHouse, and
-scheduler listener under Enterprise ownership.
+The Enterprise handoff is implemented: the private binary/service is named
+`open-lumora-gateway`, its Compose stack joins `open-lumora-control`, Hermes
+mounts `open-lumora_open_lumora_data`, cloud authentication is configured with
+`AUTH_SERVICE_BASE_URL`, and the runtime extensions, PostgreSQL, ClickHouse,
+managed scheduler, and retention worker are owned and built by the Enterprise
+repository.

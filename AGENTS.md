@@ -19,7 +19,9 @@ For roadmap work, also read `docs/implementation/README.md`, the assigned number
 - Name Go files in PascalCase after their primary exported function or type. `cmd/main.go` is the required Go entrypoint exception.
 - Start every Go file with a short `<Summary>` block explaining why an agent should open or modify it.
 - Preserve structured zerolog fields, OpenTelemetry spans/propagation, and the Hermes Runs API approval path.
-- Keep `extensions/hermes_api` aligned with the read-only `sandboxes` runtime contract when Hermes changes.
+- Hermes API extensions and Docker/Incus runtime packaging belong exclusively
+  to `open-lumora-enterprise`; this repository keeps only the public runtime
+  client contracts used by Studio.
 - Docker starts in `START_MODE=local`: Traefik exposes only the public frontend
   and Studio backend. Studio calls `open-lumora-gateway` on the external private
   `open-lumora-control` network. Gateway, runtime, PostgreSQL, ClickHouse, and

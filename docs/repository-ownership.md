@@ -8,9 +8,10 @@ another's executables or rebuilding the same infrastructure.
 | `open-lumora` | `open-lumora-frontend`, `open-lumora-backend` | Agent profiles in `open-lumora_open_lumora_data`, public Traefik routes |
 | `open-lumora-enterprise` | `open-lumora-gateway`, `open-lumora-hermes-runtime` | PostgreSQL, ClickHouse, gateway keys/state, scheduler and retention workers |
 
-The public `extensions/` directory remains source input to the enterprise
-runtime build. It is not a public runtime image and `make build` in this
-repository never invokes a runtime Dockerfile or an enterprise build context.
+Hermes extensions, launchers, and runtime packaging live exclusively in the
+Enterprise repository. The public repository retains only Studio's runtime
+client contracts and never invokes a runtime Dockerfile or Enterprise build
+context.
 
 ## Private deployment contract
 
@@ -31,8 +32,8 @@ browser never receives a gateway, runtime, database, or ClickHouse address.
 
 ## Enterprise authentication environment
 
-Authentication belongs exclusively to `open-lumora-gateway`. The enterprise
-configuration and Compose files must add:
+Authentication belongs exclusively to `open-lumora-gateway`. The Enterprise
+configuration and Compose files provide:
 
 ```dotenv
 AUTH_SERVICE_BASE_URL=https://auth.example.com
@@ -45,9 +46,9 @@ session verification. Credentials must not appear in this URL, logs, traces,
 or the public frontend/backend environment. Transport-specific options such as
 TLS or gRPC remain private enterprise settings.
 
-## Enterprise build handoff
+## Enterprise build contract
 
-The enterprise `make build` must:
+The Enterprise `make build`:
 
 1. Build the Go gateway as the `open-lumora-gateway` executable/image.
 2. Run `python build_docker.py --path open-lumora-hermes-runtime:<tag>`.
