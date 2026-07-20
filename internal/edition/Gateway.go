@@ -1,6 +1,6 @@
 // <Summary>
-// Gateway resolves plan limits from the private Open Lumora gateway while
-// falling back to the explicit local Free policy whenever it is unavailable.
+// Gateway resolves authenticated extension entitlements from the private Open
+// Lumora gateway while preserving unrestricted OSS access when it is offline.
 // </Summary>
 package edition
 
@@ -31,7 +31,7 @@ func NewGateway(endpoint string, fallback Policy) (*Gateway, error) {
 	return &Gateway{endpoint: strings.TrimRight(parsed.String(), "/"), client: &http.Client{Timeout: 2 * time.Second}, fallback: fallback}, nil
 }
 
-func (g *Gateway) Name() string { return "gateway-with-free-fallback" }
+func (g *Gateway) Name() string { return "gateway-with-unrestricted-oss-fallback" }
 
 func (g *Gateway) Principal(ctx context.Context, authorization string) (Principal, error) {
 	return g.fallback.Principal(ctx, authorization)

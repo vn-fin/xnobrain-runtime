@@ -94,13 +94,10 @@ func NewCommunity(config Config) (*Application, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open Community repository: %w", err)
 	}
-	fallbackPolicy := edition.OpenSource{
-		AgentLimit: config.MaxOpenSourceAgents, CronJobLimit: config.MaxOpenSourceCronJobs,
-		CronConcurrency: config.MaxOpenSourceConcurrency, CronRunsPerDay: config.MaxOpenSourceCronRunsPerDay, CronRunsPerMonth: config.MaxOpenSourceCronRunsPerMonth,
-		ProviderConnectionsPerType: config.MaxOpenSourceProviderConnections,
-		TeamLimit:                  config.MaxOpenSourceTeams, AgentsPerTeam: config.MaxOpenSourceAgentsPerTeam,
-		DelegatedWorkers: config.MaxOpenSourceDelegatedWorkers, DelegationDepth: config.MaxOpenSourceDelegationDepth,
-	}
+	// Local Hermes capabilities are intentionally unrestricted. The optional
+	// gateway adds authenticated observability and future cloud-only features;
+	// losing it must never reduce access to a user's self-hosted agents.
+	fallbackPolicy := edition.OpenSource{}
 	var policy edition.Policy = fallbackPolicy
 	if config.ControlGatewayURL != "" {
 		gatewayPolicy, err := edition.NewGateway(config.ControlGatewayURL, fallbackPolicy)

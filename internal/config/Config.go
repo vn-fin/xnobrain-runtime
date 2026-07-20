@@ -37,12 +37,6 @@ type Config struct {
 	RuntimeTimeout                   time.Duration
 	ContainerIdleEnabled             bool
 	ContainerIdleTimeout             time.Duration
-	MaxOpenSourceAgents              int
-	MaxOpenSourceCronJobs            int
-	MaxOpenSourceConcurrency         int
-	MaxOpenSourceCronRunsPerDay      int
-	MaxOpenSourceCronRunsPerMonth    int
-	MaxOpenSourceProviderConnections int
 	PermissionGRPCHost               string
 	AuthTimeout                      time.Duration
 	OTLPEndpoint                     string
@@ -50,10 +44,6 @@ type Config struct {
 	DeviceSigningPublicKey           string
 	DevicePollInterval               time.Duration
 	TelemetryDiskCapBytes            int64
-	MaxOpenSourceTeams               int
-	MaxOpenSourceAgentsPerTeam       int
-	MaxOpenSourceDelegatedWorkers    int
-	MaxOpenSourceDelegationDepth     int
 	ManagedWorkerToken               string
 	SchedulerEnabled                 bool
 }
@@ -107,12 +97,6 @@ func Load() (Config, error) {
 		RuntimeTimeout:                   time.Duration(integer("RUNTIME_TIMEOUT_SECONDS", 900)) * time.Second,
 		ContainerIdleEnabled:             boolean("CONTAINER_IDLE_ENABLED", true),
 		ContainerIdleTimeout:             time.Duration(integer("CONTAINER_IDLE_TIMEOUT_MINUTES", 30)) * time.Minute,
-		MaxOpenSourceAgents:              integer("MAX_OPEN_SOURCE_AGENTS", 4),
-		MaxOpenSourceCronJobs:            integer("MAX_OPEN_SOURCE_CRON_JOBS", 4),
-		MaxOpenSourceConcurrency:         integer("MAX_OPEN_SOURCE_CRON_CONCURRENCY", 1),
-		MaxOpenSourceCronRunsPerDay:      integer("MAX_OPEN_SOURCE_CRON_RUNS_PER_DAY", 10),
-		MaxOpenSourceCronRunsPerMonth:    integer("MAX_OPEN_SOURCE_CRON_RUNS_PER_MONTH", 200),
-		MaxOpenSourceProviderConnections: integer("MAX_OPEN_SOURCE_PROVIDER_CONNECTIONS_PER_TYPE", 1),
 		PermissionGRPCHost:               strings.TrimSpace(os.Getenv("PERMISSION_GRPC_HOST")),
 		AuthTimeout:                      time.Duration(integer("AUTH_TIMEOUT_SECONDS", 1)) * time.Second,
 		OTLPEndpoint:                     strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
@@ -120,10 +104,6 @@ func Load() (Config, error) {
 		DeviceSigningPublicKey:           strings.TrimSpace(os.Getenv("DEVICE_SIGNING_PUBLIC_KEY")),
 		DevicePollInterval:               time.Duration(integer("DEVICE_POLL_INTERVAL_SECONDS", 20)) * time.Second,
 		TelemetryDiskCapBytes:            int64(integer("OTEL_DISK_BUFFER_BYTES", 64*1024*1024)),
-		MaxOpenSourceTeams:               integer("MAX_OPEN_SOURCE_TEAMS", 1),
-		MaxOpenSourceAgentsPerTeam:       integer("MAX_OPEN_SOURCE_AGENTS_PER_TEAM", 2),
-		MaxOpenSourceDelegatedWorkers:    integer("MAX_OPEN_SOURCE_DELEGATED_WORKERS", 1),
-		MaxOpenSourceDelegationDepth:     integer("MAX_OPEN_SOURCE_DELEGATION_DEPTH", 1),
 		ManagedWorkerToken:               strings.TrimSpace(os.Getenv("MANAGED_WORKER_TOKEN")),
 		SchedulerEnabled:                 boolean("SCHEDULER_ENABLED", true),
 	}, nil

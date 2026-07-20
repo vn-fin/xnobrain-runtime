@@ -29,12 +29,6 @@ type Config struct {
 	RuntimeTimeout                   time.Duration
 	ContainerIdleEnabled             bool
 	ContainerIdleTimeout             time.Duration
-	MaxOpenSourceAgents              int
-	MaxOpenSourceCronJobs            int
-	MaxOpenSourceConcurrency         int
-	MaxOpenSourceCronRunsPerDay      int
-	MaxOpenSourceCronRunsPerMonth    int
-	MaxOpenSourceProviderConnections int
 	PermissionGRPCHost               string
 	AuthTimeout                      time.Duration
 	OTLPEndpoint                     string
@@ -42,10 +36,6 @@ type Config struct {
 	DeviceSigningPublicKey           string
 	DevicePollInterval               time.Duration
 	TelemetryDiskCapBytes            int64
-	MaxOpenSourceTeams               int
-	MaxOpenSourceAgentsPerTeam       int
-	MaxOpenSourceDelegatedWorkers    int
-	MaxOpenSourceDelegationDepth     int
 	ManagedWorkerToken               string
 	SchedulerEnabled                 bool
 }
@@ -66,14 +56,9 @@ func configFromInternal(config internalconfig.Config) Config {
 		HermesRuntimeURL: config.HermesRuntimeURL, HermesRuntimeToken: config.HermesRuntimeToken, ControlGatewayURL: config.ControlGatewayURL,
 		NineRouterURL: config.NineRouterURL, NineRouterDataDir: config.NineRouterDataDir, RuntimeTimeout: config.RuntimeTimeout,
 		ContainerIdleEnabled: config.ContainerIdleEnabled, ContainerIdleTimeout: config.ContainerIdleTimeout,
-		MaxOpenSourceAgents: config.MaxOpenSourceAgents, MaxOpenSourceCronJobs: config.MaxOpenSourceCronJobs,
-		MaxOpenSourceConcurrency: config.MaxOpenSourceConcurrency, MaxOpenSourceCronRunsPerDay: config.MaxOpenSourceCronRunsPerDay, MaxOpenSourceCronRunsPerMonth: config.MaxOpenSourceCronRunsPerMonth,
-		MaxOpenSourceProviderConnections: config.MaxOpenSourceProviderConnections,
 		PermissionGRPCHost:               config.PermissionGRPCHost, AuthTimeout: config.AuthTimeout, OTLPEndpoint: config.OTLPEndpoint,
 		DeviceCloudURL: config.DeviceCloudURL, DeviceSigningPublicKey: config.DeviceSigningPublicKey, DevicePollInterval: config.DevicePollInterval,
 		TelemetryDiskCapBytes: config.TelemetryDiskCapBytes,
-		MaxOpenSourceTeams:    config.MaxOpenSourceTeams, MaxOpenSourceAgentsPerTeam: config.MaxOpenSourceAgentsPerTeam,
-		MaxOpenSourceDelegatedWorkers: config.MaxOpenSourceDelegatedWorkers, MaxOpenSourceDelegationDepth: config.MaxOpenSourceDelegationDepth,
 		ManagedWorkerToken: config.ManagedWorkerToken, SchedulerEnabled: config.SchedulerEnabled,
 	}
 }
@@ -86,14 +71,9 @@ func (c Config) internal() internalconfig.Config {
 		HermesRuntimeURL: c.HermesRuntimeURL, HermesRuntimeToken: c.HermesRuntimeToken, ControlGatewayURL: c.ControlGatewayURL,
 		NineRouterURL: c.NineRouterURL, NineRouterDataDir: c.NineRouterDataDir, RuntimeTimeout: c.RuntimeTimeout,
 		ContainerIdleEnabled: c.ContainerIdleEnabled, ContainerIdleTimeout: c.ContainerIdleTimeout,
-		MaxOpenSourceAgents: c.MaxOpenSourceAgents, MaxOpenSourceCronJobs: c.MaxOpenSourceCronJobs,
-		MaxOpenSourceConcurrency: c.MaxOpenSourceConcurrency, MaxOpenSourceCronRunsPerDay: c.MaxOpenSourceCronRunsPerDay, MaxOpenSourceCronRunsPerMonth: c.MaxOpenSourceCronRunsPerMonth,
-		MaxOpenSourceProviderConnections: c.MaxOpenSourceProviderConnections,
 		PermissionGRPCHost:               c.PermissionGRPCHost, AuthTimeout: c.AuthTimeout, OTLPEndpoint: c.OTLPEndpoint,
 		DeviceCloudURL: c.DeviceCloudURL, DeviceSigningPublicKey: c.DeviceSigningPublicKey, DevicePollInterval: c.DevicePollInterval,
 		TelemetryDiskCapBytes: c.TelemetryDiskCapBytes,
-		MaxOpenSourceTeams:    c.MaxOpenSourceTeams, MaxOpenSourceAgentsPerTeam: c.MaxOpenSourceAgentsPerTeam,
-		MaxOpenSourceDelegatedWorkers: c.MaxOpenSourceDelegatedWorkers, MaxOpenSourceDelegationDepth: c.MaxOpenSourceDelegationDepth,
 		ManagedWorkerToken: c.ManagedWorkerToken, SchedulerEnabled: c.SchedulerEnabled,
 	}
 }

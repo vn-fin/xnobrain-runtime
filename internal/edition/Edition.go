@@ -52,25 +52,32 @@ type OpenSource struct {
 	DelegationDepth            int
 }
 
-func (o OpenSource) Name() string { return "opensource" }
+func (o OpenSource) Name() string { return "opensource-unlimited" }
 func (o OpenSource) Principal(_ context.Context, _ string) (Principal, error) {
 	return Principal{UserID: "local", TenantID: "local", PlanID: "opensource", Roles: []string{"owner"}}, nil
 }
 func (o OpenSource) Limits(_ context.Context, _ Principal) (Limits, error) {
 	return Limits{
-		Sandboxes:                  1,
-		Agents:                     o.AgentLimit,
-		CronJobs:                   o.CronJobLimit,
-		CronParallelRuns:           o.CronConcurrency,
-		CronRunsPerDay:             o.CronRunsPerDay,
-		CronRunsPerMonth:           o.CronRunsPerMonth,
-		ProviderConnectionsPerType: o.ProviderConnectionsPerType,
+		Sandboxes:                  unlimitedUnlessConfigured(0),
+		Agents:                     unlimitedUnlessConfigured(o.AgentLimit),
+		CronJobs:                   unlimitedUnlessConfigured(o.CronJobLimit),
+		CronParallelRuns:           unlimitedUnlessConfigured(o.CronConcurrency),
+		CronRunsPerDay:             unlimitedUnlessConfigured(o.CronRunsPerDay),
+		CronRunsPerMonth:           unlimitedUnlessConfigured(o.CronRunsPerMonth),
+		ProviderConnectionsPerType: unlimitedUnlessConfigured(o.ProviderConnectionsPerType),
 		ContainerHardwareUpgrades:  false,
 		ManagedTelemetry:           false,
-		Teams:                      o.TeamLimit,
-		AgentsPerTeam:              o.AgentsPerTeam,
-		DelegatedWorkers:           o.DelegatedWorkers,
-		DelegationDepth:            o.DelegationDepth,
-		ImportBytes:                -1,
+		Teams:                      unlimitedUnlessConfigured(o.TeamLimit),
+		AgentsPerTeam:              unlimitedUnlessConfigured(o.AgentsPerTeam),
+		DelegatedWorkers:           unlimitedUnlessConfigured(o.DelegatedWorkers),
+		DelegationDepth:            unlimitedUnlessConfigured(o.DelegationDepth),
+		ImportBytes:                Unlimited,
 	}, nil
+}
+
+func unlimitedUnlessConfigured(value int) int {
+	if value > 0 {
+		return value
+	}
+	return Unlimited
 }

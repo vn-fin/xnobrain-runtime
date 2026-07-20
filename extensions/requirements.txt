@@ -1,0 +1,3 @@
+# OSS-owned Hermes extension dependencies.
+aiohttp>=3.10,<4
+PyYAML>=6,<7

@@ -1,0 +1,34 @@
+#!/usr/bin/env sh
+# <Summary>
+# Starts the OSS Hermes API extension with the Python environment that owns Hermes.
+# </Summary>
+set -eu
+
+default_extension="/opt/open-lumora/hermes/hermes_custom_gateway.py"
+if [ ! -f "$default_extension" ]; then
+  script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+  default_extension="$script_dir/../extensions/hermes_custom_gateway.py"
+fi
+extension="${HERMES_EXTENSION_ENTRYPOINT:-$default_extension}"
+
+if [ -n "${HERMES_PYTHON:-}" ]; then
+  exec "$HERMES_PYTHON" "$extension" "$@"
+fi
+
+hermes_path="$(command -v hermes || true)"
+if [ -n "$hermes_path" ]; then
+  hermes_path="$(readlink -f "$hermes_path")"
+  hermes_python="$(dirname "$hermes_path")/python"
+  if [ -x "$hermes_python" ]; then
+    exec "$hermes_python" "$extension" "$@"
+  fi
+fi
+
+for candidate in /opt/hermes/.venv/bin/python3 /opt/hermes/.venv/bin/python /root/.local/share/hermes/venv/bin/python /usr/local/bin/python3 /usr/bin/python3; do
+  if [ -x "$candidate" ] && "$candidate" -c 'import hermes_cli.main' >/dev/null 2>&1; then
+    exec "$candidate" "$extension" "$@"
+  fi
+done
+
+echo "Hermes Python runtime was not found" >&2
+exit 127
