@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/xno/open-lumora/internal/device"
 )
 
 func (s *Server) DashboardOverview(c fiber.Ctx) error {
@@ -49,6 +51,8 @@ func (s *Server) proxyDashboard(c fiber.Ctx, path string) error {
 	request.Header.Set("Accept", "application/json")
 	if authorization := strings.TrimSpace(c.Get("Authorization")); authorization != "" {
 		request.Header.Set("Authorization", authorization)
+	} else if authorization := s.claimedDeviceAuthorization(); authorization != "" {
+		request.Header.Set("Authorization", authorization)
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
 	response, err := client.Do(request)
@@ -62,4 +66,16 @@ func (s *Server) proxyDashboard(c fiber.Ctx, path string) error {
 	}
 	c.Set(fiber.HeaderContentType, "application/json; charset=utf-8")
 	return c.Status(response.StatusCode).Send(body)
+}
+
+func (s *Server) claimedDeviceAuthorization() string {
+	store, err := device.NewStore(filepath.Join(s.config.DataDir, "device"))
+	if err != nil {
+		return ""
+	}
+	registration, exists, err := store.Load()
+	if err != nil || !exists || !registration.Claimed || strings.TrimSpace(registration.AccessToken) == "" {
+		return ""
+	}
+	return "Bearer " + registration.AccessToken
 }

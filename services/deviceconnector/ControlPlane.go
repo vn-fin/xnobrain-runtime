@@ -49,6 +49,7 @@ type PollResponse struct {
 	Commands      []device.Command        `json:"commands"`
 	Notifications []contract.Notification `json:"notifications"`
 	Revoked       bool                    `json:"revoked"`
+	Claimed       bool                    `json:"claimed"`
 }
 
 type ControlPlane interface {

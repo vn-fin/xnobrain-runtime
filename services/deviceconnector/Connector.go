@@ -229,6 +229,12 @@ func (c *Connector) cycle(ctx context.Context) error {
 		c.mu.Unlock()
 		return ErrRevoked
 	}
+	if registration.Claimed != response.Claimed {
+		registration.Claimed = response.Claimed
+		if err := c.store.Save(registration); err != nil {
+			return err
+		}
+	}
 	now := c.now()
 	c.mu.Lock()
 	c.status.Connected = true

@@ -10,6 +10,7 @@ package tracing
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
@@ -23,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -41,14 +43,23 @@ func Setup(ctx context.Context, endpoint string, dataDir string, diskCapBytes in
 		} else {
 			exporterOptions = append(exporterOptions, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})))
 		}
-		if headers := otlpHeaders(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")); len(headers) > 0 {
+		headers := otlpHeaders(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS"))
+		if len(headers) > 0 {
 			exporterOptions = append(exporterOptions, otlptracegrpc.WithHeaders(headers))
+		}
+		usesDeviceCredential := !hasAuthorization(headers)
+		credentialPath := filepath.Join(dataDir, "device", "registration.json")
+		if usesDeviceCredential {
+			exporterOptions = append(exporterOptions, otlptracegrpc.WithDialOption(grpc.WithPerRPCCredentials(deviceTokenCredential{path: credentialPath})))
 		}
 		exporter, err := otlptracegrpc.New(exportCtx, exporterOptions...)
 		if err != nil {
 			return nil, err
 		}
 		var durable trace.SpanExporter = exporter
+		if usesDeviceCredential {
+			durable = &claimedDeviceExporter{path: credentialPath, next: durable}
+		}
 		if strings.TrimSpace(dataDir) != "" && diskCapBytes > 0 && !strings.EqualFold(hostOnly(address), "otel-collector") {
 			spool, err := NewSpoolExporter(exporter, filepath.Join(dataDir, "telemetry"), diskCapBytes)
 			if err != nil {
@@ -73,6 +84,68 @@ func Setup(ctx context.Context, endpoint string, dataDir string, diskCapBytes in
 		defer cancel()
 		_ = provider.Shutdown(shutdownCtx)
 	}, nil
+}
+
+type deviceTokenCredential struct{ path string }
+
+type claimedDeviceExporter struct {
+	path string
+	next trace.SpanExporter
+}
+
+func (e *claimedDeviceExporter) ExportSpans(ctx context.Context, spans []trace.ReadOnlySpan) error {
+	if !claimedRegistrationExists(e.path) {
+		return nil
+	}
+	return e.next.ExportSpans(ctx, spans)
+}
+
+func (e *claimedDeviceExporter) Shutdown(ctx context.Context) error {
+	return e.next.Shutdown(ctx)
+}
+
+func (c deviceTokenCredential) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
+	registration, err := readDeviceRegistration(c.path)
+	if err != nil {
+		return nil, err
+	}
+	if !registration.Claimed || strings.TrimSpace(registration.AccessToken) == "" {
+		return nil, fmt.Errorf("managed telemetry requires a logged-in claimed device")
+	}
+	return map[string]string{"authorization": "Bearer " + registration.AccessToken}, nil
+}
+
+func (deviceTokenCredential) RequireTransportSecurity() bool { return false }
+
+type deviceRegistration struct {
+	AccessToken string `json:"access_token"`
+	Claimed     bool   `json:"claimed"`
+}
+
+func claimedRegistrationExists(path string) bool {
+	registration, err := readDeviceRegistration(path)
+	return err == nil && registration.Claimed && strings.TrimSpace(registration.AccessToken) != ""
+}
+
+func readDeviceRegistration(path string) (deviceRegistration, error) {
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return deviceRegistration{}, err
+	}
+	var registration deviceRegistration
+	if err := json.Unmarshal(payload, &registration); err != nil {
+		return deviceRegistration{}, err
+	}
+	return registration, nil
+}
+
+func hasAuthorization(headers map[string]string) bool {
+	for key, value := range headers {
+		if strings.EqualFold(strings.TrimSpace(key), "authorization") && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func collectorAddress(endpoint string) (string, bool, error) {

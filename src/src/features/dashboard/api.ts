@@ -1,11 +1,11 @@
 import { request } from '../../api/client';
 
-export type DashboardWindow = '24h' | '7d' | '30d';
+export type DashboardWindow = '24h' | '7d' | '30d' | '90d' | '365d';
 
 export type TimelinePoint = { bucket: string; runs: number; input_tokens: number; output_tokens: number; cost_usd: number; errors: number };
 export type EntityUsage = { id: string; name: string; runs: number; tokens: number; cost_usd: number; error_rate: number; p95_latency_ms: number };
 export type NamedUsage = { name: string; calls: number; errors: number; cost_usd: number; response_chars: number };
-export type ResourcePoint = { bucket: string; cpu_percent: number; memory_mb: number };
+export type ResourcePoint = { bucket: string; cpu_percent: number; memory_mb: number; disk_gb: number; network_rx_mb: number; network_tx_mb: number };
 
 export type DashboardOverview = {
   generated_at: string;
@@ -27,6 +27,7 @@ export type DashboardOverview = {
 export type TraceSummary = {
   trace_id: string; started_at: string; ended_at: string; root_operation: string; status: string;
   duration_ms: number; spans: number; agent_id: string; run_id: string; conversation_id: string;
+  agent_ref: string; conversation_ref: string; session_ref: string;
   provider: string; model: string; input_tokens: number; output_tokens: number;
   response_chars: number; cost_usd: number; demo: boolean;
 };

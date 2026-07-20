@@ -129,7 +129,7 @@ func (s *Conversations) stream(ctx context.Context, userID string, agentID strin
 		span.End()
 	}()
 	agentIDHash := safetracing.HashID(agentID)
-	span.SetAttributes(attribute.String("agent.id_hash", agentIDHash), attribute.String("conversation.id_hash", safetracing.HashID(conversationID)), attribute.Bool("run.interactive", interactive), attribute.String("lumora.node.kind", "agent"), attribute.String("lumora.node.id_hash", agentIDHash), attribute.Int("gen_ai.prompt.length", len([]rune(strings.TrimSpace(input)))))
+	span.SetAttributes(attribute.String("agent.id_hash", agentIDHash), attribute.String("conversation.id_hash", safetracing.HashID(conversationID)), attribute.String("lumora.agent.ref", agentID), attribute.String("lumora.conversation.ref", conversationID), attribute.String("lumora.session.ref", conversationID), attribute.Bool("run.interactive", interactive), attribute.String("lumora.node.kind", "agent"), attribute.String("lumora.node.id_hash", agentIDHash), attribute.Int("gen_ai.prompt.length", len([]rune(strings.TrimSpace(input)))))
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return fmt.Errorf("input is required")

@@ -22,11 +22,12 @@ function RankedList({ title, rows }: { title: string; rows: Array<{ name: string
 
 function TraceExplorer({ list, detail, selected, onSelect }: { list?: TraceList; detail?: TraceDetail; selected: string; onSelect: (id: string) => void }) {
   const spans = detail?.spans ?? [];
+  const selectedSummary = list?.traces.find((item) => item.trace_id === selected);
   const started = spans.length ? Math.min(...spans.map((span) => Date.parse(span.started_at))) : 0;
   const ended = spans.length ? Math.max(...spans.map((span) => Date.parse(span.ended_at))) : 1;
   const range = Math.max(1, ended - started);
   return <section className="dashboard-card trace-explorer">
-    <div className="card-heading"><div><h3>Latest traces</h3><p>Chat, agent, model, skill, and tool execution with response character sizes</p></div><Braces size={20} /></div>
+    <div className="card-heading"><div><h3>Latest traces</h3><p>Chat, agent, model, skill, and tool execution with response character sizes</p></div>{selectedSummary?.agent_ref && selectedSummary.conversation_ref ? <a href={`/agents/${encodeURIComponent(selectedSummary.agent_ref)}/conversations/${encodeURIComponent(selectedSummary.conversation_ref)}`}>Open chat</a> : <Braces size={20} />}</div>
     <div className="trace-layout">
       <div className="trace-list">{list?.traces.map((trace) => <button key={trace.trace_id} className={selected === trace.trace_id ? 'active' : ''} onClick={() => onSelect(trace.trace_id)}>
         <span><i className={trace.status} /> <strong>{trace.root_operation || 'Agent run'}</strong><small>{new Date(trace.started_at).toLocaleTimeString()}</small></span>
@@ -82,12 +83,12 @@ export function DashboardView({ onClose }: { onClose?: () => void }) {
   useEffect(() => { setTrace(undefined); if (selectedTrace) void dashboardApi.trace(selectedTrace).then(setTrace).catch((cause) => setError(cause instanceof Error ? cause.message : 'Trace request failed')); }, [selectedTrace]);
   const resourceCPU = useMemo(() => overview?.resources.map((point) => point.cpu_percent) ?? [], [overview]);
   if (!overview && loading) return <div className="dashboard-view dashboard-state"><RefreshCw className="spin" /> Loading aggregate telemetry…</div>;
-  if (!overview) return <div className="dashboard-view dashboard-state error"><TriangleAlert /> <div><strong>Dashboard unavailable</strong><p>{error}</p><button onClick={load}>Try again</button></div></div>;
+  if (!overview) return <div className="dashboard-view dashboard-state error"><TriangleAlert /> <div><strong>Dashboard unavailable</strong><p>{error || 'Sign in and claim this device to enable private usage telemetry.'}</p><button onClick={load}>Try again</button></div></div>;
   const summary = overview.summary;
   return <div className="dashboard-view">
     <header className="dashboard-header"><div><span className="eyebrow">OBSERVABILITY</span><h1>Agent operations</h1><p>Runs, usage, dependencies, and runtime health from ClickHouse aggregates.</p></div><div className="dashboard-actions">
       {overview.demo_data && <span className="demo-badge"><Sparkles size={14} /> Demo data</span>}
-      <div className="window-picker">{(['24h','7d','30d'] as DashboardWindow[]).map((item) => <button className={window === item ? 'active' : ''} key={item} onClick={() => setWindow(item)}>{item}</button>)}</div>
+      <div className="window-picker">{(['24h','7d','30d','90d','365d'] as DashboardWindow[]).map((item) => <button className={window === item ? 'active' : ''} key={item} onClick={() => setWindow(item)}>{item}</button>)}</div>
       <button className="icon-button" title="Refresh" onClick={load}><RefreshCw className={loading ? 'spin' : ''} size={17} /></button>
       {onClose && <button className="icon-button" title="Close" onClick={onClose}><X size={18} /></button>}
     </div></header>
@@ -103,7 +104,7 @@ export function DashboardView({ onClose }: { onClose?: () => void }) {
     </div>
     <div className="dashboard-grid wide-left">
       <section className="dashboard-card timeline-card"><div className="card-heading"><div><h3>Runs and token volume</h3><p>Server-side time buckets; raw spans stay in ClickHouse</p></div><strong>{compact.format(summary.input_tokens + summary.output_tokens)} tokens</strong></div><Sparkline values={overview.timeline.map((point) => point.runs)} errors={overview.timeline.map((point) => point.errors)} /><div className="timeline-legend"><span><i /> Successful volume</span><span><i className="error" /> Bucket with errors</span></div></section>
-      <section className="dashboard-card resource-card"><div className="card-heading"><div><h3>Runtime resources</h3><p>Average CPU · memory</p></div><strong>{resourceCPU.at(-1)?.toFixed(0) ?? 0}% CPU</strong></div><Sparkline values={resourceCPU} /><div className="resource-stat"><span>Latest memory</span><strong>{overview.resources.at(-1)?.memory_mb.toFixed(0) ?? 0} MB</strong></div></section>
+      <section className="dashboard-card resource-card"><div className="card-heading"><div><h3>Runtime resources</h3><p>CPU · memory · disk · network</p></div><strong>{resourceCPU.at(-1)?.toFixed(0) ?? 0}% CPU</strong></div><Sparkline values={resourceCPU} /><div className="resource-stat"><span>Memory</span><strong>{overview.resources.at(-1)?.memory_mb.toFixed(0) ?? 0} MB</strong></div><div className="resource-stat"><span>Disk / block I/O</span><strong>{overview.resources.at(-1)?.disk_gb.toFixed(2) ?? 0} GB</strong></div><div className="resource-stat"><span>Network RX / TX</span><strong>{overview.resources.at(-1)?.network_rx_mb.toFixed(1) ?? 0} / {overview.resources.at(-1)?.network_tx_mb.toFixed(1) ?? 0} MB</strong></div></section>
     </div>
     {dependencies && <DependencyGraph graph={dependencies} />}
     <TraceExplorer list={traces} detail={trace} selected={selectedTrace} onSelect={setSelectedTrace} />
