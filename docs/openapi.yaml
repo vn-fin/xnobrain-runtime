@@ -1,0 +1,425 @@
+openapi: 3.1.0
+info:
+  title: Open Lumora API
+  version: 0.1.0
+  description: Public HTTP boundary of the Open Lumora modular monolith.
+servers:
+  - url: http://localhost:3000
+paths:
+  /api/v1/health:
+    get:
+      summary: Check API health
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /api/v1/limits:
+    get:
+      summary: Get active edition limits and current usage
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /api/v1/bundles/export:
+    post:
+      summary: Export selected profiles as a sanitized .lumora bundle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_ids]
+              properties:
+                agent_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string, pattern: "^[a-z][a-z0-9]{5}$" }
+                include_conversations: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Streamed, checksummed portable bundle
+          content:
+            application/vnd.open-lumora.bundle:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/bundles/inspect:
+    post:
+      summary: Validate and inspect a .lumora bundle without changing local state
+      requestBody: { $ref: "#/components/requestBodies/Bundle" }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "400": { $ref: "#/components/responses/Error" }
+  /api/v1/bundles/dry-run:
+    post:
+      summary: Preview ID remaps, resets, paused crons, quarantine, and storage use
+      requestBody: { $ref: "#/components/requestBodies/Bundle" }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "400": { $ref: "#/components/responses/Error" }
+  /api/v1/bundles/apply:
+    post:
+      summary: Atomically import a validated bundle with safe defaults
+      description: Conflicting agent IDs are remapped, provider and approval state is reset, cron jobs are paused, and workspace code is quarantined.
+      requestBody: { $ref: "#/components/requestBodies/Bundle" }
+      responses:
+        "201": { $ref: "#/components/responses/Success" }
+        "400": { $ref: "#/components/responses/Error" }
+  /api/v1/device:
+    get:
+      summary: Get the outbound cloud connector state without exposing credentials
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /api/v1/device/pair:
+    post:
+      summary: Enable registration through the configured outbound cloud endpoint
+      responses:
+        "202": { $ref: "#/components/responses/Success" }
+        "400": { $ref: "#/components/responses/Error" }
+  /api/v1/device/unpair:
+    post:
+      summary: Disable cloud connectivity and erase only rotating cloud credentials
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /api/v1/teams/:
+    get:
+      summary: List saved agent teams
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+    post:
+      summary: Create an owner-scoped team with bounded delegation policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TeamInput" }
+      responses:
+        "201": { $ref: "#/components/responses/Success" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/teams/{team_id}:
+    get:
+      summary: Get a saved team
+      parameters: [{ $ref: "#/components/parameters/TeamID" }]
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      summary: Replace a saved team's members and execution policy
+      parameters: [{ $ref: "#/components/parameters/TeamID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TeamInput" }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+    delete:
+      summary: Delete a saved team definition
+      parameters: [{ $ref: "#/components/parameters/TeamID" }]
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /api/v1/teams/{team_id}/run:
+    post:
+      summary: Run bounded child work and return the orchestrator's final summary
+      parameters: [{ $ref: "#/components/parameters/TeamID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task]
+              properties:
+                task: { type: string }
+                depth: { type: integer, minimum: 1, default: 1 }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /agent-gateway/v1/agents:
+    get:
+      summary: List agents
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+    post:
+      summary: Create an isolated agent profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/Success" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "409": { $ref: "#/components/responses/Error" }
+  /agent-gateway/v1/agents-configs/{agent_id}:
+    patch:
+      summary: Update the selected agent's file-backed config
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: { type: string }
+                reasoning_effort: { type: string }
+                approval_mode: { type: string }
+                skills_write_approval: { type: boolean }
+                memory_write_approval: { type: boolean }
+                system_prompt: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /agent-gateway/v1/agents-skills/{agent_id}:
+    get:
+      summary: List skills owned by one agent
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+    post:
+      summary: Write a skill only under profiles/{agent_id}/skills
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [skill_id, content]
+              properties:
+                skill_id: { type: string }
+                name: { type: string }
+                category: { type: string }
+                content: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /agent-gateway/v1/agents/{agent_id}/memory:
+    get:
+      summary: Read agent memory
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+    patch:
+      summary: Update memory and create a snapshot
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target, content]
+              properties:
+                target: { type: string, enum: [memory, user] }
+                content: { type: string }
+                append: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /agent-gateway/v1/agents/{agent_id}/snapshots:
+    get:
+      summary: List immutable memory and skill snapshots
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /conversations/v1/conversations:
+    get:
+      summary: List an agent's conversations
+      parameters:
+        - $ref: "#/components/parameters/AgentQuery"
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+    post:
+      summary: Create a conversation
+      parameters:
+        - $ref: "#/components/parameters/AgentQuery"
+      responses:
+        "201": { $ref: "#/components/responses/Success" }
+  /conversations/v1/conversations/{conversation_id}/chat/stream:
+    post:
+      summary: Run Hermes and stream server-sent events
+      parameters:
+        - $ref: "#/components/parameters/ConversationID"
+        - $ref: "#/components/parameters/AgentQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input]
+              properties:
+                input: { type: string }
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+  /conversations/v1/conversations/{conversation_id}/runs/{run_id}/approval:
+    post:
+      summary: Resolve a run approval and persist session/always profile choices
+      parameters:
+        - $ref: "#/components/parameters/ConversationID"
+        - $ref: "#/components/parameters/RunID"
+        - $ref: "#/components/parameters/AgentQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [choice]
+              properties:
+                choice: { type: string, enum: [once, session, always, deny] }
+                resolve_all: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /agent-gateway/v1/providers:
+    get:
+      summary: List filtered 9router provider connections
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /agent-gateway/v1/providers/{provider_id}/connect:
+    put:
+      summary: Submit provider credentials or an OAuth callback
+      description: Replaces the current account by default. Set replace=false for an additive connection subject to the per-provider-type limit.
+      parameters:
+        - name: provider_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: replace
+          in: query
+          schema: { type: boolean, default: true }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /agent-gateway/v1/cron/jobs:
+    get:
+      summary: List cron jobs
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+    post:
+      summary: Create a local or managed cron job with an interval or canonical five-field schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, name, prompt]
+              properties:
+                agent_id: { type: string }
+                name: { type: string }
+                prompt: { type: string }
+                interval_minutes: { type: integer, minimum: 1 }
+                schedule: { type: string, example: "30 9 * * 1-5" }
+                timezone: { type: string, example: "Asia/Ho_Chi_Minh" }
+                mode: { type: string, enum: [local, managed], default: local }
+                misfire_policy: { type: string, enum: [skip, notify, run_latest, ask, replay_bounded], default: notify }
+                replay_limit: { type: integer, minimum: 1 }
+      responses:
+        "201": { $ref: "#/components/responses/Success" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+components:
+  requestBodies:
+    Bundle:
+      required: true
+      content:
+        application/vnd.open-lumora.bundle:
+          schema: { type: string, format: binary }
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file]
+            properties:
+              file: { type: string, format: binary }
+  parameters:
+    AgentID:
+      name: agent_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[a-z][a-z0-9]{5}$" }
+    AgentQuery:
+      name: agent
+      in: query
+      required: true
+      schema: { type: string }
+    ConversationID:
+      name: conversation_id
+      in: path
+      required: true
+      schema: { type: string }
+    RunID:
+      name: run_id
+      in: path
+      required: true
+      schema: { type: string }
+    TeamID:
+      name: team_id
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    Success:
+      description: Successful envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Envelope" }
+    Error:
+      description: Error envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Envelope" }
+    RateLimited:
+      description: The active edition quota was reached
+      headers:
+        RateLimit-Limit:
+          schema: { type: integer }
+        RateLimit-Remaining:
+          schema: { type: integer }
+        RateLimit-Policy:
+          schema: { type: string }
+        RateLimit-Reset:
+          schema: { type: integer, format: int64 }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Envelope" }
+  schemas:
+    TeamInput:
+      type: object
+      required: [name, orchestrator_id, members]
+      properties:
+        name: { type: string }
+        orchestrator_id: { type: string }
+        members:
+          type: array
+          items:
+            type: object
+            required: [agent_id, role]
+            properties:
+              agent_id: { type: string }
+              role: { type: string }
+              allowed_tools:
+                type: array
+                items: { type: string }
+              enabled: { type: boolean, default: true }
+        shared_workspace: { type: boolean, default: false }
+        max_parallel: { type: integer, minimum: 1 }
+        max_depth: { type: integer, minimum: 1 }
+        enabled: { type: boolean, default: true }
+    Envelope:
+      type: object
+      required: [success, status_code]
+      properties:
+        success: { type: boolean }
+        data: {}
+        message: { type: string }
+        status_code: { type: integer }

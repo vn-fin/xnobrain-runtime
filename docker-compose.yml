@@ -1,0 +1,42 @@
+name: open-lumora
+
+services:
+  studio:
+    build: .
+    ports:
+      - "${HTTP_PORT:-3000}:3000"
+    environment:
+      HTTP_PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATA_DIR: /opt/data/open-lumora
+      FRONTEND_DIR: /opt/open-lumora/frontend
+      HERMES_BIN: hermes
+      HERMES_GATEWAY_BIN: hermes-custom-gateway
+      HERMES_RUNTIME_MODE: gateway
+      NINE_ROUTER_URL: http://127.0.0.1:20128
+      NINE_ROUTER_DATA_DIR: /opt/data/.9router
+      CONTAINER_IDLE_ENABLED: ${CONTAINER_IDLE_ENABLED:-true}
+      CONTAINER_IDLE_TIMEOUT_MINUTES: ${CONTAINER_IDLE_TIMEOUT_MINUTES:-30}
+      MAX_OPEN_SOURCE_AGENTS: 4
+      MAX_OPEN_SOURCE_CRON_JOBS: 4
+      MAX_OPEN_SOURCE_CRON_CONCURRENCY: 1
+      MAX_OPEN_SOURCE_CRON_RUNS_PER_DAY: 10
+      MAX_OPEN_SOURCE_CRON_RUNS_PER_MONTH: 200
+      MAX_OPEN_SOURCE_PROVIDER_CONNECTIONS_PER_TYPE: 1
+      MAX_OPEN_SOURCE_TEAMS: 1
+      MAX_OPEN_SOURCE_AGENTS_PER_TEAM: 2
+      MAX_OPEN_SOURCE_DELEGATED_WORKERS: 1
+      MAX_OPEN_SOURCE_DELEGATION_DEPTH: 1
+      # Required only when this Studio is an enterprise-managed import worker.
+      MANAGED_WORKER_TOKEN: ${MANAGED_WORKER_TOKEN:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_DISK_BUFFER_BYTES: ${OTEL_DISK_BUFFER_BYTES:-67108864}
+      DEVICE_CLOUD_URL: ${DEVICE_CLOUD_URL:-}
+      DEVICE_SIGNING_PUBLIC_KEY: ${DEVICE_SIGNING_PUBLIC_KEY:-}
+      DEVICE_POLL_INTERVAL_SECONDS: ${DEVICE_POLL_INTERVAL_SECONDS:-20}
+    volumes:
+      - open_lumora_data:/opt/data
+    restart: unless-stopped
+
+volumes:
+  open_lumora_data:

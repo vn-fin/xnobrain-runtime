@@ -1,0 +1,237 @@
+{
+  "language": {
+    "label": "Idioma",
+    "en": "English",
+    "vi": "Tiếng Việt",
+    "es": "Español",
+    "fr": "Français",
+    "de": "Deutsch",
+    "ja": "日本語",
+    "zh": "中文"
+  },
+  "nav": {
+    "sandbox": "Sandbox",
+    "connections": "Conexiones",
+    "skills": "Habilidades"
+  },
+  "theme": {
+    "label": "Tema",
+    "light": "Claro",
+    "dark": "Oscuro",
+    "auto": "Sistema"
+  },
+  "login": {
+    "title": "Iniciar sesión",
+    "subtitle": "Inicia sesión en tu espacio de trabajo para continuar.",
+    "username": "Correo electrónico",
+    "usernamePlaceholder": "tu@ejemplo.com",
+    "password": "Contraseña",
+    "passwordPlaceholder": "Tu contraseña",
+    "signIn": "Iniciar sesión",
+    "signOut": "Cerrar sesión",
+    "signingIn": "Iniciando sesión…",
+    "error": "No se pudo iniciar sesión. Comprueba tus credenciales e inténtalo de nuevo.",
+    "mockNote": "Firebase no está configurado — usando inicio de sesión de demostración local. Cualquier usuario/contraseña funciona."
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "create": "Crear",
+    "apply": "Aplicar",
+    "test": "Probar",
+    "confirm": "Confirmar",
+    "close": "Cerrar",
+    "install": "Instalar",
+    "viewMore": "Ver más",
+    "showLess": "Ver menos",
+    "search": "Buscar"
+  },
+  "agents": {
+    "title": "Asistentes",
+    "recent": "Recientes",
+    "searchPlaceholder": "Buscar asistentes…",
+    "new": "Nuevo asistente",
+    "settings": "Ajustes del asistente",
+    "runtimeConfig": "Configuración de ejecución",
+    "test": "Probar asistente",
+    "delete": "Eliminar asistente"
+  },
+  "chat": {
+    "placeholder": "Pide cambios adicionales",
+    "workLocally": "Trabajar localmente",
+    "ide": "Contexto del IDE",
+    "fullAccess": "Acceso total",
+    "createConversation": "Crear conversación",
+    "closeConversation": "Cerrar conversación",
+    "emptyTitle": "Aún no hay conversaciones",
+    "emptyDesc": "Inicia una nueva conversación para empezar a chatear con {{name}}.",
+    "emptyReady": "Envía un mensaje a {{name}} para empezar.",
+    "newConversation": "Nueva conversación"
+  },
+  "conversation": {
+    "share": "Compartir",
+    "shareUnavailable": "Compartir aún no está disponible",
+    "rename": "Renombrar",
+    "delete": "Eliminar",
+    "deleteTitle": "Eliminar conversación",
+    "deleteMessage": "¿Eliminar “{{name}}”? Esto elimina permanentemente la conversación y sus mensajes. Esta acción no se puede deshacer.",
+    "renameLabel": "Nombre de la conversación",
+    "menu": "Opciones de conversación"
+  },
+  "controls": {
+    "title": "Controles del asistente",
+    "workspace": "Espacio de trabajo",
+    "skills": "Habilidades",
+    "runtime": "Ejecución",
+    "newFile": "Nuevo archivo",
+    "newFolder": "Nueva carpeta",
+    "upload": "Subir archivos (arrastrar y soltar)",
+    "refresh": "Actualizar",
+    "cron": "Cron"
+  },
+  "skillsView": {
+    "title": "Habilidades",
+    "subtitle": "Explora las habilidades instaladas, instala nuevas y aplícalas a tus asistentes.",
+    "installNew": "Instalar nueva",
+    "searchPlaceholder": "Buscar habilidades…",
+    "all": "Todas",
+    "installed": "instalada",
+    "available": "disponible",
+    "installPlaceholder": "Nombre de la habilidad o ruta del registro (ej. github.com/org/skill)",
+    "empty": "Ninguna habilidad coincide con tu búsqueda o filtro.",
+    "selected_one": "{{count}} habilidad seleccionada",
+    "selected_other": "{{count}} habilidades seleccionadas",
+    "applyToAgents_one": "Aplicar a {{count}} asistente",
+    "applyToAgents_other": "Aplicar a {{count}} asistentes"
+  },
+  "agentSkills": {
+    "title": "Habilidades del asistente",
+    "add": "Añadir habilidad",
+    "searchPlaceholder": "Buscar habilidades raíz para añadir…",
+    "enabledFor_one": "{{count}} habilidad activada para {{name}}.",
+    "enabledFor_other": "{{count}} habilidades activadas para {{name}}.",
+    "empty": "Aún no hay habilidades activadas. Usa “Añadir habilidad” para buscar y aplicarlas.",
+    "noMatch": "Ninguna habilidad coincide con “{{query}}”.",
+    "enableHint": "Habilitar para {{name}}",
+    "disableHint": "Deshabilitar para {{name}}",
+    "enabledOf": "{{enabled}} de {{total}} habilitadas para {{name}}.",
+    "totalSkills_one": "{{count}} habilidad",
+    "totalSkills_other": "{{count}} habilidades",
+    "filterPlaceholder": "Filtrar por nombre, descripción o ruta…",
+    "sortBy": "Ordenar habilidades",
+    "filter": { "all": "Todas", "on": "Habilitadas", "off": "Deshabilitadas" },
+    "sort": { "name": "Nombre", "category": "Categoría", "status": "Estado" }
+  },
+  "connections": {
+    "title": "Conexiones",
+    "subtitle": "Conecta proveedores de LLM (clave API o autenticación CLI) para que tus asistentes funcionen.",
+    "notConnected": "sin conectar",
+    "connected": "conectado",
+    "healthy": "en buen estado",
+    "authenticate": "Autenticar",
+    "addApiKey": "Añadir clave API",
+    "disconnect": "Desconectar",
+    "addKeyTitle": "Añadir clave API",
+    "addKeyDesc": "Elige un proveedor y pega la clave API. La clave se guarda cifrada y se inyecta en el sandbox como {{env}}."
+  },
+  "auth": {
+    "connect": "Conectar {{name}}",
+    "openUrl": "Abrir la URL de inicio de sesión",
+    "enterCode": "Introduce este código en la página",
+    "submit": "Enviar",
+    "pasteHint": "Pega la URL de callback o el código",
+    "pasteClipboard": "Pegar callback desde el portapapeles"
+  },
+  "sandbox": {
+    "title": "Sandbox",
+    "notProvisioned": "sin aprovisionar",
+    "provisioning": "aprovisionando…",
+    "noSandbox": "Aún no hay sandbox",
+    "noSandboxDesc": "No tienes un runtime de Hermes en ejecución. Inicia el contenedor local para dar a tus asistentes espacio de trabajo, terminal y cómputo.",
+    "create": "Crear sandbox",
+    "provisioningTitle": "Aprovisionando sandbox…",
+    "specs": "Aprovisiona vía POST /sandboxes/v1/me/sandboxes/setup · 6 vCPU · 24 GiB · disco 80 GiB",
+    "refresh": "Actualizar"
+  },
+  "onboarding": {
+    "title": "Vamos a configurarlo",
+    "subtitle": "Unos pasos rápidos para empezar a trabajar con tu asistente.",
+    "checking": "Comprobando…",
+    "vm": {
+      "title": "Preparar el contenedor Hermes",
+      "desc": "Prepara el contenedor local de Hermes con espacio de trabajo, terminal y cómputo para tu asistente.",
+      "action": "Preparar contenedor",
+      "provisioning": "Aprovisionando… {{percent}}%",
+      "ready": "Sandbox lista."
+    },
+    "provider": {
+      "title": "Conectar un proveedor",
+      "desc": "Conecta un proveedor de LLM (clave API o autenticación CLI) y prueba la conexión.",
+      "ready": "{{name}} conectado."
+    },
+    "model": {
+      "title": "Elegir un modelo predeterminado",
+      "desc": "Elige el proveedor y el modelo predeterminados para los nuevos asistentes.",
+      "action": "Guardar predeterminado",
+      "saving": "Guardando…",
+      "loading": "Cargando modelos…",
+      "none": "No hay modelos disponibles",
+      "ready": "Modelo predeterminado: {{model}}"
+    },
+    "agent": {
+      "title": "Crear un asistente",
+      "desc": "Ponle un nombre y un propósito. Luego podrás conectar un proveedor y elegir un modelo.",
+      "action": "Crear asistente"
+    },
+    "conversation": {
+      "title": "Iniciar una conversación",
+      "desc": "Tu primera conversación se crea automáticamente para que puedas empezar a chatear."
+    }
+  },
+  "modals": {
+    "createAgent": "Crear asistente",
+    "createAgentApi": "Corresponde a POST /agent-gateway/v1/agents",
+    "name": "Nombre",
+    "namePlaceholder": "ej. Analista de datos",
+    "description": "Descripción",
+    "descPlaceholder": "¿Qué debe hacer este asistente?",
+    "createAgentBtn": "Crear asistente",
+    "agentSettings": "Ajustes del asistente",
+    "settingsTitle": "Título",
+    "provider": "Proveedor",
+    "model": "Modelo",
+    "reasoningEffort": "Nivel de razonamiento",
+    "approvalMode": "Modo de aprobación",
+    "saveConfirm": "¿Guardar los cambios de “{{name}}”?",
+    "back": "Atrás",
+    "confirmSave": "Confirmar guardado",
+    "deleteAgentTitle": "Eliminar asistente",
+    "deleteAgentMsg": "¿Eliminar “{{name}}”? Esto elimina sus conversaciones y configuración. Esta acción no se puede deshacer."
+  },
+  "cron": {
+    "title": "Tareas cron",
+    "new": "Nuevo cron",
+    "name": "Nombre",
+    "namePlaceholder": "ej. Comprobar estado del servidor",
+    "prompt": "Prompt",
+    "promptPlaceholder": "¿Qué debe ejecutarse según lo programado?",
+    "intervalLabel": "Cada (minutos)",
+    "forever": "Ejecutar siempre",
+    "create": "Crear cron",
+    "stop": "Detener",
+    "start": "Iniciar",
+    "delete": "Eliminar",
+    "empty": "Aún no hay tareas cron. Crea una para ejecutar un prompt de forma programada.",
+    "state": "Estado",
+    "schedule": "Programación",
+    "nextRun": "Próxima ejecución",
+    "id": "ID",
+    "every": "cada {{n}} min",
+    "foreverSuffix": "siempre",
+    "times": "{{n}} veces",
+    "scheduled": "programado",
+    "stopped": "detenido",
+    "running": "en ejecución"
+  }
+}

@@ -1,0 +1,237 @@
+{
+  "language": {
+    "label": "Ngôn ngữ",
+    "en": "English",
+    "vi": "Tiếng Việt",
+    "es": "Español",
+    "fr": "Français",
+    "de": "Deutsch",
+    "ja": "日本語",
+    "zh": "中文"
+  },
+  "nav": {
+    "sandbox": "Sandbox",
+    "connections": "Kết nối",
+    "skills": "Kỹ năng"
+  },
+  "theme": {
+    "label": "Giao diện",
+    "light": "Sáng",
+    "dark": "Tối",
+    "auto": "Hệ thống"
+  },
+  "login": {
+    "title": "Đăng nhập",
+    "subtitle": "Đăng nhập vào không gian làm việc để tiếp tục.",
+    "username": "Email",
+    "usernamePlaceholder": "ban@vidu.com",
+    "password": "Mật khẩu",
+    "passwordPlaceholder": "Mật khẩu của bạn",
+    "signIn": "Đăng nhập",
+    "signOut": "Đăng xuất",
+    "signingIn": "Đang đăng nhập…",
+    "error": "Không thể đăng nhập. Vui lòng kiểm tra thông tin và thử lại.",
+    "mockNote": "Chưa cấu hình Firebase — đang dùng đăng nhập demo cục bộ. Mọi tên đăng nhập/mật khẩu đều được chấp nhận."
+  },
+  "common": {
+    "cancel": "Hủy",
+    "save": "Lưu",
+    "delete": "Xóa",
+    "create": "Tạo",
+    "apply": "Áp dụng",
+    "test": "Kiểm tra",
+    "confirm": "Xác nhận",
+    "close": "Đóng",
+    "install": "Cài đặt",
+    "viewMore": "Xem thêm",
+    "showLess": "Thu gọn",
+    "search": "Tìm kiếm"
+  },
+  "agents": {
+    "title": "Trợ lý",
+    "recent": "Gần đây",
+    "searchPlaceholder": "Tìm trợ lý…",
+    "new": "Trợ lý mới",
+    "settings": "Cài đặt trợ lý",
+    "runtimeConfig": "Cấu hình runtime",
+    "test": "Kiểm tra trợ lý",
+    "delete": "Xóa trợ lý"
+  },
+  "chat": {
+    "placeholder": "Yêu cầu thay đổi tiếp theo",
+    "workLocally": "Làm việc cục bộ",
+    "ide": "Ngữ cảnh IDE",
+    "fullAccess": "Toàn quyền",
+    "createConversation": "Tạo cuộc trò chuyện",
+    "closeConversation": "Đóng cuộc trò chuyện",
+    "emptyTitle": "Chưa có cuộc trò chuyện nào",
+    "emptyDesc": "Bắt đầu một cuộc trò chuyện mới để trò chuyện với {{name}}.",
+    "emptyReady": "Gửi tin nhắn cho {{name}} để bắt đầu.",
+    "newConversation": "Cuộc trò chuyện mới"
+  },
+  "conversation": {
+    "share": "Chia sẻ",
+    "shareUnavailable": "Tính năng chia sẻ chưa khả dụng",
+    "rename": "Đổi tên",
+    "delete": "Xóa",
+    "deleteTitle": "Xóa cuộc trò chuyện",
+    "deleteMessage": "Xóa “{{name}}”? Thao tác này sẽ xóa vĩnh viễn cuộc trò chuyện và các tin nhắn của nó. Không thể hoàn tác.",
+    "renameLabel": "Tên cuộc trò chuyện",
+    "menu": "Tùy chọn cuộc trò chuyện"
+  },
+  "controls": {
+    "title": "Điều khiển trợ lý",
+    "workspace": "Không gian làm việc",
+    "skills": "Kỹ năng",
+    "runtime": "Runtime",
+    "newFile": "Tệp mới",
+    "newFolder": "Thư mục mới",
+    "upload": "Tải tệp lên (hỗ trợ kéo & thả)",
+    "refresh": "Làm mới",
+    "cron": "Cron"
+  },
+  "skillsView": {
+    "title": "Kỹ năng",
+    "subtitle": "Duyệt các kỹ năng đã cài, cài kỹ năng mới và áp dụng cho trợ lý của bạn.",
+    "installNew": "Cài mới",
+    "searchPlaceholder": "Tìm kỹ năng…",
+    "all": "Tất cả",
+    "installed": "đã cài",
+    "available": "có sẵn",
+    "installPlaceholder": "Tên kỹ năng hoặc đường dẫn registry (vd: github.com/org/skill)",
+    "empty": "Không có kỹ năng nào khớp với tìm kiếm hoặc bộ lọc.",
+    "selected_one": "Đã chọn {{count}} kỹ năng",
+    "selected_other": "Đã chọn {{count}} kỹ năng",
+    "applyToAgents_one": "Áp dụng cho {{count}} trợ lý",
+    "applyToAgents_other": "Áp dụng cho {{count}} trợ lý"
+  },
+  "agentSkills": {
+    "title": "Kỹ năng trợ lý",
+    "add": "Thêm kỹ năng",
+    "searchPlaceholder": "Tìm kỹ năng gốc để thêm…",
+    "enabledFor_one": "Đã bật {{count}} kỹ năng cho {{name}}.",
+    "enabledFor_other": "Đã bật {{count}} kỹ năng cho {{name}}.",
+    "empty": "Chưa bật kỹ năng nào. Dùng “Thêm kỹ năng” để tìm kỹ năng gốc và áp dụng.",
+    "noMatch": "Không có kỹ năng nào khớp “{{query}}”.",
+    "enableHint": "Bật cho {{name}}",
+    "disableHint": "Tắt cho {{name}}",
+    "enabledOf": "Đã bật {{enabled}}/{{total}} cho {{name}}.",
+    "totalSkills_one": "{{count}} kỹ năng",
+    "totalSkills_other": "{{count}} kỹ năng",
+    "filterPlaceholder": "Lọc theo tên, mô tả hoặc đường dẫn…",
+    "sortBy": "Sắp xếp kỹ năng",
+    "filter": { "all": "Tất cả", "on": "Đang bật", "off": "Đã tắt" },
+    "sort": { "name": "Tên", "category": "Danh mục", "status": "Trạng thái" }
+  },
+  "connections": {
+    "title": "Kết nối",
+    "subtitle": "Kết nối các nhà cung cấp LLM (khóa API hoặc xác thực CLI) để trợ lý có thể chạy.",
+    "notConnected": "chưa kết nối",
+    "connected": "đã kết nối",
+    "healthy": "hoạt động tốt",
+    "authenticate": "Xác thực",
+    "addApiKey": "Thêm khóa API",
+    "disconnect": "Ngắt kết nối",
+    "addKeyTitle": "Thêm khóa API",
+    "addKeyDesc": "Chọn nhà cung cấp và dán khóa API. Khóa được lưu mã hóa và đưa vào sandbox dưới biến {{env}}."
+  },
+  "auth": {
+    "connect": "Kết nối {{name}}",
+    "openUrl": "Mở URL đăng nhập",
+    "enterCode": "Nhập mã này trên trang",
+    "submit": "Gửi",
+    "pasteHint": "Dán URL callback hoặc mã",
+    "pasteClipboard": "Dán callback từ bộ nhớ tạm"
+  },
+  "sandbox": {
+    "title": "Sandbox",
+    "notProvisioned": "chưa cấp phát",
+    "provisioning": "đang cấp phát…",
+    "noSandbox": "Chưa có sandbox",
+    "noSandboxDesc": "Bạn chưa có runtime Hermes nào đang chạy. Khởi động container cục bộ để cấp không gian làm việc, terminal và tài nguyên tính toán cho trợ lý.",
+    "create": "Tạo sandbox",
+    "provisioningTitle": "Đang cấp phát sandbox…",
+    "specs": "Cấp phát qua POST /sandboxes/v1/me/sandboxes/setup · 6 vCPU · 24 GiB · đĩa 80 GiB",
+    "refresh": "Làm mới"
+  },
+  "onboarding": {
+    "title": "Hãy thiết lập nào",
+    "subtitle": "Vài bước nhanh để bắt đầu làm việc với trợ lý của bạn.",
+    "checking": "Đang kiểm tra…",
+    "vm": {
+      "title": "Chuẩn bị container Hermes",
+      "desc": "Chuẩn bị container Hermes cục bộ có không gian làm việc, terminal và tài nguyên tính toán cho trợ lý.",
+      "action": "Chuẩn bị container",
+      "provisioning": "Đang cấp phát… {{percent}}%",
+      "ready": "Sandbox đã sẵn sàng."
+    },
+    "provider": {
+      "title": "Kết nối nhà cung cấp",
+      "desc": "Kết nối nhà cung cấp LLM (khóa API hoặc xác thực CLI) và kiểm tra kết nối.",
+      "ready": "Đã kết nối {{name}}."
+    },
+    "model": {
+      "title": "Chọn mô hình mặc định",
+      "desc": "Chọn nhà cung cấp và mô hình mặc định cho trợ lý mới.",
+      "action": "Lưu mặc định",
+      "saving": "Đang lưu…",
+      "loading": "Đang tải mô hình…",
+      "none": "Không có mô hình",
+      "ready": "Mô hình mặc định: {{model}}"
+    },
+    "agent": {
+      "title": "Tạo trợ lý",
+      "desc": "Đặt tên và mục đích. Sau đó bạn có thể kết nối nhà cung cấp và chọn mô hình.",
+      "action": "Tạo trợ lý"
+    },
+    "conversation": {
+      "title": "Bắt đầu cuộc trò chuyện",
+      "desc": "Cuộc trò chuyện đầu tiên được tạo tự động để bạn có thể trò chuyện ngay."
+    }
+  },
+  "modals": {
+    "createAgent": "Tạo trợ lý",
+    "createAgentApi": "Ánh xạ tới POST /agent-gateway/v1/agents",
+    "name": "Tên",
+    "namePlaceholder": "vd: Chuyên viên phân tích dữ liệu",
+    "description": "Mô tả",
+    "descPlaceholder": "Trợ lý này nên làm gì?",
+    "createAgentBtn": "Tạo trợ lý",
+    "agentSettings": "Cài đặt trợ lý",
+    "settingsTitle": "Tiêu đề",
+    "provider": "Nhà cung cấp",
+    "model": "Mô hình",
+    "reasoningEffort": "Mức độ suy luận",
+    "approvalMode": "Chế độ phê duyệt",
+    "saveConfirm": "Lưu thay đổi cho “{{name}}”?",
+    "back": "Quay lại",
+    "confirmSave": "Xác nhận lưu",
+    "deleteAgentTitle": "Xóa trợ lý",
+    "deleteAgentMsg": "Xóa “{{name}}”? Thao tác này xóa các cuộc trò chuyện và cấu hình của nó. Không thể hoàn tác."
+  },
+  "cron": {
+    "title": "Công việc định kỳ",
+    "new": "Cron mới",
+    "name": "Tên",
+    "namePlaceholder": "vd: Kiểm tra trạng thái máy chủ",
+    "prompt": "Lời nhắc",
+    "promptPlaceholder": "Chạy nội dung gì theo lịch?",
+    "intervalLabel": "Mỗi (phút)",
+    "forever": "Chạy mãi mãi",
+    "create": "Tạo cron",
+    "stop": "Dừng",
+    "start": "Chạy",
+    "delete": "Xóa",
+    "empty": "Chưa có công việc định kỳ. Tạo một cái để chạy lời nhắc theo lịch.",
+    "state": "Trạng thái",
+    "schedule": "Lịch",
+    "nextRun": "Lần chạy tới",
+    "id": "ID",
+    "every": "mỗi {{n}} phút",
+    "foreverSuffix": "mãi mãi",
+    "times": "{{n}} lần",
+    "scheduled": "đã lên lịch",
+    "stopped": "đã dừng",
+    "running": "đang chạy"
+  }
+}
