@@ -4,7 +4,7 @@
 // </Summary>
 package runtime
 
-import "github.com/xno/open-lumora/pkg/studio/contract"
+import "github.com/xno/open-lumora/internal/studio/contract"
 
 type Event = contract.Event
 type Request = contract.Request

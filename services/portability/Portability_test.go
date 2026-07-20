@@ -23,8 +23,8 @@ import (
 	"github.com/xno/open-lumora/internal/models"
 	"github.com/xno/open-lumora/internal/profile"
 	"github.com/xno/open-lumora/internal/repositories"
-	"github.com/xno/open-lumora/pkg/edition"
-	"github.com/xno/open-lumora/pkg/studio/contract"
+	"github.com/xno/open-lumora/internal/edition"
+	"github.com/xno/open-lumora/internal/studio/contract"
 	"github.com/xno/open-lumora/services/agents"
 	"gopkg.in/yaml.v3"
 )

@@ -7,7 +7,7 @@ if [[ -x "$project_dir/.tools/go/bin/go" ]]; then
   go_bin="$project_dir/.tools/go/bin/go"
 fi
 
-cd "$project_dir/frontend"
+cd "$project_dir/src"
 npm install
 npm run dev -- --host 127.0.0.1 &
 frontend_pid=$!

@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xno/open-lumora/pkg/edition"
-	"github.com/xno/open-lumora/pkg/studio"
-	"github.com/xno/open-lumora/pkg/studio/contract"
+	"github.com/xno/open-lumora/internal/edition"
+	"github.com/xno/open-lumora/internal/studio"
+	"github.com/xno/open-lumora/internal/studio/contract"
 )
 
 type repository struct{ contract.Repository }

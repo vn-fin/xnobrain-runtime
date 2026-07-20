@@ -7,7 +7,7 @@
 // </Summary>
 package repositories
 
-import "github.com/xno/open-lumora/pkg/studio/contract"
+import "github.com/xno/open-lumora/internal/studio/contract"
 
 var ErrNotFound = contract.ErrNotFound
 var ErrConflict = contract.ErrConflict

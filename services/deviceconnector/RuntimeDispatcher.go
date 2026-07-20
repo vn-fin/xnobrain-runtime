@@ -9,7 +9,7 @@ package deviceconnector
 import (
 	"context"
 
-	"github.com/xno/open-lumora/pkg/studio/contract"
+	"github.com/xno/open-lumora/internal/studio/contract"
 	"github.com/xno/open-lumora/services/crons"
 )
 

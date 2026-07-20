@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/xno/open-lumora/internal/config"
-	"github.com/xno/open-lumora/pkg/edition"
+	"github.com/xno/open-lumora/internal/edition"
 )
 
 func TestProviderConnectionLimitAllowsReplaceButRejectsAdditiveAccount(t *testing.T) {

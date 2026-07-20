@@ -13,7 +13,7 @@ import (
 
 	"github.com/xno/open-lumora/internal/profile"
 	"github.com/xno/open-lumora/internal/repositories"
-	"github.com/xno/open-lumora/pkg/edition"
+	"github.com/xno/open-lumora/internal/edition"
 )
 
 func TestOpenSourceAgentLimit(t *testing.T) {

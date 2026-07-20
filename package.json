@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "./scripts/dev.sh",
-    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:frontend": "npm --prefix src run dev",
     "test": "make test",
     "build": "make build"
   }

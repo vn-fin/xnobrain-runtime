@@ -18,7 +18,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/xno/open-lumora/internal/device"
-	"github.com/xno/open-lumora/pkg/studio/contract"
+	"github.com/xno/open-lumora/internal/studio/contract"
 )
 
 var (

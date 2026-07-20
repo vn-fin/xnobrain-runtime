@@ -4,7 +4,7 @@
 // </Summary>
 package models
 
-import "github.com/xno/open-lumora/pkg/studio/contract"
+import "github.com/xno/open-lumora/internal/studio/contract"
 
 type Agent = contract.Agent
 type AgentConfig = contract.AgentConfig

@@ -21,7 +21,7 @@ import (
 
 	"github.com/xno/open-lumora/internal/models"
 	"github.com/xno/open-lumora/internal/profile"
-	"github.com/xno/open-lumora/pkg/studio/contract"
+	"github.com/xno/open-lumora/internal/studio/contract"
 	"gopkg.in/yaml.v3"
 )
 

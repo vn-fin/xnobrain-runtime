@@ -17,7 +17,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/xno/open-lumora/internal/logger"
 	"github.com/xno/open-lumora/internal/tracing"
-	"github.com/xno/open-lumora/pkg/studio"
+	"github.com/xno/open-lumora/internal/studio"
 )
 
 func main() {

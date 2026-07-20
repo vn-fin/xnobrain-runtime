@@ -13,7 +13,7 @@ import (
 	"github.com/xno/open-lumora/internal/profile"
 	"github.com/xno/open-lumora/internal/repositories"
 	runtimeadapter "github.com/xno/open-lumora/internal/runtime"
-	"github.com/xno/open-lumora/pkg/edition"
+	"github.com/xno/open-lumora/internal/edition"
 	"github.com/xno/open-lumora/services/agents"
 	"github.com/xno/open-lumora/services/conversations"
 )

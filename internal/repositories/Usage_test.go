@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xno/open-lumora/pkg/studio/contract"
+	"github.com/xno/open-lumora/internal/studio/contract"
 )
 
 func TestMemoryReserveUsageIsAtomic(t *testing.T) {

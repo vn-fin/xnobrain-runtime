@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/xno/open-lumora/internal/device"
-	"github.com/xno/open-lumora/pkg/studio/contract"
+	"github.com/xno/open-lumora/internal/studio/contract"
 )
 
 type RegistrationChallenge struct {

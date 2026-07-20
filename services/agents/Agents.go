@@ -21,7 +21,7 @@ import (
 	"github.com/xno/open-lumora/internal/profile"
 	"github.com/xno/open-lumora/internal/repositories"
 	safetracing "github.com/xno/open-lumora/internal/tracing"
-	"github.com/xno/open-lumora/pkg/edition"
+	"github.com/xno/open-lumora/internal/edition"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
