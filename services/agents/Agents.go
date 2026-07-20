@@ -15,13 +15,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/xno/open-lumora/internal/edition"
 	"github.com/xno/open-lumora/internal/identity"
 	"github.com/xno/open-lumora/internal/limits"
 	"github.com/xno/open-lumora/internal/models"
 	"github.com/xno/open-lumora/internal/profile"
 	"github.com/xno/open-lumora/internal/repositories"
 	safetracing "github.com/xno/open-lumora/internal/tracing"
-	"github.com/xno/open-lumora/internal/edition"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )

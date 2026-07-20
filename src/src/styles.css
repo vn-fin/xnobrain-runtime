@@ -5685,6 +5685,13 @@ body.col-resizing {
 .system-success { color: var(--green); font-size: 13px; }
 .system-error { color: var(--danger); padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border-2)); border-radius: 9px; }
 .system-device { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.system-deployment { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 10px; background: var(--hover); }
+.system-deployment > div { display: grid; gap: 3px; }
+.system-deployment small, .system-advanced-copy { color: var(--muted); font-size: 12px; }
+.system-advanced-card { margin-top: 8px; }
+.system-advanced-copy { margin: 0; line-height: 1.55; }
+.system-agent-config { display: grid; grid-template-columns: minmax(120px, 1fr) auto; gap: 10px; align-items: center; padding: 9px 11px; border: 1px solid var(--border-2); border-radius: 9px; }
+.system-agent-config code { color: var(--muted); font-size: 11px; }
 .system-recovery { display: grid; gap: 6px; padding: 12px; border-radius: 9px; background: var(--hover); }
 .system-recovery code { width: fit-content; padding: 5px 8px; border-radius: 6px; background: var(--bg); user-select: all; }
 @media (max-width: 720px) { .system-scroll { padding: 14px; } .system-import, .system-preview { align-items: stretch; flex-direction: column; } }

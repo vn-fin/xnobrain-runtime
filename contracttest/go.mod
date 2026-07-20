@@ -1,4 +1,4 @@
-module github.com/xno/open-lumora-contracttest
+module github.com/xno/open-lumora/contracttest
 
 go 1.26.0
 

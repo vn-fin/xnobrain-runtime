@@ -4,7 +4,9 @@ Open Lumora is a self-hosted, low-code workspace for building Hermes AI agents. 
 
 ## Start
 
-The portable path for Windows, macOS, and Linux is Docker Compose:
+The portable path for Windows, macOS, and Linux is Docker Compose. Local mode
+is the default and starts Traefik, Studio, the offline SQLite gateway, and the
+extended Hermes runtime without exposing internal service ports:
 
 ```bash
 cp .env.example .env
@@ -36,6 +38,9 @@ Provider credentials are delegated to the 9router process included with the Herm
 Current limits and usage are available at `GET /api/v1/limits`. Limited write endpoints return HTTP `429` with `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Policy`, and, for monthly usage, `RateLimit-Reset` headers.
 
 See [plans and limits](docs/plans.md), [implementation roadmap](docs/implementation/README.md), [architecture](docs/architecture.md), [development and verification](docs/development.md), [API guide](docs/api.md), [OpenAPI contract](docs/openapi.yaml), and [enterprise extension contract](docs/enterprise-extension.md).
+
+Image builds, offline split bundles, domains, and local/cloud startup are
+documented in [deployment](docs/deployment.md).
 
 ## License
 

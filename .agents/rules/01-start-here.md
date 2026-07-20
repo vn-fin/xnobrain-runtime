@@ -11,7 +11,8 @@
 - `internal/runtime`: CLI and Hermes Runs API adapters.
 - `pkg/edition`: public open-source/enterprise policy contracts.
 - `extensions/hermes_api`: packaged Python adapter loaded by each profile API server.
-- `frontend`: Vite, React, and TypeScript application.
+- `src`: Vite, React, and TypeScript application.
+- `bin/images`: checksummed split OCI bundles; never store an unsplit image tar.
 - `docs`: human-authored architecture and API documentation.
 - `docs/plans.md`: authoritative plan features, recommended limits, and enforcement semantics.
 - `docs/implementation/README.md`: prioritized cross-repository implementation roadmap and parallel work ownership.
@@ -33,3 +34,5 @@
 - Use temp-file-plus-rename for config and content writes.
 - Never return or log credentials, runtime tokens, or provider keys.
 - Open-source requests use the local principal. Enterprise authentication is supplied by an edition extension.
+- The offline enterprise gateway may supply Free limits, but loss of that
+  gateway must fall back to the exact same local Free policy.

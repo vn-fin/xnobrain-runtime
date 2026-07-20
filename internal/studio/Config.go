@@ -11,6 +11,7 @@ import (
 )
 
 type Config struct {
+	StartMode                        string
 	Edition                          string
 	HTTPPort                         int
 	LogLevel                         string
@@ -22,6 +23,7 @@ type Config struct {
 	HermesRuntimeMode                string
 	HermesRuntimeURL                 string
 	HermesRuntimeToken               string
+	ControlGatewayURL                string
 	NineRouterURL                    string
 	NineRouterDataDir                string
 	RuntimeTimeout                   time.Duration
@@ -57,10 +59,10 @@ func LoadConfig() (Config, error) {
 
 func configFromInternal(config internalconfig.Config) Config {
 	return Config{
-		Edition: config.Edition, HTTPPort: config.HTTPPort, LogLevel: config.LogLevel,
+		StartMode: config.StartMode, Edition: config.Edition, HTTPPort: config.HTTPPort, LogLevel: config.LogLevel,
 		CORSAllowedOrigins: config.CORSAllowedOrigins, DataDir: config.DataDir, FrontendDir: config.FrontendDir,
 		HermesBin: config.HermesBin, HermesGatewayBin: config.HermesGatewayBin, HermesRuntimeMode: config.HermesRuntimeMode,
-		HermesRuntimeURL: config.HermesRuntimeURL, HermesRuntimeToken: config.HermesRuntimeToken,
+		HermesRuntimeURL: config.HermesRuntimeURL, HermesRuntimeToken: config.HermesRuntimeToken, ControlGatewayURL: config.ControlGatewayURL,
 		NineRouterURL: config.NineRouterURL, NineRouterDataDir: config.NineRouterDataDir, RuntimeTimeout: config.RuntimeTimeout,
 		ContainerIdleEnabled: config.ContainerIdleEnabled, ContainerIdleTimeout: config.ContainerIdleTimeout,
 		MaxOpenSourceAgents: config.MaxOpenSourceAgents, MaxOpenSourceCronJobs: config.MaxOpenSourceCronJobs,
@@ -77,10 +79,10 @@ func configFromInternal(config internalconfig.Config) Config {
 
 func (c Config) internal() internalconfig.Config {
 	return internalconfig.Config{
-		Edition: c.Edition, HTTPPort: c.HTTPPort, LogLevel: c.LogLevel,
+		StartMode: c.StartMode, Edition: c.Edition, HTTPPort: c.HTTPPort, LogLevel: c.LogLevel,
 		CORSAllowedOrigins: c.CORSAllowedOrigins, DataDir: c.DataDir, FrontendDir: c.FrontendDir,
 		HermesBin: c.HermesBin, HermesGatewayBin: c.HermesGatewayBin, HermesRuntimeMode: c.HermesRuntimeMode,
-		HermesRuntimeURL: c.HermesRuntimeURL, HermesRuntimeToken: c.HermesRuntimeToken,
+		HermesRuntimeURL: c.HermesRuntimeURL, HermesRuntimeToken: c.HermesRuntimeToken, ControlGatewayURL: c.ControlGatewayURL,
 		NineRouterURL: c.NineRouterURL, NineRouterDataDir: c.NineRouterDataDir, RuntimeTimeout: c.RuntimeTimeout,
 		ContainerIdleEnabled: c.ContainerIdleEnabled, ContainerIdleTimeout: c.ContainerIdleTimeout,
 		MaxOpenSourceAgents: c.MaxOpenSourceAgents, MaxOpenSourceCronJobs: c.MaxOpenSourceCronJobs,

@@ -7,6 +7,19 @@ afterEach(() => {
 });
 
 describe('systemApi', () => {
+  it('reads the non-secret deployment summary for Settings', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ success: true, data: { mode: 'local', gateway_configured: true, runtime_transport: 'gateway-runtime', managed_cloud: false } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const deployment = await systemApi.deployment();
+
+    expect(deployment.mode).toBe('local');
+    expect(deployment.gateway_configured).toBe(true);
+  });
+
   it('downloads a raw .lumora response without JSON decoding', async () => {
     const fetchMock = vi.fn(async () => new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
       status: 200,

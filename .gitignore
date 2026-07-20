@@ -1,6 +1,5 @@
 # ─── Go ────────────────────────────────────────────────────────────────────────
 # Compiled binaries
-bin/
 *.exe
 *.exe~
 *.dll
@@ -19,7 +18,6 @@ go.work.sum
 
 # ─── React / Node (src/) ───────────────────────────────────────────────────────
 src/node_modules/
-src/dist/
 src/.vite/
 src/*.tsbuildinfo
 src/vite.config.js
@@ -32,6 +30,10 @@ src/storybook-static/
 node_modules/
 dist/
 .npm/
+
+# The production UI is embedded in the public Studio image and is committed.
+!src/dist/
+!src/dist/**
 
 # ─── Environment & secrets ────────────────────────────────────────────────────
 .env

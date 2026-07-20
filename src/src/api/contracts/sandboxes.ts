@@ -6,11 +6,15 @@ export type DefaultSandboxDTO = {
   info?: Record<string, unknown>;
   ipv4?: string;
   ipv6?: string;
-  resources?: { cpus?: string | number; memory?: string; rootSize?: string };
   status?: string;
   type?: string;
   userId?: string;
   vmId?: string;
+  id?: string;
+  created_at?: string;
+  ipv4_address?: string;
+  ipv6_address?: string;
+  resources?: { cpus?: string | number; memory?: string; rootSize?: string; root_size?: string };
 };
 
 export type SandboxMetricsDTO = {
@@ -26,6 +30,30 @@ export type SandboxMetricsDTO = {
   netTxBytes?: number;
   uptimeSeconds?: number;
   vcpuTimeNs?: number;
+  cpu_percent?: number;
+  disk_read_bytes?: number;
+  disk_total_bytes?: number;
+  disk_usage_bytes?: number;
+  disk_write_bytes?: number;
+  memory_available_bytes?: number;
+  memory_bytes?: number;
+  memory_limit_bytes?: number;
+  net_rx_bytes?: number;
+  net_tx_bytes?: number;
+  uptime_seconds?: number;
+  vcpu_time_ns?: number;
+};
+
+export type SandboxProcessDTO = {
+  pid?: number;
+  command?: string;
+  cpuPercent?: number;
+  memoryPercent?: number;
+  rssKiB?: number;
+  cpu_percent?: number;
+  memory_percent?: number;
+  rss_kib?: number;
+  state?: string;
 };
 
 export type SandboxSystemDTO = {
@@ -41,14 +69,9 @@ export type SandboxSystemDTO = {
     volumeUsedBytes?: number;
     volumeTotalBytes?: number;
   };
-  topProcesses?: Array<{
-    pid?: number;
-    command?: string;
-    cpuPercent?: number;
-    memoryPercent?: number;
-    rssKiB?: number;
-    state?: string;
-  }>;
+  topProcesses?: SandboxProcessDTO[];
+  cpu_percent?: number;
+  top_processes?: SandboxProcessDTO[];
 };
 
 export type DefaultSandboxStatsDTO = {
@@ -63,4 +86,5 @@ export type SandboxHealthDTO = {
   statusCode?: number;
   health?: Record<string, unknown>;
   sandbox?: DefaultSandboxDTO;
+  status_code?: number;
 };

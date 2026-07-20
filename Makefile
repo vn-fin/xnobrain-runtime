@@ -1,8 +1,11 @@
 GO_BIN := $(if $(wildcard $(CURDIR)/.tools/go/bin/go),$(CURDIR)/.tools/go/bin/go,go)
 GOFMT_BIN := $(if $(wildcard $(CURDIR)/.tools/go/bin/gofmt),$(CURDIR)/.tools/go/bin/gofmt,gofmt)
 PYTHON_BIN := $(if $(wildcard $(CURDIR)/.tools/python/bin/python),$(CURDIR)/.tools/python/bin/python,python3)
+CONTAINER_CLI ?= docker
+IMAGE_TAG ?= local
+OPEN_LUMORA_IMAGE ?= open-lumora-studio:$(IMAGE_TAG)
 
-.PHONY: dev backend src test check build
+.PHONY: dev backend src test check binary build image bundle load-bundle
 
 dev:
 	./scripts/dev.sh
@@ -28,7 +31,18 @@ check:
 	cd src && npm test
 	cd src && npm run build
 
-build:
+binary:
 	cd src && npm run build
 	mkdir -p bin
 	$(GO_BIN) build -o bin/open-lumora ./cmd
+
+build: binary image
+
+image:
+	$(CONTAINER_CLI) build -t $(OPEN_LUMORA_IMAGE) .
+
+bundle:
+	CONTAINER_CLI=$(CONTAINER_CLI) IMAGE_TAG=$(IMAGE_TAG) ./scripts/BundleImages.sh
+
+load-bundle:
+	CONTAINER_CLI=$(CONTAINER_CLI) ./scripts/LoadImages.sh

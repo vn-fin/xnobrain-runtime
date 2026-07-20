@@ -19,6 +19,7 @@ import (
 )
 
 type Config struct {
+	StartMode                        string
 	Edition                          string
 	HTTPPort                         int
 	LogLevel                         string
@@ -30,6 +31,7 @@ type Config struct {
 	HermesRuntimeMode                string
 	HermesRuntimeURL                 string
 	HermesRuntimeToken               string
+	ControlGatewayURL                string
 	NineRouterURL                    string
 	NineRouterDataDir                string
 	RuntimeTimeout                   time.Duration
@@ -57,11 +59,15 @@ type Config struct {
 
 func Load() (Config, error) {
 	_ = godotenv.Load(".env")
+	startMode := strings.ToLower(value("START_MODE", "local"))
+	if startMode != "local" && startMode != "cloud" {
+		return Config{}, fmt.Errorf("START_MODE must be local or cloud")
+	}
 	dataDir, err := filepath.Abs(value("DATA_DIR", "data"))
 	if err != nil {
 		return Config{}, fmt.Errorf("resolve DATA_DIR: %w", err)
 	}
-	frontendDir, err := filepath.Abs(value("FRONTEND_DIR", "frontend/dist"))
+	frontendDir, err := filepath.Abs(value("FRONTEND_DIR", "src/dist"))
 	if err != nil {
 		return Config{}, fmt.Errorf("resolve FRONTEND_DIR: %w", err)
 	}
@@ -69,8 +75,20 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("resolve NINE_ROUTER_DATA_DIR: %w", err)
 	}
+	controlGatewayURL := strings.TrimRight(strings.TrimSpace(os.Getenv("CONTROL_GATEWAY_URL")), "/")
+	hermesRuntimeURL := strings.TrimRight(strings.TrimSpace(os.Getenv("HERMES_RUNTIME_URL")), "/")
+	nineRouterURL := strings.TrimRight(value("NINE_ROUTER_URL", "http://127.0.0.1:20128"), "/")
+	if controlGatewayURL != "" {
+		if hermesRuntimeURL == "" {
+			hermesRuntimeURL = controlGatewayURL + "/runtime"
+		}
+		if strings.TrimSpace(os.Getenv("NINE_ROUTER_URL")) == "" {
+			nineRouterURL = controlGatewayURL + "/nine-router"
+		}
+	}
 
 	return Config{
+		StartMode:                        startMode,
 		Edition:                          value("OPEN_LUMORA_EDITION", "opensource"),
 		HTTPPort:                         integer("HTTP_PORT", 3000),
 		LogLevel:                         value("LOG_LEVEL", "debug"),
@@ -80,9 +98,10 @@ func Load() (Config, error) {
 		HermesBin:                        value("HERMES_BIN", "hermes"),
 		HermesGatewayBin:                 value("HERMES_GATEWAY_BIN", "hermes-custom-gateway"),
 		HermesRuntimeMode:                value("HERMES_RUNTIME_MODE", "cli"),
-		HermesRuntimeURL:                 strings.TrimRight(strings.TrimSpace(os.Getenv("HERMES_RUNTIME_URL")), "/"),
+		HermesRuntimeURL:                 hermesRuntimeURL,
 		HermesRuntimeToken:               strings.TrimSpace(os.Getenv("HERMES_RUNTIME_TOKEN")),
-		NineRouterURL:                    value("NINE_ROUTER_URL", "http://127.0.0.1:20128"),
+		ControlGatewayURL:                controlGatewayURL,
+		NineRouterURL:                    nineRouterURL,
 		NineRouterDataDir:                nineRouterDataDir,
 		RuntimeTimeout:                   time.Duration(integer("RUNTIME_TIMEOUT_SECONDS", 900)) * time.Second,
 		ContainerIdleEnabled:             boolean("CONTAINER_IDLE_ENABLED", true),

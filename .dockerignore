@@ -1,11 +1,11 @@
 .git
 .tools
 data
-frontend/node_modules
-frontend/dist
-frontend/*.tsbuildinfo
-frontend/vite.config.js
-frontend/vite.config.d.ts
+src/node_modules
+src/dist
+src/*.tsbuildinfo
+src/vite.config.js
+src/vite.config.d.ts
 bin
 extensions/**/__pycache__
 extensions/**/*.pyc

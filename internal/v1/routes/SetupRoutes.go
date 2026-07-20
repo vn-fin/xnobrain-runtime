@@ -12,6 +12,7 @@ import (
 func SetupRoutes(app *fiber.App, server *api.Server) {
 	app.Get("/api/v1/health", server.Health)
 	app.Get("/api/v1/limits", server.Limits)
+	app.Get("/api/v1/system/deployment", server.Deployment)
 	app.Get("/agent-gateway/v1/ping", server.Health)
 	server.RegisterAgentRoutes(app)
 	server.RegisterConversationRoutes(app)

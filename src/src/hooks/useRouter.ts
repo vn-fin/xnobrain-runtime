@@ -23,8 +23,8 @@ export function parseRoute(pathname: string, search: string): RouteState {
   if (seg[0] === 'sandbox') centerView = 'sandbox';
   else if (seg[0] === 'connections') centerView = 'connections';
   else if (seg[0] === 'skills') centerView = 'skills';
-	else if (seg[0] === 'teams') centerView = 'teams';
-  else if (seg[0] === 'data') centerView = 'data';
+  else if (seg[0] === 'teams') centerView = 'teams';
+  else if (seg[0] === 'data' || seg[0] === 'settings') centerView = 'data';
   else if (seg[0] === 'agents') {
     agentId = seg[1] ?? '';
     if (seg[2] === 'conversations') conversationId = seg[3] ?? '';
@@ -56,8 +56,8 @@ export function computeUrl(state: RouteState): string {
   const params = new URLSearchParams();
   if (state.centerView === 'sandbox') return '/sandbox';
   if (state.centerView === 'connections') return '/connections';
-  if (state.centerView === 'data') return '/data';
-	if (state.centerView === 'teams') return '/teams';
+  if (state.centerView === 'data') return '/settings';
+  if (state.centerView === 'teams') return '/teams';
   if (state.centerView === 'skills') {
     if (state.skillsSearch.trim()) params.set('q', state.skillsSearch.trim());
     if (state.skillsGroupFilter !== 'all') params.set('group', state.skillsGroupFilter);

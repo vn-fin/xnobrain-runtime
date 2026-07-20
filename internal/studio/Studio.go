@@ -14,13 +14,13 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/xno/open-lumora/internal/api"
+	"github.com/xno/open-lumora/internal/edition"
 	"github.com/xno/open-lumora/internal/ninerouter"
 	"github.com/xno/open-lumora/internal/profile"
 	"github.com/xno/open-lumora/internal/repositories"
 	runtimeadapter "github.com/xno/open-lumora/internal/runtime"
-	v1routes "github.com/xno/open-lumora/internal/v1/routes"
-	"github.com/xno/open-lumora/internal/edition"
 	"github.com/xno/open-lumora/internal/studio/contract"
+	v1routes "github.com/xno/open-lumora/internal/v1/routes"
 	"github.com/xno/open-lumora/services/agents"
 	"github.com/xno/open-lumora/services/conversations"
 	"github.com/xno/open-lumora/services/crons"
@@ -94,12 +94,20 @@ func NewCommunity(config Config) (*Application, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open Community repository: %w", err)
 	}
-	policy := edition.OpenSource{
+	fallbackPolicy := edition.OpenSource{
 		AgentLimit: config.MaxOpenSourceAgents, CronJobLimit: config.MaxOpenSourceCronJobs,
 		CronConcurrency: config.MaxOpenSourceConcurrency, CronRunsPerDay: config.MaxOpenSourceCronRunsPerDay, CronRunsPerMonth: config.MaxOpenSourceCronRunsPerMonth,
 		ProviderConnectionsPerType: config.MaxOpenSourceProviderConnections,
 		TeamLimit:                  config.MaxOpenSourceTeams, AgentsPerTeam: config.MaxOpenSourceAgentsPerTeam,
 		DelegatedWorkers: config.MaxOpenSourceDelegatedWorkers, DelegationDepth: config.MaxOpenSourceDelegationDepth,
+	}
+	var policy edition.Policy = fallbackPolicy
+	if config.ControlGatewayURL != "" {
+		gatewayPolicy, err := edition.NewGateway(config.ControlGatewayURL, fallbackPolicy)
+		if err != nil {
+			return nil, fmt.Errorf("configure enterprise gateway policy: %w", err)
+		}
+		policy = gatewayPolicy
 	}
 	routerToken, err := ninerouter.New(config.NineRouterURL, config.NineRouterDataDir).APIToken()
 	if err != nil {

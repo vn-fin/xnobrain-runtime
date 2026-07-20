@@ -12,6 +12,13 @@ export type DeviceStatus = {
   claimed: boolean;
 };
 
+export type DeploymentStatus = {
+  mode: 'local' | 'cloud';
+  gateway_configured: boolean;
+  runtime_transport: string;
+  managed_cloud: boolean;
+};
+
 export type BundleInspection = {
   manifest: { export_id: string; source_version: string; agents: Array<{ id: string; name: string }>; teams?: Array<{ id: string; name: string }> };
   files: number;
@@ -49,6 +56,7 @@ function bundleForm(file: File) {
 }
 
 export const systemApi = {
+  deployment: () => request<DeploymentStatus>('/api/v1/system/deployment'),
   device: () => request<DeviceStatus>('/api/v1/device'),
   pair: () => request<{ pairing: boolean }>('/api/v1/device/pair', { method: 'POST' }),
   unpair: () => request<{ unpaired: boolean }>('/api/v1/device/unpair', { method: 'POST' }),

@@ -13,23 +13,23 @@ import {
   Plus,
   Search,
   Server,
+  Settings,
   Share2,
   Sparkles,
   Sun,
   Trash2,
-  Database,
-	Network,
+  Network,
 } from 'lucide-react';
 import { SUPPORTED_LANGUAGES } from '../i18n';
 import { useTheme } from '../theme';
 import type { Agent, CenterView, Conversation } from '../types';
 
 const navItems = [
-  { id: 'sandbox', icon: Server },
-  { id: 'connections', icon: KeyRound },
-  { id: 'skills', icon: Sparkles },
-	{ id: 'teams', icon: Network },
-  { id: 'data', icon: Database },
+  { id: 'skills', label: 'skills', icon: Sparkles },
+  { id: 'sandbox', label: 'runtime', icon: Server },
+  { id: 'teams', label: 'teams', icon: Network },
+  { id: 'connections', label: 'connections', icon: KeyRound },
+  { id: 'data', label: 'settings', icon: Settings },
 ] as const;
 
 export function Sidebar({
@@ -99,13 +99,13 @@ export function Sidebar({
           const active =
             (item.id === 'sandbox' && centerView === 'sandbox') ||
             (item.id === 'skills' && centerView === 'skills') ||
-			(item.id === 'teams' && centerView === 'teams') ||
+            (item.id === 'teams' && centerView === 'teams') ||
             (item.id === 'connections' && centerView === 'connections') ||
             (item.id === 'data' && centerView === 'data');
           return (
             <button key={item.id} className={active ? 'nav-row active' : 'nav-row'} onClick={() => onNavigate(item.id as CenterView)}>
               <Icon size={18} />
-              <span>{t(`nav.${item.id}`, { defaultValue: item.id === 'data' ? 'Data & cloud' : item.id })}</span>
+              <span>{t(`nav.${item.label}`, { defaultValue: item.label[0].toUpperCase() + item.label.slice(1) })}</span>
             </button>
           );
         })}

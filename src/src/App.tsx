@@ -31,7 +31,7 @@ export default function App() {
   const crons = useCrons();
   const conversation = useConversation(router.activeAgentId, router.activeConversationId);
   const workspace = useWorkspace(router.activeAgentId);
-	const teams = useTeams();
+  const teams = useTeams();
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
   const RIGHT_MIN = 280;
@@ -228,8 +228,8 @@ export default function App() {
             onImported={assistants.refresh}
             onClose={() => router.setCenterView('chat')}
           />
-		) : centerView === 'teams' ? (
-		  <TeamsView agents={assistants.agents} state={teams} onClose={() => router.setCenterView('chat')} />
+        ) : centerView === 'teams' ? (
+          <TeamsView agents={assistants.agents} state={teams} onClose={() => router.setCenterView('chat')} />
         ) : (
           <ChatArea
             agent={activeAgent}

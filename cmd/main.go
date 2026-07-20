@@ -16,8 +16,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/xno/open-lumora/internal/logger"
-	"github.com/xno/open-lumora/internal/tracing"
 	"github.com/xno/open-lumora/internal/studio"
+	"github.com/xno/open-lumora/internal/tracing"
 )
 
 func main() {
@@ -45,6 +45,6 @@ func run() error {
 		return err
 	}
 	defer application.Close()
-	log.Info().Int("port", cfg.HTTPPort).Str("edition", cfg.Edition).Msg("open lumora starting")
+	log.Info().Int("port", cfg.HTTPPort).Str("edition", cfg.Edition).Str("start_mode", cfg.StartMode).Msg("open lumora starting")
 	return application.Listen(ctx)
 }

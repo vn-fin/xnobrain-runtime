@@ -10,10 +10,12 @@
     "zh": "中文"
   },
   "nav": {
-    "sandbox": "Sandbox",
+    "sandbox": "Runtime",
+    "runtime": "Runtime",
     "connections": "Connections",
-    "skills": "Skills"
-	,"teams": "Teams"
+    "skills": "Skills",
+    "teams": "Teams",
+    "settings": "Settings"
   },
   "theme": {
     "label": "Theme",
@@ -171,7 +173,7 @@
     "autoDetect": "Copy the callback URL from the window and paste it below."
   },
   "sandbox": {
-    "title": "Sandbox",
+    "title": "Runtime",
     "notProvisioned": "not provisioned",
     "provisioning": "provisioning…",
     "noSandbox": "No sandbox yet",
@@ -187,11 +189,11 @@
     "step": "Step {{current}} of {{total}}",
     "checking": "Checking…",
     "vm": {
-      "title": "Prepare the Hermes container",
-      "desc": "Prepare the local Hermes container with a workspace, terminal, and compute for your assistant.",
-      "action": "Prepare container",
+      "title": "Check the Hermes runtime",
+      "desc": "The local runtime image is pulled automatically. No virtual-machine setup is required.",
+      "action": "Check runtime",
       "provisioning": "Provisioning… {{percent}}%",
-      "ready": "Sandbox ready."
+      "ready": "Runtime ready."
     },
     "provider": {
       "title": "Connect a provider",

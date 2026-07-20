@@ -35,7 +35,12 @@ Runtime approval events include a subsystem key such as `memory_write` or `skill
 
 ## Runtime and providers
 
-Host development defaults to the Hermes CLI adapter. The container uses the packaged `extensions/hermes_api` adapter and starts one private Hermes API server per active profile. Conversation turns use Hermes `/v1/runs`, `/events`, `/stop`, and `/approval`, which preserves real tool and write-approval events while keeping `HERMES_HOME` and `HOME` bound to the selected profile. The official Hermes image is the final Docker base, and 9router remains the credential owner on loopback.
+Host development defaults to the Hermes CLI adapter. The Docker deployment
+uses a separate extended Hermes runtime image. Studio calls only the enterprise
+gateway; the gateway privately proxies Hermes `/v1/runs`, `/events`, `/stop`,
+and `/approval` plus the 9router API. Studio, gateway, and runtime share the
+profile volume so every absolute profile path has the same meaning without
+granting the browser or host direct runtime access.
 
 The gateway adapter starts a profile API server lazily and reuses it for that profile until the Go process stops. `CONTAINER_IDLE_ENABLED` and `CONTAINER_IDLE_TIMEOUT_MINUTES` remain policy metadata for a future managed-container controller; the local OSS application container does not stop itself because doing so would also remove its UI and API.
 

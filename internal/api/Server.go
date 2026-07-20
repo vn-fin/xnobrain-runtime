@@ -29,6 +29,7 @@ import (
 	recovermiddleware "github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/rs/zerolog/log"
 	"github.com/xno/open-lumora/internal/config"
+	"github.com/xno/open-lumora/internal/edition"
 	"github.com/xno/open-lumora/internal/limits"
 	"github.com/xno/open-lumora/internal/middlewares"
 	"github.com/xno/open-lumora/internal/models"
@@ -36,7 +37,6 @@ import (
 	"github.com/xno/open-lumora/internal/profile"
 	"github.com/xno/open-lumora/internal/repositories"
 	runtimeadapter "github.com/xno/open-lumora/internal/runtime"
-	"github.com/xno/open-lumora/internal/edition"
 	"github.com/xno/open-lumora/internal/studio/contract"
 	"github.com/xno/open-lumora/services/agents"
 	"github.com/xno/open-lumora/services/conversations"
@@ -812,7 +812,13 @@ func (s *Server) RegisterSandboxRoutes(app *fiber.App) {
 	root.Post("/setup", s.sandboxSetup)
 }
 func (s *Server) sandboxInfo(c fiber.Ctx) error {
-	return send(c, 200, map[string]any{"id": "local-runtime", "status": "running", "type": "container", "image": "nousresearch/hermes-agent", "ipv4": "127.0.0.1", "created_at": s.startedAt, "idle_policy": map[string]any{"enabled": s.config.ContainerIdleEnabled, "timeout_seconds": int(s.config.ContainerIdleTimeout.Seconds()), "runtime_processes": "request-scoped"}, "resources": map[string]any{"cpus": stdruntime.NumCPU(), "memory": "host limit", "root_size": "data volume"}}, "runtime info")
+	runtimeType := "host"
+	image := "local Hermes CLI"
+	if s.config.HermesRuntimeURL != "" {
+		runtimeType = "container"
+		image = "open-lumora-hermes-runtime"
+	}
+	return send(c, 200, map[string]any{"id": "personal-runtime", "status": "running", "type": runtimeType, "image": image, "ipv4": "private", "created_at": s.startedAt, "gateway": map[string]any{"healthy": true, "port": 8642}, "mode": s.config.StartMode, "idle_policy": map[string]any{"enabled": s.config.ContainerIdleEnabled, "timeout_seconds": int(s.config.ContainerIdleTimeout.Seconds()), "runtime_processes": "request-scoped"}, "resources": map[string]any{"cpus": stdruntime.NumCPU(), "memory": "host limit", "root_size": "data volume"}}, "runtime info")
 }
 func (s *Server) sandboxMetrics(c fiber.Ctx) error {
 	var memory stdruntime.MemStats
@@ -824,6 +830,16 @@ func (s *Server) sandboxStats(c fiber.Ctx) error {
 	return send(c, 200, map[string]any{"system": map[string]any{"cpu_percent": 0, "processes": 1, "os": map[string]string{"hostname": hostname, "os": stdruntime.GOOS, "architecture": stdruntime.GOARCH}, "storage": map[string]any{"data_dir": s.config.DataDir}, "top_processes": []any{}}}, "runtime stats")
 }
 func (s *Server) sandboxHealth(c fiber.Ctx) error {
+	if s.config.HermesRuntimeURL != "" {
+		status, endpoint, err := s.runtimeHealth(c.Context())
+		if err != nil {
+			if status == 0 {
+				status = fiber.StatusServiceUnavailable
+			}
+			return send(c, fiber.StatusServiceUnavailable, map[string]any{"healthy": false, "status_code": status, "endpoint": endpoint, "message": err.Error()}, "runtime unavailable")
+		}
+		return send(c, fiber.StatusOK, map[string]any{"healthy": true, "status_code": status, "endpoint": endpoint}, "runtime healthy")
+	}
 	_, err := exec.LookPath(s.config.HermesBin)
 	if err != nil {
 		return send(c, fiber.StatusServiceUnavailable, map[string]any{"healthy": false, "status_code": fiber.StatusServiceUnavailable, "endpoint": "local", "message": "Hermes CLI is not installed"}, "runtime unavailable")

@@ -16,9 +16,9 @@ import (
 	"testing"
 
 	"github.com/xno/open-lumora/internal/config"
+	"github.com/xno/open-lumora/internal/edition"
 	"github.com/xno/open-lumora/internal/profile"
 	"github.com/xno/open-lumora/internal/repositories"
-	"github.com/xno/open-lumora/internal/edition"
 	"github.com/xno/open-lumora/services/agents"
 	"github.com/xno/open-lumora/services/portability"
 )

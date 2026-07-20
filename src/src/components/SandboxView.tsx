@@ -36,7 +36,7 @@ export function SandboxView({
           <div className="sbx-title">
             <Server size={18} />
             <div>
-              <strong>{t('sandbox.title')}</strong>
+              <strong>{t('nav.runtime', { defaultValue: 'Runtime' })}</strong>
               <span className="sbx-vmid">{setupRunning ? t('sandbox.provisioning') : t('sandbox.notProvisioned')}</span>
             </div>
           </div>
@@ -83,7 +83,7 @@ export function SandboxView({
         <div className="sbx-title">
           <Server size={18} />
           <div>
-            <strong>{t('sandbox.title')}</strong>
+            <strong>{t('nav.runtime', { defaultValue: 'Runtime' })}</strong>
             <span className="sbx-vmid">{info.vmId}</span>
           </div>
           <span className={health.healthy ? 'sbx-status ok' : 'sbx-status down'}>
@@ -220,7 +220,7 @@ export function SandboxView({
 
         <div className="sbx-footnote">
           <Code2 size={14} />
-          <span>Mapped from /sandboxes/v1/me/sandboxes: info, stats, metrics, health and setup.</span>
+          <span>Private Hermes runtime health and host-visible resource information.</span>
         </div>
       </div>
     </div>

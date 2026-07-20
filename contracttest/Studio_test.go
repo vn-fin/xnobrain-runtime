@@ -1,6 +1,6 @@
 // <Summary>
-// The external compatibility module proves downstream composition requires no
-// imports from Open Lumora internal packages and owns a clean lifecycle.
+// The nested compatibility module proves the enterprise-supported composition
+// can import Open Lumora internals deliberately and owns a clean lifecycle.
 // </Summary>
 package contracttest
 
