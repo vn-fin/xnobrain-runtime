@@ -197,7 +197,28 @@ func (a *Application) Serve(ctx context.Context, listener net.Listener) error {
 		go func() { _ = a.connector.Start(runContext) }()
 	}
 	_ = a.eventSink.Publish(runContext, contract.EventEnvelope{Type: "service.started", OccurredAt: time.Now().UTC(), Attributes: map[string]any{"edition": a.config.Edition}})
-	return a.App.Listener(listener, fiber.ListenConfig{GracefulContext: runContext})
+	serveReturned := make(chan struct{})
+	shutdownComplete := make(chan struct{})
+	go func() {
+		defer close(shutdownComplete)
+		select {
+		case <-runContext.Done():
+			// Closing the owned listener also handles cancellation before Fiber has
+			// initialized its server, where Shutdown alone cannot unblock Serve.
+			_ = listener.Close()
+			shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			_ = a.App.ShutdownWithContext(shutdownContext)
+		case <-serveReturned:
+		}
+	}()
+	listenErr := a.App.Listener(listener, fiber.ListenConfig{})
+	close(serveReturned)
+	<-shutdownComplete
+	if runContext.Err() != nil {
+		return nil
+	}
+	return listenErr
 }
 
 func (a *Application) Close() error {

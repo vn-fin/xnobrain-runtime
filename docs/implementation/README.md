@@ -49,7 +49,7 @@ To avoid merge conflicts, assign one owner per row:
 | Portability | `services/portability`, bundle schema/tests |
 | Telemetry | `internal/tracing`, telemetry middleware and redaction tests |
 | Teams | `services/teams`, team/delegation tests |
-| Frontend | `frontend/src/features/<feature>` only |
+| Frontend | `src/src/features/<feature>` only |
 | Integration owner | `cmd/main.go`, `internal/v1/routes/SetupRoutes.go`, shared config, root Compose and docs |
 
 Feature owners must not edit route assembly or `cmd/main.go`; they expose constructors and handlers for the integration owner. The integration owner starts only after the feature package compiles independently.
