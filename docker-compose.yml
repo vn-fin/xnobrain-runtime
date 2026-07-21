@@ -46,8 +46,8 @@ services:
       HERMES_ROOT_PROFILE: /opt/data/open-lumora/root
       HERMES_PROFILES_ROOT: /opt/data/open-lumora/profiles
       HERMES_DESKTOP: "1"
-      HOME: /opt/data/home
-      XDG_CONFIG_HOME: /opt/data/home/.config
+      HOME: /root
+      XDG_CONFIG_HOME: /root/.config
       NINE_ROUTER_DATA_DIR: /opt/data/.9router
       NINE_ROUTER_INTERNAL_SECRET: ${NINE_ROUTER_INTERNAL_SECRET:-open-lumora-local-9router}
       API_SERVER_HOST: 0.0.0.0

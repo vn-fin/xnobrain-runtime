@@ -2,6 +2,17 @@
 set -euo pipefail
 
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$NINE_ROUTER_DATA_DIR"
+hermes_python="${HERMES_RUNTIME_PYTHON:-/usr/local/lib/hermes-agent/venv/bin/python}"
+if [[ ! -x "$hermes_python" ]]; then
+  echo "Hermes runtime Python not found: $hermes_python" >&2
+  exit 1
+fi
+# Hermes keeps its updater under HERMES_HOME/bin. The image provides uv as a
+# system command, so make it available to every persistent profile root too.
+mkdir -p "$HERMES_HOME/bin"
+if [[ ! -e "$HERMES_HOME/bin/uv" ]]; then
+  ln -s /usr/local/bin/uv "$HERMES_HOME/bin/uv"
+fi
 # Hermes CLI discovers named profiles at HERMES_HOME/profiles. Open Lumora's
 # stable data contract keeps them at DATA_DIR/profiles, so expose that one
 # directory through a compatibility symlink instead of duplicating state.
@@ -20,7 +31,7 @@ chmod 600 "$HERMES_HOME/.env"
 # preserves local edits and deletions and respects .no-bundled-skills markers.
 sync_profile_skills() {
   local profile_dir="$1"
-  HERMES_HOME="$profile_dir" /opt/hermes/.venv/bin/python -c \
+  HERMES_HOME="$profile_dir" "$hermes_python" -c \
     'from tools.skills_sync import sync_skills; sync_skills(quiet=True)'
 }
 sync_profile_skills "$HERMES_HOME"
@@ -38,7 +49,7 @@ REQUIRE_API_KEY=false \
 NODE_ENV=production \
 node /opt/open-lumora/9router/server.js &
 router_pid=$!
-python3 /opt/open-lumora/server.py &
+"$hermes_python" /opt/open-lumora/server.py &
 api_pid=$!
 
 cleanup() {
