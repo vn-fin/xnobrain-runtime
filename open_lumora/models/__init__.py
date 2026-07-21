@@ -1,7 +1,8 @@
 """Pydantic request and response contracts exposed in Swagger."""
 
 from .api import (
-    AgentCreate, AgentMetadataPatch, APIEnvelope, BundleExport, ChatRequest,
+    AgentCreate, AgentMetadataPatch, APIEnvelope, BundleExport, BundleUploadApply,
+    BundleUploadComplete, BundleUploadStart, ChatRequest,
     ConfigPatch, ConversationCreate, ConversationRename, CronCreate, EnabledPatch,
     GenericObject, MCPConfig, MemoryPatch, ProviderCredential, RunApproval,
     SkillInstall, TeamCreate, TeamRun, WorkspaceCreate, WorkspacePath, WorkspaceWrite,

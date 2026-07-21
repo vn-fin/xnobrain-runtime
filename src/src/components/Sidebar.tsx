@@ -47,6 +47,7 @@ export function Sidebar({
   onNavigate,
   onSelectAgent,
   onSelectConversation,
+  onRenameAgent,
   onRenameConversation,
   onRequestDeleteConversation,
   onNewAgent,
@@ -60,6 +61,7 @@ export function Sidebar({
   onNavigate: (view: CenterView) => void;
   onSelectAgent: (agent: Agent) => void;
   onSelectConversation: (conversationId: string) => void;
+  onRenameAgent: (agentId: string, displayName: string) => void | Promise<void>;
   onRenameConversation: (conversationId: string, title: string) => void | Promise<void>;
   onRequestDeleteConversation: (conversationId: string) => void;
   onNewAgent: () => void;
@@ -71,6 +73,19 @@ export function Sidebar({
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [renamingAgentId, setRenamingAgentId] = useState<string | null>(null);
+  const [agentRenameValue, setAgentRenameValue] = useState('');
+
+  const startAgentRename = (agent: Agent) => {
+    setRenamingAgentId(agent.id);
+    setAgentRenameValue(agent.title);
+  };
+
+  const commitAgentRename = (agent: Agent) => {
+    const value = agentRenameValue.trim();
+    if (value && value !== agent.title) void onRenameAgent(agent.id, value);
+    setRenamingAgentId(null);
+  };
 
   const startRename = (conversation: Conversation) => {
     setMenuId(null);
@@ -153,19 +168,52 @@ export function Sidebar({
           </div>
         )}
 
-        {filtered.map((agent) => (
-          <button
-            key={agent.id}
-            className={agent.id === activeAgent.id && centerView === 'chat' ? 'agent-row active' : 'agent-row'}
-            onClick={() => onSelectAgent(agent)}
-          >
-            <span className="status-dot" />
-            <span>
-              <strong>{agent.name}</strong>
-              <small>{agent.model}</small>
-            </span>
-          </button>
-        ))}
+        {filtered.map((agent) => {
+          const active = agent.id === activeAgent.id && centerView === 'chat';
+          if (renamingAgentId === agent.id) {
+            return (
+              <div key={agent.id} className={active ? 'agent-row active renaming' : 'agent-row renaming'}>
+                <input
+                  className="history-rename-input"
+                  value={agentRenameValue}
+                  autoFocus
+                  aria-label={t('agents.renameLabel')}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => setAgentRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitAgentRename(agent); }
+                    if (e.key === 'Escape') { e.preventDefault(); setRenamingAgentId(null); }
+                  }}
+                  onBlur={() => commitAgentRename(agent)}
+                />
+              </div>
+            );
+          }
+          return (
+            <div key={agent.id} className={active ? 'agent-row active' : 'agent-row'}>
+              <button
+                className="agent-row-main"
+                onClick={() => onSelectAgent(agent)}
+                onDoubleClick={(e) => { e.stopPropagation(); startAgentRename(agent); }}
+                title={agent.title}
+              >
+                <span className="status-dot" />
+                <span>
+                  <strong>{agent.title}</strong>
+                  <small>{agent.model}</small>
+                </span>
+              </button>
+              <button
+                className="agent-row-rename"
+                title={t('agents.rename')}
+                aria-label={t('agents.rename')}
+                onClick={() => startAgentRename(agent)}
+              >
+                <Pencil size={14} />
+              </button>
+            </div>
+          );
+        })}
 
         <div className="section-title recent-title">
           <History size={14} />

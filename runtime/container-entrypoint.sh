@@ -15,6 +15,20 @@ touch "$HERMES_HOME/.env"
 chmod 700 "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$NINE_ROUTER_DATA_DIR"
 chmod 600 "$HERMES_HOME/.env"
 
+# Keep the persistent default and named profiles in sync with the skills bundled
+# by the Hermes runtime image. The upstream synchronizer is manifest-based: it
+# preserves local edits and deletions and respects .no-bundled-skills markers.
+sync_profile_skills() {
+  local profile_dir="$1"
+  HERMES_HOME="$profile_dir" /opt/hermes/.venv/bin/python -c \
+    'from tools.skills_sync import sync_skills; sync_skills(quiet=True)'
+}
+sync_profile_skills "$HERMES_HOME"
+for profile_dir in "$HERMES_PROFILES_ROOT"/*; do
+  [[ -d "$profile_dir" ]] || continue
+  sync_profile_skills "$profile_dir"
+done
+
 DATA_DIR="$NINE_ROUTER_DATA_DIR" \
 PORT=20128 \
 HOSTNAME=0.0.0.0 \

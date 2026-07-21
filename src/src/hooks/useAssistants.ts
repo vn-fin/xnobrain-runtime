@@ -7,21 +7,11 @@ import type { AgentConfigDTO } from '../api/contracts/agentGateway';
 import type { Agent, AgentSkill, AgentSkillMap, AsyncStatus, GlobalRuntimeConfig, SkillStateMap } from '../types';
 
 function deriveSkills(agents: Agent[]) {
-  const libraryMap = new Map<string, AgentSkill>();
   const enabled: AgentSkillMap = {};
   const states: SkillStateMap = {};
   for (const agent of agents) {
     enabled[agent.id] = {};
     for (const skill of agent.skills) {
-      const current = libraryMap.get(skill.skill_id);
-      libraryMap.set(skill.skill_id, {
-        ...current,
-        ...skill,
-        description: skill.description || current?.description || '',
-        path: skill.path || current?.path || '',
-        installed: true,
-        enabled: current?.enabled || skill.enabled,
-      });
       enabled[agent.id][skill.skill_id] = skill.enabled;
       states[skill.skill_id] = {
         ...(states[skill.skill_id] ?? {}),
@@ -29,7 +19,7 @@ function deriveSkills(agents: Agent[]) {
       };
     }
   }
-  return { library: [...libraryMap.values()], enabled, states };
+  return { enabled, states };
 }
 
 /** Picks a conversation title that doesn't collide with existing ones, since
@@ -58,8 +48,8 @@ function mapGlobalConfig(config: AgentConfigDTO | null): GlobalRuntimeConfig | n
   return {
     provider: config.provider ?? '',
     model: config.model ?? '',
-    skillsWriteApproval: config.skills_write_approval ?? nestedWriteApproval(config, 'skills') ?? false,
-    memoryWriteApproval: config.memory_write_approval ?? nestedWriteApproval(config, 'memory') ?? false,
+    skillsWriteApproval: config.skills_write_approval ?? nestedWriteApproval(config, 'skills') ?? true,
+    memoryWriteApproval: config.memory_write_approval ?? nestedWriteApproval(config, 'memory') ?? true,
   };
 }
 
@@ -77,7 +67,6 @@ export function useAssistants() {
   const setComposedAgents = useCallback((next: Agent[]) => {
     const derived = deriveSkills(next);
     setAgents(next);
-    setLibrary(derived.library);
     setAgentSkills(derived.enabled);
     setSkillStates(derived.states);
   }, []);
@@ -86,8 +75,12 @@ export function useAssistants() {
     setStatus('loading');
     setError('');
     try {
-      const baseAgents = await agentsApi.list();
-      const globalConfig = await agentsApi.getGlobalConfig().catch(() => null);
+      const [baseAgents, defaultSkillsPage, globalConfig] = await Promise.all([
+        agentsApi.list(),
+        skillsApi.listDefault(),
+        agentsApi.getGlobalConfig().catch(() => null),
+      ]);
+      setLibrary(defaultSkillsPage.skills);
       setDefaultConfig(mapGlobalConfig(globalConfig));
       const pages: Record<string, ResponsePagination> = {};
       const composed = await Promise.all(baseAgents.map(async (agent) => {
@@ -117,16 +110,22 @@ export function useAssistants() {
     const agent = await agentsApi.create(name, description);
     let conversationId = '';
     let conversations: Agent['conversations'] = [];
+    let profileSkills: AgentSkill[] = [];
     try {
       const conversation = await conversationsApi.create(agent.id, 'New conversation');
       conversationId = conversation.id;
       conversations = [conversation];
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Agent created, but its first conversation could not be created.');
+    }
+    try {
+      profileSkills = (await skillsApi.list(agent.id)).skills;
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'Agent created, but its skills could not be loaded.');
     } finally {
       setPending(false);
     }
-    setComposedAgents([...agents, { ...agent, conversations, skills: [] }]);
+    setComposedAgents([...agents, { ...agent, conversations, skills: profileSkills }]);
     return { agentId: agent.id, conversationId };
   };
 
@@ -140,6 +139,24 @@ export function useAssistants() {
         : agent));
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Could not update assistant.');
+      throw value;
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const renameAgent = async (id: string, displayName: string) => {
+    const clean = displayName.trim();
+    if (!clean) return;
+    setPending(true);
+    setError('');
+    try {
+      const updated = await agentsApi.rename(id, clean);
+      setComposedAgents(agents.map((agent) => agent.id === id
+        ? { ...updated, conversations: agent.conversations, skills: agent.skills }
+        : agent));
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'Could not rename assistant.');
       throw value;
     } finally {
       setPending(false);
@@ -325,7 +342,7 @@ export function useAssistants() {
 
   return {
     agents, library, agentSkills, skillStates, agentSkillPages, defaultConfig, status, error, pending, refresh,
-    createAgent, updateAgent, deleteAgent, testAgent, setDefaultModel, setWriteApprovals,
+    createAgent, updateAgent, renameAgent, deleteAgent, testAgent, setDefaultModel, setWriteApprovals,
     createConversation, deleteConversation, renameConversation,
     toggleAgentSkill, setSkillEnabled, loadSkillsPage, installSkill, installExistingSkill, applySkillsToAgents,
   };

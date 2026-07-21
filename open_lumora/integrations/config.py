@@ -6,6 +6,7 @@ import asyncio
 import os
 import re
 import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Mapping
@@ -60,6 +61,23 @@ class GlobalConfigManager:
 
     def get_config(self) -> dict[str, Any]:
         return self._describe(self._read_config())
+
+    def ensure_write_approval_defaults(self) -> dict[str, Any]:
+        """Persist Open Lumora's safe default for new skill and memory writes."""
+        config = self._read_config()
+        changed = False
+        for subsystem in ("skills", "memory"):
+            section = config.get(subsystem)
+            if not isinstance(section, dict):
+                section = {}
+                config[subsystem] = section
+                changed = True
+            if "write_approval" not in section:
+                section["write_approval"] = True
+                changed = True
+        if changed:
+            self._write_config(config)
+        return self._describe(config)
 
     def update_config(self, body: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(body, Mapping):
@@ -239,11 +257,11 @@ class GlobalConfigManager:
             "reasoning_effort": effort,
             "approval_mode": "off" if approval is False or str(approval).lower() == "off" else "on",
             "skills_write_approval": self._coerce_bool(
-                self._get_nested(config, ("skills", "write_approval"), False),
+                self._get_nested(config, ("skills", "write_approval"), True),
                 field="skills.write_approval",
             ),
             "memory_write_approval": self._coerce_bool(
-                self._get_nested(config, ("memory", "write_approval"), False),
+                self._get_nested(config, ("memory", "write_approval"), True),
                 field="memory.write_approval",
             ),
             "system_prompt": soul,
@@ -267,8 +285,22 @@ class GlobalConfigManager:
 
     def _write_config(self, config: Mapping[str, Any]) -> None:
         self.root_profile.mkdir(parents=True, exist_ok=True)
-        with (self.root_profile / "config.yaml").open("w", encoding="utf-8") as file:
-            yaml.safe_dump(dict(config), file, sort_keys=False, allow_unicode=False)
+        path = self.root_profile / "config.yaml"
+        payload = yaml.safe_dump(dict(config), sort_keys=False, allow_unicode=False).encode("utf-8")
+        descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        try:
+            os.fchmod(descriptor, 0o640)
+            with os.fdopen(descriptor, "wb") as file:
+                file.write(payload)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary, path)
+        except Exception:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+            raise
 
     def _scan_skills(self, config: Mapping[str, Any]) -> list[dict[str, Any]]:
         seen: set[str] = set()
@@ -288,6 +320,7 @@ class GlobalConfigManager:
             return
         for skill_file in sorted(root.rglob("SKILL.md")):
             frontmatter = self._read_skill_frontmatter(skill_file)
+            relative_parent = skill_file.parent.relative_to(root)
             skill_id = str(frontmatter.get("name") or skill_file.parent.name).strip()
             if not skill_id or skill_id in seen:
                 continue
@@ -297,9 +330,12 @@ class GlobalConfigManager:
                     "skill_id": skill_id,
                     "name": skill_id,
                     "path": str(skill_file.parent),
-                    "relative_path": str(skill_file.parent.relative_to(root)),
+                    "relative_path": str(relative_parent),
                     "description": str(frontmatter.get("description") or ""),
-                    "category": str(frontmatter.get("category") or ""),
+                    "category": str(
+                        frontmatter.get("category")
+                        or (relative_parent.parts[0] if len(relative_parent.parts) > 1 else "skills")
+                    ),
                     "installed": True,
                     "enabled": True,
                 }

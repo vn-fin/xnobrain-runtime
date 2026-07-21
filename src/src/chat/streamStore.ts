@@ -334,8 +334,9 @@ export const streamStore = {
 
   async resolveApproval(agentId: string, conversationId: string, runId: string, choice: RunApprovalChoice) {
     const key = keyOf(agentId, conversationId);
-    await conversationsApi.resolveRunApproval(agentId, conversationId, runId, choice);
     const snap = getSnapshot(key);
+    const subsystem = snap.runs.find((run) => run.id === runId)?.approval?.subsystem;
+    await conversationsApi.resolveRunApproval(agentId, conversationId, runId, choice, false, subsystem);
     patch(key, {
       runs: snap.runs.map((run) => (run.id === runId
         ? { ...run, status: run.status === 'waiting_for_approval' ? 'running' : run.status, approval: undefined }

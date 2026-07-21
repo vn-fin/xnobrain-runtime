@@ -45,6 +45,9 @@ The default Hermes profile is `HERMES_ROOT_PROFILE`. Named agents live at
 `DATA_DIR/profiles/<agent-id>/`, also exposed to Hermes as
 `HERMES_HOME/profiles`. A named profile owns its config, `AGENTS.md`, skills,
 memory, workspace, native Hermes session database, cron state, and snapshots.
+`HERMES_ROOT_PROFILE/profiles.yaml` is the atomic profile registry. Each entry
+contains `name` (the generated profile ID), `display_name`, `description`, and
+`updated_at`; the UI never uses the generated ID as the human-facing label.
 
 Filesystem writes use validated paths, temporary files, `fsync`, and atomic
 replacement. Profile deletion is a recoverable move into the local trash tree.
@@ -62,8 +65,15 @@ Chat runs invoke the original Hermes CLI with the selected profile's
 `HERMES_HOME`; output is streamed as SSE and active subprocesses can be stopped.
 Approval resolution calls Hermes' native approval core. Every profile is
 normalized to the local 9router custom provider, while model selection remains
-per profile. The local scheduler runs in-process and shares Hermes' file locks,
+per profile. Skill and memory write approval gates default on and persist in
+that profile's `config.yaml`; an Always allow response approves the current
+write and disables only its matching gate. The local scheduler runs in-process and shares Hermes' file locks,
 so it does not require a second scheduler service.
+
+Saved agent teams support both parallel convoy runs and dependency-aware DAGs.
+Ready workflow steps run in parallel within the team's concurrency policy,
+downstream steps receive upstream summaries, cycles and out-of-team assignments
+are rejected, and the configured orchestrator produces the final synthesis.
 
 ## Enterprise and telemetry
 

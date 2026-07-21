@@ -17,9 +17,11 @@ export type AgentConfigDTO = {
 
 export type AgentDTO = {
   api_server?: { host?: string; port?: number };
+  config?: AgentConfigDTO;
   created_at?: string;
   deleted_at?: string;
   description?: string;
+  display_name?: string;
   id?: string;
   metadata?: { config?: AgentConfigDTO };
   name?: string;
@@ -29,8 +31,8 @@ export type AgentDTO = {
   user_id?: string;
 };
 
-export type AgentCreateRequestDTO = { name: string; description: string };
-export type AgentMetadataUpdateRequestDTO = { title?: string; description?: string; metadata?: AgentDTO['metadata'] };
+export type AgentCreateRequestDTO = { display_name: string; description: string };
+export type AgentMetadataUpdateRequestDTO = { display_name?: string; title?: string; description?: string; metadata?: AgentDTO['metadata'] };
 export type AgentConfigUpdateRequestDTO = AgentConfigDTO;
 export type AgentTestResponseDTO = { agent_id?: string; healthy?: boolean; message?: string; status?: string };
 

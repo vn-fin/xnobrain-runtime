@@ -40,8 +40,7 @@ There is no ORM and no Community application database.
 
 ```bash
 make check
-make image
-make install
+make run
 ```
 
 The two application images are `open-lumora-frontend` and

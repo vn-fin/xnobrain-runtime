@@ -14,11 +14,13 @@ class APIEnvelope(BaseModel):
 
 
 class AgentCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
+    display_name: str | None = Field(default=None, min_length=1, max_length=200)
+    name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str = Field(default="", max_length=4000)
 
 
 class AgentMetadataPatch(BaseModel):
+    display_name: str | None = Field(default=None, max_length=200)
     title: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=4000)
 
@@ -29,6 +31,8 @@ class ConfigPatch(BaseModel):
     model: str | None = None
     reasoning_effort: str | None = None
     approval_mode: str | None = None
+    skills_write_approval: bool | None = None
+    memory_write_approval: bool | None = None
     system_prompt: str | None = None
 
 
@@ -90,11 +94,22 @@ class ChatRequest(BaseModel):
 class RunApproval(BaseModel):
     choice: Literal["once", "session", "always", "deny"]
     resolve_all: bool = False
-    subsystem: str | None = None
+    subsystem: Literal["skills", "memory"] | None = None
+
+
+class TeamWorkflowStep(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    task: str = Field(min_length=1, max_length=20_000)
+    agent_id: str | None = None
+    role: str | None = None
+    needs: list[str] = Field(default_factory=list)
+    allowed_tools: list[str] | None = None
 
 
 class TeamRun(BaseModel):
-    task: str = Field(min_length=1)
+    task: str = Field(default="", max_length=20_000)
+    workflow: list[TeamWorkflowStep] = Field(default_factory=list, max_length=64)
+    synthesis: str | None = Field(default=None, max_length=20_000)
 
 
 class ProviderCredential(BaseModel):
@@ -109,6 +124,20 @@ class ProviderCredential(BaseModel):
 class BundleExport(BaseModel):
     agent_ids: list[str] = Field(min_length=1)
     include_conversations: bool = False
+
+
+class BundleUploadStart(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    size: int = Field(gt=0)
+    sha256: str | None = Field(default=None, min_length=64, max_length=64)
+
+
+class BundleUploadComplete(BaseModel):
+    sha256: str | None = Field(default=None, min_length=64, max_length=64)
+
+
+class BundleUploadApply(BaseModel):
+    environment: dict[str, str] = Field(default_factory=dict)
 
 
 class MCPConfig(BaseModel):

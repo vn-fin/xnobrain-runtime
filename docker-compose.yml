@@ -20,6 +20,9 @@ services:
 
   frontend:
     image: ${OPEN_LUMORA_FRONTEND_IMAGE:-open-lumora-frontend:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
     labels:
       - traefik.enable=true
       - traefik.http.routers.open-lumora-ui.rule=Host(`${OPEN_LUMORA_DOMAIN:-localhost}`)
@@ -32,6 +35,9 @@ services:
 
   runtime:
     image: ${HERMES_RUNTIME_IMAGE:-open-lumora-hermes-runtime:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
     user: "10001:10001"
     environment:
       HERMES_HOME: /opt/data/open-lumora/root

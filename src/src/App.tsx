@@ -19,6 +19,7 @@ import { Onboarding } from './components/Onboarding';
 import { SystemView } from './features/system/SystemView';
 import { TeamsView } from './components/TeamsView';
 import { DashboardView } from './features/dashboard/DashboardView';
+import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
 import { useAuth } from './auth';
@@ -119,6 +120,23 @@ export default function App() {
     setCreateAgentOpen(false);
   };
 
+  const handleImportedProfile = async (report: ImportReport) => {
+    await assistants.refresh();
+    const agentId = Object.values(report.agent_id_mappings)[0];
+    if (agentId) router.openChat(agentId, '');
+    setCreateAgentOpen(false);
+  };
+
+  const exportProfile = async (agentId: string) => {
+    const download = await systemApi.export([agentId]);
+    const url = URL.createObjectURL(download.blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = download.filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleDeleteAgent = async (id: string) => {
     const next = await assistants.deleteAgent(id);
     if (id === router.activeAgentId && next) router.openChat(next.agentId, next.conversationId);
@@ -186,6 +204,7 @@ export default function App() {
         onNavigate={router.setCenterView}
         onSelectAgent={(agent) => router.openChat(agent.id, agent.conversations[0]?.id ?? '')}
         onSelectConversation={(id) => router.openChat(router.activeAgentId, id)}
+        onRenameAgent={assistants.renameAgent}
         onRenameConversation={handleRenameConversation}
         onRequestDeleteConversation={(id) => setDeleteConversationId(id)}
         onNewAgent={() => setCreateAgentOpen(true)}
@@ -324,10 +343,10 @@ export default function App() {
         />
       )}
 
-      {createAgentOpen && <CreateAgentModal onCreate={handleCreateAgent} onClose={() => setCreateAgentOpen(false)} />}
+      {createAgentOpen && <CreateAgentModal onCreate={handleCreateAgent} onImported={handleImportedProfile} onClose={() => setCreateAgentOpen(false)} />}
 
       {settingsOpen && (
-        <AgentSettingsModal agent={activeAgent} providers={runtimeProviders} onSave={handleUpdateAgent} onClose={() => setSettingsOpen(false)} />
+        <AgentSettingsModal agent={activeAgent} providers={runtimeProviders} onSave={handleUpdateAgent} onExport={() => exportProfile(activeAgent.id)} onClose={() => setSettingsOpen(false)} />
       )}
 
       {deleteConversationId && (

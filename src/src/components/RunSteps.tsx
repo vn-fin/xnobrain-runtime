@@ -127,7 +127,8 @@ function RunApprovalPrompt({
 
   const respond = async (choice: RunApprovalChoice) => {
     if (!onResolveApproval || submitting) return;
-    if (choice === 'always' && !window.confirm('Always approve matching requests for this agent profile?')) return;
+    const target = approval.subsystem ? `${approval.subsystem} writes` : 'matching requests';
+    if (choice === 'always' && !window.confirm(`Always allow ${target} for this agent profile?`)) return;
     setSubmitting(choice);
     try {
       await onResolveApproval(run.id, choice);

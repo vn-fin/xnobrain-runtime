@@ -14,6 +14,7 @@ type AuthContextValue = {
   backendUser: BackendUser | null;
   deploymentMode: Deployment['mode'];
   enterprisePlan: EnterprisePlan | null;
+  authError: string;
   loading: boolean;
   loginOpen: boolean;
   signIn: (email: string, password: string) => Promise<void>;
@@ -27,6 +28,17 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 const USER_INFO_KEY = 'user_info';
+const AUTH_REQUEST_TIMEOUT_MS = 15_000;
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
 
 function authApiUrl(): string {
   const base = (import.meta.env.VITE_AUTH_API_URL ?? 'https://api.dev.xnoquant.io').replace(/\/+$/, '');
@@ -46,7 +58,7 @@ function clearTokens() {
 }
 
 async function exchangeFirebaseToken(idToken: string): Promise<BackendTokenResponse> {
-  const response = await fetch(authApiUrl(), { headers: { Authorization: `Bearer ${idToken}` } });
+  const response = await fetchWithTimeout(authApiUrl(), { headers: { Authorization: `Bearer ${idToken}` } });
   const body = await response.json().catch(() => undefined) as { data?: BackendTokenResponse; message?: string; error?: string } | undefined;
   if (!response.ok || !body?.data) throw new Error(body?.message ?? body?.error ?? `Authentication failed (${response.status}).`);
   return body.data;
@@ -54,7 +66,7 @@ async function exchangeFirebaseToken(idToken: string): Promise<BackendTokenRespo
 
 async function loadEnterprisePlan(accessToken: string): Promise<EnterprisePlan | null> {
   try {
-    const response = await fetch(buildApiUrl('/api/v1/enterprise/features'), {
+    const response = await fetchWithTimeout(buildApiUrl('/api/v1/enterprise/features'), {
       headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
     });
     if (response.status === 401) throw new Error('Login is invalid or expired.');
@@ -72,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [backendUser, setBackendUser] = useState<BackendUser | null>(null);
   const [deploymentMode, setDeploymentMode] = useState<Deployment['mode']>('local');
   const [enterprisePlan, setEnterprisePlan] = useState<EnterprisePlan | null>(null);
+  const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(true);
   const [deploymentLoading, setDeploymentLoading] = useState(true);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -85,11 +98,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    fetch(buildApiUrl('/api/v1/system/deployment'), { headers: { Accept: 'application/json' } })
+    fetchWithTimeout(buildApiUrl('/api/v1/system/deployment'), { headers: { Accept: 'application/json' } })
       .then(async (response) => {
         const body = await response.json() as { data?: Deployment };
         if (active && body.data?.mode) setDeploymentMode(body.data.mode);
       })
+      .catch(() => undefined)
       .finally(() => { if (active) setDeploymentLoading(false); });
     return () => { active = false; };
   }, []);
@@ -117,8 +131,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBackendUser(tokens.user);
         setEnterprisePlan(plan);
         setLoginOpen(false);
-      } catch {
-        if (active) reset();
+      } catch (cause) {
+        if (active) {
+          reset();
+          setAuthError(cause instanceof Error && cause.name !== 'AbortError'
+            ? cause.message
+            : 'Authentication service timed out. Please try again.');
+        }
         await firebaseSignOut(firebaseAuth);
       } finally {
         if (active) setAuthLoading(false);
@@ -129,11 +148,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!firebaseEnabled || !auth) throw new Error('Authentication is not configured.');
+    setAuthError('');
     await signInWithEmailAndPassword(auth, email, password);
   }, []);
 
   const signOut = useCallback(async () => {
     if (firebaseEnabled && auth) await firebaseSignOut(auth);
+    setAuthError('');
     reset();
   }, [reset]);
 
@@ -148,6 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     backendUser,
     deploymentMode,
     enterprisePlan,
+    authError,
     loading: authLoading || deploymentLoading,
     loginOpen,
     signIn,
@@ -155,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     openLogin: () => setLoginOpen(true),
     closeLogin: () => setLoginOpen(false),
     hasEnterpriseFeature: (capability) => Boolean(user && planHasCapability(enterprisePlan, capability)),
-  }), [user, backendUser, deploymentMode, enterprisePlan, authLoading, deploymentLoading, loginOpen, signIn, signOut]);
+  }), [user, backendUser, deploymentMode, enterprisePlan, authError, authLoading, deploymentLoading, loginOpen, signIn, signOut]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

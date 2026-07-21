@@ -481,7 +481,7 @@ export function RightPanel({
               </div>
               <input
                 type="checkbox"
-                checked={defaultConfig?.skillsWriteApproval ?? false}
+                checked={defaultConfig?.skillsWriteApproval ?? true}
                 disabled={!approvalsAvailable || approvalSaving !== null}
                 onChange={(e) => void updateWriteApproval('skills', e.target.checked)}
               />
@@ -494,7 +494,7 @@ export function RightPanel({
               </div>
               <input
                 type="checkbox"
-                checked={defaultConfig?.memoryWriteApproval ?? false}
+                checked={defaultConfig?.memoryWriteApproval ?? true}
                 disabled={!approvalsAvailable || approvalSaving !== null}
                 onChange={(e) => void updateWriteApproval('memory', e.target.checked)}
               />

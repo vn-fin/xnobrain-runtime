@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, ClipboardPaste, Plus, X } from 'lucide-react';
+import { Check, ClipboardPaste, Download, FileArchive, Plus, Upload, X } from 'lucide-react';
 import { ExternalLinkIcon, ProviderBrandIcon } from './common';
 import type { Agent, ConnectionProvider, ProviderConnectInfo, ProviderConnector } from '../types';
 import { providerConnectNeedsText } from '../utils/providers';
 import { useProviderAuthPopup } from '../hooks/useProviderAuthPopup';
+import { systemApi, type BundleTransfer, type ImportReport, type TransferProgress } from '../features/system/api';
 
 export function AuthModal({
   provider,
@@ -127,37 +128,124 @@ export function AuthModal({
   );
 }
 
-export function CreateAgentModal({ onCreate, onClose }: { onCreate: (name: string, description: string) => void; onClose: () => void }) {
+export function CreateAgentModal({
+  onCreate,
+  onImported,
+  onClose,
+}: {
+  onCreate: (name: string, description: string) => void;
+  onImported: (report: ImportReport) => void | Promise<void>;
+  onClose: () => void;
+}) {
   const { t } = useTranslation();
+  const [mode, setMode] = useState<'new' | 'upload'>('new');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [file, setFile] = useState<File>();
+  const [transfer, setTransfer] = useState<BundleTransfer>();
+  const [progress, setProgress] = useState<TransferProgress>();
+  const [environment, setEnvironment] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+
+  const close = () => {
+    if (busy) return;
+    if (transfer?.upload_id) void systemApi.cancelUpload(transfer.upload_id).catch(() => undefined);
+    onClose();
+  };
+
+  const upload = async () => {
+    if (!file) return;
+    setBusy('upload'); setError(''); setProgress(undefined);
+    try {
+      const result = await systemApi.upload(file, setProgress);
+      setTransfer(result);
+      setEnvironment(Object.fromEntries((result.preview?.missing_environment ?? []).map((key) => [key, ''])));
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'Could not upload profile.');
+    } finally {
+      setBusy(''); setProgress(undefined);
+    }
+  };
+
+  const apply = async () => {
+    if (!transfer?.upload_id) return;
+    setBusy('apply'); setError('');
+    try {
+      const filled = Object.fromEntries(Object.entries(environment).filter(([, value]) => value.trim()));
+      const report = await systemApi.applyUpload(transfer.upload_id, filled);
+      setTransfer(undefined);
+      await onImported(report);
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'Could not create assistant from profile.');
+    } finally {
+      setBusy('');
+    }
+  };
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={close}>
       <div className="app-modal" onClick={(e) => e.stopPropagation()}>
         <div className="app-modal-head">
           <strong>{t('modals.createAgent')}</strong>
-          <button className="icon-button" onClick={onClose} title={t('common.close')}>
+          <button className="icon-button" onClick={close} title={t('common.close')}>
             <X size={17} />
           </button>
         </div>
-        <p className="app-modal-sub">{t('modals.createAgentApi')}</p>
-        <div className="modal-form">
-          <label>
-            {t('modals.name')}
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('modals.namePlaceholder')} autoFocus />
-          </label>
-          <label>
-            {t('modals.description')}
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('modals.descPlaceholder')} rows={3} />
-          </label>
+        <div className="create-agent-tabs">
+          <button className={mode === 'new' ? 'active' : ''} onClick={() => setMode('new')}><Plus size={14} />New assistant</button>
+          <button className={mode === 'upload' ? 'active' : ''} onClick={() => setMode('upload')}><Upload size={14} />Upload profile</button>
         </div>
-        <div className="modal-actions">
-          <button className="conn-btn ghost" onClick={onClose}>{t('common.cancel')}</button>
-          <button className="conn-btn primary" disabled={!name.trim()} onClick={() => onCreate(name.trim(), description.trim())}>
-            <Plus size={15} />
-            {t('modals.createAgentBtn')}
-          </button>
-        </div>
+        {mode === 'new' ? (
+          <>
+            <p className="app-modal-sub">{t('modals.createAgentApi')}</p>
+            <div className="modal-form">
+              <label>
+                {t('modals.name')}
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('modals.namePlaceholder')} autoFocus />
+              </label>
+              <label>
+                {t('modals.description')}
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('modals.descPlaceholder')} rows={3} />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="conn-btn ghost" onClick={close}>{t('common.cancel')}</button>
+              <button className="conn-btn primary" disabled={!name.trim()} onClick={() => onCreate(name.trim(), description.trim())}>
+                <Plus size={15} />
+                {t('modals.createAgentBtn')}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="app-modal-sub">Credentials are removed from the archive and synchronized from this server's default profile.</p>
+            <label className="profile-upload-picker">
+              <FileArchive size={20} />
+              <span><strong>{file?.name ?? 'Choose a .lumora or .zip profile'}</strong><small>Uploads use verified 4 MB parts.</small></span>
+              <input type="file" accept=".lumora,.zip,application/zip" onChange={(event) => { if (transfer?.upload_id) void systemApi.cancelUpload(transfer.upload_id); setFile(event.target.files?.[0]); setTransfer(undefined); setError(''); }} />
+            </label>
+            {busy === 'upload' && <div className="profile-transfer-progress"><span style={{ width: `${progress?.percent ?? 0}%` }} /><small>{progress?.percent ?? 0}% uploaded</small></div>}
+            {transfer?.preview && (
+              <div className="profile-import-preview">
+                <strong>{transfer.preview.inspection.manifest.agents.length} profile ready to import</strong>
+                <small>{transfer.preview.inspection.files} files · approvals reset · credentials copied from default profile</small>
+                {(transfer.preview.missing_environment ?? []).map((key) => (
+                  <label key={key}>{key}<input type="password" value={environment[key] ?? ''} onChange={(event) => setEnvironment((current) => ({ ...current, [key]: event.target.value }))} placeholder="Optional missing secret or environment value" autoComplete="off" /></label>
+                ))}
+              </div>
+            )}
+            {error && <div className="system-error">{error}</div>}
+            <div className="modal-actions">
+              <button className="conn-btn ghost" onClick={close}>{t('common.cancel')}</button>
+              {!transfer ? (
+                <button className="conn-btn primary" disabled={!file || !!busy} onClick={() => void upload()}><Upload size={15} />{busy === 'upload' ? 'Uploading…' : 'Upload & inspect'}</button>
+              ) : (
+                <button className="conn-btn primary" disabled={!!busy} onClick={() => void apply()}><Plus size={15} />{busy === 'apply' ? 'Creating…' : 'Create from profile'}</button>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -167,11 +255,13 @@ export function AgentSettingsModal({
   agent,
   providers,
   onSave,
+  onExport,
   onClose,
 }: {
   agent: Agent;
   providers: ProviderConnector[];
   onSave: (updates: Partial<Agent>) => void;
+  onExport: () => Promise<void>;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -182,6 +272,8 @@ export function AgentSettingsModal({
   const [reasoningEffort, setReasoningEffort] = useState(agent.reasoningEffort);
   const [approvalMode, setApprovalMode] = useState<Agent['approvalMode']>(agent.approvalMode);
   const [confirming, setConfirming] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   const save = () => onSave({ title, description, provider, model, reasoningEffort, approvalMode });
 
@@ -194,6 +286,12 @@ export function AgentSettingsModal({
             <X size={17} />
           </button>
         </div>
+
+        <div className="profile-export-row">
+          <span><strong>Portable profile</strong><small>Downloads a credential-free, compressed .lumora archive in parts.</small></span>
+          <button className="conn-btn ghost" disabled={exporting} onClick={() => { setExporting(true); setExportError(''); void onExport().catch((value) => setExportError(value instanceof Error ? value.message : 'Export failed.')).finally(() => setExporting(false)); }}><Download size={15} />{exporting ? 'Exporting…' : 'Export profile'}</button>
+        </div>
+        {exportError && <div className="system-error">{exportError}</div>}
         <p className="app-modal-sub">PATCH /agents/{'{id}'}/metadata · PATCH /agents-configs/{'{id}'}</p>
 
         <div className="modal-form">

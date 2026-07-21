@@ -14,10 +14,18 @@ Core safety is available to every plan: restricted child toolsets, no child clar
 
 Validate saved-team count and members on mutation. At run time reserve team concurrency and cloud execution usage before delegation. Self-hosted Free uses local safety counters; cloud uses the enterprise ledger. Nested orchestration requires explicit policy and cycle detection.
 
+The current Phase 1 multi-agent execution contract follows Hermes issue #344:
+flat team runs are parallel convoy legs followed by coordinator synthesis, and
+structured runs accept a DAG of named steps. Ready steps run concurrently on
+different profiles, repeated use of one profile is serialized, dependency
+summaries are injected into downstream steps, and cyclic or out-of-team graphs
+are rejected before execution.
+
 ## Acceptance criteria
 
 - A team cannot reference an agent outside its owner/tenant.
 - Parallel child count and depth never exceed policy under races.
 - Parent cancellation stops children and releases reservations.
+- DAG execution detects cycles and passes upstream results to dependent steps.
 - Leaf workers cannot mutate shared memory or bypass assigned toolsets.
 - Team export/import remaps every member consistently and disables missing members with a diagnostic.

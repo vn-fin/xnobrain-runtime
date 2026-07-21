@@ -75,6 +75,8 @@
     "settings": "Assistant settings",
     "runtimeConfig": "Runtime config",
     "test": "Test assistant",
+    "rename": "Rename assistant",
+    "renameLabel": "Assistant name",
     "delete": "Delete assistant"
   },
   "chat": {
@@ -228,7 +230,7 @@
   "modals": {
     "createAgent": "Create assistant",
     "createAgentApi": "Maps to POST /agent-gateway/v1/agents",
-    "name": "Name",
+    "name": "Display name",
     "namePlaceholder": "e.g. Data Analyst",
     "description": "Description",
     "descPlaceholder": "What should this assistant do?",

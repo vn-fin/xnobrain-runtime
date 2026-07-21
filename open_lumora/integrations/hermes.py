@@ -12,8 +12,11 @@ import secrets
 import shutil
 import sqlite3
 import string
+import tempfile
+import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -47,6 +50,7 @@ DEFAULT_PROFILES_ROOT = str(Path.home() / ".hermes" / "profiles")
 DEFAULT_LEGACY_AGENTS_ROOT = str(Path.home() / ".hermes" / "legacy-agents")
 DEFAULT_AGENT_CONFIG_DIR = str(Path.home() / ".config" / "sandbox-agent")
 METADATA_FILE = "agent.json"
+PROFILES_REGISTRY_FILE = "profiles.yaml"
 CREDENTIAL_FILES = (".env", "auth.json")
 AGENT_CREDENTIAL_ENV_KEYS = ("NINE_ROUTER_API_KEY",)
 SEED_FILES = ("config.yaml", "SOUL.md", "AGENTS.md", "mcp.json", *CREDENTIAL_FILES)
@@ -101,9 +105,12 @@ class AgentManager:
         self.nine_router = NineRouterManager()
         self._active_runs: dict[str, asyncio.subprocess.Process] = {}
         self._stopped_runs: set[str] = set()
+        self._registry_lock = threading.RLock()
+        self.sync_profiles_registry()
 
     def list_agents(self) -> dict[str, Any]:
         self.profiles_root.mkdir(parents=True, exist_ok=True)
+        self.sync_profiles_registry()
         agents = []
         seen: set[str] = set()
         for path in sorted(self.profiles_root.iterdir(), key=lambda item: item.name):
@@ -140,6 +147,7 @@ class AgentManager:
         if not existed or bool(body.get("refresh_seed", False)):
             self._copy_seed_profile(profile_dir, copy_credentials=bool(body.get("copy_credentials", True)))
             self._copy_root_skills(profile_dir, overwrite=True)
+        self._ensure_router_profile(profile_dir, body.get("model"))
         self._write_workspace_cwd(profile_dir, workspace_dir)
         self._ensure_workspace_agents(profile_dir, workspace_dir)
         self._initialize_state_db(profile_dir)
@@ -150,12 +158,14 @@ class AgentManager:
         metadata.setdefault("profile_name", name)
         metadata.setdefault("created_at", now)
         metadata["updated_at"] = now
-        for field in ("description", "title"):
+        for field in ("description", "title", "display_name"):
             if field in body:
                 value = body.get(field)
                 metadata[field] = "" if value is None else str(value).strip()
+        metadata.setdefault("display_name", str(metadata.get("title") or name))
         self._write_metadata(profile_dir, metadata)
         self._write_profile_manifest(profile_dir, metadata)
+        self.sync_profiles_registry()
 
         if "soul" in body:
             self._write_text(profile_dir / "SOUL.md", body.get("soul"))
@@ -173,6 +183,10 @@ class AgentManager:
         profile_dir = self._require_profile(name)
         workspace_dir = self._workspace_dir(name)
         metadata = self._read_metadata(profile_dir)
+        registry = self._registry_profile(name)
+        if registry:
+            metadata["display_name"] = registry["display_name"]
+            metadata["description"] = registry["description"]
         config = self._read_config(profile_dir)
         payload = {
             "object": "hermes.agent",
@@ -189,6 +203,139 @@ class AgentManager:
         if include_memory:
             payload["memory"] = self.read_memory(name)
         return payload
+
+    def sync_profiles_registry(self) -> dict[str, Any]:
+        """Atomically backfill root ``profiles.yaml`` from all Hermes profiles."""
+        self.root_profile.mkdir(parents=True, exist_ok=True)
+        self.profiles_root.mkdir(parents=True, exist_ok=True)
+        with self._registry_lock:
+            current = {
+                str(item.get("name") or ""): item
+                for item in self._read_profiles_registry().get("profiles", [])
+                if isinstance(item, Mapping) and str(item.get("name") or "")
+            }
+            entries = [self._profile_registry_entry("default", self.root_profile, current.get("default"))]
+            for profile_dir in sorted(self.profiles_root.iterdir(), key=lambda item: item.name):
+                if self._is_native_agent_profile(profile_dir):
+                    entries.append(self._profile_registry_entry(profile_dir.name, profile_dir, current.get(profile_dir.name)))
+            if self.legacy_agents_root.is_dir():
+                for agent_dir in sorted(self.legacy_agents_root.iterdir(), key=lambda item: item.name):
+                    profile_dir = agent_dir / ".profile"
+                    if profile_dir.is_dir() and agent_dir.name not in {item["name"] for item in entries}:
+                        entries.append(self._profile_registry_entry(agent_dir.name, profile_dir, current.get(agent_dir.name)))
+            payload = {"profiles": entries}
+            if payload != self._read_profiles_registry():
+                self._write_profiles_registry(payload)
+            return payload
+
+    def update_profile_registry(
+        self,
+        name: str,
+        *,
+        display_name: str | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Update human-facing metadata in the authoritative root registry."""
+        self._agent_name(name)
+        with self._registry_lock:
+            payload = self.sync_profiles_registry()
+            entry = next((item for item in payload["profiles"] if item["name"] == name), None)
+            if entry is None:
+                raise AgentAPIError(f"Agent not found: {name}", code="agent_not_found", status=404)
+            if display_name is not None:
+                clean_name = str(display_name).strip()
+                if not clean_name:
+                    raise AgentAPIError("display_name is required", code="invalid_display_name")
+                entry["display_name"] = clean_name
+            if description is not None:
+                entry["description"] = str(description).strip()
+            entry["updated_at"] = self._iso_timestamp(time.time())
+            self._write_profiles_registry(payload)
+            return entry
+
+    def _profile_registry_entry(
+        self,
+        name: str,
+        profile_dir: Path,
+        existing: Mapping[str, Any] | None,
+    ) -> dict[str, str]:
+        metadata = self._read_metadata(profile_dir)
+        profile_meta: dict[str, Any] = {}
+        profile_yaml = profile_dir / "profile.yaml"
+        if profile_yaml.is_file():
+            try:
+                loaded = yaml.safe_load(profile_yaml.read_text(encoding="utf-8")) or {}
+                if isinstance(loaded, dict):
+                    profile_meta = loaded
+            except (OSError, yaml.YAMLError):
+                pass
+        existing = existing or {}
+        display_name = str(
+            existing.get("display_name")
+            or metadata.get("display_name")
+            or metadata.get("title")
+            or ("Default profile" if name == "default" else name)
+        ).strip()
+        description = str(
+            existing.get("description")
+            or metadata.get("description")
+            or profile_meta.get("description")
+            or ""
+        ).strip()
+        updated_value = existing.get("updated_at") or metadata.get("updated_at")
+        if updated_value is None:
+            source = profile_dir / "config.yaml"
+            updated_value = source.stat().st_mtime if source.exists() else profile_dir.stat().st_mtime
+        return {
+            "description": description,
+            "name": name,
+            "display_name": display_name,
+            "updated_at": self._iso_timestamp(updated_value),
+        }
+
+    def _registry_profile(self, name: str) -> dict[str, Any] | None:
+        for item in self._read_profiles_registry().get("profiles", []):
+            if isinstance(item, dict) and str(item.get("name") or "") == name:
+                return item
+        return None
+
+    def _read_profiles_registry(self) -> dict[str, Any]:
+        path = self.root_profile / PROFILES_REGISTRY_FILE
+        if not path.is_file():
+            return {"profiles": []}
+        try:
+            loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            return {"profiles": []}
+        profiles = loaded.get("profiles", []) if isinstance(loaded, dict) else []
+        return {"profiles": profiles if isinstance(profiles, list) else []}
+
+    def _write_profiles_registry(self, payload: Mapping[str, Any]) -> None:
+        path = self.root_profile / PROFILES_REGISTRY_FILE
+        serialized = yaml.safe_dump(dict(payload), sort_keys=False, allow_unicode=True).encode("utf-8")
+        descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        try:
+            os.fchmod(descriptor, 0o640)
+            with os.fdopen(descriptor, "wb") as file:
+                file.write(serialized)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary, path)
+        except Exception:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+            raise
+
+    @staticmethod
+    def _iso_timestamp(value: Any) -> str:
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(float(value), timezone.utc).isoformat().replace("+00:00", "Z")
+        text = str(value or "").strip()
+        if not text:
+            return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        return text
 
     def delete_agent(self, raw_name: Any) -> dict[str, Any]:
         name = self._agent_name(raw_name)
@@ -211,6 +358,8 @@ class AgentManager:
             "reasoning",
             "effort",
             "approval_mode",
+            "skills_write_approval",
+            "memory_write_approval",
             "system_prompt",
             "language",
             "stream_output",
@@ -251,6 +400,18 @@ class AgentManager:
         if "approval_mode" in body:
             mode = self._approval_mode(body["approval_mode"])
             self._set_nested(config, ("approvals", "mode"), "manual" if mode == "on" else "off")
+        if "skills_write_approval" in body:
+            self._set_nested(
+                config,
+                ("skills", "write_approval"),
+                self._coerce_bool(body["skills_write_approval"]),
+            )
+        if "memory_write_approval" in body:
+            self._set_nested(
+                config,
+                ("memory", "write_approval"),
+                self._coerce_bool(body["memory_write_approval"]),
+            )
         if "system_prompt" in body:
             prompt = self._text_value(body["system_prompt"], field="system_prompt", max_chars=20_000)
             self._set_nested(config, ("agent", "system_prompt"), prompt)
@@ -269,9 +430,7 @@ class AgentManager:
         if "soul" in body:
             self._write_text(profile_dir / "SOUL.md", body["soul"])
 
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        with config_path.open("w", encoding="utf-8") as file:
-            yaml.safe_dump(config, file, sort_keys=False, allow_unicode=False)
+        self._write_yaml_atomic(config_path, config)
         return self.describe_agent(name)
 
     def list_skills(self, raw_name: Any) -> dict[str, Any]:
@@ -1105,7 +1264,10 @@ class AgentManager:
                     "name": skill_id,
                     "path": str(rel_parent),
                     "description": str(frontmatter.get("description") or ""),
-                    "category": str(frontmatter.get("category") or ""),
+                    "category": str(
+                        frontmatter.get("category")
+                        or (rel_parent.parts[0] if len(rel_parent.parts) > 1 else "skills")
+                    ),
                     "installed": True,
                     "enabled": skill_id not in disabled,
                 }
@@ -1180,8 +1342,13 @@ class AgentManager:
         if model is not None:
             selected_model = self._nonempty_string(model, "model")
         normalize_nine_router_config(config, selected_model)
-        with (profile_dir / "config.yaml").open("w", encoding="utf-8") as file:
-            yaml.safe_dump(config, file, sort_keys=False, allow_unicode=False)
+        for subsystem in ("skills", "memory"):
+            section = config.get(subsystem)
+            if not isinstance(section, dict):
+                section = {}
+                config[subsystem] = section
+            section.setdefault("write_approval", True)
+        self._write_yaml_atomic(profile_dir / "config.yaml", config)
 
     def _effective_config(self, config: Mapping[str, Any], metadata: Mapping[str, Any]) -> dict[str, Any]:
         effort = str(self._get_nested(config, ("agent", "reasoning_effort"), "medium") or "medium").lower()
@@ -1192,8 +1359,33 @@ class AgentManager:
             "reasoning": effort != "none",
             "effort": effort,
             "approval_mode": "off" if approval is False or str(approval).lower() == "off" else "on",
+            "skills_write_approval": self._coerce_bool(
+                self._get_nested(config, ("skills", "write_approval"), True)
+            ),
+            "memory_write_approval": self._coerce_bool(
+                self._get_nested(config, ("memory", "write_approval"), True)
+            ),
             "system_prompt": self._get_nested(config, ("agent", "system_prompt"), ""),
         }
+
+    @staticmethod
+    def _write_yaml_atomic(path: Path, value: Mapping[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = yaml.safe_dump(dict(value), sort_keys=False, allow_unicode=False).encode("utf-8")
+        descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        try:
+            os.fchmod(descriptor, 0o640)
+            with os.fdopen(descriptor, "wb") as file:
+                file.write(payload)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary, path)
+        except Exception:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+            raise
 
     def _conversation_title(self, body: Mapping[str, Any]) -> str | None:
         if "name" in body:

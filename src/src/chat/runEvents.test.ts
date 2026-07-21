@@ -92,6 +92,22 @@ describe('reduceRunEvent (live API format)', () => {
     expect(resumed?.approval).toBeUndefined();
   });
 
+  it('identifies memory write approvals for persistent allow choices', () => {
+    const waiting = fold([
+      stream[0],
+      body({
+        event: 'approval.request',
+        run_id: RUN_ID,
+        description: 'Memory write requires approval',
+        command: 'Save to memory: preferred timezone',
+        choices: ['once', 'always', 'deny'],
+        allow_permanent: true,
+      }),
+    ]);
+
+    expect(waiting?.approval?.subsystem).toBe('memory');
+  });
+
   it('completes the run with output and token usage', () => {
     const run = fold(stream);
     expect(run?.status).toBe('completed');

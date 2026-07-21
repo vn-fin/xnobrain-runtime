@@ -10,8 +10,7 @@ Traefik -> frontend container
 Build and start:
 
 ```bash
-make image
-make install
+make run
 ```
 
 Open <http://localhost>; Swagger is <http://localhost/docs>. Only Traefik binds

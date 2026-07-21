@@ -14,6 +14,8 @@ import time
 from typing import Any, Mapping
 import uuid
 
+import yaml
+
 from ..integrations import (
     AgentAPIError,
     AgentManager,
@@ -66,21 +68,56 @@ class PlatformService:
         self.agents = agents
         self.config = config
         self.router = router
-        self.portability = PortabilityService(repository)
+        self.portability = PortabilityService(repository, config.root_profile)
         self._oauth_attempts: dict[str, dict[str, str]] = {}
         self._running_crons: set[str] = set()
+        self.config.ensure_write_approval_defaults()
+        self._ensure_existing_write_approval_defaults()
+
+    def _ensure_existing_write_approval_defaults(self) -> None:
+        """Backfill safe defaults into existing agent profiles with a snapshot."""
+        for profile in self.repository.profiles_root.iterdir():
+            path = profile / "config.yaml"
+            if not profile.is_dir() or not path.is_file():
+                continue
+            try:
+                config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError):
+                continue
+            if not isinstance(config, dict):
+                continue
+            changed = False
+            for subsystem in ("skills", "memory"):
+                section = config.get(subsystem)
+                if not isinstance(section, dict):
+                    section = {}
+                    config[subsystem] = section
+                    changed = True
+                if "write_approval" not in section:
+                    section["write_approval"] = True
+                    changed = True
+            if changed:
+                self.repository.snapshot(profile.name, "config", "config", path.read_bytes())
+                self.repository.atomic_yaml(path, config)
 
     def list_profiles(self) -> list[dict[str, Any]]:
         """Use Hermes' native profile inventory, including the default profile."""
         from hermes_cli.profiles import list_profiles
+        registry = {
+            item["name"]: item
+            for item in self.agents.sync_profiles_registry()["profiles"]
+        }
         result = []
         for item in list_profiles():
             updated_at = item.path.stat().st_mtime if item.path.exists() else None
+            metadata = registry.get(item.name, {})
             result.append({
                 "name": item.name, "path": str(item.path), "is_default": item.is_default,
                 "gateway_running": item.gateway_running, "model": item.model,
                 "provider": item.provider, "skill_count": item.skill_count,
-                "description": item.description, "updated_at": updated_at,
+                "display_name": metadata.get("display_name", item.name),
+                "description": metadata.get("description", item.description),
+                "updated_at": metadata.get("updated_at", updated_at),
             })
         return result
 
@@ -88,10 +125,11 @@ class PlatformService:
         return [self._agent_dto(item) for item in self.agents.list_agents()["agents"]]
 
     def create_agent(self, body: Mapping[str, Any]) -> dict[str, Any]:
-        payload = dict(body)
-        if "title" not in payload and "name" in payload:
-            payload["title"] = payload["name"]
-            payload.pop("name", None)
+        display_name = str(body.get("display_name") or body.get("name") or "").strip()
+        if not display_name:
+            raise ServiceError("display_name is required")
+        payload = {**dict(body), "title": display_name, "display_name": display_name}
+        payload.pop("name", None)
         if "description" in body:
             payload["description"] = body["description"]
         raw, _ = self.agents.create_agent(payload)
@@ -106,15 +144,25 @@ class PlatformService:
         current = {}
         if metadata_path.is_file():
             current = json.loads(metadata_path.read_text(encoding="utf-8"))
-        for key in ("title", "description"):
+        for key in ("display_name", "title", "description"):
             if key in body:
                 current[key] = str(body[key] or "").strip()
+        if "display_name" in body:
+            current["title"] = current["display_name"]
+        elif "title" in body:
+            current["display_name"] = current["title"]
         current["updated_at"] = time.time()
         self.repository.atomic_json(metadata_path, current)
+        self.agents.update_profile_registry(
+            agent_id,
+            display_name=str(current.get("display_name") or current.get("title") or ""),
+            description=str(current.get("description") or ""),
+        )
         return self.get_agent(agent_id)
 
     def delete_agent(self, agent_id: str) -> dict[str, Any]:
         target = self.repository.soft_delete_profile(agent_id)
+        self.agents.sync_profiles_registry()
         return {"deleted": True, "recoverable": True, "trash_path": str(target)}
 
     def global_config(self) -> dict[str, Any]:
@@ -131,12 +179,14 @@ class PlatformService:
         translated = dict(body)
         if "reasoning_effort" in translated:
             translated["effort"] = translated.pop("reasoning_effort")
-        translated.pop("skills_write_approval", None)
-        translated.pop("memory_write_approval", None)
         return self.agents.update_config(agent_id, translated)["config"]
 
     def list_skills(self, agent_id: str) -> list[dict[str, Any]]:
         return self.agents.list_skills(agent_id)["skills"]
+
+    def list_default_skills(self) -> list[dict[str, Any]]:
+        """List only the skills installed in the default Hermes profile."""
+        return self.config.list_skills()["skills"]
 
     async def install_skill(self, agent_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         payload = await self.agents.install_skill(agent_id, body)
@@ -223,8 +273,25 @@ class PlatformService:
     async def stop_run(self, run_id: str) -> dict[str, Any]:
         return await self.agents.stop_run(run_id)
 
-    def resolve_approval(self, run_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        return self.agents.resolve_approval(run_id, body)
+    def resolve_approval(
+        self,
+        run_id: str,
+        body: Mapping[str, Any],
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        subsystem = str(body.get("subsystem") or "").strip().lower()
+        choice = str(body.get("choice") or "").lower()
+        resolution = dict(body)
+        if choice == "always" and subsystem in {"skills", "memory"}:
+            # Write gates are booleans, not command allowlists: approve this
+            # write once, then disable the selected gate for future writes.
+            resolution["choice"] = "once"
+        result = self.agents.resolve_approval(run_id, resolution)
+        if choice == "always" and agent_id and subsystem in {"skills", "memory"}:
+            field = f"{subsystem}_write_approval"
+            self.update_agent_config(agent_id, {field: False})
+            result = {**result, "choice": "always", "subsystem": subsystem, "write_approval_disabled": True}
+        return result
 
     def export_bundle(self, body: Mapping[str, Any]) -> tuple[bytes, str]:
         return self.portability.export(body)
@@ -236,7 +303,32 @@ class PlatformService:
         return self.portability.dry_run(payload)
 
     def apply_bundle(self, payload: bytes) -> dict[str, Any]:
-        return self.portability.apply(payload)
+        result = self.portability.apply(payload)
+        self.agents.sync_profiles_registry()
+        return result
+
+    def start_bundle_export(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        return self.portability.start_export(body)
+
+    def bundle_export_part(self, transfer_id: str, part_number: str) -> tuple[bytes, dict[str, Any]]:
+        return self.portability.read_export_part(transfer_id, part_number)
+
+    def start_bundle_upload(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        return self.portability.start_upload(body)
+
+    def put_bundle_upload_part(self, transfer_id: str, part_number: str, payload: bytes) -> dict[str, Any]:
+        return self.portability.put_upload_part(transfer_id, part_number, payload)
+
+    def complete_bundle_upload(self, transfer_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        return self.portability.complete_upload(transfer_id, body)
+
+    def apply_bundle_upload(self, transfer_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        result = self.portability.apply_upload(transfer_id, body)
+        self.agents.sync_profiles_registry()
+        return result
+
+    def delete_bundle_transfer(self, kind: str, transfer_id: str) -> dict[str, Any]:
+        return self.portability.delete_transfer(kind, transfer_id)
 
     def list_crons(self) -> list[dict[str, Any]]:
         return self.repository.list_crons()
@@ -371,25 +463,106 @@ class PlatformService:
             raise ServiceError("team not found", status=404, code="not_found")
         return {"deleted": True}
 
-    async def run_team(self, team_id: str, task: str) -> dict[str, Any]:
+    async def run_team(self, team_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         team = self.get_team(team_id)
         if not team.get("enabled", True):
             raise ServiceError("team is disabled", status=409, code="team_disabled")
+        task = str(body.get("task") or "").strip()
+        raw_workflow = body.get("workflow") or []
+        if not task and not raw_workflow:
+            raise ServiceError("task or workflow is required")
         started = iso()
         members = [item for item in team["members"] if item.get("enabled", True)]
         semaphore = asyncio.Semaphore(max(1, int(team.get("max_parallel") or 1)))
+        agent_locks: dict[str, asyncio.Lock] = {}
+        configured = {
+            str(item["agent_id"]): {
+                "agent_id": str(item["agent_id"]),
+                "role": str(item["role"]),
+                "allowed_tools": [tool for tool in item.get("allowed_tools", []) if tool in SAFE_TOOLSETS],
+            }
+            for item in members
+        }
+        configured[str(team["orchestrator_id"])] = {
+            "agent_id": str(team["orchestrator_id"]),
+            "role": "coordinator",
+            "allowed_tools": ["todo"],
+        }
 
-        async def run_member(member: Mapping[str, Any]) -> dict[str, Any]:
-            async with semaphore:
-                tools = [tool for tool in member.get("allowed_tools", []) if tool in SAFE_TOOLSETS]
-                prompt = f"Role: {member['role']}\nDo not ask for clarification or write memory. Return only a final summary.\n\nTask: {task}"
-                result = await self.agents.chat(member["agent_id"], {"message": prompt, "toolsets": tools})
-                return {"agent_id": member["agent_id"], "role": member["role"], "summary": result.get("response", "")}
+        if raw_workflow:
+            workflow = self._team_workflow(raw_workflow, configured, members, task)
+        else:
+            if not members:
+                raise ServiceError("team has no enabled workers", status=409, code="team_has_no_workers")
+            workflow = [
+                {
+                    "id": f"worker-{index + 1}",
+                    "task": task,
+                    "needs": [],
+                    **configured[str(member["agent_id"])],
+                }
+                for index, member in enumerate(members)
+            ]
+        self._validate_team_workflow(workflow)
 
-        results = await asyncio.gather(*(run_member(item) for item in members))
-        synthesis = "Synthesize these worker summaries into one final answer.\n\n" + "\n\n".join(f"{item['role']}: {item['summary']}" for item in results)
+        async def run_step(step: Mapping[str, Any], completed: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+            agent_lock = agent_locks.setdefault(str(step["agent_id"]), asyncio.Lock())
+            async with agent_lock, semaphore:
+                upstream = []
+                for dependency in step["needs"]:
+                    result = completed[dependency]
+                    value = result.get("summary") or f"Failed with {result.get('error', 'worker_failed')}"
+                    upstream.append(f"[{dependency}] {value}")
+                prompt = (
+                    f"Role: {step['role']}\n"
+                    "Do not ask for clarification or write memory. Return only a final summary.\n\n"
+                    f"Task: {step['task']}"
+                )
+                if upstream:
+                    prompt += "\n\nUpstream results:\n" + "\n\n".join(upstream)
+                try:
+                    result = await self.agents.chat(
+                        str(step["agent_id"]),
+                        {"message": prompt, "toolsets": list(step["allowed_tools"])},
+                    )
+                    return {
+                        "id": step["id"], "agent_id": step["agent_id"], "role": step["role"],
+                        "needs": list(step["needs"]), "status": "completed",
+                        "summary": str(result.get("response") or ""),
+                    }
+                except Exception as error:
+                    return {
+                        "id": step["id"], "agent_id": step["agent_id"], "role": step["role"],
+                        "needs": list(step["needs"]), "status": "failed",
+                        "error": str(getattr(error, "code", "worker_failed")),
+                    }
+
+        pending = {str(step["id"]): step for step in workflow}
+        completed: dict[str, dict[str, Any]] = {}
+        while pending:
+            ready = [step for step in pending.values() if all(need in completed for need in step["needs"])]
+            if not ready:
+                raise ServiceError("workflow contains a dependency cycle", code="workflow_cycle")
+            batch = await asyncio.gather(*(run_step(step, completed) for step in ready))
+            for result in batch:
+                completed[result["id"]] = result
+                pending.pop(result["id"], None)
+
+        results = [completed[str(step["id"])] for step in workflow]
+        synthesis_instruction = str(body.get("synthesis") or "Synthesize these workflow results into one final answer.").strip()
+        synthesis = synthesis_instruction + "\n\n" + "\n\n".join(
+            f"[{item['id']}] {item['role']}: {item.get('summary') or item.get('error', 'worker_failed')}"
+            for item in results
+        )
         final = await self.agents.chat(team["orchestrator_id"], {"message": synthesis, "toolsets": ["todo"]})
-        return {"team_id": team_id, "member_results": results, "orchestrator_summary": final.get("response", ""), "started_at": started, "completed_at": iso()}
+        return {
+            "team_id": team_id,
+            "member_results": results,
+            "workflow_results": results,
+            "orchestrator_summary": final.get("response", ""),
+            "started_at": started,
+            "completed_at": iso(),
+        }
 
     def get_mcp(self, agent_id: str) -> dict[str, Any]:
         path = self.repository.profile_path(agent_id) / "mcp.json"
@@ -504,6 +677,83 @@ class PlatformService:
     def _api_key_info(provider: str) -> dict[str, Any]:
         return {"provider_id": provider, "provider_type": provider, "connection_mode": "api-key", "required_client_action": "submit_text", "instructions": "Enter the provider API key. It is stored by 9router, not Open Lumora.", "text_label": "API key", "status": "waiting_for_user"}
 
+    def _team_workflow(
+        self,
+        raw_workflow: Any,
+        configured: Mapping[str, Mapping[str, Any]],
+        members: list[Mapping[str, Any]],
+        parent_task: str,
+    ) -> list[dict[str, Any]]:
+        if not isinstance(raw_workflow, list) or not raw_workflow or len(raw_workflow) > 64:
+            raise ServiceError("workflow must contain between 1 and 64 steps", code="invalid_workflow")
+        workers = [str(item["agent_id"]) for item in members]
+        workflow: list[dict[str, Any]] = []
+        for index, raw in enumerate(raw_workflow):
+            if not isinstance(raw, Mapping):
+                raise ServiceError("workflow steps must be objects", code="invalid_workflow")
+            step_id = str(raw.get("id") or "").strip()
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", step_id):
+                raise ServiceError("workflow step id is invalid", code="invalid_workflow")
+            step_task = str(raw.get("task") or raw.get("goal") or parent_task).strip()
+            if not step_task:
+                raise ServiceError("workflow step task is required", code="invalid_workflow")
+            requested_agent = str(raw.get("agent_id") or "").strip()
+            requested_role = str(raw.get("role") or "").strip()
+            if not requested_agent and requested_role:
+                requested_agent = next(
+                    (agent_id for agent_id, item in configured.items() if item["role"] == requested_role),
+                    "",
+                )
+            if not requested_agent:
+                if not workers:
+                    raise ServiceError("workflow has no available worker", status=409, code="team_has_no_workers")
+                requested_agent = workers[index % len(workers)]
+            assignment = configured.get(requested_agent)
+            if assignment is None:
+                raise ServiceError("workflow references an agent outside the team", code="invalid_workflow_agent")
+            allowed = list(assignment["allowed_tools"])
+            requested_tools = raw.get("allowed_tools")
+            if requested_tools is not None:
+                if not isinstance(requested_tools, list):
+                    raise ServiceError("allowed_tools must be a list", code="invalid_workflow")
+                if any(str(tool) not in allowed for tool in requested_tools):
+                    raise ServiceError("workflow step exceeds its assigned tool policy", code="invalid_workflow_tools")
+                allowed = sorted({str(tool) for tool in requested_tools})
+            needs = raw.get("needs") or []
+            if not isinstance(needs, list):
+                raise ServiceError("workflow needs must be a list", code="invalid_workflow")
+            workflow.append({
+                "id": step_id,
+                "task": step_task,
+                "agent_id": requested_agent,
+                "role": requested_role or str(assignment["role"]),
+                "allowed_tools": allowed,
+                "needs": [str(item).strip() for item in needs],
+            })
+        return workflow
+
+    @staticmethod
+    def _validate_team_workflow(workflow: list[Mapping[str, Any]]) -> None:
+        ids = [str(step["id"]) for step in workflow]
+        if len(set(ids)) != len(ids):
+            raise ServiceError("workflow step ids must be unique", code="invalid_workflow")
+        known = set(ids)
+        remaining = set(ids)
+        completed: set[str] = set()
+        by_id = {str(step["id"]): step for step in workflow}
+        for step in workflow:
+            needs = list(step.get("needs") or [])
+            if len(set(needs)) != len(needs) or str(step["id"]) in needs:
+                raise ServiceError("workflow dependencies are invalid", code="invalid_workflow")
+            if any(need not in known for need in needs):
+                raise ServiceError("workflow dependency does not exist", code="invalid_workflow_dependency")
+        while remaining:
+            ready = {step_id for step_id in remaining if all(need in completed for need in by_id[step_id].get("needs", []))}
+            if not ready:
+                raise ServiceError("workflow contains a dependency cycle", code="workflow_cycle")
+            completed.update(ready)
+            remaining.difference_update(ready)
+
     def _put_team(self, team_id: str, body: Mapping[str, Any], *, created_at: str) -> dict[str, Any]:
         name = str(body.get("name") or "").strip()
         orchestrator = str(body.get("orchestrator_id") or "").strip()
@@ -561,7 +811,8 @@ class PlatformService:
         metadata = dict(item.get("metadata") or {})
         config = dict(item.get("config") or {})
         name = str(item.get("name") or item.get("profile_name") or "")
-        return {"id": name, "name": name, "title": str(metadata.get("title") or metadata.get("name") or name), "description": str(metadata.get("description") or ""), "status": str(metadata.get("status") or "active"), "config": {"provider": str(config.get("provider") or "nine-router"), "model": str(config.get("model") or "auto"), "reasoning_effort": str(config.get("effort") or "medium"), "approval_mode": str(config.get("approval_mode") or "on")}, "created_at": metadata.get("created_at"), "updated_at": metadata.get("updated_at"), "metadata": {**metadata, "profile_path": item.get("profile_path"), "workspace_path": item.get("workspace_path")}}
+        display_name = str(metadata.get("display_name") or metadata.get("title") or metadata.get("name") or name)
+        return {"id": name, "name": name, "display_name": display_name, "title": display_name, "description": str(metadata.get("description") or ""), "status": str(metadata.get("status") or "active"), "config": {"provider": str(config.get("provider") or "nine-router"), "model": str(config.get("model") or "auto"), "reasoning_effort": str(config.get("effort") or "medium"), "approval_mode": str(config.get("approval_mode") or "on"), "skills_write_approval": bool(config.get("skills_write_approval", True)), "memory_write_approval": bool(config.get("memory_write_approval", True))}, "created_at": metadata.get("created_at"), "updated_at": metadata.get("updated_at"), "metadata": {**metadata, "profile_path": item.get("profile_path"), "workspace_path": item.get("workspace_path")}}
 
 
 EXPECTED_ERRORS = (ServiceError, StoreError, AgentAPIError, ConfigAPIError, NineRouterAPIError)

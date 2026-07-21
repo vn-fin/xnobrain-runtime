@@ -17,8 +17,7 @@ The Community backend has no Go toolchain or PostgreSQL requirement.
 
 ```bash
 make check
-make image
-docker compose up -d
+make run
 make smoke-api
 ```
 
@@ -36,7 +35,7 @@ provider failures must emit `run.failed`, not a false completed event.
 
 ## Latest evidence
 
-On 2026-07-21, `make check` passed 15 Python tests and 26 frontend tests plus
+On 2026-07-21, `make check` passed 19 Python tests and 31 frontend tests plus
 the TypeScript/Vite production build. Both application images built. The live
 Compose stack reached healthy state behind Traefik, Swagger exposed the unified
 Hermes/Open Lumora schema, the safe API smoke suite passed, and a bounded live

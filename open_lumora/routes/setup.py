@@ -12,7 +12,8 @@ from fastapi import Body, Request
 from fastapi.responses import Response
 
 from ..models import (
-    AgentCreate, AgentMetadataPatch, APIEnvelope, BundleExport, ChatRequest,
+    AgentCreate, AgentMetadataPatch, APIEnvelope, BundleExport, BundleUploadApply,
+    BundleUploadComplete, BundleUploadStart, ChatRequest,
     ConfigPatch, ConversationCreate, ConversationRename, CronCreate, EnabledPatch,
     MCPConfig, MemoryPatch, ProviderCredential, RunApproval,
     SkillInstall, TeamCreate, TeamRun, WorkspaceCreate, WorkspacePath, WorkspaceWrite,
@@ -51,6 +52,7 @@ ROUTES = (
     Route("GET", "/agent-gateway/v1/agents-configs/global", "config_global_get", tags=("Config",)),
     Route("PATCH", "/agent-gateway/v1/agents-configs/global", "config_global_patch", ConfigPatch, tags=("Config",)),
     Route("PATCH", "/agent-gateway/v1/agents-configs/{agent_id}", "config_agent_patch", ConfigPatch, tags=("Config",)),
+    Route("GET", "/agent-gateway/v1/agents-skills", "skills_default_list", tags=("Skills",)),
     Route("GET", "/agent-gateway/v1/agents-skills/{agent_id}", "skills_list", tags=("Skills",)),
     Route("POST", "/agent-gateway/v1/agents-skills/{agent_id}", "skills_install", SkillInstall, tags=("Skills",)),
     Route("PATCH", "/agent-gateway/v1/agents-skills/{agent_id}/{skill_id}", "skills_patch", EnabledPatch, tags=("Skills",)),
@@ -115,6 +117,14 @@ ROUTES = (
     Route("POST", "/api/v1/bundles/inspect", "bundle_inspect", special="bundle_upload", tags=("Portability",)),
     Route("POST", "/api/v1/bundles/dry-run", "bundle_dry_run", special="bundle_upload", tags=("Portability",)),
     Route("POST", "/api/v1/bundles/apply", "bundle_apply", special="bundle_upload", tags=("Portability",)),
+    Route("POST", "/api/v1/bundles/exports", "bundle_export_start", BundleExport, tags=("Portability",)),
+    Route("GET", "/api/v1/bundles/exports/{transfer_id}/parts/{part_number}", "bundle_export_part", special="bundle_part", tags=("Portability",)),
+    Route("DELETE", "/api/v1/bundles/exports/{transfer_id}", "bundle_export_delete", tags=("Portability",)),
+    Route("POST", "/api/v1/bundles/uploads", "bundle_upload_start", BundleUploadStart, tags=("Portability",)),
+    Route("PUT", "/api/v1/bundles/uploads/{transfer_id}/parts/{part_number}", "bundle_upload_part", special="bundle_part", tags=("Portability",)),
+    Route("POST", "/api/v1/bundles/uploads/{transfer_id}/complete", "bundle_upload_complete", BundleUploadComplete, tags=("Portability",)),
+    Route("POST", "/api/v1/bundles/uploads/{transfer_id}/apply", "bundle_upload_apply", BundleUploadApply, tags=("Portability",)),
+    Route("DELETE", "/api/v1/bundles/uploads/{transfer_id}", "bundle_upload_delete", tags=("Portability",)),
 
     Route("GET", "/api/v1/dashboard/{tail:path}", "enterprise_proxy", special="enterprise_proxy", tags=("Enterprise",)),
     Route("GET", "/api/v1/observability/{tail:path}", "enterprise_proxy", special="enterprise_proxy", tags=("Enterprise",)),
@@ -136,6 +146,9 @@ def _endpoint(handlers: Any, route: Route):
     elif route.special == "bundle_upload":
         async def endpoint(request: Request) -> Response:
             return await handlers.bundle_upload(request)
+    elif route.special == "bundle_part":
+        async def endpoint(request: Request) -> Response:
+            return await handlers.bundle_part(request)
     elif route.special == "sandbox_setup":
         async def endpoint(request: Request) -> Response:
             return await handlers.sandbox_setup(request)
@@ -156,7 +169,7 @@ def _endpoint(handlers: Any, route: Route):
 
 def setup_routes(app: Any, handlers: Any) -> None:
     for route in ROUTES:
-        raw_response = route.special in {"stream", "workspace_upload", "bundle_export", "bundle_upload", "sandbox_setup", "enterprise_proxy"}
+        raw_response = route.special in {"stream", "workspace_upload", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "enterprise_proxy"}
         app.add_api_route(
             route.path,
             _endpoint(handlers, route),

@@ -23,8 +23,8 @@ export const agentsApi = {
     return mapAgent(await request<AgentDTO>(`${ROOT}/agents/${encoded(id)}/detail`));
   },
 
-  async create(name: string, description: string): Promise<Agent> {
-    const body: AgentCreateRequestDTO = { name, description };
+  async create(displayName: string, description: string): Promise<Agent> {
+    const body: AgentCreateRequestDTO = { display_name: displayName, description };
     return mapAgent(await request<AgentDTO>(`${ROOT}/agents`, { method: 'POST', body: JSON.stringify(body) }));
   },
 
@@ -35,6 +35,10 @@ export const agentsApi = {
         body: JSON.stringify(input),
       }),
     );
+  },
+
+  async rename(id: string, displayName: string): Promise<Agent> {
+    return agentsApi.updateMetadata(id, { display_name: displayName });
   },
 
   async updateConfig(id: string, input: AgentConfigUpdateRequestDTO): Promise<void> {
@@ -59,7 +63,7 @@ export const agentsApi = {
 
   async update(id: string, updates: Partial<Agent>): Promise<Agent> {
     const metadata: AgentMetadataUpdateRequestDTO = {};
-    if (updates.title !== undefined) metadata.title = updates.title;
+    if (updates.title !== undefined) metadata.display_name = updates.title;
     if (updates.description !== undefined) metadata.description = updates.description;
     const config: AgentConfigDTO = {};
     if (updates.provider !== undefined) config.provider = updates.provider;

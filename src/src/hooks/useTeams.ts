@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { teamsApi, type Team, type TeamInput, type TeamRun } from '../api/teams';
+import { teamsApi, type Team, type TeamInput, type TeamRun, type TeamWorkflowStep } from '../api/teams';
 
 export function useTeams() {
   const [teams, setTeams] = useState<Team[]>([]);
@@ -45,10 +45,10 @@ export function useTeams() {
     }
   };
 
-  const run = async (teamId: string, task: string) => {
+  const run = async (teamId: string, task: string, workflow: TeamWorkflowStep[] = []) => {
     setPending(true);
     try {
-      const result = await teamsApi.run(teamId, task);
+      const result = await teamsApi.run(teamId, task, workflow);
       setLastRun(result);
       setError('');
       return result;

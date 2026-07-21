@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from io import BytesIO
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -65,6 +66,87 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         deployment = deployment_response.json()["data"]
         self.assertFalse(deployment["database"])
 
+    async def test_profile_registry_uses_generated_ids_and_display_names(self):
+        async with self.client() as client:
+            created = await client.post("/agent-gateway/v1/agents", json={
+                "display_name": "Research Lead",
+                "description": "Coordinates research workflows.",
+            })
+        self.assertEqual(created.status_code, 201, created.text)
+        profile = created.json()["data"]
+        self.assertRegex(profile["id"], r"^[a-z][a-z0-9]{5}$")
+        self.assertNotEqual(profile["id"], "Research Lead")
+        self.assertEqual(profile["display_name"], "Research Lead")
+        registry_path = self.root / "profiles.yaml"
+        registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+        entries = {item["name"]: item for item in registry["profiles"]}
+        self.assertEqual(set(entries[profile["id"]]), {"description", "name", "display_name", "updated_at"})
+        self.assertEqual(entries[profile["id"]]["display_name"], "Research Lead")
+        self.assertIn("default", entries)
+
+        async with self.client() as client:
+            updated = await client.patch(
+                f"/agent-gateway/v1/agents/{profile['id']}/metadata",
+                json={"display_name": "Research Director"},
+            )
+        self.assertEqual(updated.json()["data"]["display_name"], "Research Director")
+        registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+        entries = {item["name"]: item for item in registry["profiles"]}
+        self.assertEqual(entries[profile["id"]]["display_name"], "Research Director")
+
+        entries[profile["id"]]["display_name"] = "Registry Name"
+        registry_path.write_text(
+            yaml.safe_dump({"profiles": list(entries.values())}, sort_keys=False),
+            encoding="utf-8",
+        )
+        async with self.client() as client:
+            listed = await client.get("/agent-gateway/v1/agents")
+        listed_profile = next(item for item in listed.json()["data"] if item["id"] == profile["id"])
+        self.assertEqual(listed_profile["display_name"], "Registry Name")
+
+    async def test_write_approvals_default_on_and_allow_always_disables_the_selected_gate(self):
+        async with self.client() as client:
+            created = await client.post("/agent-gateway/v1/agents", json={"display_name": "Safe Writer"})
+        self.assertEqual(created.status_code, 201, created.text)
+        agent = created.json()["data"]
+        agent_id = agent["id"]
+        self.assertTrue(agent["config"]["skills_write_approval"])
+        self.assertTrue(agent["config"]["memory_write_approval"])
+
+        config_path = self.profiles / agent_id / "config.yaml"
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        self.assertTrue(config["skills"]["write_approval"])
+        self.assertTrue(config["memory"]["write_approval"])
+
+        async with self.client() as client:
+            toggled = await client.patch(
+                f"/agent-gateway/v1/agents-configs/{agent_id}",
+                json={"skills_write_approval": False},
+            )
+        self.assertEqual(toggled.status_code, 200, toggled.text)
+        self.assertFalse(toggled.json()["data"]["skills_write_approval"])
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        self.assertFalse(config["skills"]["write_approval"])
+        self.assertTrue(config["memory"]["write_approval"])
+
+        self.composition.service.agents.resolve_approval = unittest.mock.Mock(
+            return_value={"run_id": "run_test", "choice": "always", "resolved": 1}
+        )
+        async with self.client() as client:
+            allowed = await client.post(
+                "/conversations/v1/conversations/conversation/runs/run_test/approval",
+                params={"agent": agent_id},
+                json={"choice": "always", "subsystem": "memory"},
+            )
+        self.assertEqual(allowed.status_code, 200, allowed.text)
+        self.assertTrue(allowed.json()["data"]["write_approval_disabled"])
+        self.composition.service.agents.resolve_approval.assert_called_once_with(
+            "run_test", {"choice": "once", "subsystem": "memory"}
+        )
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        self.assertFalse(config["memory"]["write_approval"])
+        self.assertGreaterEqual(len(self.composition.service.repository.list_snapshots(agent_id, "config")), 2)
+
     async def test_agent_skill_memory_mcp_and_snapshots_are_profile_local(self):
         async with self.client() as client:
             created = await client.post("/agent-gateway/v1/agents", json={"name": "Researcher", "description": "test"})
@@ -89,6 +171,42 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({item["kind"] for item in snapshots}, {"skills", "memory"})
         self.assertFalse((self.root / "skills" / "notes" / "SKILL.md").exists())
 
+    async def test_default_and_agent_skill_catalogs_stay_profile_scoped(self):
+        default_skill = self.root / "skills" / "office" / "default-notes" / "SKILL.md"
+        default_skill.parent.mkdir(parents=True)
+        default_skill.write_text(
+            "---\nname: default-notes\ndescription: Default profile notes\n---\n",
+            encoding="utf-8",
+        )
+        async with self.client() as client:
+            created = await client.post("/agent-gateway/v1/agents", json={"name": "Scoped"})
+        agent_id = created.json()["data"]["id"]
+        agent_skill = self.profiles / agent_id / "skills" / "custom" / "agent-only" / "SKILL.md"
+        agent_skill.parent.mkdir(parents=True)
+        agent_skill.write_text(
+            "---\nname: agent-only\ndescription: Custom profile only\n---\n",
+            encoding="utf-8",
+        )
+
+        async with self.client() as client:
+            default_response = await client.get("/agent-gateway/v1/agents-skills")
+            agent_response = await client.get(f"/agent-gateway/v1/agents-skills/{agent_id}")
+
+        self.assertEqual(default_response.status_code, 200, default_response.text)
+        self.assertEqual(agent_response.status_code, 200, agent_response.text)
+        default_skills = default_response.json()["data"]
+        agent_skills = agent_response.json()["data"]
+        self.assertEqual([item["skill_id"] for item in default_skills], ["default-notes"])
+        self.assertEqual(default_skills[0]["category"], "office")
+        self.assertEqual(
+            {item["skill_id"] for item in agent_skills},
+            {"default-notes", "agent-only"},
+        )
+        self.assertEqual(
+            next(item for item in agent_skills if item["skill_id"] == "agent-only")["category"],
+            "custom",
+        )
+
     async def test_team_and_cron_persist_without_database(self):
         ids = []
         async with self.client() as client:
@@ -108,6 +226,59 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cron.status_code, 201, cron.text)
         self.assertEqual(len(teams.json()["data"]), 1)
         self.assertEqual(len(crons.json()["data"]), 1)
+
+    async def test_team_workflow_runs_dependency_dag_and_synthesizes(self):
+        ids = []
+        async with self.client() as client:
+            for display_name in ("Coordinator", "Researcher", "Reviewer"):
+                response = await client.post("/agent-gateway/v1/agents", json={"display_name": display_name})
+                ids.append(response.json()["data"]["id"])
+            team_response = await client.post("/api/v1/teams", json={
+                "name": "DAG team",
+                "orchestrator_id": ids[0],
+                "members": [
+                    {"agent_id": ids[1], "role": "researcher", "allowed_tools": ["web"]},
+                    {"agent_id": ids[2], "role": "reviewer", "allowed_tools": ["web"]},
+                ],
+                "max_parallel": 2,
+            })
+        team_id = team_response.json()["data"]["id"]
+        prompts: list[tuple[str, str]] = []
+
+        async def fake_chat(agent_id, body):
+            prompts.append((agent_id, body["message"]))
+            if agent_id == ids[0]:
+                return {"response": "final synthesis"}
+            if agent_id == ids[1]:
+                return {"response": "research result"}
+            return {"response": "review result"}
+
+        self.composition.service.agents.chat = AsyncMock(side_effect=fake_chat)
+        async with self.client() as client:
+            response = await client.post(f"/api/v1/teams/{team_id}/run", json={
+                "workflow": [
+                    {"id": "research", "task": "Research the API", "role": "researcher"},
+                    {"id": "review", "task": "Review the findings", "role": "reviewer", "needs": ["research"]},
+                ],
+                "synthesis": "Produce the final answer.",
+            })
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()["data"]
+        self.assertEqual([item["id"] for item in result["workflow_results"]], ["research", "review"])
+        self.assertEqual(result["orchestrator_summary"], "final synthesis")
+        reviewer_prompt = next(prompt for agent_id, prompt in prompts if agent_id == ids[2])
+        self.assertIn("[research] research result", reviewer_prompt)
+        self.assertEqual(prompts[-1][0], ids[0])
+
+        async with self.client() as client:
+            cycle = await client.post(f"/api/v1/teams/{team_id}/run", json={
+                "workflow": [
+                    {"id": "a", "task": "A", "needs": ["b"]},
+                    {"id": "b", "task": "B", "needs": ["a"]},
+                ],
+            })
+        self.assertEqual(cycle.status_code, 400, cycle.text)
+        self.assertEqual(cycle.json()["error"]["code"], "workflow_cycle")
 
     async def test_due_profile_cron_executes_in_the_unified_process(self):
         async with self.client() as client:
@@ -160,6 +331,66 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         imported_id = applied.json()["data"]["agent_id_mappings"][agent_id]
         self.assertNotEqual(imported_id, agent_id)
         self.assertTrue((self.profiles / imported_id / "config.yaml").is_file())
+
+    async def test_profile_bundle_chunk_transfer_redacts_and_inherits_default_credentials(self):
+        (self.root / ".env").write_text("DEFAULT_SECRET=from-default\n", encoding="utf-8")
+        (self.root / "auth.json").write_text('{"session":"default-auth"}\n', encoding="utf-8")
+        async with self.client() as client:
+            created = await client.post("/agent-gateway/v1/agents", json={"display_name": "Chunked profile"})
+        agent_id = created.json()["data"]["id"]
+        profile = self.profiles / agent_id
+        (profile / ".env").write_text("SOURCE_TOKEN=never-export-this\n", encoding="utf-8")
+        (profile / "workspace" / "secret.txt").write_text("token=never-export-this\n", encoding="utf-8")
+        (profile / "workspace" / "large.bin").write_bytes(os.urandom(4 * 1024 * 1024 + 256))
+        config = yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))
+        config["providers"] = {"private": {"api_key": "never-export-this", "key_env": "MISSING_API_KEY"}}
+        (profile / "config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+
+        async with self.client() as client:
+            started = await client.post("/api/v1/bundles/exports", json={"agent_ids": [agent_id]})
+            transfer = started.json()["data"]
+            parts = []
+            for number in range(transfer["total_parts"]):
+                response = await client.get(f"/api/v1/bundles/exports/{transfer['export_id']}/parts/{number}")
+                self.assertEqual(response.status_code, 200, response.text)
+                parts.append(response.content)
+        self.assertGreater(transfer["total_parts"], 1)
+        bundle = b"".join(parts)
+        self.assertEqual(len(bundle), transfer["size"])
+        self.assertEqual(__import__("hashlib").sha256(bundle).hexdigest(), transfer["sha256"])
+        with ZipFile(BytesIO(bundle)) as archive:
+            names = archive.namelist()
+            self.assertNotIn(f"profiles/{agent_id}/.env", names)
+            self.assertNotIn(b"never-export-this", archive.read(f"profiles/{agent_id}/workspace/secret.txt"))
+            exported_config = yaml.safe_load(archive.read(f"profiles/{agent_id}/config.yaml"))
+            self.assertNotIn("api_key", exported_config.get("providers", {}).get("private", {}))
+
+        async with self.client() as client:
+            upload_started = await client.post("/api/v1/bundles/uploads", json={"filename": "profile.zip", "size": len(bundle)})
+            upload = upload_started.json()["data"]
+            for number in range(upload["total_parts"]):
+                chunk = bundle[number * upload["chunk_size"]:(number + 1) * upload["chunk_size"]]
+                response = await client.put(
+                    f"/api/v1/bundles/uploads/{upload['upload_id']}/parts/{number}",
+                    content=chunk,
+                    headers={"Content-Type": "application/octet-stream"},
+                )
+                self.assertEqual(response.status_code, 201, response.text)
+            completed = await client.post(f"/api/v1/bundles/uploads/{upload['upload_id']}/complete", json={})
+            self.assertEqual(completed.status_code, 200, completed.text)
+            self.assertIn("MISSING_API_KEY", completed.json()["data"]["preview"]["missing_environment"])
+            applied = await client.post(
+                f"/api/v1/bundles/uploads/{upload['upload_id']}/apply",
+                json={"environment": {"MISSING_API_KEY": "server-specific-value"}},
+            )
+        self.assertEqual(applied.status_code, 201, applied.text)
+        imported_id = applied.json()["data"]["agent_id_mappings"][agent_id]
+        imported = self.profiles / imported_id
+        imported_env = (imported / ".env").read_text(encoding="utf-8")
+        self.assertIn("DEFAULT_SECRET=from-default", imported_env)
+        self.assertIn("MISSING_API_KEY=server-specific-value", imported_env)
+        self.assertNotIn("never-export-this", imported_env)
+        self.assertEqual(json.loads((imported / "auth.json").read_text())["session"], "default-auth")
 
     async def test_missing_run_control_and_local_device_have_stable_responses(self):
         async with self.client() as client:

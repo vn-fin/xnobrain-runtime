@@ -20,19 +20,34 @@ describe('systemApi', () => {
     expect(deployment.gateway_configured).toBe(true);
   });
 
-  it('downloads a raw .lumora response without JSON decoding', async () => {
-    const fetchMock = vi.fn(async () => new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
-      status: 200,
-      headers: { 'content-type': 'application/vnd.open-lumora.bundle' },
-    }));
+  it('downloads a .lumora archive in parts', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/bundles/exports')) {
+        return new Response(JSON.stringify({ success: true, data: {
+          export_id: 'export-1', filename: 'profile.lumora', size: 4,
+          sha256: '0'.repeat(64), chunk_size: 4, total_parts: 1,
+        } }), { status: 201, headers: { 'content-type': 'application/json' } });
+      }
+      if (url.includes('/parts/0')) {
+        return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]).buffer, {
+          status: 200, headers: { 'content-type': 'application/octet-stream' },
+        });
+      }
+      return new Response(JSON.stringify({ success: true, data: { deleted: true } }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    });
     vi.stubGlobal('fetch', fetchMock);
 
     const bundle = await systemApi.export(['a12345']);
 
-    expect(bundle.size).toBe(4);
+    expect(bundle.blob.size).toBe(4);
+    expect(bundle.filename).toBe('profile.lumora');
     const [, init] = fetchMock.mock.calls[0];
     expect(init?.method).toBe('POST');
     expect(init?.body).toContain('a12345');
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/parts/0'))).toBe(true);
   });
 
   it('uploads bundle inspection as multipart without overriding its boundary', async () => {
@@ -49,5 +64,38 @@ describe('systemApi', () => {
     const result = await systemApi.inspect(new File(['bundle'], 'profiles.lumora'));
 
     expect(result.files).toBe(3);
+  });
+
+  it('uploads profile archives as parts before server-side merge', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/bundles/uploads')) {
+        return new Response(JSON.stringify({ success: true, data: {
+          upload_id: 'upload-1', filename: 'profile.zip', size: 5,
+          sha256: '', chunk_size: 3, total_parts: 2,
+        } }), { status: 201, headers: { 'content-type': 'application/json' } });
+      }
+      if (url.endsWith('/complete')) {
+        return new Response(JSON.stringify({ success: true, data: {
+          upload_id: 'upload-1', filename: 'profile.zip', size: 5,
+          sha256: '0'.repeat(64), chunk_size: 3, total_parts: 2, complete: true,
+          preview: { inspection: { manifest: { agents: [] }, files: 2, expanded_bytes: 5, warnings: [] } },
+        } }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ success: true, data: { part_number: 0 } }), {
+        status: 201, headers: { 'content-type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const progress: number[] = [];
+    const result = await systemApi.upload(new File(['abcde'], 'profile.zip'), (item) => progress.push(item.percent));
+
+    const partCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes('/parts/'));
+    expect(partCalls).toHaveLength(2);
+    expect((partCalls[0][1]?.body as Blob).size).toBe(3);
+    expect((partCalls[1][1]?.body as Blob).size).toBe(2);
+    expect(progress).toEqual([60, 100]);
+    expect(result.complete).toBe(true);
   });
 });

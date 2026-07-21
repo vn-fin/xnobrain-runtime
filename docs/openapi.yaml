@@ -124,10 +124,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [task]
               properties:
                 task: { type: string }
-                depth: { type: integer, minimum: 1, default: 1 }
+                synthesis: { type: string }
+                workflow:
+                  type: array
+                  maxItems: 64
+                  items: { $ref: "#/components/schemas/TeamWorkflowStep" }
       responses:
         "200": { $ref: "#/components/responses/Success" }
         "429": { $ref: "#/components/responses/RateLimited" }
@@ -144,9 +147,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name]
+              required: [display_name]
               properties:
-                name: { type: string }
+                display_name: { type: string }
                 description: { type: string }
       responses:
         "201": { $ref: "#/components/responses/Success" }
@@ -279,8 +282,82 @@ paths:
               properties:
                 choice: { type: string, enum: [once, always, deny] }
                 resolve_all: { type: boolean }
+                subsystem: { type: string, enum: [skills, memory], description: Always allow disables this profile's corresponding write-approval gate. }
       responses:
         "200": { $ref: "#/components/responses/Success" }
+  /api/v1/bundles/exports:
+    post:
+      summary: Prepare a credential-free file-backed profile export
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_ids]
+              properties:
+                agent_ids: { type: array, items: { type: string } }
+                include_conversations: { type: boolean }
+      responses:
+        "201": { $ref: "#/components/responses/Success" }
+  /api/v1/bundles/exports/{transfer_id}/parts/{part_number}:
+    get:
+      summary: Download one verified bundle part
+      parameters:
+        - { name: transfer_id, in: path, required: true, schema: { type: string } }
+        - { name: part_number, in: path, required: true, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: Binary archive part
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+  /api/v1/bundles/uploads:
+    post:
+      summary: Start a chunked profile upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, size]
+              properties:
+                filename: { type: string }
+                size: { type: integer, minimum: 1 }
+                sha256: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/Success" }
+  /api/v1/bundles/uploads/{transfer_id}/parts/{part_number}:
+    put:
+      summary: Upload one exact-size binary bundle part
+      parameters:
+        - { name: transfer_id, in: path, required: true, schema: { type: string } }
+        - { name: part_number, in: path, required: true, schema: { type: integer, minimum: 0 } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "201": { $ref: "#/components/responses/Success" }
+  /api/v1/bundles/uploads/{transfer_id}/complete:
+    post:
+      summary: Merge, verify, inspect, and dry-run a completed upload
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /api/v1/bundles/uploads/{transfer_id}/apply:
+    post:
+      summary: Atomically create profiles from a completed upload
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                environment: { type: object, additionalProperties: { type: string } }
+      responses:
+        "201": { $ref: "#/components/responses/Success" }
   /agent-gateway/v1/providers:
     get:
       summary: List filtered 9router provider connections
@@ -431,6 +508,20 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Envelope" }
   schemas:
+    TeamWorkflowStep:
+      type: object
+      required: [id, task]
+      properties:
+        id: { type: string }
+        task: { type: string }
+        agent_id: { type: string }
+        role: { type: string }
+        needs:
+          type: array
+          items: { type: string }
+        allowed_tools:
+          type: array
+          items: { type: string }
     TeamInput:
       type: object
       required: [name, orchestrator_id, members]

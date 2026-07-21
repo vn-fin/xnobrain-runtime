@@ -16,9 +16,11 @@ local agents, profiles, skills, memory, MCP, providers, teams, or cron.
 Docker Compose is the supported installation path:
 
 ```bash
-make image
-make install
+make run
 ```
+
+This builds both application images from the root Dockerfiles and starts the
+Compose stack. It does not create a native binary under `bin/`.
 
 Open <http://localhost>. The API is routed through the same Traefik address,
 and interactive Swagger documentation is at <http://localhost/docs>.

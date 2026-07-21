@@ -13,7 +13,8 @@
 - `open_lumora/telemetry.py`: redacted OpenTelemetry instrumentation.
 - `runtime`: the unified Hermes/FastAPI/9router Docker image and entrypoint.
 - `src`: Vite, React, and TypeScript application.
-- `bin/images`: checksummed split OCI bundles; never store an unsplit image tar.
+- `Dockerfile.frontend` and `Dockerfile.backend`: Compose application builds.
+- `bin/images`: optional checksummed release bundles; normal builds do not write here.
 - `docs`: architecture, API, deployment, versioned contracts, and history.
 
 ## Python style and boundaries

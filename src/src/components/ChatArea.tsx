@@ -446,7 +446,7 @@ export function ChatArea({
             {agent.title}
             <ChevronDown size={16} />
           </button>
-          <span>{agent.name}</span>
+          <span>{agent.model}</span>
         </div>
 
         <div className="top-actions">

@@ -77,21 +77,19 @@ days, and Enterprise 365 days for traces, safe span events, and runtime metrics.
 
 ## Build and offline install
 
-The public repository builds backend, frontend, and Hermes runtime images. The
-Enterprise repository builds only its API image and owns the ClickHouse schema.
-The public images are written into a compressed bundle under `bin/images`; each
-part is 47 MB and checksum verified.
+The public repository builds the frontend and unified Hermes runtime images.
+The Enterprise repository builds only its API image and owns the ClickHouse
+schema. Normal local startup builds directly from the root Dockerfiles and does
+not write application binaries or image bundles under `bin/`.
 
 ```bash
-make build
+make run
 make -C ../open-lumora-enterprise build
-make install
 ```
 
-Public `make install` checks and concatenates the public image bundle, ensures
-the private network exists, and starts the complete self-hosted stack. Use the
-`authenticated` Compose profile to start its local Collector after configuring
-login and tenant-bound telemetry credentials.
+Use the `authenticated` Compose profile to start the local Collector after
+configuring login and tenant-bound telemetry credentials. An offline image
+bundle remains available as an explicit release-only `make bundle` step.
 
 Run `make smoke-api` after startup to validate safe read/status endpoints and
 all six provider contracts through Traefik. OAuth starts are checked for a

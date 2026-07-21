@@ -39,8 +39,9 @@ referenced versioned contract under `docs/contracts/`.
 - Docker has two application images: the React UI and the unified
   FastAPI/Hermes/9router runtime. Traefik is the edge router. Incus deployment
   packaging belongs to the Enterprise deployment repository, not this OSS tree.
-- `make build` builds the two application images and their split OCI transfer
-  bundle under `bin/images`; every part stays below 50 MB.
+- `make build` builds the two application images through Docker Compose and
+  does not write a native binary under `bin/`. `make bundle` is an explicit
+  release-only step for creating a split OCI transfer bundle.
 
 ## Validation
 

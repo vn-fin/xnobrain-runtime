@@ -67,6 +67,7 @@ class APIHandlers:
             "config_global_get": (s.global_config, "global config retrieved successfully", 200),
             "config_global_patch": (lambda: s.update_global_config(body), "global config updated successfully", 200),
             "config_agent_patch": (lambda: s.update_agent_config(p["agent_id"], body), "agent config updated successfully", 200),
+            "skills_default_list": (s.list_default_skills, "default profile skills retrieved successfully", 200),
             "skills_list": (lambda: s.list_skills(p["agent_id"]), "skills retrieved successfully", 200),
             "skills_install": (lambda: s.install_skill(p["agent_id"], body), "skill installed successfully", 201),
             "skills_patch": (lambda: s.set_skill_enabled(p["agent_id"], p["skill_id"], body), "skill updated successfully", 200),
@@ -91,7 +92,13 @@ class APIHandlers:
             "conversations_rename": (lambda: s.rename_conversation(agent(), p["conversation_id"], body), "conversation renamed successfully", 200),
             "conversations_delete": (lambda: s.delete_conversation(agent(), p["conversation_id"]), "conversation deleted successfully", 200),
             "run_stop": (lambda: s.stop_run(p["run_id"]), "run stopped successfully", 200),
-            "run_approval": (lambda: s.resolve_approval(p["run_id"], body), "approval resolved successfully", 200),
+            "run_approval": (lambda: s.resolve_approval(p["run_id"], body, agent()), "approval resolved successfully", 200),
+            "bundle_export_start": (lambda: s.start_bundle_export(body), "bundle export prepared", 201),
+            "bundle_export_delete": (lambda: s.delete_bundle_transfer("export", p["transfer_id"]), "bundle export deleted", 200),
+            "bundle_upload_start": (lambda: s.start_bundle_upload(body), "bundle upload created", 201),
+            "bundle_upload_complete": (lambda: s.complete_bundle_upload(p["transfer_id"], body), "bundle upload completed", 200),
+            "bundle_upload_apply": (lambda: s.apply_bundle_upload(p["transfer_id"], body), "bundle imported successfully", 201),
+            "bundle_upload_delete": (lambda: s.delete_bundle_transfer("upload", p["transfer_id"]), "bundle upload deleted", 200),
             "cron_list": (s.list_crons, "cron jobs retrieved successfully", 200), "cron_create": (lambda: s.create_cron(body), "cron job created successfully", 201),
             "cron_pause": (lambda: s.set_cron_enabled(p["job_id"], False), "cron job paused", 200), "cron_resume": (lambda: s.set_cron_enabled(p["job_id"], True), "cron job resumed", 200),
             "cron_run": (lambda: s.run_cron(p["job_id"]), "cron job completed", 200), "cron_delete": (lambda: s.delete_cron(p["job_id"]), "cron job deleted", 200),
@@ -99,7 +106,7 @@ class APIHandlers:
             "notification_resolve": (lambda: s.repository.resolve_notification(p["notification_id"]), "notification resolved successfully", 200),
             "teams_list": (s.list_teams, "teams retrieved successfully", 200), "teams_create": (lambda: s.create_team(body), "team created successfully", 201),
             "teams_get": (lambda: s.get_team(p["team_id"]), "team retrieved successfully", 200), "teams_update": (lambda: s.update_team(p["team_id"], body), "team updated successfully", 200),
-            "teams_delete": (lambda: s.delete_team(p["team_id"]), "team deleted successfully", 200), "teams_run": (lambda: s.run_team(p["team_id"], str(body.get("task") or "")), "team run completed successfully", 200),
+            "teams_delete": (lambda: s.delete_team(p["team_id"]), "team deleted successfully", 200), "teams_run": (lambda: s.run_team(p["team_id"], body), "team run completed successfully", 200),
             "providers": (s.providers, "providers retrieved successfully", 200),
             "provider_connect_start": (lambda: s.start_provider_connect(p["provider_id"]), "provider connection started", 200),
             "provider_connect_status": (lambda: s.provider_status(p["provider_id"]), "provider status retrieved", 200),
@@ -195,6 +202,39 @@ class APIHandlers:
             return self.failure(error)
         except (ValueError, KeyError, TypeError) as error:
             error.status, error.code = 400, "invalid_bundle"
+            return self.failure(error)
+
+    async def bundle_part(self, request: Request) -> Response:
+        try:
+            transfer_id = request.path_params["transfer_id"]
+            part_number = request.path_params["part_number"]
+            operation = request.scope["route"].name
+            if operation == "bundle_upload_part":
+                content_length = int(request.headers.get("content-length") or 0)
+                if content_length <= 0 or content_length > 4 * 1024 * 1024:
+                    raise ValueError("upload part size is invalid")
+                payload = await request.body()
+                expected_hash = str(request.headers.get("x-part-sha256") or "").lower()
+                if expected_hash and expected_hash != __import__("hashlib").sha256(payload).hexdigest():
+                    raise ValueError("upload part checksum is invalid")
+                result = self.service.put_bundle_upload_part(transfer_id, part_number, payload)
+                return self.success(result, "bundle part uploaded", 201)
+            payload, metadata = self.service.bundle_export_part(transfer_id, part_number)
+            return Response(
+                payload,
+                media_type="application/octet-stream",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{metadata["filename"]}.part{int(part_number):08d}"',
+                    "X-Transfer-Filename": metadata["filename"],
+                    "X-Part-Number": str(part_number),
+                    "X-Total-Parts": str(metadata["total_parts"]),
+                    "X-Part-SHA256": __import__("hashlib").sha256(payload).hexdigest(),
+                },
+            )
+        except EXPECTED_ERRORS as error:
+            return self.failure(error)
+        except (ValueError, KeyError, TypeError) as error:
+            error.status, error.code = 400, "invalid_bundle_part"
             return self.failure(error)
 
     async def sandbox_setup(self, request: Request) -> Response:

@@ -126,13 +126,14 @@ export const conversationsApi = {
     runId: string,
     choice: RunApprovalChoice,
     resolveAll = false,
+    subsystem?: 'skills' | 'memory',
   ): Promise<ResolveRunApprovalResponse> {
     return request<ResolveRunApprovalResponse>(pathWithAgent(
       `${ROOT}/${encoded(conversationId)}/runs/${encoded(runId)}/approval`,
       agentId,
     ), {
       method: 'POST',
-      body: JSON.stringify({ choice, resolve_all: resolveAll }),
+      body: JSON.stringify({ choice, resolve_all: resolveAll, ...(subsystem ? { subsystem } : {}) }),
     });
   },
 

@@ -2,10 +2,10 @@ import type { AgentDTO } from '../contracts/agentGateway';
 import type { Agent } from '../../types';
 
 export function mapAgent(dto: AgentDTO): Agent {
-  const config = dto.metadata?.config;
+  const config = dto.config ?? dto.metadata?.config;
   return {
     id: dto.id ?? '',
-    title: dto.title?.trim() || dto.name || '',
+    title: dto.display_name?.trim() || dto.title?.trim() || dto.name || '',
     name: dto.name ?? '',
     description: dto.description ?? '',
     status: dto.status ?? 'unknown',

@@ -38,6 +38,7 @@ teams="$(request GET /api/v1/teams/)"
 request GET /agent-gateway/v1/ping >/dev/null
 agents="$(request GET /agent-gateway/v1/agents)"
 request GET /agent-gateway/v1/agents-configs/global >/dev/null
+default_skills="$(request GET /agent-gateway/v1/agents-skills)"
 crons="$(request GET /agent-gateway/v1/cron/jobs)"
 request GET /sandboxes/v1/me/sandboxes/info >/dev/null
 request GET /sandboxes/v1/me/sandboxes/metrics >/dev/null
@@ -91,6 +92,7 @@ fi
 # are still decoded here so schema regressions cannot masquerade as HTTP 200s.
 jq -e '.data | type == "array"' <<<"$crons" >/dev/null
 jq -e '.data | type == "array"' <<<"$notifications" >/dev/null
+jq -e '.data | type == "array"' <<<"$default_skills" >/dev/null
 
 jq -e '.data | length == 6' <<<"$providers" >/dev/null
 printf 'Public API smoke checks passed.\n'

@@ -5,7 +5,7 @@ import { useAuth } from './auth';
 
 export default function LoginScreen({ optional = false }: { optional?: boolean }) {
   const { t } = useTranslation();
-  const { signIn, closeLogin } = useAuth();
+  const { signIn, closeLogin, authError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -32,7 +32,7 @@ export default function LoginScreen({ optional = false }: { optional?: boolean }
         <div className="login-heading"><h1>{t('login.title')}</h1><p className="login-sub">{t('login.subtitle')}</p></div>
         <label className="login-field">{t('login.username')}<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder={t('login.usernamePlaceholder')} autoFocus /></label>
         <label className="login-field">{t('login.password')}<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={t('login.passwordPlaceholder')} /></label>
-        {error && <div className="login-error">{error}</div>}
+        {(error || authError) && <div className="login-error">{error || authError}</div>}
         <button className="login-btn" type="submit" disabled={busy || !email.trim() || !password.trim()}>{busy ? t('login.signingIn') : t('login.signIn')}</button>
       </form>
     </div>

@@ -59,6 +59,15 @@ function approvalChoices(value: unknown, allowPermanent: boolean): RunApprovalCh
   return allowPermanent ? APPROVAL_CHOICES : APPROVAL_CHOICES.filter((choice) => choice !== 'always');
 }
 
+function approvalSubsystem(data: Data): 'skills' | 'memory' | undefined {
+  const explicit = string(data.subsystem).toLowerCase();
+  if (explicit === 'skills' || explicit === 'memory') return explicit;
+  const description = `${string(data.description)} ${readable(data.command)}`.toLowerCase();
+  if (description.includes('skills.write_approval')) return 'skills';
+  if (description.includes('memory.write_approval') || description.includes('save to memory:')) return 'memory';
+  return undefined;
+}
+
 function terminal(status: ChatRun['status']): boolean {
   return status === 'completed' || status === 'error' || status === 'interrupted' || status === 'cancelled';
 }
@@ -96,7 +105,8 @@ export function reduceRunEvent(run: ChatRun | null, event: SSEEvent): ChatRun | 
     return { ...run, messageId: string(record(data.message).id) || string(data.message_id) || run.messageId };
   }
   if (type === 'approval.request') {
-    const allowPermanent = data.allow_permanent !== false;
+    const subsystem = approvalSubsystem(data);
+    const allowPermanent = subsystem !== undefined || data.allow_permanent !== false;
     return {
       ...run,
       status: terminal(run.status) ? run.status : 'waiting_for_approval',
@@ -105,6 +115,7 @@ export function reduceRunEvent(run: ChatRun | null, event: SSEEvent): ChatRun | 
         description: string(data.description) || 'Approval required',
         choices: approvalChoices(data.choices, allowPermanent),
         allowPermanent,
+        ...(subsystem ? { subsystem } : {}),
       },
     };
   }

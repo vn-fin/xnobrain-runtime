@@ -25,6 +25,14 @@ function skills(data: AgentSkillListResponseDTO | AgentSkillDTO[] | undefined): 
 }
 
 export const skillsApi = {
+  async listDefault(page?: number): Promise<SkillsPage> {
+    const query = page != null ? `?page=${encodeURIComponent(String(page))}` : '';
+    const { data, pagination } = await requestWithMeta<AgentSkillListResponseDTO | AgentSkillDTO[]>(
+      `${ROOT}${query}`,
+    );
+    return { skills: skills(data), pagination };
+  },
+
   async list(agentId: string, page?: number): Promise<SkillsPage> {
     const query = page != null ? `?page=${encodeURIComponent(String(page))}` : '';
     const { data, pagination } = await requestWithMeta<AgentSkillListResponseDTO | AgentSkillDTO[]>(

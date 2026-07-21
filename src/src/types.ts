@@ -159,6 +159,7 @@ export type ChatRunApproval = {
   description: string;
   choices: RunApprovalChoice[];
   allowPermanent: boolean;
+  subsystem?: 'skills' | 'memory';
 };
 
 export type ChatRunStep = {
