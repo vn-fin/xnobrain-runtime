@@ -16,6 +16,14 @@ Open `http://localhost` for the UI and `http://localhost/docs` for Swagger.
 Only Traefik publishes a host port. The runtime's named volume holds profiles,
 teams, notifications, Hermes state, and 9router credentials.
 
+The runtime defaults to 4 CPUs and 4 GB RAM and requests a 100 GB writable
+root disk. Increase `OPEN_LUMORA_RUNTIME_CPUS`,
+`OPEN_LUMORA_RUNTIME_MEMORY`, or `OPEN_LUMORA_RUNTIME_DISK_SIZE` in `.env`
+when the host has more capacity. CPU and RAM use cgroup limits. Docker enforces
+the root-disk request only on storage drivers with per-container quota support;
+durable profile data in the named volume follows the Docker host's volume
+capacity.
+
 Set `ENTERPRISE_API_URL` to add authenticated Enterprise features. The
 optional `authenticated` Compose profile starts an OTel collector that exports
 to that URL. The Enterprise service and its databases are not part of this OSS

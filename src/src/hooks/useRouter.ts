@@ -9,7 +9,6 @@ export type RouteState = {
   agentSearch: string;
   skillsSearch: string;
   skillsGroupFilter: string;
-  skillsPage: number;
 };
 
 export function parseRoute(pathname: string, search: string): RouteState {
@@ -33,7 +32,6 @@ export function parseRoute(pathname: string, search: string): RouteState {
     if (panel === 'skills' || panel === 'runtime' || panel === 'cron' || panel === 'workspace') rightView = panel;
   }
 
-  const pageParam = Number.parseInt(sp.get('page') ?? '1', 10);
   return {
     centerView,
     agentId,
@@ -42,7 +40,6 @@ export function parseRoute(pathname: string, search: string): RouteState {
     agentSearch: sp.get('agentq') ?? '',
     skillsSearch: sp.get('q') ?? '',
     skillsGroupFilter: sp.get('group') ?? 'all',
-    skillsPage: Number.isFinite(pageParam) && pageParam > 0 ? pageParam - 1 : 0,
   };
 }
 
@@ -63,7 +60,6 @@ export function computeUrl(state: RouteState): string {
   if (state.centerView === 'skills') {
     if (state.skillsSearch.trim()) params.set('q', state.skillsSearch.trim());
     if (state.skillsGroupFilter !== 'all') params.set('group', state.skillsGroupFilter);
-    if (state.skillsPage > 0) params.set('page', String(state.skillsPage + 1));
     return `/skills${params.size ? `?${params}` : ''}`;
   }
   if (!state.agentId) return '/';
@@ -88,18 +84,17 @@ export function useRouter() {
   const [agentSearch, setAgentSearch] = useState(bootRoute.agentSearch);
   const [skillsSearch, setSkillsSearch] = useState(bootRoute.skillsSearch);
   const [skillsGroupFilter, setSkillsGroupFilter] = useState(bootRoute.skillsGroupFilter);
-  const [skillsPage, setSkillsPage] = useState(bootRoute.skillsPage);
 
   useEffect(() => {
     const url = computeUrl({
       centerView, agentId: activeAgentId, conversationId: activeConversationId, rightView,
-      agentSearch, skillsSearch, skillsGroupFilter, skillsPage,
+      agentSearch, skillsSearch, skillsGroupFilter,
     });
     const current = window.location.pathname + window.location.search;
     if (url === current) return;
     if (url.split('?')[0] !== window.location.pathname) window.history.pushState(null, '', url);
     else window.history.replaceState(null, '', url);
-  }, [centerView, activeAgentId, activeConversationId, rightView, agentSearch, skillsSearch, skillsGroupFilter, skillsPage]);
+  }, [centerView, activeAgentId, activeConversationId, rightView, agentSearch, skillsSearch, skillsGroupFilter]);
 
   useEffect(() => {
     const onPop = () => {
@@ -111,7 +106,6 @@ export function useRouter() {
       setAgentSearch(state.agentSearch);
       setSkillsSearch(state.skillsSearch);
       setSkillsGroupFilter(state.skillsGroupFilter);
-      setSkillsPage(state.skillsPage);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -129,16 +123,16 @@ export function useRouter() {
     setActiveConversationId(next.conversationId);
     const currentState: RouteState = {
       centerView, agentId: next.agentId, conversationId: next.conversationId, rightView,
-      agentSearch, skillsSearch, skillsGroupFilter, skillsPage,
+      agentSearch, skillsSearch, skillsGroupFilter,
     };
     window.history.replaceState(null, '', computeUrl(currentState));
-  }, [activeAgentId, activeConversationId, centerView, rightView, agentSearch, skillsSearch, skillsGroupFilter, skillsPage]);
+  }, [activeAgentId, activeConversationId, centerView, rightView, agentSearch, skillsSearch, skillsGroupFilter]);
 
   return {
     centerView, setCenterView, rightView, setRightView,
     activeAgentId, setActiveAgentId, activeConversationId, setActiveConversationId,
     agentSearch, setAgentSearch, skillsSearch, setSkillsSearch,
-    skillsGroupFilter, setSkillsGroupFilter, skillsPage, setSkillsPage,
+    skillsGroupFilter, setSkillsGroupFilter,
     openChat, reconcileAgents,
   };
 }

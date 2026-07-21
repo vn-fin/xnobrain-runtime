@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useRouter } from './hooks/useRouter';
 import { useAssistants, useActiveAgent } from './hooks/useAssistants';
+import { useCommunitySkills } from './hooks/useCommunitySkills';
 import { useConnections } from './hooks/useConnections';
 import { useSandbox } from './hooks/useSandbox';
 import { useCrons } from './hooks/useCrons';
@@ -29,6 +30,7 @@ export default function App() {
   const { t } = useTranslation();
   const router = useRouter();
   const assistants = useAssistants();
+  const communitySkills = useCommunitySkills();
   const connections = useConnections();
   const sandbox = useSandbox(router.centerView === 'sandbox');
   const crons = useCrons();
@@ -243,12 +245,15 @@ export default function App() {
             library={assistants.library}
             agents={assistants.agents}
             agentSkills={assistants.agentSkills}
+            community={communitySkills.skills}
+            communityStats={communitySkills.stats}
+            communityStatus={communitySkills.status}
+            communityError={communitySkills.error}
+            onRetryCommunity={communitySkills.refresh}
             search={router.skillsSearch}
             onSearch={router.setSkillsSearch}
             groupFilter={router.skillsGroupFilter}
             onGroupFilter={router.setSkillsGroupFilter}
-            page={router.skillsPage}
-            onPage={router.setSkillsPage}
             onInstall={assistants.installDefaultSkill}
             installPending={assistants.skillInstallPending}
             installError={assistants.skillInstallError}

@@ -25,7 +25,10 @@ class LocalRuntimeManager:
     def detail(self) -> dict[str, Any]:
         cpu_percent, cpu_usage_ns = self._cpu_usage()
         memory_used, memory_limit = self._memory_usage()
-        disk = shutil.disk_usage(self.data_dir if self.data_dir.exists() else Path("/"))
+        # Docker's storage quota applies to the container writable layer. Read
+        # the root filesystem so the API reports that enforced limit instead
+        # of the host capacity backing the persistent profile volume.
+        disk = shutil.disk_usage(Path("/"))
         network_rx, network_tx = self._network_usage()
         hostname = socket.gethostname()
         uptime = max(0, int(time.time() - self.started_at))

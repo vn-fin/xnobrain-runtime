@@ -41,6 +41,12 @@ services:
     # The local assistant is intentionally root inside its own runtime
     # container so it can install requested office/system packages on demand.
     user: "0:0"
+    cpus: ${OPEN_LUMORA_RUNTIME_CPUS:-4.0}
+    mem_limit: ${OPEN_LUMORA_RUNTIME_MEMORY:-4G}
+    memswap_limit: ${OPEN_LUMORA_RUNTIME_MEMORY:-4G}
+    # Enforced when the Docker storage driver supports per-container quotas.
+    storage_opt:
+      size: ${OPEN_LUMORA_RUNTIME_DISK_SIZE:-100G}
     environment:
       HERMES_HOME: /opt/data/open-lumora/root
       HERMES_ROOT_PROFILE: /opt/data/open-lumora/root
