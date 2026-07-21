@@ -42,7 +42,7 @@ func (s *Server) cloudAuthentication(c fiber.Ctx) error {
 }
 
 func cloudProtectedPath(path string) bool {
-	if path == "/api/v1/health" || path == "/agent-gateway/v1/ping" {
+	if path == "/api/v1/health" || path == "/api/v1/system/deployment" || path == "/agent-gateway/v1/ping" {
 		return false
 	}
 	for _, prefix := range []string{"/api/", "/agent-gateway/", "/conversations/", "/sandboxes/", "/internal/"} {

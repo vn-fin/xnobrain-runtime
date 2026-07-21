@@ -25,11 +25,16 @@ func TestCloudAuthenticationFailsClosedAndForwardsValidLogin(t *testing.T) {
 	server := NewServer(config.Config{StartMode: "cloud", ControlGatewayURL: enterprise.URL}, nil, nil, nil, nil)
 	app := NewApp(server.config, server)
 	app.Get("/api/v1/health", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
+	app.Get("/api/v1/system/deployment", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
 	app.Get("/api/v1/private", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
 
 	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
 	if err != nil || response.StatusCode != fiber.StatusOK {
 		t.Fatalf("health status=%d err=%v", response.StatusCode, err)
+	}
+	response, err = app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/system/deployment", nil))
+	if err != nil || response.StatusCode != fiber.StatusOK {
+		t.Fatalf("deployment status=%d err=%v", response.StatusCode, err)
 	}
 	response, err = app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/private", nil))
 	if err != nil || response.StatusCode != fiber.StatusUnauthorized {

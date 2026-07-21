@@ -1,4 +1,5 @@
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? window.location.origin).replace(/\/+$/, '');
+export const AUTH_EXPIRED_EVENT = 'open-lumora:auth-expired';
 
 type ApiEnvelope<T> = {
   success?: boolean;
@@ -31,7 +32,13 @@ function authenticatedHeaders(init?: RequestInit, includeJson = true): Headers {
   if (includeJson && init?.body != null && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
+  const token = localStorage.getItem('access_token');
+  if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
   return headers;
+}
+
+function emitAuthExpired() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
 }
 
 async function responseBody(response: Response): Promise<unknown> {
@@ -62,6 +69,7 @@ export async function requestRaw(path: string, init: RequestInit = {}): Promise<
   if (response.ok) return response;
 
   const body = await responseBody(response);
+  if (response.status === 401) emitAuthExpired();
   throw new ApiError(response.status, messageFrom(body, response), body);
 }
 

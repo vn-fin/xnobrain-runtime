@@ -5,6 +5,8 @@ import {
   History,
   KeyRound,
   Languages,
+  LogIn,
+  LogOut,
   Monitor,
   Moon,
   MoreHorizontal,
@@ -23,11 +25,12 @@ import {
 } from 'lucide-react';
 import { SUPPORTED_LANGUAGES } from '../i18n';
 import { useTheme } from '../theme';
+import { useAuth } from '../auth';
 import type { Agent, CenterView, Conversation } from '../types';
 
 const navItems = [
   { id: 'skills', label: 'skills', icon: Sparkles },
-  { id: 'dashboard', label: 'dashboard', icon: ChartNoAxesCombined },
+  { id: 'dashboard', label: 'dashboard', icon: ChartNoAxesCombined, enterpriseCapability: 'managed_telemetry' },
   { id: 'sandbox', label: 'runtime', icon: Server },
   { id: 'teams', label: 'teams', icon: Network },
   { id: 'connections', label: 'connections', icon: KeyRound },
@@ -63,6 +66,7 @@ export function Sidebar({
 }) {
   const { t, i18n } = useTranslation();
   const { preference: themePref, setPreference: setThemePref } = useTheme();
+  const { user, enterprisePlan, hasEnterpriseFeature, openLogin, signOut } = useAuth();
   const [searchOpen, setSearchOpen] = useState(!!agentSearch);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -98,6 +102,8 @@ export function Sidebar({
       <div className="main-nav">
         {navItems.map((item) => {
           const Icon = item.icon;
+          const enterpriseCapability = 'enterpriseCapability' in item ? item.enterpriseCapability : undefined;
+          const disabled = enterpriseCapability ? !hasEnterpriseFeature(enterpriseCapability) : false;
           const active =
             (item.id === 'dashboard' && centerView === 'dashboard') ||
             (item.id === 'sandbox' && centerView === 'sandbox') ||
@@ -106,7 +112,13 @@ export function Sidebar({
             (item.id === 'connections' && centerView === 'connections') ||
             (item.id === 'data' && centerView === 'data');
           return (
-            <button key={item.id} className={active ? 'nav-row active' : 'nav-row'} onClick={() => onNavigate(item.id as CenterView)}>
+            <button
+              key={item.id}
+              className={active ? 'nav-row active' : 'nav-row'}
+              disabled={disabled}
+              title={disabled ? t('login.enterpriseRequired', { defaultValue: 'Sign in to use this enterprise feature.' }) : undefined}
+              onClick={() => onNavigate(item.id as CenterView)}
+            >
               <Icon size={18} />
               <span>{t(`nav.${item.label}`, { defaultValue: item.label[0].toUpperCase() + item.label.slice(1) })}</span>
             </button>
@@ -245,10 +257,18 @@ export function Sidebar({
           <ChevronDown size={14} />
         </div>
 
-        <div className="user-row" title="Open-source local mode">
-          <span className="user-avatar">L</span>
-          <span className="user-name">Local workspace</span>
-        </div>
+        {user ? (
+          <div className="user-row" title={enterprisePlan?.plan_id ?? 'signed in'}>
+            <span className="user-avatar">{(user.displayName ?? user.email ?? '?').charAt(0).toUpperCase()}</span>
+            <span className="user-name">{user.displayName ?? user.email}</span>
+            <button className="icon-button" title={t('login.signOut')} onClick={() => void signOut()}><LogOut size={16} /></button>
+          </div>
+        ) : (
+          <button className="user-row user-login" onClick={openLogin}>
+            <span className="user-avatar"><LogIn size={14} /></span>
+            <span className="user-name">{t('login.signIn')}</span>
+          </button>
+        )}
       </div>
     </aside>
   );

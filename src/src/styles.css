@@ -311,6 +311,11 @@ body.col-resizing {
   background: var(--panel-3);
 }
 
+.nav-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .history-section {
   flex: 1;
   min-height: 0;
@@ -386,6 +391,17 @@ body.col-resizing {
   align-items: center;
   gap: 8px;
   padding: 4px 2px 0;
+}
+
+.user-login {
+  width: 100%;
+  color: var(--text);
+  text-align: left;
+  border-radius: 8px;
+}
+
+.user-login:hover {
+  background: var(--hover);
 }
 
 .user-avatar {
@@ -893,6 +909,14 @@ body.col-resizing {
   background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--green) 11%, transparent), transparent 38%), var(--bg);
 }
 
+.login-screen.optional {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgb(0 0 0 / 58%);
+  backdrop-filter: blur(4px);
+}
+
 .login-card {
   width: min(400px, 100%);
   display: grid;
@@ -902,6 +926,13 @@ body.col-resizing {
   border-radius: 14px;
   background: var(--panel);
   box-shadow: 0 20px 60px rgb(0 0 0 / 18%);
+  position: relative;
+}
+
+.login-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
 }
 
 .login-brand {

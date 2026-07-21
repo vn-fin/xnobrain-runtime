@@ -21,6 +21,7 @@ import { TeamsView } from './components/TeamsView';
 import { DashboardView } from './features/dashboard/DashboardView';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
+import { useAuth } from './auth';
 import type { Agent } from './types';
 
 export default function App() {
@@ -33,6 +34,8 @@ export default function App() {
   const conversation = useConversation(router.activeAgentId, router.activeConversationId);
   const workspace = useWorkspace(router.activeAgentId);
   const teams = useTeams();
+  const { hasEnterpriseFeature } = useAuth();
+  const telemetryEnabled = hasEnterpriseFeature('managed_telemetry');
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
   const RIGHT_MIN = 280;
@@ -94,6 +97,10 @@ export default function App() {
   }, [assistants.status, assistants.agents]);
 
   const { centerView } = router;
+
+  useEffect(() => {
+    if (centerView === 'dashboard' && !telemetryEnabled) router.setCenterView('chat');
+  }, [centerView, router, telemetryEnabled]);
   const authProvider = connections.connections.find((p) => p.id === connections.authProviderId) ?? null;
   const runtimeProviders = useMemo(() => connections.connections.map((provider) => ({
     id: provider.id,
@@ -136,10 +143,10 @@ export default function App() {
   if (assistants.status === 'loading') return <AsyncState status="loading" />;
   if (assistants.status === 'error') return <AsyncState status="error" error={assistants.error} onRetry={assistants.refresh} />;
   if (!activeAgent) {
-    if (centerView === 'dashboard') return <DashboardView onClose={() => router.setCenterView('chat')} />;
+    if (centerView === 'dashboard' && telemetryEnabled) return <DashboardView onClose={() => router.setCenterView('chat')} />;
     return (
       <div className="empty-app">
-        <button className="onboarding-dashboard-link" onClick={() => router.setCenterView('dashboard')}>View observability dashboard</button>
+        {telemetryEnabled && <button className="onboarding-dashboard-link" onClick={() => router.setCenterView('dashboard')}>View observability dashboard</button>}
         <Onboarding
           sandboxStatus={sandbox.status}
           sandboxProvisioned={sandbox.provisioned}
