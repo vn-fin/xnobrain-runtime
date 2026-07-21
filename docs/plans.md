@@ -6,14 +6,15 @@ while authenticated Enterprise API features follow the account plan.
 
 ## Runtime ownership
 
-`open-lumora` owns the frontend, Studio API, Hermes/9router runtime extensions,
-Docker runtime image, and Incus runtime image. It supports agents, profiles,
-skills, memory, MCP, providers, teams, conversations, and local cron scheduling.
+`open-lumora` owns the frontend and combined FastAPI/Hermes/9router Docker
+runtime. It supports agents, profiles, skills, memory, MCP, providers, teams,
+conversations, and local cron scheduling without an application database.
 
 `open-lumora-enterprise` owns the authenticated Enterprise API, PostgreSQL plan
 metadata, ClickHouse telemetry storage, trace ingestion, aggregate metric APIs,
-and future collaboration features. It does not contain or build Hermes runtime
-source or images.
+future collaboration features, and managed/Incus cloud packaging. It consumes
+the released OSS runtime interface rather than forking the `open_lumora`
+application package.
 
 ## Deployment behavior
 
@@ -24,9 +25,9 @@ source or images.
 | Cloud | Required | Managed Incus runtime | Usage, traces, metrics, and future collaboration | Plan applies to managed resources and Enterprise features |
 
 The default Compose mode is self-hosted and signed out. It continues to work
-without Internet or an authentication service. The Enterprise API image may be
-present in this stack, but its authenticated routes remain unavailable until a
-user signs in and the auth service is configured.
+without Internet or an authentication service. The Enterprise API is external
+to this stack; authenticated routes remain unavailable until
+`ENTERPRISE_API_URL` is configured and a user signs in.
 
 ## Plans
 
@@ -64,7 +65,7 @@ is unavailable.
 Telemetry is available only to an authenticated account or claimed device:
 
 ```text
-Studio/runtime -> OTel Collector -> Enterprise API -> Go ingest channel
+FastAPI/runtime -> OTel Collector -> Enterprise API -> ingest channel
                -> fixed workers -> ClickHouse -> aggregate/filter APIs -> UI
 ```
 

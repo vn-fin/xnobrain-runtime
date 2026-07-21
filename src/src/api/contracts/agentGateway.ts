@@ -53,8 +53,8 @@ export type AgentSkillListResponseDTO = {
 };
 
 export type AgentSkillInstallRequestDTO = {
-  skill_id: string;
-  name: string;
+  skill_id?: string;
+  name?: string;
   category?: string;
   content?: string;
   enable: boolean;

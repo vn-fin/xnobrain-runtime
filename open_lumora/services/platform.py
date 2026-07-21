@@ -63,11 +63,13 @@ class PlatformService:
         agents: AgentManager,
         config: GlobalConfigManager,
         router: NineRouterManager,
+        runtime,
     ):
         self.repository = repository
         self.agents = agents
         self.config = config
         self.router = router
+        self.runtime = runtime
         self.portability = PortabilityService(repository, config.root_profile)
         self._oauth_attempts: dict[str, dict[str, str]] = {}
         self._running_crons: set[str] = set()
@@ -120,6 +122,17 @@ class PlatformService:
                 "updated_at": metadata.get("updated_at", updated_at),
             })
         return result
+
+    def sandbox(self, action: str) -> dict[str, Any]:
+        """Return local runtime detail without exposing a process listing."""
+        detail = self.runtime.detail()
+        if action == "detail":
+            return detail
+        if action in {"info", "metrics", "health"}:
+            return detail[action]
+        if action == "stats":
+            return {"metrics": detail["metrics"], "system": detail["system"]}
+        raise ServiceError("sandbox resource not found", status=404, code="not_found")
 
     def list_agents(self) -> list[dict[str, Any]]:
         return [self._agent_dto(item) for item in self.agents.list_agents()["agents"]]
@@ -187,6 +200,10 @@ class PlatformService:
     def list_default_skills(self) -> list[dict[str, Any]]:
         """List only the skills installed in the default Hermes profile."""
         return self.config.list_skills()["skills"]
+
+    async def install_default_skill(self, body: Mapping[str, Any]) -> list[dict[str, Any]]:
+        """Install a URL, hub identifier, or local SKILL.md into the root profile."""
+        return (await self.config.install_skill(body))["skills"]
 
     async def install_skill(self, agent_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         payload = await self.agents.install_skill(agent_id, body)

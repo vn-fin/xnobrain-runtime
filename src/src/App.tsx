@@ -30,7 +30,7 @@ export default function App() {
   const router = useRouter();
   const assistants = useAssistants();
   const connections = useConnections();
-  const sandbox = useSandbox();
+  const sandbox = useSandbox(router.centerView === 'sandbox');
   const crons = useCrons();
   const conversation = useConversation(router.activeAgentId, router.activeConversationId);
   const workspace = useWorkspace(router.activeAgentId);
@@ -248,7 +248,9 @@ export default function App() {
             onGroupFilter={router.setSkillsGroupFilter}
             page={router.skillsPage}
             onPage={router.setSkillsPage}
-            onInstall={assistants.installSkill}
+            onInstall={assistants.installDefaultSkill}
+            installPending={assistants.skillInstallPending}
+            installError={assistants.skillInstallError}
             onInstallExisting={assistants.installExistingSkill}
             onApply={assistants.applySkillsToAgents}
             onClose={() => router.setCenterView('chat')}

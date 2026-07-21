@@ -15,6 +15,8 @@ export function SkillsView({
   page,
   onPage,
   onInstall,
+  installPending,
+  installError,
   onInstallExisting,
   onApply,
   onClose,
@@ -28,7 +30,9 @@ export function SkillsView({
   onGroupFilter: (v: string) => void;
   page: number;
   onPage: (v: number) => void;
-  onInstall: (name: string, agentIds: string[]) => void;
+  onInstall: (source: string) => Promise<boolean>;
+  installPending: boolean;
+  installError: string;
   onInstallExisting: (id: string, agentIds: string[]) => void;
   onApply: (skillIds: string[], agentIds: string[]) => void;
   onClose: () => void;
@@ -38,7 +42,6 @@ export function SkillsView({
   const [installName, setInstallName] = useState('');
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [applyAgentIds, setApplyAgentIds] = useState<string[]>([]);
-  const [targetAgentIds, setTargetAgentIds] = useState<string[]>(() => agents[0] ? [agents[0].id] : []);
 
   const pageSize = 8;
   const categories = ['all', ...skillCategoryOrder.filter((c) => library.some((s) => s.category === c))];
@@ -60,10 +63,12 @@ export function SkillsView({
   const toggleAgent = (id: string) =>
     setApplyAgentIds((prev) => (prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]));
 
-  const confirmInstall = () => {
-    onInstall(installName.trim(), targetAgentIds);
-    setInstallName('');
-    setInstallOpen(false);
+  const confirmInstall = async () => {
+    if (!installName.trim() || installPending) return;
+    if (await onInstall(installName.trim())) {
+      setInstallName('');
+      setInstallOpen(false);
+    }
   };
 
   const apply = () => {
@@ -97,23 +102,16 @@ export function SkillsView({
               value={installName}
               onChange={(e) => setInstallName(e.target.value)}
               placeholder={t('skillsView.installPlaceholder')}
-              onKeyDown={(e) => e.key === 'Enter' && confirmInstall()}
+              onKeyDown={(e) => e.key === 'Enter' && void confirmInstall()}
               autoFocus
             />
-            <button className="skv-install-confirm" disabled={!installName.trim() || targetAgentIds.length === 0} onClick={confirmInstall}>
+            <button className="skv-install-confirm" disabled={!installName.trim() || installPending} onClick={() => void confirmInstall()}>
               <Check size={15} />
-              {t('common.install')}
+              {installPending ? t('common.loading', { defaultValue: 'Installing…' }) : t('common.install')}
             </button>
           </div>
-          <div className="skv-targets">
-            <span>Install for:</span>
-            {agents.map((agent) => (
-              <label key={agent.id} className={targetAgentIds.includes(agent.id) ? 'skv-agent-chip on' : 'skv-agent-chip'}>
-                <input type="checkbox" checked={targetAgentIds.includes(agent.id)} onChange={() => setTargetAgentIds((ids) => ids.includes(agent.id) ? ids.filter((id) => id !== agent.id) : [...ids, agent.id])} />
-                {agent.title}
-              </label>
-            ))}
-          </div>
+          <p className="skv-install-hint">{t('skillsView.installHint')}</p>
+          {installError && <p className="skv-install-error" role="alert">{installError}</p>}
         </div>
       )}
 
@@ -180,10 +178,10 @@ export function SkillsView({
                       ) : (
                         <button
                           className="skv-install-mini"
-                          disabled={targetAgentIds.length === 0}
+                          disabled={agents.length === 0}
                           onClick={(e) => {
                             e.stopPropagation();
-                            onInstallExisting(skill.skill_id, targetAgentIds);
+                            onInstallExisting(skill.skill_id, agents.map((agent) => agent.id));
                           }}
                         >
                           <Plus size={13} />

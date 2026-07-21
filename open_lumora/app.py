@@ -16,12 +16,15 @@ from .services import PlatformService
 class OpenLumoraApplication:
     """Builds clean layers around the original Hermes runtime objects."""
 
-    def __init__(self, agents, config, router):
+    def __init__(self, agents, config, router, runtime=None):
         root_profile = Path(os.getenv("HERMES_ROOT_PROFILE") or os.getenv("HERMES_HOME") or Path.home() / ".hermes")
         profiles_root = Path(os.getenv("HERMES_PROFILES_ROOT") or root_profile / "profiles")
         data_dir = Path(os.getenv("DATA_DIR") or root_profile / "open-lumora")
         self.repository = FileRepository(data_dir, profiles_root)
-        self.service = PlatformService(self.repository, agents, config, router)
+        if runtime is None:
+            from .integrations import LocalRuntimeManager
+            runtime = LocalRuntimeManager(data_dir=data_dir)
+        self.service = PlatformService(self.repository, agents, config, router, runtime)
         self.handlers = APIHandlers(self.service)
 
     def register(self, app) -> None:

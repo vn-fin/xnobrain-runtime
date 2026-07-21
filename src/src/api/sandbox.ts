@@ -1,6 +1,6 @@
 import { request, requestRaw } from './client';
 import { readSSE, type SSEEvent } from './stream';
-import type { DefaultSandboxDTO, DefaultSandboxStatsDTO, SandboxHealthDTO, SandboxMetricsDTO } from './contracts/sandboxes';
+import type { SandboxDetailDTO } from './contracts/sandboxes';
 import { mapSandboxData } from './mappers/sandbox';
 import type { SandboxData } from '../types';
 
@@ -9,20 +9,14 @@ const SANDBOX_BASE = '/sandboxes/v1/me/sandboxes';
 
 export const sandboxApi = {
   async get(): Promise<SandboxResult> {
-    const info = await request<DefaultSandboxDTO>(`${SANDBOX_BASE}/info`).catch((error: unknown) => {
+    const detail = await request<SandboxDetailDTO>(`${SANDBOX_BASE}/detail`).catch((error: unknown) => {
       if ((error as { status?: number } | null)?.status === 404) return null;
       throw error;
     });
-    if (!info) return { provisioned: false, data: null };
-
-    const [metrics, stats, health] = await Promise.all([
-      request<SandboxMetricsDTO>(`${SANDBOX_BASE}/metrics`),
-      request<DefaultSandboxStatsDTO>(`${SANDBOX_BASE}/stats`),
-      request<SandboxHealthDTO>(`${SANDBOX_BASE}/health`),
-    ]);
+    if (!detail) return { provisioned: false, data: null };
     return {
       provisioned: true,
-      data: mapSandboxData(info, metrics, stats.system ?? {}, health),
+      data: mapSandboxData(detail),
     };
   },
 

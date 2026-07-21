@@ -5110,6 +5110,16 @@ body.col-resizing {
   background: #43d389;
 }
 
+.skv-install-hint,
+.skv-install-error {
+  margin: 0;
+  padding: 0 24px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.skv-install-error { color: var(--danger); }
+
 .skills-view-controls {
   display: flex;
   align-items: center;

@@ -77,29 +77,9 @@ export type SandboxMetrics = {
   netTxBytes: number;
 };
 
-export type SandboxProcess = {
-  pid: number;
-  command: string;
-  cpuPercent: number;
-  memoryPercent: number;
-  rssKiB: number;
-  state: string;
-};
-
 export type SandboxSystem = {
   cpuPercent: number;
-  processes: number;
   os: { hostname: string; os: string; osVersion: string; kernelVersion: string; fqdn: string };
-  storage: {
-    pool: string;
-    poolUsedBytes: number;
-    poolTotalBytes: number;
-    volumeName: string;
-    volumeType: string;
-    volumeUsedBytes: number;
-    volumeTotalBytes: number;
-  };
-  topProcesses: SandboxProcess[];
 };
 
 export type SandboxHealth = { healthy: boolean; statusCode: number; endpoint: string };
@@ -109,6 +89,7 @@ export type SandboxData = {
   metrics: SandboxMetrics;
   system: SandboxSystem;
   health: SandboxHealth;
+  updatedAt: string;
 };
 
 // Skills (agent-gateway agents-skills)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import re
 import shutil
@@ -168,12 +169,14 @@ class GlobalConfigManager:
             raise ConfigAPIError("request body must be an object")
 
         self.root_profile.mkdir(parents=True, exist_ok=True)
+        before = self._skill_files()
         if "content" in body:
             skill_id = self._skill_id(body.get("skill_id") or body.get("name"))
             content = self._text_value(body["content"], field="content", max_chars=MAX_TEXT_CHARS)
             skill_dir = self.root_profile / "skills" / skill_id
             skill_dir.mkdir(parents=True, exist_ok=True)
             self._write_text(skill_dir / "SKILL.md", content, field="content")
+            self._snapshot_skill_changes(before, self._skill_files())
             return self.list_skills()
 
         source = self._nonempty_string(body.get("source"), "source")
@@ -194,9 +197,8 @@ class GlobalConfigManager:
                 code="skill_install_failed",
                 status=422,
             )
-        payload = self.list_skills()
-        payload["command"] = result
-        return payload
+        self._snapshot_skill_changes(before, self._skill_files())
+        return self.list_skills()
 
     def list_skills(self) -> dict[str, Any]:
         config = self._read_config()
@@ -287,9 +289,13 @@ class GlobalConfigManager:
         self.root_profile.mkdir(parents=True, exist_ok=True)
         path = self.root_profile / "config.yaml"
         payload = yaml.safe_dump(dict(config), sort_keys=False, allow_unicode=False).encode("utf-8")
+        self._atomic_write(path, payload)
+
+    def _atomic_write(self, path: Path, payload: bytes, *, mode: int = 0o640) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         try:
-            os.fchmod(descriptor, 0o640)
+            os.fchmod(descriptor, mode)
             with os.fdopen(descriptor, "wb") as file:
                 file.write(payload)
                 file.flush()
@@ -301,6 +307,27 @@ class GlobalConfigManager:
             except FileNotFoundError:
                 pass
             raise
+
+    def _skill_files(self) -> dict[str, bytes]:
+        root = self.root_profile / "skills"
+        if not root.is_dir():
+            return {}
+        return {
+            path.relative_to(root).as_posix(): path.read_bytes()
+            for path in root.rglob("SKILL.md")
+            if path.is_file()
+        }
+
+    def _snapshot_skill_changes(self, before: Mapping[str, bytes], after: Mapping[str, bytes]) -> None:
+        for relative, current in after.items():
+            previous = before.get(relative)
+            if previous == current:
+                continue
+            payload = previous if previous is not None else current
+            digest = hashlib.sha256(payload).hexdigest()
+            target = self.root_profile / "snapshots" / "skills" / Path(relative).parent
+            snapshot = target / f"{time.time_ns()}-{digest[:12]}.md"
+            self._atomic_write(snapshot, payload, mode=0o440)
 
     def _scan_skills(self, config: Mapping[str, Any]) -> list[dict[str, Any]]:
         seen: set[str] = set()
@@ -521,8 +548,7 @@ class GlobalConfigManager:
 
     def _write_text(self, path: Path, value: Any, *, field: str) -> None:
         text = self._text_value(value, field=field, max_chars=MAX_TEXT_CHARS)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        self._atomic_write(path, text.encode("utf-8"))
 
     def _read_text(self, path: Path) -> str:
         try:

@@ -8,7 +8,7 @@ mode does not export telemetry or expose a local usage dashboard. An
 authenticated installation follows this private chain:
 
 ```text
-browser -> Traefik -> frontend or Studio API -> OSS Hermes runtime
+browser -> Traefik -> frontend or unified FastAPI/Hermes runtime
                               |
                               +-> Enterprise API -> ClickHouse aggregates
 ```

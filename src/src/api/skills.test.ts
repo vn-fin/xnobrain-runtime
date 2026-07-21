@@ -28,4 +28,22 @@ describe('skillsApi', () => {
     expect(fetchMock.mock.calls[0][0]).toBe(`${window.location.origin}/agent-gateway/v1/agents-skills`);
     expect(result.skills.map((skill) => skill.skill_id)).toEqual(['default-notes']);
   });
+
+  it('installs a pasted source into the default Hermes profile', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: [{ skill_id: 'pdf', name: 'pdf', installed: true, enabled: true }],
+    }), { status: 201, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await skillsApi.installDefault({ source: 'skills-sh/anthropics/skills/pdf', enable: true });
+
+    expect(fetchMock.mock.calls[0][0]).toBe(`${window.location.origin}/agent-gateway/v1/agents-skills`);
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+      source: 'skills-sh/anthropics/skills/pdf',
+      enable: true,
+    });
+    expect(result[0].skill_id).toBe('pdf');
+  });
 });

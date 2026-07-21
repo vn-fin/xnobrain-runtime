@@ -14,6 +14,26 @@ RUN --mount=type=cache,target=/root/.npm npm install --save-exact "next@${NINE_R
 FROM nousresearch/hermes-agent:latest
 
 USER root
+# Keep package indexes and source definitions in the runtime image so an agent
+# running as root can install an additional package without first refreshing
+# APT. This image is office-oriented but retains practical engineering tools.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      antiword build-essential ca-certificates catdoc csvkit curl default-jre-headless \
+      dnsutils docx2txt ffmpeg file fontconfig fonts-crosextra-caladea \
+      fonts-crosextra-carlito fonts-dejavu fonts-freefont-ttf fonts-liberation \
+      fonts-noto-cjk fonts-noto-color-emoji fonts-urw-base35 ghostscript git \
+      gnumeric gnupg graphicsmagick htop hunspell-en-us hyphen-en-us imagemagick \
+      img2pdf iproute2 iputils-ping jq less libreoffice libreoffice-base \
+      libreoffice-calc libreoffice-draw libreoffice-impress libreoffice-math \
+      libreoffice-script-provider-python libreoffice-writer locales lsof \
+      mtr-tiny mythes-en-us nano net-tools netcat-openbsd ocrmypdf odt2txt \
+      openssh-client pandoc pdftk-java pkg-config poppler-utils procps psmisc \
+      python3-dev python3-pip python3-uno python3-venv qpdf redis-tools ripgrep \
+      rsync socat software-properties-common sqlite3 strace tar tcpdump \
+      tesseract-ocr tesseract-ocr-eng tmux traceroute tree unoconv unzip vim \
+      wget wkhtmltopdf wv xlsx2csv xz-utils zip \
+    && fc-cache -f
 # Use 9router's supported standalone build layout. The npm CLI artifact starts
 # but can return empty HTTP bodies when embedded into another base image.
 COPY --from=nine-router-builder /src/public /opt/open-lumora/9router/public
@@ -25,7 +45,11 @@ COPY --from=nine-router-builder /src/node_modules/node-forge /opt/open-lumora/9r
 COPY --from=nine-router-builder /src/node_modules/next /opt/open-lumora/9router/node_modules/next
 COPY requirements.txt /opt/open-lumora/requirements.txt
 RUN python3 -m ensurepip --upgrade \
-    && python3 -m pip install --no-cache-dir -r /opt/open-lumora/requirements.txt
+    && python3 -m pip install --no-cache-dir -r /opt/open-lumora/requirements.txt \
+    && python3 -m pip install --no-cache-dir \
+      beautifulsoup4 csvkit extract-msg lxml mammoth markdown markitdown \
+      odfpy openpyxl pandas pdfplumber pikepdf pillow pymupdf pypdf \
+      python-docx python-magic python-pptx pyyaml reportlab xlrd xlsxwriter
 COPY open_lumora /opt/open-lumora/open_lumora
 COPY server.py /opt/open-lumora/server.py
 COPY runtime/container-entrypoint.sh /usr/local/bin/open-lumora-runtime

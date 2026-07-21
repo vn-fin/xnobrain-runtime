@@ -53,6 +53,7 @@ ROUTES = (
     Route("PATCH", "/agent-gateway/v1/agents-configs/global", "config_global_patch", ConfigPatch, tags=("Config",)),
     Route("PATCH", "/agent-gateway/v1/agents-configs/{agent_id}", "config_agent_patch", ConfigPatch, tags=("Config",)),
     Route("GET", "/agent-gateway/v1/agents-skills", "skills_default_list", tags=("Skills",)),
+    Route("POST", "/agent-gateway/v1/agents-skills", "skills_default_install", SkillInstall, tags=("Skills",)),
     Route("GET", "/agent-gateway/v1/agents-skills/{agent_id}", "skills_list", tags=("Skills",)),
     Route("POST", "/agent-gateway/v1/agents-skills/{agent_id}", "skills_install", SkillInstall, tags=("Skills",)),
     Route("PATCH", "/agent-gateway/v1/agents-skills/{agent_id}/{skill_id}", "skills_patch", EnabledPatch, tags=("Skills",)),

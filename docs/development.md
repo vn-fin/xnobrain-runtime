@@ -1,47 +1,31 @@
 # Development and verification
 
-## Requirements
-
-- Python 3.12 or newer
-- Node.js 22 or newer and npm
-- Hermes Agent for native/profile integration tests
-- Docker Engine with Compose for the release path
-
-Copy `.env.example` to `.env` when overrides are needed. Start the backend from
-the repository root with `python server.py` or `make backend`; it listens on
-`0.0.0.0:8642`. Start Vite with `make src`. `make dev` manages both processes.
-
-The Community backend has no Go toolchain or PostgreSQL requirement.
-
-## Checks
+Requirements are Python 3.12+, a current Hermes Agent installation, Node.js
+22+, and npm. Copy `.env.example` to `.env` when local overrides are needed.
 
 ```bash
-make check
-make run
+./scripts/dev.sh          # Vite 5173 + FastAPI 8642
+python server.py          # API only
+make check                # Python tests/compile + frontend tests/build
+```
+
+Vite proxies `/api`, `/agent-gateway`, `/conversations`, and `/sandboxes` to
+port 8642. Swagger is at `http://127.0.0.1:8642/docs`.
+
+The Python tests use isolated temporary profile roots. For a real chat smoke
+test, use an existing Hermes profile without changing its config and send a
+short prompt through the conversation SSE endpoint. Never print credentials or
+copy a user's `.env` into test output.
+
+Container verification:
+
+```bash
+make image
+docker compose up -d
+docker compose ps
 make smoke-api
 ```
 
-`make check` runs Python unit/contract tests, compiles the full `open_lumora`
-package, runs frontend tests, type-checks TypeScript, and builds the production
-browser bundle. `make smoke-api` sends safe public/status requests through
-Traefik and skips Enterprise-only dashboards when `ENTERPRISE_API_URL` is not
-configured.
-
-For profile mutations, verify that skills exist only at
-`DATA_DIR/profiles/<id>/skills/<skill>/SKILL.md`, memory and config writes have
-snapshots, traversal/symlink escapes fail, and delete moves the profile to the
-recoverable trash tree. Chat requires at least one valid 9router provider;
-provider failures must emit `run.failed`, not a false completed event.
-
-## Latest evidence
-
-On 2026-07-21, `make check` passed 19 Python tests and 31 frontend tests plus
-the TypeScript/Vite production build. Both application images built. The live
-Compose stack reached healthy state behind Traefik, Swagger exposed the unified
-Hermes/Open Lumora schema, the safe API smoke suite passed, and a bounded live
-mutation suite covered agents, config, skills, memory, MCP, workspace,
-snapshots, cron, teams, and portable bundle export/inspect/dry-run/apply.
-
-The installed local Hermes profile and the container path both completed a real
-`gpt-5.5` request. The container request traversed FastAPI, the Hermes CLI, and
-the bundled 9router process.
+After a profile mutation, verify its files remain under
+`DATA_DIR/profiles/<id>`, mutable content was atomically replaced, and an
+immutable snapshot exists where required.

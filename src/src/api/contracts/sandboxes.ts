@@ -88,3 +88,12 @@ export type SandboxHealthDTO = {
   sandbox?: DefaultSandboxDTO;
   status_code?: number;
 };
+
+export type SandboxDetailDTO = {
+  info?: DefaultSandboxDTO;
+  metrics?: SandboxMetricsDTO;
+  system?: SandboxSystemDTO;
+  health?: SandboxHealthDTO;
+  updatedAt?: string;
+  updated_at?: string;
+};

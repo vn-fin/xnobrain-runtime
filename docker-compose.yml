@@ -38,7 +38,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    user: "10001:10001"
+    # The local assistant is intentionally root inside its own runtime
+    # container so it can install requested office/system packages on demand.
+    user: "0:0"
     environment:
       HERMES_HOME: /opt/data/open-lumora/root
       HERMES_ROOT_PROFILE: /opt/data/open-lumora/root

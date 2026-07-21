@@ -63,6 +63,8 @@ export function useAssistants() {
   const [status, setStatus] = useState<AsyncStatus>('loading');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
+  const [skillInstallPending, setSkillInstallPending] = useState(false);
+  const [skillInstallError, setSkillInstallError] = useState('');
 
   const setComposedAgents = useCallback((next: Agent[]) => {
     const derived = deriveSkills(next);
@@ -309,13 +311,21 @@ export function useAssistants() {
     setAgentSkillPages((prev) => ({ ...prev, [agentId]: pagination ?? prev[agentId] }));
   };
 
-  const installSkill = async (name: string, agentIds: string[] = []) => {
-    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    if (!id || agentIds.length === 0) return [];
-    const results = await Promise.allSettled(agentIds.map((agentId) =>
-      skillsApi.install(agentId, { skill_id: id, name, enable: true })));
-    await refresh();
-    return results;
+  const installDefaultSkill = async (source: string) => {
+    const clean = source.trim();
+    if (!clean) return false;
+    setSkillInstallPending(true);
+    setSkillInstallError('');
+    try {
+      await skillsApi.installDefault({ source: clean, enable: true });
+      await refresh();
+      return true;
+    } catch (value) {
+      setSkillInstallError(value instanceof Error ? value.message : 'Could not install skill.');
+      return false;
+    } finally {
+      setSkillInstallPending(false);
+    }
   };
 
   const installExistingSkill = async (skillId: string, agentIds: string[] = []) => {
@@ -341,10 +351,11 @@ export function useAssistants() {
   };
 
   return {
-    agents, library, agentSkills, skillStates, agentSkillPages, defaultConfig, status, error, pending, refresh,
+    agents, library, agentSkills, skillStates, agentSkillPages, defaultConfig, status, error, pending,
+    skillInstallPending, skillInstallError, refresh,
     createAgent, updateAgent, renameAgent, deleteAgent, testAgent, setDefaultModel, setWriteApprovals,
     createConversation, deleteConversation, renameConversation,
-    toggleAgentSkill, setSkillEnabled, loadSkillsPage, installSkill, installExistingSkill, applySkillsToAgents,
+    toggleAgentSkill, setSkillEnabled, loadSkillsPage, installDefaultSkill, installExistingSkill, applySkillsToAgents,
   };
 }
 

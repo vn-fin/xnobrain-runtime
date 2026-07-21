@@ -66,6 +66,44 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         deployment = deployment_response.json()["data"]
         self.assertFalse(deployment["database"])
 
+    async def test_sandbox_detail_reports_only_important_runtime_usage(self):
+        async with self.client() as client:
+            response = await client.get("/sandboxes/v1/me/sandboxes/detail")
+        self.assertEqual(response.status_code, 200, response.text)
+        detail = response.json()["data"]
+        self.assertEqual(detail["info"]["type"], "container")
+        self.assertIn("cpu_percent", detail["metrics"])
+        self.assertIn("memory_bytes", detail["metrics"])
+        self.assertIn("disk_usage_bytes", detail["metrics"])
+        self.assertIn("net_rx_bytes", detail["metrics"])
+        self.assertTrue(detail["health"]["healthy"])
+        self.assertNotIn("top_processes", json.dumps(detail))
+
+    async def test_default_profile_installs_skill_from_url_without_returning_command_output(self):
+        source = "https://example.com/office-helper/SKILL.md"
+
+        async def install_from_url(_command, *, timeout_seconds):
+            self.assertGreater(timeout_seconds, 0)
+            skill = self.root / "skills" / "office" / "office-helper" / "SKILL.md"
+            skill.parent.mkdir(parents=True, exist_ok=True)
+            skill.write_text(
+                "---\nname: office-helper\ndescription: Helps with office files\n---\n",
+                encoding="utf-8",
+            )
+            return {"exit_code": 0, "stdout": "internal installer output", "stderr": ""}
+
+        self.composition.service.config._run_command = AsyncMock(side_effect=install_from_url)
+        async with self.client() as client:
+            response = await client.post("/agent-gateway/v1/agents-skills", json={"source": source})
+        self.assertEqual(response.status_code, 201, response.text)
+        data = response.json()["data"]
+        self.assertEqual([item["skill_id"] for item in data], ["office-helper"])
+        self.assertNotIn("internal installer output", response.text)
+        command = self.composition.service.config._run_command.await_args.args[0]
+        self.assertEqual(command[1:4], ["skills", "install", source])
+        snapshots = list((self.root / "snapshots" / "skills").rglob("*.md"))
+        self.assertEqual(len(snapshots), 1)
+
     async def test_profile_registry_uses_generated_ids_and_display_names(self):
         async with self.client() as client:
             created = await client.post("/agent-gateway/v1/agents", json={

@@ -68,6 +68,7 @@ class APIHandlers:
             "config_global_patch": (lambda: s.update_global_config(body), "global config updated successfully", 200),
             "config_agent_patch": (lambda: s.update_agent_config(p["agent_id"], body), "agent config updated successfully", 200),
             "skills_default_list": (s.list_default_skills, "default profile skills retrieved successfully", 200),
+            "skills_default_install": (lambda: s.install_default_skill(body), "skill installed into default profile", 201),
             "skills_list": (lambda: s.list_skills(p["agent_id"]), "skills retrieved successfully", 200),
             "skills_install": (lambda: s.install_skill(p["agent_id"], body), "skill installed successfully", 201),
             "skills_patch": (lambda: s.set_skill_enabled(p["agent_id"], p["skill_id"], body), "skill updated successfully", 200),
@@ -116,7 +117,7 @@ class APIHandlers:
             "provider_test": (lambda: s.test_provider(p["provider_id"]), "provider tested", 200),
             "provider_models": (lambda: self._provider_models(p["provider_id"]), "models retrieved successfully", 200),
             "provider_reasoning": (lambda: {"provider_id": p["provider_id"], "model": p["model"], "reasoning": ["low", "medium", "high"]}, "reasoning options retrieved", 200),
-            "sandbox": (lambda: {"status": "ok", "runtime": "hermes", "single_api_server": True, "action": p["action"]}, "sandbox status retrieved", 200),
+            "sandbox": (lambda: s.sandbox(p["action"]), "sandbox detail retrieved", 200),
         }
         if name not in operations:
             raise ValueError("unsupported route")

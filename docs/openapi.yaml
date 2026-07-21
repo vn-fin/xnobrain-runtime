@@ -77,6 +77,30 @@ paths:
       summary: Disable cloud connectivity and erase only rotating cloud credentials
       responses:
         "200": { $ref: "#/components/responses/Success" }
+  /sandboxes/v1/me/sandboxes/detail:
+    get:
+      summary: Get essential local runtime health and resource totals
+      description: Returns CPU, memory, disk, network, uptime, OS, and API health without process details.
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+  /agent-gateway/v1/agents-skills:
+    post:
+      summary: Install a skill source into the default Hermes profile
+      description: Accepts a direct SKILL.md URL, Hermes or skills.sh identifier, GitHub repository, or local skill path.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              properties:
+                source: { type: string, maxLength: 512 }
+                name: { type: string }
+                category: { type: string }
+                force: { type: boolean, default: false }
+      responses:
+        "201": { $ref: "#/components/responses/Success" }
   /api/v1/teams/:
     get:
       summary: List saved agent teams

@@ -1,51 +1,33 @@
 # Open Lumora Agent Guide
 
-Open Lumora is an open-source Python/FastAPI and React application built around
-the original Hermes Agent CLI/core. Read `.agents/rules/01-start-here.md` before
-changing code. For roadmap work, also read the relevant specification and every
-referenced versioned contract under `docs/contracts/`.
+Open Lumora is an open-source FastAPI/Hermes and React application. Read
+`.agents/rules/01-start-here.md` before changing code. For roadmap work, also
+read the assigned specification and referenced versioned contracts.
 
 ## Non-negotiable rules
 
 - Write only inside this repository. Related repositories are read-only references.
-- Never introduce an ORM or Community application database. Community state is
-  stored in atomic profile/configuration files; Hermes and 9router may retain
-  their native embedded local stores.
-- Keep one backend package named `open_lumora`; do not add separate
-  `hermes_api`, `studio_api`, or `open_lumora.data` packages.
-- Keep boundaries truthful: `repositories` owns persistence, `integrations`
-  owns Hermes/9router adapters, `services` owns business behavior, `handlers`
-  owns HTTP behavior, `models` owns Pydantic contracts, and `routes/setup.py`
-  is the only Open Lumora route assembly point.
-- The root backend entrypoint is `server.py`; it must start one FastAPI server
-  on port 8642 and keep Swagger/OpenAPI enabled.
-- Preserve upstream Hermes core/CLI behavior and native routes. Do not start a
-  separate API server per profile.
+- Do not add Go, PostgreSQL, an ORM, or another application API process.
+- Keep one FastAPI/Hermes process on port 8642 and one 9router process.
+- Preserve the original Hermes core and native FastAPI routes; extend them from
+  `open_lumora` rather than copying or forking Hermes.
+- `open_lumora/routes/setup.py` is the only Open Lumora route assembly point.
+- Handlers own HTTP translation, services own rules, repositories own atomic
+  files, integrations adapt Hermes CLI and 9router, and models are Pydantic.
 - Agent-owned data belongs under `DATA_DIR/profiles/<agent-id>/`.
 - Agent-created skills belong under
-  `DATA_DIR/profiles/<agent-id>/skills/<skill-id>/SKILL.md`; never write them to
-  the root/shared profile.
-- Every memory or skill mutation creates an immutable local snapshot before
-  returning success. Persistent approvals belong atomically in that agent's
-  `config.yaml`.
-- Self-hosted OSS access is unlimited for agents, profiles, skills, memory,
-  MCP, providers, teams, and local cron. Subscription limits apply only to
-  managed resources and authenticated Enterprise API features.
-- `ENTERPRISE_API_URL` is optional. Enterprise loss must never restrict local
-  Hermes behavior, and Enterprise must not carry a private copy of the
-  `open_lumora` package.
-- Preserve structured logs, redacted OpenTelemetry spans/propagation, SSE run
-  stop, and the Hermes approval-core path.
-- Docker has two application images: the React UI and the unified
-  FastAPI/Hermes/9router runtime. Traefik is the edge router. Incus deployment
-  packaging belongs to the Enterprise deployment repository, not this OSS tree.
-- `make build` builds the two application images through Docker Compose and
-  does not write a native binary under `bin/`. `make bundle` is an explicit
-  release-only step for creating a split OCI transfer bundle.
+  `DATA_DIR/profiles/<agent-id>/skills/<skill-id>/SKILL.md`.
+- Every memory, skill, or config mutation that promises persistence creates an
+  immutable snapshot before success and writes mutable state atomically.
+- Never return or log credentials, request bodies, prompts, or provider keys.
+- Preserve structured metadata logs, OpenTelemetry propagation, streaming run
+  events, stop, and the Hermes approval path.
+- Local OSS access is unlimited. Enterprise behavior is optional and reached
+  only through `ENTERPRISE_API_URL`; its outage cannot restrict local features.
+- This repository builds only the combined backend/runtime Docker image and UI
+  image. Incus/cloud runtime packaging is owned by the enterprise repository.
 
 ## Validation
 
-Run `make check`. For focused backend work, run the Python tests under
-`open_lumora/tests`. For frontend work, run `cd src && npm test && npm run build`.
-For deployment changes, build both images, start Compose, and run
-`make smoke-api` through Traefik.
+Run `make check`. For focused work run the Python tests and
+`cd src && npm test && npm run build`.

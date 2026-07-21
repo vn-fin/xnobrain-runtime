@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { ArrowUp, Clock, Cloud, Code2, Cpu, Gauge, HardDrive, Laptop, Plus, RefreshCw, Server, X } from 'lucide-react';
+import { ArrowUp, Clock, Cloud, Gauge, HardDrive, Plus, RefreshCw, Server, X } from 'lucide-react';
 import { StatCard, UsageBar, formatBytes, formatUptime } from './common';
 import type { SandboxData } from '../types';
 import type { AsyncStatus } from '../types';
@@ -122,7 +122,7 @@ export function SandboxView({
           <div className="sbx-tile">
             <span className="sbx-tile-label"><Clock size={13} /> Uptime</span>
             <strong>{formatUptime(metrics.uptimeSeconds)}</strong>
-            <small>{system.processes} processes</small>
+            <small>updates every 5 seconds</small>
           </div>
         </div>
 
@@ -133,8 +133,7 @@ export function SandboxView({
             <UsageBar label="Disk" used={metrics.diskUsageBytes} total={metrics.diskTotalBytes} unit="bytes" />
             <div className="sbx-kv-row">
               <div><span>Mem available</span><strong>{formatBytes(metrics.memoryAvailableBytes)}</strong></div>
-              <div><span>Disk read</span><strong>{formatBytes(metrics.diskReadBytes)}</strong></div>
-              <div><span>Disk write</span><strong>{formatBytes(metrics.diskWriteBytes)}</strong></div>
+              <div><span>Last sample</span><strong>{data.updatedAt ? new Date(data.updatedAt).toLocaleTimeString() : '—'}</strong></div>
             </div>
           </StatCard>
 
@@ -165,27 +164,20 @@ export function SandboxView({
             <dl className="sbx-dl">
               <div><dt>Type</dt><dd>{info.type}</dd></div>
               <div><dt>Image</dt><dd>{info.image}</dd></div>
-              <div><dt>IPv4</dt><dd>{info.ipv4}</dd></div>
-              <div><dt>IPv6</dt><dd>{info.ipv6}</dd></div>
-              <div><dt>Gateway</dt><dd>:{info.gateway.port} · {info.gateway.healthy ? 'healthy' : 'down'}</dd></div>
-              <div><dt>Created</dt><dd>{new Date(info.createdAt).toLocaleString()}</dd></div>
+              <div><dt>API</dt><dd>:{info.gateway.port} · {info.gateway.healthy ? 'healthy' : 'down'}</dd></div>
+              <div><dt>Started</dt><dd>{new Date(info.createdAt).toLocaleString()}</dd></div>
               <div><dt>vCPU / Mem</dt><dd>{info.resources.cpus} · {info.resources.memory}</dd></div>
               <div><dt>Root size</dt><dd>{info.resources.rootSize}</dd></div>
             </dl>
           </StatCard>
 
-          <StatCard icon={Laptop} title="Operating system">
+          <StatCard icon={Server} title="Operating system">
             <dl className="sbx-dl">
               <div><dt>Hostname</dt><dd>{system.os.hostname}</dd></div>
               <div><dt>OS</dt><dd>{system.os.os} {system.os.osVersion}</dd></div>
               <div><dt>Kernel</dt><dd>{system.os.kernelVersion}</dd></div>
-              <div><dt>FQDN</dt><dd>{system.os.fqdn}</dd></div>
+              <div><dt>Architecture</dt><dd>{info.resources.cpus} vCPU · {info.resources.memory}</dd></div>
             </dl>
-          </StatCard>
-
-          <StatCard icon={HardDrive} title="Storage">
-            <UsageBar label={`Pool · ${system.storage.pool}`} used={system.storage.poolUsedBytes} total={system.storage.poolTotalBytes} unit="bytes" />
-            <UsageBar label={`Volume · ${system.storage.volumeName} (${system.storage.volumeType})`} used={system.storage.volumeUsedBytes} total={system.storage.volumeTotalBytes} unit="bytes" />
           </StatCard>
 
           <StatCard icon={Cloud} title="Health">
@@ -200,27 +192,11 @@ export function SandboxView({
             </dl>
           </StatCard>
 
-          <StatCard icon={Cpu} title="Top processes">
-            <div className="sbx-proc">
-              <div className="sbx-proc-head">
-                <span>PID</span><span>Command</span><span>CPU</span><span>Mem</span><span>RSS</span>
-              </div>
-              {system.topProcesses.map((p) => (
-                <div className="sbx-proc-row" key={p.pid}>
-                  <span>{p.pid}</span>
-                  <span className="sbx-proc-cmd">{p.command}</span>
-                  <span>{p.cpuPercent.toFixed(1)}%</span>
-                  <span>{p.memoryPercent.toFixed(1)}%</span>
-                  <span>{formatBytes(p.rssKiB * 1024)}</span>
-                </div>
-              ))}
-            </div>
-          </StatCard>
         </div>
 
         <div className="sbx-footnote">
-          <Code2 size={14} />
-          <span>Private Hermes runtime health and host-visible resource information.</span>
+          <Server size={14} />
+          <span>Only essential runtime health and resource totals are collected. Process details are not exposed.</span>
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@
 from .config import ConfigAPIError, GlobalConfigManager
 from .hermes import AgentAPIError, AgentManager
 from .nine_router import NineRouterAPIError, NineRouterManager
+from .runtime import LocalRuntimeManager
 
 __all__ = [
     "AgentAPIError",
@@ -11,4 +12,5 @@ __all__ = [
     "GlobalConfigManager",
     "NineRouterAPIError",
     "NineRouterManager",
+    "LocalRuntimeManager",
 ]

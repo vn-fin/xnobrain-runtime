@@ -41,6 +41,15 @@ export const skillsApi = {
     return { skills: skills(data), pagination };
   },
 
+  async installDefault(input: AgentSkillInstallRequestDTO): Promise<AgentSkill[]> {
+    return skills(
+      await request<AgentSkillListResponseDTO>(ROOT, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    );
+  },
+
   async install(agentId: string, input: AgentSkillInstallRequestDTO): Promise<AgentSkill[]> {
     return skills(
       await request<AgentSkillListResponseDTO>(`${ROOT}/${encoded(agentId)}`, {

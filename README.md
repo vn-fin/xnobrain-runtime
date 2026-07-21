@@ -1,69 +1,59 @@
 # Open Lumora
 
-Open Lumora is a self-hosted React workspace for building and running Hermes
-agents. Its backend is one Python/FastAPI server built on the original Hermes
-CLI FastAPI application. The same server manages the default profile and every
-named profile; it does not start a separate HTTP server per agent.
+Open Lumora is a self-hosted React workspace for creating and running Hermes
+agents. One Python/FastAPI process extends the original Hermes CLI dashboard
+application and serves the default profile plus every named profile. One
+9router process provides LLM routing. There is no Go service, PostgreSQL,
+Redis, or per-profile API server.
 
-The Community edition has no Go backend, PostgreSQL, ORM, Redis, or required
-cloud service. Agent state is stored atomically under
-`DATA_DIR/profiles/<agent-id>/`. The optional Enterprise relationship is one
-outbound `ENTERPRISE_API_URL`; an unavailable Enterprise API cannot restrict
-local agents, profiles, skills, memory, MCP, providers, teams, or cron.
+```text
+browser -> Traefik -> React UI
+                   -> FastAPI + original Hermes core -> profile files
+                                                    -> 9router -> LLMs
+                   -> Enterprise API (optional, ENTERPRISE_API_URL)
+```
 
 ## Start
 
-Docker Compose is the supported installation path:
+Docker Compose is the supported distribution on Linux, macOS, and Windows:
 
 ```bash
-make run
+make image
+docker compose up -d
 ```
 
-This builds both application images from the root Dockerfiles and starts the
-Compose stack. It does not create a native binary under `bin/`.
+Open <http://localhost>. Swagger is available at <http://localhost/docs> and
+the generated OpenAPI document at <http://localhost/openapi.json>.
 
-Open <http://localhost>. The API is routed through the same Traefik address,
-and interactive Swagger documentation is at <http://localhost/docs>.
-
-There are two Open Lumora application images:
-
-- `open-lumora-frontend`: the React UI served by unprivileged nginx.
-- `open-lumora-hermes-runtime`: FastAPI, the original Hermes core/CLI, and the
-  bundled 9router process.
-
-Traefik is the edge router. The optional `authenticated` Compose profile adds
-only the OpenTelemetry Collector.
-
-## Development
-
-Install Python 3.12+, Node.js 22+, npm, and Hermes Agent. The root entrypoint is:
+For local development, install Python 3.12+, Hermes Agent, Node.js 22+, and npm:
 
 ```bash
+./scripts/dev.sh
+# or run only the API
 python server.py
 ```
 
-It listens on port `8642` by default and keeps FastAPI Swagger enabled. Run the
-frontend separately with `make src`, or use `make dev` for both development
-processes. Validation is:
+Validation:
 
 ```bash
 make check
-make smoke-api   # with the Compose stack running
+make smoke-api
 ```
 
-## Profile safety
+## Data safety
 
-Agent `abc123` owns `DATA_DIR/profiles/abc123`. Agent-created skills are always
-written to `profiles/abc123/skills/<skill-id>/SKILL.md`, memory is profile-local,
-and every memory or skill mutation creates an immutable snapshot before success.
-Portable bundles exclude credentials, logs, cache, and host-only runtime state.
+Named agent data belongs under `DATA_DIR/profiles/<agent-id>/`. Skills are
+written only to `skills/<skill-id>/SKILL.md` inside that profile. Memory,
+config, and skill mutations create immutable local snapshots, and mutable
+files use temp-file, fsync, and rename. Provider credentials remain owned by
+Hermes/9router and are excluded from `.lumora` bundles.
 
-Provider credentials are owned by the bundled local 9router service and are
-never returned by the Open Lumora API. Telemetry records route/status/timing and
-safe identifiers, never prompts, responses, memory, skill content, or secrets.
+Self-hosted agents, profiles, skills, memory, MCP, providers, teams, and local
+cron are unlimited. `ENTERPRISE_API_URL` enables optional authenticated
+features without becoming a dependency of local Hermes operation.
 
 See [architecture](docs/architecture.md), [development](docs/development.md),
-[deployment](docs/deployment.md), and the [HTTP API](docs/api.md).
+[deployment](docs/deployment.md), and [API guide](docs/api.md).
 
 ## License
 

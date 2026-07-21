@@ -1,12 +1,11 @@
-import type { DefaultSandboxDTO, SandboxHealthDTO, SandboxMetricsDTO, SandboxSystemDTO } from '../contracts/sandboxes';
+import type { SandboxDetailDTO } from '../contracts/sandboxes';
 import type { SandboxData } from '../../types';
 
-export function mapSandboxData(
-  info: DefaultSandboxDTO,
-  metrics: SandboxMetricsDTO,
-  system: SandboxSystemDTO,
-  health: SandboxHealthDTO,
-): SandboxData {
+export function mapSandboxData(detail: SandboxDetailDTO): SandboxData {
+  const info = detail.info ?? {};
+  const metrics = detail.metrics ?? {};
+  const system = detail.system ?? {};
+  const health = detail.health ?? {};
   return {
     info: {
       vmId: info.vmId ?? info.id ?? '',
@@ -39,7 +38,6 @@ export function mapSandboxData(
     },
     system: {
       cpuPercent: system.cpuPercent ?? system.cpu_percent ?? 0,
-      processes: system.processes ?? 0,
       os: {
         hostname: system.os?.hostname ?? '',
         os: system.os?.os ?? '',
@@ -47,28 +45,12 @@ export function mapSandboxData(
         kernelVersion: system.os?.kernelVersion ?? '',
         fqdn: system.os?.fqdn ?? '',
       },
-      storage: {
-        pool: system.storage?.pool ?? '',
-        poolUsedBytes: system.storage?.poolUsedBytes ?? 0,
-        poolTotalBytes: system.storage?.poolTotalBytes ?? 0,
-        volumeName: system.storage?.volumeName ?? '',
-        volumeType: system.storage?.volumeType ?? '',
-        volumeUsedBytes: system.storage?.volumeUsedBytes ?? 0,
-        volumeTotalBytes: system.storage?.volumeTotalBytes ?? 0,
-      },
-      topProcesses: (system.topProcesses ?? system.top_processes ?? []).map((process) => ({
-        pid: process.pid ?? 0,
-        command: process.command ?? '',
-        cpuPercent: process.cpuPercent ?? process.cpu_percent ?? 0,
-        memoryPercent: process.memoryPercent ?? process.memory_percent ?? 0,
-        rssKiB: process.rssKiB ?? process.rss_kib ?? 0,
-        state: process.state ?? '',
-      })),
     },
     health: {
       healthy: health.healthy ?? false,
       statusCode: health.statusCode ?? health.status_code ?? 0,
       endpoint: health.endpoint ?? '',
     },
+    updatedAt: detail.updatedAt ?? detail.updated_at ?? '',
   };
 }
