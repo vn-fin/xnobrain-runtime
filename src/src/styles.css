@@ -1093,7 +1093,7 @@ body.col-resizing {
   text-align: left;
 }
 
-.agent-row-rename {
+.agent-row-more {
   flex: 0 0 auto;
   width: 26px;
   height: 26px;
@@ -1105,9 +1105,10 @@ body.col-resizing {
   opacity: 0;
 }
 
-.agent-row:hover .agent-row-rename,
-.agent-row-rename:focus-visible { opacity: 1; }
-.agent-row-rename:hover { background: var(--hover); color: var(--text); }
+.agent-row:hover .agent-row-more,
+.agent-row-more[aria-expanded='true'] { opacity: 1; }
+.agent-row-more:hover { background: var(--hover); color: var(--text); }
+.agent-action-error { padding: 5px 8px; color: var(--danger); font-size: 12px; }
 .agent-row.renaming { padding: 2px 4px; }
 
 .history-row-main {

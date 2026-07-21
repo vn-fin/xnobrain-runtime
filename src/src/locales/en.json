@@ -77,6 +77,8 @@
     "test": "Test assistant",
     "rename": "Rename assistant",
     "renameLabel": "Assistant name",
+    "menu": "Assistant options",
+    "export": "Export profile",
     "delete": "Delete assistant"
   },
   "chat": {

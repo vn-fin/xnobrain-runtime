@@ -205,6 +205,7 @@ export default function App() {
         onSelectAgent={(agent) => router.openChat(agent.id, agent.conversations[0]?.id ?? '')}
         onSelectConversation={(id) => router.openChat(router.activeAgentId, id)}
         onRenameAgent={assistants.renameAgent}
+        onExportAgent={exportProfile}
         onRenameConversation={handleRenameConversation}
         onRequestDeleteConversation={(id) => setDeleteConversationId(id)}
         onNewAgent={() => setCreateAgentOpen(true)}
@@ -348,7 +349,7 @@ export default function App() {
       {createAgentOpen && <CreateAgentModal onCreate={handleCreateAgent} onImported={handleImportedProfile} onClose={() => setCreateAgentOpen(false)} />}
 
       {settingsOpen && (
-        <AgentSettingsModal agent={activeAgent} providers={runtimeProviders} onSave={handleUpdateAgent} onExport={() => exportProfile(activeAgent.id)} onClose={() => setSettingsOpen(false)} />
+        <AgentSettingsModal agent={activeAgent} providers={runtimeProviders} onSave={handleUpdateAgent} onClose={() => setSettingsOpen(false)} />
       )}
 
       {deleteConversationId && (

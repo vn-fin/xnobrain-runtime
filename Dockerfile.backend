@@ -83,6 +83,7 @@ RUN curl -fsSL https://hermes-agent.nousresearch.com/install.sh \
 
 # Match the interactive sandbox image: office Python helpers and common agent
 # CLIs are ready immediately instead of being lazily downloaded at first use.
+ARG AGENT_BROWSER_VERSION=0.26.0
 RUN python3 -m venv /opt/hermes-office-tools \
     && /opt/hermes-office-tools/bin/python -m pip install --no-cache-dir --upgrade \
       pip setuptools wheel \
@@ -98,7 +99,9 @@ RUN python3 -m venv /opt/hermes-office-tools \
       "9router@${NINE_ROUTER_NPM_VERSION}" \
       "@openai/codex@${CODEX_CLI_VERSION}" \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
-      pnpm
+      "agent-browser@${AGENT_BROWSER_VERSION}" \
+      pnpm \
+    && agent-browser install --with-deps
 
 # Use 9router's standalone build for the supervised web process. The globally
 # installed CLI above remains available to the root agent for administration.

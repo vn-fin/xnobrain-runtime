@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, ClipboardPaste, Download, FileArchive, Plus, Upload, X } from 'lucide-react';
+import { Check, ClipboardPaste, FileArchive, Plus, Upload, X } from 'lucide-react';
 import { ExternalLinkIcon, ProviderBrandIcon } from './common';
 import type { Agent, ConnectionProvider, ProviderConnectInfo, ProviderConnector } from '../types';
 import { providerConnectNeedsText } from '../utils/providers';
@@ -222,8 +222,8 @@ export function CreateAgentModal({
             <p className="app-modal-sub">Credentials are removed from the archive and synchronized from this server's default profile.</p>
             <label className="profile-upload-picker">
               <FileArchive size={20} />
-              <span><strong>{file?.name ?? 'Choose a .lumora or .zip profile'}</strong><small>Uploads use verified 4 MB parts.</small></span>
-              <input type="file" accept=".lumora,.zip,application/zip" onChange={(event) => { if (transfer?.upload_id) void systemApi.cancelUpload(transfer.upload_id); setFile(event.target.files?.[0]); setTransfer(undefined); setError(''); }} />
+              <span><strong>{file?.name ?? 'Choose a .zip profile archive'}</strong><small>Uploads use verified 4 MB parts.</small></span>
+              <input type="file" accept=".zip,application/zip" onChange={(event) => { if (transfer?.upload_id) void systemApi.cancelUpload(transfer.upload_id); setFile(event.target.files?.[0]); setTransfer(undefined); setError(''); }} />
             </label>
             {busy === 'upload' && <div className="profile-transfer-progress"><span style={{ width: `${progress?.percent ?? 0}%` }} /><small>{progress?.percent ?? 0}% uploaded</small></div>}
             {transfer?.preview && (
@@ -255,13 +255,11 @@ export function AgentSettingsModal({
   agent,
   providers,
   onSave,
-  onExport,
   onClose,
 }: {
   agent: Agent;
   providers: ProviderConnector[];
   onSave: (updates: Partial<Agent>) => void;
-  onExport: () => Promise<void>;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -272,8 +270,6 @@ export function AgentSettingsModal({
   const [reasoningEffort, setReasoningEffort] = useState(agent.reasoningEffort);
   const [approvalMode, setApprovalMode] = useState<Agent['approvalMode']>(agent.approvalMode);
   const [confirming, setConfirming] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState('');
 
   const save = () => onSave({ title, description, provider, model, reasoningEffort, approvalMode });
 
@@ -287,11 +283,6 @@ export function AgentSettingsModal({
           </button>
         </div>
 
-        <div className="profile-export-row">
-          <span><strong>Portable profile</strong><small>Downloads a credential-free, compressed .lumora archive in parts.</small></span>
-          <button className="conn-btn ghost" disabled={exporting} onClick={() => { setExporting(true); setExportError(''); void onExport().catch((value) => setExportError(value instanceof Error ? value.message : 'Export failed.')).finally(() => setExporting(false)); }}><Download size={15} />{exporting ? 'Exporting…' : 'Export profile'}</button>
-        </div>
-        {exportError && <div className="system-error">{exportError}</div>}
         <p className="app-modal-sub">PATCH /agents/{'{id}'}/metadata · PATCH /agents-configs/{'{id}'}</p>
 
         <div className="modal-form">

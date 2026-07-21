@@ -46,7 +46,7 @@ Named agent data belongs under `DATA_DIR/profiles/<agent-id>/`. Skills are
 written only to `skills/<skill-id>/SKILL.md` inside that profile. Memory,
 config, and skill mutations create immutable local snapshots, and mutable
 files use temp-file, fsync, and rename. Provider credentials remain owned by
-Hermes/9router and are excluded from `.lumora` bundles.
+Hermes/9router and are excluded from portable `.zip` profile archives.
 
 Self-hosted agents, profiles, skills, memory, MCP, providers, teams, and local
 cron are unlimited. `ENTERPRISE_API_URL` enables optional authenticated

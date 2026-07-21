@@ -1,6 +1,7 @@
 # Portable bundle format v1
 
-Media type: `application/vnd.open-lumora.bundle+zip; version=1`. Extension: `.lumora`.
+Media type: `application/zip`. Extension: `.zip`. The bundle remains versioned
+by `manifest.json`; it does not use a custom filename extension or media type.
 
 ## Layout
 

@@ -122,7 +122,7 @@ export function SandboxView({
           <div className="sbx-tile">
             <span className="sbx-tile-label"><Clock size={13} /> Uptime</span>
             <strong>{formatUptime(metrics.uptimeSeconds)}</strong>
-            <small>updates every 5 seconds</small>
+            <small>live updates every second</small>
           </div>
         </div>
 

@@ -14,18 +14,22 @@ schema at `/openapi.json`. Hermes CLI native routes remain available under
 JSON responses use `{success,data,message,status_code}`. SSE sends structured
 Hermes lifecycle objects and terminates with `data: [DONE]`.
 
+Runtime statistics are available as a snapshot at
+`/sandboxes/v1/me/sandboxes/detail` and as one-second SSE updates at
+`/sandboxes/v1/me/sandboxes/detail/stream`.
+
 Portable profile example:
 
 ```bash
 curl -fsS -X POST http://localhost/api/v1/bundles/export \
   -H 'Content-Type: application/json' \
-  -d '{"agent_ids":["agent-id"]}' -o profiles.lumora
+  -d '{"agent_ids":["agent-id"]}' -o profiles.zip
 curl -fsS -X POST http://localhost/api/v1/bundles/inspect \
-  -F file=@profiles.lumora
+  -F file=@profiles.zip
 curl -fsS -X POST http://localhost/api/v1/bundles/dry-run \
-  -F file=@profiles.lumora
+  -F file=@profiles.zip
 curl -fsS -X POST http://localhost/api/v1/bundles/apply \
-  -F file=@profiles.lumora
+  -F file=@profiles.zip
 ```
 
 Local endpoints do not require an Enterprise login. Enterprise proxy routes

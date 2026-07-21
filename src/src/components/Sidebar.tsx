@@ -22,6 +22,7 @@ import {
   Trash2,
   Network,
   ChartNoAxesCombined,
+  Download,
 } from 'lucide-react';
 import { SUPPORTED_LANGUAGES } from '../i18n';
 import { useTheme } from '../theme';
@@ -48,6 +49,7 @@ export function Sidebar({
   onSelectAgent,
   onSelectConversation,
   onRenameAgent,
+  onExportAgent,
   onRenameConversation,
   onRequestDeleteConversation,
   onNewAgent,
@@ -62,6 +64,7 @@ export function Sidebar({
   onSelectAgent: (agent: Agent) => void;
   onSelectConversation: (conversationId: string) => void;
   onRenameAgent: (agentId: string, displayName: string) => void | Promise<void>;
+  onExportAgent: (agentId: string) => Promise<void>;
   onRenameConversation: (conversationId: string, title: string) => void | Promise<void>;
   onRequestDeleteConversation: (conversationId: string) => void;
   onNewAgent: () => void;
@@ -71,14 +74,31 @@ export function Sidebar({
   const { user, enterprisePlan, hasEnterpriseFeature, openLogin, signOut } = useAuth();
   const [searchOpen, setSearchOpen] = useState(!!agentSearch);
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [agentMenuId, setAgentMenuId] = useState<string | null>(null);
+  const [exportingAgentId, setExportingAgentId] = useState<string | null>(null);
+  const [agentActionError, setAgentActionError] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renamingAgentId, setRenamingAgentId] = useState<string | null>(null);
   const [agentRenameValue, setAgentRenameValue] = useState('');
 
   const startAgentRename = (agent: Agent) => {
+    setAgentMenuId(null);
     setRenamingAgentId(agent.id);
     setAgentRenameValue(agent.title);
+  };
+
+  const exportAgent = async (agent: Agent) => {
+    setExportingAgentId(agent.id);
+    setAgentActionError('');
+    try {
+      await onExportAgent(agent.id);
+      setAgentMenuId(null);
+    } catch (cause) {
+      setAgentActionError(cause instanceof Error ? cause.message : 'Could not export profile.');
+    } finally {
+      setExportingAgentId(null);
+    }
   };
 
   const commitAgentRename = (agent: Agent) => {
@@ -204,16 +224,33 @@ export function Sidebar({
                 </span>
               </button>
               <button
-                className="agent-row-rename"
-                title={t('agents.rename')}
-                aria-label={t('agents.rename')}
-                onClick={() => startAgentRename(agent)}
+                className="agent-row-more"
+                title={t('agents.menu', { defaultValue: 'Assistant options' })}
+                aria-label={t('agents.menu', { defaultValue: 'Assistant options' })}
+                aria-expanded={agentMenuId === agent.id}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setMenuId(null);
+                  setAgentActionError('');
+                  setAgentMenuId((id) => (id === agent.id ? null : agent.id));
+                }}
               >
-                <Pencil size={14} />
+                <MoreHorizontal size={16} />
               </button>
+              {agentMenuId === agent.id && (
+                <div className="row-menu" role="menu">
+                  <button className="row-menu-item" disabled={exportingAgentId === agent.id} onClick={() => startAgentRename(agent)}>
+                    <Pencil size={14} /> {t('agents.rename')}
+                  </button>
+                  <button className="row-menu-item" disabled={exportingAgentId === agent.id} onClick={() => void exportAgent(agent)}>
+                    <Download size={14} /> {exportingAgentId === agent.id ? 'Exporting…' : t('agents.export', { defaultValue: 'Export profile' })}
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
+        {agentActionError && <div className="agent-action-error" role="alert">{agentActionError}</div>}
 
         <div className="section-title recent-title">
           <History size={14} />
@@ -277,7 +314,7 @@ export function Sidebar({
             </div>
           );
         })}
-        {menuId && <div className="row-menu-catcher" onClick={() => setMenuId(null)} />}
+        {(menuId || agentMenuId) && <div className="row-menu-catcher" onClick={() => { setMenuId(null); setAgentMenuId(null); }} />}
       </div>
 
       <div className="left-footer">

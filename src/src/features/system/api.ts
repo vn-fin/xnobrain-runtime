@@ -136,7 +136,7 @@ export const systemApi = {
         onProgress?.({ loaded, total: transfer.size, percent: Math.round((loaded / transfer.size) * 100) });
       }
       return {
-        blob: new Blob(parts, { type: 'application/vnd.open-lumora.bundle+zip; version=1' }),
+        blob: new Blob(parts, { type: 'application/zip' }),
         filename: transfer.filename,
       };
     } finally {

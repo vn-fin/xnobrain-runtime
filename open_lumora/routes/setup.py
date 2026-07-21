@@ -112,6 +112,7 @@ ROUTES = (
     Route("GET", "/agent-gateway/v1/providers/{provider_id}/models", "provider_models", tags=("Providers",)),
     Route("GET", "/agent-gateway/v1/providers/{provider_id}/models/{model}/reasoning", "provider_reasoning", tags=("Providers",)),
 
+    Route("GET", "/sandboxes/v1/me/sandboxes/detail/stream", "sandbox_detail_stream", special="sandbox_stream", tags=("Sandbox",)),
     Route("GET", "/sandboxes/v1/me/sandboxes/{action}", "sandbox", tags=("Sandbox",)),
     Route("POST", "/sandboxes/v1/me/sandboxes/setup", "sandbox_setup", special="sandbox_setup", tags=("Sandbox",)),
     Route("POST", "/api/v1/bundles/export", "bundle_export", BundleExport, "bundle_export", ("Portability",)),
@@ -153,6 +154,9 @@ def _endpoint(handlers: Any, route: Route):
     elif route.special == "sandbox_setup":
         async def endpoint(request: Request) -> Response:
             return await handlers.sandbox_setup(request)
+    elif route.special == "sandbox_stream":
+        async def endpoint(request: Request) -> Response:
+            return await handlers.sandbox_detail_stream(request)
     elif route.special == "enterprise_proxy":
         async def endpoint(request: Request) -> Response:
             return await handlers.enterprise_proxy(request)
@@ -170,7 +174,7 @@ def _endpoint(handlers: Any, route: Route):
 
 def setup_routes(app: Any, handlers: Any) -> None:
     for route in ROUTES:
-        raw_response = route.special in {"stream", "workspace_upload", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "enterprise_proxy"}
+        raw_response = route.special in {"stream", "workspace_upload", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "enterprise_proxy"}
         app.add_api_route(
             route.path,
             _endpoint(handlers, route),

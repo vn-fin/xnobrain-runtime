@@ -4,7 +4,7 @@ Priority P1 and parallel with connector/scheduler after the format is frozen. Ow
 
 ## Format
 
-Use a versioned `.lumora` archive with `manifest.json`, `checksums.json`, and `profiles/<agent-id>/...`. Manifest fields include format/version, source app version, creation time, selected agents, included optional data, and required capabilities. Checksums cover every payload file and the manifest is signed when produced by a managed service.
+Use a standard `.zip` archive with `manifest.json`, `checksums.json`, and `profiles/<agent-id>/...`. The manifest provides the bundle format/version, source app version, creation time, selected agents, included optional data, and required capabilities. Checksums cover every payload file and the manifest is signed when produced by a managed service.
 
 Include profile config, agent metadata, memory, skills, workspace, snapshots, cron definitions, and optionally conversations. Exclude device identity, provider credentials, OAuth tokens, runtime endpoints, PIDs, sockets, logs, caches, temporary files, and absolute host paths.
 

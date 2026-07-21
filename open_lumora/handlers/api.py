@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import os
@@ -176,7 +177,7 @@ class APIHandlers:
             payload, filename = self.service.export_bundle(body)
             return Response(
                 payload,
-                media_type="application/vnd.open-lumora.bundle",
+                media_type="application/zip",
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
         except EXPECTED_ERRORS as error:
@@ -246,6 +247,27 @@ class APIHandlers:
                     yield f"data: {value}\n\n"
             return StreamingResponse(progress(), media_type="text/event-stream")
         return self.success(payload, "sandbox ready")
+
+    async def sandbox_detail_stream(self, request: Request) -> StreamingResponse:
+        """Stream one important runtime snapshot per second until disconnect."""
+        async def events():
+            sequence = 0
+            while not await request.is_disconnected():
+                detail = self.service.sandbox("detail")
+                payload = json.dumps(detail, separators=(",", ":"))
+                yield f"id: {sequence}\nevent: stats\ndata: {payload}\n\n"
+                sequence += 1
+                await asyncio.sleep(1)
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     def _device_status(self) -> dict[str, Any]:
         return {

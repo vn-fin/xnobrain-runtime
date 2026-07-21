@@ -57,7 +57,7 @@ class PortabilityService:
     # Legacy whole-response endpoints stay compatible. New UI/API clients use
     # the transfer-session methods below so archive bytes are always chunked.
     def export(self, body: Mapping[str, Any]) -> tuple[bytes, str]:
-        descriptor, name = tempfile.mkstemp(prefix=".bundle-", suffix=".lumora", dir=self.transfer_root)
+        descriptor, name = tempfile.mkstemp(prefix=".bundle-", suffix=".zip", dir=self.transfer_root)
         os.close(descriptor)
         temporary = Path(name)
         try:
@@ -80,7 +80,7 @@ class PortabilityService:
         directory = self.export_root / transfer_id
         directory.mkdir(mode=0o750)
         try:
-            metadata = self._export_to_path(body, directory / "bundle.lumora")
+            metadata = self._export_to_path(body, directory / "bundle.zip")
             metadata.update({"export_id": transfer_id, "chunk_size": CHUNK_SIZE})
             metadata["total_parts"] = self._part_count(metadata["size"])
             self.repository.atomic_json(directory / "metadata.json", metadata)
@@ -93,13 +93,13 @@ class PortabilityService:
         directory = self._transfer_dir(self.export_root, transfer_id)
         metadata = self._read_metadata(directory)
         number = self._part_number(part_number, metadata["total_parts"])
-        with (directory / "bundle.lumora").open("rb") as file:
+        with (directory / "bundle.zip").open("rb") as file:
             file.seek(number * CHUNK_SIZE)
             payload = file.read(CHUNK_SIZE)
         return payload, metadata
 
     def start_upload(self, body: Mapping[str, Any]) -> dict[str, Any]:
-        filename = Path(str(body.get("filename") or "profile.lumora")).name
+        filename = Path(str(body.get("filename") or "profile.zip")).name
         size = int(body.get("size") or 0)
         if size <= 0 or size > MAX_COMPRESSED:
             raise StoreError("bundle size is invalid", code="invalid_bundle")
@@ -140,9 +140,9 @@ class PortabilityService:
     def complete_upload(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         directory = self._transfer_dir(self.upload_root, transfer_id)
         metadata = self._read_metadata(directory)
-        if metadata.get("complete") and (directory / "bundle.lumora").is_file():
+        if metadata.get("complete") and (directory / "bundle.zip").is_file():
             return metadata
-        target = directory / "bundle.lumora"
+        target = directory / "bundle.zip"
         digest = hashlib.sha256()
         total = 0
         descriptor, temporary = tempfile.mkstemp(prefix=".bundle.", dir=directory)
@@ -179,12 +179,12 @@ class PortabilityService:
     def apply_upload(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         directory = self._transfer_dir(self.upload_root, transfer_id)
         metadata = self._read_metadata(directory)
-        if not metadata.get("complete") or not (directory / "bundle.lumora").is_file():
+        if not metadata.get("complete") or not (directory / "bundle.zip").is_file():
             raise StoreError("upload is not complete", status=409, code="upload_incomplete")
         environment = body.get("environment") or {}
         if not isinstance(environment, Mapping):
             raise StoreError("environment must be an object", code="invalid_environment")
-        report = self.apply_file(directory / "bundle.lumora", environment)
+        report = self.apply_file(directory / "bundle.zip", environment)
         shutil.rmtree(directory, ignore_errors=True)
         return report
 
@@ -374,7 +374,7 @@ class PortabilityService:
             raise StoreError("bundle size is invalid", code="invalid_bundle")
         return {
             "bundle_export_id": export_id,
-            "filename": f"open-lumora-{export_id}.lumora",
+            "filename": f"open-lumora-{export_id}.zip",
             "size": size,
             "sha256": self._hash_file(target),
             "created_at": created_at,
@@ -770,7 +770,7 @@ class PortabilityService:
     def _with_payload(self, payload: bytes, operation):
         if not payload or len(payload) > MAX_COMPRESSED:
             raise StoreError("bundle size is invalid", code="invalid_bundle")
-        descriptor, name = tempfile.mkstemp(prefix=".legacy-bundle-", suffix=".lumora", dir=self.transfer_root)
+        descriptor, name = tempfile.mkstemp(prefix=".legacy-bundle-", suffix=".zip", dir=self.transfer_root)
         path = Path(name)
         try:
             with os.fdopen(descriptor, "wb") as file:

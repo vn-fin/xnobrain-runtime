@@ -20,12 +20,12 @@ describe('systemApi', () => {
     expect(deployment.gateway_configured).toBe(true);
   });
 
-  it('downloads a .lumora archive in parts', async () => {
+  it('downloads a standard ZIP archive in parts', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/api/v1/bundles/exports')) {
         return new Response(JSON.stringify({ success: true, data: {
-          export_id: 'export-1', filename: 'profile.lumora', size: 4,
+          export_id: 'export-1', filename: 'profile.zip', size: 4,
           sha256: '0'.repeat(64), chunk_size: 4, total_parts: 1,
         } }), { status: 201, headers: { 'content-type': 'application/json' } });
       }
@@ -43,7 +43,8 @@ describe('systemApi', () => {
     const bundle = await systemApi.export(['a12345']);
 
     expect(bundle.blob.size).toBe(4);
-    expect(bundle.filename).toBe('profile.lumora');
+    expect(bundle.filename).toBe('profile.zip');
+    expect(bundle.blob.type).toBe('application/zip');
     const [, init] = fetchMock.mock.calls[0];
     expect(init?.method).toBe('POST');
     expect(init?.body).toContain('a12345');
@@ -61,7 +62,7 @@ describe('systemApi', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await systemApi.inspect(new File(['bundle'], 'profiles.lumora'));
+    const result = await systemApi.inspect(new File(['bundle'], 'profiles.zip'));
 
     expect(result.files).toBe(3);
   });

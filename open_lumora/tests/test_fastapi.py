@@ -79,6 +79,26 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(detail["health"]["healthy"])
         self.assertNotIn("top_processes", json.dumps(detail))
 
+    async def test_sandbox_detail_stream_emits_an_immediate_stats_event(self):
+        class ConnectedRequest:
+            async def is_disconnected(self):
+                return False
+
+        with patch("open_lumora.handlers.api.asyncio.sleep", new=AsyncMock()) as sleep:
+            response = await self.composition.handlers.sandbox_detail_stream(ConnectedRequest())
+            event = await anext(response.body_iterator)
+            next_event = await anext(response.body_iterator)
+            await response.body_iterator.aclose()
+
+        self.assertEqual(response.media_type, "text/event-stream")
+        self.assertEqual(response.headers["x-accel-buffering"], "no")
+        sleep.assert_awaited_once_with(1)
+        self.assertIn("id: 1\n", next_event)
+        self.assertIn("event: stats\n", event)
+        payload = json.loads(event.split("data: ", 1)[1])
+        self.assertIn("cpu_percent", payload["metrics"])
+        self.assertNotIn("top_processes", event)
+
     async def test_default_profile_installs_skill_from_url_without_returning_command_output(self):
         source = "https://example.com/office-helper/SKILL.md"
 
@@ -357,7 +377,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         with ZipFile(BytesIO(exported.content)) as archive:
             self.assertNotIn(f"profiles/{agent_id}/.env", archive.namelist())
 
-        upload = {"file": ("profile.lumora", exported.content, "application/vnd.open-lumora.bundle")}
+        self.assertEqual(exported.headers["content-type"], "application/zip")
+        self.assertIn('.zip"', exported.headers["content-disposition"])
+        upload = {"file": ("profile.zip", exported.content, "application/zip")}
         async with self.client() as client:
             inspected = await client.post("/api/v1/bundles/inspect", files=upload)
             preview = await client.post("/api/v1/bundles/dry-run", files=upload)
@@ -387,6 +409,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         async with self.client() as client:
             started = await client.post("/api/v1/bundles/exports", json={"agent_ids": [agent_id]})
             transfer = started.json()["data"]
+            self.assertTrue(transfer["filename"].endswith(".zip"))
             parts = []
             for number in range(transfer["total_parts"]):
                 response = await client.get(f"/api/v1/bundles/exports/{transfer['export_id']}/parts/{number}")

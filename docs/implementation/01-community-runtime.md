@@ -32,7 +32,7 @@ Self-hosted Free runs persistently with no database, Redis, Kafka, login, or net
 
 ## Migration
 
-Provide a one-time importer from the current PostgreSQL export shape or a portable `.lumora` bundle. Do not silently discard existing conversations or crons. If Hermes already owns equivalent sessions, map identifiers and report anything not importable.
+Provide a one-time importer from the current PostgreSQL export shape or a portable `.zip` profile archive. Do not silently discard existing conversations or crons. If Hermes already owns equivalent sessions, map identifiers and report anything not importable.
 
 ## Acceptance criteria
 

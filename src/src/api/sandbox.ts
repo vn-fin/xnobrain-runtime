@@ -20,6 +20,22 @@ export const sandboxApi = {
     };
   },
 
+  async stream(onDetail: (result: SandboxResult) => void, signal?: AbortSignal): Promise<void> {
+    const response = await requestRaw(`${SANDBOX_BASE}/detail/stream`, {
+      headers: { Accept: 'text/event-stream' },
+      signal,
+    });
+    await readSSE(
+      response,
+      (event: SSEEvent) => {
+        if (event.event !== 'stats' && event.event !== 'message') return;
+        if (!event.data || typeof event.data !== 'object') return;
+        onDetail({ provisioned: true, data: mapSandboxData(event.data as SandboxDetailDTO) });
+      },
+      signal,
+    );
+  },
+
   setup: () => request<unknown>(`${SANDBOX_BASE}/setup`, { method: 'POST' }),
 
   /**

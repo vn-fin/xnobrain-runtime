@@ -31,10 +31,36 @@ export function useSandbox(active: boolean) {
 
   useEffect(() => {
     if (!active) return undefined;
-    void refresh(false);
-    const timer = window.setInterval(() => void refresh(true), 5_000);
-    return () => window.clearInterval(timer);
-  }, [active, refresh]);
+    const controller = new AbortController();
+    let reconnectTimer: number | undefined;
+    let received = false;
+
+    const connect = async () => {
+      if (!received) setStatus('loading');
+      try {
+        await sandboxApi.stream((result) => {
+          received = true;
+          setData(result.data);
+          setProvisioned(result.provisioned);
+          setError('');
+          setStatus('ready');
+        }, controller.signal);
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        if (!received) {
+          setError(cause instanceof Error ? cause.message : 'Unable to stream sandbox statistics');
+          setStatus('error');
+        }
+      }
+      if (!controller.signal.aborted) reconnectTimer = window.setTimeout(() => void connect(), 1_000);
+    };
+
+    void connect();
+    return () => {
+      controller.abort();
+      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
+    };
+  }, [active]);
 
   const createSandbox = async () => {
     setSetupRunning(true);
