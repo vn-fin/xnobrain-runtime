@@ -96,11 +96,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assistants.status, assistants.agents]);
 
-  const { centerView } = router;
+  const { centerView, setCenterView } = router;
 
   useEffect(() => {
-    if (centerView === 'dashboard' && !telemetryEnabled) router.setCenterView('chat');
-  }, [centerView, router, telemetryEnabled]);
+    if (centerView === 'dashboard' && !telemetryEnabled) setCenterView('chat');
+  }, [centerView, setCenterView, telemetryEnabled]);
   const authProvider = connections.connections.find((p) => p.id === connections.authProviderId) ?? null;
   const runtimeProviders = useMemo(() => connections.connections.map((provider) => ({
     id: provider.id,
