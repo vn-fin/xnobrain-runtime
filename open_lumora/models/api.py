@@ -51,7 +51,7 @@ class SkillInstall(BaseModel):
     skill_id: str | None = None
     name: str | None = None
     content: str | None = None
-    source: str | None = None
+    source: str | None = Field(default=None, max_length=512)
 
 
 class EnabledPatch(BaseModel):
