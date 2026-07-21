@@ -35,7 +35,7 @@ ROUTES = (
     Route("GET", "/agent-gateway/v1/ping", "health", tags=("System",)),
     Route("GET", "/api/v1/limits", "limits", tags=("System",)),
     Route("GET", "/api/v1/system/deployment", "deployment", tags=("System",)),
-    Route("GET", "/api/v1/enterprise/features", "enterprise_features", tags=("Enterprise",)),
+    Route("GET", "/api/v1/enterprise/features", "enterprise_features", special="enterprise_proxy", tags=("Enterprise",)),
     Route("GET", "/api/v1/device", "device_status", tags=("Enterprise",)),
     Route("POST", "/api/v1/device/pair", "device_pair", tags=("Enterprise",)),
     Route("POST", "/api/v1/device/unpair", "device_unpair", tags=("Enterprise",)),
@@ -130,6 +130,9 @@ ROUTES = (
 
     Route("GET", "/api/v1/dashboard/{tail:path}", "enterprise_proxy", special="enterprise_proxy", tags=("Enterprise",)),
     Route("GET", "/api/v1/observability/{tail:path}", "enterprise_proxy", special="enterprise_proxy", tags=("Enterprise",)),
+    Route("GET", "/api/v1/skills", "enterprise_skills_list", special="enterprise_proxy", tags=("Enterprise Skills",)),
+    Route("GET", "/api/v1/skills/search", "enterprise_skills_search", special="enterprise_proxy", tags=("Enterprise Skills",)),
+    Route("POST", "/api/v1/skills/{skill_id}/install", "enterprise_skills_install", special="enterprise_proxy", tags=("Enterprise Skills",)),
 )
 
 

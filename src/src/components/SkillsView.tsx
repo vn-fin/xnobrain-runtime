@@ -79,6 +79,7 @@ export function SkillsView({
   groupFilter,
   onGroupFilter,
   onInstall,
+  onInstallCommunity,
   installPending,
   installError,
   onInstallExisting,
@@ -100,6 +101,7 @@ export function SkillsView({
   groupFilter: string;
   onGroupFilter: (v: string) => void;
   onInstall: (source: string, force?: boolean) => Promise<boolean>;
+  onInstallCommunity: (skill: CommunitySkill, force?: boolean) => Promise<boolean>;
   installPending: boolean;
   installError: string;
   onInstallExisting: (id: string, agentIds: string[]) => void;
@@ -215,7 +217,7 @@ export function SkillsView({
     if (installPending) return;
     setInstallingSource(skill.source);
     try {
-      await onInstall(skill.source);
+      await onInstallCommunity(skill);
     } finally {
       setInstallingSource('');
     }
@@ -226,7 +228,7 @@ export function SkillsView({
     if (installPending) return;
     setInstallingSource(skill.source);
     try {
-      await onInstall(skill.source, true);
+      await onInstallCommunity(skill, true);
     } finally {
       setInstallingSource('');
     }

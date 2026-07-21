@@ -24,20 +24,20 @@ import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
 import { useAuth } from './auth';
-import type { Agent } from './types';
+import type { Agent, CommunitySkill } from './types';
 
 export default function App() {
   const { t } = useTranslation();
   const router = useRouter();
   const assistants = useAssistants();
-  const communitySkills = useCommunitySkills();
+  const { user, hasEnterpriseFeature } = useAuth();
+  const communitySkills = useCommunitySkills(router.skillsSearch, router.skillsGroupFilter, Boolean(user));
   const connections = useConnections();
   const sandbox = useSandbox(router.centerView === 'sandbox');
   const crons = useCrons();
   const conversation = useConversation(router.activeAgentId, router.activeConversationId);
   const workspace = useWorkspace(router.activeAgentId);
   const teams = useTeams();
-  const { hasEnterpriseFeature } = useAuth();
   const telemetryEnabled = hasEnterpriseFeature('managed_telemetry');
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
@@ -150,6 +150,12 @@ export default function App() {
     setSettingsOpen(false);
   };
 
+  const handleInstallCommunitySkill = async (skill: CommunitySkill, force = false) => {
+    const selected = await communitySkills.install(skill.skill_id);
+    if (!selected) return false;
+    return assistants.installDefaultSkill(selected.source, force);
+  };
+
   const handleCreateConversation = async () => {
     const id = await assistants.createConversation(router.activeAgentId, activeAgent.model);
     router.setActiveConversationId(id);
@@ -257,8 +263,9 @@ export default function App() {
             groupFilter={router.skillsGroupFilter}
             onGroupFilter={router.setSkillsGroupFilter}
             onInstall={assistants.installDefaultSkill}
+            onInstallCommunity={handleInstallCommunitySkill}
             installPending={assistants.skillInstallPending}
-            installError={assistants.skillInstallError}
+            installError={assistants.skillInstallError || communitySkills.installError}
             onInstallExisting={assistants.installExistingSkill}
             onApply={assistants.applySkillsToAgents}
             onClose={() => router.setCenterView('chat')}

@@ -64,6 +64,8 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     volumes:
       - open_lumora_data:/opt/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     labels:
       - traefik.enable=true
       - traefik.http.routers.open-lumora-api.rule=Host(`${OPEN_LUMORA_DOMAIN:-localhost}`) && (PathPrefix(`/api`) || PathPrefix(`/agent-gateway`) || PathPrefix(`/conversations`) || PathPrefix(`/sandboxes`) || PathPrefix(`/internal`) || PathPrefix(`/docs`) || Path(`/openapi.json`) || Path(`/redoc`))
@@ -92,6 +94,8 @@ services:
       - ./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro
       - otel_collector_data:/var/lib/otelcol
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - control
     restart: unless-stopped

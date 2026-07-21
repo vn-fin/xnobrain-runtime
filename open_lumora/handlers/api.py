@@ -161,6 +161,8 @@ class APIHandlers:
 
     async def enterprise_proxy(self, request: Request) -> Response:
         if not self.enterprise_url:
+            if request.url.path == "/api/v1/enterprise/features":
+                return self.success({"available": False, "local_features_unrestricted": True}, "features retrieved")
             error = ValueError("ENTERPRISE_API_URL is not configured"); error.status, error.code = 503, "enterprise_unavailable"
             return self.failure(error)
         headers = {key: value for key, value in request.headers.items() if key.lower() in {"authorization", "traceparent", "tracestate"}}

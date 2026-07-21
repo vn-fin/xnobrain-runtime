@@ -1,32 +1,60 @@
-import { describe, expect, it } from 'vitest';
-import { communityApi, computeCommunityStats } from './community';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { communityApi } from './community';
 
-describe('communityApi (smoke)', () => {
-  it('returns a catalog of skills with derived stats', async () => {
-    const catalog = await communityApi.list();
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.clear();
+});
 
-    expect(catalog.skills.length).toBeGreaterThan(0);
-    // Every entry carries the identifiers the install path needs.
-    for (const skill of catalog.skills) {
-      expect(skill.skill_id).toBeTruthy();
-      expect(skill.source).toBeTruthy();
-      expect(skill.author).toBeTruthy();
-    }
+describe('communityApi', () => {
+  it('lists and searches the authenticated Enterprise catalog', async () => {
+    localStorage.setItem('access_token', 'login-token');
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
+      success: true,
+      data: {
+        skills: [{
+          skill_id: 'community-pdf',
+          name: 'pdf',
+          category: 'data',
+          description: 'PDF documents',
+          source: 'skills-sh/anthropics/skills/pdf',
+          author: 'anthropics',
+          installs: 4820,
+        }],
+        stats: { totalSkills: 1, totalAuthors: 1, totalInstalls: 4820 },
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    vi.stubGlobal('fetch', fetchMock);
 
-    // Stats are derived from the returned list, not hard-coded.
-    const expected = computeCommunityStats(catalog.skills);
-    expect(catalog.stats).toEqual(expected);
-    expect(catalog.stats.totalSkills).toBe(catalog.skills.length);
-    expect(catalog.stats.totalInstalls).toBe(
-      catalog.skills.reduce((sum, s) => sum + s.installs, 0),
-    );
-    expect(catalog.stats.totalAuthors).toBeLessThanOrEqual(catalog.skills.length);
+    const listed = await communityApi.list();
+    const searched = await communityApi.list('pdf', 'data');
+
+    expect(listed.skills[0].skill_id).toBe('community-pdf');
+    expect(searched.stats.totalInstalls).toBe(4820);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${window.location.origin}/api/v1/skills`);
+    expect(fetchMock.mock.calls[1][0]).toBe(`${window.location.origin}/api/v1/skills/search?q=pdf&category=data`);
+    expect(new Headers(fetchMock.mock.calls[0][1].headers).get('Authorization')).toBe('Bearer login-token');
   });
 
-  it('rejects when the request is aborted', async () => {
-    const controller = new AbortController();
-    const pending = communityApi.list(controller.signal);
-    controller.abort();
-    await expect(pending).rejects.toThrow();
+  it('resolves an Enterprise skill source for local installation', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: {
+        skill_id: 'community-pdf',
+        name: 'pdf',
+        category: 'data',
+        description: 'PDF documents',
+        source: 'skills-sh/anthropics/skills/pdf',
+        author: 'anthropics',
+        installs: 4820,
+      },
+    }), { status: 202, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const selected = await communityApi.install('community-pdf');
+
+    expect(selected.source).toBe('skills-sh/anthropics/skills/pdf');
+    expect(fetchMock.mock.calls[0][0]).toBe(`${window.location.origin}/api/v1/skills/community-pdf/install`);
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
   });
 });

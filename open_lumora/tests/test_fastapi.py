@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 from zipfile import ZipFile
 
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response as HTTPXResponse
 import yaml
 
 from open_lumora.app import OpenLumoraApplication
@@ -65,6 +65,26 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["data"]["api"], "fastapi")
         deployment = deployment_response.json()["data"]
         self.assertFalse(deployment["database"])
+
+    async def test_enterprise_plan_and_skill_routes_forward_the_login_token(self):
+        self.composition.handlers.enterprise_url = "http://localhost:3100"
+        upstream = AsyncMock(return_value=HTTPXResponse(
+            200,
+            json={"success": True, "data": {"skills": [], "stats": {"totalSkills": 0, "totalAuthors": 0, "totalInstalls": 0}}},
+            headers={"Content-Type": "application/json"},
+        ))
+        with patch("open_lumora.handlers.api.httpx.AsyncClient.request", new=upstream):
+            async with self.client() as client:
+                skills = await client.get("/api/v1/skills", headers={"Authorization": "Bearer login-token"})
+                search = await client.get("/api/v1/skills/search?q=pdf", headers={"Authorization": "Bearer login-token"})
+                install = await client.post("/api/v1/skills/community-pdf/install", headers={"Authorization": "Bearer login-token"})
+                plan = await client.get("/api/v1/enterprise/features", headers={"Authorization": "Bearer login-token"})
+
+        self.assertEqual([skills.status_code, search.status_code, install.status_code, plan.status_code], [200, 200, 200, 200])
+        self.assertEqual(upstream.await_count, 4)
+        for call in upstream.await_args_list:
+            forwarded_headers = {key.lower(): value for key, value in call.kwargs["headers"].items()}
+            self.assertEqual(forwarded_headers["authorization"], "Bearer login-token")
 
     async def test_sandbox_detail_reports_only_important_runtime_usage(self):
         async with self.client() as client:

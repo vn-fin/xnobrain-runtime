@@ -27,7 +27,9 @@ capacity.
 Set `ENTERPRISE_API_URL` to add authenticated Enterprise features. The
 optional `authenticated` Compose profile starts an OTel collector that exports
 to that URL. The Enterprise service and its databases are not part of this OSS
-Compose project.
+Compose project. Use `http://localhost:3100` when running Open Lumora directly
+on the host, or `http://host.docker.internal:3100` from this Compose stack. The
+runtime and collector include the Linux host-gateway mapping for that name.
 
 Builds produce only:
 
