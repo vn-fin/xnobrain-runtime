@@ -1,16 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut, type User } from 'firebase/auth';
 import { AUTH_EXPIRED_EVENT, buildApiUrl } from './api/client';
+import { normalizeEnterprisePlan, planHasCapability, type EnterprisePlan } from './authPlan';
 import { auth, firebaseEnabled } from './firebase';
 
 export type AuthUser = { email: string | null; displayName: string | null };
 export type BackendUser = { aud?: string; user_id: string; email: string; phone?: string; username?: string };
-export type EnterprisePlan = {
-  plan_id: string;
-  capabilities: Record<string, boolean>;
-  hardware_class: string;
-  telemetry_retention_days: number;
-};
+export type { EnterprisePlan } from './authPlan';
 type Deployment = { mode: 'local' | 'cloud' };
 type BackendTokenResponse = { access_token: string; refresh_token?: string; user: BackendUser };
 type AuthContextValue = {
@@ -63,8 +59,8 @@ async function loadEnterprisePlan(accessToken: string): Promise<EnterprisePlan |
     });
     if (response.status === 401) throw new Error('Login is invalid or expired.');
     if (!response.ok) return null;
-    const body = await response.json().catch(() => undefined) as { data?: EnterprisePlan } | undefined;
-    return body?.data ?? null;
+    const body = await response.json().catch(() => undefined) as { data?: unknown } | undefined;
+    return normalizeEnterprisePlan(body?.data);
   } catch (cause) {
     if (cause instanceof Error && cause.message === 'Login is invalid or expired.') throw cause;
     return null;
@@ -158,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOut,
     openLogin: () => setLoginOpen(true),
     closeLogin: () => setLoginOpen(false),
-    hasEnterpriseFeature: (capability) => Boolean(user && enterprisePlan?.capabilities[capability]),
+    hasEnterpriseFeature: (capability) => Boolean(user && planHasCapability(enterprisePlan, capability)),
   }), [user, backendUser, deploymentMode, enterprisePlan, authLoading, deploymentLoading, loginOpen, signIn, signOut]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

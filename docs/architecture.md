@@ -1,60 +1,76 @@
 # Architecture
 
-Open Lumora is a modular monolith. The browser calls one Fiber application. The API invokes Go services as functions rather than making internal HTTP calls, and those services own agent lifecycle, conversations, cron scheduling, profile files, snapshots, and edition limits.
-
-The frontend lives in `src/` and ships as its own container. The backend entrypoint is `cmd/main.go`. Business rules live under `services/<service_name>`; safe profile I/O is concentrated in `internal/profile`; runtime execution is behind `internal/runtime`; persistence is behind `internal/repositories`; transport code is under `internal/api`, with centralized route assembly in `internal/v1/routes/SetupRoutes.go`.
-
-Hermes-owned state is file-backed. Versioned agent metadata lives in each
-profile `config.yaml`, conversations and messages live in the profile session
-tree, cron definitions are individual YAML files, and notifications are
-individual JSON files. Self-hosted Compose also starts PostgreSQL for the
-pulled Enterprise API; the OSS backend does not query it. No ORM is used.
-
-## Agent profiles
-
-Each agent is assigned a six-character ID and this fixed tree:
+Open Lumora is a Python modular monolith around the upstream Hermes Agent
+runtime. Uvicorn serves one FastAPI application on port `8642`. Open Lumora
+imports Hermes CLI's native FastAPI app, adds its compatibility/management
+routes ahead of Hermes' SPA catch-all, and leaves the original Hermes routes,
+WebSocket APIs, cron scheduler, MCP, tools, sessions, skills, and config features
+available from the same process.
 
 ```text
-DATA_DIR/profiles/<agent-id>/
-  config.yaml
-  AGENTS.md
-  skills/<skill-id>/SKILL.md
-  memories/MEMORY.md
-  memories/USER.md
-  workspace/AGENTS.md
-  sessions/
-  cron/
-  logs/
-  snapshots/
-  home/.hermes -> profile root
+browser -> Traefik -> React UI
+                   -> FastAPI :8642 -> Hermes core/CLI -> 9router :20128
+                                      -> atomic profile files
+                                      -> Enterprise API (optional)
 ```
 
-The runtime receives both `HERMES_HOME=<profile>` and `HOME=<profile>/home`. This covers Hermes code that respects `HERMES_HOME` and compatibility paths that resolve `~/.hermes`, while keeping every write inside the selected profile. Paths are validated, traversal is rejected, and symlink escapes are blocked.
+The runtime image contains FastAPI and 9router, so there is one product runtime
+container instead of a Go API plus one Hermes server per profile. Only Traefik
+publishes a host port. 9router stays inside the runtime container.
 
-Skill and memory mutations create content-addressed snapshot manifests and immutable payloads. Restore copies the selected payload back to its original target. The per-profile `AGENTS.md` teaches Hermes where live memory, skills, and snapshots belong.
+## Python boundaries
 
-## Approval persistence
+All backend code is under the single `open_lumora` package:
 
-Runtime approval events include a subsystem key such as `memory_write` or `skills_write`. Resolving with `session` or `always` calls the profile manager before resuming Hermes. It records the choice in `approvals.persisted` and disables that subsystem's `write_approval` flag in the selected agent's `config.yaml`. A subsequent process reads the same file, so this is not browser-only state.
+```text
+open_lumora/
+  routes/          public URL assembly; the only route registration point
+  handlers/        HTTP envelopes, SSE, uploads, downloads, Enterprise proxy
+  models/          Pydantic request/response contracts used by Swagger
+  services/        business orchestration and portable-profile behavior
+  repositories/    atomic filesystem persistence owned by Open Lumora
+  integrations/    Hermes CLI/core/config and 9router adapters
+  app.py            dependency composition
+  server.py         FastAPI/Uvicorn factory
+  telemetry.py      redacted OpenTelemetry setup
+```
 
-## Runtime and providers
+There is deliberately no `open_lumora.data` package. Persistence and external
+runtime interaction have different change reasons: repositories store Open
+Lumora-owned state, while integrations translate calls to Hermes and 9router.
 
-Studio calls the OSS Hermes runtime directly for `/v1/runs`, `/events`,
-`/stop`, `/approval`, and 9router operations. The public repository builds the
-runtime and owns its extensions. Studio and runtime share
-`open-lumora_open_lumora_data`; private HTTP travels on
-`open-lumora-control`. The browser never receives a runtime address.
+## Profiles and persistence
 
-The gateway adapter starts a profile API server lazily and reuses it for that profile until the Go process stops. `CONTAINER_IDLE_ENABLED` and `CONTAINER_IDLE_TIMEOUT_MINUTES` remain policy metadata for a future managed-container controller; the local OSS application container does not stop itself because doing so would also remove its UI and API.
+The default Hermes profile is `HERMES_ROOT_PROFILE`. Named agents live at
+`DATA_DIR/profiles/<agent-id>/`, also exposed to Hermes as
+`HERMES_HOME/profiles`. A named profile owns its config, `AGENTS.md`, skills,
+memory, workspace, native Hermes session database, cron state, and snapshots.
 
-## Editions and quotas
+Filesystem writes use validated paths, temporary files, `fsync`, and atomic
+replacement. Profile deletion is a recoverable move into the local trash tree.
+Memory and skill mutations snapshot immutable content before returning success.
+Portable import validates paths, symlinks, checksums, expansion ratios, file
+counts, and declared profile ownership before making a profile visible.
 
-`internal/studio` is the application-composition seam and
-`internal/studio/contract` contains repository, runtime, lifecycle, and DTO
-contracts. The open-source policy returns an unrestricted local principal.
-Enterprise plans govern only authenticated extension APIs and managed cloud
-resources; they never reduce self-hosted Hermes access.
+Hermes itself uses SQLite for its native local session state and 9router uses
+its own embedded local store. Open Lumora introduces no application database
+and never queries PostgreSQL.
 
-A downstream enterprise composition can implement the same policy with gRPC token verification, tenant-aware plan lookup, RBAC, audit, and licensed limits. `-1` means unlimited for numeric limits. The enterprise control plane remains responsible for distributed reservations, container resource classes, billing, and managed telemetry; the local application remains usable without that control plane.
+## Runs, providers, and scheduling
 
-The product-level availability and recommended Free, Pro, and Enterprise values are maintained in [plans, features, and limits](plans.md). Paid PostgreSQL repositories and infrastructure were moved into the enterprise repository; later managed features continue to compose through the public contracts rather than importing Community internals.
+Chat runs invoke the original Hermes CLI with the selected profile's
+`HERMES_HOME`; output is streamed as SSE and active subprocesses can be stopped.
+Approval resolution calls Hermes' native approval core. Every profile is
+normalized to the local 9router custom provider, while model selection remains
+per profile. The local scheduler runs in-process and shares Hermes' file locks,
+so it does not require a second scheduler service.
+
+## Enterprise and telemetry
+
+`ENTERPRISE_API_URL` is optional. When present, explicitly Enterprise-owned
+dashboard, observability, and device operations are forwarded with auth and W3C
+trace headers. When absent, local features remain unlimited and database-free.
+
+FastAPI and outbound HTTP are OpenTelemetry-instrumented. Structured logs and
+spans contain route templates, status, latency, and safe service metadata; user
+content and credentials are excluded.

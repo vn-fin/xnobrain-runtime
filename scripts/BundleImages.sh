@@ -7,7 +7,6 @@ output_dir="${BUNDLE_OUTPUT_DIR:-bin/images}"
 part_size="${IMAGE_BUNDLE_PART_SIZE:-47m}"
 bundle="open-lumora-images-${image_tag}"
 images=(
-  "${OPEN_LUMORA_BACKEND_IMAGE:-open-lumora-backend:${image_tag}}"
   "${OPEN_LUMORA_FRONTEND_IMAGE:-open-lumora-frontend:${image_tag}}"
   "${HERMES_RUNTIME_IMAGE:-open-lumora-hermes-runtime:${image_tag}}"
 )

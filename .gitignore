@@ -1,20 +1,15 @@
-# ─── Go ────────────────────────────────────────────────────────────────────────
-# Compiled binaries
+# ─── Native build artifacts ───────────────────────────────────────────────────
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 
-# Test & coverage
+# Test and coverage output
 *.test
 *.out
 coverage.html
 coverage.txt
-
-# Go workspace
-go.work
-go.work.sum
 
 # ─── React / Node (src/) ───────────────────────────────────────────────────────
 src/node_modules/
@@ -31,7 +26,7 @@ node_modules/
 dist/
 .npm/
 
-# The production UI is embedded in the public Studio image and is committed.
+# The production UI is copied into the frontend image and is committed.
 !src/dist/
 !src/dist/**
 
@@ -51,9 +46,7 @@ data/
 *.log
 logs/
 
-# ─── Python / Extensions ──────────────────────────────────────────────────────
-extensions/**/__pycache__/
-extensions/**/*.pyc
+# ─── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo

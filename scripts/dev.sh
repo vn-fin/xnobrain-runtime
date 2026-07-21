@@ -2,9 +2,11 @@
 set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-go_bin="go"
-if [[ -x "$project_dir/.tools/go/bin/go" ]]; then
-  go_bin="$project_dir/.tools/go/bin/go"
+python_bin="python3"
+if [[ -x "$project_dir/.tools/python/bin/python" ]]; then
+  python_bin="$project_dir/.tools/python/bin/python"
+elif [[ -x "$HOME/.local/lib/hermes-agent/venv/bin/python" ]]; then
+  python_bin="$HOME/.local/lib/hermes-agent/venv/bin/python"
 fi
 
 cd "$project_dir/src"
@@ -18,4 +20,4 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cd "$project_dir"
-"$go_bin" run cmd/main.go
+exec "$python_bin" server.py

@@ -1,0 +1,137 @@
+"""Pydantic contracts for Open Lumora's public management APIs."""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class APIEnvelope(BaseModel):
+    success: bool = True
+    data: Any = None
+    message: str = "ok"
+    status_code: int = 200
+
+
+class AgentCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=4000)
+
+
+class AgentMetadataPatch(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+
+
+class ConfigPatch(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    provider: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
+    approval_mode: str | None = None
+    system_prompt: str | None = None
+
+
+class CronCreate(BaseModel):
+    agent_id: str
+    name: str
+    prompt: str
+    interval_minutes: int | None = Field(default=None, gt=0)
+    schedule: str | None = None
+    timezone: str = "Etc/UTC"
+    mode: Literal["local", "managed"] = "local"
+
+
+class SkillInstall(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    skill_id: str | None = None
+    name: str | None = None
+    content: str | None = None
+    source: str | None = None
+
+
+class EnabledPatch(BaseModel):
+    enabled: bool
+
+
+class MemoryPatch(BaseModel):
+    memory: str
+
+
+class WorkspacePath(BaseModel):
+    path: str
+
+
+class WorkspaceWrite(WorkspacePath):
+    content: str | None = None
+    content_base64: str | None = None
+
+
+class WorkspaceCreate(WorkspaceWrite):
+    type: Literal["file", "directory"] = "file"
+
+
+class ConversationCreate(BaseModel):
+    title: str = Field(default="New conversation", max_length=200)
+
+
+class ConversationRename(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+
+class ChatRequest(BaseModel):
+    input: str = Field(min_length=1)
+    model: str | None = None
+    skills: list[str] | None = None
+    toolsets: list[str] | None = None
+    timeout_seconds: int | None = Field(default=None, gt=0)
+
+
+class RunApproval(BaseModel):
+    choice: Literal["once", "session", "always", "deny"]
+    resolve_all: bool = False
+    subsystem: str | None = None
+
+
+class TeamRun(BaseModel):
+    task: str = Field(min_length=1)
+
+
+class ProviderCredential(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    text: str | None = None
+    response_text: str | None = None
+    token: str | None = None
+    api_key: str | None = None
+    default_model: str | None = None
+
+
+class BundleExport(BaseModel):
+    agent_ids: list[str] = Field(min_length=1)
+    include_conversations: bool = False
+
+
+class MCPConfig(BaseModel):
+    servers: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class TeamMember(BaseModel):
+    agent_id: str
+    role: str
+    allowed_tools: list[str] = Field(default_factory=lambda: ["web"])
+    enabled: bool = True
+
+
+class TeamCreate(BaseModel):
+    name: str
+    orchestrator_id: str
+    members: list[TeamMember] = Field(default_factory=list)
+    max_parallel: int = Field(default=1, gt=0)
+    max_depth: int = Field(default=1, gt=0)
+    enabled: bool = True
+
+
+class GenericObject(BaseModel):
+    """Document an intentionally extensible Hermes-native payload."""
+
+    model_config = ConfigDict(extra="allow")

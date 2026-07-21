@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import LoginScreen from './LoginScreen';
+import RootErrorBoundary from './RootErrorBoundary';
 import { AuthProvider, useAuth } from './auth';
 import { initTheme } from './theme';
 import './i18n';
@@ -19,6 +20,8 @@ function AuthGate() {
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <AuthProvider><AuthGate /></AuthProvider>
+    <RootErrorBoundary>
+      <AuthProvider><AuthGate /></AuthProvider>
+    </RootErrorBoundary>
   </React.StrictMode>,
 );

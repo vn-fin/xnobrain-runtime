@@ -43,7 +43,7 @@ processors:
 
 exporters:
   otlphttp/local_gateway:
-    endpoint: http://open-lumora-gateway:3100
+    endpoint: ${env:ENTERPRISE_API_URL}
     compression: gzip
     auth:
       authenticator: headers_setter
@@ -58,7 +58,7 @@ exporters:
       max_interval: 30s
       max_elapsed_time: 0s
   otlphttp/resource_gateway:
-    endpoint: http://open-lumora-gateway:3100
+    endpoint: ${env:ENTERPRISE_API_URL}
     compression: gzip
     headers:
       Authorization: "Bearer ${env:TELEMETRY_RESOURCE_TOKEN}"

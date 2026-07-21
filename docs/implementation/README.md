@@ -1,5 +1,11 @@
 # Open Lumora implementation roadmap
 
+> **Historical specifications:** the numbered work packages in this directory
+> describe the retired Go backend and are retained for contract history only.
+> The current implementation is the single Python/FastAPI `open_lumora`
+> package documented in `docs/architecture.md`; do not use the old Go paths or
+> validation commands for new work.
+
 This directory turns the product plan into implementation work. Read this file, `docs/plans.md`, and the specification assigned to your work package before editing code. Cross-repository protocol changes require an explicit version change under `docs/contracts`; do not coordinate by importing private enterprise packages into this repository.
 
 ## Target system

@@ -37,71 +37,31 @@ services:
       HERMES_HOME: /opt/data/open-lumora/root
       HERMES_ROOT_PROFILE: /opt/data/open-lumora/root
       HERMES_PROFILES_ROOT: /opt/data/open-lumora/profiles
+      HERMES_DESKTOP: "1"
+      HOME: /opt/data/home
+      XDG_CONFIG_HOME: /opt/data/home/.config
       NINE_ROUTER_DATA_DIR: /opt/data/.9router
       NINE_ROUTER_INTERNAL_SECRET: ${NINE_ROUTER_INTERNAL_SECRET:-open-lumora-local-9router}
-      API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: 8642
-      HERMES_RUNTIME_TOKEN: ${HERMES_RUNTIME_TOKEN:-open-lumora-local-runtime}
+      DATA_DIR: /opt/data/open-lumora
+      START_MODE: ${START_MODE:-local}
+      ENTERPRISE_API_URL: ${ENTERPRISE_API_URL:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     volumes:
       - open_lumora_data:/opt/data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.open-lumora-api.rule=Host(`${OPEN_LUMORA_DOMAIN:-localhost}`) && (PathPrefix(`/api`) || PathPrefix(`/agent-gateway`) || PathPrefix(`/conversations`) || PathPrefix(`/sandboxes`) || PathPrefix(`/internal`) || PathPrefix(`/docs`) || Path(`/openapi.json`) || Path(`/redoc`))
+      - traefik.http.routers.open-lumora-api.entrypoints=web
+      - traefik.http.routers.open-lumora-api.priority=100
+      - traefik.http.services.open-lumora-api.loadbalancer.server.port=8642
     networks:
+      - edge
       - control
-      - runtime-egress
     healthcheck:
-      test: ["CMD", "python3", "-c", "import os,urllib.request; t=os.environ.get('HERMES_RUNTIME_TOKEN',''); r=urllib.request.Request('http://127.0.0.1:8642/health',headers={'Authorization':'Bearer '+t}); urllib.request.urlopen(r,timeout=2)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/api/v1/health',timeout=2)"]
       interval: 15s
-      timeout: 3s
-      retries: 20
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:17-bookworm
-    environment:
-      POSTGRES_DB: open_lumora
-      POSTGRES_USER: open_lumora
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-open_lumora}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - control
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U open_lumora -d open_lumora"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    restart: unless-stopped
-
-  open-lumora-gateway:
-    # Pulled Enterprise API artifact. It exposes no authenticated extensions in
-    # local/no-login mode; set START_MODE=cloud plus auth/ClickHouse endpoints
-    # when this self-hosted installation is attached to an account.
-    image: ${OPEN_LUMORA_ENTERPRISE_API_IMAGE:-open-lumora-gateway:local}
-    environment:
-      START_MODE: ${START_MODE:-local}
-      HTTP_PORT: 3100
-      DATA_DIR: /opt/open-lumora/data
-      DATABASE_URL: postgres://open_lumora:${POSTGRES_PASSWORD:-open_lumora}@postgres:5432/open_lumora?sslmode=disable
-      AUTH_SERVICE_BASE_URL: ${AUTH_SERVICE_BASE_URL:-}
-      AUTH_GRPC_INSECURE: ${AUTH_GRPC_INSECURE:-false}
-      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-}
-      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-open_lumora}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
-      DASHBOARD_ENABLED: ${DASHBOARD_ENABLED:-true}
-      DASHBOARD_SMOKE_DATA_ENABLED: ${DASHBOARD_SMOKE_DATA_ENABLED:-true}
-      TELEMETRY_RESOURCE_TOKEN: ${TELEMETRY_RESOURCE_TOKEN:-}
-      TELEMETRY_RESOURCE_TENANT_ID: ${TELEMETRY_RESOURCE_TENANT_ID:-}
-    volumes:
-      - enterprise_api_data:/opt/open-lumora/data
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - control
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3100/api/v1/ready"]
-      interval: 10s
       timeout: 3s
       retries: 20
     restart: unless-stopped
@@ -113,69 +73,21 @@ services:
     command: ["--config=/etc/otelcol/config.yaml"]
     environment:
       TELEMETRY_RESOURCE_TOKEN: ${TELEMETRY_RESOURCE_TOKEN:-}
+      ENTERPRISE_API_URL: ${ENTERPRISE_API_URL:-}
     volumes:
       - ./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro
       - otel_collector_data:/var/lib/otelcol
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    depends_on:
-      open-lumora-gateway:
-        condition: service_healthy
     networks:
       - control
-    restart: unless-stopped
-
-  studio:
-    image: ${OPEN_LUMORA_BACKEND_IMAGE:-open-lumora-backend:local}
-    command: ["/usr/local/bin/open-lumora"]
-    environment:
-      START_MODE: ${START_MODE:-local}
-      HTTP_PORT: 3000
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATA_DIR: /opt/data/open-lumora
-      FRONTEND_DIR: /opt/open-lumora/frontend
-      CONTROL_GATEWAY_URL: ${OPEN_LUMORA_GATEWAY_URL:-http://open-lumora-gateway:3100}
-      HERMES_RUNTIME_URL: http://runtime:8642
-      HERMES_RUNTIME_TOKEN: ${HERMES_RUNTIME_TOKEN:-open-lumora-local-runtime}
-      NINE_ROUTER_URL: http://runtime:20128
-      NINE_ROUTER_DATA_DIR: /opt/data/.9router
-      DEVICE_CLOUD_URL: ${DEVICE_CLOUD_URL:-}
-      DEVICE_SIGNING_PUBLIC_KEY: ${DEVICE_SIGNING_PUBLIC_KEY:-}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
-      OTEL_DISK_BUFFER_BYTES: ${OTEL_DISK_BUFFER_BYTES:-67108864}
-      SCHEDULER_ENABLED: "false"
-    volumes:
-      - open_lumora_data:/opt/data
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.open-lumora-api.rule=Host(`${OPEN_LUMORA_DOMAIN:-localhost}`) && (PathPrefix(`/api`) || PathPrefix(`/agent-gateway`) || PathPrefix(`/conversations`) || PathPrefix(`/sandboxes`) || PathPrefix(`/internal`))
-      - traefik.http.routers.open-lumora-api.entrypoints=web
-      - traefik.http.routers.open-lumora-api.priority=100
-      - traefik.http.services.open-lumora-api.loadbalancer.server.port=3000
-    networks:
-      - edge
-      - control
-    depends_on:
-      runtime:
-        condition: service_healthy
-      open-lumora-gateway:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/v1/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 20
     restart: unless-stopped
 
 networks:
   edge:
   control:
-    name: open-lumora-control
-    external: true
-  runtime-egress:
+    internal: true
 
 volumes:
   open_lumora_data:
     name: open-lumora_open_lumora_data
-  postgres_data:
-  enterprise_api_data:
   otel_collector_data:

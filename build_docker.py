@@ -30,8 +30,8 @@ def main() -> int:
         parser.error("--path must be a non-empty image reference without whitespace")
     context = args.context.resolve()
     dockerfile = repository / "runtime" / "Dockerfile"
-    if not dockerfile.is_file() or not (repository / "extensions").is_dir():
-        parser.error("enterprise runtime Dockerfile and extensions are required")
+    if not dockerfile.is_file() or not (repository / "open_lumora").is_dir():
+        parser.error("runtime Dockerfile and open_lumora package are required")
 
     command = [args.container_cli, "build", "--file", str(dockerfile), "--tag", args.path]
     if args.platform:

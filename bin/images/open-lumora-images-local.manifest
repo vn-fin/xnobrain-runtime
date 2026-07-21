@@ -1,5 +1,0 @@
-format=open-lumora-image-bundle-v1
-tag=local
-part_size=47m
-image=open-lumora-backend:local
-image=open-lumora-frontend:local

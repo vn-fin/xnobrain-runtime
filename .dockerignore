@@ -7,6 +7,6 @@ src/*.tsbuildinfo
 src/vite.config.js
 src/vite.config.d.ts
 bin
-extensions/**/__pycache__
-extensions/**/*.pyc
+open_lumora/**/__pycache__
+open_lumora/**/*.pyc
 *.log
