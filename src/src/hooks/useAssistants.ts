@@ -311,13 +311,13 @@ export function useAssistants() {
     setAgentSkillPages((prev) => ({ ...prev, [agentId]: pagination ?? prev[agentId] }));
   };
 
-  const installDefaultSkill = async (source: string) => {
+  const installDefaultSkill = async (source: string, force = false) => {
     const clean = source.trim();
     if (!clean) return false;
     setSkillInstallPending(true);
     setSkillInstallError('');
     try {
-      await skillsApi.installDefault({ source: clean, enable: true });
+      await skillsApi.installDefault({ source: clean, enable: true, force });
       await refresh();
       return true;
     } catch (value) {

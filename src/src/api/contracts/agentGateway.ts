@@ -44,6 +44,7 @@ export type AgentSkillDTO = {
   enabled?: boolean;
   installed?: boolean;
   path?: string;
+  version?: string;
 };
 
 export type AgentSkillListResponseDTO = {

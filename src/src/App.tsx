@@ -250,6 +250,8 @@ export default function App() {
             communityStatus={communitySkills.status}
             communityError={communitySkills.error}
             onRetryCommunity={communitySkills.refresh}
+            tab={router.skillsTab}
+            onTabChange={router.setSkillsTab}
             search={router.skillsSearch}
             onSearch={router.setSkillsSearch}
             groupFilter={router.skillsGroupFilter}

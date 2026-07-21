@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Clock, Download, Plus, Search, ShieldCheck, Star, Users, X } from 'lucide-react';
+import { ArrowUpCircle, Check, ChevronDown, Clock, Download, Plus, Search, ShieldCheck, Star, Users, X } from 'lucide-react';
 import { groupSkillsByCategory, skillCategoryOrder } from '../utils/skills';
 import type {
   Agent,
@@ -9,9 +9,8 @@ import type {
   AsyncStatus,
   CommunitySkill,
   CommunityStats,
+  SkillsTab,
 } from '../types';
-
-type SkillsTab = 'installed' | 'community';
 
 // Initial number of cards shown before "View more". Larger than the old page
 // size so most catalogs fit on screen without any interaction.
@@ -35,6 +34,18 @@ function formatRelative(iso: string | undefined): string {
   if (months < 12) return `${months} mo ago`;
   const years = Math.floor(days / 365);
   return `${years} yr ago`;
+}
+
+/** Numeric semver-ish compare. Returns <0, 0, or >0. Missing parts count as 0. */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i += 1) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
 }
 
 type Stat = { label: string; value: string };
@@ -61,6 +72,8 @@ export function SkillsView({
   communityStatus,
   communityError,
   onRetryCommunity,
+  tab,
+  onTabChange,
   search,
   onSearch,
   groupFilter,
@@ -80,11 +93,13 @@ export function SkillsView({
   communityStatus: AsyncStatus;
   communityError: string;
   onRetryCommunity: () => void;
+  tab: SkillsTab;
+  onTabChange: (tab: SkillsTab) => void;
   search: string;
   onSearch: (v: string) => void;
   groupFilter: string;
   onGroupFilter: (v: string) => void;
-  onInstall: (source: string) => Promise<boolean>;
+  onInstall: (source: string, force?: boolean) => Promise<boolean>;
   installPending: boolean;
   installError: string;
   onInstallExisting: (id: string, agentIds: string[]) => void;
@@ -92,7 +107,6 @@ export function SkillsView({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<SkillsTab>('installed');
   const [installOpen, setInstallOpen] = useState(false);
   const [installName, setInstallName] = useState('');
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
@@ -127,7 +141,19 @@ export function SkillsView({
   // Categories offered by the active tab's data set.
   const categories = useMemo(() => {
     const source: { category: string }[] = tab === 'installed' ? library : community;
-    return ['all', ...skillCategoryOrder.filter((c) => source.some((s) => s.category === c))];
+    // Use the real categories present in the data (derived server-side from
+    // SKILL.md frontmatter or the skill's parent folder), not a fixed list —
+    // otherwise valid categories like "office" would be dropped. Known
+    // categories keep their canonical order; the rest sort alphabetically.
+    const present = [...new Set(source.map((s) => s.category).filter(Boolean))];
+    present.sort((a, b) => {
+      const ai = skillCategoryOrder.indexOf(a);
+      const bi = skillCategoryOrder.indexOf(b);
+      const an = ai < 0 ? Number.MAX_SAFE_INTEGER : ai;
+      const bn = bi < 0 ? Number.MAX_SAFE_INTEGER : bi;
+      return an !== bn ? an - bn : a.localeCompare(b);
+    });
+    return ['all', ...present];
   }, [tab, library, community]);
 
   // Reset the view-more window whenever the visible result set changes.
@@ -135,11 +161,17 @@ export function SkillsView({
     setVisible(INITIAL_VISIBLE);
   }, [tab, groupFilter, q]);
 
-  const installedSkillIds = useMemo(() => new Set(library.map((s) => s.skill_id)), [library]);
-  const installedNames = useMemo(
-    () => new Set(library.filter((s) => s.installed).map((s) => s.name.toLowerCase())),
-    [library],
-  );
+  // Map of installed skills keyed by both skill_id and lower-cased name, so a
+  // community entry can resolve its installed counterpart (and its version).
+  const installedByKey = useMemo(() => {
+    const map = new Map<string, AgentSkill>();
+    for (const s of library) {
+      if (!s.installed) continue;
+      map.set(s.skill_id, s);
+      map.set(s.name.toLowerCase(), s);
+    }
+    return map;
+  }, [library]);
 
   // Installed-tab summary figures.
   const installedStats = useMemo<Stat[]>(() => {
@@ -189,6 +221,17 @@ export function SkillsView({
     }
   };
 
+  // Reinstall from source with force, pulling the latest published version.
+  const upgradeCommunity = async (skill: CommunitySkill) => {
+    if (installPending) return;
+    setInstallingSource(skill.source);
+    try {
+      await onInstall(skill.source, true);
+    } finally {
+      setInstallingSource('');
+    }
+  };
+
   const apply = () => {
     onApply(selectedSkillIds, applyAgentIds);
     setSelectedSkillIds([]);
@@ -197,7 +240,7 @@ export function SkillsView({
 
   const switchTab = (next: SkillsTab) => {
     if (next === tab) return;
-    setTab(next);
+    onTabChange(next);
     setSelectedSkillIds([]);
     setApplyAgentIds([]);
     if (groupFilter !== 'all') onGroupFilter('all');
@@ -283,16 +326,19 @@ export function SkillsView({
             placeholder={t('skillsView.searchPlaceholder')}
           />
         </div>
-        <div className="skv-filters">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              className={groupFilter === cat ? 'skv-chip active' : 'skv-chip'}
-              onClick={() => onGroupFilter(cat)}
-            >
-              {cat === 'all' ? t('skillsView.all') : cat}
-            </button>
-          ))}
+        <div className="skv-filter-select">
+          <select
+            value={groupFilter}
+            onChange={(e) => onGroupFilter(e.target.value)}
+            aria-label={t('skillsView.categoryLabel', { defaultValue: 'Filter by category' })}
+          >
+            {categories.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat === 'all' ? t('skillsView.allCategories', { defaultValue: 'All categories' }) : cat}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={15} />
         </div>
       </div>
 
@@ -377,8 +423,19 @@ export function SkillsView({
             {!communityLoading && !communityFailed && (
               <div className="skv-grid skv-grid-community">
                 {shownCommunity.map((skill) => {
-                  const alreadyInstalled =
-                    installedSkillIds.has(skill.skill_id) || installedNames.has(skill.name.toLowerCase());
+                  const installed =
+                    installedByKey.get(skill.skill_id) ?? installedByKey.get(skill.name.toLowerCase());
+                  const installedVersion = installed?.version;
+                  // Up to date only when both versions are known and the
+                  // community one isn't newer. When the installed version is
+                  // unknown we still offer an upgrade (reinstall latest).
+                  const upToDate = Boolean(
+                    installed &&
+                      skill.version &&
+                      installedVersion &&
+                      compareVersions(skill.version, installedVersion) <= 0,
+                  );
+                  const canUpgrade = Boolean(installed) && !upToDate;
                   const busy = installingSource === skill.source;
                   const updated = formatRelative(skill.updatedAt);
                   return (
@@ -422,9 +479,7 @@ export function SkillsView({
                       </div>
                       <div className="skv-card-foot">
                         <span className="skv-path">{skill.source}</span>
-                        {alreadyInstalled ? (
-                          <span className="skv-badge installed">{t('skillsView.installed')}</span>
-                        ) : (
+                        {!installed ? (
                           <button
                             className="skv-install-mini primary"
                             disabled={installPending}
@@ -433,6 +488,28 @@ export function SkillsView({
                             <Download size={13} />
                             {busy ? t('common.loading', { defaultValue: 'Installing…' }) : t('common.install')}
                           </button>
+                        ) : (
+                          <div className="skv-installed-actions">
+                            <span className="skv-badge installed" title={installedVersion ? `v${installedVersion}` : undefined}>
+                              {t('skillsView.installed')}
+                              {installedVersion ? ` · v${installedVersion}` : ''}
+                            </span>
+                            {canUpgrade && (
+                              <button
+                                className="skv-install-mini upgrade"
+                                disabled={installPending}
+                                onClick={() => void upgradeCommunity(skill)}
+                                title={t('skillsView.upgradeTitle', { defaultValue: 'Reinstall the latest published version' })}
+                              >
+                                <ArrowUpCircle size={13} />
+                                {busy
+                                  ? t('common.loading', { defaultValue: 'Installing…' })
+                                  : skill.version
+                                    ? t('skillsView.upgradeTo', { defaultValue: 'Upgrade to v{{version}}', version: skill.version })
+                                    : t('skillsView.upgrade', { defaultValue: 'Upgrade' })}
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     </article>

@@ -5150,33 +5150,36 @@ body.col-resizing {
   font-size: 13px;
 }
 
-.skv-filters {
+.skv-filter-select {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  flex: 0 0 auto;
 }
 
-.skv-chip {
-  height: 30px;
-  padding: 0 12px;
+.skv-filter-select select {
+  height: 36px;
+  min-width: 160px;
+  padding: 0 32px 0 12px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--muted);
-  background: var(--elevated);
-  font-size: 12px;
-  text-transform: capitalize;
-}
-
-.skv-chip:hover {
+  border-radius: 8px;
+  background: var(--input-bg);
   color: var(--text);
-  background: var(--hover);
+  font-size: 13px;
+  text-transform: capitalize;
+  appearance: none;
+  cursor: pointer;
 }
 
-.skv-chip.active {
-  color: #08110d;
-  background: #35c07a;
-  border-color: #35c07a;
-  font-weight: 600;
+.skv-filter-select select:hover {
+  border-color: var(--border-2);
+}
+
+.skv-filter-select svg {
+  position: absolute;
+  right: 10px;
+  pointer-events: none;
+  color: var(--muted);
 }
 
 .skv-tabs {
@@ -5352,6 +5355,29 @@ body.col-resizing {
 
 .skv-install-mini.primary:hover:not(:disabled) {
   background: #43d389;
+}
+
+.skv-install-mini.upgrade {
+  color: #7dd3fc;
+  border-color: #2b5f7a;
+  background: #0e2230;
+  font-weight: 600;
+}
+
+.skv-install-mini.upgrade:hover:not(:disabled) {
+  background: #123044;
+}
+
+.skv-installed-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.skv-card-community .skv-card-foot {
+  flex-wrap: wrap;
 }
 
 .skv-install-mini:disabled {

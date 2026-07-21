@@ -4,6 +4,7 @@
 
 export type RightView = 'workspace' | 'skills' | 'cron' | 'runtime';
 export type CenterView = 'chat' | 'dashboard' | 'sandbox' | 'connections' | 'skills' | 'teams' | 'data';
+export type SkillsTab = 'installed' | 'community';
 
 export type ConnectionMode = 'device-code' | 'cli' | 'api-key';
 export type ProviderBrand = 'openai' | 'claude' | 'anthropic' | 'gemini' | 'openrouter';
@@ -101,6 +102,8 @@ export type AgentSkill = {
   enabled: boolean;
   installed: boolean;
   path: string;
+  /** Installed version, when the backend reports one (SKILL.md frontmatter). */
+  version?: string;
 };
 
 // Community skills (placeholder shape until the community catalog API lands).

@@ -16,6 +16,7 @@ function mapSkill(dto: AgentSkillDTO): AgentSkill {
     enabled: dto.enabled ?? false,
     installed: dto.installed ?? true,
     path: dto.path ?? '',
+    version: dto.version ?? undefined,
   };
 }
 
