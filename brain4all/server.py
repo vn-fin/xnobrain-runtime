@@ -1,4 +1,4 @@
-"""Single-process FastAPI application factory for Hermes and Open Lumora."""
+"""Single-process FastAPI application factory for Hermes and Brain4All."""
 
 from __future__ import annotations
 
@@ -11,21 +11,21 @@ import uvicorn
 
 
 def create_app():
-    """Extend Hermes CLI's original FastAPI app with Open Lumora routes."""
+    """Extend Hermes CLI's original FastAPI app with Brain4All routes."""
     from hermes_cli.web_server import app
-    from .app import OpenLumoraApplication
+    from .app import Brain4AllApplication
     from .integrations import AgentManager, GlobalConfigManager, NineRouterManager
 
-    if not getattr(app.state, "open_lumora_registered", False):
-        composition = OpenLumoraApplication(AgentManager(), GlobalConfigManager(), NineRouterManager())
+    if not getattr(app.state, "brain4all_registered", False):
+        composition = Brain4AllApplication(AgentManager(), GlobalConfigManager(), NineRouterManager())
         composition.register(app)
-        app.state.open_lumora = composition
-        app.state.open_lumora_registered = True
+        app.state.brain4all = composition
+        app.state.brain4all_registered = True
 
         @app.middleware("http")
         async def structured_request_log(request, call_next):
             started = time.monotonic()
-            # Open Lumora owns the /api/v1 management surface. Hermes' dashboard
+            # Brain4All owns the /api/v1 management surface. Hermes' dashboard
             # middleware protects its own /api routes with a private browser
             # session token; mark only our versioned platform routes as already
             # authenticated so they remain usable through Traefik without
@@ -34,7 +34,7 @@ def create_app():
                 request.state.token_authenticated = True
             response = await call_next(request)
             traceparent = request.headers.get("traceparent", "")
-            logging.getLogger("open_lumora.http").info(json.dumps({
+            logging.getLogger("brain4all.http").info(json.dumps({
                 "event": "http.request", "method": request.method,
                 "route": request.scope.get("route").path if request.scope.get("route") else request.url.path,
                 "status": response.status_code,

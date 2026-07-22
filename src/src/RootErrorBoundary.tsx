@@ -11,14 +11,14 @@ export default class RootErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('Open Lumora UI render failed', error, info);
+    console.error('Brain4All UI render failed', error, info);
   }
 
   render() {
     if (!this.state.error) return this.props.children;
     return (
       <main className="async-state error" role="alert">
-        <strong>Open Lumora could not render this page.</strong>
+        <strong>Brain4All could not render this page.</strong>
         <span>{this.state.error.message || 'An unexpected interface error occurred.'}</span>
         <button type="button" onClick={() => window.location.reload()}>Reload</button>
       </main>

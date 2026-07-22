@@ -1,19 +1,19 @@
 # Product editions and deployment modes
 
-This is the product contract for Open Lumora. Deployment mode and subscription
+This is the product contract for Brain4All. Deployment mode and subscription
 plan are separate decisions: self-hosting never limits local Hermes features,
 while authenticated Enterprise API features follow the account plan.
 
 ## Runtime ownership
 
-`open-lumora` owns the frontend and combined FastAPI/Hermes/9router Docker
+`brain4all` owns the frontend and combined FastAPI/Hermes/9router Docker
 runtime. It supports agents, profiles, skills, memory, MCP, providers, teams,
 conversations, and local cron scheduling without an application database.
 
-`open-lumora-enterprise` owns the authenticated Enterprise API, PostgreSQL plan
+`brain4all-enterprise` owns the authenticated Enterprise API, PostgreSQL plan
 metadata, ClickHouse telemetry storage, trace ingestion, aggregate metric APIs,
 future collaboration features, and managed/Incus cloud packaging. It consumes
-the released OSS runtime interface rather than forking the `open_lumora`
+the released OSS runtime interface rather than forking the `brain4all`
 application package.
 
 ## Deployment behavior

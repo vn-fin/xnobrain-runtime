@@ -1,4 +1,4 @@
-"""Pydantic contracts for Open Lumora's public management APIs."""
+"""Pydantic contracts for Brain4All's public management APIs."""
 
 from __future__ import annotations
 

@@ -4,13 +4,13 @@
 
 - `server.py`: root FastAPI entrypoint; run with `python server.py`.
 - `requirements.txt`: backend/runtime dependencies.
-- `open_lumora/routes/setup.py`: the only Open Lumora route assembly point.
-- `open_lumora/handlers`: HTTP/SSE and Enterprise proxy translation.
-- `open_lumora/models`: Pydantic request/response contracts used by Swagger.
-- `open_lumora/services`: application rules and orchestration.
-- `open_lumora/repositories`: atomic profile/team/notification persistence.
-- `open_lumora/integrations`: original Hermes CLI and 9router adapters.
-- `open_lumora/telemetry.py`: metadata-only OpenTelemetry setup.
+- `brain4all/routes/setup.py`: the only Brain4All route assembly point.
+- `brain4all/handlers`: HTTP/SSE and Enterprise proxy translation.
+- `brain4all/models`: Pydantic request/response contracts used by Swagger.
+- `brain4all/services`: application rules and orchestration.
+- `brain4all/repositories`: atomic profile/team/notification persistence.
+- `brain4all/integrations`: original Hermes CLI and 9router adapters.
+- `brain4all/telemetry.py`: metadata-only OpenTelemetry setup.
 - `src`: Vite, React, and TypeScript UI.
 - `runtime`: the combined FastAPI/Hermes/9router image.
 - `docs/contracts`: versioned cross-repository protocols.

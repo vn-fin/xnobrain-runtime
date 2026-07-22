@@ -1,6 +1,6 @@
-# Open Lumora project summary
+# Brain4All project summary
 
-Open Lumora is a self-hosted and managed workspace for Hermes agents. The
+Brain4All is a self-hosted and managed workspace for Hermes agents. The
 Community product consists of a React UI and one runtime/backend image that
 contains FastAPI, the original Hermes CLI/core, and 9router. Each agent uses an
 isolated atomic file-backed profile. No Go API or PostgreSQL service is present.
@@ -13,7 +13,7 @@ Browser -> Traefik -> React
                                       -> default or named profile
 ```
 
-One FastAPI process serves Open Lumora management routes and all native Hermes
+One FastAPI process serves Brain4All management routes and all native Hermes
 CLI routes. Profiles are data, not servers. This removes per-profile service
 lifecycle and keeps upstream Hermes feature updates available through one
 runtime image.
@@ -31,7 +31,7 @@ Enterprise behavior. Local capabilities continue when it is unset or offline.
 
 ## Privacy and persistence
 
-Open Lumora-owned state is stored under `DATA_DIR`; Hermes and 9router retain
+Brain4All-owned state is stored under `DATA_DIR`; Hermes and 9router retain
 their native embedded local state. Portable bundles and telemetry exclude
 credentials, prompts, responses, memories, skills, tool arguments, and logs.
 There is no ORM and no Community application database.
@@ -43,6 +43,6 @@ make check
 make run
 ```
 
-The two application images are `open-lumora-frontend` and
-`open-lumora-hermes-runtime`. Open <http://localhost> and use
+The two application images are `brain4all-frontend` and
+`brain4all-hermes-runtime`. Open <http://localhost> and use
 <http://localhost/docs> for the unified OpenAPI documentation.

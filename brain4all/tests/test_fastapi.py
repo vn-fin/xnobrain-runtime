@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, Response as HTTPXResponse
 import yaml
 
-from open_lumora.app import OpenLumoraApplication
-from open_lumora.integrations import AgentManager, GlobalConfigManager
+from brain4all.app import Brain4AllApplication
+from brain4all.integrations import AgentManager, GlobalConfigManager
 
 
 class FakeRouter:
@@ -42,7 +42,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         })
         self.environment.start()
         app = FastAPI()
-        composition = OpenLumoraApplication(
+        composition = Brain4AllApplication(
             AgentManager(root_profile=self.root, profiles_root=self.profiles, legacy_agents_root=Path(self.temporary.name) / "legacy-agents"),
             GlobalConfigManager(root_profile=self.root), FakeRouter(),
         )
@@ -73,7 +73,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             json={"success": True, "data": {"skills": [], "stats": {"totalSkills": 0, "totalAuthors": 0, "totalInstalls": 0}}},
             headers={"Content-Type": "application/json"},
         ))
-        with patch("open_lumora.handlers.api.httpx.AsyncClient.request", new=upstream):
+        with patch("brain4all.handlers.api.httpx.AsyncClient.request", new=upstream):
             async with self.client() as client:
                 skills = await client.get("/api/v1/skills", headers={"Authorization": "Bearer login-token"})
                 search = await client.get("/api/v1/skills/search?q=pdf", headers={"Authorization": "Bearer login-token"})
@@ -104,7 +104,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             async def is_disconnected(self):
                 return False
 
-        with patch("open_lumora.handlers.api.asyncio.sleep", new=AsyncMock()) as sleep:
+        with patch("brain4all.handlers.api.asyncio.sleep", new=AsyncMock()) as sleep:
             response = await self.composition.handlers.sandbox_detail_stream(ConnectedRequest())
             event = await anext(response.body_iterator)
             next_event = await anext(response.body_iterator)

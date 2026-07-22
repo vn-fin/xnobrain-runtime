@@ -28,7 +28,7 @@ export default function LoginScreen({ optional = false }: { optional?: boolean }
     <div className={`login-screen${optional ? ' optional' : ''}`}>
       <form className="login-card" onSubmit={submit}>
         {optional && <button type="button" className="login-close icon-button" onClick={closeLogin} title={t('common.close')}><X size={17} /></button>}
-        <div className="login-brand"><span className="login-logo">L</span><strong>Open Lumora</strong></div>
+        <div className="login-brand"><span className="login-logo">L</span><strong>Brain4All</strong></div>
         <div className="login-heading"><h1>{t('login.title')}</h1><p className="login-sub">{t('login.subtitle')}</p></div>
         <label className="login-field">{t('login.username')}<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder={t('login.usernamePlaceholder')} autoFocus /></label>
         <label className="login-field">{t('login.password')}<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={t('login.passwordPlaceholder')} /></label>

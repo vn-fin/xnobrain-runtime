@@ -1,4 +1,4 @@
-"""FastAPI handlers layered over the Open Lumora platform service."""
+"""FastAPI handlers layered over the Brain4All platform service."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from ..services import EXPECTED_ERRORS, PlatformService
 
 
 class APIHandlers:
-    """Expose the stable Open Lumora contract without duplicating Hermes APIs."""
+    """Expose the stable Brain4All contract without duplicating Hermes APIs."""
 
     def __init__(self, service: PlatformService):
         self.service = service

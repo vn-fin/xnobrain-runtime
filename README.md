@@ -1,6 +1,6 @@
-# Open Lumora
+# Brain4All
 
-Open Lumora is a self-hosted React workspace for creating and running Hermes
+Brain4All is a self-hosted React workspace for creating and running Hermes
 agents. One Python/FastAPI process extends the original Hermes CLI dashboard
 application and serves the default profile plus every named profile. One
 9router process provides LLM routing. There is no Go service, PostgreSQL,

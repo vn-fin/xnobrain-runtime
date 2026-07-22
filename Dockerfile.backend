@@ -105,37 +105,37 @@ RUN python3 -m venv /opt/hermes-office-tools \
 
 # Use 9router's standalone build for the supervised web process. The globally
 # installed CLI above remains available to the root agent for administration.
-COPY --from=nine-router-builder /src/public /opt/open-lumora/9router/public
-COPY --from=nine-router-builder /src/.next/static /opt/open-lumora/9router/.next/static
-COPY --from=nine-router-builder /src/.next/standalone/ /opt/open-lumora/9router/
-COPY --from=nine-router-builder /src/open-sse /opt/open-lumora/9router/open-sse
-COPY --from=nine-router-builder /src/src/mitm /opt/open-lumora/9router/src/mitm
-COPY --from=nine-router-builder /src/node_modules/node-forge /opt/open-lumora/9router/node_modules/node-forge
-COPY --from=nine-router-builder /src/node_modules/next /opt/open-lumora/9router/node_modules/next
+COPY --from=nine-router-builder /src/public /opt/brain4all/9router/public
+COPY --from=nine-router-builder /src/.next/static /opt/brain4all/9router/.next/static
+COPY --from=nine-router-builder /src/.next/standalone/ /opt/brain4all/9router/
+COPY --from=nine-router-builder /src/open-sse /opt/brain4all/9router/open-sse
+COPY --from=nine-router-builder /src/src/mitm /opt/brain4all/9router/src/mitm
+COPY --from=nine-router-builder /src/node_modules/node-forge /opt/brain4all/9router/node_modules/node-forge
+COPY --from=nine-router-builder /src/node_modules/next /opt/brain4all/9router/node_modules/next
 
-COPY requirements.txt /opt/open-lumora/requirements.txt
+COPY requirements.txt /opt/brain4all/requirements.txt
 RUN uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
-      -r /opt/open-lumora/requirements.txt
+      -r /opt/brain4all/requirements.txt
 
-COPY open_lumora /opt/open-lumora/open_lumora
-COPY server.py /opt/open-lumora/server.py
-COPY runtime/container-entrypoint.sh /usr/local/bin/open-lumora-runtime
-COPY runtime/prepare-nine-router-auth.sh /usr/local/bin/open-lumora-prepare-nine-router-auth
-RUN find /opt/open-lumora/open_lumora -type d -name __pycache__ -prune -exec rm -rf {} + \
-    && find /opt/open-lumora/open_lumora -type f -name '*.pyc' -delete \
+COPY brain4all /opt/brain4all/brain4all
+COPY server.py /opt/brain4all/server.py
+COPY runtime/container-entrypoint.sh /usr/local/bin/brain4all-runtime
+COPY runtime/prepare-nine-router-auth.sh /usr/local/bin/brain4all-prepare-nine-router-auth
+RUN find /opt/brain4all/brain4all -type d -name __pycache__ -prune -exec rm -rf {} + \
+    && find /opt/brain4all/brain4all -type f -name '*.pyc' -delete \
     && install -d -m 0700 /opt/data /root/.config \
-    && chmod 0755 /usr/local/bin/open-lumora-runtime /usr/local/bin/open-lumora-prepare-nine-router-auth \
+    && chmod 0755 /usr/local/bin/brain4all-runtime /usr/local/bin/brain4all-prepare-nine-router-auth \
     && /usr/local/lib/hermes-agent/venv/bin/python -m compileall -q \
-      /opt/open-lumora/open_lumora /opt/open-lumora/server.py \
+      /opt/brain4all/brain4all /opt/brain4all/server.py \
     && apt-get update
 
 ENV PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr/local/bin:${PATH}" \
     HERMES_INSTALL_DIR=/usr/local/lib/hermes-agent \
     HERMES_RUNTIME_PYTHON=/usr/local/lib/hermes-agent/venv/bin/python \
     HERMES_CLI=/usr/local/bin/hermes \
-    HERMES_HOME=/opt/data/open-lumora/root \
-    HERMES_ROOT_PROFILE=/opt/data/open-lumora/root \
-    HERMES_PROFILES_ROOT=/opt/data/open-lumora/profiles \
+    HERMES_HOME=/opt/data/brain4all/root \
+    HERMES_ROOT_PROFILE=/opt/data/brain4all/root \
+    HERMES_PROFILES_ROOT=/opt/data/brain4all/profiles \
     NINE_ROUTER_DATA_DIR=/opt/data/.9router \
     HERMES_DESKTOP=1 \
     HOME=/root \
@@ -147,4 +147,4 @@ VOLUME ["/opt/data"]
 EXPOSE 8642 20128
 HEALTHCHECK --interval=15s --timeout=3s --retries=10 CMD /usr/local/lib/hermes-agent/venv/bin/python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/api/v1/health',timeout=2)" || exit 1
 USER root
-ENTRYPOINT ["/usr/local/bin/open-lumora-runtime"]
+ENTRYPOINT ["/usr/local/bin/brain4all-runtime"]

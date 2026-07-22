@@ -13,13 +13,13 @@ mkdir -p "$HERMES_HOME/bin"
 if [[ ! -e "$HERMES_HOME/bin/uv" ]]; then
   ln -s /usr/local/bin/uv "$HERMES_HOME/bin/uv"
 fi
-# Hermes CLI discovers named profiles at HERMES_HOME/profiles. Open Lumora's
+# Hermes CLI discovers named profiles at HERMES_HOME/profiles. Brain4All's
 # stable data contract keeps them at DATA_DIR/profiles, so expose that one
 # directory through a compatibility symlink instead of duplicating state.
 if [[ ! -e "$HERMES_HOME/profiles" ]]; then
   ln -s "$HERMES_PROFILES_ROOT" "$HERMES_HOME/profiles"
 fi
-/usr/local/bin/open-lumora-prepare-nine-router-auth
+/usr/local/bin/brain4all-prepare-nine-router-auth
 IFS= read -r NINE_ROUTER_API_KEY <"$NINE_ROUTER_DATA_DIR/auth/cli-token"
 export NINE_ROUTER_API_KEY
 touch "$HERMES_HOME/.env"
@@ -47,9 +47,9 @@ BASE_URL=http://127.0.0.1:20128 \
 NEXT_PUBLIC_BASE_URL=http://127.0.0.1:20128 \
 REQUIRE_API_KEY=false \
 NODE_ENV=production \
-node /opt/open-lumora/9router/server.js &
+node /opt/brain4all/9router/server.js &
 router_pid=$!
-"$hermes_python" /opt/open-lumora/server.py &
+"$hermes_python" /opt/brain4all/server.py &
 api_pid=$!
 
 cleanup() {

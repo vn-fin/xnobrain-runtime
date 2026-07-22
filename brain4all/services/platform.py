@@ -412,15 +412,15 @@ class PlatformService:
 
     async def scheduler_loop(self, interval_seconds: int = 30) -> None:
         """Run due profile-local jobs without a database or second service."""
-        logger = logging.getLogger("open_lumora.cron")
-        logger.info("Open Lumora profile cron scheduler started")
+        logger = logging.getLogger("brain4all.cron")
+        logger.info("Brain4All profile cron scheduler started")
         while True:
             try:
                 await self._tick_crons()
             except asyncio.CancelledError:
                 raise
             except Exception as error:
-                logger.warning("Open Lumora cron tick failed: %s", type(error).__name__)
+                logger.warning("Brain4All cron tick failed: %s", type(error).__name__)
             await asyncio.sleep(max(1, interval_seconds))
 
     async def _tick_crons(self) -> None:
@@ -692,7 +692,7 @@ class PlatformService:
 
     @staticmethod
     def _api_key_info(provider: str) -> dict[str, Any]:
-        return {"provider_id": provider, "provider_type": provider, "connection_mode": "api-key", "required_client_action": "submit_text", "instructions": "Enter the provider API key. It is stored by 9router, not Open Lumora.", "text_label": "API key", "status": "waiting_for_user"}
+        return {"provider_id": provider, "provider_type": provider, "connection_mode": "api-key", "required_client_action": "submit_text", "instructions": "Enter the provider API key. It is stored by 9router, not Brain4All.", "text_label": "API key", "status": "waiting_for_user"}
 
     def _team_workflow(
         self,

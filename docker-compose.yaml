@@ -1,4 +1,4 @@
-name: open-lumora
+name: brain4all
 
 services:
   traefik:
@@ -8,10 +8,10 @@ services:
       - --api.dashboard=false
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
-      - --providers.docker.network=open-lumora_edge
+      - --providers.docker.network=brain4all_edge
       - --entrypoints.web.address=:80
     ports:
-      - "${OPEN_LUMORA_HTTP_PORT:-80}:80"
+      - "${BRAIN4ALL_HTTP_PORT:-80}:80"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
@@ -19,59 +19,59 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${OPEN_LUMORA_FRONTEND_IMAGE:-open-lumora-frontend:local}
+    image: ${BRAIN4ALL_FRONTEND_IMAGE:-brain4all-frontend:local}
     build:
       context: .
       dockerfile: Dockerfile.frontend
     labels:
       - traefik.enable=true
-      - traefik.http.routers.open-lumora-ui.rule=Host(`${OPEN_LUMORA_DOMAIN:-localhost}`)
-      - traefik.http.routers.open-lumora-ui.entrypoints=web
-      - traefik.http.routers.open-lumora-ui.priority=1
-      - traefik.http.services.open-lumora-ui.loadbalancer.server.port=8080
+      - traefik.http.routers.brain4all-ui.rule=Host(`${BRAIN4ALL_DOMAIN:-localhost}`)
+      - traefik.http.routers.brain4all-ui.entrypoints=web
+      - traefik.http.routers.brain4all-ui.priority=1
+      - traefik.http.services.brain4all-ui.loadbalancer.server.port=8080
     networks:
       - edge
     restart: unless-stopped
 
   runtime:
-    image: ${HERMES_RUNTIME_IMAGE:-open-lumora-hermes-runtime:local}
+    image: ${HERMES_RUNTIME_IMAGE:-brain4all-hermes-runtime:local}
     build:
       context: .
       dockerfile: Dockerfile.backend
     # The local assistant is intentionally root inside its own runtime
     # container so it can install requested office/system packages on demand.
     user: "0:0"
-    cpus: ${OPEN_LUMORA_RUNTIME_CPUS:-4.0}
-    mem_limit: ${OPEN_LUMORA_RUNTIME_MEMORY:-4G}
-    memswap_limit: ${OPEN_LUMORA_RUNTIME_MEMORY:-4G}
+    cpus: ${BRAIN4ALL_RUNTIME_CPUS:-4.0}
+    mem_limit: ${BRAIN4ALL_RUNTIME_MEMORY:-4G}
+    memswap_limit: ${BRAIN4ALL_RUNTIME_MEMORY:-4G}
     # Enforced when the Docker storage driver supports per-container quotas.
     storage_opt:
-      size: ${OPEN_LUMORA_RUNTIME_DISK_SIZE:-100G}
+      size: ${BRAIN4ALL_RUNTIME_DISK_SIZE:-100G}
     environment:
-      HERMES_HOME: /opt/data/open-lumora/root
-      HERMES_ROOT_PROFILE: /opt/data/open-lumora/root
-      HERMES_PROFILES_ROOT: /opt/data/open-lumora/profiles
+      HERMES_HOME: /opt/data/brain4all/root
+      HERMES_ROOT_PROFILE: /opt/data/brain4all/root
+      HERMES_PROFILES_ROOT: /opt/data/brain4all/profiles
       HERMES_DESKTOP: "1"
       HOME: /root
       XDG_CONFIG_HOME: /root/.config
       NINE_ROUTER_DATA_DIR: /opt/data/.9router
-      NINE_ROUTER_INTERNAL_SECRET: ${NINE_ROUTER_INTERNAL_SECRET:-open-lumora-local-9router}
+      NINE_ROUTER_INTERNAL_SECRET: ${NINE_ROUTER_INTERNAL_SECRET:-brain4all-local-9router}
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: 8642
-      DATA_DIR: /opt/data/open-lumora
+      DATA_DIR: /opt/data/brain4all
       START_MODE: ${START_MODE:-local}
       ENTERPRISE_API_URL: ${ENTERPRISE_API_URL:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     volumes:
-      - open_lumora_data:/opt/data
+      - brain4all_data:/opt/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
       - traefik.enable=true
-      - traefik.http.routers.open-lumora-api.rule=Host(`${OPEN_LUMORA_DOMAIN:-localhost}`) && (PathPrefix(`/api`) || PathPrefix(`/agent-gateway`) || PathPrefix(`/conversations`) || PathPrefix(`/sandboxes`) || PathPrefix(`/internal`) || PathPrefix(`/docs`) || Path(`/openapi.json`) || Path(`/redoc`))
-      - traefik.http.routers.open-lumora-api.entrypoints=web
-      - traefik.http.routers.open-lumora-api.priority=100
-      - traefik.http.services.open-lumora-api.loadbalancer.server.port=8642
+      - traefik.http.routers.brain4all-api.rule=Host(`${BRAIN4ALL_DOMAIN:-localhost}`) && (PathPrefix(`/api`) || PathPrefix(`/agent-gateway`) || PathPrefix(`/conversations`) || PathPrefix(`/sandboxes`) || PathPrefix(`/internal`) || PathPrefix(`/docs`) || Path(`/openapi.json`) || Path(`/redoc`))
+      - traefik.http.routers.brain4all-api.entrypoints=web
+      - traefik.http.routers.brain4all-api.priority=100
+      - traefik.http.services.brain4all-api.loadbalancer.server.port=8642
     networks:
       - edge
       - control
@@ -106,6 +106,6 @@ networks:
     internal: true
 
 volumes:
-  open_lumora_data:
-    name: open-lumora_open_lumora_data
+  brain4all_data:
+    name: brain4all_brain4all_data
   otel_collector_data:

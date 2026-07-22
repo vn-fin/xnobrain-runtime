@@ -1,6 +1,6 @@
-# Open Lumora Agent Guide
+# Brain4All Agent Guide
 
-Open Lumora is an open-source FastAPI/Hermes and React application. Read this
+Brain4All is an open-source FastAPI/Hermes and React application. Read this
 file and `.agents/rules/01-start-here.md` before every task. For roadmap work,
 also read the assigned specification and referenced versioned contracts.
 
@@ -57,8 +57,8 @@ Use `cd src && npm run build` for the final frontend type/build verification.
 - Do not add Go, PostgreSQL, an ORM, or another application API process.
 - Keep one FastAPI/Hermes process on port 8642 and one 9router process.
 - Preserve the original Hermes core and native FastAPI routes. Extend them from
-  `open_lumora` instead of copying or forking Hermes.
-- `open_lumora/routes/setup.py` is the only Open Lumora route assembly point.
+  `brain4all` instead of copying or forking Hermes.
+- `brain4all/routes/setup.py` is the only Brain4All route assembly point.
 - Handlers own HTTP translation, services own rules, repositories own atomic
   files, integrations adapt Hermes CLI and 9router, and models are Pydantic.
 - Local layers call each other directly rather than through HTTP.
@@ -83,7 +83,7 @@ Use `cd src && npm run build` for the final frontend type/build verification.
 - Local OSS access is unlimited. Enterprise behavior is optional; an Enterprise
   API outage must not restrict local features.
 - This repository builds the combined backend/runtime image and UI image.
-- Managed control-plane services remain in `open-lumora-enterprise`; coordinate
+- Managed control-plane services remain in `brain4all-enterprise`; coordinate
   versioned contracts when a feature changes both repositories.
 - Incus and cloud runtime packaging are maintained outside this repository.
 

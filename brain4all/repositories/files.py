@@ -31,7 +31,7 @@ class StoreError(ValueError):
 class FileRepository:
     """Small, lock-protected repositories rooted in ``DATA_DIR``.
 
-    Hermes remains authoritative for sessions and provider credentials. Open Lumora
+    Hermes remains authoritative for sessions and provider credentials. Brain4All
     owns only product metadata that Hermes does not already persist.
     """
 

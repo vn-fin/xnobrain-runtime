@@ -1,1 +1,0 @@
-"""Open Lumora backend tests."""

@@ -22,7 +22,7 @@ import yaml
 from ..repositories import FileRepository, StoreError
 
 
-BUNDLE_FORMAT = "open-lumora-bundle"
+BUNDLE_FORMAT = "brain4all-bundle"
 BUNDLE_VERSION = 1
 CHUNK_SIZE = 4 * 1024 * 1024
 MAX_COMPRESSED = 2 * 1024 * 1024 * 1024
@@ -374,7 +374,7 @@ class PortabilityService:
             raise StoreError("bundle size is invalid", code="invalid_bundle")
         return {
             "bundle_export_id": export_id,
-            "filename": f"open-lumora-{export_id}.zip",
+            "filename": f"brain4all-{export_id}.zip",
             "size": size,
             "sha256": self._hash_file(target),
             "created_at": created_at,

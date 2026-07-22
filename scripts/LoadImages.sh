@@ -3,7 +3,7 @@ set -euo pipefail
 
 container_cli="${CONTAINER_CLI:-docker}"
 input_dir="${BUNDLE_INPUT_DIR:-bin/images}"
-manifest="$(find "$input_dir" -maxdepth 1 -type f -name 'open-lumora-images-*.manifest' -print -quit)"
+manifest="$(find "$input_dir" -maxdepth 1 -type f -name 'brain4all-images-*.manifest' -print -quit)"
 if [ -z "$manifest" ]; then
   echo "No image bundle manifest found under $input_dir." >&2
   exit 2

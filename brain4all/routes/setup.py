@@ -1,6 +1,6 @@
-"""The only Open Lumora route assembly point.
+"""The only Brain4All route assembly point.
 
-Hermes CLI owns its native ``/api`` routes. This module adds the stable Open Lumora
+Hermes CLI owns its native ``/api`` routes. This module adds the stable Brain4All
 compatibility surface and deliberately keeps every URL out of handlers and
 services so the public contract is reviewable in one place.
 """
@@ -27,7 +27,7 @@ class Route:
     operation: str
     body: type | None = None
     special: str | None = None
-    tags: tuple[str, ...] = ("Open Lumora",)
+    tags: tuple[str, ...] = ("Brain4All",)
 
 
 ROUTES = (

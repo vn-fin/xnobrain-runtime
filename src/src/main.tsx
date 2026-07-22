@@ -13,7 +13,7 @@ initTheme();
 
 function AuthGate() {
   const { user, deploymentMode, loading, loginOpen } = useAuth();
-  if (loading) return <div className="app-loading" aria-busy="true"><span className="login-logo">L</span><strong>Loading Open Lumora…</strong></div>;
+  if (loading) return <div className="app-loading" aria-busy="true"><span className="login-logo">L</span><strong>Loading Brain4All…</strong></div>;
   if (deploymentMode === 'cloud' && !user) return <LoginScreen />;
   return <><App />{deploymentMode === 'local' && loginOpen && !user && <LoginScreen optional />}</>;
 }

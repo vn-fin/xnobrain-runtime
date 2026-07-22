@@ -7,8 +7,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from open_lumora.integrations.hermes import AgentManager
-from open_lumora.integrations.nine_router import (
+from brain4all.integrations.hermes import AgentManager
+from brain4all.integrations.nine_router import (
     NINE_ROUTER_API_BASE_URL,
     NINE_ROUTER_PROVIDER,
     NineRouterAPIError,

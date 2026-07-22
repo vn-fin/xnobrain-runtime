@@ -12,4 +12,4 @@ NEXT_PUBLIC_BASE_URL=http://127.0.0.1:20128 \
 REQUIRE_API_KEY=false \
 9router --host 127.0.0.1 --port 20128 --no-browser --skip-update &
 
-exec /usr/local/bin/open-lumora
+exec /usr/local/bin/brain4all

@@ -1,12 +1,12 @@
-# Open Lumora enterprise extension contract
+# Brain4All enterprise extension contract
 
 The authoritative Free, Pro, and Enterprise feature matrix and recommended limits are defined in [plans, features, and limits](plans.md). This document defines repository and deployment ownership rather than duplicating those values.
 
-Implementation is split into independently assignable work packages under [the OSS roadmap](implementation/README.md) and the companion `open-lumora-enterprise/docs/implementation` directory. Versioned device and portability protocols belong in this public repository so both sides can test compatibility without importing private code.
+Implementation is split into independently assignable work packages under [the OSS roadmap](implementation/README.md) and the companion `brain4all-enterprise/docs/implementation` directory. Versioned device and portability protocols belong in this public repository so both sides can test compatibility without importing private code.
 
-The open-source repository must remain a complete downloadable product. Its Docker Compose file builds or pulls only public Open Lumora and Hermes images; it must never require a private enterprise image or a cloud account.
+The open-source repository must remain a complete downloadable product. Its Docker Compose file builds or pulls only public Brain4All and Hermes images; it must never require a private enterprise image or a cloud account.
 
-The recommended downstream project is a thin private composition named `open-lumora-enterprise`, not a copy of this backend. It pins a released Open Lumora module and runtime image, implements `pkg/edition.Policy`, and adds only proprietary control-plane capabilities. If its binary imports this repository's `internal` composition packages, its Go module path must be nested under `github.com/xno/open-lumora/` so Go's internal-package rules permit the import. A future public application builder can remove that constraint; the policy contract itself is already public.
+The recommended downstream project is a thin private composition named `brain4all-enterprise`, not a copy of this backend. It pins a released Brain4All module and runtime image, implements `pkg/edition.Policy`, and adds only proprietary control-plane capabilities. If its binary imports this repository's `internal` composition packages, its Go module path must be nested under `github.com/vn-fin/brain4all/` so Go's internal-package rules permit the import. A future public application builder can remove that constraint; the policy contract itself is already public.
 
 ## Ownership split
 
@@ -14,8 +14,8 @@ The shared open-source runtime continues to own profile isolation, safe paths, s
 
 Use separate versioned images:
 
-- `open-lumora:<version>` is the public, self-contained local application and the base runtime contract.
-- `open-lumora-enterprise:<version>` is the private API/control-plane composition.
+- `brain4all:<version>` is the public, self-contained local application and the base runtime contract.
+- `brain4all-enterprise:<version>` is the private API/control-plane composition.
 - A pinned Hermes worker image runs agent workloads. Enterprise orchestration may select CPU, memory, storage, and accelerator classes without rebuilding the Studio API image.
 
 Enterprise deployments may pull the public runtime image from the open-source release. The reverse dependency is forbidden: the open-source deployment never pulls the enterprise image.

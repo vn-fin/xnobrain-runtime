@@ -14,7 +14,7 @@ describe('RootErrorBoundary', () => {
 
     render(<RootErrorBoundary><BrokenView /></RootErrorBoundary>);
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Open Lumora could not render this page.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Brain4All could not render this page.');
     expect(screen.getByText('render exploded')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
   });

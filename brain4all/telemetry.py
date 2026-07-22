@@ -17,13 +17,13 @@ def configure(app) -> None:
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
     except ImportError:
-        logging.getLogger("open_lumora.telemetry").warning("OpenTelemetry packages are unavailable")
+        logging.getLogger("brain4all.telemetry").warning("OpenTelemetry packages are unavailable")
         return
 
     endpoint = str(os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or "").strip()
     provider = TracerProvider(resource=Resource.create({
-        "service.name": "open-lumora",
-        "service.version": os.getenv("OPEN_LUMORA_VERSION", "dev"),
+        "service.name": "brain4all",
+        "service.version": os.getenv("BRAIN4ALL_VERSION", "dev"),
         "deployment.environment": os.getenv("START_MODE", "local"),
     }))
     if endpoint:

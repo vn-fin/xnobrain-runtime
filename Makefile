@@ -1,8 +1,8 @@
 PYTHON_BIN := $(if $(wildcard $(CURDIR)/.tools/python/bin/python),$(CURDIR)/.tools/python/bin/python,$(if $(wildcard $(HOME)/.local/lib/hermes-agent/venv/bin/python),$(HOME)/.local/lib/hermes-agent/venv/bin/python,python3))
 CONTAINER_CLI ?= docker
 IMAGE_TAG ?= local
-OPEN_LUMORA_FRONTEND_IMAGE ?= open-lumora-frontend:$(IMAGE_TAG)
-HERMES_RUNTIME_IMAGE ?= open-lumora-hermes-runtime:$(IMAGE_TAG)
+BRAIN4ALL_FRONTEND_IMAGE ?= brain4all-frontend:$(IMAGE_TAG)
+HERMES_RUNTIME_IMAGE ?= brain4all-hermes-runtime:$(IMAGE_TAG)
 .PHONY: dev backend src test check smoke-api build run image frontend-image runtime-image bundle load-bundle install
 
 dev:
@@ -15,12 +15,12 @@ src:
 	cd src && npm run dev
 
 test:
-	$(PYTHON_BIN) -m unittest discover -s open_lumora/tests -t . -p 'test_*.py'
+	$(PYTHON_BIN) -m unittest discover -s brain4all/tests -t . -p 'test_*.py'
 	cd src && npm test
 
 check:
-	$(PYTHON_BIN) -m unittest discover -s open_lumora/tests -t . -p 'test_*.py'
-	$(PYTHON_BIN) -m compileall -q open_lumora server.py
+	$(PYTHON_BIN) -m unittest discover -s brain4all/tests -t . -p 'test_*.py'
+	$(PYTHON_BIN) -m compileall -q brain4all server.py
 	cd src && npm test
 	cd src && npm run build
 

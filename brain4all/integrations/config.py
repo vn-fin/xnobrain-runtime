@@ -64,7 +64,7 @@ class GlobalConfigManager:
         return self._describe(self._read_config())
 
     def ensure_write_approval_defaults(self) -> dict[str, Any]:
-        """Persist Open Lumora's safe default for new skill and memory writes."""
+        """Persist Brain4All's safe default for new skill and memory writes."""
         config = self._read_config()
         changed = False
         for subsystem in ("skills", "memory"):

@@ -128,7 +128,7 @@ export function Sidebar({
   return (
     <aside className="left-panel">
       <div className="brand">
-        <span>Open Lumora</span>
+        <span>Brain4All</span>
         <button className="icon-button" title="Toggle sidebar">
           <PanelLeftClose size={17} />
         </button>

@@ -13,7 +13,7 @@ browser -> Traefik -> frontend or unified FastAPI/Hermes runtime
                               +-> Enterprise API -> ClickHouse aggregates
 ```
 
-The browser cannot address `open-lumora-gateway`, runtime, or ClickHouse.
+The browser cannot address `brain4all-gateway`, runtime, or ClickHouse.
 Traefik is the only service with a host port. Studio exposes two narrow proxy
 reads for the dashboard:
 
@@ -34,7 +34,7 @@ one authorized trace so the UI can render its waterfall and dependency graph.
 ## Runtime measurements
 
 The Hermes event adapter follows the runtime-hook approach demonstrated by
-`nujovich/hermes-telemetry`, while keeping Open Lumora's OTLP and ClickHouse
+`nujovich/hermes-telemetry`, while keeping Brain4All's OTLP and ClickHouse
 pipeline. Each run records the values Hermes or its provider actually returns:
 
 | Scope | Measurements |
@@ -84,7 +84,7 @@ not write application binaries or image bundles under `bin/`.
 
 ```bash
 make run
-make -C ../open-lumora-enterprise build
+make -C ../brain4all-enterprise build
 ```
 
 Use the `authenticated` Compose profile to start the local Collector after

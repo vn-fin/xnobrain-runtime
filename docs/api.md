@@ -2,7 +2,7 @@
 
 FastAPI generates the authoritative interactive contract at `/docs` and JSON
 schema at `/openapi.json`. Hermes CLI native routes remain available under
-`/api`; Open Lumora adds these compatibility groups:
+`/api`; Brain4All adds these compatibility groups:
 
 - `/agent-gateway/v1/agents`, `/profiles`, config, skills, memory, workspaces,
   MCP, providers, and cron
