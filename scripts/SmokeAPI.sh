@@ -5,7 +5,7 @@
 # </Summary>
 set -euo pipefail
 
-base_url="${BRAIN4ALL_SMOKE_URL:-http://127.0.0.1}"
+base_url="${BRAIN4ALL_SMOKE_URL:-http://127.0.0.1:5152}"
 domain="${BRAIN4ALL_DOMAIN:-localhost}"
 
 request() {

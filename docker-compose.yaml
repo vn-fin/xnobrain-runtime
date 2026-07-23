@@ -9,9 +9,9 @@ services:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=brain4all_edge
-      - --entrypoints.web.address=:80
+      - --entrypoints.web.address=:5152
     ports:
-      - "${BRAIN4ALL_HTTP_PORT:-80}:80"
+      - "${BRAIN4ALL_HTTP_PORT:-5152}:5152"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:

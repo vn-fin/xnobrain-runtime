@@ -8,11 +8,10 @@ Traefik -> frontend container
 ```
 
 ```bash
-make image
-docker compose up -d
+docker compose up -d --build
 ```
 
-Open `http://localhost` for the UI and `http://localhost/docs` for Swagger.
+Open `http://localhost:5152` for the UI and `http://localhost:5152/docs` for Swagger.
 Only Traefik publishes a host port. The runtime's named volume holds profiles,
 teams, notifications, Hermes state, and 9router credentials.
 

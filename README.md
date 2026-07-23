@@ -14,15 +14,28 @@ browser -> Traefik -> React UI
 
 ## Start
 
-Docker Compose is the supported distribution on Linux, macOS, and Windows:
+Install Docker, Docker Compose, and make with the platform installer:
 
 ```bash
-make image
-docker compose up -d
+./scripts/setup-linux.sh
+# or: ./scripts/setup-macos.sh
 ```
 
-Open <http://localhost>. Swagger is available at <http://localhost/docs> and
-the generated OpenAPI document at <http://localhost/openapi.json>.
+On Windows, run this in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1
+```
+
+Then start Brain4All without make:
+
+```bash
+docker compose up -d --build
+```
+
+Open <http://localhost:5152>. Swagger is available at
+<http://localhost:5152/docs> and the generated OpenAPI document at
+<http://localhost:5152/openapi.json>.
 
 For local development, install Python 3.12+, Hermes Agent, Node.js 22+, and npm:
 

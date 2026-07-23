@@ -59,7 +59,17 @@ function AssigneeStack({ ids, agents }: { ids: string[]; agents: Agent[] }) {
   );
 }
 
-/** Priority is merged into the title as a leading colored bar (per the design). */
+function AssigneeSummary({ ids, agents }: { ids: string[]; agents: Agent[] }) {
+  if (ids.length === 0) return <span className="kb-unassigned">Unassigned</span>;
+  const lead = resolveAssignee(ids[0], agents);
+  return (
+    <span className="kb-owner">
+      <AssigneeStack ids={ids} agents={agents} />
+      <span>{lead.name}{ids.length > 1 ? ` +${ids.length - 1}` : ''}</span>
+    </span>
+  );
+}
+
 function PriorityTitle({ task }: { task: KanbanTask }) {
   return (
     <span className="kb-title-line">
@@ -83,12 +93,17 @@ function TaskCard({
   onOpen: () => void;
 }) {
   return (
-    <button className={`kb-card col-${column}`} onClick={onOpen}>
+    <button
+      className={`kb-card col-${column} status-${task.status}`}
+      onClick={onOpen}
+      aria-label={`Open ${task.id}: ${task.title}`}
+    >
       <div className="kb-card-top">
         <span className="kb-id">{task.id}</span>
-        {column === 'done' && <span className={`kb-substate ${task.status}`}>{statusLabel(task.status)}</span>}
+        <span className={`kb-substate ${task.status}`}>{statusLabel(task.status)}</span>
       </div>
       <PriorityTitle task={task} />
+      <p className="kb-card-desc">{task.description}</p>
       {task.tags.length > 0 && (
         <div className="kb-tags">
           {task.tags.map((tag) => (
@@ -124,7 +139,7 @@ function TaskCard({
         </div>
       ) : null}
       <div className="kb-card-foot">
-        <AssigneeStack ids={task.assignees} agents={agents} />
+        <AssigneeSummary ids={task.assignees} agents={agents} />
         <span className="kb-updated">{task.updated}</span>
       </div>
     </button>
@@ -149,10 +164,13 @@ function TaskDrawer({
       <div className="kb-drawer" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="kb-drawer-head">
           <div>
-            <span className="kb-id">{task.id} · {state.statusLabel(task.status)}</span>
+            <div className="kb-drawer-kicker">
+              <span className="kb-id">{task.id}</span>
+              <span className={`kb-substate ${task.status}`}>{state.statusLabel(task.status)}</span>
+            </div>
             <h2>{task.title}</h2>
           </div>
-          <button className="icon-button" aria-label="Close" onClick={onClose}>
+          <button className="icon-button" aria-label="Close task details" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
@@ -219,7 +237,10 @@ function TaskDrawer({
           )}
         </div>
         <div className="kb-drawer-foot">
-          <span className="kb-label">Move to status</span>
+          <div>
+            <span className="kb-label">Move task</span>
+            <p>Update the task status without leaving the board.</p>
+          </div>
           <div className="kb-move-buttons">
             {board.statuses.map((status) => (
               <button
@@ -360,11 +381,59 @@ export function KanbanView({
   const [addingStatus, setAddingStatus] = useState(false);
   const [statusLabelInput, setStatusLabelInput] = useState('');
   const [statusColumn, setStatusColumn] = useState<KanbanColumnId>('todo');
+  const [agentFilter, setAgentFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState<'all' | KanbanPriority>('all');
+  const [columnFilter, setColumnFilter] = useState<'all' | KanbanColumnId>('all');
 
   const openTask = useMemo(
-    () => (openTaskId ? visibleTasks.find((task) => task.id === openTaskId) ?? null : null),
-    [openTaskId, visibleTasks],
+    () => (openTaskId ? board?.tasks.find((task) => task.id === openTaskId) ?? null : null),
+    [board, openTaskId],
   );
+
+  const assigneeOptions = useMemo(() => {
+    const ids = new Set(board?.tasks.flatMap((task) => task.assignees) ?? []);
+    return [...ids]
+      .map((id) => resolveAssignee(id, agents))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [agents, board]);
+
+  const filteredTasks = useMemo(
+    () =>
+      visibleTasks.filter(
+        (task) =>
+          (agentFilter === 'all' || task.assignees.includes(agentFilter)) &&
+          (priorityFilter === 'all' || task.priority === priorityFilter) &&
+          (columnFilter === 'all' || columnOf(task.status) === columnFilter),
+      ),
+    [agentFilter, columnFilter, columnOf, priorityFilter, visibleTasks],
+  );
+
+  const metrics = useMemo(() => {
+    const tasks = board?.tasks ?? [];
+    const running = tasks.filter((task) => columnOf(task.status) === 'in_progress');
+    const blocked = tasks.filter((task) => task.status === 'blocked' || Boolean(task.block));
+    const completed = tasks.filter(
+      (task) => columnOf(task.status) === 'done' && task.status !== 'blocked' && !task.block,
+    );
+    return {
+      total: tasks.length,
+      running: running.length,
+      activeAgents: new Set(running.flatMap((task) => task.assignees)).size,
+      blocked: blocked.length,
+      completed: completed.length,
+      completion: tasks.length ? Math.round((completed.length / tasks.length) * 100) : 0,
+    };
+  }, [board, columnOf]);
+
+  const filtersActive =
+    Boolean(search.trim()) || agentFilter !== 'all' || priorityFilter !== 'all' || columnFilter !== 'all';
+
+  const clearFilters = () => {
+    setSearch('');
+    setAgentFilter('all');
+    setPriorityFilter('all');
+    setColumnFilter('all');
+  };
 
   const submitStatus = async () => {
     if (!statusLabelInput.trim()) return;
@@ -377,16 +446,20 @@ export function KanbanView({
     <section className="kanban-view">
       <header className="kb-header">
         <div className="kb-title-group">
-          <h1>
-            <Columns3 size={22} /> {board?.name ?? 'Task board'}
-          </h1>
+          <div className="kb-heading-line">
+            <span className="kb-heading-icon"><Columns3 size={18} /></span>
+            <div>
+              <h1>{board?.name ?? 'Task board'}</h1>
+              <span className="kb-board-id">board/{board?.id ?? 'default'}</span>
+            </div>
+          </div>
           <span className="kb-sub">{board?.description}</span>
         </div>
         <div className="kb-header-actions">
-          <span className="kb-proto" title="This board uses in-memory sample data">Sample data</span>
           <div className="kb-view-switch" role="tablist" aria-label="Board layout">
             <button
               className={view === 'board' ? 'active' : ''}
+              role="tab"
               aria-selected={view === 'board'}
               onClick={() => setView('board')}
             >
@@ -394,10 +467,11 @@ export function KanbanView({
             </button>
             <button
               className={view === 'table' ? 'active' : ''}
+              role="tab"
               aria-selected={view === 'table'}
               onClick={() => setView('table')}
             >
-              <List size={14} /> Table
+              <List size={14} /> List <span>{board?.tasks.length ?? 0}</span>
             </button>
           </div>
           <button className="primary-button" onClick={() => { setNewTaskStatus(undefined); setNewTaskOpen(true); }}>
@@ -410,39 +484,109 @@ export function KanbanView({
       </header>
 
       <div className="kb-command">
-        <div className="kb-search">
+        <label className="kb-search">
           <Search size={16} />
+          <span className="sr-only">Search tasks</span>
           <input
+            type="search"
             value={search}
-            placeholder="Search tasks, ids, tags, assignees…"
+            placeholder="Search tasks, IDs, tags, or agents…"
             onChange={(event) => setSearch(event.target.value)}
           />
           {search && (
-            <button className="icon-button" aria-label="Clear search" onClick={() => setSearch('')}>
+            <button className="icon-button" type="button" aria-label="Clear search" onClick={() => setSearch('')}>
               <X size={14} />
             </button>
           )}
+        </label>
+        <div className="kb-filters">
+          <label>
+            <span className="sr-only">Filter by assignee</span>
+            <select value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)}>
+              <option value="all">All agents</option>
+              {assigneeOptions.map((person) => (
+                <option key={person.id} value={person.id}>{person.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="sr-only">Filter by priority</span>
+            <select
+              value={priorityFilter}
+              onChange={(event) => setPriorityFilter(event.target.value as 'all' | KanbanPriority)}
+            >
+              <option value="all">All priorities</option>
+              <option value="high">High priority</option>
+              <option value="medium">Medium priority</option>
+              <option value="low">Low priority</option>
+            </select>
+          </label>
+          <label>
+            <span className="sr-only">Filter by board column</span>
+            <select
+              value={columnFilter}
+              onChange={(event) => setColumnFilter(event.target.value as 'all' | KanbanColumnId)}
+            >
+              <option value="all">All statuses</option>
+              {KANBAN_COLUMNS.map((column) => (
+                <option key={column.id} value={column.id}>{column.label}</option>
+              ))}
+            </select>
+          </label>
+          {filtersActive && <button className="kb-clear" onClick={clearFilters}>Clear</button>}
         </div>
       </div>
 
       {state.status === 'loading' && <div className="kb-empty">Loading board…</div>}
       {state.status === 'error' && <div className="kb-error">{state.error}</div>}
 
+      {board && state.status === 'ready' && (
+        <div className="kb-summary" aria-label="Board summary">
+          <div className="kb-metric">
+            <span>Total work</span>
+            <strong>{metrics.total}</strong>
+            <small>tasks</small>
+          </div>
+          <div className="kb-metric active">
+            <span>In progress</span>
+            <strong>{metrics.running}</strong>
+            <small>{metrics.activeAgents} active {metrics.activeAgents === 1 ? 'agent' : 'agents'}</small>
+          </div>
+          <div className={`kb-metric ${metrics.blocked ? 'attention' : ''}`}>
+            <span>Blocked</span>
+            <strong>{metrics.blocked}</strong>
+            <small>{metrics.blocked ? 'needs attention' : 'all clear'}</small>
+          </div>
+          <div className="kb-metric complete">
+            <span>Completed</span>
+            <strong>{metrics.completion}%</strong>
+            <small>{metrics.completed} done</small>
+          </div>
+        </div>
+      )}
+
       {board && state.status === 'ready' && view === 'board' && (
         <div className="kb-board">
           {KANBAN_COLUMNS.map((column) => {
-            const items = visibleTasks.filter((task) => columnOf(task.status) === column.id);
+            const items = filteredTasks.filter((task) => columnOf(task.status) === column.id);
+            const total = board.tasks.filter((task) => columnOf(task.status) === column.id).length;
+            const initialStatus = board.statuses.find((status) => status.column === column.id)?.id;
             return (
               <section key={column.id} className={`kb-column col-${column.id}`}>
                 <header className="kb-column-head">
                   <span className="kb-swatch" />
-                  <strong>{column.label}</strong>
-                  <span className="kb-count">{items.length}</span>
+                  <div>
+                    <strong>{column.label}</strong>
+                    <span>{column.hint}</span>
+                  </div>
+                  <span className="kb-count">{filtersActive ? `${items.length}/${total}` : total}</span>
                 </header>
                 <div className="kb-column-body">
-                  <span className="kb-column-hint">{column.hint}</span>
                   {items.length === 0 ? (
-                    <div className="kb-lane-empty">No tasks</div>
+                    <div className="kb-lane-empty">
+                      <strong>{filtersActive ? 'No matching tasks' : 'No tasks yet'}</strong>
+                      <span>{filtersActive ? 'Try changing your filters.' : `Add work to ${column.label.toLowerCase()}.`}</span>
+                    </div>
                   ) : (
                     items.map((task) => (
                       <TaskCard
@@ -455,6 +599,12 @@ export function KanbanView({
                       />
                     ))
                   )}
+                  <button
+                    className="kb-column-add"
+                    onClick={() => { setNewTaskStatus(initialStatus); setNewTaskOpen(true); }}
+                  >
+                    <Plus size={14} /> Add task
+                  </button>
                 </div>
               </section>
             );
@@ -465,7 +615,9 @@ export function KanbanView({
       {board && state.status === 'ready' && view === 'table' && (
         <div className="kb-table">
           <div className="kb-table-toolbar">
-            <span>{visibleTasks.length} tasks · grouped by status</span>
+            <span>
+              <strong>{filteredTasks.length}</strong> {filteredTasks.length === 1 ? 'task' : 'tasks'} · grouped by status
+            </span>
             {addingStatus ? (
               <div className="kb-add-status">
                 <input
@@ -495,7 +647,7 @@ export function KanbanView({
             )}
           </div>
           {board.statuses.map((status) => {
-            const items = visibleTasks.filter((task) => task.status === status.id);
+            const items = filteredTasks.filter((task) => task.status === status.id);
             return (
               <div key={status.id} className="kb-group">
                 <div className="kb-group-head">
@@ -512,6 +664,13 @@ export function KanbanView({
                 </div>
                 {items.length > 0 && (
                   <div className="kb-rows">
+                    <div className="kb-row kb-row-labels" aria-hidden="true">
+                      <span>Task</span>
+                      <span>Assignee</span>
+                      <span>Deps</span>
+                      <span>Updated</span>
+                      <span />
+                    </div>
                     {items.map((task) => (
                       <button key={task.id} className="kb-row" onClick={() => setOpenTaskId(task.id)}>
                         <span className="kb-row-task">
@@ -519,7 +678,7 @@ export function KanbanView({
                           <span className="kb-row-id">{task.id}</span>
                         </span>
                         <span className="kb-row-assignees">
-                          <AssigneeStack ids={task.assignees} agents={agents} />
+                          <AssigneeSummary ids={task.assignees} agents={agents} />
                         </span>
                         <span className="kb-row-deps">
                           {task.deps.length ? (
