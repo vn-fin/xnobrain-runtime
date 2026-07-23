@@ -65,6 +65,8 @@ Legend:
 ## 002 — Product experience
 
 - [ ] Replace production mock Kanban data with the versioned API client.
+- [ ] Remove seeded mock/demo and smoke-hook Kanban data; smoke and browser
+  checks must create and verify real records in Hermes SQLite.
 - [ ] Remove custom status creation and render exactly five workflow states.
 - [ ] Build the board view with accessible drag/drop and a non-drag move
   control.
@@ -133,6 +135,8 @@ Legend:
 - [ ] Refresh and container restart preserve tasks, boards, schedules, and
   occurrence history without duplication.
 - [ ] Production contains no seeded demo Kanban records.
+- [ ] No smoke-test hook or fallback can inject synthetic Kanban records into
+  the running application.
 - [ ] No regression to chat streaming, stop behavior, approvals, telemetry
   propagation, profile isolation, or 9router behavior.
 - [ ] Architecture, API, development, user, migration, and troubleshooting

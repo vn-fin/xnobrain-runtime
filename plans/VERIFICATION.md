@@ -40,6 +40,11 @@ credentials or private prompts.
 Use the built images and their installed Hermes artifact—not a separate local
 checkout—for final compatibility tests.
 
+Smoke and browser journeys must create records through the real API and read
+them back from Hermes-backed endpoints. Do not enable a mock server, seed
+fixture, smoke hook, in-memory fallback, or demo-data mode in the running
+application. Test cleanup may remove only the records created by that test run.
+
 ## API matrix
 
 Verify success, validation, conflict, not-found, stale-write, and degraded
@@ -169,6 +174,8 @@ Verify clear, non-destructive behavior for:
 - Optional Enterprise API outage does not restrict local Kanban.
 - No additional app process, database, or standalone dispatcher/cron daemon in
   Compose.
+- No mock/demo/smoke-hook data path is present in the production runtime or
+  frontend bundle.
 
 ## Release evidence
 

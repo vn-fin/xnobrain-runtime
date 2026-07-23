@@ -189,6 +189,12 @@ Design and test:
 Do not seed fake production tasks. Demo content belongs in tests or an explicit,
 reversible onboarding action.
 
+Remove all existing mock/demo and smoke-hook Kanban data paths from the
+production bundle. Automated smoke and browser tests must create their own
+records through the real Brain4All API, verify those records in Hermes SQLite,
+and clean up only the test records they created. There must be no fallback from
+a failed API request to in-memory sample data.
+
 ## Accessibility and localization
 
 - Full operation without drag, mouse, hover, or color alone.
@@ -216,6 +222,8 @@ reversible onboarding action.
 8. Add comments, dependencies, attachments, worker/run, archive, and
    diagnostics panels as their APIs become available.
 9. Remove mock/demo-only status, board, and cron UI paths.
+10. Remove smoke-test data injection hooks; update smoke coverage to use the
+    real API and persisted Hermes records.
 
 Split components by behavior and reuse existing design primitives. Avoid a
 single growing `KanbanView.tsx`.
