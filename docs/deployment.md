@@ -36,6 +36,11 @@ The collector receives metadata-only spans from the runtime and writes basic
 summaries to its container logs. `OTEL_EXPORTER_OTLP_ENDPOINT` is restricted to
 the Compose collector or a loopback address.
 
+Runtime logs are JSON objects. Every record includes `time`,
+`development_environment` (default `dev`), and `service_name` (default
+`runtime`). Set `DEVELOPMENT_ENVIRONMENT` and `SERVICE_NAME` in `.env` to
+override those defaults.
+
 Builds produce only:
 
 - `brain4all-frontend:<tag>`

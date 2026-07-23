@@ -5,6 +5,7 @@ import { useAssistants, useActiveAgent } from './hooks/useAssistants';
 import { useConnections } from './hooks/useConnections';
 import { useSandbox } from './hooks/useSandbox';
 import { useCrons } from './hooks/useCrons';
+import { useKanban } from './hooks/useKanban';
 import { useConversation } from './hooks/useConversation';
 import { useWorkspace } from './hooks/useWorkspace';
 import { useTeams } from './hooks/useTeams';
@@ -18,6 +19,7 @@ import { SkillsView } from './components/SkillsView';
 import { Onboarding } from './components/Onboarding';
 import { SystemView } from './features/system/SystemView';
 import { TeamsView } from './components/TeamsView';
+import { KanbanView } from './components/KanbanView';
 import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
@@ -28,11 +30,15 @@ export default function App() {
   const router = useRouter();
   const assistants = useAssistants();
   const connections = useConnections();
-  const sandbox = useSandbox(router.centerView === 'sandbox');
+  // The first onboarding step needs the same local runtime status as the
+  // Runtime view. Without this, a fresh installation remains on “Checking…”
+  // because the stream is only activated after navigating away from onboarding.
+  const sandbox = useSandbox(router.centerView === 'sandbox' || assistants.agents.length === 0);
   const crons = useCrons();
   const conversation = useConversation(router.activeAgentId, router.activeConversationId);
   const workspace = useWorkspace(router.activeAgentId);
   const teams = useTeams();
+  const kanban = useKanban();
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
   const RIGHT_MIN = 280;
@@ -251,6 +257,8 @@ export default function App() {
           />
         ) : centerView === 'teams' ? (
           <TeamsView agents={assistants.agents} state={teams} onClose={() => router.setCenterView('chat')} />
+        ) : centerView === 'kanban' ? (
+          <KanbanView agents={assistants.agents} state={kanban} onClose={() => router.setCenterView('chat')} />
         ) : (
           <ChatArea
             agent={activeAgent}

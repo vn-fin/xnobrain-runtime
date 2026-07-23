@@ -3,7 +3,7 @@
 // swapped from mock data to real fetch calls without touching components.
 
 export type RightView = 'workspace' | 'skills' | 'cron' | 'runtime';
-export type CenterView = 'chat' | 'sandbox' | 'connections' | 'skills' | 'teams' | 'data';
+export type CenterView = 'chat' | 'sandbox' | 'connections' | 'skills' | 'teams' | 'data' | 'kanban';
 
 export type ConnectionMode = 'device-code' | 'cli' | 'api-key';
 export type ProviderBrand = 'openai' | 'claude' | 'anthropic' | 'gemini' | 'openrouter';
@@ -274,3 +274,70 @@ export type CronJob = {
 
 // Per-agent skill enablement map: agentId -> { skillId -> enabled }
 export type AgentSkillMap = Record<string, Record<string, boolean>>;
+
+// ---------------------------------------------------------------------------
+// Kanban (multi-agent task board)
+//
+// A deliberately simplified take on Hermes Kanban. The durable Hermes board
+// has many statuses (triage, ready, todo, scheduled, running, blocked, review,
+// done, archived). Here we collapse those into three board columns for an
+// easy-to-read board, while still keeping a fine-grained `status` per task so
+// the table view can group by (and add) custom statuses.
+//   • Todo        ← triage / ready / todo / scheduled
+//   • In progress ← running / in-progress
+//   • Done        ← done / reviewed / blocked
+// ---------------------------------------------------------------------------
+
+export type KanbanColumnId = 'todo' | 'in_progress' | 'done';
+export type KanbanPriority = 'high' | 'medium' | 'low';
+export type KanbanDepState = 'done' | 'pending' | 'blocked';
+
+export type KanbanDependency = { id: string; title: string; state: KanbanDepState };
+
+/** A fine-grained status that lives inside one of the three board columns. */
+export type KanbanStatusDef = {
+  id: string;
+  label: string;
+  column: KanbanColumnId;
+};
+
+export type KanbanTask = {
+  id: string;
+  title: string;
+  description: string;
+  /** Fine-grained status id; resolves to one of the three board columns. */
+  status: string;
+  priority: KanbanPriority;
+  /** Multiple assignees, referenced by agent id. */
+  assignees: string[];
+  tags: string[];
+  deps: KanbanDependency[];
+  /** 0–100 completion, surfaced for in-progress work. */
+  progress: number;
+  /** Human-readable "updated" label (e.g. "4m ago"). */
+  updated: string;
+  /** Populated when the task is blocked. */
+  block?: string | null;
+  /** Populated when the task is complete. */
+  summary?: string | null;
+};
+
+export type KanbanBoard = {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  /** Ordered status vocabulary for this board (table grouping + column map). */
+  statuses: KanbanStatusDef[];
+  tasks: KanbanTask[];
+};
+
+export type KanbanViewMode = 'board' | 'table';
+
+export type NewKanbanTaskInput = {
+  title: string;
+  description: string;
+  status: string;
+  priority: KanbanPriority;
+  assignees: string[];
+};

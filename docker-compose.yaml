@@ -59,6 +59,8 @@ services:
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: 8642
       DATA_DIR: /opt/data/brain4all
+      DEVELOPMENT_ENVIRONMENT: ${DEVELOPMENT_ENVIRONMENT:-dev}
+      SERVICE_NAME: ${SERVICE_NAME:-runtime}
       OTEL_ENABLED: ${OTEL_ENABLED:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
     volumes:

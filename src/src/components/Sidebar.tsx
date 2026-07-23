@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ChevronDown,
+  Columns3,
   History,
   KeyRound,
   Languages,
@@ -28,6 +29,7 @@ import type { Agent, CenterView, Conversation } from '../types';
 const navItems = [
   { id: 'skills', label: 'skills', icon: Sparkles },
   { id: 'sandbox', label: 'runtime', icon: Server },
+  { id: 'kanban', label: 'kanban', icon: Columns3 },
   { id: 'teams', label: 'teams', icon: Network },
   { id: 'connections', label: 'connections', icon: KeyRound },
   { id: 'data', label: 'settings', icon: Settings },
@@ -134,6 +136,7 @@ export function Sidebar({
           const active =
             (item.id === 'sandbox' && centerView === 'sandbox') ||
             (item.id === 'skills' && centerView === 'skills') ||
+            (item.id === 'kanban' && centerView === 'kanban') ||
             (item.id === 'teams' && centerView === 'teams') ||
             (item.id === 'connections' && centerView === 'connections') ||
             (item.id === 'data' && centerView === 'data');

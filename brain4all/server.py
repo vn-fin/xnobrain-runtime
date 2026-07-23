@@ -9,6 +9,8 @@ import time
 
 import uvicorn
 
+from .json_logging import configure_logging
+
 
 def create_app():
     """Extend Hermes CLI's original FastAPI app with Brain4All routes."""
@@ -52,7 +54,7 @@ app = create_app()
 
 
 def main() -> None:
-    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(), format="%(message)s")
+    configure_logging()
     uvicorn.run(
         app,
         host=os.getenv("API_SERVER_HOST", "0.0.0.0"),
