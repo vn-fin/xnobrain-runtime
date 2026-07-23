@@ -5,11 +5,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-import os
 import time
 from typing import Any, Callable
 
-import httpx
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
@@ -22,7 +20,6 @@ class APIHandlers:
     def __init__(self, service: PlatformService):
         self.service = service
         self.started_at = time.time()
-        self.enterprise_url = str(os.getenv("ENTERPRISE_API_URL") or "").rstrip("/")
 
     @staticmethod
     def success(data: Any, message: str = "ok", status: int = 200) -> JSONResponse:
@@ -54,11 +51,7 @@ class APIHandlers:
         operations: dict[str, tuple[Callable[[], Any], str, int]] = {
             "health": (lambda: {"status": "ok", "edition": "opensource", "api": "fastapi", "uptime_seconds": int(time.time()-self.started_at)}, "healthy", 200),
             "limits": (lambda: {"plan_id": "self-hosted", "local_features_unlimited": True, "agents": -1, "teams": -1, "mcp_servers": -1, "cron_jobs": -1}, "limits retrieved", 200),
-            "deployment": (lambda: {"mode": os.getenv("START_MODE", "local"), "start_mode": os.getenv("START_MODE", "local"), "runtime": "hermes-fastapi", "runtime_transport": "in-process", "gateway_configured": bool(self.enterprise_url), "managed_cloud": bool(self.enterprise_url), "enterprise_api_url": self.enterprise_url, "enterprise_connected": bool(self.enterprise_url), "database": False}, "deployment retrieved", 200),
-            "enterprise_features": (lambda: {"available": bool(self.enterprise_url), "local_features_unrestricted": True}, "features retrieved", 200),
-            "device_status": (self._device_status, "device status retrieved successfully", 200),
-            "device_pair": (lambda: self._device_action("pair"), "device pairing started", 202),
-            "device_unpair": (lambda: self._device_action("unpair"), "device unpaired successfully", 200),
+            "deployment": (lambda: {"mode": "local", "runtime": "hermes-fastapi", "runtime_transport": "in-process", "database": False}, "deployment retrieved", 200),
             "agents_list": (s.list_agents, "agents retrieved successfully", 200), "agents_create": (lambda: s.create_agent(body), "agent created successfully", 201),
             "profiles_list": (s.list_profiles, "profiles retrieved successfully", 200),
             "agents_get": (lambda: s.get_agent(p["agent_id"]), "agent retrieved successfully", 200),
@@ -159,21 +152,6 @@ class APIHandlers:
             error.status, error.code = 400, "invalid_request"
             return self.failure(error)
 
-    async def enterprise_proxy(self, request: Request) -> Response:
-        if not self.enterprise_url:
-            if request.url.path == "/api/v1/enterprise/features":
-                return self.success({"available": False, "local_features_unrestricted": True}, "features retrieved")
-            error = ValueError("ENTERPRISE_API_URL is not configured"); error.status, error.code = 503, "enterprise_unavailable"
-            return self.failure(error)
-        headers = {key: value for key, value in request.headers.items() if key.lower() in {"authorization", "traceparent", "tracestate"}}
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.request(request.method, self.enterprise_url + request.url.path + (f"?{request.url.query}" if request.url.query else ""), headers=headers)
-            return Response(response.content, status_code=response.status_code, media_type=response.headers.get("content-type"))
-        except httpx.HTTPError:
-            error = ValueError("Enterprise API is unavailable"); error.status, error.code = 503, "enterprise_unavailable"
-            return self.failure(error)
-
     async def bundle_export(self, _request: Request, body: dict[str, Any]) -> Response:
         try:
             payload, filename = self.service.export_bundle(body)
@@ -270,24 +248,3 @@ class APIHandlers:
                 "X-Accel-Buffering": "no",
             },
         )
-
-    def _device_status(self) -> dict[str, Any]:
-        return {
-            "enabled": bool(self.enterprise_url), "connected": False,
-            "endpoint": self.enterprise_url, "queued_commands": 0, "claimed": False,
-        }
-
-    async def _device_action(self, action: str) -> dict[str, Any]:
-        if not self.enterprise_url:
-            if action == "unpair":
-                return {"unpaired": True}
-            error = ValueError("ENTERPRISE_API_URL is not configured")
-            error.status, error.code = 503, "enterprise_unavailable"
-            raise error
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(f"{self.enterprise_url}/api/v1/device/{action}")
-        if response.status_code >= 400:
-            error = ValueError("Enterprise device API rejected the request")
-            error.status, error.code = response.status_code, "enterprise_error"
-            raise error
-        return response.json().get("data", response.json())

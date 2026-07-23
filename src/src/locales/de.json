@@ -31,7 +31,7 @@
     "signOut": "Abmelden",
     "signingIn": "Anmeldung…",
     "error": "Anmeldung fehlgeschlagen. Überprüfe deine Zugangsdaten und versuche es erneut.",
-    "mockNote": "Firebase ist nicht konfiguriert — lokale Demo-Anmeldung wird verwendet. Beliebiger Benutzername/Passwort funktioniert."
+    "mockNote": "Diese lokale Installation erfordert keine Anmeldung an der Anwendung."
   },
   "common": {
     "cancel": "Abbrechen",

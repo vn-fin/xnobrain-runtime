@@ -35,11 +35,6 @@ ROUTES = (
     Route("GET", "/agent-gateway/v1/ping", "health", tags=("System",)),
     Route("GET", "/api/v1/limits", "limits", tags=("System",)),
     Route("GET", "/api/v1/system/deployment", "deployment", tags=("System",)),
-    Route("GET", "/api/v1/enterprise/features", "enterprise_features", special="enterprise_proxy", tags=("Enterprise",)),
-    Route("GET", "/api/v1/device", "device_status", tags=("Enterprise",)),
-    Route("POST", "/api/v1/device/pair", "device_pair", tags=("Enterprise",)),
-    Route("POST", "/api/v1/device/unpair", "device_unpair", tags=("Enterprise",)),
-
     Route("GET", "/agent-gateway/v1/agents", "agents_list", tags=("Agents",)),
     Route("POST", "/agent-gateway/v1/agents", "agents_create", AgentCreate, tags=("Agents",)),
     Route("GET", "/agent-gateway/v1/profiles", "profiles_list", tags=("Profiles",)),
@@ -128,11 +123,6 @@ ROUTES = (
     Route("POST", "/api/v1/bundles/uploads/{transfer_id}/apply", "bundle_upload_apply", BundleUploadApply, tags=("Portability",)),
     Route("DELETE", "/api/v1/bundles/uploads/{transfer_id}", "bundle_upload_delete", tags=("Portability",)),
 
-    Route("GET", "/api/v1/dashboard/{tail:path}", "enterprise_proxy", special="enterprise_proxy", tags=("Enterprise",)),
-    Route("GET", "/api/v1/observability/{tail:path}", "enterprise_proxy", special="enterprise_proxy", tags=("Enterprise",)),
-    Route("GET", "/api/v1/skills", "enterprise_skills_list", special="enterprise_proxy", tags=("Enterprise Skills",)),
-    Route("GET", "/api/v1/skills/search", "enterprise_skills_search", special="enterprise_proxy", tags=("Enterprise Skills",)),
-    Route("POST", "/api/v1/skills/{skill_id}/install", "enterprise_skills_install", special="enterprise_proxy", tags=("Enterprise Skills",)),
 )
 
 
@@ -160,9 +150,6 @@ def _endpoint(handlers: Any, route: Route):
     elif route.special == "sandbox_stream":
         async def endpoint(request: Request) -> Response:
             return await handlers.sandbox_detail_stream(request)
-    elif route.special == "enterprise_proxy":
-        async def endpoint(request: Request) -> Response:
-            return await handlers.enterprise_proxy(request)
     elif route.body is not None:
         async def endpoint(request: Request, body=Body(...)) -> Response:
             return await handlers.dispatch(request, body.model_dump(exclude_unset=True))
@@ -177,7 +164,7 @@ def _endpoint(handlers: Any, route: Route):
 
 def setup_routes(app: Any, handlers: Any) -> None:
     for route in ROUTES:
-        raw_response = route.special in {"stream", "workspace_upload", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "enterprise_proxy"}
+        raw_response = route.special in {"stream", "workspace_upload", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream"}
         app.add_api_route(
             route.path,
             _endpoint(handlers, route),

@@ -8,7 +8,7 @@ afterEach(() => {
 
 describe('systemApi', () => {
   it('reads the non-secret deployment summary for Settings', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ success: true, data: { mode: 'local', gateway_configured: true, runtime_transport: 'gateway-runtime', managed_cloud: false } }), {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ success: true, data: { mode: 'local', runtime_transport: 'in-process' } }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     }));
@@ -17,7 +17,7 @@ describe('systemApi', () => {
     const deployment = await systemApi.deployment();
 
     expect(deployment.mode).toBe('local');
-    expect(deployment.gateway_configured).toBe(true);
+    expect(deployment.runtime_transport).toBe('in-process');
   });
 
   it('downloads a standard ZIP archive in parts', async () => {

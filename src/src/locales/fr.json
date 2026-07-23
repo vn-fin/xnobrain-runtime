@@ -31,7 +31,7 @@
     "signOut": "Se déconnecter",
     "signingIn": "Connexion…",
     "error": "Connexion impossible. Vérifiez vos identifiants et réessayez.",
-    "mockNote": "Firebase n'est pas configuré — connexion de démonstration locale utilisée. Tout identifiant/mot de passe fonctionne."
+    "mockNote": "Cette installation locale ne nécessite pas de connexion à l’application."
   },
   "common": {
     "cancel": "Annuler",

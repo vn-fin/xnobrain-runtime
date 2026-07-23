@@ -24,12 +24,17 @@ the root-disk request only on storage drivers with per-container quota support;
 durable profile data in the named volume follows the Docker host's volume
 capacity.
 
-Set `ENTERPRISE_API_URL` to add authenticated Enterprise features. The
-optional `authenticated` Compose profile starts an OTel collector that exports
-to that URL. The Enterprise service and its databases are not part of this OSS
-Compose project. Use `http://localhost:3100` when running Brain4All directly
-on the host, or `http://host.docker.internal:3100` from this Compose stack. The
-runtime and collector include the Linux host-gateway mapping for that name.
+The stack is local-only: it does not include or call an Enterprise API. The
+optional `otel` Compose profile starts a local OpenTelemetry collector. It is
+disabled by default and has no outbound exporter:
+
+```bash
+OTEL_ENABLED=true docker compose --profile otel up -d
+```
+
+The collector receives metadata-only spans from the runtime and writes basic
+summaries to its container logs. `OTEL_EXPORTER_OTLP_ENDPOINT` is restricted to
+the Compose collector or a loopback address.
 
 Builds produce only:
 
@@ -37,5 +42,3 @@ Builds produce only:
 - `brain4all-hermes-runtime:<tag>` (FastAPI, Hermes, and 9router)
 
 `make build` also creates the checksummed split OCI bundle under `bin/images`.
-Incus and managed-cloud runtime packaging belong in `brain4all-enterprise`,
-not this repository.

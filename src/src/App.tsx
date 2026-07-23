@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useRouter } from './hooks/useRouter';
 import { useAssistants, useActiveAgent } from './hooks/useAssistants';
-import { useCommunitySkills } from './hooks/useCommunitySkills';
 import { useConnections } from './hooks/useConnections';
 import { useSandbox } from './hooks/useSandbox';
 import { useCrons } from './hooks/useCrons';
@@ -19,26 +18,21 @@ import { SkillsView } from './components/SkillsView';
 import { Onboarding } from './components/Onboarding';
 import { SystemView } from './features/system/SystemView';
 import { TeamsView } from './components/TeamsView';
-import { DashboardView } from './features/dashboard/DashboardView';
 import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
-import { useAuth } from './auth';
-import type { Agent, CommunitySkill } from './types';
+import type { Agent } from './types';
 
 export default function App() {
   const { t } = useTranslation();
   const router = useRouter();
   const assistants = useAssistants();
-  const { user, hasEnterpriseFeature } = useAuth();
-  const communitySkills = useCommunitySkills(router.skillsSearch, router.skillsGroupFilter, Boolean(user));
   const connections = useConnections();
   const sandbox = useSandbox(router.centerView === 'sandbox');
   const crons = useCrons();
   const conversation = useConversation(router.activeAgentId, router.activeConversationId);
   const workspace = useWorkspace(router.activeAgentId);
   const teams = useTeams();
-  const telemetryEnabled = hasEnterpriseFeature('managed_telemetry');
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
   const RIGHT_MIN = 280;
@@ -99,11 +93,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assistants.status, assistants.agents]);
 
-  const { centerView, setCenterView } = router;
+  const { centerView } = router;
 
-  useEffect(() => {
-    if (centerView === 'dashboard' && !telemetryEnabled) setCenterView('chat');
-  }, [centerView, setCenterView, telemetryEnabled]);
   const authProvider = connections.connections.find((p) => p.id === connections.authProviderId) ?? null;
   const runtimeProviders = useMemo(() => connections.connections.map((provider) => ({
     id: provider.id,
@@ -150,12 +141,6 @@ export default function App() {
     setSettingsOpen(false);
   };
 
-  const handleInstallCommunitySkill = async (skill: CommunitySkill, force = false) => {
-    const selected = await communitySkills.install(skill.skill_id);
-    if (!selected) return false;
-    return assistants.installDefaultSkill(selected.source, force);
-  };
-
   const handleCreateConversation = async () => {
     const id = await assistants.createConversation(router.activeAgentId, activeAgent.model);
     router.setActiveConversationId(id);
@@ -169,10 +154,8 @@ export default function App() {
   if (assistants.status === 'loading') return <AsyncState status="loading" />;
   if (assistants.status === 'error') return <AsyncState status="error" error={assistants.error} onRetry={assistants.refresh} />;
   if (!activeAgent) {
-    if (centerView === 'dashboard' && telemetryEnabled) return <DashboardView onClose={() => router.setCenterView('chat')} />;
     return (
       <div className="empty-app">
-        {telemetryEnabled && <button className="onboarding-dashboard-link" onClick={() => router.setCenterView('dashboard')}>View observability dashboard</button>}
         <Onboarding
           sandboxStatus={sandbox.status}
           sandboxProvisioned={sandbox.provisioned}
@@ -220,9 +203,7 @@ export default function App() {
       />
 
       <main className={centerView === 'chat' ? 'chat-area' : 'chat-area sandbox-mode'}>
-        {centerView === 'dashboard' ? (
-          <DashboardView onClose={() => router.setCenterView('chat')} />
-        ) : centerView === 'sandbox' ? (
+        {centerView === 'sandbox' ? (
           <SandboxView
             data={sandbox.data}
             provisioned={sandbox.provisioned}
@@ -251,21 +232,13 @@ export default function App() {
             library={assistants.library}
             agents={assistants.agents}
             agentSkills={assistants.agentSkills}
-            community={communitySkills.skills}
-            communityStats={communitySkills.stats}
-            communityStatus={communitySkills.status}
-            communityError={communitySkills.error}
-            onRetryCommunity={communitySkills.refresh}
-            tab={router.skillsTab}
-            onTabChange={router.setSkillsTab}
             search={router.skillsSearch}
             onSearch={router.setSkillsSearch}
             groupFilter={router.skillsGroupFilter}
             onGroupFilter={router.setSkillsGroupFilter}
             onInstall={assistants.installDefaultSkill}
-            onInstallCommunity={handleInstallCommunitySkill}
             installPending={assistants.skillInstallPending}
-            installError={assistants.skillInstallError || communitySkills.installError}
+            installError={assistants.skillInstallError}
             onInstallExisting={assistants.installExistingSkill}
             onApply={assistants.applySkillsToAgents}
             onClose={() => router.setCenterView('chat')}

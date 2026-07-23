@@ -371,8 +371,8 @@ class PlatformService:
             "next_run_at": iso(datetime.fromtimestamp(now.timestamp() + seconds, timezone.utc)),
             "last_evaluated_at": iso(now), "created_at": iso(now), "updated_at": iso(now),
         }
-        if job["mode"] not in {"local", "managed"}:
-            raise ServiceError("mode must be local or managed")
+        if job["mode"] != "local":
+            raise ServiceError("only local cron jobs are supported")
         return self.repository.put_cron(job)
 
     def set_cron_enabled(self, cron_id: str, enabled: bool) -> dict[str, Any]:
@@ -400,7 +400,7 @@ class PlatformService:
         if not job.get("enabled", True):
             raise ServiceError("cron job is paused", status=409, code="cron_paused")
         if job.get("mode", "local") != "local":
-            raise ServiceError("managed cron requires an Enterprise command", status=403, code="managed_cron")
+            raise ServiceError("only local cron jobs are supported", status=403, code="local_only")
         result = await self.agents.chat(job["agent_id"], {"message": job["prompt"]})
         now = utc_now()
         job["last_run_at"] = iso(now)

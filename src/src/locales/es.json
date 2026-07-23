@@ -31,7 +31,7 @@
     "signOut": "Cerrar sesión",
     "signingIn": "Iniciando sesión…",
     "error": "No se pudo iniciar sesión. Comprueba tus credenciales e inténtalo de nuevo.",
-    "mockNote": "Firebase no está configurado — usando inicio de sesión de demostración local. Cualquier usuario/contraseña funciona."
+    "mockNote": "Esta instalación local no requiere iniciar sesión en la aplicación."
   },
   "common": {
     "cancel": "Cancelar",

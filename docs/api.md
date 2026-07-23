@@ -7,8 +7,7 @@ schema at `/openapi.json`. Hermes CLI native routes remain available under
 - `/agent-gateway/v1/agents`, `/profiles`, config, skills, memory, workspaces,
   MCP, providers, and cron
 - `/conversations/v1/conversations` for history and structured SSE runs
-- `/api/v1/teams`, `/bundles`, `/device`, `/notifications`, limits, deployment,
-  dashboard, and observability
+- `/api/v1/teams`, `/bundles`, `/notifications`, limits, and deployment
 - `/sandboxes/v1/me/sandboxes` for local runtime information/setup
 
 JSON responses use `{success,data,message,status_code}`. SSE sends structured
@@ -32,5 +31,5 @@ curl -fsS -X POST http://localhost/api/v1/bundles/apply \
   -F file=@profiles.zip
 ```
 
-Local endpoints do not require an Enterprise login. Enterprise proxy routes
-return `503 enterprise_unavailable` when `ENTERPRISE_API_URL` is absent.
+All application endpoints are local; the project does not expose Enterprise
+proxy, device-pairing, dashboard, or observability routes.

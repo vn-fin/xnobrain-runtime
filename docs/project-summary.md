@@ -1,7 +1,6 @@
 # Brain4All project summary
 
-Brain4All is a self-hosted and managed workspace for Hermes agents. The
-Community product consists of a React UI and one runtime/backend image that
+Brain4All is a self-hosted workspace for Hermes agents. It consists of a React UI and one runtime/backend image that
 contains FastAPI, the original Hermes CLI/core, and 9router. Each agent uses an
 isolated atomic file-backed profile. No Go API or PostgreSQL service is present.
 
@@ -20,14 +19,13 @@ runtime image.
 
 ## Feature boundary
 
-Community provides unlimited local agents, profiles, prompts/config, skills,
+Brain4All provides unlimited local agents, profiles, prompts/config, skills,
 memory, MCP, conversations and SSE runs, approvals, cron, providers, teams,
-workspace files, immutable snapshots, and portable bundles. The optional
-Enterprise API owns authentication, billing/plans, managed resources, retained
-observability, and Incus deployment packaging.
+workspace files, immutable snapshots, and portable bundles. It has no managed
+control plane or Enterprise API integration.
 
-`ENTERPRISE_API_URL` is the only application integration required for optional
-Enterprise behavior. Local capabilities continue when it is unset or offline.
+OpenTelemetry is optional and local-only. The Compose collector profile is off
+by default and writes metadata-only span summaries to its container logs.
 
 ## Privacy and persistence
 

@@ -31,7 +31,7 @@
     "signOut": "退出登录",
     "signingIn": "正在登录…",
     "error": "无法登录。请检查凭据后重试。",
-    "mockNote": "未配置 Firebase — 使用本地演示登录。任意用户名/密码均可。"
+    "mockNote": "此本地安装不需要应用登录。"
   },
   "common": {
     "cancel": "取消",

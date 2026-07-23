@@ -43,7 +43,7 @@ class CronCreate(BaseModel):
     interval_minutes: int | None = Field(default=None, gt=0)
     schedule: str | None = None
     timezone: str = "Etc/UTC"
-    mode: Literal["local", "managed"] = "local"
+    mode: Literal["local"] = "local"
 
 
 class SkillInstall(BaseModel):

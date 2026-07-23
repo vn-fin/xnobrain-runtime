@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 from zipfile import ZipFile
 
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient, Response as HTTPXResponse
+from httpx import ASGITransport, AsyncClient
 import yaml
 
 from brain4all.app import Brain4AllApplication
@@ -66,25 +66,19 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         deployment = deployment_response.json()["data"]
         self.assertFalse(deployment["database"])
 
-    async def test_enterprise_plan_and_skill_routes_forward_the_login_token(self):
-        self.composition.handlers.enterprise_url = "http://localhost:3100"
-        upstream = AsyncMock(return_value=HTTPXResponse(
-            200,
-            json={"success": True, "data": {"skills": [], "stats": {"totalSkills": 0, "totalAuthors": 0, "totalInstalls": 0}}},
-            headers={"Content-Type": "application/json"},
-        ))
-        with patch("brain4all.handlers.api.httpx.AsyncClient.request", new=upstream):
+    async def test_local_only_deployment_has_no_enterprise_proxy_routes(self):
+        with patch.dict(os.environ, {"ENTERPRISE_API_URL": "https://control.example.test"}):
             async with self.client() as client:
-                skills = await client.get("/api/v1/skills", headers={"Authorization": "Bearer login-token"})
-                search = await client.get("/api/v1/skills/search?q=pdf", headers={"Authorization": "Bearer login-token"})
-                install = await client.post("/api/v1/skills/community-pdf/install", headers={"Authorization": "Bearer login-token"})
-                plan = await client.get("/api/v1/enterprise/features", headers={"Authorization": "Bearer login-token"})
+                deployment = await client.get("/api/v1/system/deployment")
+                dashboard = await client.get("/api/v1/dashboard/overview")
+                skills = await client.get("/api/v1/skills")
+                device = await client.get("/api/v1/device")
 
-        self.assertEqual([skills.status_code, search.status_code, install.status_code, plan.status_code], [200, 200, 200, 200])
-        self.assertEqual(upstream.await_count, 4)
-        for call in upstream.await_args_list:
-            forwarded_headers = {key.lower(): value for key, value in call.kwargs["headers"].items()}
-            self.assertEqual(forwarded_headers["authorization"], "Bearer login-token")
+        self.assertEqual(deployment.status_code, 200, deployment.text)
+        self.assertEqual(deployment.json()["data"], {
+            "mode": "local", "runtime": "hermes-fastapi", "runtime_transport": "in-process", "database": False,
+        })
+        self.assertEqual([dashboard.status_code, skills.status_code, device.status_code], [404, 404, 404])
 
     async def test_sandbox_detail_reports_only_important_runtime_usage(self):
         async with self.client() as client:
@@ -473,14 +467,11 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("never-export-this", imported_env)
         self.assertEqual(json.loads((imported / "auth.json").read_text())["session"], "default-auth")
 
-    async def test_missing_run_control_and_local_device_have_stable_responses(self):
+    async def test_missing_run_control_has_a_stable_response(self):
         async with self.client() as client:
             stopped = await client.post("/conversations/v1/conversations/c/runs/run_00000000000000000000000000000000/stop?agent=a")
-            device = await client.get("/api/v1/device")
         self.assertEqual(stopped.status_code, 404)
         self.assertEqual(stopped.json()["error"]["code"], "run_not_found")
-        self.assertEqual(device.status_code, 200)
-        self.assertFalse(device.json()["data"]["enabled"])
 
 
 if __name__ == "__main__":

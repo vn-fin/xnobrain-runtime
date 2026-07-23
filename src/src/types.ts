@@ -3,8 +3,7 @@
 // swapped from mock data to real fetch calls without touching components.
 
 export type RightView = 'workspace' | 'skills' | 'cron' | 'runtime';
-export type CenterView = 'chat' | 'dashboard' | 'sandbox' | 'connections' | 'skills' | 'teams' | 'data';
-export type SkillsTab = 'installed' | 'community';
+export type CenterView = 'chat' | 'sandbox' | 'connections' | 'skills' | 'teams' | 'data';
 
 export type ConnectionMode = 'device-code' | 'cli' | 'api-key';
 export type ProviderBrand = 'openai' | 'claude' | 'anthropic' | 'gemini' | 'openrouter';
@@ -104,47 +103,6 @@ export type AgentSkill = {
   path: string;
   /** Installed version, when the backend reports one (SKILL.md frontmatter). */
   version?: string;
-};
-
-// Community skills (placeholder shape until the community catalog API lands).
-// `source` is what gets passed to the install endpoint on click. The fields
-// below `installs` are optional marketplace metadata: the card renders
-// whatever is present, so the real catalog can populate them incrementally.
-export type CommunitySkill = {
-  skill_id: string;
-  name: string;
-  category: string;
-  description: string;
-  source: string;
-  author: string;
-  installs: number;
-  /** Semantic version of the published skill, e.g. "1.4.0". */
-  version?: string;
-  /** ISO timestamp of the last publish/update. */
-  updatedAt?: string;
-  /** Average community rating, 0–5. */
-  rating?: number;
-  /** Number of ratings behind `rating`. */
-  ratingCount?: number;
-  /** Short discovery tags shown on the card. */
-  tags?: string[];
-  /** Whether the catalog flags this entry as verified/official. */
-  verified?: boolean;
-  /** Optional external page for the skill. */
-  homepage?: string;
-};
-
-// Aggregate figures for the community catalog header strip.
-export type CommunityStats = {
-  totalSkills: number;
-  totalAuthors: number;
-  totalInstalls: number;
-};
-
-// Full response shape returned by the community catalog seam.
-export type CommunityCatalog = {
-  skills: CommunitySkill[];
-  stats: CommunityStats;
 };
 
 // Conversations (conversations service)

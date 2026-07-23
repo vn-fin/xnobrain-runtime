@@ -59,9 +59,8 @@ services:
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: 8642
       DATA_DIR: /opt/data/brain4all
-      START_MODE: ${START_MODE:-local}
-      ENTERPRISE_API_URL: ${ENTERPRISE_API_URL:-}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
     volumes:
       - brain4all_data:/opt/data
     extra_hosts:
@@ -84,18 +83,11 @@ services:
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.136.0
-    profiles: ["authenticated"]
+    profiles: ["otel"]
     user: "0:0"
     command: ["--config=/etc/otelcol/config.yaml"]
-    environment:
-      TELEMETRY_RESOURCE_TOKEN: ${TELEMETRY_RESOURCE_TOKEN:-}
-      ENTERPRISE_API_URL: ${ENTERPRISE_API_URL:-}
     volumes:
       - ./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro
-      - otel_collector_data:/var/lib/otelcol
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks:
       - control
     restart: unless-stopped
@@ -108,4 +100,3 @@ networks:
 volumes:
   brain4all_data:
     name: brain4all_brain4all_data
-  otel_collector_data:

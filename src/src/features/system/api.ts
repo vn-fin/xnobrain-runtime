@@ -1,22 +1,8 @@
 import { request, requestMultipart, requestRaw } from '../../api/client';
 
-export type DeviceStatus = {
-  enabled: boolean;
-  connected: boolean;
-  device_id?: string;
-  endpoint?: string;
-  last_connected_at?: string;
-  last_error_code?: string;
-  queued_commands: number;
-  recovery_code?: string;
-  claimed: boolean;
-};
-
 export type DeploymentStatus = {
-  mode: 'local' | 'cloud';
-  gateway_configured: boolean;
+  mode: 'local';
   runtime_transport: string;
-  managed_cloud: boolean;
 };
 
 export type BundleInspection = {
@@ -80,9 +66,6 @@ async function sha256(value: ArrayBuffer): Promise<string> {
 
 export const systemApi = {
   deployment: () => request<DeploymentStatus>('/api/v1/system/deployment'),
-  device: () => request<DeviceStatus>('/api/v1/device'),
-  pair: () => request<{ pairing: boolean }>('/api/v1/device/pair', { method: 'POST' }),
-  unpair: () => request<{ unpaired: boolean }>('/api/v1/device/unpair', { method: 'POST' }),
   inspect: (file: File) => requestMultipart<BundleInspection>('/api/v1/bundles/inspect', bundleForm(file)),
   dryRun: (file: File) => requestMultipart<BundleDryRun>('/api/v1/bundles/dry-run', bundleForm(file)),
   apply: (file: File) => requestMultipart<ImportReport>('/api/v1/bundles/apply', bundleForm(file)),

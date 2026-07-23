@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Cloud, Download, FileArchive, Network, RefreshCw, Server, ShieldCheck, Upload, X } from 'lucide-react';
+import { Download, FileArchive, Network, Server, ShieldCheck, Upload, X } from 'lucide-react';
 import type { Agent } from '../../types';
-import { systemApi, type BundleDryRun, type BundleTransfer, type DeploymentStatus, type DeviceStatus, type ImportReport, type TransferProgress } from './api';
+import { systemApi, type BundleDryRun, type BundleTransfer, type DeploymentStatus, type ImportReport, type TransferProgress } from './api';
 
 export function SystemView({ agents, onImported, onClose }: { agents: Agent[]; onImported: () => Promise<void>; onClose: () => void }) {
   const [selected, setSelected] = useState(() => new Set(agents.map((agent) => agent.id)));
-  const [device, setDevice] = useState<DeviceStatus>();
   const [deployment, setDeployment] = useState<DeploymentStatus>();
   const [file, setFile] = useState<File>();
   const [preview, setPreview] = useState<BundleDryRun>();
@@ -15,11 +14,7 @@ export function SystemView({ agents, onImported, onClose }: { agents: Agent[]; o
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
-  const refreshDevice = async () => {
-    try { setDevice(await systemApi.device()); } catch (value) { setError(value instanceof Error ? value.message : 'Could not load device status.'); }
-  };
   useEffect(() => {
-    void refreshDevice();
     void systemApi.deployment().then(setDeployment).catch((value) => setError(value instanceof Error ? value.message : 'Could not load deployment mode.'));
   }, []);
 
@@ -55,16 +50,16 @@ export function SystemView({ agents, onImported, onClose }: { agents: Agent[]; o
   return (
     <div className="system-view">
       <header className="conn-topbar">
-        <div><h1>Settings</h1><p>Deployment, portable data, cloud connection, and advanced integrations.</p></div>
+        <div><h1>Settings</h1><p>Local deployment, portable data, and advanced integrations.</p></div>
         <button className="icon-button" onClick={onClose} title="Close"><X size={17} /></button>
       </header>
       <div className="system-scroll">
         {error && <div className="system-error">{error}</div>}
         <section className="system-card">
-          <div className="system-card-title"><Server size={18} /><div><strong>Deployment</strong><small>Local is the default and works without a login or internet connection.</small></div></div>
+          <div className="system-card-title"><Server size={18} /><div><strong>Deployment</strong><small>This installation runs locally and does not contact a managed service.</small></div></div>
           <div className="system-deployment">
-            <span className={deployment?.mode === 'cloud' ? 'conn-badge' : 'conn-badge ok'}>{deployment?.mode === 'cloud' ? 'Cloud' : 'Local'}</span>
-            <div><strong>{deployment?.gateway_configured ? 'Enterprise gateway connected' : 'Free fallback limits active'}</strong><small>{deployment?.runtime_transport || 'Checking runtime…'}</small></div>
+            <span className="conn-badge ok">Local</span>
+            <div><strong>Local runtime</strong><small>{deployment?.runtime_transport || 'Checking runtime…'}</small></div>
           </div>
         </section>
         <section className="system-card">
@@ -79,12 +74,6 @@ export function SystemView({ agents, onImported, onClose }: { agents: Agent[]; o
           </div>
           {preview && <div className="system-preview"><ShieldCheck size={17} /><div><strong>{preview.inspection.manifest.agents.length} profile(s), {preview.inspection.files} files</strong><span>{preview.collisions.length} ID collision(s) · {preview.paused_cron_jobs} cron(s) paused · {preview.quarantined_code.length} code file(s) quarantined</span></div><button className="conn-btn primary" disabled={!!busy} onClick={() => void applyImport()}>{busy === 'apply' ? 'Applying…' : 'Apply import'}</button></div>}
           {report && <div className="system-success">Imported {Object.keys(report.agent_id_mappings).length} profile(s). Review providers, approvals, quarantined code, and paused crons before use.</div>}
-        </section>
-        <section className="system-card">
-          <div className="system-card-title"><Cloud size={18} /><div><strong>Cloud connection</strong><small>Outbound HTTPS only. Local agents continue to work while offline.</small></div><button className="icon-button" onClick={() => void refreshDevice()}><RefreshCw size={15} /></button></div>
-          <div className="system-device"><span className={device?.connected ? 'conn-badge ok' : 'conn-badge'}>{device?.connected ? 'Connected' : device?.enabled ? 'Connecting / offline' : 'Disabled'}</span><span>{device?.endpoint || 'No cloud endpoint configured'}</span>{device?.last_error_code && <code>{device.last_error_code}</code>}</div>
-          {device?.recovery_code && <div className="system-recovery"><strong>Recovery code</strong><code>{device.recovery_code}</code><span>Store this safely. It is not a login credential.</span></div>}
-          <button className={device?.enabled ? 'conn-btn danger' : 'conn-btn primary'} disabled={!device || !!busy} onClick={() => void run('device', async () => { if (device?.enabled) await systemApi.unpair(); else await systemApi.pair(); await refreshDevice(); })}>{device?.enabled ? 'Unpair' : 'Pair device'}</button>
         </section>
         <section className="system-card system-advanced-card">
           <div className="system-card-title"><Network size={18} /><div><strong>MCP servers</strong><small>Advanced integration setup. Skills stay the recommended way to add reusable agent behavior.</small></div></div>

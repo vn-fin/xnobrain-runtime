@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Agent, CenterView, RightView, SkillsTab } from '../types';
+import type { Agent, CenterView, RightView } from '../types';
 
 export type RouteState = {
   centerView: CenterView;
@@ -9,7 +9,6 @@ export type RouteState = {
   agentSearch: string;
   skillsSearch: string;
   skillsGroupFilter: string;
-  skillsTab: SkillsTab;
 };
 
 export function parseRoute(pathname: string, search: string): RouteState {
@@ -20,8 +19,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
   let conversationId = '';
   let rightView: RightView = 'workspace';
 
-  if (seg[0] === 'dashboard') centerView = 'dashboard';
-  else if (seg[0] === 'sandbox') centerView = 'sandbox';
+  if (seg[0] === 'sandbox') centerView = 'sandbox';
   else if (seg[0] === 'connections') centerView = 'connections';
   else if (seg[0] === 'skills') centerView = 'skills';
   else if (seg[0] === 'teams') centerView = 'teams';
@@ -41,7 +39,6 @@ export function parseRoute(pathname: string, search: string): RouteState {
     agentSearch: sp.get('agentq') ?? '',
     skillsSearch: sp.get('q') ?? '',
     skillsGroupFilter: sp.get('group') ?? 'all',
-    skillsTab: sp.get('tab') === 'community' ? 'community' : 'installed',
   };
 }
 
@@ -54,13 +51,11 @@ export function reconcileSelection(agentId: string, conversationId: string, agen
 
 export function computeUrl(state: RouteState): string {
   const params = new URLSearchParams();
-  if (state.centerView === 'dashboard') return '/dashboard';
   if (state.centerView === 'sandbox') return '/sandbox';
   if (state.centerView === 'connections') return '/connections';
   if (state.centerView === 'data') return '/settings';
   if (state.centerView === 'teams') return '/teams';
   if (state.centerView === 'skills') {
-    if (state.skillsTab === 'community') params.set('tab', 'community');
     if (state.skillsSearch.trim()) params.set('q', state.skillsSearch.trim());
     if (state.skillsGroupFilter !== 'all') params.set('group', state.skillsGroupFilter);
     return `/skills${params.size ? `?${params}` : ''}`;
@@ -87,18 +82,17 @@ export function useRouter() {
   const [agentSearch, setAgentSearch] = useState(bootRoute.agentSearch);
   const [skillsSearch, setSkillsSearch] = useState(bootRoute.skillsSearch);
   const [skillsGroupFilter, setSkillsGroupFilter] = useState(bootRoute.skillsGroupFilter);
-  const [skillsTab, setSkillsTab] = useState<SkillsTab>(bootRoute.skillsTab);
 
   useEffect(() => {
     const url = computeUrl({
       centerView, agentId: activeAgentId, conversationId: activeConversationId, rightView,
-      agentSearch, skillsSearch, skillsGroupFilter, skillsTab,
+      agentSearch, skillsSearch, skillsGroupFilter,
     });
     const current = window.location.pathname + window.location.search;
     if (url === current) return;
     if (url.split('?')[0] !== window.location.pathname) window.history.pushState(null, '', url);
     else window.history.replaceState(null, '', url);
-  }, [centerView, activeAgentId, activeConversationId, rightView, agentSearch, skillsSearch, skillsGroupFilter, skillsTab]);
+  }, [centerView, activeAgentId, activeConversationId, rightView, agentSearch, skillsSearch, skillsGroupFilter]);
 
   useEffect(() => {
     const onPop = () => {
@@ -110,7 +104,6 @@ export function useRouter() {
       setAgentSearch(state.agentSearch);
       setSkillsSearch(state.skillsSearch);
       setSkillsGroupFilter(state.skillsGroupFilter);
-      setSkillsTab(state.skillsTab);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -128,16 +121,16 @@ export function useRouter() {
     setActiveConversationId(next.conversationId);
     const currentState: RouteState = {
       centerView, agentId: next.agentId, conversationId: next.conversationId, rightView,
-      agentSearch, skillsSearch, skillsGroupFilter, skillsTab,
+      agentSearch, skillsSearch, skillsGroupFilter,
     };
     window.history.replaceState(null, '', computeUrl(currentState));
-  }, [activeAgentId, activeConversationId, centerView, rightView, agentSearch, skillsSearch, skillsGroupFilter, skillsTab]);
+  }, [activeAgentId, activeConversationId, centerView, rightView, agentSearch, skillsSearch, skillsGroupFilter]);
 
   return {
     centerView, setCenterView, rightView, setRightView,
     activeAgentId, setActiveAgentId, activeConversationId, setActiveConversationId,
     agentSearch, setAgentSearch, skillsSearch, setSkillsSearch,
-    skillsGroupFilter, setSkillsGroupFilter, skillsTab, setSkillsTab,
+    skillsGroupFilter, setSkillsGroupFilter,
     openChat, reconcileAgents,
   };
 }

@@ -1,93 +1,24 @@
-# OSS local collector: forwards only authenticated Studio telemetry and
-# explicitly tenant-bound runtime metrics to the Enterprise API.
-extensions:
-  health_check:
-    endpoint: 0.0.0.0:13133
-  file_storage:
-    directory: /var/lib/otelcol
-    create_directory: true
-  headers_setter:
-    headers:
-      - action: upsert
-        key: Authorization
-        from_context: authorization
-
+# Local-only collector. It receives metadata-only OTLP spans from the runtime
+# and writes summaries to its container logs; it has no outbound exporters.
 receivers:
   otlp:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
-        include_metadata: true
       http:
         endpoint: 0.0.0.0:4318
-        include_metadata: true
-  docker_stats:
-    endpoint: unix:///var/run/docker.sock
-    collection_interval: 15s
-    timeout: 5s
-    excluded_images:
-      - "!/^brain4all-hermes-runtime(:.*)?$/"
-    metrics:
-      container.cpu.utilization:
-        enabled: true
 
 processors:
-  memory_limiter:
-    check_interval: 1s
-    limit_mib: 192
-    spike_limit_mib: 48
   batch:
-    timeout: 2s
-    send_batch_size: 256
-    send_batch_max_size: 1000
+    timeout: 5s
 
 exporters:
-  otlphttp/local_gateway:
-    endpoint: ${env:ENTERPRISE_API_URL}
-    compression: gzip
-    auth:
-      authenticator: headers_setter
-    sending_queue:
-      enabled: true
-      num_consumers: 2
-      queue_size: 2048
-      storage: file_storage
-    retry_on_failure:
-      enabled: true
-      initial_interval: 1s
-      max_interval: 30s
-      max_elapsed_time: 0s
-  otlphttp/resource_gateway:
-    endpoint: ${env:ENTERPRISE_API_URL}
-    compression: gzip
-    headers:
-      Authorization: "Bearer ${env:TELEMETRY_RESOURCE_TOKEN}"
-    sending_queue:
-      enabled: true
-      num_consumers: 2
-      queue_size: 2048
-      storage: file_storage
-    retry_on_failure:
-      enabled: true
-      initial_interval: 1s
-      max_interval: 30s
-      max_elapsed_time: 0s
+  debug:
+    verbosity: basic
 
 service:
-  extensions: [health_check, file_storage, headers_setter]
-  telemetry:
-    logs:
-      level: info
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [otlphttp/local_gateway]
-    logs:
-      receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [otlphttp/local_gateway]
-    metrics:
-      receivers: [docker_stats]
-      processors: [memory_limiter, batch]
-      exporters: [otlphttp/resource_gateway]
+      processors: [batch]
+      exporters: [debug]

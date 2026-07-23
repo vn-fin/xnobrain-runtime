@@ -10,7 +10,6 @@ Redis, or per-profile API server.
 browser -> Traefik -> React UI
                    -> FastAPI + original Hermes core -> profile files
                                                     -> 9router -> LLMs
-                   -> Enterprise API (optional, ENTERPRISE_API_URL)
 ```
 
 ## Start
@@ -49,12 +48,24 @@ files use temp-file, fsync, and rename. Provider credentials remain owned by
 Hermes/9router and are excluded from portable `.zip` profile archives.
 
 Self-hosted agents, profiles, skills, memory, MCP, providers, teams, and local
-cron are unlimited. `ENTERPRISE_API_URL` enables optional authenticated
-features without becoming a dependency of local Hermes operation.
+cron are unlimited. The application has no managed control plane, login, or
+Enterprise API integration.
+
+## Optional local telemetry
+
+Telemetry is off by default. To run the local-only OpenTelemetry collector,
+which writes metadata-only span summaries to its own container logs, run:
+
+```bash
+OTEL_ENABLED=true docker compose --profile otel up -d
+```
+
+The runtime only accepts the Compose collector or a loopback OTLP endpoint; it
+will not export telemetry to a remote host.
 
 See [architecture](docs/architecture.md), [development](docs/development.md),
 [deployment](docs/deployment.md), and [API guide](docs/api.md).
 
 ## License
 
-Add the project license before public distribution.
+Choose and add a license before public distribution.

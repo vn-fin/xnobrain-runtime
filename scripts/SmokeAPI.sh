@@ -27,13 +27,8 @@ request() {
 
 request GET /api/v1/health >/dev/null
 request GET /api/v1/limits >/dev/null
-deployment="$(request GET /api/v1/system/deployment)"
-if jq -e '.data.enterprise_connected == true' <<<"$deployment" >/dev/null; then
-  request GET '/api/v1/dashboard/overview?window=24h' >/dev/null
-  request GET '/api/v1/dashboard/dependencies?window=24h' >/dev/null
-fi
+request GET /api/v1/system/deployment >/dev/null
 notifications="$(request GET /api/v1/notifications)"
-request GET /api/v1/device >/dev/null
 teams="$(request GET /api/v1/teams/)"
 request GET /agent-gateway/v1/ping >/dev/null
 agents="$(request GET /agent-gateway/v1/agents)"

@@ -11,7 +11,6 @@ Traefik -> React
              -> services -> repositories -> profile/config files
              -> integrations -> Hermes CLI/core
              -> integrations -> 9router
-             -> optional Enterprise API
 ```
 
 Brain4All route assembly is centralized in `brain4all/routes/setup.py`.
@@ -22,7 +21,7 @@ Pydantic models are bound to routes and generate `/docs` and `/openapi.json`.
 Hermes remains authoritative for its native sessions, cron, MCP, config,
 skills, tools, provider, webhook, and gateway APIs. Brain4All adds stable UI
 compatibility APIs for agent lifecycle, per-profile files, snapshots, teams,
-portable bundles, streaming runs, and optional Enterprise features.
+portable bundles, and streaming runs.
 
 ## Profiles and persistence
 
@@ -37,14 +36,14 @@ cron, log, MCP, and snapshot data. Portable bundles exclude `.env`,
 credentials, logs, caches, and provider secrets; imported approvals reset to
 manual and imported cron jobs are paused.
 
-## Runtime and Enterprise boundary
+## Local runtime boundary
 
 Chat selects a profile and invokes the original Hermes CLI/core from the one
 FastAPI process. Streaming emits structured `run.started`, `message.delta`,
 terminal run events, and supports process interruption. Hermes' approval core
 remains the resolver for pending approvals.
 
-`ENTERPRISE_API_URL` is the only deployment-time Enterprise application
-dependency. It enables dashboard, observability, and device functionality.
-When absent or unavailable, all local OSS capabilities remain unrestricted.
-Telemetry exports metadata-only spans when an OTLP endpoint is configured.
+There is no managed control-plane dependency, login, or API proxy. The optional
+OpenTelemetry collector is local-only and disabled by default. When
+`OTEL_ENABLED=true`, the runtime exports metadata-only spans only to the
+Compose collector or a loopback endpoint.

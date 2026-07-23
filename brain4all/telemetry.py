@@ -4,10 +4,29 @@ from __future__ import annotations
 
 import logging
 import os
+from urllib.parse import urlparse
+
+
+def telemetry_enabled() -> bool:
+    """Return whether the explicitly opt-in local OTLP pipeline is enabled."""
+    return str(os.getenv("OTEL_ENABLED", "false")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def local_collector_endpoint() -> str | None:
+    """Accept only the Compose collector or loopback collector endpoints."""
+    endpoint = str(os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or "").strip()
+    parsed = urlparse(endpoint if "://" in endpoint else f"//{endpoint}")
+    if parsed.hostname in {"otel-collector", "localhost", "127.0.0.1", "::1"}:
+        return endpoint
+    if endpoint:
+        logging.getLogger("brain4all.telemetry").warning("Ignoring non-local OTLP endpoint")
+    return None
 
 
 def configure(app) -> None:
-    """Instrument metadata only; prompts, responses, files, and credentials stay out."""
+    """Instrument metadata only when the local collector is explicitly enabled."""
+    if not telemetry_enabled():
+        return
     try:
         from opentelemetry import trace
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -20,14 +39,14 @@ def configure(app) -> None:
         logging.getLogger("brain4all.telemetry").warning("OpenTelemetry packages are unavailable")
         return
 
-    endpoint = str(os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or "").strip()
+    endpoint = local_collector_endpoint()
     provider = TracerProvider(resource=Resource.create({
         "service.name": "brain4all",
         "service.version": os.getenv("BRAIN4ALL_VERSION", "dev"),
-        "deployment.environment": os.getenv("START_MODE", "local"),
+        "deployment.environment": "local",
     }))
     if endpoint:
-        exporter = OTLPSpanExporter(endpoint=endpoint, insecure=endpoint.startswith("http://"))
+        exporter = OTLPSpanExporter(endpoint=endpoint, insecure=endpoint.startswith(("http://", "otel-collector", "localhost", "127.0.0.1")))
         provider.add_span_processor(BatchSpanProcessor(exporter, max_queue_size=2048, max_export_batch_size=256))
     trace.set_tracer_provider(provider)
     FastAPIInstrumentor.instrument_app(

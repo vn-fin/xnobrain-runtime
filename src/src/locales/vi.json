@@ -31,7 +31,7 @@
     "signOut": "Đăng xuất",
     "signingIn": "Đang đăng nhập…",
     "error": "Không thể đăng nhập. Vui lòng kiểm tra thông tin và thử lại.",
-    "mockNote": "Chưa cấu hình Firebase — đang dùng đăng nhập demo cục bộ. Mọi tên đăng nhập/mật khẩu đều được chấp nhận."
+    "mockNote": "Bản cài đặt cục bộ này không yêu cầu đăng nhập ứng dụng."
   },
   "common": {
     "cancel": "Hủy",
