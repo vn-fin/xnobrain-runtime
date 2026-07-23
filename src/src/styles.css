@@ -6522,11 +6522,34 @@ body.col-resizing {
   gap: 10px;
 }
 
-.kb-heading-line > div {
+.kb-board-picker-wrap {
   min-width: 0;
   display: flex;
   align-items: baseline;
   gap: 9px;
+}
+
+.kb-board-picker-wrap label {
+  min-width: 0;
+}
+
+.kb-board-picker {
+  max-width: 240px;
+  height: 30px;
+  padding: 0 28px 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--text);
+  background: transparent;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.kb-board-picker:hover,
+.kb-board-picker:focus {
+  border-color: var(--border-2);
+  background: var(--elevated);
 }
 
 .kb-heading-icon {

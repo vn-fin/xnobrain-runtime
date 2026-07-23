@@ -155,21 +155,117 @@ const SEED_BOARD: KanbanBoard = {
   ],
 };
 
+const PROVIDER_BOARD: KanbanBoard = {
+  id: 'provider-rollout',
+  name: 'Provider rollout',
+  description: 'Provider connections, contracts, and fallback checks',
+  color: '#34d399',
+  statuses: DEFAULT_STATUSES.map((status) => ({ ...status })),
+  tasks: [
+    {
+      id: 'P-201',
+      title: 'Verify provider OAuth callback',
+      description: 'Exercise the local callback flow and confirm credentials remain on this machine.',
+      status: 'in_progress',
+      priority: 'high',
+      assignees: ['api-mapper'],
+      tags: ['providers', 'oauth'],
+      deps: [{ id: 'P-198', title: 'Provider capability matrix', state: 'done' }],
+      progress: 54,
+      updated: '3m ago',
+    },
+    {
+      id: 'P-203',
+      title: 'Test provider fallback order',
+      description: 'Confirm failed requests move to the next locally configured provider.',
+      status: 'blocked',
+      priority: 'high',
+      assignees: ['test-runner'],
+      tags: ['providers', 'qa'],
+      deps: [{ id: 'P-201', title: 'Verify provider OAuth callback', state: 'blocked' }],
+      progress: 0,
+      block: 'Waiting for callback verification.',
+      updated: '12m ago',
+    },
+    {
+      id: 'P-198',
+      title: 'Document provider capability matrix',
+      description: 'Record supported models, connection modes, and local runtime behavior.',
+      status: 'done',
+      priority: 'medium',
+      assignees: ['research-agent'],
+      tags: ['providers', 'docs'],
+      deps: [],
+      progress: 100,
+      summary: 'Capability matrix is ready for review.',
+      updated: '48m ago',
+    },
+  ],
+};
+
+const RELEASE_BOARD: KanbanBoard = {
+  id: 'release-readiness',
+  name: 'Release readiness',
+  description: 'Final verification and documentation for the local release',
+  color: '#c084fc',
+  statuses: DEFAULT_STATUSES.map((status) => ({ ...status })),
+  tasks: [
+    {
+      id: 'R-311',
+      title: 'Run cross-platform regression suite',
+      description: 'Verify Linux, macOS, and Windows installation paths before release.',
+      status: 'in_progress',
+      priority: 'high',
+      assignees: ['test-runner'],
+      tags: ['release', 'qa'],
+      deps: [],
+      progress: 71,
+      updated: '6m ago',
+    },
+    {
+      id: 'R-313',
+      title: 'Review remaining release blockers',
+      description: 'Triage open issues and assign an owner to every blocking item.',
+      status: 'todo',
+      priority: 'high',
+      assignees: ['ui-builder', 'sandbox-ops'],
+      tags: ['release', 'review'],
+      deps: [{ id: 'R-311', title: 'Cross-platform regression suite', state: 'pending' }],
+      progress: 0,
+      updated: '22m ago',
+    },
+    {
+      id: 'R-309',
+      title: 'Publish local deployment guide',
+      description: 'Finalize the installation and upgrade instructions for local users.',
+      status: 'done',
+      priority: 'medium',
+      assignees: ['research-agent'],
+      tags: ['release', 'docs'],
+      deps: [],
+      progress: 100,
+      summary: 'Local deployment guide is ready.',
+      updated: '1h ago',
+    },
+  ],
+};
+
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
-// A single mutable in-memory board. Refreshing the page resets it.
-let board: KanbanBoard = clone(SEED_BOARD);
+// Mutable in-memory boards. Refreshing the page resets their task changes.
+let boards: KanbanBoard[] = clone([SEED_BOARD, PROVIDER_BOARD, RELEASE_BOARD]);
 let nextId = 1100;
 
 const delay = <T,>(value: T, ms = 120): Promise<T> =>
   new Promise((resolve) => setTimeout(() => resolve(clone(value)), ms));
 
 export const kanbanApi = {
-  /** Load the board with its statuses and tasks. */
-  getBoard: (): Promise<KanbanBoard> => delay(board),
+  /** Load every local board so the UI can switch without another request. */
+  getBoards: (): Promise<KanbanBoard[]> => delay(boards),
 
   /** Create a task in a given status. */
-  createTask: (input: NewKanbanTaskInput): Promise<KanbanTask> => {
+  createTask: (boardId: string, input: NewKanbanTaskInput): Promise<KanbanTask> => {
+    const board = boards.find((item) => item.id === boardId) ?? boards[0];
     const task: KanbanTask = {
       id: `T-${nextId++}`,
       title: input.title,
@@ -189,7 +285,8 @@ export const kanbanApi = {
   },
 
   /** Move a task to a different fine-grained status. */
-  moveTask: (taskId: string, status: string): Promise<KanbanTask | null> => {
+  moveTask: (boardId: string, taskId: string, status: string): Promise<KanbanTask | null> => {
+    const board = boards.find((item) => item.id === boardId) ?? boards[0];
     const task = board.tasks.find((item) => item.id === taskId);
     if (!task) return delay(null);
     task.status = status;
@@ -201,7 +298,8 @@ export const kanbanApi = {
   },
 
   /** Register a new custom status (adds a column-group in the table view). */
-  addStatus: (label: string, column: KanbanStatusDef['column']): Promise<KanbanStatusDef> => {
+  addStatus: (boardId: string, label: string, column: KanbanStatusDef['column']): Promise<KanbanStatusDef> => {
+    const board = boards.find((item) => item.id === boardId) ?? boards[0];
     const id = label
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')

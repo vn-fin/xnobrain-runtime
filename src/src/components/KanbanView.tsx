@@ -447,9 +447,28 @@ export function KanbanView({
       <header className="kb-header">
         <div className="kb-title-group">
           <div className="kb-heading-line">
-            <span className="kb-heading-icon"><Columns3 size={18} /></span>
-            <div>
-              <h1>{board?.name ?? 'Task board'}</h1>
+            <span className="kb-heading-icon" style={board ? { color: board.color } : undefined}>
+              <Columns3 size={18} />
+            </span>
+            <div className="kb-board-picker-wrap">
+              <label>
+                <span className="sr-only">Select task board</span>
+                <select
+                  className="kb-board-picker"
+                  value={state.activeBoardId}
+                  onChange={(event) => {
+                    state.setActiveBoardId(event.target.value);
+                    setAgentFilter('all');
+                    setPriorityFilter('all');
+                    setColumnFilter('all');
+                    setOpenTaskId(null);
+                  }}
+                >
+                  {state.boards.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name} · {item.tasks.length} tasks</option>
+                  ))}
+                </select>
+              </label>
               <span className="kb-board-id">board/{board?.id ?? 'default'}</span>
             </div>
           </div>

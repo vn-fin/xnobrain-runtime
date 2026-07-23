@@ -17,7 +17,10 @@ const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
  * creating tasks, and adding custom statuses.
  */
 export function useKanban() {
-  const [board, setBoard] = useState<KanbanBoard | null>(null);
+  const [boards, setBoards] = useState<KanbanBoard[]>([]);
+  const [activeBoardId, setActiveBoardIdState] = useState(
+    () => window.localStorage.getItem('brain4all-kanban-board') ?? '',
+  );
   const [status, setStatus] = useState<AsyncStatus>('loading');
   const [error, setError] = useState('');
   const [view, setView] = useState<KanbanViewMode>('board');
@@ -26,7 +29,11 @@ export function useKanban() {
   const refresh = useCallback(async () => {
     setStatus('loading');
     try {
-      setBoard(await kanbanApi.getBoard());
+      const loaded = await kanbanApi.getBoards();
+      setBoards(loaded);
+      setActiveBoardIdState((current) =>
+        loaded.some((board) => board.id === current) ? current : loaded[0]?.id ?? '',
+      );
       setStatus('ready');
       setError('');
     } catch (cause) {
@@ -38,6 +45,17 @@ export function useKanban() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const board = useMemo(
+    () => boards.find((item) => item.id === activeBoardId) ?? boards[0] ?? null,
+    [activeBoardId, boards],
+  );
+
+  const setActiveBoardId = useCallback((boardId: string) => {
+    setActiveBoardIdState(boardId);
+    setSearch('');
+    window.localStorage.setItem('brain4all-kanban-board', boardId);
+  }, []);
 
   /** Resolve a task's fine-grained status to one of the three board columns. */
   const columnOf = useCallback(
@@ -53,31 +71,43 @@ export function useKanban() {
   );
 
   const moveTask = useCallback((taskId: string, nextStatus: string) => {
-    setBoard((current) => {
-      if (!current) return current;
-      const tasks = current.tasks.map((task) =>
-        task.id === taskId ? { ...task, status: nextStatus, updated: 'just now' } : task,
-      );
-      return { ...current, tasks };
-    });
-    void kanbanApi.moveTask(taskId, nextStatus);
-  }, []);
+    if (!board) return;
+    setBoards((current) =>
+      current.map((item) =>
+        item.id === board.id
+          ? {
+              ...item,
+              tasks: item.tasks.map((task) =>
+                task.id === taskId ? { ...task, status: nextStatus, updated: 'just now' } : task,
+              ),
+            }
+          : item,
+      ),
+    );
+    void kanbanApi.moveTask(board.id, taskId, nextStatus);
+  }, [board]);
 
   const createTask = useCallback(async (input: NewKanbanTaskInput) => {
-    const task = await kanbanApi.createTask(input);
-    setBoard((current) => (current ? { ...current, tasks: [task, ...current.tasks] } : current));
+    if (!board) throw new Error('No board is selected.');
+    const task = await kanbanApi.createTask(board.id, input);
+    setBoards((current) =>
+      current.map((item) => (item.id === board.id ? { ...item, tasks: [task, ...item.tasks] } : item)),
+    );
     return task;
-  }, []);
+  }, [board]);
 
   const addStatus = useCallback(async (label: string, column: KanbanStatusDef['column']) => {
-    const created = await kanbanApi.addStatus(label, column);
-    setBoard((current) =>
-      current && !current.statuses.some((entry) => entry.id === created.id)
-        ? { ...current, statuses: [...current.statuses, created] }
-        : current,
+    if (!board) throw new Error('No board is selected.');
+    const created = await kanbanApi.addStatus(board.id, label, column);
+    setBoards((current) =>
+      current.map((item) =>
+        item.id === board.id && !item.statuses.some((entry) => entry.id === created.id)
+          ? { ...item, statuses: [...item.statuses, created] }
+          : item,
+      ),
     );
     return created;
-  }, []);
+  }, [board]);
 
   // Tasks filtered by the search box, sorted by priority within their group.
   const visibleTasks = useMemo(() => {
@@ -95,7 +125,10 @@ export function useKanban() {
   }, [board, search]);
 
   return {
+    boards,
     board,
+    activeBoardId: board?.id ?? activeBoardId,
+    setActiveBoardId,
     status,
     error,
     view,
