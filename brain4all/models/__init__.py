@@ -6,6 +6,8 @@ from .api import (
     ConfigPatch, ConversationCreate, ConversationRename, CronCreate, EnabledPatch,
     GenericObject, MCPConfig, MemoryPatch, ProviderCredential, RunApproval,
     SkillInstall, TeamCreate, TeamRun, WorkspaceCreate, WorkspacePath, WorkspaceWrite,
+    KanbanAssign, KanbanBoardCreate, KanbanComment, KanbanLink, KanbanMove,
+    KanbanTaskCreate, KanbanTaskPatch,
 )
 
 __all__ = [name for name in globals() if not name.startswith("_")]

@@ -125,7 +125,7 @@ function TaskCard({
         <div className="kb-progress">
           <div className="kb-progress-label">
             <span>
-              <Clock size={12} /> In progress
+              <Clock size={12} /> In Progress
             </span>
             <span>{task.progress}%</span>
           </div>
@@ -288,7 +288,7 @@ function NewTaskModal({
       setInvalid(true);
       return;
     }
-    await state.createTask({ title: title.trim(), description: description.trim(), status, priority, assignees });
+    await state.createTask({ title: title.trim(), description: description.trim(), status: status as KanbanColumnId, priority, assignees });
     onClose();
   };
 
@@ -315,7 +315,7 @@ function NewTaskModal({
             <label className="kb-field">
               Status
               <select value={status} onChange={(event) => setStatus(event.target.value)}>
-                {board.statuses.map((entry) => (
+                {board.statuses.filter((entry) => entry.id === 'backlog' || entry.id === 'todo').map((entry) => (
                   <option key={entry.id} value={entry.id}>{entry.label}</option>
                 ))}
               </select>
@@ -378,9 +378,6 @@ export function KanbanView({
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskStatus, setNewTaskStatus] = useState<string | undefined>(undefined);
-  const [addingStatus, setAddingStatus] = useState(false);
-  const [statusLabelInput, setStatusLabelInput] = useState('');
-  const [statusColumn, setStatusColumn] = useState<KanbanColumnId>('todo');
   const [agentFilter, setAgentFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | KanbanPriority>('all');
   const [columnFilter, setColumnFilter] = useState<'all' | KanbanColumnId>('all');
@@ -411,9 +408,9 @@ export function KanbanView({
   const metrics = useMemo(() => {
     const tasks = board?.tasks ?? [];
     const running = tasks.filter((task) => columnOf(task.status) === 'in_progress');
-    const blocked = tasks.filter((task) => task.status === 'blocked' || Boolean(task.block));
+    const blocked = tasks.filter((task) => Boolean(task.block));
     const completed = tasks.filter(
-      (task) => columnOf(task.status) === 'done' && task.status !== 'blocked' && !task.block,
+      (task) => columnOf(task.status) === 'done' && !task.block,
     );
     return {
       total: tasks.length,
@@ -433,13 +430,6 @@ export function KanbanView({
     setAgentFilter('all');
     setPriorityFilter('all');
     setColumnFilter('all');
-  };
-
-  const submitStatus = async () => {
-    if (!statusLabelInput.trim()) return;
-    await state.addStatus(statusLabelInput.trim(), statusColumn);
-    setStatusLabelInput('');
-    setAddingStatus(false);
   };
 
   return (
@@ -567,7 +557,7 @@ export function KanbanView({
             <small>tasks</small>
           </div>
           <div className="kb-metric active">
-            <span>In progress</span>
+            <span>In Progress</span>
             <strong>{metrics.running}</strong>
             <small>{metrics.activeAgents} active {metrics.activeAgents === 1 ? 'agent' : 'agents'}</small>
           </div>
@@ -618,12 +608,14 @@ export function KanbanView({
                       />
                     ))
                   )}
-                  <button
-                    className="kb-column-add"
-                    onClick={() => { setNewTaskStatus(initialStatus); setNewTaskOpen(true); }}
-                  >
-                    <Plus size={14} /> Add task
-                  </button>
+                  {(column.id === 'backlog' || column.id === 'todo') && (
+                    <button
+                      className="kb-column-add"
+                      onClick={() => { setNewTaskStatus(initialStatus); setNewTaskOpen(true); }}
+                    >
+                      <Plus size={14} /> Add task
+                    </button>
+                  )}
                 </div>
               </section>
             );
@@ -637,33 +629,7 @@ export function KanbanView({
             <span>
               <strong>{filteredTasks.length}</strong> {filteredTasks.length === 1 ? 'task' : 'tasks'} · grouped by status
             </span>
-            {addingStatus ? (
-              <div className="kb-add-status">
-                <input
-                  value={statusLabelInput}
-                  autoFocus
-                  placeholder="New status name"
-                  onChange={(event) => setStatusLabelInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') void submitStatus();
-                    if (event.key === 'Escape') setAddingStatus(false);
-                  }}
-                />
-                <select value={statusColumn} onChange={(event) => setStatusColumn(event.target.value as KanbanColumnId)}>
-                  {KANBAN_COLUMNS.map((column) => (
-                    <option key={column.id} value={column.id}>{column.label}</option>
-                  ))}
-                </select>
-                <button className="conn-btn ghost" onClick={() => void submitStatus()}>Add</button>
-                <button className="icon-button" aria-label="Cancel" onClick={() => setAddingStatus(false)}>
-                  <X size={15} />
-                </button>
-              </div>
-            ) : (
-              <button className="conn-btn ghost" onClick={() => setAddingStatus(true)}>
-                <Plus size={15} /> New status
-              </button>
-            )}
+            <span className="kb-fixed-status-note">Five default statuses</span>
           </div>
           {board.statuses.map((status) => {
             const items = filteredTasks.filter((task) => task.status === status.id);
@@ -673,13 +639,13 @@ export function KanbanView({
                   <span className={`kb-status-dot col-${status.column}`} />
                   <strong>{status.label}</strong>
                   <span className="kb-count">{items.length}</span>
-                  <button
+                  {(status.id === 'backlog' || status.id === 'todo') && <button
                     className="kb-group-add"
                     aria-label={`Add task to ${status.label}`}
                     onClick={() => { setNewTaskStatus(status.id); setNewTaskOpen(true); }}
                   >
                     <Plus size={14} />
-                  </button>
+                  </button>}
                 </div>
                 {items.length > 0 && (
                   <div className="kb-rows">

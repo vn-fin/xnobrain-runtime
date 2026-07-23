@@ -4,7 +4,6 @@ import {
   ChevronDown,
   Columns3,
   History,
-  KeyRound,
   Languages,
   Monitor,
   Moon,
@@ -13,13 +12,10 @@ import {
   Pencil,
   Plus,
   Search,
-  Server,
   Settings,
   Share2,
-  Sparkles,
   Sun,
   Trash2,
-  Network,
   Download,
 } from 'lucide-react';
 import { SUPPORTED_LANGUAGES } from '../i18n';
@@ -27,11 +23,7 @@ import { useTheme } from '../theme';
 import type { Agent, CenterView, Conversation } from '../types';
 
 const navItems = [
-  { id: 'skills', label: 'skills', icon: Sparkles },
-  { id: 'sandbox', label: 'runtime', icon: Server },
   { id: 'kanban', label: 'kanban', icon: Columns3 },
-  { id: 'teams', label: 'teams', icon: Network },
-  { id: 'connections', label: 'connections', icon: KeyRound },
   { id: 'data', label: 'settings', icon: Settings },
 ] as const;
 
@@ -133,13 +125,7 @@ export function Sidebar({
       <div className="main-nav">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const active =
-            (item.id === 'sandbox' && centerView === 'sandbox') ||
-            (item.id === 'skills' && centerView === 'skills') ||
-            (item.id === 'kanban' && centerView === 'kanban') ||
-            (item.id === 'teams' && centerView === 'teams') ||
-            (item.id === 'connections' && centerView === 'connections') ||
-            (item.id === 'data' && centerView === 'data');
+          const active = item.id === centerView;
           return (
             <button
               key={item.id}

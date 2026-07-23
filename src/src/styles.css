@@ -6254,9 +6254,9 @@ body.col-resizing {
 @media (max-width: 720px) { .system-scroll { padding: 14px; } .system-import, .system-preview { align-items: stretch; flex-direction: column; } }
 
 /* =====================================================================
-   Kanban — simplified multi-agent task board
-   Three merged columns (Todo / In progress / Done) plus a status-grouped
-   table view. Assignees resolve to the app's real agents.
+   Kanban — five-state task board
+   The product keeps one predictable workflow while exposing Hermes detail
+   badges (triage, scheduled, blocked, and worker state) on each card.
    ===================================================================== */
 .kanban-view {
   height: 100%;

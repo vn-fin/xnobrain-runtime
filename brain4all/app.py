@@ -34,14 +34,18 @@ class Brain4AllApplication:
         @asynccontextmanager
         async def lifespan(application):
             async with upstream_lifespan(application):
-                scheduler = asyncio.create_task(
-                    self.service.scheduler_loop(), name="brain4all-cron"
-                )
+                dispatcher = None
+                try:
+                    from .integrations.kanban import dispatcher_loop
+                    dispatcher = asyncio.create_task(dispatcher_loop(), name="brain4all-kanban-dispatcher")
+                except Exception:
+                    dispatcher = None
                 try:
                     yield
                 finally:
-                    scheduler.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await scheduler
+                    if dispatcher is not None:
+                        dispatcher.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await dispatcher
 
         app.router.lifespan_context = lifespan

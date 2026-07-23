@@ -12,9 +12,8 @@ import type {
 const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
 /**
- * Manages the Kanban board: loads the (smoke) board, tracks the active view
- * mode / search filter, and exposes optimistic mutations for moving tasks,
- * creating tasks, and adding custom statuses.
+ * Manages the real Hermes-backed Kanban board and exposes small optimistic
+ * mutations for moving and creating tasks.
  */
 export function useKanban() {
   const [boards, setBoards] = useState<KanbanBoard[]>([]);
@@ -57,10 +56,10 @@ export function useKanban() {
     window.localStorage.setItem('brain4all-kanban-board', boardId);
   }, []);
 
-  /** Resolve a task's fine-grained status to one of the three board columns. */
+  /** Product API already returns one of the five fixed columns. */
   const columnOf = useCallback(
     (taskStatus: string): KanbanColumnId =>
-      board?.statuses.find((entry) => entry.id === taskStatus)?.column ?? 'todo',
+      (board?.statuses.find((entry) => entry.id === taskStatus)?.column ?? 'todo') as KanbanColumnId,
     [board],
   );
 
@@ -70,8 +69,9 @@ export function useKanban() {
     [board],
   );
 
-  const moveTask = useCallback((taskId: string, nextStatus: string) => {
+  const moveTask = useCallback(async (taskId: string, nextStatus: KanbanColumnId) => {
     if (!board) return;
+    const previous = boards;
     setBoards((current) =>
       current.map((item) =>
         item.id === board.id
@@ -84,8 +84,18 @@ export function useKanban() {
           : item,
       ),
     );
-    void kanbanApi.moveTask(board.id, taskId, nextStatus);
-  }, [board]);
+    try {
+      const updated = await kanbanApi.moveTask(board.id, taskId, nextStatus);
+      if (updated) {
+        setBoards((current) => current.map((item) => item.id === board.id
+          ? { ...item, tasks: item.tasks.map((task) => task.id === taskId ? updated : task) }
+          : item));
+      }
+    } catch (cause) {
+      setBoards(previous);
+      throw cause;
+    }
+  }, [board, boards]);
 
   const createTask = useCallback(async (input: NewKanbanTaskInput) => {
     if (!board) throw new Error('No board is selected.');
@@ -96,18 +106,9 @@ export function useKanban() {
     return task;
   }, [board]);
 
-  const addStatus = useCallback(async (label: string, column: KanbanStatusDef['column']) => {
-    if (!board) throw new Error('No board is selected.');
-    const created = await kanbanApi.addStatus(board.id, label, column);
-    setBoards((current) =>
-      current.map((item) =>
-        item.id === board.id && !item.statuses.some((entry) => entry.id === created.id)
-          ? { ...item, statuses: [...item.statuses, created] }
-          : item,
-      ),
-    );
-    return created;
-  }, [board]);
+  const addStatus = useCallback(async (_label: string, _column: KanbanStatusDef['column']) => {
+    throw new Error('Kanban uses the five default statuses.');
+  }, []);
 
   // Tasks filtered by the search box, sorted by priority within their group.
   const visibleTasks = useMemo(() => {

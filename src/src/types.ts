@@ -1,8 +1,7 @@
 // Shared domain types for the app. These mirror the backend API models
-// (agent-gateway, conversations, sandboxes) so the service layer can be
-// swapped from mock data to real fetch calls without touching components.
+// (agent-gateway, conversations, sandboxes, and Hermes Kanban).
 
-export type RightView = 'workspace' | 'skills' | 'cron' | 'runtime';
+export type RightView = 'workspace' | 'skills' | 'runtime';
 export type CenterView = 'chat' | 'sandbox' | 'connections' | 'skills' | 'teams' | 'data' | 'kanban';
 
 export type ConnectionMode = 'device-code' | 'cli' | 'api-key';
@@ -278,25 +277,20 @@ export type AgentSkillMap = Record<string, Record<string, boolean>>;
 // ---------------------------------------------------------------------------
 // Kanban (multi-agent task board)
 //
-// A deliberately simplified take on Hermes Kanban. The durable Hermes board
-// has many statuses (triage, ready, todo, scheduled, running, blocked, review,
-// done, archived). Here we collapse those into three board columns for an
-// easy-to-read board, while still keeping a fine-grained `status` per task so
-// the table view can group by (and add) custom statuses.
-//   • Todo        ← triage / ready / todo / scheduled
-//   • In progress ← running / in-progress
-//   • Done        ← done / reviewed / blocked
+// Hermes has execution substates (triage, ready, scheduled, running, blocked,
+// review, done, archived). The product intentionally presents five fixed
+// columns; the API returns a state-detail badge for the execution substate.
 // ---------------------------------------------------------------------------
 
-export type KanbanColumnId = 'todo' | 'in_progress' | 'done';
+export type KanbanColumnId = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
 export type KanbanPriority = 'high' | 'medium' | 'low';
 export type KanbanDepState = 'done' | 'pending' | 'blocked';
 
 export type KanbanDependency = { id: string; title: string; state: KanbanDepState };
 
-/** A fine-grained status that lives inside one of the three board columns. */
+/** The fixed product status vocabulary. */
 export type KanbanStatusDef = {
-  id: string;
+  id: KanbanColumnId;
   label: string;
   column: KanbanColumnId;
 };
@@ -305,8 +299,7 @@ export type KanbanTask = {
   id: string;
   title: string;
   description: string;
-  /** Fine-grained status id; resolves to one of the three board columns. */
-  status: string;
+  status: KanbanColumnId;
   priority: KanbanPriority;
   /** Multiple assignees, referenced by agent id. */
   assignees: string[];
@@ -337,7 +330,7 @@ export type KanbanViewMode = 'board' | 'table';
 export type NewKanbanTaskInput = {
   title: string;
   description: string;
-  status: string;
+  status: KanbanColumnId;
   priority: KanbanPriority;
   assignees: string[];
 };

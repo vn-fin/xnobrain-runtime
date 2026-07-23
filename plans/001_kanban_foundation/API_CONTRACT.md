@@ -45,7 +45,8 @@ expresses a user-facing target state and resolves to a legal domain operation.
 
 - `GET|POST /boards/{board_slug}/tasks/{task_id}/comments`
 - `GET|POST /boards/{board_slug}/tasks/{task_id}/links`
-- `DELETE /boards/{board_slug}/tasks/{task_id}/links/{link_id}`
+- `DELETE /boards/{board_slug}/tasks/{task_id}/links` (parent/child IDs in the
+  request body; Hermes exposes links as a pair rather than a link resource)
 - `GET|POST /boards/{board_slug}/tasks/{task_id}/attachments`
 - `GET|DELETE /boards/{board_slug}/tasks/{task_id}/attachments/{attachment_id}`
 - `GET /boards/{board_slug}/tasks/{task_id}/runs`

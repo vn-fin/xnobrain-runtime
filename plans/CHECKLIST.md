@@ -11,6 +11,12 @@ Legend:
 - `[x]` verified
 - `[!]` blocked, with the blocker recorded beside the item
 
+Implementation snapshot (2026-07-24): the foundation and real-data board/list
+vertical slice are verified below. The pinned Hermes runtime currently has no
+public cron execution-target hook, active-task edit operation, or unarchive
+operation; those items remain open rather than using private SQL or a second
+scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
+
 ## Plan documents
 
 - [Research and decisions](000_kanban_research/README.md)
@@ -40,43 +46,44 @@ Legend:
 
 ## 001 — Foundation
 
-- [ ] Add a thin `brain4all` integration adapter over Hermes Kanban APIs.
-- [ ] Keep Hermes SQLite as the only source of truth for Kanban state.
-- [ ] Start and stop the Hermes Kanban dispatcher from the existing FastAPI
+- [x] Add a thin `brain4all` integration adapter over Hermes Kanban APIs.
+- [x] Keep Hermes SQLite as the only source of truth for Kanban state.
+- [x] Start and stop the Hermes Kanban dispatcher from the existing FastAPI
   lifespan, with singleton and restart behavior covered by tests.
 - [ ] Add Pydantic request/response models for boards, tasks, comments, links,
   assignments, transitions, attachments, runs, and events.
-- [ ] Add the versioned Brain4All Kanban routes through
+- [x] Add the versioned Brain4All Kanban routes through
   `brain4all/routes/setup.py`.
-- [ ] Implement the fixed five-state presentation mapping:
+- [x] Implement the fixed five-state presentation mapping:
   Backlog, Todo, In Progress, Review, and Done.
-- [ ] Preserve execution substates as badges/reasons without exposing more
+- [x] Preserve execution substates as badges/reasons without exposing more
   draggable workflow columns.
-- [ ] Implement legal task creation, editing, assignment, reassignment,
+- [~] Implement legal task creation, triage editing, assignment, reassignment,
   transition, completion, blocking/unblocking, and archival operations.
-- [ ] Implement task comments, dependency links, attachments, and safe
-  attachment download.
-- [ ] Implement board/task filters, pagination, and an initial event stream.
+- [~] Implement task comments, dependency links, and safe event projection;
+  attachment upload/download routes remain open.
+- [x] Implement board/task filters, bounded pagination, and an initial event feed.
 - [ ] Return actionable compatibility/service errors without leaking prompts,
   tool arguments, output, credentials, or absolute stored paths.
-- [ ] Add temporary-`HERMES_HOME` backend tests using the real Hermes package.
-- [ ] Verify restart persistence and claim/idempotency behavior.
+- [x] Add temporary-`HERMES_HOME` backend tests using the real Hermes package.
+- [~] Verify restart persistence and claim/idempotency behavior (task
+  idempotency is Hermes-backed; lifecycle restart coverage remains).
 
 ## 002 — Product experience
 
-- [ ] Replace production mock Kanban data with the versioned API client.
-- [ ] Remove seeded mock/demo and smoke-hook Kanban data; smoke and browser
+- [x] Replace production mock Kanban data with the versioned API client.
+- [x] Remove seeded mock/demo and smoke-hook Kanban data; smoke and browser
   checks must create and verify real records in Hermes SQLite.
-- [ ] Remove custom status creation and render exactly five workflow states.
-- [ ] Build the board view with accessible drag/drop and a non-drag move
+- [x] Remove custom status creation and render exactly five workflow states.
+- [x] Build the board view with accessible drag/drop and a non-drag move
   control.
-- [ ] Build the list view over the same filters, mutations, and state model.
+- [x] Build the list view over the same filters, mutations, and state model.
 - [ ] Implement fast task creation and an advanced task editor.
 - [ ] Implement clear assignment, dependencies, comments, attachments, run
   history, worker state, and archive experiences.
-- [ ] Add loading, empty, partial-failure, offline/retry, and permission/error
+- [x] Add loading, empty, partial-failure, offline/retry, and permission/error
   states.
-- [ ] Make the left navigation contain only Agents and Kanban, with Settings as
+- [x] Make the left navigation contain only Agents and Kanban, with Settings as
   a utility destination.
 - [ ] Move Skills, Runtime, Connections, Teams, Data, workspace, memory, agent
   detail, and automation defaults into organized Settings sections.
@@ -84,15 +91,20 @@ Legend:
 - [ ] Add responsive list fallback, keyboard operation, focus management,
   screen-reader announcements, reduced-motion support, and contrast checks.
 - [ ] Translate all new strings in every locale currently shipped by the app.
-- [ ] Add component, hook, routing, accessibility, and build tests.
+- [x] Add component, hook, routing, and build tests (accessibility audit remains).
 
 ## 003 — Kanban-native automation
 
-- [ ] Use the upstream Hermes cron scheduler/ticker; do not add another polling
+- [~] Use the upstream Hermes cron scheduler/ticker; no second scheduler is
+  started by Brain4All, but the current Hermes runtime exposes no Kanban
+  execution target.
   loop, daemon, API process, or scheduler database.
-- [ ] Add the approved cron execution target that enqueues a Kanban occurrence
-  instead of starting an invisible cron agent run.
-- [ ] Create every new automation template on the default Kanban board.
+- [!] Add the approved cron execution target that enqueues a Kanban occurrence
+  instead of starting an invisible cron agent run (blocked: the pinned Hermes
+  package exposes no public `execution_target=kanban` hook; implementing this
+  safely requires an upstream Hermes extension or a newly pinned release).
+- [x] Create every new automation template on the default Kanban board (the
+  compatibility `/cron/jobs` facade links a visible template card).
 - [ ] Make automation creation from Settings and from an agent prompt converge
   on the same service and persisted Hermes cron definition.
 - [ ] Create recurring occurrence tasks with a deterministic idempotency key,
@@ -103,7 +115,8 @@ Legend:
   cron-expression editing.
 - [ ] Migrate existing Brain4All YAML jobs once, with a snapshot, idempotency,
   a dry-run report, and safe conflict handling.
-- [ ] Remove the Brain4All `scheduler_loop` and retire or adapt the legacy cron
+- [x] Remove the Brain4All `scheduler_loop` from the FastAPI lifespan; legacy
+  endpoints remain a compatibility facade and are not a started scheduler.
   endpoints only after migration and compatibility tests pass.
 - [ ] Verify settings-created and prompt-created schedules in the browser and
   through the API, including pause/restart/no-duplicate behavior.
@@ -128,14 +141,15 @@ Legend:
 
 ## Release gate
 
-- [ ] All focused backend and frontend tests pass.
-- [ ] `make check` passes.
+- [x] All focused backend and frontend tests pass.
+- [x] `make check` passes.
 - [ ] `make run`, `make smoke-api`, and container health checks pass.
-- [ ] The browser journeys in `VERIFICATION.md` pass against a real stack.
+- [x] The Kanban browser journey in `VERIFICATION.md` passes against a real
+  stack; automation journeys remain open with the cron execution-target gate.
 - [ ] Refresh and container restart preserve tasks, boards, schedules, and
   occurrence history without duplication.
-- [ ] Production contains no seeded demo Kanban records.
-- [ ] No smoke-test hook or fallback can inject synthetic Kanban records into
+- [x] Production contains no seeded demo Kanban records.
+- [x] No smoke-test hook or fallback can inject synthetic Kanban records into
   the running application.
 - [ ] No regression to chat streaming, stop behavior, approvals, telemetry
   propagation, profile isolation, or 9router behavior.

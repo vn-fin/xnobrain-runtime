@@ -2,23 +2,18 @@ import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Check,
-  ChevronDown,
-  Clock,
   Code2,
-  Play,
   Plus,
   Search,
   ShieldCheck,
   Sparkles,
-  Square,
-  Trash2,
   Wrench,
   X,
   ArrowUpDown,
 } from 'lucide-react';
 import { WorkspacePanel, type WorkspaceController } from './WorkspacePanel';
 import type { ResponsePagination } from '../api/client';
-import type { Agent, AgentSkill, AgentSkillMap, CronJob, GlobalRuntimeConfig, ProviderConnector, RightView } from '../types';
+import type { Agent, AgentSkill, AgentSkillMap, GlobalRuntimeConfig, ProviderConnector, RightView } from '../types';
 
 const AGENT_ACTIONS = ['Create', 'Metadata', 'Runtime', 'Memory', 'Test', 'Delete'];
 type WriteApprovalPatch = Partial<Pick<GlobalRuntimeConfig, 'skillsWriteApproval' | 'memoryWriteApproval'>>;
@@ -36,10 +31,6 @@ export function RightPanel({
   onUpdateWriteApprovals,
   skillsPagination,
   onLoadSkillsPage,
-  crons,
-  onCreateCron,
-  onToggleCron,
-  onDeleteCron,
   onCreateAgent,
   onOpenSettings,
   onDeleteAgent,
@@ -60,10 +51,6 @@ export function RightPanel({
   onUpdateWriteApprovals: (updates: WriteApprovalPatch) => Promise<void>;
   skillsPagination?: ResponsePagination;
   onLoadSkillsPage: (page: number) => void;
-  crons: CronJob[];
-  onCreateCron: (input: { name: string; prompt: string; intervalMinutes: number; forever: boolean }) => void;
-  onToggleCron: (id: string) => void;
-  onDeleteCron: (id: string) => void;
   onCreateAgent: () => void;
   onOpenSettings: () => void;
   onDeleteAgent: () => void;
@@ -83,29 +70,12 @@ export function RightPanel({
   const [statusFilter, setStatusFilter] = useState<'all' | 'on' | 'off'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'category' | 'status'>('name');
 
-  // Cron form (local UI state)
-  const [cronFormOpen, setCronFormOpen] = useState(false);
-  const [cronName, setCronName] = useState('');
-  const [cronPrompt, setCronPrompt] = useState('');
-  const [cronInterval, setCronInterval] = useState('120');
-  const [cronForever, setCronForever] = useState(true);
-  const [expandedCronId, setExpandedCronId] = useState<string | null>(null);
   const [approvalSaving, setApprovalSaving] = useState<'skills' | 'memory' | null>(null);
   const [approvalError, setApprovalError] = useState('');
 
   const enabledMap = agentSkills[agent.id] ?? {};
   const approvalsAvailable = defaultConfig !== null;
 
-  const submitCron = () => {
-    const interval = Math.max(1, parseInt(cronInterval, 10) || 0);
-    if (!cronName.trim() || !cronPrompt.trim() || !interval) return;
-    onCreateCron({ name: cronName.trim(), prompt: cronPrompt.trim(), intervalMinutes: interval, forever: cronForever });
-    setCronName('');
-    setCronPrompt('');
-    setCronInterval('120');
-    setCronForever(true);
-    setCronFormOpen(false);
-  };
 
   const startResize = (event: ReactPointerEvent) => {
     event.preventDefault();
@@ -158,7 +128,7 @@ export function RightPanel({
       </div>
 
       <div className="right-tabs">
-        {(['workspace', 'skills', 'cron', 'runtime'] as const).map((tab) => (
+        {(['workspace', 'skills', 'runtime'] as const).map((tab) => (
           <button key={tab} className={rightView === tab ? 'active' : ''} onClick={() => onRightView(tab)}>
             {t(`controls.${tab}`)}
           </button>
@@ -330,103 +300,6 @@ export function RightPanel({
               </>
             );
           })()}
-        </section>
-      )}
-
-      {rightView === 'cron' && (
-        <section className="panel-section">
-          <div className="skills-toolbar">
-            <span className="skills-toolbar-title">{t('cron.title')} · Demo data</span>
-            <button className={cronFormOpen ? 'add-skill-btn open' : 'add-skill-btn'} onClick={() => setCronFormOpen((v) => !v)}>
-              <Plus size={15} />
-              {t('cron.new')}
-            </button>
-          </div>
-
-          {cronFormOpen && (
-            <div className="cron-form">
-              <label>
-                {t('cron.name')}
-                <input value={cronName} onChange={(e) => setCronName(e.target.value)} placeholder={t('cron.namePlaceholder')} autoFocus />
-              </label>
-              <label>
-                {t('cron.prompt')}
-                <textarea value={cronPrompt} onChange={(e) => setCronPrompt(e.target.value)} placeholder={t('cron.promptPlaceholder')} rows={2} />
-              </label>
-              <div className="cron-form-row">
-                <label>
-                  {t('cron.intervalLabel')}
-                  <input type="number" min={1} value={cronInterval} onChange={(e) => setCronInterval(e.target.value)} />
-                </label>
-                <label className="cron-forever">
-                  <input type="checkbox" checked={cronForever} onChange={(e) => setCronForever(e.target.checked)} />
-                  {t('cron.forever')}
-                </label>
-              </div>
-              <div className="cron-form-actions">
-                <button className="conn-btn ghost" onClick={() => setCronFormOpen(false)}>{t('common.cancel')}</button>
-                <button className="conn-btn primary" disabled={!cronName.trim() || !cronPrompt.trim()} onClick={submitCron}>
-                  <Check size={15} />
-                  {t('cron.create')}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {crons.length === 0 ? (
-            <div className="skills-empty">
-              <Clock size={18} />
-              <p>{t('cron.empty')}</p>
-            </div>
-          ) : (
-            <div className="cron-list">
-              {crons.map((job) => {
-                const expanded = expandedCronId === job.id;
-                const schedule = `${t('cron.every', { n: job.intervalMinutes })} (${job.forever ? t('cron.foreverSuffix') : t('cron.times', { n: job.repeatCount ?? 0 })})`;
-                return (
-                  <div className={expanded ? 'cron-card expanded' : 'cron-card'} key={job.id}>
-                    <button className="cron-head" onClick={() => setExpandedCronId(expanded ? null : job.id)}>
-                      <ChevronDown size={14} className={expanded ? 'cron-caret open' : 'cron-caret'} />
-                      <div className="cron-head-main">
-                        <strong>{job.name}</strong>
-                        <small>{schedule}</small>
-                      </div>
-                      <span className={`cron-badge ${job.state}`}>{t(`cron.${job.state}`)}</span>
-                    </button>
-
-                    <div className="cron-sub">
-                      <Clock size={12} />
-                      <span>{t('cron.nextRun')}: {new Date(job.nextRun).toLocaleString()}</span>
-                    </div>
-
-                    {expanded && (
-                      <div className="cron-detail">
-                        <dl>
-                          <div><dt>{t('cron.id')}</dt><dd>{job.id}</dd></div>
-                          <div><dt>{t('cron.name')}</dt><dd>{job.name}</dd></div>
-                          <div><dt>{t('cron.state')}</dt><dd>{t(`cron.${job.state}`)}</dd></div>
-                          <div><dt>{t('cron.schedule')}</dt><dd>{schedule}</dd></div>
-                          <div><dt>{t('cron.nextRun')}</dt><dd>{job.nextRun}</dd></div>
-                          <div><dt>{t('cron.prompt')}</dt><dd>{job.prompt}</dd></div>
-                        </dl>
-                      </div>
-                    )}
-
-                    <div className="cron-actions">
-                      <button className="conn-btn ghost" onClick={() => onToggleCron(job.id)}>
-                        {job.state === 'stopped' ? <Play size={13} /> : <Square size={13} />}
-                        {job.state === 'stopped' ? t('cron.start') : t('cron.stop')}
-                      </button>
-                      <button className="conn-btn danger" onClick={() => onDeleteCron(job.id)}>
-                        <Trash2 size={13} />
-                        {t('cron.delete')}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </section>
       )}
 

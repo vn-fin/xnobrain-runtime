@@ -71,6 +71,8 @@ class PlatformService:
         self.router = router
         self.runtime = runtime
         self.portability = PortabilityService(repository, config.root_profile)
+        from .kanban import KanbanService
+        self.kanban = KanbanService()
         self._oauth_attempts: dict[str, dict[str, str]] = {}
         self._running_crons: set[str] = set()
         self.config.ensure_write_approval_defaults()
@@ -360,8 +362,9 @@ class PlatformService:
         schedule = str(body.get("schedule") or (f"@every {interval}m" if interval > 0 else "")).strip()
         seconds = self._schedule_seconds(schedule)
         now = utc_now()
+        cron_id = uuid.uuid4().hex
         job = {
-            "id": uuid.uuid4().hex, "agent_id": agent_id,
+            "id": cron_id, "agent_id": agent_id,
             "name": str(body.get("name") or "Scheduled task").strip(),
             "schedule": schedule, "timezone": str(body.get("timezone") or "Etc/UTC"),
             "mode": str(body.get("mode") or "local"),
@@ -370,9 +373,36 @@ class PlatformService:
             "prompt": prompt, "enabled": True,
             "next_run_at": iso(datetime.fromtimestamp(now.timestamp() + seconds, timezone.utc)),
             "last_evaluated_at": iso(now), "created_at": iso(now), "updated_at": iso(now),
+            # Compatibility metadata: the visible automation template always
+            # belongs to Hermes' default board.  The legacy file record is
+            # retained only so existing pause/list clients can migrate; the
+            # embedded Brain4All scheduler is intentionally not started.
+            "kanban_board": "default",
         }
         if job["mode"] != "local":
             raise ServiceError("only local cron jobs are supported")
+        try:
+            template = self.kanban.create_task("default", {
+                "title": job["name"],
+                "description": f"Automation ({schedule}, {job['timezone']})\n\n{prompt}",
+                # The automation template is a visible definition, not an
+                # occurrence. Keep it in triage so the dispatcher cannot run
+                # it as ordinary work.
+                "status": "backlog",
+                "priority": "medium",
+                "assignee": agent_id,
+                "idempotency_key": f"cron-template:{agent_id}:{cron_id}",
+            }, created_by=agent_id)
+            job["kanban_task_id"] = template["id"]
+        except Exception as exc:
+            # A source checkout used by the compatibility test suite may not
+            # include Hermes.  Production images pin Hermes and therefore
+            # require the template; preserve the old response only for that
+            # explicit unavailable-runtime case.
+            from ..integrations.kanban import KanbanUnavailable
+            if not isinstance(exc, KanbanUnavailable) and not (isinstance(exc, ServiceError) and exc.code == "kanban_not_ready"):
+                raise
+            job["kanban_task_id"] = None
         return self.repository.put_cron(job)
 
     def set_cron_enabled(self, cron_id: str, enabled: bool) -> dict[str, Any]:

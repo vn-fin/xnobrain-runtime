@@ -1,313 +1,123 @@
+import { request } from './client';
 import type {
   KanbanBoard,
+  KanbanColumnId,
+  KanbanDependency,
   KanbanStatusDef,
   KanbanTask,
   NewKanbanTaskInput,
 } from '../types';
 
-// ---------------------------------------------------------------------------
-// Smoke API for the Kanban board.
-//
-// This is intentionally backed by in-memory sample data so the board renders
-// end-to-end without a running backend. Every method returns a Promise and the
-// shape mirrors what a real `/agent-gateway/v1/kanban` service would return, so
-// swapping these implementations for `request(...)` calls later is mechanical.
-//
-// Assignees are referenced by agent id and resolved against the app's real
-// agents in the UI layer — the board is "a new group over the assistants".
-// ---------------------------------------------------------------------------
-
-/** The three board columns every board collapses its statuses into. */
-export const KANBAN_COLUMNS: Array<{ id: 'todo' | 'in_progress' | 'done'; label: string; hint: string }> = [
-  { id: 'todo', label: 'Todo', hint: 'Queued & scheduled work' },
-  { id: 'in_progress', label: 'In progress', hint: 'Being worked on now' },
-  { id: 'done', label: 'Done', hint: 'Done · reviewed · blocked' },
+export const KANBAN_COLUMNS: Array<{ id: KanbanColumnId; label: string; hint: string }> = [
+  { id: 'backlog', label: 'Backlog', hint: 'Ideas and needs clarification' },
+  { id: 'todo', label: 'Todo', hint: 'Ready or scheduled work' },
+  { id: 'in_progress', label: 'In Progress', hint: 'Being worked on now' },
+  { id: 'review', label: 'Review', hint: 'Needs input or approval' },
+  { id: 'done', label: 'Done', hint: 'Completed work' },
 ];
 
-/** Default fine-grained status vocabulary, merged into the three columns. */
-const DEFAULT_STATUSES: KanbanStatusDef[] = [
-  { id: 'todo', label: 'Todo', column: 'todo' },
-  { id: 'scheduled', label: 'Scheduled', column: 'todo' },
-  { id: 'in_progress', label: 'In progress', column: 'in_progress' },
-  { id: 'done', label: 'Done', column: 'done' },
-  { id: 'reviewed', label: 'Reviewed', column: 'done' },
-  { id: 'blocked', label: 'Blocked', column: 'done' },
-];
+const STATUS_DEFS: KanbanStatusDef[] = KANBAN_COLUMNS.map((column) => ({
+  id: column.id,
+  label: column.label,
+  column: column.id,
+}));
 
-const SEED_BOARD: KanbanBoard = {
-  id: 'default',
-  name: 'Task board',
-  description: 'Shared multi-agent work queue',
-  color: '#4f8cff',
-  statuses: DEFAULT_STATUSES.map((status) => ({ ...status })),
-  tasks: [
-    {
-      id: 'T-1042',
-      title: 'Design multi-agent board shell',
-      description: 'Build the board layout: three merged columns plus a table view that groups by status.',
-      status: 'in_progress',
-      priority: 'high',
-      assignees: ['ui-builder', 'research-agent'],
-      tags: ['ui', 'dashboard'],
-      deps: [{ id: 'T-1010', title: 'Approve palette tokens', state: 'done' }],
-      progress: 62,
-      updated: '4m ago',
-    },
-    {
-      id: 'T-1043',
-      title: 'Map task API response fields',
-      description: 'Read the gateway schema and map task/assignee/dependency shapes to the board.',
-      status: 'in_progress',
-      priority: 'medium',
-      assignees: ['api-mapper'],
-      tags: ['api', 'contract'],
-      deps: [{ id: 'T-1002', title: 'Gateway auth handshake', state: 'done' }],
-      progress: 35,
-      updated: '2m ago',
-    },
-    {
-      id: 'T-1050',
-      title: 'Summarize provider connection docs',
-      description: 'Read provider connect flows and prepare a one-page operator summary.',
-      status: 'todo',
-      priority: 'medium',
-      assignees: ['research-agent'],
-      tags: ['docs', 'providers'],
-      deps: [],
-      progress: 0,
-      updated: '18m ago',
-    },
-    {
-      id: 'T-1051',
-      title: 'Draft cron digest report template',
-      description: 'Produce a reusable template for the daily metrics digest scheduled job.',
-      status: 'scheduled',
-      priority: 'low',
-      assignees: ['research-agent', 'sandbox-ops'],
-      tags: ['cron', 'reporting'],
-      deps: [{ id: 'T-1050', title: 'Provider docs summary', state: 'pending' }],
-      progress: 0,
-      updated: 'due in 18m',
-    },
-    {
-      id: 'T-1053',
-      title: 'Investigate workspace tree lag',
-      description: 'Large files may cause the workspace tree to render slowly. Needs profiling.',
-      status: 'todo',
-      priority: 'medium',
-      assignees: ['ui-builder'],
-      tags: ['perf', 'workspace'],
-      deps: [],
-      progress: 0,
-      updated: '1h ago',
-    },
-    {
-      id: 'T-1048',
-      title: 'Retry flaky sandbox smoke test',
-      description: 'The smoke suite intermittently fails while provisioning the sandbox VM network.',
-      status: 'blocked',
-      priority: 'high',
-      assignees: ['test-runner'],
-      tags: ['qa', 'sandbox'],
-      deps: [{ id: 'T-1041', title: 'Sandbox gateway healthy', state: 'blocked' }],
-      progress: 0,
-      block: 'Dependency T-1041 (sandbox gateway) is unhealthy — retries exhausted.',
-      updated: '9m ago',
-    },
-    {
-      id: 'T-1057',
-      title: 'Approve sandbox recovery summary',
-      description: 'Review the recovery summary before the incident loop is closed.',
-      status: 'reviewed',
-      priority: 'medium',
-      assignees: ['test-runner', 'ui-builder'],
-      tags: ['review', 'recovery'],
-      deps: [{ id: 'T-1048', title: 'Retry flaky sandbox smoke test', state: 'pending' }],
-      progress: 100,
-      updated: '5m ago',
-    },
-    {
-      id: 'T-1028',
-      title: 'Wire skill toggle without page refresh',
-      description: 'Toggle installed skills on/off and reflect state immediately without a full reload.',
-      status: 'done',
-      priority: 'high',
-      assignees: ['ui-builder'],
-      tags: ['skills', 'ui'],
-      deps: [{ id: 'T-1005', title: 'Skill registry contract', state: 'done' }],
-      progress: 100,
-      summary: 'Merged. Toggle updates the in-memory store and refreshes the affected agent instantly.',
-      updated: '18m ago',
-    },
-    {
-      id: 'T-1035',
-      title: 'Stream run steps to chat',
-      description: 'Render tool/run steps incrementally as the gateway streams events.',
-      status: 'done',
-      priority: 'medium',
-      assignees: ['api-mapper'],
-      tags: ['stream', 'chat'],
-      deps: [],
-      progress: 100,
-      summary: 'Completed after one retry. Steps render in order with tool badges.',
-      updated: '41m ago',
-    },
-  ],
-};
+type RawTask = Record<string, any>;
 
-const PROVIDER_BOARD: KanbanBoard = {
-  id: 'provider-rollout',
-  name: 'Provider rollout',
-  description: 'Provider connections, contracts, and fallback checks',
-  color: '#34d399',
-  statuses: DEFAULT_STATUSES.map((status) => ({ ...status })),
-  tasks: [
-    {
-      id: 'P-201',
-      title: 'Verify provider OAuth callback',
-      description: 'Exercise the local callback flow and confirm credentials remain on this machine.',
-      status: 'in_progress',
-      priority: 'high',
-      assignees: ['api-mapper'],
-      tags: ['providers', 'oauth'],
-      deps: [{ id: 'P-198', title: 'Provider capability matrix', state: 'done' }],
-      progress: 54,
-      updated: '3m ago',
-    },
-    {
-      id: 'P-203',
-      title: 'Test provider fallback order',
-      description: 'Confirm failed requests move to the next locally configured provider.',
-      status: 'blocked',
-      priority: 'high',
-      assignees: ['test-runner'],
-      tags: ['providers', 'qa'],
-      deps: [{ id: 'P-201', title: 'Verify provider OAuth callback', state: 'blocked' }],
-      progress: 0,
-      block: 'Waiting for callback verification.',
-      updated: '12m ago',
-    },
-    {
-      id: 'P-198',
-      title: 'Document provider capability matrix',
-      description: 'Record supported models, connection modes, and local runtime behavior.',
-      status: 'done',
-      priority: 'medium',
-      assignees: ['research-agent'],
-      tags: ['providers', 'docs'],
-      deps: [],
-      progress: 100,
-      summary: 'Capability matrix is ready for review.',
-      updated: '48m ago',
-    },
-  ],
-};
+function relativeTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return value;
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
 
-const RELEASE_BOARD: KanbanBoard = {
-  id: 'release-readiness',
-  name: 'Release readiness',
-  description: 'Final verification and documentation for the local release',
-  color: '#c084fc',
-  statuses: DEFAULT_STATUSES.map((status) => ({ ...status })),
-  tasks: [
-    {
-      id: 'R-311',
-      title: 'Run cross-platform regression suite',
-      description: 'Verify Linux, macOS, and Windows installation paths before release.',
-      status: 'in_progress',
-      priority: 'high',
-      assignees: ['test-runner'],
-      tags: ['release', 'qa'],
-      deps: [],
-      progress: 71,
-      updated: '6m ago',
-    },
-    {
-      id: 'R-313',
-      title: 'Review remaining release blockers',
-      description: 'Triage open issues and assign an owner to every blocking item.',
-      status: 'todo',
-      priority: 'high',
-      assignees: ['ui-builder', 'sandbox-ops'],
-      tags: ['release', 'review'],
-      deps: [{ id: 'R-311', title: 'Cross-platform regression suite', state: 'pending' }],
-      progress: 0,
-      updated: '22m ago',
-    },
-    {
-      id: 'R-309',
-      title: 'Publish local deployment guide',
-      description: 'Finalize the installation and upgrade instructions for local users.',
-      status: 'done',
-      priority: 'medium',
-      assignees: ['research-agent'],
-      tags: ['release', 'docs'],
-      deps: [],
-      progress: 100,
-      summary: 'Local deployment guide is ready.',
-      updated: '1h ago',
-    },
-  ],
-};
+function taskFromApi(raw: RawTask): KanbanTask {
+  const status = (raw.status ?? 'todo') as KanbanColumnId;
+  const parents = Array.isArray(raw.parents) ? raw.parents : [];
+  const deps: KanbanDependency[] = parents.map((dep: any) => ({
+    id: String(dep.id),
+    title: String(dep.title ?? dep.id),
+    state: dep.status === 'done' ? 'done' : dep.status === 'review' ? 'blocked' : 'pending',
+  }));
+  return {
+    id: String(raw.id),
+    title: String(raw.title ?? ''),
+    description: String(raw.description ?? ''),
+    status,
+    priority: raw.priority === 'high' || raw.priority === 'low' ? raw.priority : 'medium',
+    assignees: Array.isArray(raw.assignees) ? raw.assignees.map(String) : raw.assignee ? [String(raw.assignee)] : [],
+    tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+    deps,
+    progress: Number(raw.progress ?? 0),
+    updated: relativeTime(raw.updated_at),
+    block: raw.block ?? raw.state_detail?.reason ?? null,
+    summary: raw.summary ?? null,
+  };
+}
 
-const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-
-// Mutable in-memory boards. Refreshing the page resets their task changes.
-let boards: KanbanBoard[] = clone([SEED_BOARD, PROVIDER_BOARD, RELEASE_BOARD]);
-let nextId = 1100;
-
-const delay = <T,>(value: T, ms = 120): Promise<T> =>
-  new Promise((resolve) => setTimeout(() => resolve(clone(value)), ms));
+function boardFromApi(raw: any): KanbanBoard {
+  return {
+    id: String(raw.id ?? raw.slug ?? 'default'),
+    name: String(raw.name ?? raw.slug ?? 'Task board'),
+    description: String(raw.description ?? ''),
+    color: String(raw.color || '#4f8cff'),
+    statuses: STATUS_DEFS.map((status) => ({ ...status })),
+    tasks: Array.isArray(raw.tasks) ? raw.tasks.map(taskFromApi) : [],
+  };
+}
 
 export const kanbanApi = {
-  /** Load every local board so the UI can switch without another request. */
-  getBoards: (): Promise<KanbanBoard[]> => delay(boards),
-
-  /** Create a task in a given status. */
-  createTask: (boardId: string, input: NewKanbanTaskInput): Promise<KanbanTask> => {
-    const board = boards.find((item) => item.id === boardId) ?? boards[0];
-    const task: KanbanTask = {
-      id: `T-${nextId++}`,
-      title: input.title,
-      description: input.description || 'No description provided.',
-      status: input.status,
-      priority: input.priority,
-      assignees: input.assignees,
-      tags: ['new'],
-      deps: [],
-      progress: input.status === 'done' || input.status === 'reviewed' ? 100 : 0,
-      updated: 'just now',
-      block: input.status === 'blocked' ? 'Created directly in the Blocked status.' : null,
-      summary: input.status === 'done' ? 'Created directly in Done.' : null,
-    };
-    board.tasks = [task, ...board.tasks];
-    return delay(task);
+  async getBoards(): Promise<KanbanBoard[]> {
+    const data = await request<any[]>('/agent-gateway/v1/kanban/boards');
+    return (data ?? []).map(boardFromApi);
   },
 
-  /** Move a task to a different fine-grained status. */
-  moveTask: (boardId: string, taskId: string, status: string): Promise<KanbanTask | null> => {
-    const board = boards.find((item) => item.id === boardId) ?? boards[0];
-    const task = board.tasks.find((item) => item.id === taskId);
-    if (!task) return delay(null);
-    task.status = status;
-    task.updated = 'just now';
-    if (status === 'done' || status === 'reviewed') task.progress = 100;
-    if (status === 'blocked' && !task.block) task.block = 'Manually flagged as blocked.';
-    if (status === 'done' && !task.summary) task.summary = 'Marked complete from the board.';
-    return delay(task);
+  async createTask(boardId: string, input: NewKanbanTaskInput): Promise<KanbanTask> {
+    if (input.status !== 'backlog' && input.status !== 'todo') {
+      throw new Error('New tasks can start in Backlog or Todo.');
+    }
+    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks`, {
+      method: 'POST',
+      body: JSON.stringify({
+        title: input.title,
+        description: input.description,
+        status: input.status,
+        priority: input.priority,
+        assignee: input.assignees[0] ?? null,
+      }),
+    });
+    return taskFromApi(data);
   },
 
-  /** Register a new custom status (adds a column-group in the table view). */
-  addStatus: (boardId: string, label: string, column: KanbanStatusDef['column']): Promise<KanbanStatusDef> => {
-    const board = boards.find((item) => item.id === boardId) ?? boards[0];
-    const id = label
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') || `status-${board.statuses.length + 1}`;
-    const existing = board.statuses.find((status) => status.id === id);
-    if (existing) return delay(existing);
-    const status: KanbanStatusDef = { id, label: label.trim(), column };
-    board.statuses = [...board.statuses, status];
-    return delay(status);
+  async moveTask(boardId: string, taskId: string, status: KanbanColumnId): Promise<KanbanTask | null> {
+    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    });
+    return data ? taskFromApi(data) : null;
+  },
+
+  async archiveTask(boardId: string, taskId: string): Promise<KanbanTask> {
+    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/archive`, { method: 'POST' });
+    return taskFromApi(data);
+  },
+
+  async addComment(boardId: string, taskId: string, body: string): Promise<void> {
+    await request(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ body, author: 'user' }),
+    });
+  },
+
+  // Kept as an explicit rejection so no UI can accidentally reintroduce
+  // custom workflow columns.
+  async addStatus(): Promise<never> {
+    throw new Error('Kanban uses the five default statuses.');
   },
 };

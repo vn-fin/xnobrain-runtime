@@ -4,7 +4,6 @@ import { useRouter } from './hooks/useRouter';
 import { useAssistants, useActiveAgent } from './hooks/useAssistants';
 import { useConnections } from './hooks/useConnections';
 import { useSandbox } from './hooks/useSandbox';
-import { useCrons } from './hooks/useCrons';
 import { useKanban } from './hooks/useKanban';
 import { useConversation } from './hooks/useConversation';
 import { useWorkspace } from './hooks/useWorkspace';
@@ -34,7 +33,6 @@ export default function App() {
   // Runtime view. Without this, a fresh installation remains on “Checking…”
   // because the stream is only activated after navigating away from onboarding.
   const sandbox = useSandbox(router.centerView === 'sandbox' || assistants.agents.length === 0);
-  const crons = useCrons();
   const conversation = useConversation(router.activeAgentId, router.activeConversationId);
   const workspace = useWorkspace(router.activeAgentId);
   const teams = useTeams();
@@ -318,10 +316,6 @@ export default function App() {
           onUpdateWriteApprovals={(updates) => assistants.setWriteApprovals(activeAgent.id, updates)}
           skillsPagination={assistants.agentSkillPages[router.activeAgentId]}
           onLoadSkillsPage={(page) => assistants.loadSkillsPage(router.activeAgentId, page)}
-          crons={crons.crons}
-          onCreateCron={(input) => crons.createCron({ ...input, agentId: activeAgent.id })}
-          onToggleCron={crons.toggleCron}
-          onDeleteCron={crons.deleteCron}
           onCreateAgent={() => setCreateAgentOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
           onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}

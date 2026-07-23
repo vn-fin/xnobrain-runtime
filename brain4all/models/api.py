@@ -46,6 +46,60 @@ class CronCreate(BaseModel):
     mode: Literal["local"] = "local"
 
 
+class KanbanBoardCreate(BaseModel):
+    slug: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    name: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+    color: str | None = Field(default=None, max_length=32)
+
+
+class KanbanTaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    description: str = Field(default="", max_length=50_000)
+    status: Literal["backlog", "todo"] = "todo"
+    priority: Literal["high", "medium", "low"] = "medium"
+    assignee: str | None = Field(default=None, max_length=128)
+    parents: list[str] = Field(default_factory=list, max_length=100)
+    workspace_kind: Literal["scratch", "dir", "worktree"] = "scratch"
+    workspace_path: str | None = Field(default=None, max_length=2000)
+    skills: list[str] | None = Field(default=None, max_length=64)
+    model_override: str | None = Field(default=None, max_length=256)
+    provider_override: str | None = Field(default=None, max_length=128)
+    goal_mode: bool = False
+    idempotency_key: str | None = Field(default=None, max_length=512)
+
+
+class KanbanTaskPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    description: str | None = Field(default=None, max_length=50_000)
+    priority: Literal["high", "medium", "low"] | None = None
+    tags: list[str] | None = Field(default=None, max_length=32)
+    model_override: str | None = Field(default=None, max_length=256)
+    provider_override: str | None = Field(default=None, max_length=128)
+
+
+class KanbanMove(BaseModel):
+    status: Literal["backlog", "todo", "in_progress", "review", "done"]
+    revision: str | None = Field(default=None, max_length=128)
+    reason: str | None = Field(default=None, max_length=4000)
+
+
+class KanbanAssign(BaseModel):
+    assignee: str | None = Field(default=None, max_length=128)
+    reclaim_first: bool = False
+    reason: str | None = Field(default=None, max_length=4000)
+
+
+class KanbanComment(BaseModel):
+    body: str = Field(min_length=1, max_length=20_000)
+    author: str = Field(default="user", min_length=1, max_length=128)
+
+
+class KanbanLink(BaseModel):
+    parent_id: str = Field(min_length=1, max_length=128)
+    child_id: str = Field(min_length=1, max_length=128)
+
+
 class SkillInstall(BaseModel):
     model_config = ConfigDict(extra="allow")
     skill_id: str | None = None

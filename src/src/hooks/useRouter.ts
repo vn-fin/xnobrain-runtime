@@ -29,7 +29,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
     agentId = seg[1] ?? '';
     if (seg[2] === 'conversations') conversationId = seg[3] ?? '';
     const panel = sp.get('panel');
-    if (panel === 'skills' || panel === 'runtime' || panel === 'cron' || panel === 'workspace') rightView = panel;
+    if (panel === 'skills' || panel === 'runtime' || panel === 'workspace') rightView = panel;
   }
 
   return {
