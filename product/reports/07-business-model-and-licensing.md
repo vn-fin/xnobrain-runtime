@@ -1,6 +1,6 @@
 # 07 · Business Model & Licensing
 
-> Your plan — open-source a personal edition, sell a proprietary enterprise/cloud
+> The plan — open-source a personal edition, sell a proprietary enterprise/cloud
 > edition firms can self-host or run in cloud with protected source — is a proven
 > **open-core** pattern. This file benchmarks precedents, then gives concrete license
 > recommendations. External claims linked; recommendations are marked as opinion.
@@ -53,8 +53,8 @@ This is currently **unset** and blocks public launch. Options (opinion):
   keep an attribution/NOTICE inventory.
 
 ### Decision B — the *personal (Python + Go)* vs *enterprise (Go)* framing
-Your prompt says open-source is "Python + Go," enterprise is "Go." The **repo today**
-is: **OSS = Python + React; Go = enterprise only** (the old Go/Postgres OSS path was
+The stated intention describes open-source as "Python + Go" and enterprise as "Go." The
+**repo today** is: **OSS = Python + React; Go = enterprise only** (the old Go/Postgres OSS path was
 retired — see [01-current-state.md](01-current-state.md) §4). Reconcile deliberately:
 
 - **Recommended (opinion): keep OSS Python + React; Go stays enterprise.** Simplest,

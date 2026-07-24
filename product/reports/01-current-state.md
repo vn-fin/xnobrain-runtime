@@ -1,6 +1,6 @@
 # 01 · Current State — What Brain4All Is Today
 
-> Reference doc. Sourced from the repository itself (`AGENTS.md`, `README.md`,
+> Scope: sourced from the repository itself (`AGENTS.md`, `README.md`,
 > `docs/architecture.md`, `docs/enterprise-extension.md`,
 > `docs/repository-ownership.md`, `docs/project-summary.md`). No external claims here —
 > this is the ground truth of the code as it stands on 2026-07-24.
@@ -105,8 +105,8 @@ Rules that protect the model:
 
 ### ⚠️ Language reality-check vs. the stated plan
 
-Your prompt says "open-source a part of project (Python + Go)" and "enterprise
-(golang)." The repo's current reality is:
+The stated intention is to open-source part of the project (described as "Python + Go")
+and keep an enterprise edition in Go. The repository's current reality is:
 
 - **OSS = Python** (FastAPI monolith) + React/TypeScript frontend. The Go/Postgres
   path was explicitly retired in the OSS repo.

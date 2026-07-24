@@ -5,9 +5,9 @@
 > **11 source channels**. **220** were captured in full detail here; the final ~42
 > were cut by the page's content-length limit (noted at the end). Each entry below is
 > a compressed-but-faithful record: title, what the agent does, and the named
-> tools/models/numbers. **Sections C–E are the analysis you actually want** — which
-> stories are nearest to Twin Terminal, where Hermes + OpenClaw appear together, and
-> what it means for Brain4All.
+> tools/models/numbers. **Sections C–E carry the analysis** — which stories are nearest
+> to Twin Terminal, where Hermes and OpenClaw appear together, and what it means for
+> Brain4All.
 
 ## Page structure (verbatim)
 
@@ -341,7 +341,7 @@ judgment and voice.*
   Your registry should **interoperate with agentskills.io**, not reinvent it — and add
   the one thing Atlas's star-ratings lack: *measured fidelity + expiry.*
 
-## D. Hermes + OpenClaw together (you asked specifically)
+## D. Hermes and OpenClaw deployed together
 
 OpenClaw appears constantly as Hermes's reference point — often **running side by
 side**:

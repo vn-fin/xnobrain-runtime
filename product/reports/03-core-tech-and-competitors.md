@@ -129,7 +129,7 @@ Buyers evaluating "build AI agents" platforms will name these. Position yourself
 Two takeaways for strategy:
 
 1. **The common commercial pattern is open-core** (free self-hosted core + paid
-   cloud/enterprise) — exactly your plan. See
+   cloud/enterprise) — exactly the intended plan. See
    [07-business-model-and-licensing.md](07-business-model-and-licensing.md).
 2. **Everyone competes on "build agents." Nobody competes on "certify that this
    agent faithfully reproduces a specific named human expert."** That is the sentence

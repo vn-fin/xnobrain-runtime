@@ -1,10 +1,10 @@
 # 02 · The Vision — "Twin Terminal" Deconstructed
 
-> Reference doc. This is a faithful English rendering + analysis of the two
-> Vietnamese vision artifacts in `product/`:
-> `twin_terminal_product_map.html` and `twin_terminal_flow_network.html`.
-> Nothing here is invented — it is your vision, restated for a working audience and
-> stress-tested against the current build and the market (see companion files).
+> Scope: a faithful English rendering and analysis of the two Vietnamese vision
+> artifacts in `product/` (`twin_terminal_product_map.html` and
+> `twin_terminal_flow_network.html`). Nothing here is invented — it is the product
+> vision restated for a working audience and stress-tested against the current build
+> and the market.
 
 ## 1. The one-line thesis
 
