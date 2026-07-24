@@ -209,8 +209,10 @@ policy and does no HTTP. It reuses hermes.py's read-only primitive — either by
 importing/calling `AgentManager._open_readonly_db` semantics or by re-declaring
 the identical `file:...?mode=ro` open in one small helper. Public surface:
 
-- `aggregate_profile(profile_dir, *, cutoff_epoch) -> ProfilePartial`
-  (totals, per-model rows, per-day rows). Read-only, defensive.
+- `aggregate_profile(profile_dir, *, start_epoch, end_epoch, bucket) -> ProfilePartial`
+  (totals, per-model rows, per-bucket `series`). Read-only, defensive; every query
+  is bounded by the `(start, end]` window and buckets via a fixed `strftime` map
+  (`hour|day|month`; the service folds `week`).
 - `period_spend(profile_dir, *, since_epoch, cost_basis) -> float` for budget
   evaluation.
 

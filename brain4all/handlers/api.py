@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import inspect
 import json
 import time
@@ -12,6 +13,49 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from ..services import EXPECTED_ERRORS, PlatformService
+
+
+def _csv(value: Any) -> list[str]:
+    """Parse ``agents=a,b,c`` into a list; empty/absent means "all agents"."""
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def _clamp_int(value: Any, default: int, low: int, high: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, parsed))
+
+
+def _parse_epoch(value: Any) -> float:
+    """Accept epoch seconds or a ``YYYY-MM-DD`` (UTC) date. Raises on bad input."""
+    text = str(value).strip()
+    try:
+        return float(text)
+    except ValueError:
+        return datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()
+
+
+def _range(q: Any) -> dict[str, float]:
+    """Resolve the Grafana-style time range: absolute ``from``/``to`` or relative
+    ``days`` (default 30, clamped 1..366)."""
+    frm, to = q.get("from"), q.get("to")
+    now = time.time()
+    if frm or to:
+        start = _parse_epoch(frm) if frm else now - 30 * 86400
+        end = _parse_epoch(to) if to else now
+    else:
+        days = _clamp_int(q.get("days"), 30, 1, 366)
+        end, start = now, now - days * 86400
+    if not (start < end):
+        raise ValueError("range start must be before end")
+    return {"start_epoch": start, "end_epoch": end}
+
+
+def _bucket(q: Any) -> str:
+    value = str(q.get("bucket") or "day")
+    return value if value in {"hour", "day", "week", "month"} else "day"
 
 
 class APIHandlers:
@@ -133,6 +177,13 @@ class APIHandlers:
             "provider_models": (lambda: self._provider_models(p["provider_id"]), "models retrieved successfully", 200),
             "provider_reasoning": (lambda: {"provider_id": p["provider_id"], "model": p["model"], "reasoning": ["low", "medium", "high"]}, "reasoning options retrieved", 200),
             "sandbox": (lambda: s.sandbox(p["action"]), "sandbox detail retrieved", 200),
+            "analytics_agents": (s.analytics.list_selectable_agents, "analytics agents retrieved successfully", 200),
+            "analytics_usage": (lambda: s.analytics.usage_summary(agent_ids=_csv(q.get("agents")), **_range(q), bucket=_bucket(q)), "usage analytics retrieved successfully", 200),
+            "analytics_agent_usage": (lambda: s.analytics.agent_usage(p["agent_id"], **_range(q), bucket=_bucket(q)), "agent usage retrieved successfully", 200),
+            "analytics_models": (lambda: s.analytics.models_breakdown(agent_ids=_csv(q.get("agents")), **_range(q)), "model usage retrieved successfully", 200),
+            "analytics_timeseries": (lambda: s.analytics.timeseries(agent_ids=_csv(q.get("agents")), **_range(q), bucket=_bucket(q)), "usage timeseries retrieved successfully", 200),
+            "analytics_budget_get": (lambda: s.analytics.get_budget(p["agent_id"]), "budget retrieved successfully", 200),
+            "analytics_budget_set": (lambda: s.analytics.set_budget(p["agent_id"], body), "budget updated successfully", 200),
         }
         if name not in operations:
             raise ValueError("unsupported route")

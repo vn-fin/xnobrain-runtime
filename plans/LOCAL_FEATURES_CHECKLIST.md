@@ -99,8 +99,8 @@ do not).
 - [ ] **Many-agent scaling:** each agent has its own `state.db`, so cross-agent totals must read every profile. Cost must scale with *active* agents, not *total* — implement per-agent partial cache with **`os.stat` mtime-skip** (re-read only changed profiles) + **bounded-concurrency** reads (`asyncio.gather` + semaphore), plus the merged-result TTL cache. UI list paging does **not** substitute for this. **Do not add an embedded OLAP engine (DuckDB) unless a *measured* bottleneck triggers the escalation ladder** — see `009_usage_analytics/approaches.md` Decision E and `architecture.md` → Scaling to many agents.
 - [ ] Per-model, per-agent, and time-series aggregation; 9router quota overlay; estimated-vs-actual-cost caveat surfaced.
 - [ ] Per-agent budget config in `config.yaml` (advisory soft-warning; hard enforcement stays Enterprise-only) with snapshot-before-write.
-- [ ] Models + handler operations + routes (usage summary, per-agent, per-model, time-series, get/set budget).
-- [ ] React: Analytics dashboard (totals, per-model bars, time chart, budget bar) using an inline SVG chart (no new dependency).
+- [ ] Models + handler operations + routes (usage summary, per-agent, per-model, time-series, **`GET /analytics/agents`** for the picker, get/set budget). Read endpoints accept the Grafana-style controls: **`agents` (CSV; absent = all)**, **relative `days` or absolute `from`/`to`**, and **`bucket` = hour|day|week|month**.
+- [ ] React: **Grafana-style control bar** — agent **multi-select (default All, or a subset)**, time-range picker (presets + custom from/to), and bucket selector; selection persisted (URL + localStorage) and drives all panels. Plus the Analytics dashboard (totals, per-model bars, time chart, budget bar) using an inline SVG chart (no new dependency).
 - [ ] Security: no prompt/credential content exposed; read-only proven.
 - [ ] `validation.md` acceptance passed (real session records produce correct totals + a budget warning) with evidence.
 

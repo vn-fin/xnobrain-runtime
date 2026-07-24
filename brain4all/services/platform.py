@@ -73,6 +73,8 @@ class PlatformService:
         self.portability = PortabilityService(repository, config.root_profile)
         from .kanban import KanbanService
         self.kanban = KanbanService(agents)
+        from .analytics import AnalyticsService
+        self.analytics = AnalyticsService(agents, router, repository)
         self._oauth_attempts: dict[str, dict[str, str]] = {}
         self.config.ensure_write_approval_defaults()
         self._ensure_existing_write_approval_defaults()

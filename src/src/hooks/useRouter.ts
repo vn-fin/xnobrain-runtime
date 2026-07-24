@@ -34,6 +34,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
   else if (seg[0] === 'skills') centerView = 'skills';
   else if (seg[0] === 'teams') centerView = 'teams';
   else if (seg[0] === 'kanban' || seg[0] === 'board') centerView = 'kanban';
+  else if (seg[0] === 'analytics' || seg[0] === 'usage') centerView = 'analytics';
   else if (seg[0] === 'data' || seg[0] === 'settings') {
     centerView = 'data';
     if (seg[1] === 'vm' || seg[1] === 'connectors' || seg[1] === 'profiles') {
@@ -71,6 +72,7 @@ export function computeUrl(state: RouteState): string {
   if (state.centerView === 'data') return `/settings/${state.settingsSection}`;
   if (state.centerView === 'teams') return '/teams';
   if (state.centerView === 'kanban') return '/kanban';
+  if (state.centerView === 'analytics') return '/analytics';
   if (state.centerView === 'skills') {
     if (state.skillsSearch.trim()) params.set('q', state.skillsSearch.trim());
     if (state.skillsGroupFilter !== 'all') params.set('group', state.skillsGroupFilter);

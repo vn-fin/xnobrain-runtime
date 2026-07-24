@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  BarChart3,
   ChevronDown,
   Columns3,
   History,
@@ -24,6 +25,7 @@ import type { Agent, CenterView, Conversation } from '../types';
 
 const navItems = [
   { id: 'kanban', label: 'kanban', icon: Columns3 },
+  { id: 'analytics', label: 'analytics', icon: BarChart3 },
   { id: 'data', label: 'settings', icon: Settings },
 ] as const;
 

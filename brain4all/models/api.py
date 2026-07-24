@@ -212,6 +212,17 @@ class MCPConfig(BaseModel):
     servers: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
+class AgentBudgetPatch(BaseModel):
+    """Advisory (soft-warning) per-agent spend budget. All optional so a PUT with
+    ``monthly_usd: null`` clears the cap. Hard enforcement stays Enterprise-only."""
+
+    monthly_usd: float | None = Field(default=None, ge=0)
+    daily_usd: float | None = Field(default=None, ge=0)
+    warn_threshold_percent: int = Field(default=80, gt=0, le=100)
+    cost_basis: Literal["estimated", "actual"] = "estimated"
+    currency: str = Field(default="USD", min_length=1, max_length=8)
+
+
 class TeamMember(BaseModel):
     agent_id: str
     role: str

@@ -5,6 +5,7 @@ import { useAssistants, useActiveAgent } from './hooks/useAssistants';
 import { useConnections } from './hooks/useConnections';
 import { useSandbox } from './hooks/useSandbox';
 import { useKanban } from './hooks/useKanban';
+import { useAnalytics } from './hooks/useAnalytics';
 import { useConversation } from './hooks/useConversation';
 import { useWorkspace } from './hooks/useWorkspace';
 import { useTeams } from './hooks/useTeams';
@@ -17,6 +18,7 @@ import { Onboarding } from './components/Onboarding';
 import { SystemView } from './features/system/SystemView';
 import { TeamsView } from './components/TeamsView';
 import { KanbanView } from './components/KanbanView';
+import { AnalyticsView } from './components/AnalyticsView';
 import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
@@ -35,6 +37,7 @@ export default function App() {
   const workspace = useWorkspace(router.activeAgentId);
   const teams = useTeams();
   const kanban = useKanban(router.centerView === 'kanban');
+  const analytics = useAnalytics(router.centerView === 'analytics');
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
   const RIGHT_MIN = 280;
@@ -251,6 +254,8 @@ export default function App() {
           <TeamsView agents={assistants.agents} state={teams} onClose={() => router.setCenterView('chat')} />
         ) : centerView === 'kanban' ? (
           <KanbanView agents={assistants.agents} state={kanban} onClose={() => router.setCenterView('chat')} />
+        ) : centerView === 'analytics' ? (
+          <AnalyticsView state={analytics} onClose={() => router.setCenterView('chat')} />
         ) : (
           <ChatArea
             agent={activeAgent}
