@@ -56,13 +56,18 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
   `brain4all/routes/setup.py`.
 - [x] Implement the fixed five-state presentation mapping:
   Backlog, Todo, Running, Done, and Archived.
-- [x] Preserve execution substates as badges/reasons without exposing more
-  draggable workflow columns.
+- [x] Return native `status` and five-column `kanban_status` separately, and
+  preserve native execution states as distinct colored badges/reasons without
+  exposing more draggable workflow columns.
+- [x] Support changing the single native execution assignee in Backlog and
+  before a task starts; do not present a misleading multi-assignee control.
 - [~] Implement legal task creation, triage editing, assignment, reassignment,
   transition, completion, blocking/unblocking, and archival operations.
 - [~] Implement task comments, dependency links, and safe event projection;
   attachment upload/download routes remain open.
 - [x] Implement board/task filters, bounded pagination, and an initial event feed.
+- [x] Stream safe, resumable board events to the Kanban activity panel and
+  refresh canonical task data when events arrive.
 - [ ] Return actionable compatibility/service errors without leaking prompts,
   tool arguments, output, credentials, or absolute stored paths.
 - [x] Add temporary-`HERMES_HOME` backend tests using the real Hermes package.
@@ -83,6 +88,8 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
   history, worker state, and archive experiences.
 - [x] Add loading, empty, partial-failure, offline/retry, and permission/error
   states.
+- [x] Notify on successful task moves/assignments and restore the prior board
+  state with a clean notification when a transition conflicts.
 - [x] Make the left navigation contain only Agents and Kanban, with Settings as
   a utility destination.
 - [ ] Move Skills, Runtime, Connections, Teams, Data, workspace, memory, agent

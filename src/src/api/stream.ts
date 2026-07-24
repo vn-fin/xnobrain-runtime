@@ -1,23 +1,26 @@
 export type SSEEvent = {
+  id?: string;
   event: string;
   data: unknown;
 };
 
 function parseFrame(frame: string): SSEEvent | null {
+  let id: string | undefined;
   let event = 'message';
   const data: string[] = [];
   for (const rawLine of frame.split(/\r?\n/)) {
     const line = rawLine.trimEnd();
     if (!line || line.startsWith(':')) continue;
+    if (line.startsWith('id:')) id = line.slice(3).trim();
     if (line.startsWith('event:')) event = line.slice(6).trim();
     if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
   }
   if (data.length === 0) return null;
   const joined = data.join('\n');
   try {
-    return { event, data: JSON.parse(joined) as unknown };
+    return { id, event, data: JSON.parse(joined) as unknown };
   } catch {
-    return { event, data: joined };
+    return { id, event, data: joined };
   }
 }
 

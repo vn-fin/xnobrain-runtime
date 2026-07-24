@@ -1,8 +1,10 @@
-import { request } from './client';
+import { request, requestRaw } from './client';
+import { readSSE, type SSEEvent } from './stream';
 import type {
   KanbanBoard,
   KanbanColumnId,
   KanbanDependency,
+  KanbanNativeStatus,
   KanbanStatusDef,
   KanbanTask,
   NewKanbanTaskInput,
@@ -38,18 +40,20 @@ function relativeTime(value: string | null | undefined): string {
 }
 
 function taskFromApi(raw: RawTask): KanbanTask {
-  const status = (raw.status ?? 'todo') as KanbanColumnId;
+  const status = (raw.kanban_status ?? raw.status ?? 'todo') as KanbanColumnId;
+  const nativeStatus = (raw.status ?? raw.hermes_status ?? 'todo') as KanbanNativeStatus;
   const parents = Array.isArray(raw.parents) ? raw.parents : [];
   const deps: KanbanDependency[] = parents.map((dep: any) => ({
     id: String(dep.id),
     title: String(dep.title ?? dep.id),
-    state: dep.status === 'done' || dep.status === 'archived' ? 'done' : 'pending',
+    state: dep.kanban_status === 'done' || dep.kanban_status === 'archived' || dep.status === 'done' || dep.status === 'archived' ? 'done' : 'pending',
   }));
   return {
     id: String(raw.id),
     title: String(raw.title ?? ''),
     description: String(raw.description ?? ''),
     status,
+    nativeStatus,
     priority: raw.priority === 'high' || raw.priority === 'low' ? raw.priority : 'medium',
     assignees: Array.isArray(raw.assignees) ? raw.assignees.map(String) : raw.assignee ? [String(raw.assignee)] : [],
     tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
@@ -89,7 +93,7 @@ export const kanbanApi = {
         description: input.description,
         status: input.status,
         priority: input.priority,
-        assignee: input.assignees[0] ?? null,
+        assignee: input.assignee,
       }),
     });
     return taskFromApi(data);
@@ -109,6 +113,28 @@ export const kanbanApi = {
   async archiveTask(boardId: string, taskId: string): Promise<KanbanTask> {
     const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/archive`, { method: 'POST' });
     return taskFromApi(data);
+  },
+
+  async assignTask(boardId: string, taskId: string, assignee: string | null): Promise<KanbanTask> {
+    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ assignee }),
+    });
+    return taskFromApi(data);
+  },
+
+  async watchBoard(
+    boardId: string,
+    onEvent: (event: SSEEvent) => void,
+    signal: AbortSignal,
+    afterId?: number,
+  ): Promise<void> {
+    const query = afterId != null ? `?after=${encodeURIComponent(String(afterId))}` : '';
+    const response = await requestRaw(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/events/stream${query}`, {
+      headers: { Accept: 'text/event-stream' },
+      signal,
+    });
+    await readSSE(response, onEvent, signal);
   },
 
   async addComment(boardId: string, taskId: string, body: string): Promise<void> {

@@ -26,7 +26,7 @@ def _module():
         from hermes_cli import kanban_db
     except Exception as exc:  # pragma: no cover - depends on deployment image
         raise KanbanUnavailable(
-            "Hermes Kanban is unavailable; install the pinned Hermes runtime"
+            "Kanban is unavailable; install the required local runtime"
         ) from exc
     return kanban_db
 

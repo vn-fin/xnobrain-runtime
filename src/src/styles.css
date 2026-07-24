@@ -6370,13 +6370,27 @@ body.col-resizing {
 .kb-card.col-archived { border-left: 3px solid var(--muted-2); opacity: .78; }
 .kb-card-top { display: flex; align-items: center; gap: 8px; }
 .kb-id { color: var(--muted-2); font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+.kb-column-state,
 .kb-substate {
-  margin-left: auto; height: 20px; padding: 0 8px; display: inline-flex; align-items: center;
+  height: 20px; padding: 0 8px; display: inline-flex; align-items: center;
   border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
-  color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent);
+  white-space: nowrap;
 }
-.kb-substate.reviewed { color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, transparent); }
-.kb-substate.blocked { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.kb-card-top .kb-column-state { margin-left: auto; }
+.kb-column-state.col-backlog { color: #c084fc; background: color-mix(in srgb, #c084fc 13%, transparent); }
+.kb-column-state.col-todo { color: var(--muted); background: var(--panel-3); }
+.kb-column-state.col-running { color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, transparent); }
+.kb-column-state.col-done { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
+.kb-column-state.col-archived { color: var(--muted-2); background: var(--panel-3); }
+.kb-substate { color: var(--muted); background: var(--panel-3); }
+.kb-substate.native-triage { color: #c084fc; background: color-mix(in srgb, #c084fc 12%, transparent); }
+.kb-substate.native-ready { color: #22d3ee; background: color-mix(in srgb, #22d3ee 12%, transparent); }
+.kb-substate.native-scheduled { color: var(--yellow); background: color-mix(in srgb, var(--yellow) 12%, transparent); }
+.kb-substate.native-running { color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, transparent); }
+.kb-substate.native-blocked { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.kb-substate.native-review { color: #fb923c; background: color-mix(in srgb, #fb923c 13%, transparent); }
+.kb-substate.native-done { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
+.kb-substate.native-archived { color: var(--muted-2); background: var(--panel-3); }
 
 /* Priority merged into the title as a leading colored bar */
 .kb-title-line { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
@@ -6466,6 +6480,16 @@ body.col-resizing {
 .kb-label { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .kb-desc { margin: 0; color: var(--text); font-size: 14px; line-height: 1.55; }
 .kb-drawer-assignees { display: flex; flex-wrap: wrap; gap: 10px; }
+.kb-assignee-select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--input-bg);
+}
+.kb-field-help { color: var(--muted-2); font-size: 10px; font-weight: 400; }
 .kb-person { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
 .kb-drawer-grid { grid-template-columns: 1fr 1fr; }
 .kb-drawer-grid > div { display: grid; gap: 4px; }
@@ -6602,6 +6626,38 @@ body.col-resizing {
   font-size: 10px;
 }
 
+.kb-live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.kb-live-status > span,
+.kb-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+
+.kb-live-status.live > span,
+.kb-live-dot.live {
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.kb-live-status.connecting > span,
+.kb-live-dot.connecting {
+  background: var(--yellow);
+}
+
+.kb-live-status.offline > span,
+.kb-live-dot.offline {
+  background: var(--danger);
+}
+
 .kb-sub {
   padding-left: 42px;
   font-size: 12px;
@@ -6629,6 +6685,109 @@ body.col-resizing {
   gap: 10px;
   padding: 10px 20px;
   background: var(--bg);
+}
+
+.kb-notice {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.kb-notice.success {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 7%, var(--panel));
+}
+
+.kb-notice.error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, var(--panel));
+}
+
+.kb-notice span {
+  flex: 1;
+}
+
+.kb-notice .icon-button {
+  width: 26px;
+  height: 26px;
+}
+
+.kb-live-feed {
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.kb-live-feed > summary {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+  list-style: none;
+}
+
+.kb-live-feed > summary::-webkit-details-marker {
+  display: none;
+}
+
+.kb-live-latest {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-2);
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-live-events {
+  max-height: 180px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+}
+
+.kb-live-event {
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 52px 92px minmax(120px, 1fr) minmax(90px, .8fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 20px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.kb-live-event:last-child {
+  border-bottom: 0;
+}
+
+.kb-live-event code {
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.kb-live-event strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-live-empty {
+  display: block;
+  padding: 12px 20px;
+  color: var(--muted-2);
+  font-size: 11px;
 }
 
 .kb-search {
@@ -6814,20 +6973,7 @@ body.col-resizing {
 .kb-substate {
   max-width: 120px;
   overflow: hidden;
-  color: var(--muted);
-  background: var(--panel-3);
-  white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.kb-substate.running {
-  color: var(--blue);
-  background: color-mix(in srgb, var(--blue) 14%, transparent);
-}
-
-.kb-substate.scheduled {
-  color: var(--yellow);
-  background: color-mix(in srgb, var(--yellow) 12%, transparent);
 }
 
 .kb-title-text {

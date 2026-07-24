@@ -37,7 +37,7 @@ def _status(raw: str) -> str:
         return "done"
     if raw == "archived":
         return "archived"
-    raise ServiceError("Hermes returned an unsupported Kanban status", status=503, code="hermes_contract_incompatible")
+    raise ServiceError("The task has an unsupported status", status=503, code="kanban_contract_incompatible")
 
 
 def _detail(task: Any) -> dict[str, Any]:
@@ -56,7 +56,7 @@ def _detail(task: Any) -> dict[str, Any]:
     kind, label = labels.get(raw, (raw, raw.replace("_", " ").title()))
     # Failure text can contain provider/tool output. Keep the UI actionable
     # without returning that sensitive payload through the management API.
-    reason = "Hermes reported a failure" if raw == "blocked" and getattr(task, "last_failure_error", None) else None
+    reason = "The task run failed" if raw == "blocked" and getattr(task, "last_failure_error", None) else None
     return {"kind": kind, "label": label, "reason": reason}
 
 
@@ -104,7 +104,12 @@ class KanbanService:
         for parent_id in parent_ids:
             parent = kb.get_task(conn, parent_id)
             if parent is not None:
-                parent_rows.append({"id": parent.id, "title": parent.title, "status": _status(parent.status)})
+                parent_rows.append({
+                    "id": parent.id,
+                    "title": parent.title,
+                    "status": str(parent.status),
+                    "kanban_status": _status(parent.status),
+                })
         comments = kb_adapter.task_comments(conn, task.id)
         attachments = kb_adapter.task_attachments(conn, task.id)
         runs = kb_adapter.task_runs(conn, task.id)
@@ -114,8 +119,8 @@ class KanbanService:
             "id": str(task.id),
             "title": str(task.title),
             "description": str(task.body or ""),
-            "status": _status(raw_status),
-            "hermes_status": raw_status,
+            "status": raw_status,
+            "kanban_status": _status(raw_status),
             "state_detail": _detail(task),
             "priority": INT_TO_PRIORITY.get(int(getattr(task, "priority", 0) or 0), "medium"),
             "assignee": getattr(task, "assignee", None),
@@ -125,7 +130,7 @@ class KanbanService:
             "tags": [],
             "progress": progress,
             "archived": raw_status == "archived",
-            "block": "Hermes reported a failure" if raw_status == "blocked" and getattr(task, "last_failure_error", None) else None,
+            "block": "The task run failed" if raw_status == "blocked" and getattr(task, "last_failure_error", None) else None,
             "summary": getattr(task, "result", None),
             "workspace_kind": getattr(task, "workspace_kind", "scratch"),
             "workspace_path": None,
@@ -191,7 +196,7 @@ class KanbanService:
         if status:
             if status not in PRODUCT_STATUSES:
                 raise ServiceError("invalid Kanban status", code="invalid_request")
-            rows = [row for row in rows if row["status"] == status]
+            rows = [row for row in rows if row["kanban_status"] == status]
         query = (search or "").strip().lower()
         if query:
             rows = [row for row in rows if query in " ".join([row["id"], row["title"], row["description"], row.get("assignee") or ""]).lower()]
@@ -231,7 +236,7 @@ class KanbanService:
             task_id = kb.create_task(conn, title=title, body=str(body.get("description") or ""), assignee=body.get("assignee"), created_by=created_by, priority=PRIORITY_TO_INT.get(str(body.get("priority") or "medium"), 1), parents=body.get("parents") or (), triage=status == "backlog", idempotency_key=body.get("idempotency_key"), workspace_kind=str(body.get("workspace_kind") or "scratch"), workspace_path=body.get("workspace_path"), skills=body.get("skills"), model_override=body.get("model_override"), provider_override=body.get("provider_override"), goal_mode=bool(body.get("goal_mode", False)), initial_status="running", board=normalized)
             task = kb.get_task(conn, task_id)
             if task is None:
-                raise ServiceError("Hermes did not return the created task", status=503, code="hermes_contract_incompatible")
+                raise ServiceError("The created task could not be loaded", status=503, code="kanban_contract_incompatible")
             return self._task_dto(conn, task, board=normalized)
 
     def patch_task(self, board: str, task_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -246,7 +251,7 @@ class KanbanService:
                 if not ok:
                     raise ServiceError("task changed before it could be edited", status=409, code="stale_task")
             else:
-                raise ServiceError("editing active task fields requires a Hermes version with public task-edit support", status=501, code="hermes_contract_incompatible")
+                raise ServiceError("Active task fields cannot be edited", status=501, code="kanban_contract_incompatible")
             task = kb.get_task(conn, task_id)
             return self._task_dto(conn, task, board=normalized)
 
@@ -254,6 +259,15 @@ class KanbanService:
         normalized = self._board(board)
         kb = self._ready()
         with kb_adapter.connection(normalized) as conn:
+            task = kb.get_task(conn, task_id)
+            if task is None:
+                raise ServiceError("task not found", status=404, code="task_not_found")
+            if str(task.status) not in {"triage", "todo", "ready", "scheduled"}:
+                raise ServiceError(
+                    "A task can only be assigned before it starts",
+                    status=409,
+                    code="assignment_invalid",
+                )
             try:
                 ok = kb.reassign_task(conn, task_id, body.get("assignee"), reclaim_first=bool(body.get("reclaim_first", False)), reason=body.get("reason"))
             except (ValueError, RuntimeError) as exc:
@@ -309,7 +323,7 @@ class KanbanService:
                     else:
                         ok = False
                 elif target == "backlog":
-                    raise ServiceError("active tasks cannot be returned to Backlog by this Hermes version", status=409, code="invalid_transition")
+                    raise ServiceError("active tasks cannot be returned to Backlog", status=409, code="invalid_transition")
                 else:
                     raise ServiceError("invalid Kanban status", code="invalid_request")
             except ServiceError:
@@ -329,7 +343,7 @@ class KanbanService:
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             if unarchive:
-                raise ServiceError("unarchive is not publicly supported by this Hermes version", status=501, code="hermes_contract_incompatible")
+                raise ServiceError("Archived tasks cannot be restored", status=501, code="kanban_contract_incompatible")
             if not kb.archive_task(conn, task_id):
                 raise ServiceError("task could not be archived", status=409, code="invalid_transition")
             return self._task_dto(conn, kb.get_task(conn, task_id), board=normalized)
@@ -344,7 +358,7 @@ class KanbanService:
                 raise ServiceError(str(exc), code="invalid_request") from exc
             comment = next((item for item in kb.list_comments(conn, task_id) if item.id == comment_id), None)
             if comment is None:
-                raise ServiceError("comment was not persisted", status=503, code="hermes_contract_incompatible")
+                raise ServiceError("The comment could not be saved", status=503, code="kanban_contract_incompatible")
             return self._comment_dto(comment)
 
     def link_tasks(self, board: str, parent_id: str, child_id: str) -> dict[str, Any]:
@@ -374,7 +388,7 @@ class KanbanService:
         normalized = self._board(board)
         kb = self._ready()
         path = kb.kanban_db_path(board=normalized)
-        return {"board_slug": normalized, "ready": True, "db_exists": bool(path.exists()), "dispatcher": "managed-by-hermes-runtime"}
+        return {"board_slug": normalized, "ready": True, "db_exists": bool(path.exists()), "dispatcher": "managed-by-local-runtime"}
 
     def create_board(self, body: Mapping[str, Any]) -> dict[str, Any]:
         try:
@@ -419,6 +433,44 @@ class KanbanService:
         normalized = self._board(board)
         kb = self._ready()
         with kb_adapter.connection(normalized) as conn:
-            if kb.get_task(conn, task_id) is None:
+            task = kb.get_task(conn, task_id)
+            if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
-            return [{"id": int(item.id), "task_id": str(item.task_id), "kind": str(item.kind), "payload": self._safe_event_payload(item.payload), "created_at": _iso(item.created_at), "run_id": item.run_id} for item in kb.list_events(conn, task_id)]
+            return [self._event_dto(item, task) for item in kb.list_events(conn, task_id)]
+
+    def board_events(self, board: str, *, after_id: int = 0, limit: int = 200) -> list[dict[str, Any]]:
+        """Read board events through public task/event operations."""
+        normalized = self._board(board)
+        kb = self._ready()
+        rows: list[dict[str, Any]] = []
+        with kb_adapter.connection(normalized) as conn:
+            for task in kb.list_tasks(conn, include_archived=True, order_by="updated"):
+                for event in kb.list_events(conn, task.id):
+                    if int(event.id) > after_id:
+                        rows.append(self._event_dto(event, task))
+        rows.sort(key=lambda item: item["id"])
+        return rows[:max(1, min(int(limit), 200))]
+
+    def board_event_cursor(self, board: str) -> int:
+        cursor = 0
+        while True:
+            events = self.board_events(board, after_id=cursor, limit=200)
+            if not events:
+                return cursor
+            cursor = events[-1]["id"]
+            if len(events) < 200:
+                return cursor
+
+    def _event_dto(self, event: Any, task: Any) -> dict[str, Any]:
+        native_status = str(getattr(task, "status", ""))
+        return {
+            "id": int(event.id),
+            "task_id": str(event.task_id),
+            "kind": str(event.kind),
+            "payload": self._safe_event_payload(event.payload),
+            "created_at": _iso(event.created_at),
+            "run_id": event.run_id,
+            "assignee": getattr(task, "assignee", None),
+            "status": native_status,
+            "kanban_status": _status(native_status),
+        }

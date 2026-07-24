@@ -283,6 +283,7 @@ export type AgentSkillMap = Record<string, Record<string, boolean>>;
 // ---------------------------------------------------------------------------
 
 export type KanbanColumnId = 'backlog' | 'todo' | 'running' | 'done' | 'archived';
+export type KanbanNativeStatus = 'triage' | 'todo' | 'ready' | 'scheduled' | 'running' | 'blocked' | 'review' | 'done' | 'archived';
 export type KanbanPriority = 'high' | 'medium' | 'low';
 export type KanbanDepState = 'done' | 'pending' | 'blocked';
 
@@ -299,9 +300,12 @@ export type KanbanTask = {
   id: string;
   title: string;
   description: string;
+  /** Five-column presentation status. */
   status: KanbanColumnId;
+  /** Original execution state returned by the task runtime. */
+  nativeStatus: KanbanNativeStatus;
   priority: KanbanPriority;
-  /** Multiple assignees, referenced by agent id. */
+  /** Native execution assignee; currently contains zero or one agent id. */
   assignees: string[];
   tags: string[];
   deps: KanbanDependency[];
@@ -332,5 +336,21 @@ export type NewKanbanTaskInput = {
   description: string;
   status: KanbanColumnId;
   priority: KanbanPriority;
-  assignees: string[];
+  assignee: string | null;
+};
+
+export type KanbanEvent = {
+  id: number;
+  taskId: string;
+  kind: string;
+  createdAt: string;
+  assignee: string | null;
+  nativeStatus: KanbanNativeStatus;
+  status: KanbanColumnId;
+};
+
+export type KanbanNotice = {
+  id: number;
+  kind: 'success' | 'error';
+  message: string;
 };

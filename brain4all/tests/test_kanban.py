@@ -87,8 +87,9 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertEqual(created.status_code, 201, created.text)
             task_id = created.json()["data"]["id"]
-            self.assertEqual(created.json()["data"]["status"], "running")
-            self.assertEqual(created.json()["data"]["hermes_status"], "ready")
+            self.assertEqual(len(task_id), 10)
+            self.assertEqual(created.json()["data"]["status"], "ready")
+            self.assertEqual(created.json()["data"]["kanban_status"], "running")
 
             comment = await client.post(
                 f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/comments",
@@ -101,7 +102,8 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                 json={"status": "running"},
             )
             self.assertEqual(running.status_code, 200, running.text)
-            self.assertEqual(running.json()["data"]["hermes_status"], "running")
+            self.assertEqual(running.json()["data"]["status"], "running")
+            self.assertEqual(running.json()["data"]["kanban_status"], "running")
 
             done = await client.post(
                 f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/move",
@@ -109,6 +111,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(done.status_code, 200, done.text)
             self.assertEqual(done.json()["data"]["status"], "done")
+            self.assertEqual(done.json()["data"]["kanban_status"], "done")
 
             archived = await client.post(
                 f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/archive",
@@ -116,13 +119,14 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(archived.status_code, 200, archived.text)
             self.assertTrue(archived.json()["data"]["archived"])
             self.assertEqual(archived.json()["data"]["status"], "archived")
+            self.assertEqual(archived.json()["data"]["kanban_status"], "archived")
 
             visible = await client.get("/agent-gateway/v1/kanban/boards/default/tasks")
             self.assertEqual(visible.json()["data"]["tasks"], [])
             all_tasks = await client.get("/agent-gateway/v1/kanban/boards/default/tasks?include_archived=true")
             self.assertEqual(len(all_tasks.json()["data"]["tasks"]), 1)
             boards_with_archive = await client.get("/agent-gateway/v1/kanban/boards?include_archived=true")
-            self.assertEqual(boards_with_archive.json()["data"][0]["tasks"][0]["status"], "archived")
+            self.assertEqual(boards_with_archive.json()["data"][0]["tasks"][0]["kanban_status"], "archived")
 
     async def test_compatibility_cron_creation_is_visible_on_default_board(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
@@ -142,7 +146,65 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             tasks = await client.get("/agent-gateway/v1/kanban/boards/default/tasks")
             self.assertEqual(tasks.status_code, 200, tasks.text)
             self.assertEqual(tasks.json()["data"]["tasks"][0]["title"], "Morning review")
-            self.assertEqual(tasks.json()["data"]["tasks"][0]["status"], "backlog")
+            self.assertEqual(tasks.json()["data"]["tasks"][0]["status"], "triage")
+            self.assertEqual(tasks.json()["data"]["tasks"][0]["kanban_status"], "backlog")
+
+    async def test_pre_run_assignment_and_clean_transition_conflict(self):
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            created = await client.post(
+                "/agent-gateway/v1/kanban/boards/default/tasks",
+                json={"title": "Assignable task", "status": "backlog"},
+            )
+            task_id = created.json()["data"]["id"]
+            assigned = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/assign",
+                json={"assignee": "researcher"},
+            )
+            self.assertEqual(assigned.status_code, 200, assigned.text)
+            self.assertEqual(assigned.json()["data"]["assignees"], ["researcher"])
+
+            await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/move",
+                json={"status": "todo"},
+            )
+            reassigned = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/assign",
+                json={"assignee": "reviewer"},
+            )
+            self.assertEqual(reassigned.status_code, 200, reassigned.text)
+            self.assertEqual(reassigned.json()["data"]["assignees"], ["reviewer"])
+
+            await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/move",
+                json={"status": "running"},
+            )
+            conflict = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/move",
+                json={"status": "backlog"},
+            )
+            self.assertEqual(conflict.status_code, 409, conflict.text)
+            self.assertEqual(conflict.json()["message"], "active tasks cannot be returned to Backlog")
+            self.assertNotIn("Hermes", conflict.text)
+
+            assignment_conflict = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/assign",
+                json={"assignee": "writer"},
+            )
+            self.assertEqual(assignment_conflict.status_code, 409, assignment_conflict.text)
+            self.assertEqual(assignment_conflict.json()["message"], "A task can only be assigned before it starts")
+
+    async def test_board_event_feed_uses_safe_public_shapes(self):
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            created = await client.post(
+                "/agent-gateway/v1/kanban/boards/default/tasks",
+                json={"title": "Event task", "status": "backlog"},
+            )
+            task_id = created.json()["data"]["id"]
+            rows = self.composition.service.kanban.board_events("default", after_id=0)
+            event = next(item for item in rows if item["task_id"] == task_id and item["kind"] == "created")
+            self.assertEqual(event["status"], "triage")
+            self.assertEqual(event["kanban_status"], "backlog")
+            self.assertNotIn("body", event["payload"])
 
     async def test_board_metadata_never_exposes_hermes_database_path(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:

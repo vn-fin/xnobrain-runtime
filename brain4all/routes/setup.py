@@ -107,6 +107,7 @@ ROUTES = (
     Route("POST", "/agent-gateway/v1/kanban/boards/{board_slug}/tasks/{task_id}/links", "kanban_link_create", KanbanLink, tags=("Kanban",)),
     Route("DELETE", "/agent-gateway/v1/kanban/boards/{board_slug}/tasks/{task_id}/links", "kanban_link_delete", KanbanLink, tags=("Kanban",)),
     Route("GET", "/agent-gateway/v1/kanban/boards/{board_slug}/tasks/{task_id}/events", "kanban_events", tags=("Kanban",)),
+    Route("GET", "/agent-gateway/v1/kanban/boards/{board_slug}/events/stream", "kanban_event_stream", special="kanban_stream", tags=("Kanban",)),
     Route("GET", "/agent-gateway/v1/kanban/diagnostics", "kanban_diagnostics", tags=("Kanban",)),
     Route("GET", "/api/v1/notifications", "notifications", tags=("Cron",)),
     Route("POST", "/api/v1/notifications/{notification_id}/resolve", "notification_resolve", tags=("Cron",)),
@@ -173,6 +174,9 @@ def _endpoint(handlers: Any, route: Route):
     elif route.special == "sandbox_stream":
         async def endpoint(request: Request) -> Response:
             return await handlers.sandbox_detail_stream(request)
+    elif route.special == "kanban_stream":
+        async def endpoint(request: Request) -> Response:
+            return await handlers.kanban_event_stream(request)
     elif route.body is not None:
         async def endpoint(request: Request, body=Body(...)) -> Response:
             return await handlers.dispatch(request, body.model_dump(exclude_unset=True))
@@ -187,7 +191,7 @@ def _endpoint(handlers: Any, route: Route):
 
 def setup_routes(app: Any, handlers: Any) -> None:
     for route in ROUTES:
-        raw_response = route.special in {"stream", "workspace_upload", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream"}
+        raw_response = route.special in {"stream", "workspace_upload", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "kanban_stream"}
         app.add_api_route(
             route.path,
             _endpoint(handlers, route),

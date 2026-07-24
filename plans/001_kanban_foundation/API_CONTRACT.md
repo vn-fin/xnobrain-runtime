@@ -59,7 +59,8 @@ return the server-side path.
 
 - `POST /boards/{board_slug}/dispatch` — nudge dispatch; idempotent and bounded.
 - `GET /workers` — safe active-worker summaries across visible boards.
-- `GET /events` — authenticated SSE stream or resumable event feed.
+- `GET /boards/{board_slug}/events/stream` — resumable SSE stream for one
+  board. `Last-Event-ID` or `?after=` resumes from a monotonic event ID.
 - `GET /diagnostics` — compatibility, dispatcher, and board health without
   sensitive values.
 
@@ -76,7 +77,8 @@ At minimum:
   "board_slug": "default",
   "title": "Prepare the weekly report",
   "description": "User-authored task details",
-  "status": "todo",
+  "status": "ready",
+  "kanban_status": "running",
   "state_detail": {
     "kind": "ready",
     "label": "Ready",
@@ -95,8 +97,9 @@ At minimum:
 }
 ```
 
-Wire values for `status` are fixed: `backlog`, `todo`, `running`, `done`, and
-`archived`. Labels are localized by the client.
+`status` preserves the native task state. Wire values for `kanban_status` are
+fixed: `backlog`, `todo`, `running`, `done`, and `archived`. Labels are
+localized by the client.
 
 `state_detail.kind` is a bounded enum derived from the pinned upstream version,
 not a second editable status. Examples include `triage`, `waiting_dependency`,
@@ -142,7 +145,7 @@ Use the repository envelope with stable machine-readable codes:
 - `dependency_conflict`
 - `attachment_invalid`
 - `dispatcher_unavailable`
-- `hermes_contract_incompatible`
+- `kanban_contract_incompatible`
 
 Expected validation is 4xx; an upstream compatibility failure is 503 and
 appears in health diagnostics. Error messages may name resource identifiers,
@@ -151,18 +154,12 @@ filesystem paths.
 
 ## Event contract
 
-Events carry a monotonic/resumable identifier where available, board/task IDs,
-event type, timestamp, and the minimum changed fields. Initial event types:
-
-- `board.changed`
-- `task.created`
-- `task.changed`
-- `task.archived`
-- `comment.created`
-- `attachment.changed`
-- `worker.changed`
-- `run.changed`
-- `automation.changed`
+Events carry a monotonic/resumable identifier, task ID, native event kind,
+timestamp, current native `status`, projected `kanban_status`, assignee, and
+the minimum safe changed fields. The stream first sends a `connected` event
+with its cursor, then `task` events whose payload contains the projected
+native event. Event kinds remain the native public kinds such as `created`,
+`assigned`, `claimed`, `completed`, and `archived`.
 
 The client treats events as invalidation hints and refetches canonical records.
 Reconnect uses the last event ID; missed history falls back to a full refetch.

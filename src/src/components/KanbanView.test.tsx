@@ -14,9 +14,24 @@ describe('KanbanView', () => {
 
   beforeEach(() => {
     window.localStorage.clear();
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (path.endsWith('/events/stream')) {
+        return new Response('id: 0\nevent: connected\ndata: {"cursor":0}\n\n', {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        });
+      }
       if (path.includes('/kanban/boards/') && path.includes('/tasks/')) {
+        const requested = init?.body ? JSON.parse(String(init.body)) as { status?: string } : {};
+        if (path.endsWith('/move') && requested.status === 'backlog') {
+          return new Response(JSON.stringify({
+            success: false,
+            message: 'active tasks cannot be returned to Backlog',
+            error: { code: 'invalid_transition' },
+            status_code: 409,
+          }), { status: 409, headers: { 'Content-Type': 'application/json' } });
+        }
         const archived = path.endsWith('/archive');
         const providerTask = path.includes('/provider-rollout/');
         return new Response(JSON.stringify({ success: true, data: {
@@ -85,6 +100,8 @@ describe('KanbanView', () => {
     const drawer = screen.getByRole('dialog');
     expect(within(drawer).getByRole('heading', { name: 'Prepare the weekly report' })).toBeVisible();
     expect(within(drawer).getByText('Update the task status without leaving the board.')).toBeVisible();
+    expect(within(drawer).getByText('Running', { selector: '.kb-column-state' })).toBeVisible();
+    expect(within(drawer).getByText('Running', { selector: '.kb-substate' })).toBeVisible();
   });
 
   it('shows five columns and confirms before dropping a task into Archived', async () => {
@@ -111,5 +128,24 @@ describe('KanbanView', () => {
     fireEvent.drop(archiveColumn, { dataTransfer });
     expect(confirm).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/archive'))).toBe(true));
+    expect(await screen.findByRole('status')).toHaveTextContent('Moved “Prepare the weekly report” to Archived.');
+  });
+
+  it('restores a conflicting move and shows the clean API message', async () => {
+    render(<TestBoard />);
+    const card = await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
+    const backlogColumn = screen.getByRole('region', { name: 'Backlog column' });
+    const dataTransfer = {
+      effectAllowed: 'move',
+      dropEffect: 'move',
+      setData: vi.fn(),
+      getData: vi.fn(() => 't-1042'),
+    };
+
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.drop(backlogColumn, { dataTransfer });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('active tasks cannot be returned to Backlog');
+    expect(screen.getByRole('button', { name: 'Open t-1042: Prepare the weekly report' })).toBeVisible();
   });
 });

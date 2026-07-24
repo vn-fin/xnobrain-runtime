@@ -268,3 +268,37 @@ class APIHandlers:
                 "X-Accel-Buffering": "no",
             },
         )
+
+    async def kanban_event_stream(self, request: Request) -> StreamingResponse:
+        """Stream new board task events without replaying history by default."""
+        board = request.path_params["board_slug"]
+        raw_cursor = request.headers.get("Last-Event-ID") or request.query_params.get("after")
+        try:
+            cursor = max(0, int(raw_cursor)) if raw_cursor else self.service.kanban.board_event_cursor(board)
+        except (TypeError, ValueError):
+            cursor = 0
+
+        async def events():
+            nonlocal cursor
+            connected = {"board_slug": board, "cursor": cursor}
+            yield f"id: {cursor}\nevent: connected\ndata: {json.dumps(connected, separators=(',', ':'))}\n\n"
+            while not await request.is_disconnected():
+                try:
+                    rows = self.service.kanban.board_events(board, after_id=cursor)
+                    for item in rows:
+                        cursor = max(cursor, int(item["id"]))
+                        yield f"id: {cursor}\nevent: task\ndata: {json.dumps(item, separators=(',', ':'))}\n\n"
+                except EXPECTED_ERRORS as error:
+                    yield f"event: error\ndata: {json.dumps({'message': str(error)})}\n\n"
+                    return
+                await asyncio.sleep(1)
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )

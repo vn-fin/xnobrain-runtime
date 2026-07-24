@@ -34,7 +34,7 @@ export default function App() {
   const conversation = useConversation(router.activeAgentId, router.activeConversationId);
   const workspace = useWorkspace(router.activeAgentId);
   const teams = useTeams();
-  const kanban = useKanban();
+  const kanban = useKanban(router.centerView === 'kanban');
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
   const RIGHT_MIN = 280;

@@ -35,6 +35,17 @@ function colorFor(id: string): string {
   return ASSIGNEE_COLORS[hash % ASSIGNEE_COLORS.length];
 }
 
+function nativeStatusLabel(status: KanbanTask['nativeStatus']): string {
+  return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function eventTime(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 /** Resolve an assignee id against the real agent roster, with a graceful fallback. */
 function resolveAssignee(id: string, agents: Agent[]) {
   const agent = agents.find((item) => item.id === id || item.name === id);
@@ -98,7 +109,7 @@ function TaskCard({
 }) {
   return (
     <button
-      className={`kb-card col-${column} status-${task.status}`}
+      className={`kb-card col-${column} status-${task.nativeStatus}`}
       draggable
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'move';
@@ -111,7 +122,8 @@ function TaskCard({
     >
       <div className="kb-card-top">
         <span className="kb-id">{task.id}</span>
-        <span className={`kb-substate ${task.status}`}>{statusLabel(task.status)}</span>
+        <span className={`kb-column-state col-${task.status}`}>{statusLabel(task.status)}</span>
+        <span className={`kb-substate native-${task.nativeStatus}`}>{nativeStatusLabel(task.nativeStatus)}</span>
       </div>
       <PriorityTitle task={task} />
       <p className="kb-card-desc">{task.description}</p>
@@ -179,7 +191,8 @@ function TaskDrawer({
           <div>
             <div className="kb-drawer-kicker">
               <span className="kb-id">{task.id}</span>
-              <span className={`kb-substate ${task.status}`}>{state.statusLabel(task.status)}</span>
+              <span className={`kb-column-state col-${task.status}`}>{state.statusLabel(task.status)}</span>
+              <span className={`kb-substate native-${task.nativeStatus}`}>{nativeStatusLabel(task.nativeStatus)}</span>
             </div>
             <h2>{task.title}</h2>
           </div>
@@ -206,19 +219,36 @@ function TaskDrawer({
           </section>
 
           <section>
-            <span className="kb-label">Assignees</span>
+            <span className="kb-label">Assignee</span>
             <div className="kb-drawer-assignees">
-              {task.assignees.length === 0 && <span className="kb-unassigned">Unassigned</span>}
-              {task.assignees.map((id) => {
-                const person = resolveAssignee(id, agents);
-                return (
-                  <span key={id} className="kb-person">
-                    <span className="kb-avatar" style={{ background: person.color }}>{monogram(person.name)}</span>
-                    {person.name}
-                  </span>
-                );
-              })}
+              {['triage', 'todo', 'ready', 'scheduled'].includes(task.nativeStatus) ? (
+                <select
+                  className="kb-assignee-select"
+                  aria-label="Change task assignee"
+                  value={task.assignees[0] ?? ''}
+                  onChange={(event) => void state.assignTask(task.id, event.target.value || null)}
+                >
+                  <option value="">Unassigned</option>
+                  {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.title}</option>)}
+                </select>
+              ) : (
+                <>
+                  {task.assignees.length === 0 && <span className="kb-unassigned">Unassigned</span>}
+                  {task.assignees.map((id) => {
+                    const person = resolveAssignee(id, agents);
+                    return (
+                      <span key={id} className="kb-person">
+                        <span className="kb-avatar" style={{ background: person.color }}>{monogram(person.name)}</span>
+                        {person.name}
+                      </span>
+                    );
+                  })}
+                </>
+              )}
             </div>
+            {['triage', 'todo', 'ready', 'scheduled'].includes(task.nativeStatus) && (
+              <small className="kb-field-help">Choose the single agent that will run this task.</small>
+            )}
           </section>
 
           <section className="kb-drawer-grid">
@@ -288,20 +318,19 @@ function NewTaskModal({
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState(initialStatus ?? board?.statuses[0]?.id ?? 'todo');
   const [priority, setPriority] = useState<KanbanPriority>('medium');
-  const [assignees, setAssignees] = useState<string[]>([]);
+  const [assignee, setAssignee] = useState('');
   const [invalid, setInvalid] = useState(false);
 
   if (!board) return null;
 
-  const toggleAssignee = (id: string) =>
-    setAssignees((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  const toggleAssignee = (id: string) => setAssignee((current) => current === id ? '' : id);
 
   const submit = async () => {
     if (!title.trim()) {
       setInvalid(true);
       return;
     }
-    await state.createTask({ title: title.trim(), description: description.trim(), status: status as KanbanColumnId, priority, assignees });
+    await state.createTask({ title: title.trim(), description: description.trim(), status: status as KanbanColumnId, priority, assignee: assignee || null });
     onClose();
   };
 
@@ -343,13 +372,13 @@ function NewTaskModal({
             </label>
           </div>
           <div className="kb-field">
-            Assignees
+            Assignee
             <div className="kb-assignee-picker">
               {agents.length === 0 && <span className="kb-unassigned">No agents available</span>}
               {agents.map((agent) => (
                 <button
                   key={agent.id}
-                  className={assignees.includes(agent.id) ? 'kb-assignee-chip on' : 'kb-assignee-chip'}
+                  className={assignee === agent.id ? 'kb-assignee-chip on' : 'kb-assignee-chip'}
                   onClick={() => toggleAssignee(agent.id)}
                 >
                   <span className="kb-avatar" style={{ background: colorFor(agent.id) }}>{monogram(agent.title)}</span>
@@ -357,12 +386,13 @@ function NewTaskModal({
                 </button>
               ))}
             </div>
+            <small className="kb-field-help">One agent owns and runs each task.</small>
           </div>
           <label className="kb-field">
             Description
             <textarea
               value={description}
-              placeholder="Optional context for the assignees…"
+              placeholder="Optional context for the assignee…"
               onChange={(event) => setDescription(event.target.value)}
             />
           </label>
@@ -487,6 +517,10 @@ export function KanbanView({
                 </select>
               </label>
               <span className="kb-board-id">board/{board?.id ?? 'default'}</span>
+              <span className={`kb-live-status ${state.liveStatus}`}>
+                <span />
+                {state.liveStatus === 'live' ? 'Live' : state.liveStatus === 'connecting' ? 'Connecting' : 'Reconnecting'}
+              </span>
             </div>
           </div>
           <span className="kb-sub">{board?.description}</span>
@@ -518,6 +552,16 @@ export function KanbanView({
           </button>
         </div>
       </header>
+
+      {state.notice && (
+        <div className={`kb-notice ${state.notice.kind}`} role={state.notice.kind === 'error' ? 'alert' : 'status'}>
+          {state.notice.kind === 'success' ? <Check size={15} /> : <AlertTriangle size={15} />}
+          <span>{state.notice.message}</span>
+          <button className="icon-button" aria-label="Dismiss notification" onClick={state.dismissNotice}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       <div className="kb-command">
         <label className="kb-search">
@@ -572,6 +616,31 @@ export function KanbanView({
           {filtersActive && <button className="kb-clear" onClick={clearFilters}>Clear</button>}
         </div>
       </div>
+
+      <details className="kb-live-feed">
+        <summary>
+          <span className={`kb-live-dot ${state.liveStatus}`} />
+          Live task activity
+          {state.events[0] && (
+            <span className="kb-live-latest">
+              {state.events[0].taskId} · {state.events[0].kind.replaceAll('_', ' ')}
+            </span>
+          )}
+        </summary>
+        <div className="kb-live-events">
+          {state.events.length === 0 ? (
+            <span className="kb-live-empty">Waiting for new task activity…</span>
+          ) : state.events.slice(0, 8).map((event) => (
+            <div className="kb-live-event" key={event.id}>
+              <time>{eventTime(event.createdAt)}</time>
+              <code>{event.taskId}</code>
+              <strong>{event.kind.replaceAll('_', ' ')}</strong>
+              <span>@{event.assignee || 'unassigned'}</span>
+              <span className={`kb-substate native-${event.nativeStatus}`}>{nativeStatusLabel(event.nativeStatus)}</span>
+            </div>
+          ))}
+        </div>
+      </details>
 
       {state.status === 'loading' && <div className="kb-empty">Loading board…</div>}
       {state.status === 'error' && <div className="kb-error">{state.error}</div>}

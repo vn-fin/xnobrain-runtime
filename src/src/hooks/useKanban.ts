@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { kanbanApi } from '../api/kanban';
 import type {
   AsyncStatus,
   KanbanBoard,
   KanbanColumnId,
+  KanbanEvent,
+  KanbanNativeStatus,
+  KanbanNotice,
   KanbanStatusDef,
   KanbanViewMode,
   NewKanbanTaskInput,
@@ -15,7 +18,7 @@ const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
  * Manages the real Hermes-backed Kanban board and exposes small optimistic
  * mutations for moving and creating tasks.
  */
-export function useKanban() {
+export function useKanban(active = true) {
   const [boards, setBoards] = useState<KanbanBoard[]>([]);
   const [activeBoardId, setActiveBoardIdState] = useState(
     () => window.localStorage.getItem('brain4all-kanban-board') ?? '',
@@ -24,9 +27,18 @@ export function useKanban() {
   const [error, setError] = useState('');
   const [view, setView] = useState<KanbanViewMode>('board');
   const [search, setSearch] = useState('');
+  const [liveStatus, setLiveStatus] = useState<'connecting' | 'live' | 'offline'>('connecting');
+  const [events, setEvents] = useState<KanbanEvent[]>([]);
+  const [notice, setNotice] = useState<KanbanNotice | null>(null);
+  const noticeId = useRef(0);
 
-  const refresh = useCallback(async () => {
-    setStatus('loading');
+  const notify = useCallback((kind: KanbanNotice['kind'], message: string) => {
+    noticeId.current += 1;
+    setNotice({ id: noticeId.current, kind, message });
+  }, []);
+
+  const load = useCallback(async (showLoading = true) => {
+    if (showLoading) setStatus('loading');
     try {
       const loaded = await kanbanApi.getBoards();
       setBoards(loaded);
@@ -42,8 +54,8 @@ export function useKanban() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (active) void load();
+  }, [active, load]);
 
   const board = useMemo(
     () => boards.find((item) => item.id === activeBoardId) ?? boards[0] ?? null,
@@ -71,6 +83,8 @@ export function useKanban() {
 
   const moveTask = useCallback(async (taskId: string, nextStatus: KanbanColumnId) => {
     if (!board) return;
+    const title = board.tasks.find((task) => task.id === taskId)?.title ?? taskId;
+    const label = board.statuses.find((item) => item.id === nextStatus)?.label ?? nextStatus;
     const previous = boards;
     setBoards((current) =>
       current.map((item) =>
@@ -91,11 +105,25 @@ export function useKanban() {
           ? { ...item, tasks: item.tasks.map((task) => task.id === taskId ? updated : task) }
           : item));
       }
+      notify('success', `Moved “${title}” to ${label}.`);
     } catch (cause) {
       setBoards(previous);
-      throw cause;
+      notify('error', cause instanceof Error ? cause.message : 'The task could not be moved.');
     }
-  }, [board, boards]);
+  }, [board, boards, notify]);
+
+  const assignTask = useCallback(async (taskId: string, assignee: string | null) => {
+    if (!board) return;
+    try {
+      const updated = await kanbanApi.assignTask(board.id, taskId, assignee);
+      setBoards((current) => current.map((item) => item.id === board.id
+        ? { ...item, tasks: item.tasks.map((task) => task.id === taskId ? updated : task) }
+        : item));
+      notify('success', assignee ? `Assigned “${updated.title}”.` : `Unassigned “${updated.title}”.`);
+    } catch (cause) {
+      notify('error', cause instanceof Error ? cause.message : 'The assignee could not be changed.');
+    }
+  }, [board, notify]);
 
   const createTask = useCallback(async (input: NewKanbanTaskInput) => {
     if (!board) throw new Error('No board is selected.');
@@ -110,13 +138,66 @@ export function useKanban() {
     throw new Error('Kanban uses the five default statuses.');
   }, []);
 
+  const streamBoardId = activeBoardId || boards[0]?.id || '';
+  useEffect(() => {
+    if (!active || !streamBoardId) return undefined;
+    const controller = new AbortController();
+    let reconnectTimer: number | undefined;
+    let refreshTimer: number | undefined;
+    let cursor: number | undefined;
+
+    const connect = async () => {
+      if (cursor == null) setLiveStatus('connecting');
+      try {
+        await kanbanApi.watchBoard(streamBoardId, (event) => {
+          const eventId = Number(event.id);
+          if (Number.isFinite(eventId)) cursor = eventId;
+          if (event.event === 'connected') {
+            setLiveStatus('live');
+            return;
+          }
+          if (event.event === 'error') {
+            setLiveStatus('offline');
+            return;
+          }
+          if (event.event !== 'task' || !event.data || typeof event.data !== 'object') return;
+          const data = event.data as Record<string, unknown>;
+          const item: KanbanEvent = {
+            id: Number(data.id ?? eventId),
+            taskId: String(data.task_id ?? ''),
+            kind: String(data.kind ?? 'updated'),
+            createdAt: String(data.created_at ?? ''),
+            assignee: data.assignee == null ? null : String(data.assignee),
+            nativeStatus: String(data.status ?? 'todo') as KanbanNativeStatus,
+            status: String(data.kanban_status ?? 'todo') as KanbanColumnId,
+          };
+          setEvents((current) => [item, ...current.filter((existing) => existing.id !== item.id)].slice(0, 20));
+          setLiveStatus('live');
+          if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(() => void load(false), 120);
+        }, controller.signal, cursor);
+      } catch {
+        if (controller.signal.aborted) return;
+        setLiveStatus('offline');
+      }
+      if (!controller.signal.aborted) reconnectTimer = window.setTimeout(() => void connect(), 1_000);
+    };
+
+    void connect();
+    return () => {
+      controller.abort();
+      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+    };
+  }, [active, load, streamBoardId]);
+
   // Tasks filtered by the search box, sorted by priority within their group.
   const visibleTasks = useMemo(() => {
     if (!board) return [];
     const query = search.trim().toLowerCase();
     const rows = query
       ? board.tasks.filter((task) =>
-          [task.id, task.title, task.tags.join(' '), task.assignees.join(' '), task.status]
+          [task.id, task.title, task.tags.join(' '), task.assignees.join(' '), task.status, task.nativeStatus]
             .join(' ')
             .toLowerCase()
             .includes(query),
@@ -140,8 +221,13 @@ export function useKanban() {
     columnOf,
     statusLabel,
     moveTask,
+    assignTask,
     createTask,
     addStatus,
-    refresh,
+    refresh: () => load(),
+    liveStatus,
+    events,
+    notice,
+    dismissNotice: () => setNotice(null),
   };
 }
