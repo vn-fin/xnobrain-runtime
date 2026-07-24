@@ -1,0 +1,13 @@
+name: {{PLUGIN_NAME}}
+version: 0.1.0
+description: "{{DESCRIPTION}}"
+author: "you"
+# kind: standalone (default) | backend | exclusive | platform
+kind: standalone
+# Env vars this plugin needs (documented; enforce in check_fn/register).
+requires_env: []
+# Documentation hints — what this plugin contributes.
+provides_tools:
+  - {{PLUGIN_NAME}}_echo
+provides_hooks:
+  - post_tool_call
