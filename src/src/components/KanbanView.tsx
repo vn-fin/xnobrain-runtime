@@ -55,6 +55,27 @@ function eventTime(value: string): string {
     : parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function scheduleTime(value: string | null, timezone: string): string {
+  if (!value) return 'No next run';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  try {
+    return new Intl.DateTimeFormat([], {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: timezone,
+    }).format(parsed);
+  } catch {
+    return parsed.toLocaleString();
+  }
+}
+
+function defaultScheduledAt(): string {
+  const date = new Date(Date.now() + 60 * 60 * 1000);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
 /** Resolve an assignee id against the real agent roster, with a graceful fallback. */
 function resolveAssignee(id: string, agents: Agent[]) {
   const agent = agents.find((item) => item.id === id || item.name === id);
@@ -252,12 +273,15 @@ function TaskCard({
   onDragStart: () => void;
   onDragEnd: () => void;
 }) {
+  const scheduleCompleted = task.schedule?.recurrence === 'once'
+    && task.schedule.occurrenceCount > 0
+    && task.schedule.nextRunAt == null;
   return (
     <button
       className={`kb-card col-${column} status-${task.nativeStatus}`}
-      draggable={column !== 'archived'}
+      draggable={column !== 'archived' && task.nativeStatus !== 'scheduled'}
       onDragStart={(event) => {
-        if (column === 'archived') return;
+        if (column === 'archived' || task.nativeStatus === 'scheduled') return;
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', task.id);
         onDragStart();
@@ -280,7 +304,18 @@ function TaskCard({
           ))}
         </div>
       )}
-      {task.block ? (
+      {task.schedule ? (
+        <div className={`kb-signal scheduled ${task.schedule.enabled ? '' : 'paused'}`}>
+          <Clock size={13} />
+          <span>
+            {scheduleCompleted
+              ? 'Schedule completed'
+              : task.schedule.enabled
+              ? `Next: ${scheduleTime(task.schedule.nextRunAt, task.schedule.timezone)}`
+              : 'Schedule paused'}
+          </span>
+        </div>
+      ) : task.block ? (
         <div className="kb-signal blocked">
           <AlertTriangle size={13} />
           <span>{task.block}</span>
@@ -343,6 +378,9 @@ function TaskDrawer({
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
   const movableStatuses = task.allowedStatuses.filter((status) => status !== 'archived');
+  const scheduleCompleted = task.schedule?.recurrence === 'once'
+    && task.schedule.occurrenceCount > 0
+    && task.schedule.nextRunAt == null;
 
   useEffect(() => {
     if (editing) return;
@@ -497,6 +535,49 @@ function TaskDrawer({
             </div>
           </section>
 
+          {task.schedule && (
+            <section className="kb-detail-section kb-schedule-detail">
+              <div className="kb-section-heading">
+                <div>
+                  <span className="kb-label">Schedule</span>
+                  <small>
+                    {task.schedule.recurrence === 'interval'
+                      ? `Repeats every ${task.schedule.intervalMinutes} minutes`
+                      : 'Runs once'}
+                  </small>
+                </div>
+                <span className={`kb-schedule-state ${scheduleCompleted ? 'completed' : task.schedule.enabled ? 'active' : 'paused'}`}>
+                  {scheduleCompleted ? 'Completed' : task.schedule.enabled ? 'Active' : 'Paused'}
+                </span>
+              </div>
+              <div className="kb-schedule-time">
+                <Clock size={16} />
+                <div>
+                  <strong>
+                    {scheduleCompleted
+                      ? `Ran ${scheduleTime(task.schedule.lastRunAt, task.schedule.timezone)}`
+                      : scheduleTime(task.schedule.nextRunAt, task.schedule.timezone)}
+                  </strong>
+                  <small>{task.schedule.timezone} · {task.schedule.occurrenceCount} run{task.schedule.occurrenceCount === 1 ? '' : 's'}</small>
+                </div>
+              </div>
+              {!scheduleCompleted && <div className="kb-schedule-actions">
+                <button
+                  className="conn-btn ghost"
+                  onClick={() => void state.updateSchedule(
+                    task.id,
+                    task.schedule?.enabled ? 'pause' : 'resume',
+                  )}
+                >
+                  {task.schedule.enabled ? 'Pause schedule' : 'Resume schedule'}
+                </button>
+                <button className="conn-btn" onClick={() => void state.updateSchedule(task.id, 'run_now')}>
+                  Run now
+                </button>
+              </div>}
+            </section>
+          )}
+
           {task.result && (
             <section className="kb-detail-section kb-result-section">
               <div className="kb-section-heading">
@@ -631,7 +712,11 @@ function TaskDrawer({
         {task.status !== 'archived' && <div className="kb-drawer-foot">
           <div>
             <span className="kb-label">Move task</span>
-            <p>Only valid next steps are enabled.</p>
+            <p>
+              {task.nativeStatus === 'scheduled'
+                ? 'Scheduled tasks are controlled by their schedule.'
+                : 'Only valid next steps are enabled.'}
+            </p>
           </div>
           <label className="kb-move-select">
             <span className="sr-only">Move task to</span>
@@ -680,10 +765,18 @@ function NewTaskModal({
   const board = state.board;
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState(initialStatus ?? board?.statuses[0]?.id ?? 'todo');
+  const [status, setStatus] = useState<'backlog' | 'todo' | 'scheduled'>(
+    initialStatus === 'backlog' ? 'backlog' : 'todo',
+  );
   const [priority, setPriority] = useState<KanbanPriority>('medium');
   const [assignee, setAssignee] = useState('');
   const [skills, setSkills] = useState<string[]>([]);
+  const [recurrence, setRecurrence] = useState<'once' | 'interval'>('once');
+  const [scheduledAt, setScheduledAt] = useState(defaultScheduledAt);
+  const [intervalMinutes, setIntervalMinutes] = useState(60);
+  const [scheduleTimezone] = useState(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Etc/UTC',
+  );
   const [invalid, setInvalid] = useState(false);
 
   useEffect(() => {
@@ -693,7 +786,7 @@ function NewTaskModal({
   if (!board) return null;
 
   const submit = async () => {
-    if (!title.trim() || !description.trim()) {
+    if (!title.trim() || !description.trim() || (status === 'scheduled' && !scheduledAt)) {
       setInvalid(true);
       return;
     }
@@ -704,6 +797,12 @@ function NewTaskModal({
       priority,
       assignee: assignee || null,
       skills,
+      schedule: status === 'scheduled' ? {
+        recurrence,
+        scheduled_at: scheduledAt,
+        timezone: scheduleTimezone,
+        ...(recurrence === 'interval' ? { interval_minutes: intervalMinutes } : {}),
+      } : undefined,
     });
     onClose();
   };
@@ -730,10 +829,13 @@ function NewTaskModal({
           <div className="kb-field-row">
             <label className="kb-field">
               Status
-              <select value={status} onChange={(event) => setStatus(event.target.value)}>
-                {board.statuses.filter((entry) => entry.id === 'backlog' || entry.id === 'todo').map((entry) => (
-                  <option key={entry.id} value={entry.id}>{entry.label}</option>
-                ))}
+              <select
+                value={status}
+                onChange={(event) => setStatus(event.target.value as 'backlog' | 'todo' | 'scheduled')}
+              >
+                <option value="backlog">Backlog</option>
+                <option value="todo">Todo</option>
+                <option value="scheduled">Scheduled</option>
               </select>
             </label>
             <label className="kb-field">
@@ -759,6 +861,56 @@ function NewTaskModal({
             />
             <small className="kb-field-help">The assigned agent uses this as its working brief.</small>
           </label>
+          {status === 'scheduled' && (
+            <div className="kb-schedule-form">
+              <div className="kb-schedule-form-head">
+                <Clock size={17} />
+                <div>
+                  <strong>Run later</strong>
+                  <small>The Kanban dispatcher starts this task when it is due.</small>
+                </div>
+              </div>
+              <div className="kb-field-row">
+                <label className="kb-field">
+                  Repeat
+                  <select
+                    value={recurrence}
+                    onChange={(event) => setRecurrence(event.target.value as 'once' | 'interval')}
+                  >
+                    <option value="once">Run once</option>
+                    <option value="interval">Repeat</option>
+                  </select>
+                </label>
+                {recurrence === 'interval' && (
+                  <label className="kb-field">
+                    Every (minutes)
+                    <input
+                      type="number"
+                      min={1}
+                      value={intervalMinutes}
+                      onChange={(event) => setIntervalMinutes(Math.max(1, Number(event.target.value)))}
+                    />
+                  </label>
+                )}
+              </div>
+              <label className={!scheduledAt ? 'kb-field invalid' : 'kb-field'}>
+                First run
+                <input
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(event) => setScheduledAt(event.target.value)}
+                />
+              </label>
+              <div className="kb-schedule-preview">
+                <Clock size={14} />
+                <span>
+                  {recurrence === 'interval' ? `Every ${intervalMinutes} minutes, starting ` : 'Runs '}
+                  {scheduledAt ? new Date(scheduledAt).toLocaleString() : 'after a date is selected'}
+                  {' · '}{scheduleTimezone}
+                </span>
+              </div>
+            </div>
+          )}
           <div className="kb-field">
             Skills used for this task
             <SkillPicker agents={agents} assignee={assignee} selected={skills} onChange={setSkills} />
@@ -767,7 +919,11 @@ function NewTaskModal({
         </div>
         <div className="kb-modal-foot">
           <button className="conn-btn ghost" onClick={onClose}>Cancel</button>
-          <button className="primary-button" disabled={!title.trim() || !description.trim()} onClick={() => void submit()}>
+          <button
+            className="primary-button"
+            disabled={!title.trim() || !description.trim() || (status === 'scheduled' && !scheduledAt)}
+            onClick={() => void submit()}
+          >
             <Plus size={16} /> Create task
           </button>
         </div>

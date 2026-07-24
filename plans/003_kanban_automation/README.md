@@ -9,8 +9,9 @@ automation from a task, from Settings, or by prompting an agent. Every
 automation has a visible template card on the default board, and every due
 execution becomes a normal Kanban occurrence handled by the existing dispatcher.
 
-Hermes remains authoritative for schedule timing. Brain4All must remove its
-duplicate scheduler only after migration is proven.
+The existing in-process Kanban dispatcher owns schedule timing. Brain4All adds
+schedule metadata beside native tasks in the same Kanban SQLite database; it
+does not start another scheduler or create another database.
 
 ## User model
 
@@ -28,49 +29,27 @@ is due. For a one-shot schedule, the implementation may promote a single card
 at due time only if that behavior remains idempotent and equally auditable;
 using the same template/occurrence model is simpler and preferred.
 
-## Phase 0 — Execution bridge
+## Phase 0 — SQLite scheduling extension
 
-### Preferred path
-
-Contribute or consume a small upstream Hermes cron execution target:
+The pinned runtime does not expose the documented `scheduled_at` field or a
+cron-to-Kanban execution target. Extend the database at the adapter boundary:
 
 ```text
-native cron timing
-  -> execution_target = kanban
-  -> public kanban create_task
+existing Kanban dispatcher tick
+  -> read due brain4all_task_schedules rows
+  -> release one-shot task or create idempotent recurring occurrence
   -> embedded kanban dispatcher
   -> worker run and task history
 ```
 
-The extension must:
+The extension:
 
-- be valid from the native CLI, `cronjob` tool, and Brain4All Settings;
-- enqueue rather than instantiate a direct `AIAgent`;
-- use the configured/default board and an eligible profile/assignee;
-- carry a deterministic occurrence idempotency key;
-- return enough safe metadata to link the run to the template;
-- preserve existing Hermes behavior for non-Kanban cron jobs outside
-  Brain4All.
-
-Add the capability to Hermes at the edge of its cron execution service rather
-than forking the scheduler. Pin the first upstream revision containing it.
-
-### Bounded fallback
-
-If the upstream target is not available, create a Hermes no-agent script job
-whose generated helper calls the public Kanban database API. This fallback is
-allowed only after tests prove:
-
-- deterministic scheduled-instant/idempotency information is available;
-- the helper is generated atomically beneath the profile’s permitted script
-  area and contains no credentials;
-- upgrades are versioned and do not rewrite user scripts;
-- Settings, prompt, CLI, pause/resume, manual trigger, missed ticks, and restart
-  all behave consistently;
-- no polling/reconciliation process is needed.
-
-If any proof fails, block the plan and complete the upstream target. Do not
-substitute a second scheduler or an after-the-fact shadow card.
+- leaves upstream task/run/event schemas unchanged;
+- stores only timing, recurrence, timezone, enabled state, and counters;
+- uses the native task as the schedule template and source content;
+- promotes one-shot tasks through public transition operations;
+- creates recurring tasks with a deterministic scheduled-instant key;
+- runs immediately before the existing native dispatch pass.
 
 ## Data linkage
 
@@ -78,7 +57,7 @@ Prefer upstream-supported metadata fields. At minimum, persist durable opaque
 links:
 
 - template task ID;
-- Hermes cron job ID and owner profile;
+- template task ID and owner profile;
 - occurrence scheduled instant and trigger type;
 - occurrence task ID;
 - optional previous/next occurrence links;
@@ -86,15 +65,15 @@ links:
 
 Use a deterministic key equivalent to:
 
-`cron:<profile-id>:<job-id>:<scheduled-instant>`
+`schedule:<template-task-id>:<scheduled-instant>`
 
 The exact encoding is an implementation detail. It must be stable across
 restarts and manual retries. “Run now” uses a distinct trigger/event ID so
 intentional manual runs are not deduplicated against a scheduled run.
 
-Do not duplicate the full task description or schedule in a new Brain4All
-database. Store Kanban metadata in Hermes Kanban and schedule metadata in
-Hermes cron, resolving both through the service adapter.
+Do not duplicate the task description. Store schedule metadata in
+`brain4all_task_schedules` inside the same board database and resolve it by
+native task ID.
 
 ## Creation paths
 
@@ -102,8 +81,8 @@ All three paths call the same Brain4All/upstream domain operation:
 
 1. **Task UI:** turn on “Repeat or run later” in quick create/task drawer.
 2. **Settings:** create/manage automations in Settings > Automations.
-3. **Prompt:** the agent’s `cronjob` tool creates the schedule and associated
-   default-board template.
+3. **Prompt:** a Brain4All scheduling tool must call the same Kanban schedule
+   service and create the associated default-board template.
 
 Prompt-created schedules must not rely on a UI-only post-processing hook. The
 tool/CLI contract itself must support the Kanban target or be safely overridden
@@ -231,8 +210,10 @@ Browser tests:
 
 ## Acceptance criteria
 
-- There is one schedule ticker: native Hermes.
+- There is one schedule ticker: the existing Kanban dispatcher loop.
 - There is one execution queue: Hermes Kanban.
+- There is one SQLite database per board; scheduling is an extension table in
+  that database, not another persistence service.
 - There is one visible default-board template for every new automation.
 - Due work is never executed invisibly before becoming a Kanban occurrence.
 - UI and prompt creation have the same lifecycle controls and persistence.

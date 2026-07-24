@@ -158,15 +158,22 @@ and `completed`.
 Unknown future upstream states must produce a compatibility diagnostic, not be
 silently mapped to Todo.
 
+Scheduled tasks include a database-backed `schedule` object with recurrence,
+`next_run_at`, interval minutes, timezone, enabled state, occurrence count, and
+last-run time. The metadata lives in `brain4all_task_schedules` inside the
+board's Kanban SQLite database. Native scheduled cards have no ordinary move
+targets; archive remains a separate confirmed action.
+
 ## Move intent matrix
 
 Exact operations must be confirmed against the pinned public Hermes API:
 
 | From product state | Requested state | Domain intent |
 | --- | --- | --- |
-| Backlog | Todo | Promote/clarify task, then make eligible when assigned |
+| Backlog | Todo | Specify the triage task into native `todo` |
+| Backlog | Running | Specify, then promote to native `ready` |
 | Todo | Backlog | Return to triage if no worker owns it |
-| Todo | Running | Assign if needed, make ready, nudge dispatcher |
+| Todo | Running | Promote to native `ready`; the dispatcher owns claiming |
 | Todo | Done | Complete manually with a completion summary |
 | Running | Todo | Terminate/reclaim safely, then requeue; confirmation required |
 | Running | Done | Complete through the worker/domain completion operation |

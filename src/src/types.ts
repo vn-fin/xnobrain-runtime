@@ -320,6 +320,16 @@ export type KanbanConversationLink = {
   url: string;
 };
 
+export type KanbanTaskSchedule = {
+  recurrence: 'once' | 'interval';
+  nextRunAt: string | null;
+  intervalMinutes: number | null;
+  timezone: string;
+  enabled: boolean;
+  occurrenceCount: number;
+  lastRunAt: string | null;
+};
+
 /** The fixed product status vocabulary. */
 export type KanbanStatusDef = {
   id: KanbanColumnId;
@@ -356,6 +366,7 @@ export type KanbanTask = {
   /** Populated when the task is complete. */
   summary?: string | null;
   result?: string | null;
+  schedule: KanbanTaskSchedule | null;
 };
 
 export type KanbanBoard = {
@@ -373,10 +384,16 @@ export type KanbanViewMode = 'board' | 'table';
 export type NewKanbanTaskInput = {
   title: string;
   description: string;
-  status: KanbanColumnId;
+  status: KanbanColumnId | 'scheduled';
   priority: KanbanPriority;
   assignee: string | null;
   skills: string[];
+  schedule?: {
+    recurrence: 'once' | 'interval';
+    scheduled_at: string;
+    timezone: string;
+    interval_minutes?: number;
+  };
 };
 
 export type KanbanTaskPatchInput = {

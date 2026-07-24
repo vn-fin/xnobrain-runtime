@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..integrations import kanban as kb_adapter
 from ..integrations.kanban import KanbanUnavailable
@@ -64,11 +65,13 @@ def _detail(task: Any) -> dict[str, Any]:
 def _allowed_moves(raw: str) -> list[str]:
     """Return product columns reachable without hidden reclaim/reopen work."""
     if raw == "triage":
-        return ["todo", "archived"]
+        return ["todo", "running", "archived"]
     if raw in {"todo"}:
         return ["running", "done", "archived"]
-    if raw in {"ready", "running", "scheduled"}:
+    if raw in {"ready", "running"}:
         return ["done", "archived"]
+    if raw == "scheduled":
+        return ["archived"]
     if raw == "blocked":
         return ["todo", "archived"]
     if raw == "review":
@@ -102,6 +105,40 @@ class KanbanService:
         if assignee and self.agents is not None:
             return "dir", str(self.agents.workspace_dir(assignee))
         return "scratch", None
+
+    @staticmethod
+    def _schedule_values(value: Any) -> tuple[str, int, int | None, str]:
+        if not isinstance(value, Mapping):
+            raise ServiceError("schedule is required for a scheduled task", code="invalid_schedule")
+        recurrence = str(value.get("recurrence") or "once")
+        timezone_name = str(value.get("timezone") or "Etc/UTC").strip()
+        try:
+            local_zone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError as exc:
+            raise ServiceError("schedule timezone is invalid", code="invalid_schedule") from exc
+        raw_time = str(value.get("scheduled_at") or "").strip()
+        if not raw_time:
+            raise ServiceError("scheduled time is required", code="invalid_schedule")
+        try:
+            parsed = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ServiceError("scheduled time is invalid", code="invalid_schedule") from exc
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=local_zone)
+        scheduled_at = int(parsed.astimezone(timezone.utc).timestamp())
+        if scheduled_at <= int(datetime.now(timezone.utc).timestamp()):
+            raise ServiceError("scheduled time must be in the future", code="invalid_schedule")
+        interval_seconds: int | None = None
+        if recurrence == "interval":
+            try:
+                interval_seconds = int(value.get("interval_minutes") or 0) * 60
+            except (TypeError, ValueError) as exc:
+                raise ServiceError("repeat interval is invalid", code="invalid_schedule") from exc
+            if interval_seconds < 60:
+                raise ServiceError("repeat interval must be at least one minute", code="invalid_schedule")
+        elif recurrence != "once":
+            raise ServiceError("schedule recurrence is invalid", code="invalid_schedule")
+        return recurrence, scheduled_at, interval_seconds, timezone_name
 
     @staticmethod
     def _public_board(item: Mapping[str, Any]) -> dict[str, Any]:
@@ -161,6 +198,7 @@ class KanbanService:
         attachments = kb_adapter.task_attachments(conn, task.id)
         runs = kb_adapter.task_runs(conn, task.id)
         raw_status = str(task.status)
+        schedule = kb_adapter.task_schedule(conn, str(task.id))
         latest_summary = next(
             (str(run.summary) for run in reversed(runs) if getattr(run, "summary", None)),
             None,
@@ -191,6 +229,23 @@ class KanbanService:
             "model_override": getattr(task, "model_override", None),
             "provider_override": getattr(task, "provider_override", None),
             "goal_mode": bool(getattr(task, "goal_mode", False)),
+            "schedule": (
+                {
+                    "recurrence": str(schedule["recurrence"]),
+                    "next_run_at": _iso(schedule.get("next_run_at")),
+                    "interval_minutes": (
+                        int(schedule["interval_seconds"]) // 60
+                        if schedule.get("interval_seconds") is not None
+                        else None
+                    ),
+                    "timezone": str(schedule["timezone"]),
+                    "enabled": bool(schedule["enabled"]),
+                    "occurrence_count": int(schedule["occurrence_count"]),
+                    "last_run_at": _iso(schedule.get("last_run_at")),
+                }
+                if schedule is not None
+                else None
+            ),
             "comments": [self._comment_dto(item) for item in comments],
             "attachments": [self._attachment_dto(item) for item in attachments],
             "runs": [self._run_dto(item) for item in runs],
@@ -320,8 +375,11 @@ class KanbanService:
         if not description:
             raise ServiceError("description is required", code="invalid_request")
         status = str(body.get("status") or "todo")
-        if status not in {"backlog", "todo"}:
-            raise ServiceError("new tasks may start in Backlog or Todo", code="invalid_request")
+        if status not in {"backlog", "todo", "scheduled"}:
+            raise ServiceError("new tasks may start in Backlog, Todo, or Scheduled", code="invalid_request")
+        schedule_values = self._schedule_values(body.get("schedule")) if status == "scheduled" else None
+        if status != "scheduled" and body.get("schedule") is not None:
+            raise ServiceError("choose Scheduled to set a task schedule", code="invalid_schedule")
         try:
             workspace_kind, workspace_path = self._workspace_for_assignee(
                 body.get("assignee"),
@@ -353,6 +411,19 @@ class KanbanService:
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("The created task could not be loaded", status=503, code="kanban_contract_incompatible")
+            if schedule_values is not None:
+                recurrence, scheduled_at, interval_seconds, timezone_name = schedule_values
+                if not kb.schedule_task(conn, task_id, reason="Scheduled from Brain4All"):
+                    raise ServiceError("task could not be scheduled", status=409, code="invalid_schedule")
+                kb_adapter.put_task_schedule(
+                    conn,
+                    task_id,
+                    recurrence=recurrence,
+                    next_run_at=scheduled_at,
+                    interval_seconds=interval_seconds,
+                    timezone_name=timezone_name,
+                )
+                task = kb.get_task(conn, task_id)
             return self._task_dto(conn, task, board=normalized)
 
     def patch_task(self, board: str, task_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -381,6 +452,29 @@ class KanbanService:
                 raise ServiceError(str(exc), status=409, code="stale_task") from exc
             if not ok:
                 raise ServiceError("task not found", status=404, code="task_not_found")
+            if body.get("schedule") is not None:
+                recurrence, scheduled_at, interval_seconds, timezone_name = self._schedule_values(body["schedule"])
+                current = kb.get_task(conn, task_id)
+                if current is None:
+                    raise ServiceError("task not found", status=404, code="task_not_found")
+                if str(current.status) == "triage":
+                    if not kb.specify_triage_task(conn, task_id, author="user"):
+                        raise ServiceError("task could not be scheduled", status=409, code="invalid_schedule")
+                    current = kb.get_task(conn, task_id)
+                if str(current.status) != "scheduled" and not kb.schedule_task(
+                    conn,
+                    task_id,
+                    reason="Schedule updated from Brain4All",
+                ):
+                    raise ServiceError("task could not be scheduled", status=409, code="invalid_schedule")
+                kb_adapter.put_task_schedule(
+                    conn,
+                    task_id,
+                    recurrence=recurrence,
+                    next_run_at=scheduled_at,
+                    interval_seconds=interval_seconds,
+                    timezone_name=timezone_name,
+                )
             task = kb.get_task(conn, task_id)
             return self._task_dto(conn, task, board=normalized, include_detail=True)
 
@@ -426,6 +520,12 @@ class KanbanService:
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             raw = str(task.status)
+            if raw == "scheduled" and target != "archived":
+                raise ServiceError(
+                    "Scheduled tasks are controlled by their schedule",
+                    status=409,
+                    code="invalid_transition",
+                )
             try:
                 if target == "archived":
                     ok = kb.archive_task(conn, task_id)
@@ -439,7 +539,7 @@ class KanbanService:
                 elif target == "todo":
                     if raw == "triage":
                         ok = kb.specify_triage_task(conn, task_id, author="user")
-                    elif raw in {"blocked", "scheduled"}:
+                    elif raw == "blocked":
                         ok = kb.unblock_task(conn, task_id)
                     else:
                         ok = raw in {"todo", "ready"}
@@ -448,17 +548,42 @@ class KanbanService:
                         ok = kb.claim_review_task(conn, task_id, claimer="brain4all") is not None
                     elif raw == "blocked":
                         ok = kb.unblock_task(conn, task_id)
-                    elif raw in {"todo", "ready", "scheduled"}:
-                        if raw == "scheduled":
-                            ok = kb.unblock_task(conn, task_id) and kb.claim_task(conn, task_id, claimer="brain4all") is not None
-                        elif raw == "todo":
-                            promoted, _reason = kb.promote_task(conn, task_id, actor="brain4all") if hasattr(kb, "promote_task") else (False, None)
-                            if not promoted:
-                                ok = False
-                            else:
-                                ok = kb.claim_task(conn, task_id, claimer="brain4all") is not None
-                        else:
-                            ok = kb.claim_task(conn, task_id, claimer="brain4all") is not None
+                    elif raw == "triage":
+                        specified = kb.specify_triage_task(conn, task_id, author="user")
+                        promoted, promote_reason = (
+                            kb.promote_task(conn, task_id, actor="brain4all")
+                            if specified and hasattr(kb, "promote_task")
+                            else (False, None)
+                        )
+                        # The dispatcher may recompute the newly specified
+                        # parent-free todo as ready between these two public
+                        # Hermes operations.  That is the requested outcome,
+                        # not a transition conflict.
+                        if not promoted and specified:
+                            current = kb.get_task(conn, task_id)
+                            promoted = current is not None and str(current.status) == "ready"
+                        if not promoted and promote_reason:
+                            raise ServiceError(
+                                promote_reason,
+                                status=409,
+                                code="invalid_transition",
+                            )
+                        ok = promoted
+                    elif raw == "todo":
+                        promoted, promote_reason = (
+                            kb.promote_task(conn, task_id, actor="brain4all")
+                            if hasattr(kb, "promote_task")
+                            else (False, None)
+                        )
+                        if not promoted and promote_reason:
+                            raise ServiceError(
+                                promote_reason,
+                                status=409,
+                                code="invalid_transition",
+                            )
+                        ok = promoted
+                    elif raw in {"ready", "running"}:
+                        ok = True
                     else:
                         ok = False
                 elif target == "backlog":
@@ -474,6 +599,48 @@ class KanbanService:
             task = kb.get_task(conn, task_id)
             return self._task_dto(conn, task, board=normalized)
 
+    def schedule_action(self, board: str, task_id: str, action: str) -> dict[str, Any]:
+        normalized = self._board(board)
+        kb = self._ready()
+        with kb_adapter.connection(normalized) as conn:
+            task = kb.get_task(conn, task_id)
+            if task is None:
+                raise ServiceError("task not found", status=404, code="task_not_found")
+            schedule = kb_adapter.task_schedule(conn, task_id)
+            if schedule is None:
+                raise ServiceError("task schedule not found", status=404, code="schedule_not_found")
+            if str(task.status) == "archived":
+                raise ServiceError(
+                    "archived schedules cannot be changed",
+                    status=409,
+                    code="invalid_schedule",
+                )
+            if (
+                action == "resume"
+                and str(schedule["recurrence"]) == "once"
+                and schedule.get("next_run_at") is None
+            ):
+                raise ServiceError(
+                    "one-time schedule has already run",
+                    status=409,
+                    code="invalid_schedule",
+                )
+            try:
+                if action == "pause":
+                    kb_adapter.set_task_schedule_enabled(conn, task_id, False)
+                elif action == "resume":
+                    kb_adapter.set_task_schedule_enabled(conn, task_id, True)
+                elif action == "run_now":
+                    kb_adapter.run_task_schedule_now(conn, task_id, board=normalized)
+                else:
+                    raise ServiceError("schedule action is invalid", code="invalid_request")
+            except ValueError as exc:
+                raise ServiceError(str(exc), status=409, code="invalid_schedule") from exc
+            task = kb.get_task(conn, task_id)
+            if task is None:
+                raise ServiceError("task not found", status=404, code="task_not_found")
+            return self._task_dto(conn, task, board=normalized, include_detail=True)
+
     def archive_task(self, board: str, task_id: str, *, unarchive: bool = False) -> dict[str, Any]:
         normalized = self._board(board)
         kb = self._ready()
@@ -485,6 +652,8 @@ class KanbanService:
                 raise ServiceError("Archived tasks cannot be restored", status=501, code="kanban_contract_incompatible")
             if not kb.archive_task(conn, task_id):
                 raise ServiceError("task could not be archived", status=409, code="invalid_transition")
+            if kb_adapter.task_schedule(conn, task_id) is not None:
+                kb_adapter.set_task_schedule_enabled(conn, task_id, False)
             return self._task_dto(conn, kb.get_task(conn, task_id), board=normalized)
 
     def add_comment(self, board: str, task_id: str, body: Mapping[str, Any]) -> dict[str, Any]:

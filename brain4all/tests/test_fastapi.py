@@ -279,7 +279,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             "custom",
         )
 
-    async def test_team_and_cron_persist_without_database(self):
+    async def test_team_files_and_cron_kanban_database_persist(self):
         ids = []
         async with self.client() as client:
             for title in ("Lead", "Worker"):
@@ -353,6 +353,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cycle.json()["error"]["code"], "workflow_cycle")
 
     async def test_due_profile_cron_executes_in_the_unified_process(self):
+        from brain4all.integrations import kanban as kanban_adapter
+        from hermes_cli import kanban_db
+
         async with self.client() as client:
             created = await client.post("/agent-gateway/v1/agents", json={"name": "Scheduler"})
             agent_id = created.json()["data"]["id"]
@@ -360,15 +363,25 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 "agent_id": agent_id, "name": "Due", "prompt": "Run", "interval_minutes": 60,
             })
         job = response.json()["data"]
-        job["next_run_at"] = "2000-01-01T00:00:00Z"
-        self.composition.repository.put_cron(job)
-        self.composition.service.agents.chat = AsyncMock(return_value={"response": "ok"})
-
-        await self.composition.service._tick_crons()
-
-        self.composition.service.agents.chat.assert_awaited_once()
-        updated = self.composition.service._cron(job["id"])
-        self.assertIsNotNone(updated.get("last_run_at"))
+        with kanban_adapter.connection("default") as conn:
+            conn.execute(
+                "UPDATE brain4all_task_schedules SET next_run_at = 1 "
+                "WHERE task_id = ?",
+                (job["id"],),
+            )
+            released = kanban_adapter.release_due_schedules(
+                conn,
+                board="default",
+                now=2,
+            )
+            tasks = kanban_db.list_tasks(conn, include_archived=True)
+            schedule = kanban_adapter.task_schedule(conn, job["id"])
+        self.assertEqual(len(released), 1)
+        self.assertEqual(schedule["occurrence_count"], 1)
+        self.assertTrue(any(
+            str(task.idempotency_key or "").startswith(f"schedule:{job['id']}:")
+            for task in tasks
+        ))
 
     async def test_swagger_documents_typed_management_and_stream_requests(self):
         schema = self.app.openapi()

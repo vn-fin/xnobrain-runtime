@@ -53,10 +53,17 @@ class KanbanBoardCreate(BaseModel):
     color: str | None = Field(default=None, max_length=32)
 
 
+class KanbanTaskSchedule(BaseModel):
+    recurrence: Literal["once", "interval"] = "once"
+    scheduled_at: str = Field(min_length=1, max_length=64)
+    timezone: str = Field(default="Etc/UTC", min_length=1, max_length=64)
+    interval_minutes: int | None = Field(default=None, ge=1, le=525_600)
+
+
 class KanbanTaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     description: str = Field(min_length=1, max_length=50_000)
-    status: Literal["backlog", "todo"] = "todo"
+    status: Literal["backlog", "todo", "scheduled"] = "todo"
     priority: Literal["high", "medium", "low"] = "medium"
     assignee: str | None = Field(default=None, max_length=128)
     parents: list[str] = Field(default_factory=list, max_length=100)
@@ -67,6 +74,7 @@ class KanbanTaskCreate(BaseModel):
     provider_override: str | None = Field(default=None, max_length=128)
     goal_mode: bool = False
     idempotency_key: str | None = Field(default=None, max_length=512)
+    schedule: KanbanTaskSchedule | None = None
 
 
 class KanbanTaskPatch(BaseModel):
@@ -77,6 +85,11 @@ class KanbanTaskPatch(BaseModel):
     tags: list[str] | None = Field(default=None, max_length=32)
     model_override: str | None = Field(default=None, max_length=256)
     provider_override: str | None = Field(default=None, max_length=128)
+    schedule: KanbanTaskSchedule | None = None
+
+
+class KanbanScheduleAction(BaseModel):
+    action: Literal["pause", "resume", "run_now"]
 
 
 class KanbanMove(BaseModel):

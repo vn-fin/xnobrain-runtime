@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
 import tempfile
@@ -106,7 +107,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                 json={"status": "running"},
             )
             self.assertEqual(running.status_code, 200, running.text)
-            self.assertEqual(running.json()["data"]["status"], "running")
+            self.assertEqual(running.json()["data"]["status"], "ready")
             self.assertEqual(running.json()["data"]["kanban_status"], "running")
 
             done = await client.post(
@@ -150,8 +151,9 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             tasks = await client.get("/agent-gateway/v1/kanban/boards/default/tasks")
             self.assertEqual(tasks.status_code, 200, tasks.text)
             self.assertEqual(tasks.json()["data"]["tasks"][0]["title"], "Morning review")
-            self.assertEqual(tasks.json()["data"]["tasks"][0]["status"], "triage")
-            self.assertEqual(tasks.json()["data"]["tasks"][0]["kanban_status"], "backlog")
+            self.assertEqual(tasks.json()["data"]["tasks"][0]["status"], "scheduled")
+            self.assertEqual(tasks.json()["data"]["tasks"][0]["kanban_status"], "todo")
+            self.assertIsNotNone(tasks.json()["data"]["tasks"][0]["schedule"])
 
     async def test_pre_run_assignment_and_clean_transition_conflict(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
@@ -198,10 +200,17 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                 self.profiles / reviewer_id / "workspace",
             )
 
-            await client.post(
+            promoted = await client.post(
                 f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/move",
                 json={"status": "running"},
             )
+            self.assertEqual(promoted.status_code, 200, promoted.text)
+            self.assertEqual(promoted.json()["data"]["status"], "ready")
+            from brain4all.integrations import kanban as kanban_adapter
+            from hermes_cli import kanban_db
+            with kanban_adapter.connection("default") as conn:
+                claimed = kanban_db.claim_task(conn, task_id, claimer="test")
+            self.assertIsNotNone(claimed)
             conflict = await client.post(
                 f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/move",
                 json={"status": "backlog"},
@@ -229,6 +238,37 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(event["status"], "triage")
             self.assertEqual(event["kanban_status"], "backlog")
             self.assertNotIn("body", event["payload"])
+
+    async def test_backlog_promotion_accepts_dispatcher_ready_race(self):
+        from hermes_cli import kanban_db
+
+        def dispatcher_won(conn, task_id, **kwargs):
+            with kanban_db.write_txn(conn):
+                conn.execute(
+                    "UPDATE tasks SET status = 'ready' WHERE id = ? AND status = 'todo'",
+                    (task_id,),
+                )
+            return False, f"task {task_id} is 'ready'; promote only applies to 'todo' or 'blocked'"
+
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            created = await client.post(
+                "/agent-gateway/v1/kanban/boards/default/tasks",
+                json={
+                    "title": "Racing transition",
+                    "description": "The dispatcher may promote this between API operations.",
+                    "status": "backlog",
+                },
+            )
+            task_id = created.json()["data"]["id"]
+            with patch.object(kanban_db, "promote_task", side_effect=dispatcher_won):
+                moved = await client.post(
+                    f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/move",
+                    json={"status": "running"},
+                )
+
+        self.assertEqual(moved.status_code, 200, moved.text)
+        self.assertEqual(moved.json()["data"]["status"], "ready")
+        self.assertEqual(moved.json()["data"]["kanban_status"], "running")
 
     async def test_board_metadata_never_exposes_hermes_database_path(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
@@ -297,7 +337,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(task["status"], "triage")
             self.assertEqual(task["title"], "Draft launch brief")
             self.assertEqual(task["skills"], ["writing", "web-research"])
-            self.assertEqual(task["allowed_kanban_statuses"], ["todo", "archived"])
+            self.assertEqual(task["allowed_kanban_statuses"], ["todo", "running", "archived"])
             self.assertTrue(any(event["kind"] == "edited" for event in task["events"]))
 
             comment = await client.post(
@@ -326,6 +366,117 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(payload["conversation"]["url"].endswith("/20260724_102648_3e2c61"))
             self.assertNotIn("private prompt", detail.text)
             self.assertNotIn("secret tool output", detail.text)
+
+    async def test_sqlite_schedule_locks_moves_and_releases_without_claiming(self):
+        scheduled_at = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(microsecond=0)
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            agent = await client.post("/agent-gateway/v1/agents", json={"name": "Scheduled worker"})
+            agent_id = agent.json()["data"]["id"]
+            created = await client.post(
+                "/agent-gateway/v1/kanban/boards/default/tasks",
+                json={
+                    "title": "Run later",
+                    "description": "Execute this at the selected time.",
+                    "status": "scheduled",
+                    "assignee": agent_id,
+                    "schedule": {
+                        "recurrence": "once",
+                        "scheduled_at": scheduled_at.isoformat(),
+                        "timezone": "Etc/UTC",
+                    },
+                },
+            )
+            self.assertEqual(created.status_code, 201, created.text)
+            task = created.json()["data"]
+            task_id = task["id"]
+            self.assertEqual(task["status"], "scheduled")
+            self.assertEqual(task["kanban_status"], "todo")
+            self.assertEqual(task["allowed_kanban_statuses"], ["archived"])
+            self.assertEqual(task["schedule"]["recurrence"], "once")
+            self.assertTrue(task["schedule"]["enabled"])
+
+            blocked_move = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/move",
+                json={"status": "running"},
+            )
+            self.assertEqual(blocked_move.status_code, 409, blocked_move.text)
+            self.assertEqual(
+                blocked_move.json()["message"],
+                "Scheduled tasks are controlled by their schedule",
+            )
+
+            paused = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/schedule",
+                json={"action": "pause"},
+            )
+            self.assertEqual(paused.status_code, 200, paused.text)
+            self.assertFalse(paused.json()["data"]["schedule"]["enabled"])
+
+            started = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/schedule",
+                json={"action": "run_now"},
+            )
+            self.assertEqual(started.status_code, 200, started.text)
+            started_task = started.json()["data"]
+            self.assertEqual(started_task["status"], "ready")
+            self.assertEqual(started_task["kanban_status"], "running")
+            self.assertIsNone(started_task["worker"])
+            self.assertFalse(started_task["schedule"]["enabled"])
+            self.assertIsNone(started_task["schedule"]["next_run_at"])
+            rerun = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/schedule",
+                json={"action": "run_now"},
+            )
+            self.assertEqual(rerun.status_code, 409, rerun.text)
+            self.assertEqual(rerun.json()["message"], "one-time schedule has already run")
+            resume = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/schedule",
+                json={"action": "resume"},
+            )
+            self.assertEqual(resume.status_code, 409, resume.text)
+            self.assertEqual(resume.json()["message"], "one-time schedule has already run")
+
+    async def test_recurring_schedule_creates_idempotent_occurrences(self):
+        from brain4all.integrations import kanban as kanban_adapter
+        from hermes_cli import kanban_db
+
+        scheduled_at = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(microsecond=0)
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            agent = await client.post("/agent-gateway/v1/agents", json={"name": "Repeating worker"})
+            agent_id = agent.json()["data"]["id"]
+            created = await client.post(
+                "/agent-gateway/v1/kanban/boards/default/tasks",
+                json={
+                    "title": "Repeat audit",
+                    "description": "Create one occurrence per interval.",
+                    "status": "scheduled",
+                    "assignee": agent_id,
+                    "schedule": {
+                        "recurrence": "interval",
+                        "scheduled_at": scheduled_at.isoformat(),
+                        "timezone": "Etc/UTC",
+                        "interval_minutes": 60,
+                    },
+                },
+            )
+            self.assertEqual(created.status_code, 201, created.text)
+            template_id = created.json()["data"]["id"]
+            fired = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{template_id}/schedule",
+                json={"action": "run_now"},
+            )
+            self.assertEqual(fired.status_code, 200, fired.text)
+            self.assertEqual(fired.json()["data"]["status"], "scheduled")
+            self.assertEqual(fired.json()["data"]["schedule"]["occurrence_count"], 1)
+            with kanban_adapter.connection("default") as conn:
+                tasks = kanban_db.list_tasks(conn, include_archived=True)
+                occurrences = [
+                    task for task in tasks
+                    if str(task.id) != template_id
+                    and str(task.idempotency_key or "").startswith(f"schedule:{template_id}:")
+                ]
+            self.assertEqual(len(occurrences), 1)
+            self.assertIn(str(occurrences[0].status), {"todo", "ready"})
 
     async def test_api_created_conversations_use_the_native_session_id_shape(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:

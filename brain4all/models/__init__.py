@@ -7,7 +7,7 @@ from .api import (
     GenericObject, MCPConfig, MemoryPatch, ProviderCredential, RunApproval,
     SkillInstall, TeamCreate, TeamRun, WorkspaceCreate, WorkspacePath, WorkspaceWrite,
     KanbanAssign, KanbanBoardCreate, KanbanComment, KanbanLink, KanbanMove,
-    KanbanTaskCreate, KanbanTaskPatch,
+    KanbanScheduleAction, KanbanTaskCreate, KanbanTaskPatch, KanbanTaskSchedule,
 )
 
 __all__ = [name for name in globals() if not name.startswith("_")]

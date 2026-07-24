@@ -69,7 +69,8 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
   attachment upload/download routes remain open.
 - [x] Implement board/task filters, bounded pagination, and an initial event feed.
 - [x] Stream safe, resumable board events to the Kanban activity panel and
-  refresh canonical task data when events arrive.
+  refresh canonical task data when events arrive; preserve loaded detail and
+  append streamed events without clearing the open task timeline.
 - [ ] Return actionable compatibility/service errors without leaking prompts,
   tool arguments, output, credentials, or absolute stored paths.
 - [x] Add temporary-`HERMES_HOME` backend tests using the real Hermes package.
@@ -113,31 +114,37 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
 
 ## 003 — Kanban-native automation
 
-- [~] Use the upstream Hermes cron scheduler/ticker; no second scheduler is
-  started by Brain4All, but the current Hermes runtime exposes no Kanban
-  execution target.
-  loop, daemon, API process, or scheduler database.
-- [!] Add the approved cron execution target that enqueues a Kanban occurrence
-  instead of starting an invisible cron agent run (blocked: the pinned Hermes
-  package exposes no public `execution_target=kanban` hook; implementing this
-  safely requires an upstream Hermes extension or a newly pinned release).
-- [x] Create every new automation template on the default Kanban board (the
-  compatibility `/cron/jobs` facade links a visible template card).
+- [x] Use the existing in-process Kanban dispatcher as the only schedule tick;
+  do not start a second loop, daemon, API process, or scheduler database.
+- [x] Store schedule metadata in a Brain4All extension table inside each
+  Kanban SQLite database without altering upstream task/run/event tables.
+- [x] Release one-shot tasks to Ready and create recurring occurrence tasks
+  before the native dispatcher claims any worker.
+- [x] Create every new automation template on the default Kanban board; the
+  compatibility `/cron/jobs` facade now reads and writes the same SQLite data.
 - [ ] Make automation creation from Settings and from an agent prompt converge
-  on the same service and persisted Hermes cron definition.
-- [ ] Create recurring occurrence tasks with a deterministic idempotency key,
+  on the same Kanban schedule service.
+- [x] Create recurring occurrence tasks with a deterministic idempotency key,
   source linkage, schedule metadata, and copied execution configuration.
-- [ ] Implement pause, resume, edit schedule, run now, archive, and delete
-  semantics without deleting task history.
-- [ ] Show schedules as plain language with timezone, next run, and advanced
-  cron-expression editing.
+- [~] Implement pause, resume, edit schedule, run now, archive, and delete
+  semantics without deleting task history (API lifecycle and task UI
+  pause/resume/run-now are complete; schedule edit UI remains).
+- [~] Show schedules as plain language with timezone and next run; advanced
+  cron-expression editing remains open.
 - [ ] Migrate existing Brain4All YAML jobs once, with a snapshot, idempotency,
   a dry-run report, and safe conflict handling.
-- [x] Remove the Brain4All `scheduler_loop` from the FastAPI lifespan; legacy
-  endpoints remain a compatibility facade and are not a started scheduler.
-  endpoints only after migration and compatibility tests pass.
+- [x] Remove the Brain4All `scheduler_loop`; compatibility cron endpoints are
+  now a database-backed facade over Kanban schedules.
 - [ ] Verify settings-created and prompt-created schedules in the browser and
   through the API, including pause/restart/no-duplicate behavior.
+
+Verified 2026-07-24 for the implemented task/API path: real HTTP requests
+created one-shot and recurring schedules, rejected direct movement of scheduled
+templates, paused/resumed/ran them, and confirmed the extension and occurrence
+rows in `kanban.db`. A real browser created a recurring task, displayed its
+timezone/next run, disabled ordinary moves, and retained its event timeline
+through pause/resume and live refresh. Settings/prompt creation and restart
+coverage remain open.
 
 ## 004 — Hermes feature parity
 

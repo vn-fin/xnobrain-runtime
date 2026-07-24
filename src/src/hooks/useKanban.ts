@@ -43,7 +43,25 @@ export function useKanban(active = true) {
     if (showLoading) setStatus('loading');
     try {
       const loaded = await kanbanApi.getBoards();
-      setBoards(loaded);
+      setBoards((current) => loaded.map((nextBoard) => {
+        const cachedBoard = current.find((item) => item.id === nextBoard.id);
+        if (!cachedBoard) return nextBoard;
+        return {
+          ...nextBoard,
+          tasks: nextBoard.tasks.map((task) => {
+            const cached = cachedBoard.tasks.find((item) => item.id === task.id);
+            if (!cached) return task;
+            return {
+              ...task,
+              comments: cached.comments,
+              events: cached.events,
+              runs: cached.runs,
+              workerActivity: cached.workerActivity,
+              conversation: cached.conversation,
+            };
+          }),
+        };
+      }));
       setActiveBoardIdState((current) =>
         loaded.some((board) => board.id === current) ? current : loaded[0]?.id ?? '',
       );
@@ -159,6 +177,28 @@ export function useKanban(active = true) {
     }
   }, [board, notify, replaceTask]);
 
+  const updateSchedule = useCallback(async (
+    taskId: string,
+    action: 'pause' | 'resume' | 'run_now',
+  ) => {
+    if (!board) return null;
+    try {
+      const updated = await kanbanApi.scheduleAction(board.id, taskId, action);
+      replaceTask(board.id, taskId, updated);
+      if (action === 'run_now') void load(false);
+      notify(
+        'success',
+        action === 'run_now'
+          ? `Started “${updated.title}”.`
+          : `${action === 'pause' ? 'Paused' : 'Resumed'} “${updated.title}”.`,
+      );
+      return updated;
+    } catch (cause) {
+      notify('error', cause instanceof Error ? cause.message : 'The task schedule could not be updated.');
+      return null;
+    }
+  }, [board, load, notify, replaceTask]);
+
   const addComment = useCallback(async (taskId: string, body: string) => {
     if (!board) return false;
     try {
@@ -219,6 +259,27 @@ export function useKanban(active = true) {
             status: String(data.kanban_status ?? 'todo') as KanbanColumnId,
           };
           setEvents((current) => [item, ...current.filter((existing) => existing.id !== item.id)].slice(0, 20));
+          setBoards((current) => current.map((currentBoard) => currentBoard.id === streamBoardId
+            ? {
+                ...currentBoard,
+                tasks: currentBoard.tasks.map((task) => task.id === item.taskId
+                  ? {
+                      ...task,
+                      events: [
+                        ...task.events.filter((existing) => existing.id !== item.id),
+                        {
+                          id: item.id,
+                          kind: item.kind,
+                          payload: data.payload && typeof data.payload === 'object'
+                            ? data.payload as Record<string, unknown>
+                            : null,
+                          createdAt: item.createdAt,
+                        },
+                      ],
+                    }
+                  : task),
+              }
+            : currentBoard));
           setLiveStatus('live');
           if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
           refreshTimer = window.setTimeout(() => void load(false), 120);
@@ -270,6 +331,7 @@ export function useKanban(active = true) {
     moveTask,
     assignTask,
     updateTask,
+    updateSchedule,
     addComment,
     refreshTask,
     detailLoading,

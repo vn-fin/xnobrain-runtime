@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 import os
@@ -74,7 +74,6 @@ class PlatformService:
         from .kanban import KanbanService
         self.kanban = KanbanService(agents)
         self._oauth_attempts: dict[str, dict[str, str]] = {}
-        self._running_crons: set[str] = set()
         self.config.ensure_write_approval_defaults()
         self._ensure_existing_write_approval_defaults()
 
@@ -350,7 +349,22 @@ class PlatformService:
         return self.portability.delete_transfer(kind, transfer_id)
 
     def list_crons(self) -> list[dict[str, Any]]:
-        return self.repository.list_crons()
+        tasks: list[dict[str, Any]] = []
+        offset = 0
+        while True:
+            page = self.kanban.list_tasks(
+                "default",
+                {"include_archived": "true", "limit": 200, "offset": offset},
+            )
+            tasks.extend(page["tasks"])
+            offset += len(page["tasks"])
+            if offset >= int(page["total"]) or not page["tasks"]:
+                break
+        return [
+            self._schedule_job(task)
+            for task in tasks
+            if task.get("schedule") is not None and not task.get("archived")
+        ]
 
     def create_cron(self, body: Mapping[str, Any]) -> dict[str, Any]:
         agent_id = str(body.get("agent_id") or "").strip()
@@ -359,138 +373,85 @@ class PlatformService:
         if not prompt:
             raise ServiceError("prompt is required")
         interval = int(body.get("interval_minutes") or 0)
-        schedule = str(body.get("schedule") or (f"@every {interval}m" if interval > 0 else "")).strip()
-        seconds = self._schedule_seconds(schedule)
-        now = utc_now()
-        cron_id = uuid.uuid4().hex
-        job = {
-            "id": cron_id, "agent_id": agent_id,
-            "name": str(body.get("name") or "Scheduled task").strip(),
-            "schedule": schedule, "timezone": str(body.get("timezone") or "Etc/UTC"),
-            "mode": str(body.get("mode") or "local"),
-            "misfire_policy": str(body.get("misfire_policy") or "notify"),
-            "replay_limit": int(body.get("replay_limit") or 0),
-            "prompt": prompt, "enabled": True,
-            "next_run_at": iso(datetime.fromtimestamp(now.timestamp() + seconds, timezone.utc)),
-            "last_evaluated_at": iso(now), "created_at": iso(now), "updated_at": iso(now),
-            # Compatibility metadata: the visible automation template always
-            # belongs to Hermes' default board.  The legacy file record is
-            # retained only so existing pause/list clients can migrate; the
-            # embedded Brain4All scheduler is intentionally not started.
-            "kanban_board": "default",
-        }
-        if job["mode"] != "local":
+        raw_schedule = str(body.get("schedule") or "").strip()
+        timezone_name = str(body.get("timezone") or "Etc/UTC")
+        if str(body.get("mode") or "local") != "local":
             raise ServiceError("only local cron jobs are supported")
-        try:
-            template = self.kanban.create_task("default", {
-                "title": job["name"],
-                "description": f"Automation ({schedule}, {job['timezone']})\n\n{prompt}",
-                # The automation template is a visible definition, not an
-                # occurrence. Keep it in triage so the dispatcher cannot run
-                # it as ordinary work.
-                "status": "backlog",
+        recurrence = "interval"
+        if interval <= 0 and raw_schedule:
+            try:
+                parsed = datetime.fromisoformat(raw_schedule.replace("Z", "+00:00"))
+            except ValueError:
+                seconds = self._schedule_seconds(raw_schedule)
+                interval = max(1, seconds // 60)
+            else:
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                recurrence = "once"
+                scheduled_at = parsed.astimezone(timezone.utc).isoformat()
+        if recurrence == "interval":
+            if interval <= 0:
+                raise ServiceError("interval_minutes or an ISO scheduled time is required")
+            scheduled_at = (
+                datetime.now(timezone.utc) + timedelta(minutes=interval)
+            ).isoformat()
+        template = self.kanban.create_task(
+            "default",
+            {
+                "title": str(body.get("name") or "Scheduled task").strip(),
+                "description": prompt,
+                "status": "scheduled",
                 "priority": "medium",
                 "assignee": agent_id,
-                "idempotency_key": f"cron-template:{agent_id}:{cron_id}",
-            }, created_by=agent_id)
-            job["kanban_task_id"] = template["id"]
-        except Exception as exc:
-            # A source checkout used by the compatibility test suite may not
-            # include Hermes.  Production images pin Hermes and therefore
-            # require the template; preserve the old response only for that
-            # explicit unavailable-runtime case.
-            from ..integrations.kanban import KanbanUnavailable
-            if not isinstance(exc, KanbanUnavailable) and not (isinstance(exc, ServiceError) and exc.code == "kanban_not_ready"):
-                raise
-            job["kanban_task_id"] = None
-        return self.repository.put_cron(job)
+                "schedule": {
+                    "recurrence": recurrence,
+                    "scheduled_at": scheduled_at,
+                    "timezone": timezone_name,
+                    "interval_minutes": interval if recurrence == "interval" else None,
+                },
+            },
+            created_by=agent_id,
+        )
+        return self._schedule_job(template)
 
     def set_cron_enabled(self, cron_id: str, enabled: bool) -> dict[str, Any]:
-        job = self._cron(cron_id)
-        job["enabled"] = enabled
-        job["updated_at"] = iso()
-        return self.repository.put_cron(job)
+        task = self.kanban.schedule_action(
+            "default",
+            cron_id,
+            "resume" if enabled else "pause",
+        )
+        return self._schedule_job(task)
 
     def delete_cron(self, cron_id: str) -> dict[str, Any]:
-        if not self.repository.delete_cron(cron_id):
-            raise ServiceError("cron not found", status=404, code="not_found")
+        self.kanban.archive_task("default", cron_id)
         return {"deleted": True}
 
     async def run_cron(self, cron_id: str) -> dict[str, Any]:
-        if cron_id in self._running_crons:
-            raise ServiceError("cron job is already running", status=409, code="cron_running")
-        self._running_crons.add(cron_id)
-        try:
-            return await self._run_cron(cron_id)
-        finally:
-            self._running_crons.discard(cron_id)
+        task = self.kanban.schedule_action("default", cron_id, "run_now")
+        return {"job": self._schedule_job(task), "task": task}
 
-    async def _run_cron(self, cron_id: str) -> dict[str, Any]:
-        job = self._cron(cron_id)
-        if not job.get("enabled", True):
-            raise ServiceError("cron job is paused", status=409, code="cron_paused")
-        if job.get("mode", "local") != "local":
-            raise ServiceError("only local cron jobs are supported", status=403, code="local_only")
-        result = await self.agents.chat(job["agent_id"], {"message": job["prompt"]})
-        now = utc_now()
-        job["last_run_at"] = iso(now)
-        job["last_evaluated_at"] = iso(now)
-        job["next_run_at"] = iso(datetime.fromtimestamp(now.timestamp() + self._schedule_seconds(job["schedule"]), timezone.utc))
-        job["updated_at"] = iso(now)
-        self.repository.put_cron(job)
-        return {"job": job, "run": result}
-
-    async def scheduler_loop(self, interval_seconds: int = 30) -> None:
-        """Run due profile-local jobs without a database or second service."""
-        logger = logging.getLogger("brain4all.cron")
-        logger.info("Brain4All profile cron scheduler started")
-        while True:
-            try:
-                await self._tick_crons()
-            except asyncio.CancelledError:
-                raise
-            except Exception as error:
-                logger.warning("Brain4All cron tick failed: %s", type(error).__name__)
-            await asyncio.sleep(max(1, interval_seconds))
-
-    async def _tick_crons(self) -> None:
-        now = utc_now()
-        for job in self.repository.list_crons():
-            cron_id = str(job.get("id") or "")
-            if not cron_id or cron_id in self._running_crons:
-                continue
-            if not job.get("enabled", True) or job.get("mode", "local") != "local":
-                continue
-            next_run = self._parse_time(job.get("next_run_at"))
-            if next_run is None or next_run > now:
-                continue
-            # Advance the durable cursor before execution. A process crash may
-            # delay one run, but cannot duplicate an already-claimed due job.
-            job["last_evaluated_at"] = iso(now)
-            job["next_run_at"] = iso(
-                datetime.fromtimestamp(
-                    now.timestamp() + self._schedule_seconds(str(job.get("schedule") or "")),
-                    timezone.utc,
-                )
-            )
-            job["updated_at"] = iso(now)
-            self.repository.put_cron(job)
-            await self._run_scheduled_cron(cron_id)
-
-    async def _run_scheduled_cron(self, cron_id: str) -> None:
-        try:
-            await self.run_cron(cron_id)
-        except asyncio.CancelledError:
-            raise
-        except Exception as error:
-            self.repository.put_notification({
-                "id": uuid.uuid4().hex,
-                "kind": "cron_failed",
-                "cron_id": cron_id,
-                "error_code": str(getattr(error, "code", "cron_failed")),
-                "created_at": iso(),
-                "resolved": False,
-            })
+    @staticmethod
+    def _schedule_job(task: Mapping[str, Any]) -> dict[str, Any]:
+        schedule = dict(task.get("schedule") or {})
+        interval = schedule.get("interval_minutes")
+        return {
+            "id": str(task["id"]),
+            "agent_id": task.get("assignee"),
+            "name": str(task.get("title") or "Scheduled task"),
+            "prompt": str(task.get("description") or ""),
+            "schedule": (
+                f"@every {interval}m"
+                if schedule.get("recurrence") == "interval"
+                else schedule.get("next_run_at")
+            ),
+            "timezone": str(schedule.get("timezone") or "Etc/UTC"),
+            "enabled": bool(schedule.get("enabled")),
+            "next_run_at": schedule.get("next_run_at"),
+            "last_run_at": schedule.get("last_run_at"),
+            "mode": "local",
+            "kanban_board": "default",
+            "kanban_task_id": str(task["id"]),
+        }
 
     def list_teams(self) -> list[dict[str, Any]]:
         return self.repository.list_teams()
@@ -823,12 +784,6 @@ class PlatformService:
         team = {"id": team_id, "user_id": "local", "name": name, "orchestrator_id": orchestrator, "members": members, "shared_workspace": False, "max_parallel": max(1, int(body.get("max_parallel") or 1)), "max_depth": max(1, int(body.get("max_depth") or 1)), "enabled": bool(body.get("enabled", True)), "created_at": created_at, "updated_at": iso()}
         return self.repository.put_team(team)
 
-    def _cron(self, cron_id: str) -> dict[str, Any]:
-        item = next((item for item in self.repository.list_crons() if item.get("id") == cron_id), None)
-        if item is None:
-            raise ServiceError("cron not found", status=404, code="not_found")
-        return item
-
     @staticmethod
     def _schedule_seconds(schedule: str) -> int:
         match = _EVERY.fullmatch(schedule.strip())
@@ -836,18 +791,6 @@ class PlatformService:
             raise ServiceError("schedule must use @every <number>s|m|h|d")
         value = int(match.group(1))
         return value * {"s": 1, "m": 60, "h": 3600, "d": 86400}[match.group(2)]
-
-    @staticmethod
-    def _parse_time(value: Any) -> datetime | None:
-        if not value:
-            return None
-        try:
-            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except ValueError:
-            return None
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
 
     @staticmethod
     def _conversation_dto(agent_id: str, item: Mapping[str, Any]) -> dict[str, Any]:

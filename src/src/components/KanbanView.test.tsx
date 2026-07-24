@@ -47,11 +47,21 @@ describe('KanbanView', () => {
       }
       if (path.endsWith('/kanban/boards/default/tasks') && init?.method === 'POST') {
         const requested = JSON.parse(String(init.body)) as Record<string, unknown>;
+        const requestedSchedule = requested.schedule as Record<string, unknown> | undefined;
         return new Response(JSON.stringify({ success: true, data: {
           id: 't-created',
           ...requested,
-          status: requested.status === 'backlog' ? 'triage' : 'todo',
-          kanban_status: requested.status,
+          status: requested.status === 'backlog' ? 'triage' : requested.status === 'scheduled' ? 'scheduled' : 'todo',
+          kanban_status: requested.status === 'scheduled' ? 'todo' : requested.status,
+          schedule: requestedSchedule ? {
+            recurrence: requestedSchedule.recurrence,
+            next_run_at: requestedSchedule.scheduled_at,
+            interval_minutes: requestedSchedule.interval_minutes ?? null,
+            timezone: requestedSchedule.timezone,
+            enabled: true,
+            occurrence_count: 0,
+            last_run_at: null,
+          } : null,
           assignees: requested.assignee ? [requested.assignee] : [],
           parents: [],
           tags: [],
@@ -221,5 +231,39 @@ describe('KanbanView', () => {
       expect(request).toBeDefined();
       expect(JSON.parse(String(request?.[1]?.body)).skills).toEqual(['writing']);
     });
+  });
+
+  it('creates a scheduled task with a visible database-backed run time', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    render(<TestBoard agents={[researchAgent]} />);
+
+    await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
+    await user.click(screen.getByRole('button', { name: /New task/ }));
+    const modal = screen.getByRole('dialog');
+    await user.selectOptions(within(modal).getByLabelText('Status'), 'scheduled');
+    expect(within(modal).getByText('Run later')).toBeVisible();
+    expect(within(modal).getByLabelText('First run')).toHaveValue();
+
+    await user.type(within(modal).getByLabelText('Title'), 'Run the scheduled audit');
+    await user.type(
+      within(modal).getByLabelText(/Description/),
+      'Inspect the account and report any problems.',
+    );
+    await user.click(within(modal).getByRole('button', { name: /Create task/ }));
+
+    await waitFor(() => {
+      const request = fetchMock.mock.calls.find(([input, init]) =>
+        String(input).endsWith('/kanban/boards/default/tasks')
+        && init?.method === 'POST'
+        && JSON.parse(String(init.body)).status === 'scheduled'
+      );
+      expect(request).toBeDefined();
+      const body = JSON.parse(String(request?.[1]?.body));
+      expect(body.schedule.recurrence).toBe('once');
+      expect(body.schedule.scheduled_at).toBeTruthy();
+      expect(body.schedule.timezone).toBeTruthy();
+    });
+    expect(screen.getByText(/Next:/)).toBeVisible();
   });
 });

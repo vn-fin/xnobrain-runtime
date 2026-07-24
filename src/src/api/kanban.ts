@@ -33,9 +33,10 @@ const STATUS_DEFS: KanbanStatusDef[] = [...KANBAN_COLUMNS, ARCHIVED_COLUMN].map(
 type RawTask = Record<string, any>;
 
 function defaultAllowedStatuses(nativeStatus: KanbanNativeStatus): KanbanColumnId[] {
-  if (nativeStatus === 'triage') return ['todo', 'archived'];
+  if (nativeStatus === 'triage') return ['todo', 'running', 'archived'];
   if (nativeStatus === 'todo') return ['running', 'done', 'archived'];
-  if (nativeStatus === 'ready' || nativeStatus === 'running' || nativeStatus === 'scheduled') return ['done', 'archived'];
+  if (nativeStatus === 'ready' || nativeStatus === 'running') return ['done', 'archived'];
+  if (nativeStatus === 'scheduled') return ['archived'];
   if (nativeStatus === 'blocked') return ['todo', 'archived'];
   if (nativeStatus === 'review') return ['running', 'archived'];
   if (nativeStatus === 'done') return ['archived'];
@@ -127,6 +128,15 @@ function taskFromApi(raw: RawTask): KanbanTask {
     block: raw.block ?? raw.state_detail?.reason ?? null,
     summary: raw.summary ?? null,
     result: raw.result ?? raw.summary ?? null,
+    schedule: raw.schedule && typeof raw.schedule === 'object' ? {
+      recurrence: raw.schedule.recurrence === 'interval' ? 'interval' : 'once',
+      nextRunAt: raw.schedule.next_run_at == null ? null : String(raw.schedule.next_run_at),
+      intervalMinutes: raw.schedule.interval_minutes == null ? null : Number(raw.schedule.interval_minutes),
+      timezone: String(raw.schedule.timezone ?? 'Etc/UTC'),
+      enabled: Boolean(raw.schedule.enabled),
+      occurrenceCount: Number(raw.schedule.occurrence_count ?? 0),
+      lastRunAt: raw.schedule.last_run_at == null ? null : String(raw.schedule.last_run_at),
+    } : null,
   };
 }
 
@@ -148,8 +158,8 @@ export const kanbanApi = {
   },
 
   async createTask(boardId: string, input: NewKanbanTaskInput): Promise<KanbanTask> {
-    if (input.status !== 'backlog' && input.status !== 'todo') {
-      throw new Error('New tasks can start in Backlog or Todo.');
+    if (input.status !== 'backlog' && input.status !== 'todo' && input.status !== 'scheduled') {
+      throw new Error('New tasks can start in Backlog, Todo, or Scheduled.');
     }
     const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks`, {
       method: 'POST',
@@ -160,6 +170,7 @@ export const kanbanApi = {
         priority: input.priority,
         assignee: input.assignee,
         skills: input.skills,
+        schedule: input.schedule,
       }),
     });
     return taskFromApi(data);
@@ -199,6 +210,18 @@ export const kanbanApi = {
       method: 'POST',
       body: JSON.stringify({ assignee }),
     });
+    return taskFromApi(data);
+  },
+
+  async scheduleAction(
+    boardId: string,
+    taskId: string,
+    action: 'pause' | 'resume' | 'run_now',
+  ): Promise<KanbanTask> {
+    const data = await request<RawTask>(
+      `/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/schedule`,
+      { method: 'POST', body: JSON.stringify({ action }) },
+    );
     return taskFromApi(data);
   },
 
