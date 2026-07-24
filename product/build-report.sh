@@ -129,9 +129,9 @@ pandoc "$COMBINED" \
   --standalone \
   --pdf-engine=weasyprint \
   --toc --toc-depth=2 \
-  --metadata title="Brain4All — Twin Terminal" \
-  --metadata subtitle="Product Report & Development Plan" \
-  --metadata date="July 2026" \
+  --metadata title="$TITLE" \
+  --metadata subtitle="$SUBTITLE" \
+  --metadata date="$DATED" \
   --include-in-header="$BUILD/head.html" \
   -o "$OUT"
 
