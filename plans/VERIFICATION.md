@@ -56,7 +56,7 @@ behavior as relevant:
 - every allowed five-state transition and every rejected transition;
 - comments, links/dependencies, cycle rejection;
 - attachment upload/list/download/delete and traversal/oversize rejection;
-- archive/unarchive/include-archived;
+- confirmed archive/include-archived, with Archived always visible;
 - worker/run summaries and bounded sanitized logs;
 - dispatcher nudge, singleton behavior, and diagnostics;
 - event connect, resume/reconnect, and full-refetch fallback;
@@ -89,8 +89,8 @@ and dark themes; reduced motion; and one non-English locale.
    drag on another task.
 5. Trigger a stale conflict from a concurrent API/worker update and confirm the
    UI restores/refetches cleanly.
-6. Complete through Review, inspect the activity/run summary, archive it, and
-   find it using the archived filter.
+6. Complete it, inspect the activity/run summary, archive it after confirming,
+   and find it in the always-visible Archived column.
 7. Repeat key discovery/actions from list view.
 
 Refresh between steps to prove persistence rather than client memory.
@@ -98,10 +98,10 @@ Refresh between steps to prove persistence rather than client memory.
 ## Browser journey C — Agent worker lane
 
 1. Create and assign a task to a real configured profile.
-2. Observe Todo detail become Ready and then In Progress only after worker
-   claim.
+2. Observe Todo move to Running when it becomes Ready, then show active worker
+   detail after claim.
 3. Observe safe progress/heartbeat without exposing raw tool data.
-4. Exercise completion and Review/needs-input behavior.
+4. Exercise completion and blocked/needs-input detail within Done.
 5. Create a dependency pair and confirm the child does not dispatch early.
 6. Resolve the dependency and confirm one claim/run.
 7. Exercise terminate/reclaim after plan 004 implements them.

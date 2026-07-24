@@ -19,7 +19,7 @@ shows schedule, timezone, next run, paused state, assignee/profile, and recent
 occurrences.
 
 An **occurrence** is a normal task created for one scheduled instant. It moves
-through Todo, In Progress, Review, Done, and archive like any other task and
+through Todo, Running, Done, and Archived like any other task and
 retains its run/comments/output summary.
 
 Recurring schedules retain one template and many linked occurrences. This

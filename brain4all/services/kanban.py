@@ -15,7 +15,7 @@ from ..integrations.kanban import KanbanUnavailable
 from .platform import ServiceError
 
 
-PRODUCT_STATUSES = ("backlog", "todo", "in_progress", "review", "done")
+PRODUCT_STATUSES = ("backlog", "todo", "running", "done", "archived")
 PRIORITY_TO_INT = {"low": 0, "medium": 1, "high": 2}
 INT_TO_PRIORITY = {0: "low", 1: "medium", 2: "high"}
 
@@ -29,16 +29,14 @@ def _iso(epoch: int | None) -> str | None:
 def _status(raw: str) -> str:
     if raw == "triage":
         return "backlog"
-    if raw in {"todo", "ready", "scheduled"}:
+    if raw in {"todo", "scheduled"}:
         return "todo"
-    if raw == "running":
-        return "in_progress"
-    if raw in {"review", "blocked"}:
-        return "review"
-    if raw == "done":
+    if raw in {"ready", "running"}:
+        return "running"
+    if raw in {"review", "blocked", "done"}:
         return "done"
     if raw == "archived":
-        return "done"
+        return "archived"
     raise ServiceError("Hermes returned an unsupported Kanban status", status=503, code="hermes_contract_incompatible")
 
 
@@ -276,19 +274,15 @@ class KanbanService:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             raw = str(task.status)
             try:
-                if target == "done":
-                    # Review is projected from Hermes' blocked state. Resolve
-                    # the block before completing so an approval/review card
-                    # can follow the same five-column workflow as a running
-                    # card. Hermes still enforces dependency and worker rules.
+                if target == "archived":
+                    ok = kb.archive_task(conn, task_id)
+                elif target == "done":
                     if raw == "blocked":
                         ok = kb.unblock_task(conn, task_id)
                         if ok:
                             ok = kb.complete_task(conn, task_id, summary=reason or "Completed from Brain4All")
                     else:
                         ok = kb.complete_task(conn, task_id, summary=reason or "Completed from Brain4All")
-                elif target == "review":
-                    ok = kb.block_task(conn, task_id, reason=reason or "Review required", kind="needs_input")
                 elif target == "todo":
                     if raw == "triage":
                         ok = kb.specify_triage_task(conn, task_id, author="user")
@@ -296,7 +290,7 @@ class KanbanService:
                         ok = kb.unblock_task(conn, task_id)
                     else:
                         ok = raw in {"todo", "ready"}
-                elif target == "in_progress":
+                elif target == "running":
                     if raw == "review":
                         ok = kb.claim_review_task(conn, task_id, claimer="brain4all") is not None
                     elif raw == "blocked":

@@ -95,8 +95,8 @@ At minimum:
 }
 ```
 
-Wire values for `status` are fixed: `backlog`, `todo`, `in_progress`, `review`,
-and `done`. Labels are localized by the client.
+Wire values for `status` are fixed: `backlog`, `todo`, `running`, `done`, and
+`archived`. Labels are localized by the client.
 
 `state_detail.kind` is a bounded enum derived from the pinned upstream version,
 not a second editable status. Examples include `triage`, `waiting_dependency`,
@@ -113,22 +113,18 @@ Exact operations must be confirmed against the pinned public Hermes API:
 | From product state | Requested state | Domain intent |
 | --- | --- | --- |
 | Backlog | Todo | Promote/clarify task, then make eligible when assigned |
-| Backlog | Review | Request human clarification/review |
 | Todo | Backlog | Return to triage if no worker owns it |
-| Todo | In Progress | Assign if needed, make ready, nudge dispatcher |
-| Todo | Review | Request review or record needs-input reason |
+| Todo | Running | Assign if needed, make ready, nudge dispatcher |
 | Todo | Done | Complete manually with a completion summary |
-| In Progress | Review | Request worker handoff/review through supported operation |
-| In Progress | Todo | Terminate/reclaim safely, then requeue; confirmation required |
-| In Progress | Done | Complete through the worker/domain completion operation |
-| Review | Todo | Unblock/requeue and preserve review history |
-| Review | In Progress | Approve/requeue and nudge dispatch |
-| Review | Done | Approve/complete with reviewer metadata |
+| Running | Todo | Terminate/reclaim safely, then requeue; confirmation required |
+| Running | Done | Complete through the worker/domain completion operation |
+| Done | Todo | Unblock/requeue when the native state is blocked |
 | Done | Todo | Reopen as a new linked task unless upstream supports auditable reopen |
+| Any non-archived state | Archived | Confirm, then invoke the public archive operation |
 
 Moves not listed are rejected with allowed next actions. A visual drag shows the
 resolved effect before confirmation when it can terminate work, discard a
-review outcome, or create a follow-up task.
+completion outcome, or create a follow-up task.
 
 Never make `running` by patching a row. Only a worker claim may establish active
 execution.

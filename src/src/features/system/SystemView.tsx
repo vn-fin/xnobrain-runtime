@@ -4,6 +4,7 @@ import { ConnectionsView } from '../../components/ConnectionsView';
 import { SandboxView } from '../../components/SandboxView';
 import type { Agent, AsyncStatus, ConnectionProvider, SandboxData } from '../../types';
 import type { ProviderTestOutcome } from '../../hooks/useConnections';
+import type { SettingsSection } from '../../hooks/useRouter';
 import { systemApi, type BundleDryRun, type BundleTransfer, type DeploymentStatus, type ImportReport, type TransferProgress } from './api';
 
 type SystemViewProps = {
@@ -28,9 +29,9 @@ type SystemViewProps = {
   };
   onImported: () => Promise<void>;
   onClose: () => void;
+  section: SettingsSection;
+  onSectionChange: (section: SettingsSection) => void;
 };
-
-type SettingsSection = 'profiles' | 'vm' | 'connectors';
 
 export function SystemView({
   agents,
@@ -45,6 +46,8 @@ export function SystemView({
   sandbox,
   onImported,
   onClose,
+  section,
+  onSectionChange,
 }: SystemViewProps) {
   const [selected, setSelected] = useState(() => new Set(agents.map((agent) => agent.id)));
   const [deployment, setDeployment] = useState<DeploymentStatus>();
@@ -55,7 +58,6 @@ export function SystemView({
   const [progress, setProgress] = useState<TransferProgress>();
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const [section, setSection] = useState<SettingsSection>('profiles');
   const tabs: Array<{ id: SettingsSection; label: string }> = [
     { id: 'profiles', label: 'Profiles' },
     { id: 'vm', label: 'VM' },
@@ -110,7 +112,7 @@ export function SystemView({
             aria-selected={section === tab.id}
             aria-controls="settings-panel"
             tabIndex={section === tab.id ? 0 : -1}
-            onClick={() => setSection(tab.id)}
+            onClick={() => onSectionChange(tab.id)}
           >
             {tab.label}
           </button>

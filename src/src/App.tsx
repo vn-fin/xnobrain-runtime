@@ -30,7 +30,7 @@ export default function App() {
   // The first onboarding step needs the same local runtime status as the
   // Runtime view. Without this, a fresh installation remains on “Checking…”
   // because the stream is only activated after navigating away from onboarding.
-  const sandbox = useSandbox(router.centerView === 'data' || assistants.agents.length === 0);
+  const sandbox = useSandbox(router.centerView === 'data' && router.settingsSection === 'vm');
   const conversation = useConversation(router.activeAgentId, router.activeConversationId);
   const workspace = useWorkspace(router.activeAgentId);
   const teams = useTeams();
@@ -243,6 +243,8 @@ export default function App() {
               onRefresh: sandbox.refresh,
             }}
             onImported={assistants.refresh}
+            section={router.settingsSection}
+            onSectionChange={router.setSettingsSection}
             onClose={() => router.setCenterView('chat')}
           />
         ) : centerView === 'teams' ? (

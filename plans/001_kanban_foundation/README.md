@@ -33,8 +33,8 @@ the supported dispatcher inside the existing application lifecycle.
    `KanbanDispatcher` (or equivalent) and consume it. A temporary private
    adapter is allowed only behind the pin and compatibility test, with a
    removal issue and no copied loop.
-4. Confirm a public operation for “request review”. If absent, add it upstream
-   with transition tests before exposing the Review move.
+4. Preserve native review/blocked detail in the response while mapping both to
+   the fixed Done column; do not expose a separate Review move.
 5. Fail startup readiness with one concise remediation message when the Hermes
    contract is incompatible. Do not limp along with partially working
    mutations.
@@ -63,8 +63,7 @@ Follow existing Brain4All boundaries:
   closes it cleanly on shutdown.
 
 Names may be adjusted to match nearby modules if inspection during
-implementation reveals a better existing convention. Do not mix these
-responsibilities into `platform.py`.
+implementation reveals a better existing convention.
 
 ### Integration rules
 
@@ -107,11 +106,10 @@ Implement the mapping in the research plan in one shared backend function and
 mirror it with a generated or exhaustively tested frontend type:
 
 - Backlog: `triage`
-- Todo: `todo`, `ready`, `scheduled`
-- In Progress: `running`
-- Review: `review`, `blocked`
-- Done: `done`
-- Archive filter: `archived`
+- Todo: `todo`, `scheduled`
+- Running: `ready`, `running`
+- Done: `review`, `blocked`, `done`
+- Archived: `archived`
 
 Every response includes both:
 
@@ -129,7 +127,8 @@ Implement and test vertical slices rather than all reads followed by all writes:
 
 1. List/create/select a board; list/get/create/edit a task.
 2. Assign/reassign and move through legal task lifecycle operations.
-3. Archive/unarchive and include-archived filtering.
+3. Confirmed archive and include-archived reads for the always-visible
+   Archived column.
 4. Add/list comments and dependency links; validate cycles/conflicts upstream.
 5. Upload/list/download/remove attachments with size, name, and path checks.
 6. Inspect active worker and completed run summaries.

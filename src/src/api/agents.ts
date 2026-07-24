@@ -11,7 +11,12 @@ import { mapAgent } from './mappers/agents';
 import type { Agent } from '../types';
 
 const ROOT = '/agent-gateway/v1';
+const HERMES_PROVIDER = 'nine-router';
 const encoded = (value: string) => encodeURIComponent(value);
+
+function routedConfig(input: AgentConfigUpdateRequestDTO): AgentConfigUpdateRequestDTO {
+  return input.provider === undefined ? input : { ...input, provider: HERMES_PROVIDER };
+}
 
 export const agentsApi = {
   async list(): Promise<Agent[]> {
@@ -44,7 +49,7 @@ export const agentsApi = {
   async updateConfig(id: string, input: AgentConfigUpdateRequestDTO): Promise<void> {
     await request<unknown>(`${ROOT}/agents-configs/${encoded(id)}`, {
       method: 'PATCH',
-      body: JSON.stringify(input),
+      body: JSON.stringify(routedConfig(input)),
     });
   },
 
@@ -57,7 +62,7 @@ export const agentsApi = {
   async updateGlobalConfig(input: AgentConfigUpdateRequestDTO): Promise<AgentConfigDTO | null> {
     return request<AgentConfigDTO>(`${ROOT}/agents-configs/global`, {
       method: 'PATCH',
-      body: JSON.stringify(input),
+      body: JSON.stringify(routedConfig(input)),
     });
   },
 

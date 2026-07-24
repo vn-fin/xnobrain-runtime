@@ -53,4 +53,29 @@ describe('agentsApi profile display names', () => {
     expect(profile.name).toBe('a1b2c3');
     expect(profile.title).toBe('Operations Lead');
   });
+
+  it('routes an upstream model selection through the single Hermes provider', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        success: true,
+        data: null,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        success: true,
+        data: {
+          id: 'a1b2c3',
+          name: 'a1b2c3',
+          display_name: 'Research Lead',
+          config: { provider: 'nine-router', model: 'cx/gpt-5.4' },
+        },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await agentsApi.update('a1b2c3', { provider: 'codex', model: 'cx/gpt-5.4' });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+      provider: 'nine-router',
+      model: 'cx/gpt-5.4',
+    });
+  });
 });

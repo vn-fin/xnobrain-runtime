@@ -10,10 +10,10 @@ import type {
 
 export const KANBAN_COLUMNS: Array<{ id: KanbanColumnId; label: string; hint: string }> = [
   { id: 'backlog', label: 'Backlog', hint: 'Ideas and needs clarification' },
-  { id: 'todo', label: 'Todo', hint: 'Ready or scheduled work' },
-  { id: 'in_progress', label: 'In Progress', hint: 'Being worked on now' },
-  { id: 'review', label: 'Review', hint: 'Needs input or approval' },
-  { id: 'done', label: 'Done', hint: 'Completed work' },
+  { id: 'todo', label: 'Todo', hint: 'Work waiting to start' },
+  { id: 'running', label: 'Running', hint: 'Ready or being worked on' },
+  { id: 'done', label: 'Done', hint: 'Completed or blocked work' },
+  { id: 'archived', label: 'Archived', hint: 'Work kept for history' },
 ];
 
 const STATUS_DEFS: KanbanStatusDef[] = KANBAN_COLUMNS.map((column) => ({
@@ -43,7 +43,7 @@ function taskFromApi(raw: RawTask): KanbanTask {
   const deps: KanbanDependency[] = parents.map((dep: any) => ({
     id: String(dep.id),
     title: String(dep.title ?? dep.id),
-    state: dep.status === 'done' ? 'done' : dep.status === 'review' ? 'blocked' : 'pending',
+    state: dep.status === 'done' || dep.status === 'archived' ? 'done' : 'pending',
   }));
   return {
     id: String(raw.id),
@@ -74,7 +74,7 @@ function boardFromApi(raw: any): KanbanBoard {
 
 export const kanbanApi = {
   async getBoards(): Promise<KanbanBoard[]> {
-    const data = await request<any[]>('/agent-gateway/v1/kanban/boards');
+    const data = await request<any[]>('/agent-gateway/v1/kanban/boards?include_archived=true');
     return (data ?? []).map(boardFromApi);
   },
 
@@ -96,6 +96,9 @@ export const kanbanApi = {
   },
 
   async moveTask(boardId: string, taskId: string, status: KanbanColumnId): Promise<KanbanTask | null> {
+    if (status === 'archived') {
+      return this.archiveTask(boardId, taskId);
+    }
     const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/move`, {
       method: 'POST',
       body: JSON.stringify({ status }),

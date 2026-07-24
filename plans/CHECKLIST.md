@@ -37,8 +37,8 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
   the existing FastAPI process; do not copy the gateway dispatch loop.
 - [ ] Make any required Hermes changes in the current `hermes_cli` extension
   surface; do not revive or patch a legacy CLI implementation.
-- [ ] Confirm or upstream a legal public operation for requesting review; do
-  not write a task status directly in SQLite.
+- [x] Keep review/blocked as native Hermes detail mapped into Done; do not add
+  a product Review status or write task status directly in SQLite.
 - [ ] Prove the cron-to-Kanban execution bridge described in plan 003 before
   removing the legacy Brain4All scheduler.
 - [ ] Record the accepted Hermes version and compatibility decisions in
@@ -55,7 +55,7 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
 - [x] Add the versioned Brain4All Kanban routes through
   `brain4all/routes/setup.py`.
 - [x] Implement the fixed five-state presentation mapping:
-  Backlog, Todo, In Progress, Review, and Done.
+  Backlog, Todo, Running, Done, and Archived.
 - [x] Preserve execution substates as badges/reasons without exposing more
   draggable workflow columns.
 - [~] Implement legal task creation, triage editing, assignment, reassignment,

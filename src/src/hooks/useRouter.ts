@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Agent, CenterView, RightView } from '../types';
 
+export type SettingsSection = 'profiles' | 'vm' | 'connectors';
+
 export type RouteState = {
   centerView: CenterView;
+  settingsSection: SettingsSection;
   agentId: string;
   conversationId: string;
   rightView: RightView;
@@ -18,13 +21,25 @@ export function parseRoute(pathname: string, search: string): RouteState {
   let agentId = '';
   let conversationId = '';
   let rightView: RightView = 'workspace';
+  let settingsSection: SettingsSection = 'profiles';
 
   // Keep old deep links useful while the two destinations live under Settings.
-  if (seg[0] === 'sandbox' || seg[0] === 'connections') centerView = 'data';
+  if (seg[0] === 'sandbox') {
+    centerView = 'data';
+    settingsSection = 'vm';
+  } else if (seg[0] === 'connections') {
+    centerView = 'data';
+    settingsSection = 'connectors';
+  }
   else if (seg[0] === 'skills') centerView = 'skills';
   else if (seg[0] === 'teams') centerView = 'teams';
   else if (seg[0] === 'kanban' || seg[0] === 'board') centerView = 'kanban';
-  else if (seg[0] === 'data' || seg[0] === 'settings') centerView = 'data';
+  else if (seg[0] === 'data' || seg[0] === 'settings') {
+    centerView = 'data';
+    if (seg[1] === 'vm' || seg[1] === 'connectors' || seg[1] === 'profiles') {
+      settingsSection = seg[1];
+    }
+  }
   else if (seg[0] === 'agents') {
     agentId = seg[1] ?? '';
     if (seg[2] === 'conversations') conversationId = seg[3] ?? '';
@@ -34,6 +49,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
 
   return {
     centerView,
+    settingsSection,
     agentId,
     conversationId,
     rightView,
@@ -52,7 +68,7 @@ export function reconcileSelection(agentId: string, conversationId: string, agen
 
 export function computeUrl(state: RouteState): string {
   const params = new URLSearchParams();
-  if (state.centerView === 'data') return '/settings';
+  if (state.centerView === 'data') return `/settings/${state.settingsSection}`;
   if (state.centerView === 'teams') return '/teams';
   if (state.centerView === 'kanban') return '/kanban';
   if (state.centerView === 'skills') {
@@ -76,6 +92,7 @@ const bootRoute = browserRoute();
 
 export function useRouter() {
   const [centerView, setCenterView] = useState<CenterView>(bootRoute.centerView);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>(bootRoute.settingsSection);
   const [rightView, setRightView] = useState<RightView>(bootRoute.rightView);
   const [activeAgentId, setActiveAgentId] = useState(bootRoute.agentId);
   const [activeConversationId, setActiveConversationId] = useState(bootRoute.conversationId);
@@ -85,19 +102,20 @@ export function useRouter() {
 
   useEffect(() => {
     const url = computeUrl({
-      centerView, agentId: activeAgentId, conversationId: activeConversationId, rightView,
+      centerView, settingsSection, agentId: activeAgentId, conversationId: activeConversationId, rightView,
       agentSearch, skillsSearch, skillsGroupFilter,
     });
     const current = window.location.pathname + window.location.search;
     if (url === current) return;
     if (url.split('?')[0] !== window.location.pathname) window.history.pushState(null, '', url);
     else window.history.replaceState(null, '', url);
-  }, [centerView, activeAgentId, activeConversationId, rightView, agentSearch, skillsSearch, skillsGroupFilter]);
+  }, [centerView, settingsSection, activeAgentId, activeConversationId, rightView, agentSearch, skillsSearch, skillsGroupFilter]);
 
   useEffect(() => {
     const onPop = () => {
       const state = browserRoute();
       setCenterView(state.centerView);
+      setSettingsSection(state.settingsSection);
       setActiveAgentId(state.agentId);
       setActiveConversationId(state.conversationId);
       setRightView(state.rightView);
@@ -120,14 +138,14 @@ export function useRouter() {
     setActiveAgentId(next.agentId);
     setActiveConversationId(next.conversationId);
     const currentState: RouteState = {
-      centerView, agentId: next.agentId, conversationId: next.conversationId, rightView,
+      centerView, settingsSection, agentId: next.agentId, conversationId: next.conversationId, rightView,
       agentSearch, skillsSearch, skillsGroupFilter,
     };
     window.history.replaceState(null, '', computeUrl(currentState));
-  }, [activeAgentId, activeConversationId, centerView, rightView, agentSearch, skillsSearch, skillsGroupFilter]);
+  }, [activeAgentId, activeConversationId, centerView, settingsSection, rightView, agentSearch, skillsSearch, skillsGroupFilter]);
 
   return {
-    centerView, setCenterView, rightView, setRightView,
+    centerView, setCenterView, settingsSection, setSettingsSection, rightView, setRightView,
     activeAgentId, setActiveAgentId, activeConversationId, setActiveConversationId,
     agentSearch, setAgentSearch, skillsSearch, setSkillsSearch,
     skillsGroupFilter, setSkillsGroupFilter,

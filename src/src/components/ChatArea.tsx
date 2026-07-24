@@ -148,7 +148,13 @@ export function ChatArea({
   const [mentionListing, setMentionListing] = useState<WorkspaceEntry[]>([]);
   const [mentionLoading, setMentionLoading] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
-  const currentProvider = providers.find((provider) => provider.id === agent.provider);
+  // Hermes always stores `nine-router`; find the upstream account that owns
+  // the selected routed model so the picker can still highlight it.
+  const currentProvider = providers.find((provider) =>
+    provider.id === agent.provider
+    || provider.available_models?.includes(agent.model)
+    || provider.default_model === agent.model,
+  );
   const currentModelLabel = agent.model || currentProvider?.default_model || 'Select model';
   // Only the final answer of a turn is shown as a chat bubble. Intermediate
   // tool-call messages (finish_reason "tool_calls") are hidden here and instead
@@ -735,14 +741,14 @@ export function ChatArea({
                             {models.map((model) => (
                               <button
                                 key={model}
-                                className={provider.id === agent.provider && model === agent.model ? 'active' : ''}
+                                className={provider.id === currentProvider?.id && model === agent.model ? 'active' : ''}
                                 onClick={() => {
                                   setModelOpen(false);
                                   void onSelectModel(provider.id, model);
                                 }}
                               >
                                 <span>{model}</span>
-                                {provider.id === agent.provider && model === agent.model && <Check size={14} />}
+                                {provider.id === currentProvider?.id && model === agent.model && <Check size={14} />}
                               </button>
                             ))}
                           </div>

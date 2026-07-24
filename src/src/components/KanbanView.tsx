@@ -85,16 +85,27 @@ function TaskCard({
   statusLabel,
   column,
   onOpen,
+  onDragStart,
+  onDragEnd,
 }: {
   task: KanbanTask;
   agents: Agent[];
   statusLabel: (status: string) => string;
   column: KanbanColumnId;
   onOpen: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
 }) {
   return (
     <button
       className={`kb-card col-${column} status-${task.status}`}
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', task.id);
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
       onClick={onOpen}
       aria-label={`Open ${task.id}: ${task.title}`}
     >
@@ -121,11 +132,11 @@ function TaskCard({
           <Check size={13} />
           <span>{task.summary}</span>
         </div>
-      ) : column === 'in_progress' ? (
+      ) : column === 'running' ? (
         <div className="kb-progress">
           <div className="kb-progress-label">
             <span>
-              <Clock size={12} /> In Progress
+              <Clock size={12} /> Running
             </span>
             <span>{task.progress}%</span>
           </div>
@@ -150,11 +161,13 @@ function TaskDrawer({
   task,
   agents,
   state,
+  onMove,
   onClose,
 }: {
   task: KanbanTask;
   agents: Agent[];
   state: KanbanState;
+  onMove: (taskId: string, status: KanbanColumnId) => void;
   onClose: () => void;
 }) {
   const board = state.board;
@@ -247,7 +260,7 @@ function TaskDrawer({
                 key={status.id}
                 className={status.id === task.status ? 'kb-move active' : 'kb-move'}
                 disabled={status.id === task.status}
-                onClick={() => state.moveTask(task.id, status.id)}
+                onClick={() => onMove(task.id, status.id)}
               >
                 {status.label}
               </button>
@@ -381,6 +394,8 @@ export function KanbanView({
   const [agentFilter, setAgentFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | KanbanPriority>('all');
   const [columnFilter, setColumnFilter] = useState<'all' | KanbanColumnId>('all');
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dropColumn, setDropColumn] = useState<KanbanColumnId | null>(null);
 
   const openTask = useMemo(
     () => (openTaskId ? board?.tasks.find((task) => task.id === openTaskId) ?? null : null),
@@ -407,7 +422,7 @@ export function KanbanView({
 
   const metrics = useMemo(() => {
     const tasks = board?.tasks ?? [];
-    const running = tasks.filter((task) => columnOf(task.status) === 'in_progress');
+    const running = tasks.filter((task) => columnOf(task.status) === 'running');
     const blocked = tasks.filter((task) => Boolean(task.block));
     const completed = tasks.filter(
       (task) => columnOf(task.status) === 'done' && !task.block,
@@ -430,6 +445,18 @@ export function KanbanView({
     setAgentFilter('all');
     setPriorityFilter('all');
     setColumnFilter('all');
+  };
+
+  const moveTask = (taskId: string, status: KanbanColumnId) => {
+    const task = board?.tasks.find((item) => item.id === taskId);
+    if (!task || columnOf(task.status) === status) return;
+    if (
+      status === 'archived'
+      && !window.confirm(`Archive “${task.title}”? You can still find it in the Archived column.`)
+    ) {
+      return;
+    }
+    void state.moveTask(taskId, status);
   };
 
   return (
@@ -557,7 +584,7 @@ export function KanbanView({
             <small>tasks</small>
           </div>
           <div className="kb-metric active">
-            <span>In Progress</span>
+            <span>Running</span>
             <strong>{metrics.running}</strong>
             <small>{metrics.activeAgents} active {metrics.activeAgents === 1 ? 'agent' : 'agents'}</small>
           </div>
@@ -581,7 +608,32 @@ export function KanbanView({
             const total = board.tasks.filter((task) => columnOf(task.status) === column.id).length;
             const initialStatus = board.statuses.find((status) => status.column === column.id)?.id;
             return (
-              <section key={column.id} className={`kb-column col-${column.id}`}>
+              <section
+                key={column.id}
+                aria-label={`${column.label} column`}
+                className={`kb-column col-${column.id}${dropColumn === column.id ? ' drop-target' : ''}`}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  if (draggedTaskId) setDropColumn(column.id);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = 'move';
+                }}
+                onDragLeave={(event) => {
+                  const related = event.relatedTarget;
+                  if (!(related instanceof Node) || !event.currentTarget.contains(related)) {
+                    setDropColumn((current) => current === column.id ? null : current);
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const taskId = draggedTaskId || event.dataTransfer.getData('text/plain');
+                  setDraggedTaskId(null);
+                  setDropColumn(null);
+                  if (taskId) moveTask(taskId, column.id);
+                }}
+              >
                 <header className="kb-column-head">
                   <span className="kb-swatch" />
                   <div>
@@ -605,6 +657,11 @@ export function KanbanView({
                         statusLabel={statusLabel}
                         column={column.id}
                         onOpen={() => setOpenTaskId(task.id)}
+                        onDragStart={() => setDraggedTaskId(task.id)}
+                        onDragEnd={() => {
+                          setDraggedTaskId(null);
+                          setDropColumn(null);
+                        }}
                       />
                     ))
                   )}
@@ -687,7 +744,13 @@ export function KanbanView({
       )}
 
       {openTask && (
-        <TaskDrawer task={openTask} agents={agents} state={state} onClose={() => setOpenTaskId(null)} />
+        <TaskDrawer
+          task={openTask}
+          agents={agents}
+          state={state}
+          onMove={moveTask}
+          onClose={() => setOpenTaskId(null)}
+        />
       )}
       {newTaskOpen && <NewTaskModal agents={agents} state={state} initialStatus={newTaskStatus} onClose={() => setNewTaskOpen(false)} />}
     </section>

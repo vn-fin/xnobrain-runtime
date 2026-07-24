@@ -10,6 +10,7 @@ export function useSandbox(active: boolean) {
   const [setupRunning, setSetupRunning] = useState(false);
   const [setupProgress, setSetupProgress] = useState(0);
   const refreshing = useRef(false);
+  const checked = useRef(false);
 
   const refresh = useCallback(async (silent = false) => {
     if (refreshing.current) return;
@@ -21,6 +22,7 @@ export function useSandbox(active: boolean) {
       setData(result.data);
       setProvisioned(result.provisioned);
       setStatus('ready');
+      checked.current = true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to load sandbox');
       setStatus('error');
@@ -28,6 +30,12 @@ export function useSandbox(active: boolean) {
       refreshing.current = false;
     }
   }, []);
+
+  // Non-VM screens need only the initial provisioned/not-provisioned answer
+  // (not a persistent statistics stream).
+  useEffect(() => {
+    if (!active && !checked.current) void refresh();
+  }, [active, refresh]);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -39,6 +47,7 @@ export function useSandbox(active: boolean) {
       if (!received) setStatus('loading');
       try {
         await sandboxApi.stream((result) => {
+          checked.current = true;
           received = true;
           setData(result.data);
           setProvisioned(result.provisioned);

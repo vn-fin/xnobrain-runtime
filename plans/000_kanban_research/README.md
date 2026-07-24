@@ -10,8 +10,8 @@ on. Recheck them against the pinned Hermes revision before implementation.
 Brain4All will expose one approachable task system for human work, agent work,
 and scheduled work:
 
-- users see exactly **Backlog**, **Todo**, **In Progress**, **Review**, and
-  **Done** in board and list views;
+- users see exactly **Backlog**, **Todo**, **Running**, **Done**, and
+  **Archived** in board and list views;
 - Hermes owns task persistence, worker dispatch, dependencies, run history, and
   cron timing;
 - Brain4All supplies a stable product API, the five-state presentation, and an
@@ -93,13 +93,13 @@ a worker can claim a task. They are projected into five user-facing states:
 | User state | Hermes state | User-facing detail |
 | --- | --- | --- |
 | Backlog | `triage` | Needs clarification or prioritization |
-| Todo | `todo`, `ready`, `scheduled` | Unassigned, ready, waiting for dependency, or scheduled |
-| In Progress | `running` | Active worker and heartbeat |
-| Review | `review`, `blocked` | Awaiting review, needs input, failed, or blocked |
-| Done | `done` | Completed |
+| Todo | `todo`, `scheduled` | Waiting for work or a dependency |
+| Running | `ready`, `running` | Eligible for a worker or actively running |
+| Done | `blocked`, `review`, `done` | Completed or stopped for attention |
+| Archived | `archived` | Retained history |
 
-`archived` is a lifecycle/visibility flag, not a sixth workflow state. Archived
-tasks are hidden by default and available through a filter.
+Archived is always visible as the fifth column. Moving a task there requires
+confirmation because Hermes closes any active run while archiving it.
 
 Cards show a small detail badge such as “Ready”, “Scheduled”, “Needs input”, or
 “Worker stopped” when that distinction is actionable. The board never adds a
@@ -110,16 +110,15 @@ column for it.
 The UI expresses intent; the integration invokes a legal Hermes operation.
 Examples:
 
-- dropping a card into In Progress assigns it if necessary, makes it eligible,
+- dropping a card into Running assigns it if necessary, makes it eligible,
   and nudges dispatch; it must not forge `running`;
 - dropping into Done invokes completion and requires the same completion data
   as the worker tool;
 - moving a blocked task to Todo invokes unblock and respects dependencies;
-- moving to Review invokes a public review operation;
-- archiving invokes archive and removes the card from the default query.
+- archiving invokes the public archive operation after user confirmation.
 
 Direct SQL status writes are forbidden. Phase 001 must first confirm public
-review and dispatcher operations or contribute them upstream.
+dispatcher operations or contribute them upstream.
 
 ## Sources of truth and boundaries
 

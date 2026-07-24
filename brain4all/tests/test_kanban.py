@@ -13,6 +13,7 @@ from httpx import ASGITransport, AsyncClient
 
 from brain4all.app import Brain4AllApplication
 from brain4all.integrations import AgentManager, GlobalConfigManager
+from brain4all.services.kanban import _status
 
 try:
     import hermes_cli.kanban_db  # type: ignore  # noqa: F401
@@ -28,6 +29,20 @@ class _Router:
 
     async def list_models(self):
         return {"data": []}
+
+
+class KanbanProjectionTests(unittest.TestCase):
+    def test_native_states_map_to_the_five_product_columns(self):
+        expected = {
+            "triage": "backlog",
+            "todo": "todo",
+            "ready": "running",
+            "running": "running",
+            "blocked": "done",
+            "done": "done",
+            "archived": "archived",
+        }
+        self.assertEqual({native: _status(native) for native in expected}, expected)
 
 
 @unittest.skipUnless(HERMES_AVAILABLE, "Hermes runtime is not installed")
@@ -72,7 +87,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertEqual(created.status_code, 201, created.text)
             task_id = created.json()["data"]["id"]
-            self.assertEqual(created.json()["data"]["status"], "todo")
+            self.assertEqual(created.json()["data"]["status"], "running")
             self.assertEqual(created.json()["data"]["hermes_status"], "ready")
 
             comment = await client.post(
@@ -83,7 +98,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
 
             running = await client.post(
                 f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/move",
-                json={"status": "in_progress"},
+                json={"status": "running"},
             )
             self.assertEqual(running.status_code, 200, running.text)
             self.assertEqual(running.json()["data"]["hermes_status"], "running")
@@ -100,11 +115,14 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(archived.status_code, 200, archived.text)
             self.assertTrue(archived.json()["data"]["archived"])
+            self.assertEqual(archived.json()["data"]["status"], "archived")
 
             visible = await client.get("/agent-gateway/v1/kanban/boards/default/tasks")
             self.assertEqual(visible.json()["data"]["tasks"], [])
             all_tasks = await client.get("/agent-gateway/v1/kanban/boards/default/tasks?include_archived=true")
             self.assertEqual(len(all_tasks.json()["data"]["tasks"]), 1)
+            boards_with_archive = await client.get("/agent-gateway/v1/kanban/boards?include_archived=true")
+            self.assertEqual(boards_with_archive.json()["data"][0]["tasks"][0]["status"], "archived")
 
     async def test_compatibility_cron_creation_is_visible_on_default_board(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:

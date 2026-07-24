@@ -277,12 +277,12 @@ export type AgentSkillMap = Record<string, Record<string, boolean>>;
 // ---------------------------------------------------------------------------
 // Kanban (multi-agent task board)
 //
-// Hermes has execution substates (triage, ready, scheduled, running, blocked,
-// review, done, archived). The product intentionally presents five fixed
-// columns; the API returns a state-detail badge for the execution substate.
+// Hermes has execution substates (triage, todo, ready, running, blocked, done,
+// archived). The product combines ready/running and blocked/done into five
+// fixed columns.
 // ---------------------------------------------------------------------------
 
-export type KanbanColumnId = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
+export type KanbanColumnId = 'backlog' | 'todo' | 'running' | 'done' | 'archived';
 export type KanbanPriority = 'high' | 'medium' | 'low';
 export type KanbanDepState = 'done' | 'pending' | 'blocked';
 

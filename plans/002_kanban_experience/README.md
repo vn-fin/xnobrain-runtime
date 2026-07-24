@@ -76,9 +76,9 @@ Render exactly five columns, in order:
 
 1. Backlog
 2. Todo
-3. In Progress
-4. Review
-5. Done
+3. Running
+4. Done
+5. Archived
 
 Each column shows a count and an inline add affordance where creation makes
 sense. The layout supports horizontal scrolling at narrower desktop widths and

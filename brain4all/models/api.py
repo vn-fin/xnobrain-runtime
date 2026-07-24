@@ -79,7 +79,7 @@ class KanbanTaskPatch(BaseModel):
 
 
 class KanbanMove(BaseModel):
-    status: Literal["backlog", "todo", "in_progress", "review", "done"]
+    status: Literal["backlog", "todo", "running", "done", "archived"]
     revision: str | None = Field(default=None, max_length=128)
     reason: str | None = Field(default=None, max_length=4000)
 
