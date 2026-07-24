@@ -136,15 +136,32 @@ Versioned under the existing `/agent-gateway/v1` prefix, tag `Analytics`. All
 reads; only the budget PUT mutates (config.yaml). Responses ride the standard
 `APIEnvelope`.
 
+All read endpoints share a **Grafana-style control set** as query parameters:
+
+- **`agents`** — comma-separated agent IDs to include, e.g. `?agents=abc123,def456`.
+  **Absent or empty = all agents** (the default selection). A subset both scopes
+  the numbers *and reduces the read fan-out* — fewer `state.db` files are opened
+  (see [Scaling to many agents](#scaling-to-many-agents)). Unknown IDs are ignored
+  (not a 400) so a stale saved selection degrades gracefully.
+- **Time range — relative or absolute.** Either `days` (relative, default `30`)
+  **or** `from`/`to` (absolute; epoch seconds or `YYYY-MM-DD`, UTC). When `from`/`to`
+  are present they override `days`. This maps to Grafana's "Last 7d / 30d / custom".
+- **`bucket`** — time-series granularity: `hour` \| `day` \| `week` \| `month`
+  (default `day`; the UI auto-suggests one from the range width but the user can
+  override).
+
 | Method | Path | Operation | Body | Purpose |
 |--------|------|-----------|------|---------|
-| GET | `/agent-gateway/v1/analytics/usage` | `analytics_usage` | — | Cross-agent summary: totals, per-agent, per-model, time-series. Query: `days` (default 30), `bucket` (`day`\|`week`, default `day`). |
-| GET | `/agent-gateway/v1/analytics/agents/{agent_id}/usage` | `analytics_agent_usage` | — | One agent's totals, per-model, time-series. Query: `days`, `bucket`. |
-| GET | `/agent-gateway/v1/analytics/models` | `analytics_models` | — | Per-model breakdown summed across all agents. Query: `days`. |
-| GET | `/agent-gateway/v1/analytics/timeseries` | `analytics_timeseries` | — | Dense day/week token+cost series across all agents. Query: `days`, `bucket`. |
+| GET | `/agent-gateway/v1/analytics/agents` | `analytics_agents` | — | Lightweight `[{agent_id, display_name}]` list to populate the multi-select — no `state.db` reads (reuses `AgentManager.list_agents()` names only). |
+| GET | `/agent-gateway/v1/analytics/usage` | `analytics_usage` | — | Summary for the **selected agents + range**: totals, per-agent, per-model, time-series. Query: `agents`, `days`\|`from`/`to`, `bucket`. |
+| GET | `/agent-gateway/v1/analytics/agents/{agent_id}/usage` | `analytics_agent_usage` | — | One agent's totals, per-model, time-series. Query: `days`\|`from`/`to`, `bucket`. |
+| GET | `/agent-gateway/v1/analytics/models` | `analytics_models` | — | Per-model breakdown summed across the **selected** agents. Query: `agents`, `days`\|`from`/`to`. |
+| GET | `/agent-gateway/v1/analytics/timeseries` | `analytics_timeseries` | — | Dense token+cost series across the **selected** agents. Query: `agents`, `days`\|`from`/`to`, `bucket`. |
 | GET | `/agent-gateway/v1/analytics/agents/{agent_id}/budget` | `analytics_budget_get` | — | Current budget config + computed spend/status. |
 | PUT | `/agent-gateway/v1/analytics/agents/{agent_id}/budget` | `analytics_budget_set` | `AgentBudgetPatch` | Set/clear advisory budget (snapshot + atomic write). |
 
+`analytics/agents` exists so the dashboard can fill its agent dropdown cheaply
+(the Grafana "variable" pattern) without triggering a full usage sweep.
 `timeseries` overlaps the series inside `usage`; keep it as a light endpoint the
 chart can poll without the per-model payload, or fold it into `usage` if the UI
 does not need it separately (decide during implementation — keep the route list
@@ -177,9 +194,12 @@ themselves serialize through `APIEnvelope` as plain dicts):
   ("ok"|"warning"|"exceeded"|"unset"), advisory: true`.
 - `QuotaOverlay`: mirrors `NineRouterManager.usage()` output (`available,
   provider, model, plan, quotas[]`).
-- `UsageSummary`: `period_days, bucket, generated_at, timezone ("UTC"),
-  totals: UsageTotals, agents: list[AgentUsage], by_model: list[ModelUsage],
-  series: list[BucketUsage], quota: QuotaOverlay`.
+- `UsageSummary`: `range_from, range_to` (epoch, resolved from `days` or the
+  absolute `from`/`to` pair), `period_days` (kept for back-compat), `bucket`,
+  `agents_selected: list[str]` (resolved IDs; **empty means "all"**),
+  `agents_available: int`, `generated_at, timezone ("UTC")`, `totals:
+  UsageTotals, agents: list[AgentUsage], by_model: list[ModelUsage], series:
+  list[BucketUsage], quota: QuotaOverlay`.
 
 ## Integration adapter
 
@@ -220,11 +240,30 @@ New feature under `src/src/features/analytics/` with an API client
 top-level Analytics destination (follow the current nav rules in
 `plans/CHECKLIST.md` 002). Components:
 
+- **Control bar (top, Grafana-style)** — the single source of the query the whole
+  dashboard reacts to:
+  - **Agent multi-select** (`AgentPicker`): a checkable dropdown populated from
+    `GET /analytics/agents`. Defaults to **All** (nothing selected = every agent);
+    the user can check a subset, "select all", or "clear". Show the count
+    ("All 12 agents" / "3 of 12"). The selection is passed as `agents=` and is
+    persisted (URL query string + `localStorage`) so a reload keeps it.
+  - **Time-range picker** (`RangePicker`): quick presets (Last 24h, 7d, 30d, 90d)
+    that set `days`, plus a **custom** from/to date pair that sets `from`/`to`.
+  - **Bucket selector**: `hour`/`day`/`week`/`month`, auto-suggested from the range
+    width, user-overridable.
+  - A **refresh** control and a small "as of `generated_at`" stamp (data is
+    cached ~15–30s).
+  Changing any control re-issues the read requests with the new
+  `agents`/range/`bucket`; the tiles, bars, and chart all rebind. All state lives
+  in one `useAnalyticsControls` hook and flows into `useAnalytics(query)`.
 - **Totals tiles**: total tokens (input/output), estimated cost (with an
-  "estimated" tag), sessions, API calls, and the active quota window(s).
-- **Per-model bars**: horizontal bar list ranked by tokens, cost label per bar.
-- **Time chart**: tokens (and/or cost) per day/week with a day/week toggle and a
-  window selector (7/30/90 days).
+  "estimated" tag), sessions, API calls, and the active quota window(s) — scoped
+  to the current selection + range.
+- **Per-model bars**: horizontal bar list ranked by tokens, cost label per bar,
+  for the selected agents.
+- **Time chart**: tokens (and/or cost) per bucket, driven by the control bar's
+  range + `bucket` (no separate in-chart toggles — the control bar is the single
+  control surface, Grafana-style). A tokens/cost metric toggle stays on the chart.
 - **Per-agent budget bar**: for each agent, a progress bar of spend vs cap with
   the `status` color (ok/warning/exceeded) and an edit control that PUTs
   `AgentBudgetPatch`. A clear "advisory — not enforced" label.
@@ -243,12 +282,36 @@ offline/retry, consistent with the Kanban feature's state handling.
   `idx_sessions_started`; unbounded scans are never issued.
 - **Aggregate in SQL.** `SUM`/`GROUP BY` in SQLite returns a handful of rows per
   agent, not raw sessions.
-- **One open/close per agent per request**, in `asyncio.to_thread`; a slow or
-  locked profile degrades to zeroes rather than blocking others.
-- **Short in-memory TTL cache** (e.g. 15–30s) keyed by `(days, bucket)` inside
-  `AnalyticsService`. This is ephemeral process state, not persistence, so it
-  respects the "no new store" rule. Bust it after a budget write.
-- **Bound N.** Iterate exactly `AgentManager.list_agents()`; cap fan-out and
-  page the per-agent list in the UI if the deployment has many agents.
+- **Concurrent, mtime-skipped reads.** Only agents whose `state.db` changed
+  since the last request are re-read (checked with a cheap `os.stat` mtime); the
+  rest reuse a cached per-agent partial. Refreshed agents are read
+  **concurrently** under a bounded semaphore, each in `asyncio.to_thread`; a slow
+  or locked profile degrades to zeroes rather than blocking others.
+- **Two cache layers.** A per-agent partial cache keyed `(agent_id, window,
+  state.db mtime)` that survives across requests, plus a ~15–30s TTL cache of the
+  merged result keyed `(days, bucket)` for bursty identical polls. Both are
+  ephemeral process state, not persistence, so the "no new store" rule holds.
+  Bust the merged cache after a budget write.
+- **Cost scales with *active* agents, not *total*.** With many profiles the
+  dominant cost is opening N `state.db` files — so mtime-skip is the primary
+  lever: an idle profile costs a microsecond `stat`, not a file open + query. UI
+  paging of the per-agent *list* is a secondary nicety; it does **not** shrink
+  the totals sweep (totals must consider every agent), which is why skip +
+  concurrency — not paging — is what keeps many-agent deployments fast.
+
+### Scaling to many agents
+
+The per-db-then-merge is **correct at any N**: every session belongs to exactly
+one agent's `state.db`, so summing per db and adding across dbs is exact — there
+is no double-count or missed row. Scaling, not correctness, is the concern, and
+it is bounded as above: mtime-skip means a request re-reads only the handful of
+profiles that ran since the last poll, and bounded concurrency caps simultaneous
+file opens. That keeps dozens-to-low-hundreds of local profiles fast on a single
+node. True multi-tenant scale (hundreds-plus of always-active agents, cross-tenant
+rollups, long-history OLAP) is out of scope for the local reader and belongs to
+the enterprise **Go + PostgreSQL** control plane (`docs/enterprise-extension.md`),
+which owns cross-tenant aggregation. An embedded OLAP engine (DuckDB) is **not**
+the fix here — it still opens N files, adds a dependency, and conflicts with the
+"no application database" rule; see [approaches.md](approaches.md) Decision E.
 - **No capability enrichment** (`models_dev`) or `InsightsEngine` in the hot
   path — those upstream extras are deferred (see findings.md sections 5, 7).

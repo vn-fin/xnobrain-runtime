@@ -119,3 +119,63 @@ once — read-only access to Hermes state, no new database or API process, no fo
 of Hermes internals, cross-agent aggregation the native endpoints cannot do,
 advisory-only budgets, and honest cost reporting — while reusing helpers that
 already exist in `brain4all/integrations/hermes.py`.
+
+## Decision E — Analytics engine: SQLite compute-on-read vs an embedded OLAP engine (DuckDB)
+
+Recorded because the question "is per-request scanning of every agent's `state.db`
+heavy — should we embed DuckDB (which can query SQLite files) instead?" is a
+reasonable one to raise. It is not warranted for this plan; here is why, and the
+trigger that would change the answer.
+
+### Why the chosen approach (E1) is not heavy at local scale
+
+- **The hot table is pre-aggregated.** Aggregation runs over the `sessions` table,
+  which holds **one row per conversation** with token/cost columns already summed
+  (`input_tokens`, `output_tokens`, `cache_*`, `estimated_cost_usd`,
+  `actual_cost_usd`, `model`, `started_at`). The per-message table is **never
+  scanned**. A month of heavy single-user use is *thousands* of rows, not millions.
+- **Every query is bounded.** `WHERE started_at > cutoff` hits `idx_sessions_started`,
+  then `SUM`/`GROUP BY` returns a handful of rows per agent — SQLite does this in
+  milliseconds.
+- **Fan-out is bounded.** Work scales as *(agents) × (sessions-in-window)*, one
+  read-only open/close per agent in `asyncio.to_thread`, memoized 15–30s (Decision
+  B3), so bursty dashboard polling does not repeat the scan.
+- **Realistic ceiling.** The local path stays comfortably fast into the low millions
+  of aggregated session-rows per (cold-cache) request — far beyond a self-hosted
+  single-user deployment. Heaviness here would require an implausible local history.
+
+### E1. Keep SQLite compute-on-read (chosen)
+
+No new dependency; obeys the `AGENTS.md` "atomic files, no application database" rule;
+strictly read-only (`?mode=ro`); sufficient at every plausible local scale.
+
+### E2. Embed DuckDB as an in-process query engine (deferred, not chosen)
+
+DuckDB can `ATTACH` each `state.db` and aggregate across all of them in **one**
+vectorized query (via its sqlite scanner), with richer time-bucketing and
+percentiles, replacing the N-queries-plus-Python-merge.
+
+- **Its wins only materialize** with frequent, *uncached*, complex OLAP over tens of
+  millions of rows or many files — an enterprise/cloud profile, not local.
+- **Costs:** a heavyweight native dependency to package in the runtime image, the
+  sqlite-scanner extension, and — decisively — it brushes against the `AGENTS.md`
+  "no application database" rule. Used purely in-memory and ephemeral (no persistent
+  `.duckdb` file), read-only, it is *defensible* as compute-not-storage, but it is a
+  deliberate architectural addition the OSS philosophy resists and must be reconciled
+  with maintainers before adoption.
+- **Verdict: do not add for this plan.** Heavy analytics at scale belongs to the
+  enterprise **Go + PostgreSQL** control plane (`docs/enterprise-extension.md`), which
+  already owns cross-tenant aggregation — not the local single-node reader.
+
+### Escalation ladder (act only on a MEASURED bottleneck, never speculatively)
+
+1. Widen or precompute the in-memory TTL rollup on a timer — still no new dependency.
+2. Add a covering index on `(started_at, model)` if the `sessions` table itself grows
+   large on a given deployment.
+3. Only if genuinely OLAP-heavy **and** local: introduce DuckDB behind a feature flag
+   as an ephemeral, read-only, in-memory engine that `ATTACH`es the `state.db` files —
+   after reconciling the "no application database" rule. **Trigger:** the analytics
+   endpoint p95 on a cold cache exceeds an agreed budget (e.g. > 300–500 ms) at the
+   deployment's real agent/session counts.
+
+Do not add DuckDB to optimize a bottleneck this workload does not have at local scale.

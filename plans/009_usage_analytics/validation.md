@@ -141,6 +141,19 @@ Evidence: screenshots/notes; the manual SQL sum equals the API total.
 - [ ] Cross-agent totals, per-agent, per-model, and day/week series match
   hand-computed sums of real records (evidence: unit-test assertions).
 - [ ] Per-agent usage matches that agent's rows alone (evidence: isolation test).
+- [ ] **Agent multi-select:** absent/empty `agents` = all agents; a subset scopes
+  totals/per-model/series to exactly those agents — subset totals equal the sum of
+  the selected agents' per-agent totals and nothing else (evidence: subset test).
+- [ ] **Subset reduces reads:** selecting K of N agents opens only those K
+  `state.db` files (evidence: read-count / open-call assertion).
+- [ ] **`GET /analytics/agents`** lists selectable agents (id + display name)
+  without opening any `state.db` (evidence: works with zero session rows; no read).
+- [ ] **Time range:** relative `days` and absolute `from`/`to` both resolve
+  correctly, `from`/`to` override `days`, and `start >= end` → 400 (evidence: range
+  tests).
+- [ ] **Bucket granularity:** `hour`/`day`/`week`/`month` each yield a correct
+  **dense** series across the range; `week` folds to ISO weeks (evidence: bucket
+  tests).
 - [ ] `cost_basis` prefers final actual, else estimated, both exposed (evidence:
   cost-basis test).
 - [ ] Routes return 200/400/404 correctly through `APIEnvelope` (evidence: ASGI
@@ -155,3 +168,7 @@ Evidence: screenshots/notes; the manual SQL sum equals the API total.
 - [ ] `make check` and `make smoke-api` pass (evidence: command output).
 - [ ] Manual E2E: real chats -> visible totals/per-model/time + a budget warning
   (evidence: notes + matching manual SQL sum).
+- [ ] Manual E2E controls: default view shows **All agents**; selecting a subset
+  updates every panel; switching a preset range and a custom from/to range and a
+  bucket all re-query and re-render; the selection survives a page reload
+  (evidence: notes/screenshots).

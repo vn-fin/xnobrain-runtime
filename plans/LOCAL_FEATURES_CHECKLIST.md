@@ -95,6 +95,8 @@ do not).
 
 - [ ] Phase 0: pin Hermes + compatibility test asserting the `sessions` schema columns the aggregation reads, the read-only helpers, and the 9router `usage()` shape.
 - [ ] `services/analytics.py` computes aggregates **on read** across each agent's `state.db` opened read-only (`?mode=ro`); **never writes `state.db`**; no new persistent store.
+- [ ] Aggregate the pre-summed **`sessions`** table (one row per conversation), never the per-message table; window-filter on `idx_sessions_started`.
+- [ ] **Many-agent scaling:** each agent has its own `state.db`, so cross-agent totals must read every profile. Cost must scale with *active* agents, not *total* — implement per-agent partial cache with **`os.stat` mtime-skip** (re-read only changed profiles) + **bounded-concurrency** reads (`asyncio.gather` + semaphore), plus the merged-result TTL cache. UI list paging does **not** substitute for this. **Do not add an embedded OLAP engine (DuckDB) unless a *measured* bottleneck triggers the escalation ladder** — see `009_usage_analytics/approaches.md` Decision E and `architecture.md` → Scaling to many agents.
 - [ ] Per-model, per-agent, and time-series aggregation; 9router quota overlay; estimated-vs-actual-cost caveat surfaced.
 - [ ] Per-agent budget config in `config.yaml` (advisory soft-warning; hard enforcement stays Enterprise-only) with snapshot-before-write.
 - [ ] Models + handler operations + routes (usage summary, per-agent, per-model, time-series, get/set budget).
