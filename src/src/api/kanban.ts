@@ -7,24 +7,40 @@ import type {
   KanbanNativeStatus,
   KanbanStatusDef,
   KanbanTask,
+  KanbanTaskPatchInput,
   NewKanbanTaskInput,
 } from '../types';
 
 export const KANBAN_COLUMNS: Array<{ id: KanbanColumnId; label: string; hint: string }> = [
   { id: 'backlog', label: 'Backlog', hint: 'Ideas and needs clarification' },
-  { id: 'todo', label: 'Todo', hint: 'Work waiting to start' },
-  { id: 'running', label: 'Running', hint: 'Ready or being worked on' },
+  { id: 'todo', label: 'Todo', hint: 'Work waiting or scheduled' },
+  { id: 'running', label: 'In Progress', hint: 'Ready or being worked on' },
   { id: 'done', label: 'Done', hint: 'Completed or blocked work' },
-  { id: 'archived', label: 'Archived', hint: 'Work kept for history' },
 ];
 
-const STATUS_DEFS: KanbanStatusDef[] = KANBAN_COLUMNS.map((column) => ({
+export const ARCHIVED_COLUMN = {
+  id: 'archived' as KanbanColumnId,
+  label: 'Archived',
+  hint: 'Work kept for history',
+};
+
+const STATUS_DEFS: KanbanStatusDef[] = [...KANBAN_COLUMNS, ARCHIVED_COLUMN].map((column) => ({
   id: column.id,
   label: column.label,
   column: column.id,
 }));
 
 type RawTask = Record<string, any>;
+
+function defaultAllowedStatuses(nativeStatus: KanbanNativeStatus): KanbanColumnId[] {
+  if (nativeStatus === 'triage') return ['todo', 'archived'];
+  if (nativeStatus === 'todo') return ['running', 'done', 'archived'];
+  if (nativeStatus === 'ready' || nativeStatus === 'running' || nativeStatus === 'scheduled') return ['done', 'archived'];
+  if (nativeStatus === 'blocked') return ['todo', 'archived'];
+  if (nativeStatus === 'review') return ['running', 'archived'];
+  if (nativeStatus === 'done') return ['archived'];
+  return [];
+}
 
 function relativeTime(value: string | null | undefined): string {
   if (!value) return '—';
@@ -48,20 +64,69 @@ function taskFromApi(raw: RawTask): KanbanTask {
     title: String(dep.title ?? dep.id),
     state: dep.kanban_status === 'done' || dep.kanban_status === 'archived' || dep.status === 'done' || dep.status === 'archived' ? 'done' : 'pending',
   }));
+  const comments = Array.isArray(raw.comments) ? raw.comments : [];
+  const events = Array.isArray(raw.events) ? raw.events : [];
+  const runs = Array.isArray(raw.runs) ? raw.runs : [];
+  const activity = raw.worker_activity && typeof raw.worker_activity === 'object'
+    ? raw.worker_activity
+    : null;
+  const conversation = raw.conversation && typeof raw.conversation === 'object'
+    ? raw.conversation
+    : null;
   return {
     id: String(raw.id),
     title: String(raw.title ?? ''),
     description: String(raw.description ?? ''),
     status,
     nativeStatus,
+    allowedStatuses: Array.isArray(raw.allowed_kanban_statuses)
+      ? raw.allowed_kanban_statuses.map(String) as KanbanColumnId[]
+      : defaultAllowedStatuses(nativeStatus),
     priority: raw.priority === 'high' || raw.priority === 'low' ? raw.priority : 'medium',
     assignees: Array.isArray(raw.assignees) ? raw.assignees.map(String) : raw.assignee ? [String(raw.assignee)] : [],
     tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+    skills: Array.isArray(raw.skills) ? raw.skills.map(String) : [],
     deps,
+    comments: comments.map((comment: any) => ({
+      id: Number(comment.id),
+      author: String(comment.author ?? 'user'),
+      body: String(comment.body ?? ''),
+      createdAt: String(comment.created_at ?? ''),
+    })),
+    events: events.map((event: any) => ({
+      id: Number(event.id),
+      kind: String(event.kind ?? 'updated'),
+      payload: event.payload && typeof event.payload === 'object' ? event.payload : null,
+      createdAt: String(event.created_at ?? ''),
+    })),
+    runs: runs.map((run: any) => ({
+      id: Number(run.id),
+      profile: run.profile == null ? null : String(run.profile),
+      status: String(run.status ?? ''),
+      outcome: run.outcome == null ? null : String(run.outcome),
+      summary: run.summary == null ? null : String(run.summary),
+      startedAt: String(run.started_at ?? ''),
+      endedAt: run.ended_at == null ? null : String(run.ended_at),
+    })),
+    workerActivity: activity ? {
+      exists: Boolean(activity.exists),
+      sizeBytes: Number(activity.size_bytes ?? 0),
+      entries: Array.isArray(activity.entries) ? activity.entries.map((entry: any) => ({
+        kind: String(entry.kind ?? 'tool'),
+        name: String(entry.name ?? 'activity'),
+        durationSeconds: Number(entry.duration_seconds ?? 0),
+      })) : [],
+    } : null,
+    conversation: conversation ? {
+      id: String(conversation.id ?? ''),
+      agentId: String(conversation.agent_id ?? ''),
+      url: String(conversation.url ?? ''),
+    } : null,
     progress: Number(raw.progress ?? 0),
     updated: relativeTime(raw.updated_at),
     block: raw.block ?? raw.state_detail?.reason ?? null,
     summary: raw.summary ?? null,
+    result: raw.result ?? raw.summary ?? null,
   };
 }
 
@@ -94,7 +159,21 @@ export const kanbanApi = {
         status: input.status,
         priority: input.priority,
         assignee: input.assignee,
+        skills: input.skills,
       }),
+    });
+    return taskFromApi(data);
+  },
+
+  async getTask(boardId: string, taskId: string): Promise<KanbanTask> {
+    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}`);
+    return taskFromApi(data);
+  },
+
+  async updateTask(boardId: string, taskId: string, input: KanbanTaskPatchInput): Promise<KanbanTask> {
+    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
     });
     return taskFromApi(data);
   },

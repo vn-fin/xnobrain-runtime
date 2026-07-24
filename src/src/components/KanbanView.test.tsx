@@ -2,11 +2,33 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useKanban } from '../hooks/useKanban';
+import type { Agent } from '../types';
 import { KanbanView } from './KanbanView';
 
-function TestBoard() {
+const researchAgent: Agent = {
+  id: 'research-agent',
+  title: 'Research Agent',
+  name: 'research-agent',
+  description: 'Finds and writes useful information',
+  status: 'active',
+  provider: 'nine-router',
+  model: 'auto',
+  reasoningEffort: 'medium',
+  approvalMode: 'auto',
+  skillsWriteApproval: true,
+  memoryWriteApproval: true,
+  workspace: '',
+  conversations: [],
+  skills: [
+    { skill_id: 'writing', name: 'Writing', category: 'office', description: 'Draft clear documents', enabled: true, installed: true, path: '' },
+    { skill_id: 'web-research', name: 'Web research', category: 'research', description: 'Research information online', enabled: true, installed: true, path: '' },
+    { skill_id: 'disabled-skill', name: 'Disabled skill', category: 'other', description: '', enabled: false, installed: true, path: '' },
+  ],
+};
+
+function TestBoard({ agents = [] }: { agents?: Agent[] }) {
   const state = useKanban();
-  return <KanbanView agents={[]} state={state} onClose={vi.fn()} />;
+  return <KanbanView agents={agents} state={state} onClose={vi.fn()} />;
 }
 
 describe('KanbanView', () => {
@@ -14,6 +36,7 @@ describe('KanbanView', () => {
 
   beforeEach(() => {
     window.localStorage.clear();
+    let archivedTask = false;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path.endsWith('/events/stream')) {
@@ -21,6 +44,20 @@ describe('KanbanView', () => {
           status: 200,
           headers: { 'Content-Type': 'text/event-stream' },
         });
+      }
+      if (path.endsWith('/kanban/boards/default/tasks') && init?.method === 'POST') {
+        const requested = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ success: true, data: {
+          id: 't-created',
+          ...requested,
+          status: requested.status === 'backlog' ? 'triage' : 'todo',
+          kanban_status: requested.status,
+          assignees: requested.assignee ? [requested.assignee] : [],
+          parents: [],
+          tags: [],
+          progress: 0,
+          updated_at: new Date().toISOString(),
+        } }), { status: 201, headers: { 'Content-Type': 'application/json' } });
       }
       if (path.includes('/kanban/boards/') && path.includes('/tasks/')) {
         const requested = init?.body ? JSON.parse(String(init.body)) as { status?: string } : {};
@@ -32,7 +69,8 @@ describe('KanbanView', () => {
             status_code: 409,
           }), { status: 409, headers: { 'Content-Type': 'application/json' } });
         }
-        const archived = path.endsWith('/archive');
+        const archived = path.endsWith('/archive') || (archivedTask && path.includes('/t-1042'));
+        if (path.endsWith('/archive')) archivedTask = true;
         const providerTask = path.includes('/provider-rollout/');
         return new Response(JSON.stringify({ success: true, data: {
           id: providerTask ? 'p-201' : 't-1042',
@@ -99,39 +137,38 @@ describe('KanbanView', () => {
 
     const drawer = screen.getByRole('dialog');
     expect(within(drawer).getByRole('heading', { name: 'Prepare the weekly report' })).toBeVisible();
-    expect(within(drawer).getByText('Update the task status without leaving the board.')).toBeVisible();
-    expect(within(drawer).getByText('Running', { selector: '.kb-column-state' })).toBeVisible();
-    expect(within(drawer).getByText('Running', { selector: '.kb-substate' })).toBeVisible();
+    expect(within(drawer).getByText('Only valid next steps are enabled.')).toBeVisible();
+    expect(within(drawer).getByText('In Progress', { selector: '.kb-column-state' })).toBeVisible();
+    expect(within(drawer).getByText('In Progress', { selector: '.kb-substate' })).toBeVisible();
   });
 
-  it('shows five columns and confirms before dropping a task into Archived', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+  it('shows four current columns and archives through the matching confirmation dialog', async () => {
+    const user = userEvent.setup();
     const fetchMock = vi.mocked(fetch);
     render(<TestBoard />);
 
     const card = await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
-    expect(screen.getAllByRole('region', { name: / column$/ })).toHaveLength(5);
-    const archiveColumn = screen.getByRole('region', { name: 'Archived column' });
-    const dataTransfer = {
-      effectAllowed: 'move',
-      dropEffect: 'move',
-      setData: vi.fn(),
-      getData: vi.fn(() => 't-1042'),
-    };
+    expect(screen.getAllByRole('region', { name: / column$/ })).toHaveLength(4);
+    expect(screen.queryByRole('region', { name: 'Archived column' })).toBeNull();
 
-    fireEvent.dragStart(card, { dataTransfer });
-    fireEvent.drop(archiveColumn, { dataTransfer });
-    expect(confirm).toHaveBeenCalledTimes(1);
+    await user.click(card);
+    await user.click(screen.getByRole('button', { name: 'Archive task' }));
+    const confirm = screen.getByRole('alertdialog', { name: 'Archive this task?' });
+    expect(confirm).toHaveTextContent('remain available in the Archived tab');
+    await user.click(within(confirm).getByRole('button', { name: 'Keep task' }));
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/archive'))).toBe(false);
 
-    fireEvent.dragStart(card, { dataTransfer });
-    fireEvent.drop(archiveColumn, { dataTransfer });
-    expect(confirm).toHaveBeenCalledTimes(2);
+    await user.click(screen.getByRole('button', { name: 'Archive task' }));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Archive task' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/archive'))).toBe(true));
     expect(await screen.findByRole('status')).toHaveTextContent('Moved “Prepare the weekly report” to Archived.');
+
+    await user.click(screen.getByRole('tab', { name: /Archived/ }));
+    expect(screen.getByRole('button', { name: 'Open t-1042: Prepare the weekly report' })).toBeVisible();
   });
 
-  it('restores a conflicting move and shows the clean API message', async () => {
+  it('disables invalid backward moves for an active task', async () => {
+    const fetchMock = vi.mocked(fetch);
     render(<TestBoard />);
     const card = await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
     const backlogColumn = screen.getByRole('region', { name: 'Backlog column' });
@@ -145,7 +182,44 @@ describe('KanbanView', () => {
     fireEvent.dragStart(card, { dataTransfer });
     fireEvent.drop(backlogColumn, { dataTransfer });
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('active tasks cannot be returned to Backlog');
     expect(screen.getByRole('button', { name: 'Open t-1042: Prepare the weekly report' })).toBeVisible();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/move'))).toBe(false);
+
+    fireEvent.click(card);
+    const moveSelect = screen.getByLabelText('Move task to');
+    expect(within(moveSelect).getByRole('option', { name: 'Backlog' })).toBeDisabled();
+    expect(within(moveSelect).getByRole('option', { name: 'Todo' })).toBeDisabled();
+    expect(within(moveSelect).getByRole('option', { name: 'Done' })).toBeEnabled();
+  });
+
+  it('enables every enabled agent skill by default and sends unchecked selections', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    render(<TestBoard agents={[researchAgent]} />);
+
+    await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
+    await user.click(screen.getByRole('button', { name: /New task/ }));
+    const modal = screen.getByRole('dialog');
+    await user.click(within(modal).getByRole('button', { name: /Unassigned/ }));
+    await user.click(within(modal).getByRole('option', { name: /Research Agent/ }));
+
+    const writing = within(modal).getByRole('checkbox', { name: /Writing/ });
+    const webResearch = within(modal).getByRole('checkbox', { name: /Web research/ });
+    expect(writing).toBeChecked();
+    expect(webResearch).toBeChecked();
+    expect(within(modal).queryByText('Disabled skill')).toBeNull();
+
+    await user.click(webResearch);
+    await user.type(within(modal).getByLabelText('Title'), 'Create a short brief');
+    await user.type(within(modal).getByLabelText(/Description/), 'Write a concise brief for the user.');
+    await user.click(within(modal).getByRole('button', { name: /Create task/ }));
+
+    await waitFor(() => {
+      const request = fetchMock.mock.calls.find(([input, init]) =>
+        String(input).endsWith('/kanban/boards/default/tasks') && init?.method === 'POST'
+      );
+      expect(request).toBeDefined();
+      expect(JSON.parse(String(request?.[1]?.body)).skills).toEqual(['writing']);
+    });
   });
 });

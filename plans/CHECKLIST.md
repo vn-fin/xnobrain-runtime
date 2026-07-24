@@ -37,8 +37,9 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
   the existing FastAPI process; do not copy the gateway dispatch loop.
 - [ ] Make any required Hermes changes in the current `hermes_cli` extension
   surface; do not revive or patch a legacy CLI implementation.
-- [x] Keep review/blocked as native Hermes detail mapped into Done; do not add
-  a product Review status or write task status directly in SQLite.
+- [x] Keep legacy review as native execution detail mapped into In Progress and
+  blocked as native error detail mapped into Done; do not add either as a
+  product column or write task status directly in SQLite.
 - [ ] Prove the cron-to-Kanban execution bridge described in plan 003 before
   removing the legacy Brain4All scheduler.
 - [ ] Record the accepted Hermes version and compatibility decisions in
@@ -54,9 +55,10 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
   assignments, transitions, attachments, runs, and events.
 - [x] Add the versioned Brain4All Kanban routes through
   `brain4all/routes/setup.py`.
-- [x] Implement the fixed five-state presentation mapping:
-  Backlog, Todo, Running, Done, and Archived.
-- [x] Return native `status` and five-column `kanban_status` separately, and
+- [x] Implement the fixed five-state wire mapping: Backlog, Todo, In Progress,
+  Done, and Archived.
+- [x] Render four current-work columns and expose Archived as a separate view.
+- [x] Return native `status` and five-state `kanban_status` separately, and
   preserve native execution states as distinct colored badges/reasons without
   exposing more draggable workflow columns.
 - [x] Support changing the single native execution assignee in Backlog and
@@ -79,13 +81,22 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
 - [x] Replace production mock Kanban data with the versioned API client.
 - [x] Remove seeded mock/demo and smoke-hook Kanban data; smoke and browser
   checks must create and verify real records in Hermes SQLite.
-- [x] Remove custom status creation and render exactly five workflow states.
+- [x] Remove custom status creation and render exactly four current-work
+  columns, with Archived in a separate view.
 - [x] Build the board view with accessible drag/drop and a non-drag move
   control.
 - [x] Build the list view over the same filters, mutations, and state model.
-- [ ] Implement fast task creation and an advanced task editor.
-- [ ] Implement clear assignment, dependencies, comments, attachments, run
-  history, worker state, and archive experiences.
+- [x] Implement fast task creation and an advanced task editor with a required
+  worker brief, avatar assignee picker, priority, and per-task skills.
+- [x] Default a selected agent's enabled skills on task creation/edit and let
+  the user explicitly disable skills before saving.
+- [x] Default assigned pre-run tasks to the selected agent's persistent
+  workspace and install profile guidance that prevents unnecessary output
+  files for simple tasks.
+- [~] Implement clear assignment, dependencies, comments, attachments, run
+  history, worker state, and archive experiences (assignment, comments,
+  sanitized worker activity, result/conversation links, run history, event
+  history, and archive confirmation are complete; attachment UI remains).
 - [x] Add loading, empty, partial-failure, offline/retry, and permission/error
   states.
 - [x] Notify on successful task moves/assignments and restore the prior board
@@ -133,12 +144,16 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
 - [ ] Board create/list/switch/rename/archive/delete with a protected default
   board.
 - [ ] Search, saved filters, bulk assign/move/archive, and useful board stats.
-- [ ] Skills, workspace modes, priority, tags, goal mode, model/provider
-  overrides, and profile descriptions.
-- [ ] Worker lanes, active-worker view, heartbeat, log tail, run history,
-  terminate, reclaim, and recovery diagnostics.
-- [ ] Dependency graph, blocking reasons, review metadata, completion summaries,
-  and auditable task activity.
+- [~] Skills, workspace modes, priority, tags, goal mode, model/provider
+  overrides, and profile descriptions (per-task skills and priority are
+  implemented).
+- [~] Worker lanes, active-worker view, heartbeat, log tail, run history,
+  terminate, reclaim, and recovery diagnostics (sanitized activity and run
+  history are implemented without exposing prompts, tool arguments, or tool
+  output).
+- [~] Dependency graph, blocking reasons, review metadata, completion summaries,
+  and auditable task activity (completion result, conversation link, and
+  event timeline are implemented).
 - [ ] Manual and automatic specification/decomposition with clear previews.
 - [ ] Notifications/subscriptions where supported by the pinned Hermes version.
 - [ ] Advanced orchestration features only when they have a stable upstream

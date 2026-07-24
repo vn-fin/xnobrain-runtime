@@ -10,7 +10,8 @@ needed. Board and list are two views over the same records and operations.
 
 ## Product principles
 
-- Start simple: a title and optional assignee are enough to add work.
+- Start simple: a title and clear worker description are required; assignee is
+  optional.
 - Use familiar language: “Needs input” is primary; an internal `blocked` state
   may appear in supporting detail.
 - Reveal execution controls only when requested.
@@ -72,17 +73,19 @@ filter state in the URL so it is shareable and survives refresh.
 
 ## Board view
 
-Render exactly five columns, in order:
+The Current view renders exactly four columns, in order:
 
 1. Backlog
 2. Todo
-3. Running
+3. In Progress
 4. Done
-5. Archived
 
-Each column shows a count and an inline add affordance where creation makes
-sense. The layout supports horizontal scrolling at narrower desktop widths and
-uses a list-first layout on small screens.
+Archived work appears in a separate Archived view selected from the Kanban
+header. It is not a fifth board column or a drag/drop target.
+
+Each current-work column shows a count and an inline add affordance where
+creation makes sense. The layout supports horizontal scrolling at narrower
+desktop widths and uses a list-first layout on small screens.
 
 Cards show only scannable information:
 
@@ -104,6 +107,8 @@ descriptions on cards by default.
 - Keyboard users can pick up, move between columns/positions, and drop with
   announcements.
 - Every card also has a “Move to…” menu; drag is never the only way.
+- Archive is a distinct detail action with a product-styled confirmation; it is
+  never offered in the move menu or as a drag/drop target.
 - Optimistic placement remains visually pending until the API confirms.
 - Invalid/stale moves restore the card and explain what changed.
 - Moves that terminate active work or create a reopened follow-up require a
@@ -136,12 +141,17 @@ same task drawer as a Kanban card.
 The modal or inline composer asks for:
 
 - title;
+- worker description;
 - assignee (optional);
 - schedule (optional, opens the automation flow in plan 003).
 
 Default status is Todo for a ready piece of work or Backlog when explicitly
 saved as an idea. Preserve the user’s unfinished input after recoverable API
 errors.
+
+After an agent is selected, show that agent's enabled skills as a checklist.
+All enabled skills start selected; the user may disable any before creation.
+Disabled or uninstalled skills are not offered.
 
 ### Task drawer
 
@@ -157,6 +167,11 @@ The drawer is deep-linkable and contains:
 - activity timeline;
 - advanced execution: profile, skills, workspace mode, goal mode, and
   model/provider override when supported.
+
+Assigned tasks use the agent's durable profile workspace by default. Guidance
+installed in each profile tells workers not to create proof, log, or demo files
+for simple answers and to place explicitly requested deliverables in that
+durable workspace.
 
 Use plain-language help and safe defaults. Advanced fields are collapsed.
 

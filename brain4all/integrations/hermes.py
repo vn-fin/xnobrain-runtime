@@ -66,6 +66,11 @@ PROFILE_STATE_DIRS = (
 )
 
 
+def _new_conversation_id() -> str:
+    """Use the native CLI session shape for API-created conversations."""
+    return f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+
+
 class AgentAPIError(ValueError):
     """Expected API error for named-agent operations."""
 
@@ -590,7 +595,7 @@ class AgentManager:
         if body.get("conversation_id"):
             conversation_id = self._session_id(body["conversation_id"])
         if ensure_conversation and not conversation_id:
-            conversation_id = uuid.uuid4().hex
+            conversation_id = _new_conversation_id()
         if ensure_conversation and self._session(profile_dir, conversation_id) is None:
             self._create_session(
                 profile_dir,
@@ -847,7 +852,7 @@ class AgentManager:
             body.get("id")
             or body.get("session_id")
             or body.get("conversation_id")
-            or uuid.uuid4().hex
+            or _new_conversation_id()
         )
         title = self._conversation_title(body)
         model = self._conversation_model(profile_dir, body)
@@ -1074,6 +1079,14 @@ class AgentManager:
 
     def _workspace_dir(self, name: str) -> Path:
         return self._workspace_dir_for_profile(name, self._profile_dir(name))
+
+    def workspace_dir(self, raw_name: Any) -> Path:
+        """Return the existing agent's persistent workspace."""
+        name = self._agent_name(raw_name)
+        profile_dir = self._require_profile(name)
+        workspace = self._workspace_dir_for_profile(name, profile_dir)
+        workspace.mkdir(parents=True, exist_ok=True)
+        return workspace.resolve()
 
     def _require_profile(self, name: str) -> Path:
         profile_dir = self._profile_dir(name)

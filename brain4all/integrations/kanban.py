@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import asyncio
+import inspect
+import json
 import logging
 from pathlib import Path
+import re
 from typing import Any, Iterator
 
 _log = logging.getLogger("brain4all.kanban")
@@ -113,6 +116,187 @@ def task_runs(conn: Any, task_id: str) -> list[Any]:
 
 def task_attachments(conn: Any, task_id: str) -> list[Any]:
     return list(_module().list_attachments(conn, task_id))
+
+
+def create_task(conn: Any, **fields: Any) -> str:
+    """Create through the installed runtime's supported public signature.
+
+    Hermes releases have added optional execution overrides over time. Avoid
+    sending absent optional values to older releases, while rejecting an
+    explicit override that the installed runtime cannot honor.
+    """
+    creator = _module().create_task
+    supported = set(inspect.signature(creator).parameters)
+    unsupported_requested = [
+        name
+        for name in ("model_override", "provider_override")
+        if fields.get(name) is not None and name not in supported
+    ]
+    if unsupported_requested:
+        labels = ", ".join(name.replace("_", " ") for name in unsupported_requested)
+        raise ValueError(f"the installed runtime does not support {labels}")
+    compatible = {
+        name: value
+        for name, value in fields.items()
+        if name in supported
+    }
+    return str(creator(conn, **compatible))
+
+
+def update_task_fields(
+    conn: Any,
+    task_id: str,
+    *,
+    title: str | None = None,
+    body: str | None = None,
+    priority: int | None = None,
+    skills: list[str] | None = None,
+) -> bool:
+    """Update fields used by the official dashboard before execution starts.
+
+    The installed task package has public create/assign operations but no
+    equivalent field-edit helper. Keep this compatibility shim in the single
+    integration boundary, use its transaction helper, and append the same
+    durable ``edited`` event as the bundled dashboard.
+    """
+    kb = _module()
+    cleaned_skills: list[str] | None = None
+    if skills is not None:
+        cleaned_skills = []
+        seen: set[str] = set()
+        known_toolsets = set(getattr(kb, "KNOWN_TOOLSET_NAMES", ()))
+        for raw in skills:
+            name = str(raw or "").strip()
+            if not name:
+                continue
+            if "," in name:
+                raise ValueError(f"skill name cannot contain comma: {name!r}")
+            if name.casefold() in known_toolsets:
+                raise ValueError(f"{name!r} is a toolset name, not a skill name")
+            if name not in seen:
+                seen.add(name)
+                cleaned_skills.append(name)
+    with kb.write_txn(conn):
+        task = kb.get_task(conn, task_id)
+        if task is None:
+            return False
+        if str(task.status) not in {"triage", "todo", "ready", "scheduled"}:
+            raise RuntimeError("Task details can only be edited before the task starts")
+        sets: list[str] = []
+        values: list[Any] = []
+        if title is not None:
+            title = title.strip()
+            if not title:
+                raise ValueError("title is required")
+            sets.append("title = ?")
+            values.append(title)
+        if body is not None:
+            body = body.strip()
+            if not body:
+                raise ValueError("description is required")
+            sets.append("body = ?")
+            values.append(body)
+        if priority is not None:
+            sets.append("priority = ?")
+            values.append(int(priority))
+        if cleaned_skills is not None:
+            sets.append("skills = ?")
+            values.append(json.dumps(cleaned_skills))
+        if not sets:
+            return True
+        values.extend([task_id, str(task.status)])
+        changed = conn.execute(
+            f"UPDATE tasks SET {', '.join(sets)} WHERE id = ? AND status = ?",
+            tuple(values),
+        )
+        if changed.rowcount != 1:
+            raise RuntimeError("Task changed before the edit could be saved")
+        conn.execute(
+            "INSERT INTO task_events (task_id, kind, payload, created_at) "
+            "VALUES (?, 'edited', ?, unixepoch())",
+            (
+                task_id,
+                json.dumps({
+                    "fields": [
+                        field
+                        for field, present in (
+                            ("title", title is not None),
+                            ("description", body is not None),
+                            ("priority", priority is not None),
+                            ("skills", cleaned_skills is not None),
+                        )
+                        if present
+                    ],
+                }),
+            ),
+        )
+    return True
+
+
+def update_task_workspace(
+    conn: Any,
+    task_id: str,
+    *,
+    workspace_kind: str,
+    workspace_path: str | None,
+) -> bool:
+    """Change the execution workspace before a task starts."""
+    kb = _module()
+    if workspace_kind not in {"scratch", "dir", "worktree"}:
+        raise ValueError("workspace kind is invalid")
+    with kb.write_txn(conn):
+        task = kb.get_task(conn, task_id)
+        if task is None:
+            return False
+        if str(task.status) not in {"triage", "todo", "ready", "scheduled"}:
+            raise ValueError("A task workspace can only change before it starts")
+        changed = conn.execute(
+            "UPDATE tasks SET workspace_kind = ?, workspace_path = ? "
+            "WHERE id = ? AND status = ?",
+            (workspace_kind, workspace_path, task_id, str(task.status)),
+        )
+        if changed.rowcount != 1:
+            raise ValueError("The task changed before its workspace could be saved")
+        conn.execute(
+            "INSERT INTO task_events (task_id, kind, payload, created_at) "
+            "VALUES (?, 'workspace_changed', ?, unixepoch())",
+            (task_id, json.dumps({"workspace_kind": workspace_kind})),
+        )
+    return True
+
+
+_SESSION_LINE = re.compile(r"^\s*Session:\s*([A-Za-z0-9_.:-]+)\s*$")
+_TOOL_ACTIVITY_LINE = re.compile(
+    r"^\s*┊\s*(?:[^A-Za-z0-9]+)?(?:preparing\s+)?([A-Za-z][A-Za-z0-9_-]*)"
+    r"(?:\s+.*?\s+|\s+)(\d+(?:\.\d+)?)s(?:\s+.*)?$"
+)
+
+
+def safe_worker_activity(task_id: str, *, board: str, limit: int = 80) -> dict[str, Any]:
+    """Return bounded worker progress without prompts, arguments, or output."""
+    kb = _module()
+    content = kb.read_worker_log(task_id, tail_bytes=200_000, board=board) or ""
+    path = kb.worker_log_path(task_id, board=board)
+    session_id: str | None = None
+    entries: list[dict[str, Any]] = []
+    for line in content.splitlines():
+        session = _SESSION_LINE.match(line)
+        if session:
+            session_id = session.group(1)
+            continue
+        activity = _TOOL_ACTIVITY_LINE.match(line)
+        if activity:
+            entries.append({
+                "kind": "tool",
+                "name": activity.group(1),
+                "duration_seconds": float(activity.group(2)),
+            })
+    return {
+        "exists": bool(content),
+        "size_bytes": path.stat().st_size if path.exists() else 0,
+        "session_id": session_id,
+        "entries": entries[-max(1, min(int(limit), 200)):],
+    }
 
 
 def attachment_path(attachment: Any) -> Path:

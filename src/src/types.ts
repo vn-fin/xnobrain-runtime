@@ -288,6 +288,37 @@ export type KanbanPriority = 'high' | 'medium' | 'low';
 export type KanbanDepState = 'done' | 'pending' | 'blocked';
 
 export type KanbanDependency = { id: string; title: string; state: KanbanDepState };
+export type KanbanComment = {
+  id: number;
+  author: string;
+  body: string;
+  createdAt: string;
+};
+export type KanbanTaskEvent = {
+  id: number;
+  kind: string;
+  payload: Record<string, unknown> | null;
+  createdAt: string;
+};
+export type KanbanRun = {
+  id: number;
+  profile: string | null;
+  status: string;
+  outcome: string | null;
+  summary: string | null;
+  startedAt: string;
+  endedAt: string | null;
+};
+export type KanbanWorkerActivity = {
+  exists: boolean;
+  sizeBytes: number;
+  entries: Array<{ kind: string; name: string; durationSeconds: number }>;
+};
+export type KanbanConversationLink = {
+  id: string;
+  agentId: string;
+  url: string;
+};
 
 /** The fixed product status vocabulary. */
 export type KanbanStatusDef = {
@@ -304,11 +335,18 @@ export type KanbanTask = {
   status: KanbanColumnId;
   /** Original execution state returned by the task runtime. */
   nativeStatus: KanbanNativeStatus;
+  allowedStatuses: KanbanColumnId[];
   priority: KanbanPriority;
   /** Native execution assignee; currently contains zero or one agent id. */
   assignees: string[];
   tags: string[];
+  skills: string[];
   deps: KanbanDependency[];
+  comments: KanbanComment[];
+  events: KanbanTaskEvent[];
+  runs: KanbanRun[];
+  workerActivity: KanbanWorkerActivity | null;
+  conversation: KanbanConversationLink | null;
   /** 0–100 completion, surfaced for in-progress work. */
   progress: number;
   /** Human-readable "updated" label (e.g. "4m ago"). */
@@ -317,6 +355,7 @@ export type KanbanTask = {
   block?: string | null;
   /** Populated when the task is complete. */
   summary?: string | null;
+  result?: string | null;
 };
 
 export type KanbanBoard = {
@@ -337,6 +376,14 @@ export type NewKanbanTaskInput = {
   status: KanbanColumnId;
   priority: KanbanPriority;
   assignee: string | null;
+  skills: string[];
+};
+
+export type KanbanTaskPatchInput = {
+  title: string;
+  description: string;
+  priority: KanbanPriority;
+  skills: string[];
 };
 
 export type KanbanEvent = {

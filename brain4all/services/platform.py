@@ -72,7 +72,7 @@ class PlatformService:
         self.runtime = runtime
         self.portability = PortabilityService(repository, config.root_profile)
         from .kanban import KanbanService
-        self.kanban = KanbanService()
+        self.kanban = KanbanService(agents)
         self._oauth_attempts: dict[str, dict[str, str]] = {}
         self._running_crons: set[str] = set()
         self.config.ensure_write_approval_defaults()

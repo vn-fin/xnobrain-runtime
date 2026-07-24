@@ -53,10 +53,12 @@ behavior as relevant:
 - list/create/select/update/delete boards and protect the default board;
 - list/filter/page/create/get/edit tasks;
 - assign/reassign with valid, missing, and ineligible profiles;
-- every allowed five-state transition and every rejected transition;
+- every allowed current-state transition, the explicit archive action, and
+  every rejected transition;
 - comments, links/dependencies, cycle rejection;
 - attachment upload/list/download/delete and traversal/oversize rejection;
-- confirmed archive/include-archived, with Archived always visible;
+- confirmed archive/include-archived, with Archived available only through its
+  separate view;
 - worker/run summaries and bounded sanitized logs;
 - dispatcher nudge, singleton behavior, and diagnostics;
 - event connect, resume/reconnect, and full-refetch fallback;
@@ -73,7 +75,8 @@ are absent.
 2. Confirm the primary rail contains Agents and Kanban only, plus the Settings
    utility.
 3. Confirm old deep links redirect to their new Settings sections.
-4. Open Kanban and see a helpful empty default board with exactly five columns.
+4. Open Kanban and see a helpful empty default board with exactly four Current
+   columns: Backlog, Todo, In Progress, and Done.
 5. Switch to list view and back; refresh and confirm the preference/filter URL.
 6. Visit every Settings destination moved from the old sidebar.
 
@@ -82,15 +85,21 @@ and dark themes; reduced motion; and one non-English locale.
 
 ## Browser journey B — Human-managed task
 
-1. Quick-create a Todo task with title only.
-2. Edit description, priority, tags, assignee, and an attachment.
+1. Confirm quick create stays disabled until both a title and worker
+   description are present, then create a Todo task with both fields.
+2. Select an agent and confirm every enabled agent skill is checked by default,
+   disabled skills are absent, and unchecked skills are omitted on create.
+   Then edit title, description, priority, per-task skills, avatar assignee,
+   tags, and an attachment.
 3. Add a comment and a dependency.
 4. Move it with the keyboard “Move to…” control and separately test pointer
    drag on another task.
 5. Trigger a stale conflict from a concurrent API/worker update and confirm the
    UI restores/refetches cleanly.
-6. Complete it, inspect the activity/run summary, archive it after confirming,
-   and find it in the always-visible Archived column.
+6. Complete it, inspect the result, sanitized worker activity, run history,
+   event timeline, conversation ID and working conversation deep link; archive
+   it after the custom confirmation and find it only after selecting the
+   Archived view.
 7. Repeat key discovery/actions from list view.
 
 Refresh between steps to prove persistence rather than client memory.
@@ -98,13 +107,19 @@ Refresh between steps to prove persistence rather than client memory.
 ## Browser journey C — Agent worker lane
 
 1. Create and assign a task to a real configured profile.
-2. Observe Todo move to Running when it becomes Ready, then show active worker
-   detail after claim.
+2. Confirm its native workspace is the selected profile's durable workspace,
+   then observe Todo move to In Progress when it becomes Ready and show active
+   worker detail after claim.
 3. Observe safe progress/heartbeat without exposing raw tool data.
 4. Exercise completion and blocked/needs-input detail within Done.
 5. Create a dependency pair and confirm the child does not dispatch early.
 6. Resolve the dependency and confirm one claim/run.
 7. Exercise terminate/reclaim after plan 004 implements them.
+
+For a simple answer-only task, verify the worker does not create an unnecessary
+proof/log/demo file. For a task that explicitly requires a file, verify the
+deliverable exists under the assigned agent's persistent workspace before the
+worker reports its path.
 
 Restart the application while a controlled test task is recoverable. Confirm
 upstream recovery semantics and no duplicate worker.

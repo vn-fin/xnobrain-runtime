@@ -79,18 +79,38 @@ At minimum:
   "description": "User-authored task details",
   "status": "ready",
   "kanban_status": "running",
+  "allowed_kanban_statuses": ["done", "archived"],
   "state_detail": {
     "kind": "ready",
     "label": "Ready",
     "reason": null
   },
   "assignee": "research-agent",
+  "assignees": ["research-agent"],
+  "skills": ["web-research"],
   "priority": "normal",
   "tags": ["weekly"],
   "archived": false,
   "automation": null,
   "dependencies": [],
   "worker": null,
+  "worker_activity": {
+    "exists": true,
+    "size_bytes": 3186,
+    "session_id": "20260724_102648_3e2c61",
+    "entries": [
+      {"kind": "tool", "name": "browser_navigate", "duration_seconds": 5.2}
+    ]
+  },
+  "conversation": {
+    "id": "20260724_102648_3e2c61",
+    "agent_id": "research-agent",
+    "url": "/agents/research-agent/conversations/20260724_102648_3e2c61"
+  },
+  "result": "The completed worker handoff",
+  "comments": [],
+  "runs": [],
+  "events": [],
   "created_at": "RFC3339",
   "updated_at": "RFC3339",
   "revision": "opaque"
@@ -100,6 +120,35 @@ At minimum:
 `status` preserves the native task state. Wire values for `kanban_status` are
 fixed: `backlog`, `todo`, `running`, `done`, and `archived`. Labels are
 localized by the client.
+
+The board's Current view has four product columns: Backlog (`triage`), Todo
+(`todo` and `scheduled`), In Progress (`ready`, `running`, and legacy
+`review`), and Done (`done` and `blocked`). Archived is a separate view, not a
+current-work column.
+
+`allowed_kanban_statuses` is computed from the current native state. Current
+states drive drag/drop and the accessible move select; invalid backward
+transitions remain visible but disabled. Archived is removed from both move
+controls and exposed as a separate confirmed detail action.
+
+Create requires both `title` and `description`; the description is the worker
+brief. Create and pre-run edit accept `skills` as native skill IDs. When an
+agent is selected, its installed and enabled skills are selected by default;
+the client sends only the skills the user leaves enabled. The native runtime
+remains single-assignee, so `assignees` contains zero or one entry.
+
+An assigned task defaults to that agent profile's durable workspace. Explicit
+workspace configuration remains supported. A simple answer-only task must not
+create proof/log/demo files merely to demonstrate completion; an explicitly
+requested file deliverable must be written and verified in the durable agent
+workspace.
+
+Task detail responses include comments, safe run summaries, safe event
+payloads, and structured worker activity. They never include raw worker logs,
+prompts, tool arguments, tool output, credentials, or filesystem paths.
+When the worker log identifies a native session, `conversation` provides the
+same session ID and an application deep link. API-created conversations use
+the native `YYYYMMDD_HHMMSS_<6-hex>` session format as well.
 
 `state_detail.kind` is a bounded enum derived from the pinned upstream version,
 not a second editable status. Examples include `triage`, `waiting_dependency`,

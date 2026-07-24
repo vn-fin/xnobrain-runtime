@@ -8,6 +8,7 @@ import type {
   KanbanNativeStatus,
   KanbanNotice,
   KanbanStatusDef,
+  KanbanTaskPatchInput,
   KanbanViewMode,
   NewKanbanTaskInput,
 } from '../types';
@@ -30,6 +31,7 @@ export function useKanban(active = true) {
   const [liveStatus, setLiveStatus] = useState<'connecting' | 'live' | 'offline'>('connecting');
   const [events, setEvents] = useState<KanbanEvent[]>([]);
   const [notice, setNotice] = useState<KanbanNotice | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const noticeId = useRef(0);
 
   const notify = useCallback((kind: KanbanNotice['kind'], message: string) => {
@@ -61,6 +63,27 @@ export function useKanban(active = true) {
     () => boards.find((item) => item.id === activeBoardId) ?? boards[0] ?? null,
     [activeBoardId, boards],
   );
+
+  const replaceTask = useCallback((boardId: string, taskId: string, updated: KanbanBoard['tasks'][number]) => {
+    setBoards((current) => current.map((item) => item.id === boardId
+      ? { ...item, tasks: item.tasks.map((task) => task.id === taskId ? updated : task) }
+      : item));
+  }, []);
+
+  const refreshTask = useCallback(async (taskId: string, showLoading = true) => {
+    if (!board) return null;
+    if (showLoading) setDetailLoading(true);
+    try {
+      const updated = await kanbanApi.getTask(board.id, taskId);
+      replaceTask(board.id, taskId, updated);
+      return updated;
+    } catch (cause) {
+      notify('error', cause instanceof Error ? cause.message : 'The task details could not be loaded.');
+      return null;
+    } finally {
+      if (showLoading) setDetailLoading(false);
+    }
+  }, [board, notify, replaceTask]);
 
   const setActiveBoardId = useCallback((boardId: string) => {
     setActiveBoardIdState(boardId);
@@ -101,29 +124,53 @@ export function useKanban(active = true) {
     try {
       const updated = await kanbanApi.moveTask(board.id, taskId, nextStatus);
       if (updated) {
-        setBoards((current) => current.map((item) => item.id === board.id
-          ? { ...item, tasks: item.tasks.map((task) => task.id === taskId ? updated : task) }
-          : item));
+        replaceTask(board.id, taskId, updated);
+        void refreshTask(taskId, false);
       }
       notify('success', `Moved “${title}” to ${label}.`);
     } catch (cause) {
       setBoards(previous);
       notify('error', cause instanceof Error ? cause.message : 'The task could not be moved.');
     }
-  }, [board, boards, notify]);
+  }, [board, boards, notify, refreshTask, replaceTask]);
 
   const assignTask = useCallback(async (taskId: string, assignee: string | null) => {
     if (!board) return;
     try {
       const updated = await kanbanApi.assignTask(board.id, taskId, assignee);
-      setBoards((current) => current.map((item) => item.id === board.id
-        ? { ...item, tasks: item.tasks.map((task) => task.id === taskId ? updated : task) }
-        : item));
+      replaceTask(board.id, taskId, updated);
+      void refreshTask(taskId, false);
       notify('success', assignee ? `Assigned “${updated.title}”.` : `Unassigned “${updated.title}”.`);
     } catch (cause) {
       notify('error', cause instanceof Error ? cause.message : 'The assignee could not be changed.');
     }
-  }, [board, notify]);
+  }, [board, notify, refreshTask, replaceTask]);
+
+  const updateTask = useCallback(async (taskId: string, input: KanbanTaskPatchInput) => {
+    if (!board) return null;
+    try {
+      const updated = await kanbanApi.updateTask(board.id, taskId, input);
+      replaceTask(board.id, taskId, updated);
+      notify('success', `Saved “${updated.title}”.`);
+      return updated;
+    } catch (cause) {
+      notify('error', cause instanceof Error ? cause.message : 'The task could not be saved.');
+      return null;
+    }
+  }, [board, notify, replaceTask]);
+
+  const addComment = useCallback(async (taskId: string, body: string) => {
+    if (!board) return false;
+    try {
+      await kanbanApi.addComment(board.id, taskId, body);
+      await refreshTask(taskId, false);
+      notify('success', 'Comment added.');
+      return true;
+    } catch (cause) {
+      notify('error', cause instanceof Error ? cause.message : 'The comment could not be added.');
+      return false;
+    }
+  }, [board, notify, refreshTask]);
 
   const createTask = useCallback(async (input: NewKanbanTaskInput) => {
     if (!board) throw new Error('No board is selected.');
@@ -222,6 +269,10 @@ export function useKanban(active = true) {
     statusLabel,
     moveTask,
     assignTask,
+    updateTask,
+    addComment,
+    refreshTask,
+    detailLoading,
     createTask,
     addStatus,
     refresh: () => load(),

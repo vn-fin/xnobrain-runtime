@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Mapping
+from urllib.parse import quote
 
 from ..integrations import kanban as kb_adapter
 from ..integrations.kanban import KanbanUnavailable
@@ -31,9 +32,9 @@ def _status(raw: str) -> str:
         return "backlog"
     if raw in {"todo", "scheduled"}:
         return "todo"
-    if raw in {"ready", "running"}:
+    if raw in {"ready", "running", "review"}:
         return "running"
-    if raw in {"review", "blocked", "done"}:
+    if raw in {"blocked", "done"}:
         return "done"
     if raw == "archived":
         return "archived"
@@ -60,8 +61,47 @@ def _detail(task: Any) -> dict[str, Any]:
     return {"kind": kind, "label": label, "reason": reason}
 
 
+def _allowed_moves(raw: str) -> list[str]:
+    """Return product columns reachable without hidden reclaim/reopen work."""
+    if raw == "triage":
+        return ["todo", "archived"]
+    if raw in {"todo"}:
+        return ["running", "done", "archived"]
+    if raw in {"ready", "running", "scheduled"}:
+        return ["done", "archived"]
+    if raw == "blocked":
+        return ["todo", "archived"]
+    if raw == "review":
+        return ["running", "archived"]
+    if raw == "done":
+        return ["archived"]
+    return []
+
+
 class KanbanService:
     """Translate the HTTP product contract into Hermes Kanban operations."""
+
+    def __init__(self, agents: Any | None = None):
+        self.agents = agents
+
+    def _workspace_for_assignee(
+        self,
+        assignee: Any,
+        requested_kind: Any = None,
+        requested_path: Any = None,
+    ) -> tuple[str, str | None]:
+        """Default assigned work to the agent's persistent workspace."""
+        kind = str(requested_kind or "").strip()
+        path = str(requested_path or "").strip() or None
+        if kind:
+            if kind == "dir" and path is None and assignee and self.agents is not None:
+                path = str(self.agents.workspace_dir(assignee))
+            return kind, path
+        if path:
+            return "dir", path
+        if assignee and self.agents is not None:
+            return "dir", str(self.agents.workspace_dir(assignee))
+        return "scratch", None
 
     @staticmethod
     def _public_board(item: Mapping[str, Any]) -> dict[str, Any]:
@@ -96,7 +136,14 @@ class KanbanService:
                 raise ServiceError(str(exc), status=503, code="kanban_not_ready") from exc
             raise ServiceError(str(exc), code="board_not_found") from exc
 
-    def _task_dto(self, conn: Any, task: Any, *, board: str) -> dict[str, Any]:
+    def _task_dto(
+        self,
+        conn: Any,
+        task: Any,
+        *,
+        board: str,
+        include_detail: bool = False,
+    ) -> dict[str, Any]:
         kb = self._ready()
         parent_ids = kb_adapter.task_dependencies(conn, task.id)
         children = kb_adapter.task_children(conn, task.id)
@@ -114,24 +161,31 @@ class KanbanService:
         attachments = kb_adapter.task_attachments(conn, task.id)
         runs = kb_adapter.task_runs(conn, task.id)
         raw_status = str(task.status)
+        latest_summary = next(
+            (str(run.summary) for run in reversed(runs) if getattr(run, "summary", None)),
+            None,
+        )
         progress = 100 if raw_status in {"done", "archived"} and getattr(task, "completed_at", None) is not None else (50 if raw_status == "running" else 0)
-        return {
+        result = {
             "id": str(task.id),
             "title": str(task.title),
             "description": str(task.body or ""),
             "status": raw_status,
             "kanban_status": _status(raw_status),
+            "allowed_kanban_statuses": _allowed_moves(raw_status),
             "state_detail": _detail(task),
             "priority": INT_TO_PRIORITY.get(int(getattr(task, "priority", 0) or 0), "medium"),
             "assignee": getattr(task, "assignee", None),
             "assignees": [task.assignee] if getattr(task, "assignee", None) else [],
+            "skills": list(getattr(task, "skills", None) or []),
             "parents": parent_rows,
             "children": children,
             "tags": [],
             "progress": progress,
             "archived": raw_status == "archived",
             "block": "The task run failed" if raw_status == "blocked" and getattr(task, "last_failure_error", None) else None,
-            "summary": getattr(task, "result", None),
+            "summary": getattr(task, "result", None) or latest_summary,
+            "result": getattr(task, "result", None) or latest_summary,
             "workspace_kind": getattr(task, "workspace_kind", "scratch"),
             "workspace_path": None,
             "model_override": getattr(task, "model_override", None),
@@ -146,6 +200,30 @@ class KanbanService:
             "board_slug": board,
             "revision": str(getattr(task, "updated_at", None) or getattr(task, "created_at", "")),
         }
+        if include_detail:
+            events = kb_adapter.task_events(conn, task.id)
+            activity = kb_adapter.safe_worker_activity(task.id, board=board)
+            session_id = activity.get("session_id")
+            assignee = getattr(task, "assignee", None)
+            result["events"] = [self._event_dto(item, task) for item in events]
+            result["worker_activity"] = activity
+            result["conversation"] = (
+                {
+                    "id": session_id,
+                    "agent_id": assignee,
+                    "url": (
+                        f"/agents/{quote(str(assignee), safe='')}/conversations/"
+                        f"{quote(str(session_id), safe='')}"
+                    ),
+                }
+                if session_id and assignee
+                else None
+            )
+        else:
+            result["events"] = []
+            result["worker_activity"] = None
+            result["conversation"] = None
+        return result
 
     @staticmethod
     def _comment_dto(comment: Any) -> dict[str, Any]:
@@ -157,7 +235,16 @@ class KanbanService:
 
     @staticmethod
     def _run_dto(run: Any) -> dict[str, Any]:
-        return {"id": int(run.id), "task_id": str(run.task_id), "profile": run.profile, "status": run.status, "outcome": run.outcome, "summary": run.summary, "metadata": run.metadata, "started_at": _iso(run.started_at), "ended_at": _iso(run.ended_at)}
+        return {
+            "id": int(run.id),
+            "task_id": str(run.task_id),
+            "profile": run.profile,
+            "status": run.status,
+            "outcome": run.outcome,
+            "summary": run.summary,
+            "started_at": _iso(run.started_at),
+            "ended_at": _iso(run.ended_at),
+        }
 
     @staticmethod
     def _worker_dto(task: Any) -> dict[str, Any] | None:
@@ -221,7 +308,7 @@ class KanbanService:
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
-            return self._task_dto(conn, task, board=normalized)
+            return self._task_dto(conn, task, board=normalized, include_detail=True)
 
     def create_task(self, board: str, body: Mapping[str, Any], *, created_by: str = "user") -> dict[str, Any]:
         normalized = self._board(board)
@@ -229,11 +316,40 @@ class KanbanService:
         title = str(body.get("title") or "").strip()
         if not title:
             raise ServiceError("title is required", code="invalid_request")
+        description = str(body.get("description") or "").strip()
+        if not description:
+            raise ServiceError("description is required", code="invalid_request")
         status = str(body.get("status") or "todo")
         if status not in {"backlog", "todo"}:
             raise ServiceError("new tasks may start in Backlog or Todo", code="invalid_request")
+        try:
+            workspace_kind, workspace_path = self._workspace_for_assignee(
+                body.get("assignee"),
+                body.get("workspace_kind"),
+                body.get("workspace_path"),
+            )
+        except ValueError as exc:
+            raise ServiceError(str(exc), code="invalid_workspace") from exc
         with kb_adapter.connection(normalized) as conn:
-            task_id = kb.create_task(conn, title=title, body=str(body.get("description") or ""), assignee=body.get("assignee"), created_by=created_by, priority=PRIORITY_TO_INT.get(str(body.get("priority") or "medium"), 1), parents=body.get("parents") or (), triage=status == "backlog", idempotency_key=body.get("idempotency_key"), workspace_kind=str(body.get("workspace_kind") or "scratch"), workspace_path=body.get("workspace_path"), skills=body.get("skills"), model_override=body.get("model_override"), provider_override=body.get("provider_override"), goal_mode=bool(body.get("goal_mode", False)), initial_status="running", board=normalized)
+            task_id = kb_adapter.create_task(
+                conn,
+                title=title,
+                body=description,
+                assignee=body.get("assignee"),
+                created_by=created_by,
+                priority=PRIORITY_TO_INT.get(str(body.get("priority") or "medium"), 1),
+                parents=body.get("parents") or (),
+                triage=status == "backlog",
+                idempotency_key=body.get("idempotency_key"),
+                workspace_kind=workspace_kind,
+                workspace_path=workspace_path,
+                skills=body.get("skills"),
+                model_override=body.get("model_override"),
+                provider_override=body.get("provider_override"),
+                goal_mode=bool(body.get("goal_mode", False)),
+                initial_status="running",
+                board=normalized,
+            )
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("The created task could not be loaded", status=503, code="kanban_contract_incompatible")
@@ -246,14 +362,27 @@ class KanbanService:
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
-            if task.status == "triage":
-                ok = kb.specify_triage_task(conn, task_id, title=body.get("title"), body=body.get("description"), author="user")
-                if not ok:
-                    raise ServiceError("task changed before it could be edited", status=409, code="stale_task")
-            else:
-                raise ServiceError("Active task fields cannot be edited", status=501, code="kanban_contract_incompatible")
+            try:
+                ok = kb_adapter.update_task_fields(
+                    conn,
+                    task_id,
+                    title=body.get("title"),
+                    body=body.get("description"),
+                    priority=(
+                        PRIORITY_TO_INT[str(body["priority"])]
+                        if body.get("priority") is not None
+                        else None
+                    ),
+                    skills=body.get("skills"),
+                )
+            except ValueError as exc:
+                raise ServiceError(str(exc), code="invalid_request") from exc
+            except RuntimeError as exc:
+                raise ServiceError(str(exc), status=409, code="stale_task") from exc
+            if not ok:
+                raise ServiceError("task not found", status=404, code="task_not_found")
             task = kb.get_task(conn, task_id)
-            return self._task_dto(conn, task, board=normalized)
+            return self._task_dto(conn, task, board=normalized, include_detail=True)
 
     def assign_task(self, board: str, task_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         normalized = self._board(board)
@@ -274,6 +403,16 @@ class KanbanService:
                 raise ServiceError(str(exc), status=409, code="assignment_invalid") from exc
             if not ok:
                 raise ServiceError("task cannot be reassigned while active", status=409, code="assignment_invalid")
+            try:
+                workspace_kind, workspace_path = self._workspace_for_assignee(body.get("assignee"))
+                kb_adapter.update_task_workspace(
+                    conn,
+                    task_id,
+                    workspace_kind=workspace_kind,
+                    workspace_path=workspace_path,
+                )
+            except ValueError as exc:
+                raise ServiceError(str(exc), status=409, code="assignment_invalid") from exc
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")

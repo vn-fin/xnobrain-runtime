@@ -1,17 +1,24 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  Activity,
   AlertTriangle,
+  Archive,
   Check,
   ChevronRight,
   Clock,
   Columns3,
+  ExternalLink,
   Link2,
   List,
+  MessageSquare,
   Plus,
+  RefreshCw,
+  Save,
   Search,
+  Terminal,
   X,
 } from 'lucide-react';
-import { KANBAN_COLUMNS } from '../api/kanban';
+import { ARCHIVED_COLUMN, KANBAN_COLUMNS } from '../api/kanban';
 import type { useKanban } from '../hooks/useKanban';
 import type { Agent, KanbanColumnId, KanbanPriority, KanbanTask } from '../types';
 
@@ -36,6 +43,8 @@ function colorFor(id: string): string {
 }
 
 function nativeStatusLabel(status: KanbanTask['nativeStatus']): string {
+  if (status === 'running') return 'In Progress';
+  if (status === 'blocked') return 'Blocked (Error)';
   return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
@@ -81,6 +90,142 @@ function AssigneeSummary({ ids, agents }: { ids: string[]; agents: Agent[] }) {
   );
 }
 
+function AgentPicker({
+  agents,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  agents: Agent[];
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = value ? resolveAssignee(value, agents) : null;
+  return (
+    <div className="kb-agent-picker">
+      <button
+        type="button"
+        className="kb-agent-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {selected ? (
+          <>
+            <span className="kb-avatar" style={{ background: selected.color }}>{monogram(selected.name)}</span>
+            <span>{selected.name}</span>
+          </>
+        ) : (
+          <>
+            <span className="kb-avatar unassigned">—</span>
+            <span>Unassigned</span>
+          </>
+        )}
+        <ChevronRight size={14} />
+      </button>
+      {open && !disabled && (
+        <div className="kb-agent-menu" role="listbox" aria-label="Choose task assignee">
+          <button
+            type="button"
+            role="option"
+            aria-selected={!value}
+            onClick={() => { onChange(''); setOpen(false); }}
+          >
+            <span className="kb-avatar unassigned">—</span>
+            <span><strong>Unassigned</strong><small>Keep this task waiting</small></span>
+            {!value && <Check size={14} />}
+          </button>
+          {agents.map((agent) => {
+            const person = resolveAssignee(agent.id, agents);
+            return (
+              <button
+                type="button"
+                role="option"
+                aria-selected={value === agent.id}
+                key={agent.id}
+                onClick={() => { onChange(agent.id); setOpen(false); }}
+              >
+                <span className="kb-avatar" style={{ background: person.color }}>{monogram(person.name)}</span>
+                <span><strong>{person.name}</strong><small>{agent.description || agent.model || 'Assistant'}</small></span>
+                {value === agent.id && <Check size={14} />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function enabledSkillsFor(agents: Agent[], assignee: string) {
+  const agent = agents.find((item) => item.id === assignee || item.name === assignee);
+  return agent?.skills.filter((skill) => skill.installed && skill.enabled) ?? [];
+}
+
+function SkillPicker({
+  agents,
+  assignee,
+  selected,
+  onChange,
+}: {
+  agents: Agent[];
+  assignee: string;
+  selected: string[];
+  onChange: (skills: string[]) => void;
+}) {
+  const skills = useMemo(() => enabledSkillsFor(agents, assignee), [agents, assignee]);
+
+  return (
+    <div className="kb-skill-picker">
+      {!assignee ? (
+        <span className="kb-skill-empty">Choose an agent to select its enabled skills.</span>
+      ) : skills.length === 0 ? (
+        <span className="kb-skill-empty">This agent has no enabled skills.</span>
+      ) : (
+        <>
+          <div className="kb-skill-picker-head">
+            <span>{selected.length} of {skills.length} enabled</span>
+            <button
+              type="button"
+              onClick={() => onChange(
+                selected.length === skills.length ? [] : skills.map((skill) => skill.skill_id),
+              )}
+            >
+              {selected.length === skills.length ? 'Disable all' : 'Enable all'}
+            </button>
+          </div>
+          <div className="kb-skill-options" role="group" aria-label="Skills used for this task">
+            {skills.map((skill) => {
+              const checked = selected.includes(skill.skill_id);
+              return (
+                <label className={checked ? 'selected' : ''} key={skill.skill_id}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onChange(
+                      checked
+                        ? selected.filter((item) => item !== skill.skill_id)
+                        : [...selected, skill.skill_id],
+                    )}
+                  />
+                  <span className="kb-skill-check">{checked && <Check size={12} />}</span>
+                  <span>
+                    <strong>{skill.name || skill.skill_id}</strong>
+                    <small>{skill.description || skill.category}</small>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function PriorityTitle({ task }: { task: KanbanTask }) {
   return (
     <span className="kb-title-line">
@@ -110,8 +255,9 @@ function TaskCard({
   return (
     <button
       className={`kb-card col-${column} status-${task.nativeStatus}`}
-      draggable
+      draggable={column !== 'archived'}
       onDragStart={(event) => {
+        if (column === 'archived') return;
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', task.id);
         onDragStart();
@@ -174,16 +320,60 @@ function TaskDrawer({
   agents,
   state,
   onMove,
+  onArchive,
   onClose,
 }: {
   task: KanbanTask;
   agents: Agent[];
   state: KanbanState;
   onMove: (taskId: string, status: KanbanColumnId) => void;
+  onArchive: (task: KanbanTask) => void;
   onClose: () => void;
 }) {
   const board = state.board;
+  const editable = ['triage', 'todo', 'ready', 'scheduled'].includes(task.nativeStatus);
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description);
+  const [priority, setPriority] = useState(task.priority);
+  const [skills, setSkills] = useState(() => {
+    const enabled = enabledSkillsFor(agents, task.assignees[0] ?? '');
+    return task.skills.filter((skill) => enabled.some((item) => item.skill_id === skill));
+  });
+  const [comment, setComment] = useState('');
+  const [saving, setSaving] = useState(false);
+  const movableStatuses = task.allowedStatuses.filter((status) => status !== 'archived');
+
+  useEffect(() => {
+    if (editing) return;
+    setTitle(task.title);
+    setDescription(task.description);
+    setPriority(task.priority);
+    const enabled = enabledSkillsFor(agents, task.assignees[0] ?? '');
+    setSkills(task.skills.filter((skill) => enabled.some((item) => item.skill_id === skill)));
+  }, [agents, editing, task.assignees, task.description, task.priority, task.skills, task.title]);
+
   if (!board) return null;
+
+  const save = async () => {
+    if (!title.trim() || !description.trim()) return;
+    setSaving(true);
+    const updated = await state.updateTask(task.id, {
+      title: title.trim(),
+      description: description.trim(),
+      priority,
+      skills,
+    });
+    setSaving(false);
+    if (updated) setEditing(false);
+  };
+
+  const submitComment = async () => {
+    if (!comment.trim()) return;
+    const saved = await state.addComment(task.id, comment.trim());
+    if (saved) setComment('');
+  };
+
   return (
     <div className="kb-overlay" onClick={onClose}>
       <div className="kb-drawer" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
@@ -196,14 +386,80 @@ function TaskDrawer({
             </div>
             <h2>{task.title}</h2>
           </div>
-          <button className="icon-button" aria-label="Close task details" onClick={onClose}>
-            <X size={18} />
-          </button>
+          <div className="kb-drawer-head-actions">
+            <button
+              className="icon-button"
+              aria-label="Refresh task details"
+              title="Refresh task details"
+              onClick={() => void state.refreshTask(task.id)}
+            >
+              <RefreshCw size={16} className={state.detailLoading ? 'spinning' : ''} />
+            </button>
+            <button className="icon-button" aria-label="Close task details" onClick={onClose}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
         <div className="kb-drawer-body">
-          <section>
-            <span className="kb-label">Overview</span>
-            <p className="kb-desc">{task.description}</p>
+          <section className="kb-detail-section kb-edit-section">
+            <div className="kb-section-heading">
+              <div>
+                <span className="kb-label">Task brief</span>
+                <small>Name and instructions given to the agent.</small>
+              </div>
+              {editable && !editing && (
+                <button className="kb-text-action" onClick={() => setEditing(true)}>Edit task</button>
+              )}
+            </div>
+            {editing ? (
+              <div className="kb-edit-form">
+                <label className={!title.trim() ? 'kb-field invalid' : 'kb-field'}>
+                  Task name
+                  <input value={title} onChange={(event) => setTitle(event.target.value)} />
+                </label>
+                <label className={!description.trim() ? 'kb-field invalid' : 'kb-field'}>
+                  Description
+                  <textarea value={description} onChange={(event) => setDescription(event.target.value)} />
+                  <small className="kb-field-help">Required. Write the outcome and constraints the agent should follow.</small>
+                </label>
+                <label className="kb-field">
+                  Priority
+                  <select value={priority} onChange={(event) => setPriority(event.target.value as KanbanPriority)}>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </label>
+                <div className="kb-field">
+                  Skills used for this task
+                  <SkillPicker
+                    agents={agents}
+                    assignee={task.assignees[0] ?? ''}
+                    selected={skills}
+                    onChange={setSkills}
+                  />
+                </div>
+                <div className="kb-edit-actions">
+                  <button className="conn-btn ghost" onClick={() => setEditing(false)}>Cancel</button>
+                  <button
+                    className="primary-button"
+                    disabled={saving || !title.trim() || !description.trim()}
+                    onClick={() => void save()}
+                  >
+                    <Save size={15} /> {saving ? 'Saving…' : 'Save changes'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="kb-desc">{task.description}</p>
+                {task.skills.length > 0 && (
+                  <div className="kb-task-skills">
+                    {task.skills.map((skill) => <span key={skill}>{skill}</span>)}
+                  </div>
+                )}
+              </>
+            )}
             {task.block && (
               <div className="kb-signal blocked">
                 <AlertTriangle size={14} />
@@ -218,40 +474,17 @@ function TaskDrawer({
             )}
           </section>
 
-          <section>
-            <span className="kb-label">Assignee</span>
-            <div className="kb-drawer-assignees">
-              {['triage', 'todo', 'ready', 'scheduled'].includes(task.nativeStatus) ? (
-                <select
-                  className="kb-assignee-select"
-                  aria-label="Change task assignee"
-                  value={task.assignees[0] ?? ''}
-                  onChange={(event) => void state.assignTask(task.id, event.target.value || null)}
-                >
-                  <option value="">Unassigned</option>
-                  {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.title}</option>)}
-                </select>
-              ) : (
-                <>
-                  {task.assignees.length === 0 && <span className="kb-unassigned">Unassigned</span>}
-                  {task.assignees.map((id) => {
-                    const person = resolveAssignee(id, agents);
-                    return (
-                      <span key={id} className="kb-person">
-                        <span className="kb-avatar" style={{ background: person.color }}>{monogram(person.name)}</span>
-                        {person.name}
-                      </span>
-                    );
-                  })}
-                </>
-              )}
+          <section className="kb-detail-section kb-drawer-grid">
+            <div className="kb-owner-field">
+              <span className="kb-label">Assignee</span>
+              <AgentPicker
+                agents={agents}
+                value={task.assignees[0] ?? ''}
+                disabled={!editable}
+                onChange={(value) => void state.assignTask(task.id, value || null)}
+              />
+              {editable && <small className="kb-field-help">One agent owns and runs each task.</small>}
             </div>
-            {['triage', 'todo', 'ready', 'scheduled'].includes(task.nativeStatus) && (
-              <small className="kb-field-help">Choose the single agent that will run this task.</small>
-            )}
-          </section>
-
-          <section className="kb-drawer-grid">
             <div>
               <span className="kb-label">Priority</span>
               <span className="kb-value">
@@ -264,8 +497,26 @@ function TaskDrawer({
             </div>
           </section>
 
+          {task.result && (
+            <section className="kb-detail-section kb-result-section">
+              <div className="kb-section-heading">
+                <div>
+                  <span className="kb-label">Result</span>
+                  <small>Final handoff from the worker.</small>
+                </div>
+                {task.conversation && (
+                  <a className="kb-conversation-link" href={task.conversation.url}>
+                    Open conversation <ExternalLink size={13} />
+                  </a>
+                )}
+              </div>
+              <div className="kb-result">{task.result}</div>
+              {task.conversation && <code className="kb-conversation-id">{task.conversation.id}</code>}
+            </section>
+          )}
+
           {task.deps.length > 0 && (
-            <section>
+            <section className="kb-detail-section">
               <span className="kb-label">Dependencies</span>
               <div className="kb-deps">
                 {task.deps.map((dep) => (
@@ -278,25 +529,138 @@ function TaskDrawer({
               </div>
             </section>
           )}
+
+          <section className="kb-detail-section">
+            <div className="kb-section-heading">
+              <div>
+                <span className="kb-label">Comments ({task.comments.length})</span>
+                <small>Add context for the next worker attempt.</small>
+              </div>
+            </div>
+            <div className="kb-comments">
+              {task.comments.length === 0 && <span className="kb-muted">No comments yet.</span>}
+              {task.comments.map((item) => (
+                <article className="kb-comment" key={item.id}>
+                  <header><strong>{item.author}</strong><time>{eventTime(item.createdAt)}</time></header>
+                  <p>{item.body}</p>
+                </article>
+              ))}
+            </div>
+            {task.nativeStatus !== 'archived' && (
+              <div className="kb-comment-compose">
+                <textarea
+                  aria-label="Add task comment"
+                  value={comment}
+                  placeholder="Add a note, decision, or missing context…"
+                  onChange={(event) => setComment(event.target.value)}
+                />
+                <button className="primary-button" disabled={!comment.trim()} onClick={() => void submitComment()}>
+                  <MessageSquare size={14} /> Add comment
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section className="kb-detail-section">
+            <div className="kb-section-heading">
+              <div>
+                <span className="kb-label">Worker activity</span>
+                <small>Sensitive prompts, arguments, and tool output are omitted.</small>
+              </div>
+              <span className="kb-byte-count">{task.workerActivity?.sizeBytes ?? 0} B log</span>
+            </div>
+            {!task.workerActivity?.exists ? (
+              <span className="kb-muted">No worker activity yet.</span>
+            ) : task.workerActivity.entries.length === 0 ? (
+              <span className="kb-muted">The worker started, but no structured tool activity is available.</span>
+            ) : (
+              <div className="kb-worker-activity">
+                {task.workerActivity.entries.map((entry, index) => (
+                  <div key={`${entry.name}-${index}`}>
+                    <Terminal size={13} />
+                    <strong>{entry.name.replaceAll('_', ' ')}</strong>
+                    <span>{entry.durationSeconds.toFixed(1)}s</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {task.runs.length > 0 && (
+            <section className="kb-detail-section">
+              <span className="kb-label">Run history ({task.runs.length})</span>
+              <div className="kb-runs">
+                {[...task.runs].reverse().map((run) => (
+                  <article key={run.id}>
+                    <header>
+                      <span className={`kb-run-state ${run.outcome || run.status}`}>{run.outcome || run.status}</span>
+                      <strong>@{run.profile || 'unassigned'}</strong>
+                      <time>{eventTime(run.startedAt)}</time>
+                    </header>
+                    {run.summary && <p>{run.summary}</p>}
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="kb-detail-section">
+            <div className="kb-section-heading">
+              <div>
+                <span className="kb-label">Event log ({task.events.length})</span>
+                <small>Durable lifecycle changes for this task.</small>
+              </div>
+              <Activity size={15} />
+            </div>
+            <div className="kb-event-timeline">
+              {task.events.length === 0 && <span className="kb-muted">No events yet.</span>}
+              {[...task.events].reverse().map((event) => (
+                <div key={event.id}>
+                  <span className="kb-event-marker" />
+                  <div>
+                    <header><strong>{event.kind.replaceAll('_', ' ')}</strong><time>{eventTime(event.createdAt)}</time></header>
+                    {event.payload && Object.keys(event.payload).length > 0 && (
+                      <code>{JSON.stringify(event.payload)}</code>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
-        <div className="kb-drawer-foot">
+        {task.status !== 'archived' && <div className="kb-drawer-foot">
           <div>
             <span className="kb-label">Move task</span>
-            <p>Update the task status without leaving the board.</p>
+            <p>Only valid next steps are enabled.</p>
           </div>
-          <div className="kb-move-buttons">
-            {board.statuses.map((status) => (
-              <button
-                key={status.id}
-                className={status.id === task.status ? 'kb-move active' : 'kb-move'}
-                disabled={status.id === task.status}
-                onClick={() => onMove(task.id, status.id)}
-              >
-                {status.label}
-              </button>
-            ))}
-          </div>
-        </div>
+          <label className="kb-move-select">
+            <span className="sr-only">Move task to</span>
+            <select
+              aria-label="Move task to"
+              value={task.status}
+              disabled={movableStatuses.length === 0}
+              onChange={(event) => onMove(task.id, event.target.value as KanbanColumnId)}
+            >
+              {board.statuses.filter((status) => status.id !== 'archived').map((status) => (
+                <option
+                  key={status.id}
+                  value={status.id}
+                  disabled={
+                    status.id !== task.status
+                    && !movableStatuses.includes(status.id as (typeof movableStatuses)[number])
+                  }
+                >
+                  {status.label}{status.id === task.status ? ' · current' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          {task.allowedStatuses.includes('archived') && (
+            <button className="kb-archive-button" onClick={() => onArchive(task)}>
+              <Archive size={15} /> Archive task
+            </button>
+          )}
+        </div>}
       </div>
     </div>
   );
@@ -319,26 +683,36 @@ function NewTaskModal({
   const [status, setStatus] = useState(initialStatus ?? board?.statuses[0]?.id ?? 'todo');
   const [priority, setPriority] = useState<KanbanPriority>('medium');
   const [assignee, setAssignee] = useState('');
+  const [skills, setSkills] = useState<string[]>([]);
   const [invalid, setInvalid] = useState(false);
+
+  useEffect(() => {
+    setSkills(enabledSkillsFor(agents, assignee).map((skill) => skill.skill_id));
+  }, [assignee]);
 
   if (!board) return null;
 
-  const toggleAssignee = (id: string) => setAssignee((current) => current === id ? '' : id);
-
   const submit = async () => {
-    if (!title.trim()) {
+    if (!title.trim() || !description.trim()) {
       setInvalid(true);
       return;
     }
-    await state.createTask({ title: title.trim(), description: description.trim(), status: status as KanbanColumnId, priority, assignee: assignee || null });
+    await state.createTask({
+      title: title.trim(),
+      description: description.trim(),
+      status: status as KanbanColumnId,
+      priority,
+      assignee: assignee || null,
+      skills,
+    });
     onClose();
   };
 
   return (
     <div className="kb-overlay" onClick={onClose}>
-      <div className="kb-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+      <div className="kb-modal" role="dialog" aria-modal="true" aria-labelledby="new-task-title" onClick={(event) => event.stopPropagation()}>
         <div className="kb-modal-head">
-          <h2>New task</h2>
+          <h2 id="new-task-title">New task</h2>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
             <X size={18} />
           </button>
@@ -373,34 +747,65 @@ function NewTaskModal({
           </div>
           <div className="kb-field">
             Assignee
-            <div className="kb-assignee-picker">
-              {agents.length === 0 && <span className="kb-unassigned">No agents available</span>}
-              {agents.map((agent) => (
-                <button
-                  key={agent.id}
-                  className={assignee === agent.id ? 'kb-assignee-chip on' : 'kb-assignee-chip'}
-                  onClick={() => toggleAssignee(agent.id)}
-                >
-                  <span className="kb-avatar" style={{ background: colorFor(agent.id) }}>{monogram(agent.title)}</span>
-                  {agent.title}
-                </button>
-              ))}
-            </div>
+            <AgentPicker agents={agents} value={assignee} onChange={setAssignee} />
             <small className="kb-field-help">One agent owns and runs each task.</small>
           </div>
-          <label className="kb-field">
-            Description
+          <label className={invalid && !description.trim() ? 'kb-field invalid' : 'kb-field'}>
+            Description <span className="kb-required">Required</span>
             <textarea
               value={description}
-              placeholder="Optional context for the assignee…"
+              placeholder="Define the expected outcome, source material, and constraints the agent should follow…"
               onChange={(event) => setDescription(event.target.value)}
             />
+            <small className="kb-field-help">The assigned agent uses this as its working brief.</small>
           </label>
+          <div className="kb-field">
+            Skills used for this task
+            <SkillPicker agents={agents} assignee={assignee} selected={skills} onChange={setSkills} />
+            <small className="kb-field-help">Skills are loaded for this task only.</small>
+          </div>
         </div>
         <div className="kb-modal-foot">
           <button className="conn-btn ghost" onClick={onClose}>Cancel</button>
-          <button className="primary-button" onClick={() => void submit()}>
+          <button className="primary-button" disabled={!title.trim() || !description.trim()} onClick={() => void submit()}>
             <Plus size={16} /> Create task
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ArchiveConfirm({
+  task,
+  onCancel,
+  onConfirm,
+}: {
+  task: KanbanTask;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="kb-overlay kb-confirm-overlay" onClick={onCancel}>
+      <div
+        className="kb-modal kb-confirm-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="archive-task-title"
+        aria-describedby="archive-task-description"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="kb-confirm-icon"><Archive size={22} /></div>
+        <div className="kb-confirm-copy">
+          <h2 id="archive-task-title">Archive this task?</h2>
+          <p id="archive-task-description">
+            “{task.title}” will leave the current board and remain available in the Archived tab.
+          </p>
+        </div>
+        <div className="kb-confirm-actions">
+          <button className="conn-btn ghost" onClick={onCancel}>Keep task</button>
+          <button className="conn-btn danger-solid" onClick={onConfirm}>
+            <Archive size={14} /> Archive task
           </button>
         </div>
       </div>
@@ -421,6 +826,8 @@ export function KanbanView({
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskStatus, setNewTaskStatus] = useState<string | undefined>(undefined);
+  const [taskScope, setTaskScope] = useState<'current' | 'archived'>('current');
+  const [archiveTask, setArchiveTask] = useState<KanbanTask | null>(null);
   const [agentFilter, setAgentFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | KanbanPriority>('all');
   const [columnFilter, setColumnFilter] = useState<'all' | KanbanColumnId>('all');
@@ -443,15 +850,16 @@ export function KanbanView({
     () =>
       visibleTasks.filter(
         (task) =>
+          (taskScope === 'archived' ? task.status === 'archived' : task.status !== 'archived') &&
           (agentFilter === 'all' || task.assignees.includes(agentFilter)) &&
           (priorityFilter === 'all' || task.priority === priorityFilter) &&
           (columnFilter === 'all' || columnOf(task.status) === columnFilter),
       ),
-    [agentFilter, columnFilter, columnOf, priorityFilter, visibleTasks],
+    [agentFilter, columnFilter, columnOf, priorityFilter, taskScope, visibleTasks],
   );
 
   const metrics = useMemo(() => {
-    const tasks = board?.tasks ?? [];
+    const tasks = (board?.tasks ?? []).filter((task) => task.status !== 'archived');
     const running = tasks.filter((task) => columnOf(task.status) === 'running');
     const blocked = tasks.filter((task) => Boolean(task.block));
     const completed = tasks.filter(
@@ -480,14 +888,20 @@ export function KanbanView({
   const moveTask = (taskId: string, status: KanbanColumnId) => {
     const task = board?.tasks.find((item) => item.id === taskId);
     if (!task || columnOf(task.status) === status) return;
-    if (
-      status === 'archived'
-      && !window.confirm(`Archive “${task.title}”? You can still find it in the Archived column.`)
-    ) {
-      return;
-    }
+    if (!task.allowedStatuses.includes(status)) return;
+    if (status === 'archived') return;
     void state.moveTask(taskId, status);
   };
+
+  const confirmArchive = () => {
+    if (!archiveTask) return;
+    void state.moveTask(archiveTask.id, 'archived');
+    setOpenTaskId(null);
+    setArchiveTask(null);
+  };
+
+  const currentCount = board?.tasks.filter((task) => task.status !== 'archived').length ?? 0;
+  const archivedCount = board?.tasks.filter((task) => task.status === 'archived').length ?? 0;
 
   return (
     <section className="kanban-view">
@@ -526,6 +940,32 @@ export function KanbanView({
           <span className="kb-sub">{board?.description}</span>
         </div>
         <div className="kb-header-actions">
+          <div className="kb-scope-switch" role="tablist" aria-label="Task visibility">
+            <button
+              className={taskScope === 'current' ? 'active' : ''}
+              role="tab"
+              aria-selected={taskScope === 'current'}
+              onClick={() => {
+                setTaskScope('current');
+                setColumnFilter('all');
+                setOpenTaskId(null);
+              }}
+            >
+              Current <span>{currentCount}</span>
+            </button>
+            <button
+              className={taskScope === 'archived' ? 'active' : ''}
+              role="tab"
+              aria-selected={taskScope === 'archived'}
+              onClick={() => {
+                setTaskScope('archived');
+                setColumnFilter('all');
+                setOpenTaskId(null);
+              }}
+            >
+              Archived <span>{archivedCount}</span>
+            </button>
+          </div>
           <div className="kb-view-switch" role="tablist" aria-label="Board layout">
             <button
               className={view === 'board' ? 'active' : ''}
@@ -541,12 +981,14 @@ export function KanbanView({
               aria-selected={view === 'table'}
               onClick={() => setView('table')}
             >
-              <List size={14} /> List <span>{board?.tasks.length ?? 0}</span>
+              <List size={14} /> List <span>{taskScope === 'current' ? currentCount : archivedCount}</span>
             </button>
           </div>
-          <button className="primary-button" onClick={() => { setNewTaskStatus(undefined); setNewTaskOpen(true); }}>
-            <Plus size={16} /> New task
-          </button>
+          {taskScope === 'current' && (
+            <button className="primary-button" onClick={() => { setNewTaskStatus(undefined); setNewTaskOpen(true); }}>
+              <Plus size={16} /> New task
+            </button>
+          )}
           <button className="icon-button" aria-label="Close board" onClick={onClose}>
             <X size={19} />
           </button>
@@ -601,18 +1043,20 @@ export function KanbanView({
               <option value="low">Low priority</option>
             </select>
           </label>
-          <label>
-            <span className="sr-only">Filter by board column</span>
-            <select
-              value={columnFilter}
-              onChange={(event) => setColumnFilter(event.target.value as 'all' | KanbanColumnId)}
-            >
-              <option value="all">All statuses</option>
-              {KANBAN_COLUMNS.map((column) => (
-                <option key={column.id} value={column.id}>{column.label}</option>
-              ))}
-            </select>
-          </label>
+          {taskScope === 'current' && (
+            <label>
+              <span className="sr-only">Filter by board column</span>
+              <select
+                value={columnFilter}
+                onChange={(event) => setColumnFilter(event.target.value as 'all' | KanbanColumnId)}
+              >
+                <option value="all">All statuses</option>
+                {KANBAN_COLUMNS.map((column) => (
+                  <option key={column.id} value={column.id}>{column.label}</option>
+                ))}
+              </select>
+            </label>
+          )}
           {filtersActive && <button className="kb-clear" onClick={clearFilters}>Clear</button>}
         </div>
       </div>
@@ -645,7 +1089,7 @@ export function KanbanView({
       {state.status === 'loading' && <div className="kb-empty">Loading board…</div>}
       {state.status === 'error' && <div className="kb-error">{state.error}</div>}
 
-      {board && state.status === 'ready' && (
+      {board && state.status === 'ready' && taskScope === 'current' && (
         <div className="kb-summary" aria-label="Board summary">
           <div className="kb-metric">
             <span>Total work</span>
@@ -653,7 +1097,7 @@ export function KanbanView({
             <small>tasks</small>
           </div>
           <div className="kb-metric active">
-            <span>Running</span>
+            <span>In Progress</span>
             <strong>{metrics.running}</strong>
             <small>{metrics.activeAgents} active {metrics.activeAgents === 1 ? 'agent' : 'agents'}</small>
           </div>
@@ -670,7 +1114,7 @@ export function KanbanView({
         </div>
       )}
 
-      {board && state.status === 'ready' && view === 'board' && (
+      {board && state.status === 'ready' && taskScope === 'current' && view === 'board' && (
         <div className="kb-board">
           {KANBAN_COLUMNS.map((column) => {
             const items = filteredTasks.filter((task) => columnOf(task.status) === column.id);
@@ -683,11 +1127,13 @@ export function KanbanView({
                 className={`kb-column col-${column.id}${dropColumn === column.id ? ' drop-target' : ''}`}
                 onDragEnter={(event) => {
                   event.preventDefault();
-                  if (draggedTaskId) setDropColumn(column.id);
+                  const dragged = board.tasks.find((task) => task.id === draggedTaskId);
+                  if (dragged?.allowedStatuses.includes(column.id)) setDropColumn(column.id);
                 }}
                 onDragOver={(event) => {
                   event.preventDefault();
-                  event.dataTransfer.dropEffect = 'move';
+                  const dragged = board.tasks.find((task) => task.id === draggedTaskId);
+                  event.dataTransfer.dropEffect = dragged?.allowedStatuses.includes(column.id) ? 'move' : 'none';
                 }}
                 onDragLeave={(event) => {
                   const related = event.relatedTarget;
@@ -725,7 +1171,10 @@ export function KanbanView({
                         agents={agents}
                         statusLabel={statusLabel}
                         column={column.id}
-                        onOpen={() => setOpenTaskId(task.id)}
+                        onOpen={() => {
+                          setOpenTaskId(task.id);
+                          void state.refreshTask(task.id);
+                        }}
                         onDragStart={() => setDraggedTaskId(task.id)}
                         onDragEnd={() => {
                           setDraggedTaskId(null);
@@ -749,15 +1198,59 @@ export function KanbanView({
         </div>
       )}
 
+      {board && state.status === 'ready' && taskScope === 'archived' && view === 'board' && (
+        <div className="kb-archive-view">
+          <header>
+            <div>
+              <span className="kb-swatch" />
+              <div>
+                <strong>{ARCHIVED_COLUMN.label}</strong>
+                <span>{ARCHIVED_COLUMN.hint}</span>
+              </div>
+            </div>
+            <span className="kb-count">{filteredTasks.length}</span>
+          </header>
+          {filteredTasks.length === 0 ? (
+            <div className="kb-archive-empty">
+              <Archive size={24} />
+              <strong>No archived tasks</strong>
+              <span>Archived work will appear here without crowding the current board.</span>
+            </div>
+          ) : (
+            <div className="kb-archive-grid">
+              {filteredTasks.map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  agents={agents}
+                  statusLabel={statusLabel}
+                  column="archived"
+                  onOpen={() => {
+                    setOpenTaskId(task.id);
+                    void state.refreshTask(task.id);
+                  }}
+                  onDragStart={() => undefined}
+                  onDragEnd={() => undefined}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {board && state.status === 'ready' && view === 'table' && (
         <div className="kb-table">
           <div className="kb-table-toolbar">
             <span>
               <strong>{filteredTasks.length}</strong> {filteredTasks.length === 1 ? 'task' : 'tasks'} · grouped by status
             </span>
-            <span className="kb-fixed-status-note">Five default statuses</span>
+            <span className="kb-fixed-status-note">
+              {taskScope === 'current' ? 'Four current stages' : 'Archived history'}
+            </span>
           </div>
-          {board.statuses.map((status) => {
+          {board.statuses.filter((status) =>
+            taskScope === 'archived' ? status.id === 'archived' : status.id !== 'archived'
+          ).map((status) => {
             const items = filteredTasks.filter((task) => task.status === status.id);
             return (
               <div key={status.id} className="kb-group">
@@ -783,7 +1276,10 @@ export function KanbanView({
                       <span />
                     </div>
                     {items.map((task) => (
-                      <button key={task.id} className="kb-row" onClick={() => setOpenTaskId(task.id)}>
+                      <button key={task.id} className="kb-row" onClick={() => {
+                        setOpenTaskId(task.id);
+                        void state.refreshTask(task.id);
+                      }}>
                         <span className="kb-row-task">
                           <PriorityTitle task={task} />
                           <span className="kb-row-id">{task.id}</span>
@@ -818,10 +1314,18 @@ export function KanbanView({
           agents={agents}
           state={state}
           onMove={moveTask}
+          onArchive={setArchiveTask}
           onClose={() => setOpenTaskId(null)}
         />
       )}
       {newTaskOpen && <NewTaskModal agents={agents} state={state} initialStatus={newTaskStatus} onClose={() => setNewTaskOpen(false)} />}
+      {archiveTask && (
+        <ArchiveConfirm
+          task={archiveTask}
+          onCancel={() => setArchiveTask(null)}
+          onConfirm={confirmArchive}
+        />
+      )}
     </section>
   );
 }

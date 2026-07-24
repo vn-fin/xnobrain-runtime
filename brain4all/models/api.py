@@ -55,12 +55,12 @@ class KanbanBoardCreate(BaseModel):
 
 class KanbanTaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=500)
-    description: str = Field(default="", max_length=50_000)
+    description: str = Field(min_length=1, max_length=50_000)
     status: Literal["backlog", "todo"] = "todo"
     priority: Literal["high", "medium", "low"] = "medium"
     assignee: str | None = Field(default=None, max_length=128)
     parents: list[str] = Field(default_factory=list, max_length=100)
-    workspace_kind: Literal["scratch", "dir", "worktree"] = "scratch"
+    workspace_kind: Literal["scratch", "dir", "worktree"] | None = None
     workspace_path: str | None = Field(default=None, max_length=2000)
     skills: list[str] | None = Field(default=None, max_length=64)
     model_override: str | None = Field(default=None, max_length=256)
@@ -71,8 +71,9 @@ class KanbanTaskCreate(BaseModel):
 
 class KanbanTaskPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=500)
-    description: str | None = Field(default=None, max_length=50_000)
+    description: str | None = Field(default=None, min_length=1, max_length=50_000)
     priority: Literal["high", "medium", "low"] | None = None
+    skills: list[str] | None = Field(default=None, max_length=64)
     tags: list[str] | None = Field(default=None, max_length=32)
     model_override: str | None = Field(default=None, max_length=256)
     provider_override: str | None = Field(default=None, max_length=128)

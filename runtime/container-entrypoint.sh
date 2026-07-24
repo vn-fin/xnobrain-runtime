@@ -26,6 +26,9 @@ touch "$HERMES_HOME/.env"
 chmod 700 "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$NINE_ROUTER_DATA_DIR"
 chmod 600 "$HERMES_HOME/.env"
 
+BRAIN4ALL_PROFILE_TEMPLATES_DIR=/opt/brain4all/profile-templates \
+  /usr/local/bin/brain4all-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
+
 # Keep the persistent default and named profiles in sync with the skills bundled
 # by the Hermes runtime image. The upstream synchronizer is manifest-based: it
 # preserves local edits and deletions and respects .no-bundled-skills markers.
