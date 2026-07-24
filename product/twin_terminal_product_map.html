@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Twin Terminal · Bản đồ sản phẩm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#ECEEE9; --surface:#F8F9F6; --surface-2:#F1F3ED; --ink:#17211F; --ink-soft:#4A5551; --muted:#7C857F;
+    --line:#C6CCC1; --line-soft:#DADED6; --petrol:#2B4A44; --petrol-tint:#E4EBE7;
+    --clay:#A24B3B; --clay-tint:#F0E1DD; --brass:#8F7320; --brass-strong:#7A6017; --brass-tint:#EFE7CE; --brass-line:#D9C88F;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:linear-gradient(180deg,#F1F3EE,var(--paper) 45%); color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif; font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px; margin:0 auto; padding:26px 16px 60px}
+  .brandrow{display:flex; align-items:baseline; justify-content:space-between; margin:0 4px 14px}
+  .brand{font-family:'Spectral',serif; font-weight:600; font-size:19px}
+  .brand small{font-family:'Inter',sans-serif; font-weight:500; font-size:11px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; margin-left:8px}
+  .note{font-size:12px; color:var(--muted)}
+  .sheet{background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:20px 20px 18px; margin-bottom:16px;
+    box-shadow:0 18px 48px -30px rgba(23,33,31,.4)}
+  .eyebrow{display:flex; align-items:center; gap:9px; font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:12px}
+  .eyebrow .stripe{width:18px; height:1.5px; background:var(--line)}
+
+  h1{font-family:'Spectral',serif; font-size:21px; font-weight:600; margin:0 0 8px; line-height:1.3}
+  .sub{font-size:13.5px; color:var(--ink-soft); margin:0 0 16px; max-width:760px}
+  .sub b{color:var(--ink)}
+
+  /* guarantee */
+  .gtitle{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--brass-strong); margin-bottom:8px}
+  .guar{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:9px; margin-bottom:16px}
+  .g{border:1px solid var(--brass-line); background:var(--brass-tint); border-radius:12px; padding:10px 12px}
+  .g .gn{font-weight:600; font-size:12.5px; color:var(--brass-strong); margin-bottom:2px}
+  .g .gd{font-size:11.5px; color:var(--ink-soft); line-height:1.45}
+
+  .vouch{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px}
+  .vbox{border-radius:12px; padding:12px 14px; font-size:12.5px; line-height:1.5}
+  .vyes{background:var(--petrol-tint); border:1px solid #A9C4BB}
+  .vno{background:var(--clay-tint); border:1px solid #DDBCB3}
+  .vbox .vh{font-weight:600; font-size:12px; margin-bottom:5px; display:flex; align-items:center; gap:6px}
+  .vyes .vh{color:var(--petrol)} .vno .vh{color:var(--clay)}
+  .vbox ul{margin:0; padding-left:16px; color:var(--ink-soft)}
+  .vbox li{margin-bottom:2px}
+  .whyworks{font-size:12.5px; color:var(--ink-soft); font-style:italic; border-left:2px solid var(--brass-line); padding:3px 0 3px 12px}
+  .whyworks b{font-style:normal; color:var(--ink)}
+
+  svg{width:100%; height:auto; display:block}
+
+  /* engines */
+  .legend{display:flex; flex-wrap:wrap; gap:14px; font-size:11.5px; color:var(--ink-soft); margin-bottom:12px}
+  .legend span{display:inline-flex; align-items:center; gap:6px}
+  .sw{width:10px; height:10px; border-radius:3px; display:inline-block}
+  .engines{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px}
+  .eng{border:1px solid var(--line-soft); border-left-width:3px; border-radius:12px; padding:11px 12px; background:var(--surface)}
+  .eng .num{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted)}
+  .eng .en{font-weight:600; font-size:13px; margin:1px 0 4px}
+  .eng .ed{font-size:11.5px; color:var(--ink-soft); line-height:1.45}
+  .eng.gray{border-left-color:#9AA29B; background:#F4F6F1}
+  .eng.teal{border-left-color:var(--petrol); background:var(--petrol-tint)}
+  .eng.brass{border-left-color:var(--brass); background:var(--brass-tint)}
+  .eng.core{box-shadow:0 0 0 2px var(--brass-line)}
+  .eng .tag{display:inline-block; font-size:9.5px; font-family:'IBM Plex Mono',monospace; letter-spacing:.05em; border-radius:5px; padding:1px 6px; margin-left:5px; vertical-align:1px; background:#fff; color:var(--brass-strong); border:1px solid var(--brass-line)}
+
+  /* stages */
+  .stages{display:grid; grid-template-columns:repeat(auto-fit,minmax(185px,1fr)); gap:10px; margin-bottom:12px}
+  .stage{border:1px solid var(--line-soft); border-radius:14px; padding:13px 14px; background:var(--surface-2); display:flex; flex-direction:column; gap:6px}
+  .stage .bnum{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--brass-strong); letter-spacing:.08em}
+  .stage .bn{font-family:'Spectral',serif; font-weight:600; font-size:15px; line-height:1.25}
+  .stage .bd{font-size:11.5px; color:var(--ink-soft)}
+  .stage .row{font-size:11px; line-height:1.5}
+  .stage .row .k{font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); display:block}
+  .stage.s4{background:var(--brass-tint); border-color:var(--brass-line)}
+  .honest{font-size:12px; color:var(--ink-soft); font-style:italic; border-left:2px solid var(--clay); padding:3px 0 3px 12px; margin-top:4px}
+  .honest b{font-style:normal; color:var(--ink)}
+  @media (max-width:640px){ .vouch{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brandrow">
+    <div class="brand">Twin Terminal <small>Bản đồ sản phẩm</small></div>
+    <div class="note">một trang · bốn tầng</div>
+  </div>
+
+  <!-- BAND 1 -->
+  <section class="sheet">
+    <div class="eyebrow"><span class="stripe"></span>1 · Sản phẩm là gì</div>
+    <h1>Terminal cho twin của chuyên gia</h1>
+    <p class="sub">Bloomberg đảm bảo <b>dữ liệu</b> sạch, chuẩn hoá, truy xuất chính xác. Terminal này đảm bảo <b>twin skill/workflow</b> — mỗi cái mã hoá nghề của một chuyên gia có tên thật. Chuyên gia khắp nơi dạy nghề vào; twin chảy qua cổng kiểm định của terminal rồi tới bàn làm việc của khách khắp nơi. <b>Không phải danh mục để tra — là màn hình người ta ngồi cả ngày.</b></p>
+
+    <div class="gtitle">Lời hứa của terminal — mỗi twin chảy qua đây đều:</div>
+    <div class="guar">
+      <div class="g"><div class="gn">① Xuất xứ thật</div><div class="gd">Đúng là của người có tên đó — danh tính được xác minh, chống mạo danh.</div></div>
+      <div class="g"><div class="gn">② Có số đo</div><div class="gd">Độ nhất quán với chính chuyên gia, đo trên ca held-out. Huy hiệu <b>có hạn dùng</b>.</div></div>
+      <div class="g"><div class="gn">③ Cài một chạm</div><div class="gd">Không có dự án tích hợp. Cắm vào dữ liệu sẵn có của khách.</div></div>
+      <div class="g"><div class="gn">④ Chạy ổn định</div><div class="gd">Không sập giữa chừng, không lặp vô tận, chi phí đoán trước được.</div></div>
+      <div class="g"><div class="gn">⑤ Tự khai</div><div class="gd">Ra ngoài vùng phủ thì nói "chỗ này thầy chưa dạy" — không bịa.</div></div>
+    </div>
+
+    <div class="vouch">
+      <div class="vbox vyes">
+        <div class="vh">✓ TERMINAL BẢO CHỨNG</div>
+        <ul>
+          <li>bản sao <b>trung thành</b> với người gốc</li>
+          <li>xuất xứ là người thật, có tên</li>
+          <li>cài được, chạy ổn định</li>
+        </ul>
+      </div>
+      <div class="vbox vno">
+        <div class="vh">✗ TERMINAL KHÔNG BẢO CHỨNG</div>
+        <ul>
+          <li>chuyên gia đó <b>có giỏi không</b></li>
+          <li>lời khuyên đó có đúng không</li>
+          <li>→ thị trường chấm người, terminal chấm bản sao</li>
+        </ul>
+      </div>
+    </div>
+    <div class="whyworks">Bloomberg đảm bảo <b>giá được báo cáo chính xác</b>, không đảm bảo <b>trái phiếu đáng mua</b>. Cùng logic — và đây là lý do terminal chạy được ở <b>mọi ngành</b>: đo độ trung thành là so twin với phán quyết của chính chuyên gia trên ca held-out, <b>không cần biết gì về ngành</b>. Còn chấm chất lượng chuyên gia thì cần hiểu ngành — nên terminal không nhận việc đó.</div>
+  </section>
+
+  <!-- BAND 2 -->
+  <section class="sheet">
+    <div class="eyebrow"><span class="stripe"></span>2 · Twin chảy qua terminal thế nào</div>
+    <svg viewBox="0 0 740 336" role="img" aria-labelledby="ft fd">
+      <title id="ft">Dòng chảy của một twin qua terminal</title>
+      <desc id="fd">Chuyên gia dạy nghề ở xưởng, twin đi qua cổng kiểm định, lên kệ có huy hiệu, được cài qua runtime và phân quyền, tới bàn làm việc của khách. Vòng quay lại mang royalty về chuyên gia, log dùng thật nuôi vòng dạy, và trôi dạt kích hoạt tái kiểm định.</desc>
+      <defs>
+        <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M1 1L8 5L1 9" fill="none" stroke="#4A5551" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+        <marker id="ab" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M1 1L8 5L1 9" fill="none" stroke="#8F7320" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+
+      <!-- zone backgrounds -->
+      <rect x="16" y="30" width="150" height="176" rx="13" fill="#EFE7CE" opacity=".55"/>
+      <rect x="180" y="30" width="372" height="176" rx="13" fill="#E4EBE7"/>
+      <rect x="566" y="30" width="158" height="176" rx="13" fill="#F1F3ED"/>
+
+      <text x="91" y="22" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="9.5" letter-spacing=".08em" fill="#7A6017">CHUYÊN GIA · KHẮP NƠI</text>
+      <text x="366" y="22" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="9.5" letter-spacing=".08em" fill="#2B4A44">TERMINAL — CHỖ BẢO CHỨNG &amp; LƯU THÔNG</text>
+      <text x="645" y="22" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="9.5" letter-spacing=".08em" fill="#7C857F">KHÁCH · KHẮP NƠI</text>
+
+      <!-- station 1 -->
+      <rect x="28" y="54" width="126" height="128" rx="11" fill="#F8F9F6" stroke="#D9C88F"/>
+      <text x="91" y="78" text-anchor="middle" font-family="Spectral,serif" font-size="13" font-weight="600" fill="#17211F">Xưởng dạy nghề</text>
+      <text x="91" y="99" text-anchor="middle" font-size="10" fill="#4A5551">nháp – sửa – vì sao</text>
+      <text x="91" y="116" text-anchor="middle" font-size="10" fill="#4A5551">đối chiếu hai ca</text>
+      <text x="91" y="133" text-anchor="middle" font-size="10" fill="#4A5551">đoán luật để bác bỏ</text>
+      <text x="91" y="156" text-anchor="middle" font-size="10" font-weight="600" fill="#7A6017">→ sổ nghề</text>
+      <text x="91" y="172" text-anchor="middle" font-size="9" fill="#7C857F">miễn phí</text>
+
+      <!-- station 2: the gate -->
+      <rect x="192" y="54" width="112" height="128" rx="11" fill="#F8F9F6" stroke="#8F7320" stroke-width="2"/>
+      <text x="248" y="76" text-anchor="middle" font-family="Spectral,serif" font-size="13" font-weight="600" fill="#17211F">Cổng kiểm định</text>
+      <text x="248" y="90" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="8.5" letter-spacing=".06em" fill="#8F7320">LÕI SẢN PHẨM</text>
+      <text x="248" y="111" text-anchor="middle" font-size="10" fill="#4A5551">xác minh người thật</text>
+      <text x="248" y="128" text-anchor="middle" font-size="10" fill="#4A5551">đo độ trung thành</text>
+      <text x="248" y="145" text-anchor="middle" font-size="10" fill="#4A5551">thử độ ổn định</text>
+      <text x="248" y="167" text-anchor="middle" font-size="9.5" fill="#A24B3B">trượt thì không lên kệ</text>
+
+      <!-- station 3 -->
+      <rect x="318" y="54" width="106" height="128" rx="11" fill="#F8F9F6" stroke="#C6CCC1"/>
+      <text x="371" y="78" text-anchor="middle" font-family="Spectral,serif" font-size="13" font-weight="600" fill="#17211F">Kệ</text>
+      <text x="371" y="99" text-anchor="middle" font-size="10" fill="#4A5551">tìm theo nghề</text>
+      <text x="371" y="116" text-anchor="middle" font-size="10" fill="#4A5551">huy hiệu + hạn dùng</text>
+      <text x="371" y="133" text-anchor="middle" font-size="10" fill="#4A5551">vùng phủ công khai</text>
+      <text x="371" y="156" text-anchor="middle" font-size="10" fill="#4A5551">giá do chuyên gia đặt</text>
+
+      <!-- station 4 -->
+      <rect x="438" y="54" width="100" height="128" rx="11" fill="#F8F9F6" stroke="#C6CCC1"/>
+      <text x="488" y="78" text-anchor="middle" font-family="Spectral,serif" font-size="13" font-weight="600" fill="#17211F">Runtime</text>
+      <text x="488" y="99" text-anchor="middle" font-size="10" fill="#4A5551">cài một chạm</text>
+      <text x="488" y="116" text-anchor="middle" font-size="10" fill="#4A5551">chạy trên dữ liệu</text>
+      <text x="488" y="130" text-anchor="middle" font-size="10" fill="#4A5551">của khách</text>
+      <text x="488" y="152" text-anchor="middle" font-size="10" fill="#4A5551">phân quyền · đo dùng</text>
+
+      <!-- station 5 -->
+      <rect x="578" y="54" width="134" height="128" rx="11" fill="#F8F9F6" stroke="#C6CCC1"/>
+      <text x="645" y="78" text-anchor="middle" font-family="Spectral,serif" font-size="13" font-weight="600" fill="#17211F">Bàn làm việc</text>
+      <text x="645" y="99" text-anchor="middle" font-size="10" fill="#4A5551">gọi bằng mã ngắn</text>
+      <text x="645" y="116" text-anchor="middle" font-size="10" fill="#4A5551">atom: kết luận + căn cứ</text>
+      <text x="645" y="133" text-anchor="middle" font-size="10" fill="#4A5551">+ cờ độ phủ</text>
+      <text x="645" y="156" text-anchor="middle" font-size="10" fill="#4A5551">hội đồng chéo tổ chức</text>
+
+      <!-- arrows -->
+      <line x1="156" y1="118" x2="188" y2="118" stroke="#4A5551" stroke-width="1.6" marker-end="url(#a)"/>
+      <line x1="306" y1="118" x2="315" y2="118" stroke="#4A5551" stroke-width="1.6" marker-end="url(#a)"/>
+      <line x1="426" y1="118" x2="435" y2="118" stroke="#4A5551" stroke-width="1.6" marker-end="url(#a)"/>
+      <line x1="540" y1="118" x2="575" y2="118" stroke="#4A5551" stroke-width="1.6" marker-end="url(#a)"/>
+
+      <!-- return arc -->
+      <path d="M645 186 L645 246 Q645 262 629 262 L107 262 Q91 262 91 246 L91 190"
+            fill="none" stroke="#8F7320" stroke-width="1.7" stroke-dasharray="5 4" marker-end="url(#ab)"/>
+      <text x="366" y="256" text-anchor="middle" font-size="10.5" fill="#7A6017">royalty về chuyên gia · log dùng thật nuôi vòng dạy · trôi dạt → tái kiểm định</text>
+
+      <!-- money line -->
+      <text x="16" y="300" font-family="'IBM Plex Mono',monospace" font-size="9.5" letter-spacing=".08em" fill="#7C857F">TIỀN CHẢY</text>
+      <text x="16" y="320" font-size="11.5" fill="#4A5551">Khách trả <tspan font-weight="600" fill="#17211F">phí ghế + phí theo twin đã cài</tspan> → terminal giữ phần hạ tầng &amp; kiểm định → <tspan font-weight="600" fill="#17211F">royalty</tspan> về chuyên gia. Dạy nghề luôn miễn phí.</text>
+    </svg>
+  </section>
+
+  <!-- BAND 3 -->
+  <section class="sheet">
+    <div class="eyebrow"><span class="stripe"></span>3 · Vận hành bằng gì — 9 engine</div>
+    <div class="legend">
+      <span><span class="sw" style="background:#9AA29B"></span>đi thuê / chuẩn mở</span>
+      <span><span class="sw" style="background:var(--petrol)"></span>tài sản tích tụ</span>
+      <span><span class="sw" style="background:var(--brass)"></span>chính là terminal — tự xây</span>
+    </div>
+    <div class="engines">
+      <div class="eng gray"><div class="num">01</div><div class="en">Não — Brain</div><div class="ed">LLM đa model, thay được. Không bao giờ là moat.</div></div>
+      <div class="eng teal"><div class="num">02</div><div class="en">Ký ức — Memory</div><div class="ed"><b>Sổ nghề đi theo twin</b> — luật + ca sinh ra + lời chuyên gia. Cơ chế commodity, nội dung là tài sản.</div></div>
+      <div class="eng gray"><div class="num">03</div><div class="en">Thực thi — Execution</div><div class="ed">Chạy twin ổn định trên dữ liệu của khách · sandbox · chi phí đoán trước.</div></div>
+      <div class="eng gray"><div class="num">04</div><div class="en">Điều phối — Orchestration</div><div class="ed">Router theo nghề · hội đồng <b>ghép chéo tổ chức</b> · bản đồ bất đồng.</div></div>
+      <div class="eng brass"><div class="num">05</div><div class="en">Danh tính — Identity</div><div class="ed">Xác minh người thật sau mỗi twin · chống mạo danh · tên gắn vào mọi atom.</div></div>
+      <div class="eng brass"><div class="num">06</div><div class="en">Vòng học — Improvement</div><div class="ed">Moi tri thức ngầm — <b>thứ làm đầy kệ</b>. Chưa nền tảng nào có.</div></div>
+      <div class="eng brass core"><div class="num">07</div><div class="en">Kiểm định — Trust<span class="tag">★ lõi</span></div><div class="ed">Đo độ trung thành · cờ độ phủ · theo dõi trôi dạt · <b>huy hiệu hết hạn</b> theo thời gian và theo thay đổi.</div></div>
+      <div class="eng gray"><div class="num">08</div><div class="en">Kết nối — Connection</div><div class="ed">MCP/connector vào dữ liệu khách · kênh chat, nhúng, API. Cưỡi lên chuẩn mở.</div></div>
+      <div class="eng brass"><div class="num">09</div><div class="en">Thương mại — Commerce</div><div class="ed">Phân quyền · đo mức dùng · billing · <b>lineage &amp; royalty</b> chéo tổ chức.</div></div>
+    </div>
+  </section>
+
+  <!-- BAND 4 -->
+  <section class="sheet">
+    <div class="eyebrow"><span class="stripe"></span>4 · Cách làm đầy terminal — trình tự</div>
+    <div class="stages">
+      <div class="stage">
+        <div class="bnum">GĐ 1 · NÊM</div>
+        <div class="bn">Một ngành, một nước</div>
+        <div class="bd">Vài chuyên gia đầu tiên, twin dùng <b>nội bộ</b> một tổ chức. Chưa có kệ.</div>
+        <div class="row"><span class="k">Bật engine</span>01–04, 06</div>
+        <div class="row"><span class="k">Tiền</span>phí hạ tầng từ tổ chức</div>
+        <div class="row"><span class="k">Cổng lên</span>twin hội tụ thật · được dùng hằng tuần</div>
+      </div>
+      <div class="stage">
+        <div class="bnum">GĐ 2 · TÍCH</div>
+        <div class="bn">Nhiều twin, một tổ chức</div>
+        <div class="bd">Hội đồng nội bộ, house view. <b>Cổng kiểm định lần đầu có nghĩa</b> — vì output ra tới khách cuối.</div>
+        <div class="row"><span class="k">Bật engine</span>07, 09</div>
+        <div class="row"><span class="k">Tiền</span>theo môi giới &amp; khách cuối · white-label</div>
+        <div class="row"><span class="k">Cổng lên</span>kỷ luật atom — lỗi không nhân theo chuỗi</div>
+      </div>
+      <div class="stage">
+        <div class="bnum">GĐ 3 · MỞ KỆ</div>
+        <div class="bn">Chéo tổ chức, một ngành</div>
+        <div class="bd">Kệ bật lên. Twin cho thuê sang quỹ, bank wealth, tổ chức khác. <b>Royalty bắt đầu chạy.</b></div>
+        <div class="row"><span class="k">Bật engine</span>05 thành công khai · 09 là trung tâm</div>
+        <div class="row"><span class="k">Tiền</span>royalty + phí kiểm định</div>
+        <div class="row"><span class="k">Cổng lên</span>huy hiệu được người ngoài tin</div>
+      </div>
+      <div class="stage s4">
+        <div class="bnum">GĐ 4 · TERMINAL</div>
+        <div class="bn">Chéo ngành, chéo nước</div>
+        <div class="bd">Chuẩn xuất xứ &amp; độ trung thành thành <b>ngôn ngữ chung</b>. Twin khắp thế giới chảy qua.</div>
+        <div class="row"><span class="k">Bật engine</span>toàn bộ · registry + lineage</div>
+        <div class="row"><span class="k">Tiền</span>phí ghế + royalty đa tầng</div>
+        <div class="row"><span class="k">Điều kiện</span>mở từ vị thế đã có chuẩn, không từ trang trắng</div>
+      </div>
+    </div>
+    <div class="honest"><b>Bloomberg 1982 = Merrill Lynch + trái phiếu.</b> Terminal là đích, không phải điểm xuất phát — nguồn cung cho kệ đến từ GĐ 1–2, gom dưới vỏ bọc công cụ nội bộ, nên bài toán con-gà-quả-trứng tự tan. Hai thứ chưa giải: <b>bức tường nguồn cung</b> (chuyên gia giỏi có chịu bị nhân bản không) và <b>chỗ ngồi trên màn hình</b> — bất động sản đắt nhất thế giới, Bloomberg mất 40 năm để giành.</div>
+  </section>
+</div>
+</body>
+</html>
