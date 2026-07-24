@@ -1,16 +1,25 @@
 # Development and verification
 
-Requirements are Python 3.12+, a current Hermes Agent installation, Node.js
-22+, and npm. Copy `.env.example` to `.env` when local overrides are needed.
+On Linux, install the complete local toolchain with
+`./scripts/install-linux.sh`. It creates `.tools/python` for the project,
+installs Hermes and the Python requirements, provisions Node.js/npm, 9router,
+the office/document helpers, and the agent CLIs. Copy `.env.example` to `.env`
+when local overrides are needed.
 
 ```bash
-./scripts/dev.sh          # Vite 5173 + FastAPI 8642
-python server.py          # API only
+npm run dev               # Vite 5173 + reload FastAPI 8642 + 9router 20128
+make dev                  # same supervised local stack
+make backend              # API only, using the selected environment
 make check                # Python tests/compile + frontend tests/build
 ```
 
 Vite proxies `/api`, `/agent-gateway`, `/conversations`, and `/sandboxes` to
 port 8642. Swagger is at `http://127.0.0.1:8642/docs`.
+
+The development script supervises Vite, FastAPI, and 9router and stops all
+three on Ctrl-C. The backend watches Python files and reloads automatically;
+the frontend uses Vite's normal HMR. Override `BRAIN4ALL_DEV_FRONTEND_PORT` or
+`BRAIN4ALL_DEV_BACKEND_PORT` when the default ports are occupied.
 
 The Python tests use isolated temporary profile roots. For a real chat smoke
 test, use an existing Hermes profile without changing its config and send a

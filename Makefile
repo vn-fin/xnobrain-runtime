@@ -3,10 +3,10 @@ CONTAINER_CLI ?= docker
 IMAGE_TAG ?= local
 BRAIN4ALL_FRONTEND_IMAGE ?= brain4all-frontend:$(IMAGE_TAG)
 HERMES_RUNTIME_IMAGE ?= brain4all-hermes-runtime:$(IMAGE_TAG)
-.PHONY: dev backend src test check smoke-api build run image frontend-image runtime-image bundle load-bundle install
+.PHONY: dev backend src test check smoke-api build run image frontend-image runtime-image bundle load-bundle install install-local
 
 dev:
-	./scripts/dev.sh
+	bash ./scripts/dev.sh
 
 backend:
 	$(PYTHON_BIN) server.py
@@ -48,3 +48,6 @@ load-bundle:
 	CONTAINER_CLI=$(CONTAINER_CLI) ./scripts/LoadImages.sh
 
 install: run
+
+install-local:
+	./scripts/install-linux.sh

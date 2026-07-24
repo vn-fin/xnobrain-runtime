@@ -37,13 +37,26 @@ Open <http://localhost:5152>. Swagger is available at
 <http://localhost:5152/docs> and the generated OpenAPI document at
 <http://localhost:5152/openapi.json>.
 
-For local development, install Python 3.12+, Hermes Agent, Node.js 22+, and npm:
+For a Docker-free Linux development installation, run the project installer. It
+installs the Dockerfile-derived system and office tools, a project-local Hermes
+Python environment under `.tools/python`, Node.js/npm, 9router, and the Codex,
+Claude, and agent-browser CLIs:
 
 ```bash
-./scripts/dev.sh
-# or run only the API
-python server.py
+./scripts/install-linux.sh
+# or: make install-local
 ```
+
+Then start local development (Vite 5173, FastAPI 8642, and 9router 20128):
+
+```bash
+npm run dev
+# or: make dev
+```
+
+The existing `setup-linux.sh` remains the Docker/Compose installer. For
+API-only work after the local install, use
+`BRAIN4ALL_DEV_SKIP_ROUTER=1 make dev`.
 
 Validation:
 

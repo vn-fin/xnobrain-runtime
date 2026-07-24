@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
 
 import uvicorn
 
-from .json_logging import configure_logging
+from .logging_config import configure_logging
 
 
 def create_app():
@@ -25,7 +24,7 @@ def create_app():
         app.state.brain4all_registered = True
 
         @app.middleware("http")
-        async def structured_request_log(request, call_next):
+        async def request_log(request, call_next):
             started = time.monotonic()
             # Brain4All owns the /api/v1 management surface. Hermes' dashboard
             # middleware protects its own /api routes with a private browser
@@ -36,13 +35,17 @@ def create_app():
                 request.state.token_authenticated = True
             response = await call_next(request)
             traceparent = request.headers.get("traceparent", "")
-            logging.getLogger("brain4all.http").info(json.dumps({
-                "event": "http.request", "method": request.method,
-                "route": request.scope.get("route").path if request.scope.get("route") else request.url.path,
-                "status": response.status_code,
-                "latency_ms": round((time.monotonic() - started) * 1000, 3),
-                "trace_id": traceparent.split("-")[1] if traceparent.count("-") >= 3 else "",
-            }, separators=(",", ":")))
+            route = request.scope.get("route")
+            route_path = route.path if route else request.url.path
+            trace_id = traceparent.split("-")[1] if traceparent.count("-") >= 3 else "-"
+            logging.getLogger("brain4all.http").info(
+                "HTTP %s %s -> %s (%.3f ms, trace_id=%s)",
+                request.method,
+                route_path,
+                response.status_code,
+                (time.monotonic() - started) * 1000,
+                trace_id,
+            )
             return response
 
         from .telemetry import configure
@@ -55,10 +58,16 @@ app = create_app()
 
 def main() -> None:
     configure_logging()
+    reload_enabled = os.getenv("BRAIN4ALL_RELOAD", "").lower() in {"1", "true", "yes", "on"}
+    host = os.getenv("API_SERVER_HOST", "0.0.0.0")
+    port = int(os.getenv("API_SERVER_PORT", "8642"))
     uvicorn.run(
-        app,
-        host=os.getenv("API_SERVER_HOST", "0.0.0.0"),
-        port=int(os.getenv("API_SERVER_PORT", "8642")),
+        "brain4all.server:app" if reload_enabled else app,
+        host=host,
+        port=port,
+        reload=reload_enabled,
+        reload_dirs=[os.path.dirname(os.path.dirname(__file__))] if reload_enabled else None,
+        reload_excludes=["src", "src/*", "node_modules", "node_modules/*"] if reload_enabled else None,
         log_config=None,
         access_log=False,
     )

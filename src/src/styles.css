@@ -6101,6 +6101,29 @@ body.col-resizing {
 
 /* Portable data and optional outbound cloud connection */
 .system-view { height: 100%; display: flex; flex-direction: column; background: var(--bg); }
+.settings-tabs { display: flex; align-items: center; gap: 6px; padding: 0 24px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.settings-tab { min-height: 42px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 13px; font-weight: 650; cursor: pointer; }
+.settings-tab:hover { color: var(--text); background: var(--hover); }
+.settings-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+@media (max-width: 720px) { .settings-tabs { padding: 0 14px; } }
+
+/* Connectors and VM details are Settings sections, not separate destinations. */
+.system-integrations-card { overflow: hidden; padding: 0; }
+.system-integrations-card > .system-card-title { padding: 20px 20px 0; }
+.system-integrations-card .connections-view.embedded,
+.system-integrations-card .sandbox-view.embedded { min-height: 0; background: transparent; }
+.system-integrations-card .conn-topbar,
+.system-integrations-card .sbx-topbar { padding: 0 20px 16px; border-bottom: 1px solid var(--border-2); }
+.system-integrations-card .conn-topbar h1 { font-size: 17px; }
+.system-integrations-card .conn-topbar p { font-size: 12px; }
+.system-integrations-card .conn-scroll,
+.system-integrations-card .sbx-scroll { max-height: 660px; padding: 20px; }
+.system-integrations-card .conn-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.system-integrations-card .sbx-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 720px) {
+  .system-integrations-card .conn-grid,
+  .system-integrations-card .sbx-tiles { grid-template-columns: 1fr; }
+}
 
 /* Aggregate observability dashboard. Raw ClickHouse rows never reach this view. */
 .dashboard-view { height: 100%; overflow: auto; padding: 28px 32px 48px; background: radial-gradient(circle at 85% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 32%), var(--bg); color: var(--text); }

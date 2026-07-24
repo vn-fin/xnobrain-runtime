@@ -15,6 +15,7 @@ export function ConnectionsView({
   onTest,
   onSaveKey,
   onClose,
+  embedded = false,
 }: {
   providers: ConnectionProvider[];
   keyProviderId: string;
@@ -25,6 +26,7 @@ export function ConnectionsView({
   onTest: (id: string) => Promise<ProviderTestOutcome> | void;
   onSaveKey: (id: string, key: string) => void;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const [apiKey, setApiKey] = useState('');
@@ -43,15 +45,15 @@ export function ConnectionsView({
   };
 
   return (
-    <div className="connections-view">
+    <div className={embedded ? 'connections-view embedded' : 'connections-view'}>
       <header className="conn-topbar">
         <div>
           <h1>{t('connections.title')}</h1>
           <p>{t('connections.subtitle')}</p>
         </div>
-        <button className="icon-button" onClick={onClose} title={t('common.close')}>
+        {!embedded && <button className="icon-button" onClick={onClose} title={t('common.close')}>
           <X size={17} />
-        </button>
+        </button>}
       </header>
 
       <div className="conn-scroll">

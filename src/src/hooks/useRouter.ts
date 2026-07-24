@@ -19,8 +19,8 @@ export function parseRoute(pathname: string, search: string): RouteState {
   let conversationId = '';
   let rightView: RightView = 'workspace';
 
-  if (seg[0] === 'sandbox') centerView = 'sandbox';
-  else if (seg[0] === 'connections') centerView = 'connections';
+  // Keep old deep links useful while the two destinations live under Settings.
+  if (seg[0] === 'sandbox' || seg[0] === 'connections') centerView = 'data';
   else if (seg[0] === 'skills') centerView = 'skills';
   else if (seg[0] === 'teams') centerView = 'teams';
   else if (seg[0] === 'kanban' || seg[0] === 'board') centerView = 'kanban';
@@ -52,8 +52,6 @@ export function reconcileSelection(agentId: string, conversationId: string, agen
 
 export function computeUrl(state: RouteState): string {
   const params = new URLSearchParams();
-  if (state.centerView === 'sandbox') return '/sandbox';
-  if (state.centerView === 'connections') return '/connections';
   if (state.centerView === 'data') return '/settings';
   if (state.centerView === 'teams') return '/teams';
   if (state.centerView === 'kanban') return '/kanban';

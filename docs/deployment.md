@@ -35,10 +35,14 @@ The collector receives metadata-only spans from the runtime and writes basic
 summaries to its container logs. `OTEL_EXPORTER_OTLP_ENDPOINT` is restricted to
 the Compose collector or a loopback address.
 
-Runtime logs are JSON objects. Every record includes `time`,
-`development_environment` (default `dev`), and `service_name` (default
-`runtime`). Set `DEVELOPMENT_ENVIRONMENT` and `SERVICE_NAME` in `.env` to
-override those defaults.
+Runtime logs use standard human-readable Python logging. Each record includes
+the timestamp, level, logger name, and message, for example:
+
+```text
+2026-07-24 09:00:00 INFO brain4all.http: HTTP GET /api/v1/health -> 200 (1.234 ms, trace_id=-)
+```
+
+Set `LOG_LEVEL` in `.env` to change the minimum level.
 
 Builds produce only:
 

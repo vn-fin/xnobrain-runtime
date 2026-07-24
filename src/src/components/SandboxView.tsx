@@ -15,6 +15,7 @@ export function SandboxView({
   onCreate,
   onRefresh,
   onClose,
+  embedded = false,
 }: {
   data: SandboxData | null;
   provisioned: boolean;
@@ -25,13 +26,15 @@ export function SandboxView({
   onCreate: () => void;
   onRefresh: () => void;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
+  const viewClass = embedded ? 'sandbox-view embedded' : 'sandbox-view';
   if (status === 'loading' && !setupRunning) return <AsyncState status="loading" />;
   if (status === 'error' && !setupRunning) return <AsyncState status="error" error={error} onRetry={onRefresh} />;
   if (!provisioned) {
     return (
-      <div className="sandbox-view sandbox-empty-view">
+      <div className={`${viewClass} sandbox-empty-view`}>
         <header className="sbx-topbar">
           <div className="sbx-title">
             <Server size={18} />
@@ -41,9 +44,9 @@ export function SandboxView({
             </div>
           </div>
           <div className="sbx-actions">
-            <button className="icon-button" title={t('common.close')} onClick={onClose}>
+            {!embedded && <button className="icon-button" title={t('common.close')} onClick={onClose}>
               <X size={17} />
-            </button>
+            </button>}
           </div>
         </header>
         <div className="sbx-create">
@@ -78,7 +81,7 @@ export function SandboxView({
   const { info, metrics, system, health } = data;
 
   return (
-    <div className="sandbox-view">
+    <div className={viewClass}>
       <header className="sbx-topbar">
         <div className="sbx-title">
           <Server size={18} />
@@ -96,9 +99,9 @@ export function SandboxView({
             <RefreshCw size={14} />
             {t('sandbox.refresh')}
           </button>
-          <button className="icon-button" title={t('common.close')} onClick={onClose}>
+          {!embedded && <button className="icon-button" title={t('common.close')} onClick={onClose}>
             <X size={17} />
-          </button>
+          </button>}
         </div>
       </header>
 

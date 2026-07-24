@@ -12,8 +12,6 @@ import { streamStore, type CompletionEvent } from './chat/streamStore';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { RightPanel } from './components/RightPanel';
-import { SandboxView } from './components/SandboxView';
-import { ConnectionsView } from './components/ConnectionsView';
 import { SkillsView } from './components/SkillsView';
 import { Onboarding } from './components/Onboarding';
 import { SystemView } from './features/system/SystemView';
@@ -32,7 +30,7 @@ export default function App() {
   // The first onboarding step needs the same local runtime status as the
   // Runtime view. Without this, a fresh installation remains on “Checking…”
   // because the stream is only activated after navigating away from onboarding.
-  const sandbox = useSandbox(router.centerView === 'sandbox' || assistants.agents.length === 0);
+  const sandbox = useSandbox(router.centerView === 'data' || assistants.agents.length === 0);
   const conversation = useConversation(router.activeAgentId, router.activeConversationId);
   const workspace = useWorkspace(router.activeAgentId);
   const teams = useTeams();
@@ -207,31 +205,7 @@ export default function App() {
       />
 
       <main className={centerView === 'chat' ? 'chat-area' : 'chat-area sandbox-mode'}>
-        {centerView === 'sandbox' ? (
-          <SandboxView
-            data={sandbox.data}
-            provisioned={sandbox.provisioned}
-            status={sandbox.status}
-            error={sandbox.error}
-            setupRunning={sandbox.setupRunning}
-            setupProgress={sandbox.setupProgress}
-            onCreate={sandbox.createSandbox}
-            onRefresh={sandbox.refresh}
-            onClose={() => router.setCenterView('chat')}
-          />
-        ) : centerView === 'connections' ? (
-          <ConnectionsView
-            providers={connections.connections}
-            keyProviderId={connections.keyProviderId}
-            pendingId={connections.pendingId}
-            onSelectKeyProvider={connections.setKeyProviderId}
-            onConnect={connections.connect}
-            onDisconnect={connections.disconnect}
-            onTest={connections.test}
-            onSaveKey={connections.saveKey}
-            onClose={() => router.setCenterView('chat')}
-          />
-        ) : centerView === 'skills' ? (
+        {centerView === 'skills' ? (
           <SkillsView
             library={assistants.library}
             agents={assistants.agents}
@@ -250,6 +224,24 @@ export default function App() {
         ) : centerView === 'data' ? (
           <SystemView
             agents={assistants.agents}
+            providers={connections.connections}
+            keyProviderId={connections.keyProviderId}
+            providerPendingId={connections.pendingId}
+            onSelectKeyProvider={connections.setKeyProviderId}
+            onConnect={connections.connect}
+            onDisconnect={connections.disconnect}
+            onTestProvider={connections.test}
+            onSaveKey={connections.saveKey}
+            sandbox={{
+              data: sandbox.data,
+              provisioned: sandbox.provisioned,
+              status: sandbox.status,
+              error: sandbox.error,
+              setupRunning: sandbox.setupRunning,
+              setupProgress: sandbox.setupProgress,
+              onCreate: sandbox.createSandbox,
+              onRefresh: sandbox.refresh,
+            }}
             onImported={assistants.refresh}
             onClose={() => router.setCenterView('chat')}
           />

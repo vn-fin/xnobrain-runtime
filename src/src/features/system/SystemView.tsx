@@ -1,9 +1,51 @@
 import { useEffect, useState } from 'react';
 import { Download, FileArchive, Network, Server, ShieldCheck, Upload, X } from 'lucide-react';
-import type { Agent } from '../../types';
+import { ConnectionsView } from '../../components/ConnectionsView';
+import { SandboxView } from '../../components/SandboxView';
+import type { Agent, AsyncStatus, ConnectionProvider, SandboxData } from '../../types';
+import type { ProviderTestOutcome } from '../../hooks/useConnections';
 import { systemApi, type BundleDryRun, type BundleTransfer, type DeploymentStatus, type ImportReport, type TransferProgress } from './api';
 
-export function SystemView({ agents, onImported, onClose }: { agents: Agent[]; onImported: () => Promise<void>; onClose: () => void }) {
+type SystemViewProps = {
+  agents: Agent[];
+  providers: ConnectionProvider[];
+  keyProviderId: string;
+  providerPendingId: string | null;
+  onSelectKeyProvider: (id: string) => void;
+  onConnect: (id: string) => void;
+  onDisconnect: (id: string) => void;
+  onTestProvider: (id: string) => Promise<ProviderTestOutcome>;
+  onSaveKey: (id: string, key: string) => void;
+  sandbox: {
+    data: SandboxData | null;
+    provisioned: boolean;
+    status: AsyncStatus;
+    error: string;
+    setupRunning: boolean;
+    setupProgress: number;
+    onCreate: () => void;
+    onRefresh: () => void;
+  };
+  onImported: () => Promise<void>;
+  onClose: () => void;
+};
+
+type SettingsSection = 'profiles' | 'vm' | 'connectors';
+
+export function SystemView({
+  agents,
+  providers,
+  keyProviderId,
+  providerPendingId,
+  onSelectKeyProvider,
+  onConnect,
+  onDisconnect,
+  onTestProvider,
+  onSaveKey,
+  sandbox,
+  onImported,
+  onClose,
+}: SystemViewProps) {
   const [selected, setSelected] = useState(() => new Set(agents.map((agent) => agent.id)));
   const [deployment, setDeployment] = useState<DeploymentStatus>();
   const [file, setFile] = useState<File>();
@@ -13,6 +55,12 @@ export function SystemView({ agents, onImported, onClose }: { agents: Agent[]; o
   const [progress, setProgress] = useState<TransferProgress>();
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [section, setSection] = useState<SettingsSection>('profiles');
+  const tabs: Array<{ id: SettingsSection; label: string }> = [
+    { id: 'profiles', label: 'Profiles' },
+    { id: 'vm', label: 'VM' },
+    { id: 'connectors', label: 'Connectors' },
+  ];
 
   useEffect(() => {
     void systemApi.deployment().then(setDeployment).catch((value) => setError(value instanceof Error ? value.message : 'Could not load deployment mode.'));
@@ -53,16 +101,32 @@ export function SystemView({ agents, onImported, onClose }: { agents: Agent[]; o
         <div><h1>Settings</h1><p>Local deployment, portable data, and advanced integrations.</p></div>
         <button className="icon-button" onClick={onClose} title="Close"><X size={17} /></button>
       </header>
-      <div className="system-scroll">
+      <nav className="settings-tabs" role="tablist" aria-label="Settings sections">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={`settings-tab${section === tab.id ? ' active' : ''}`}
+            role="tab"
+            aria-selected={section === tab.id}
+            aria-controls="settings-panel"
+            tabIndex={section === tab.id ? 0 : -1}
+            onClick={() => setSection(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+      <div className="system-scroll" id="settings-panel" role="tabpanel">
         {error && <div className="system-error">{error}</div>}
-        <section className="system-card">
+        {section === 'profiles' && <>
+          <section className="system-card">
           <div className="system-card-title"><Server size={18} /><div><strong>Deployment</strong><small>This installation runs locally and does not contact a managed service.</small></div></div>
           <div className="system-deployment">
             <span className="conn-badge ok">Local</span>
             <div><strong>Local runtime</strong><small>{deployment?.runtime_transport || 'Checking runtime…'}</small></div>
           </div>
-        </section>
-        <section className="system-card">
+          </section>
+          <section className="system-card">
           <div className="system-card-title"><FileArchive size={18} /><div><strong>Portable profiles</strong><small>Credentials, logs, host paths, and device identity are excluded.</small></div></div>
           <div className="system-agent-list">
             {agents.map((agent) => <label key={agent.id}><input type="checkbox" checked={selected.has(agent.id)} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(agent.id)) next.delete(agent.id); else next.add(agent.id); return next; })} /><span>{agent.title}</span><code>{agent.id}</code></label>)}
@@ -74,14 +138,45 @@ export function SystemView({ agents, onImported, onClose }: { agents: Agent[]; o
           </div>
           {preview && <div className="system-preview"><ShieldCheck size={17} /><div><strong>{preview.inspection.manifest.agents.length} profile(s), {preview.inspection.files} files</strong><span>{preview.collisions.length} ID collision(s) · {preview.paused_cron_jobs} cron(s) paused · {preview.quarantined_code.length} code file(s) quarantined</span></div><button className="conn-btn primary" disabled={!!busy} onClick={() => void applyImport()}>{busy === 'apply' ? 'Applying…' : 'Apply import'}</button></div>}
           {report && <div className="system-success">Imported {Object.keys(report.agent_id_mappings).length} profile(s). Review providers, approvals, quarantined code, and paused crons before use.</div>}
-        </section>
-        <section className="system-card system-advanced-card">
-          <div className="system-card-title"><Network size={18} /><div><strong>MCP servers</strong><small>Advanced integration setup. Skills stay the recommended way to add reusable agent behavior.</small></div></div>
-          <p className="system-advanced-copy">MCP configuration is isolated per assistant in its profile. Add it only when a skill cannot provide the required external tool connection.</p>
-          <div className="system-agent-list">
-            {agents.map((agent) => <div className="system-agent-config" key={agent.id}><span>{agent.title}</span><code>profiles/{agent.id}/mcp.json</code></div>)}
-          </div>
-        </section>
+          </section>
+          <section className="system-card system-advanced-card">
+            <div className="system-card-title"><Network size={18} /><div><strong>MCP servers</strong><small>Advanced integration setup. Skills stay the recommended way to add reusable agent behavior.</small></div></div>
+            <p className="system-advanced-copy">MCP configuration is isolated per assistant in its profile. Add it only when a skill cannot provide the required external tool connection.</p>
+            <div className="system-agent-list">
+              {agents.map((agent) => <div className="system-agent-config" key={agent.id}><span>{agent.title}</span><code>profiles/{agent.id}/mcp.json</code></div>)}
+            </div>
+          </section>
+        </>}
+        {section === 'connectors' && <section className="system-card system-integrations-card">
+          <div className="system-card-title"><Network size={18} /><div><strong>Connectors</strong><small>Connect providers and test their current availability from Settings.</small></div></div>
+          <ConnectionsView
+            providers={providers}
+            keyProviderId={keyProviderId}
+            pendingId={providerPendingId}
+            onSelectKeyProvider={onSelectKeyProvider}
+            onConnect={onConnect}
+            onDisconnect={onDisconnect}
+            onTest={onTestProvider}
+            onSaveKey={onSaveKey}
+            onClose={() => undefined}
+            embedded
+          />
+        </section>}
+        {section === 'vm' && <section className="system-card system-integrations-card">
+          <div className="system-card-title"><Server size={18} /><div><strong>VM runtime</strong><small>View live VM health, resource usage, network activity, and create or refresh the sandbox.</small></div></div>
+          <SandboxView
+            data={sandbox.data}
+            provisioned={sandbox.provisioned}
+            status={sandbox.status}
+            error={sandbox.error}
+            setupRunning={sandbox.setupRunning}
+            setupProgress={sandbox.setupProgress}
+            onCreate={sandbox.onCreate}
+            onRefresh={sandbox.onRefresh}
+            onClose={() => undefined}
+            embedded
+          />
+        </section>}
       </div>
     </div>
   );
