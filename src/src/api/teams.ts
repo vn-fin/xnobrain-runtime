@@ -1,4 +1,5 @@
-import { request } from './client';
+import { request, requestRaw } from './client';
+import { readSSE, type SSEEvent } from './stream';
 
 export type TeamMember = {
   agent_id: string;
@@ -37,6 +38,48 @@ export type TeamWorkflowStep = {
   allowed_tools?: string[];
 };
 
+export type TeamRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export type TeamRunStep = {
+  id: string;
+  agent_id: string;
+  role: string;
+  task: string;
+  needs: string[];
+  allowed_tools: string[];
+  status: TeamRunStatus;
+  summary: string;
+  summary_chars: number;
+  error: string | null;
+  conversation_id: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+};
+
+export type TeamRunRecord = {
+  id: string;
+  team_id: string;
+  status: TeamRunStatus;
+  error: string | null;
+  mode: 'async' | 'sync';
+  task: string;
+  synthesis_instruction: string;
+  orchestrator_id: string;
+  orchestrator_summary: string;
+  created_at: string;
+  started_at: string | null;
+  ended_at: string | null;
+  updated_at: string;
+  revision: number;
+  steps: TeamRunStep[];
+};
+
+export const RUN_TERMINAL_STATUSES: TeamRunStatus[] = ['completed', 'failed', 'cancelled'];
+
+export function isRunTerminal(status: TeamRunStatus): boolean {
+  return RUN_TERMINAL_STATUSES.includes(status);
+}
+
 export type TeamInput = Omit<Team, 'id'>;
 
 export const teamsApi = {
@@ -45,4 +88,24 @@ export const teamsApi = {
   update: (team: Team) => request<Team>(`/api/v1/teams/${encodeURIComponent(team.id)}`, { method: 'PUT', body: JSON.stringify(team) }),
   remove: (teamId: string) => request<{ deleted: boolean }>(`/api/v1/teams/${encodeURIComponent(teamId)}`, { method: 'DELETE' }),
   run: (teamId: string, task: string, workflow: TeamWorkflowStep[] = [], synthesis?: string) => request<TeamRun>(`/api/v1/teams/${encodeURIComponent(teamId)}/run`, { method: 'POST', body: JSON.stringify({ task, workflow, synthesis }) }),
+  startRun: (teamId: string, task: string, workflow: TeamWorkflowStep[] = [], synthesis?: string) =>
+    request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs`, { method: 'POST', body: JSON.stringify({ task, workflow, synthesis }) }),
+  listRuns: (teamId: string) => request<TeamRunRecord[]>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs`),
+  getRun: (teamId: string, runId: string) => request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}`),
+  cancelRun: (teamId: string, runId: string) =>
+    request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
+  async watchRun(
+    teamId: string,
+    runId: string,
+    onEvent: (event: SSEEvent) => void,
+    signal: AbortSignal,
+    afterRevision?: number,
+  ): Promise<void> {
+    const query = afterRevision != null ? `?after=${encodeURIComponent(String(afterRevision))}` : '';
+    const response = await requestRaw(
+      `/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}/events${query}`,
+      { headers: { Accept: 'text/event-stream' }, signal },
+    );
+    await readSSE(response, onEvent, signal);
+  },
 };

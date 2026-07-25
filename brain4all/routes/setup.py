@@ -123,6 +123,11 @@ ROUTES = (
     Route("PUT", "/api/v1/teams/{team_id}", "teams_update", TeamCreate, tags=("Teams",)),
     Route("DELETE", "/api/v1/teams/{team_id}", "teams_delete", tags=("Teams",)),
     Route("POST", "/api/v1/teams/{team_id}/run", "teams_run", TeamRun, tags=("Teams",)),
+    Route("POST", "/api/v1/teams/{team_id}/runs", "team_runs_start", TeamRun, tags=("Teams",)),
+    Route("GET", "/api/v1/teams/{team_id}/runs", "team_runs_list", tags=("Teams",)),
+    Route("GET", "/api/v1/teams/{team_id}/runs/{run_id}", "team_runs_get", tags=("Teams",)),
+    Route("POST", "/api/v1/teams/{team_id}/runs/{run_id}/cancel", "team_runs_cancel", tags=("Teams",)),
+    Route("GET", "/api/v1/teams/{team_id}/runs/{run_id}/events", "team_run_event_stream", special="team_run_stream", tags=("Teams",)),
 
     Route("GET", "/agent-gateway/v1/providers", "providers", tags=("Providers",)),
     Route("POST", "/agent-gateway/v1/providers/{provider_id}/connect", "provider_connect_start", tags=("Providers",)),
@@ -200,6 +205,9 @@ def _endpoint(handlers: Any, route: Route):
     elif route.special == "kanban_stream":
         async def endpoint(request: Request) -> Response:
             return await handlers.kanban_event_stream(request)
+    elif route.special == "team_run_stream":
+        async def endpoint(request: Request) -> Response:
+            return await handlers.team_run_event_stream(request)
     elif route.body is not None:
         async def endpoint(request: Request, body=Body(...)) -> Response:
             return await handlers.dispatch(request, body.model_dump(exclude_unset=True))
@@ -214,7 +222,7 @@ def _endpoint(handlers: Any, route: Route):
 
 def setup_routes(app: Any, handlers: Any) -> None:
     for route in ROUTES:
-        raw_response = route.special in {"stream", "workspace_upload", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "kanban_stream"}
+        raw_response = route.special in {"stream", "workspace_upload", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "kanban_stream", "team_run_stream"}
         app.add_api_route(
             route.path,
             _endpoint(handlers, route),

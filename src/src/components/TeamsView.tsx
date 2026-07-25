@@ -1,10 +1,70 @@
-import { useMemo, useState } from 'react';
-import { Network, Play, Plus, Trash2, X } from 'lucide-react';
-import type { TeamInput, TeamMember, TeamWorkflowStep } from '../api/teams';
+import { useEffect, useMemo, useState } from 'react';
+import { Network, Play, Plus, Square, Trash2, X } from 'lucide-react';
+import { isRunTerminal, type TeamInput, type TeamMember, type TeamRunRecord, type TeamRunStep, type TeamWorkflowStep } from '../api/teams';
 import type { Agent } from '../types';
 import type { useTeams } from '../hooks/useTeams';
 
 type TeamsState = ReturnType<typeof useTeams>;
+
+function StepChip({ step }: { step: TeamRunStep }) {
+  return (
+    <span className={`run-chip ${step.status}`} title={step.error ?? step.summary ?? ''}>
+      {step.id} · {step.role} · {step.status}
+    </span>
+  );
+}
+
+function TeamRunsPanel({ teamId, state }: { teamId: string; state: TeamsState }) {
+  const { runs, activeRun, runsStatus, openRun, cancelRun } = state;
+  const canCancel = activeRun && activeRun.team_id === teamId && !isRunTerminal(activeRun.status);
+
+  return (
+    <div className="teams-card team-runs">
+      <h2>Runs <span>{runs.length}</span></h2>
+      {runsStatus === 'loading' && <p>Loading runs…</p>}
+      {runsStatus !== 'loading' && runs.length === 0 && <p>No runs yet. Start one above.</p>}
+      <div className="run-history">
+        {runs.map((run: TeamRunRecord) => (
+          <button
+            key={run.id}
+            className={activeRun?.id === run.id ? 'run-row active' : 'run-row'}
+            onClick={() => void openRun(teamId, run.id)}
+          >
+            <span className="run-id">{run.id.replace(/^tr_/, '').slice(0, 8)}</span>
+            <span className={`run-chip ${run.status}`}>{run.status}</span>
+            <small>{run.mode} · {run.steps.length} steps · {run.started_at ?? run.created_at}</small>
+          </button>
+        ))}
+      </div>
+      {activeRun && activeRun.team_id === teamId && (
+        <div className="run-detail">
+          <div className="run-detail-head">
+            <strong>{activeRun.id.replace(/^tr_/, '').slice(0, 8)}</strong>
+            <span className={`run-chip ${activeRun.status}`}>{activeRun.status}</span>
+            {canCancel && (
+              <button className="conn-btn ghost" onClick={() => void cancelRun(teamId, activeRun.id)}>
+                <Square size={13} /> Cancel
+              </button>
+            )}
+          </div>
+          <div className="run-chips">
+            {activeRun.steps.map((step) => <StepChip key={step.id} step={step} />)}
+          </div>
+          {activeRun.error && <p className="teams-error">Run failed: {activeRun.error}</p>}
+          {isRunTerminal(activeRun.status) && activeRun.orchestrator_summary && (
+            <div className="team-result"><h3>Orchestrator summary</h3><p>{activeRun.orchestrator_summary}</p></div>
+          )}
+          {activeRun.steps.map((step) => (
+            <details key={step.id}>
+              <summary>{step.id} · {step.role} · {step.status}</summary>
+              <p>{step.summary || step.error || '…'}</p>
+            </details>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function TeamsView({ agents, state, onClose }: { agents: Agent[]; state: TeamsState; onClose: () => void }) {
   const [name, setName] = useState('');
@@ -20,6 +80,11 @@ export function TeamsView({ agents, state, onClose }: { agents: Agent[]; state: 
     () => agents.filter((agent) => agent.id !== orchestratorId && !members.some((member) => member.agent_id === agent.id)),
     [agents, members, orchestratorId],
   );
+
+  const { loadRuns } = state;
+  useEffect(() => {
+    if (selectedTeamId) void loadRuns(selectedTeamId);
+  }, [selectedTeamId, loadRuns]);
 
   const addMember = () => {
     if (!workerId || members.some((member) => member.agent_id === workerId)) return;
@@ -53,7 +118,7 @@ export function TeamsView({ agents, state, onClose }: { agents: Agent[]; state: 
         return;
       }
     }
-    await state.run(selectedTeamId, task, workflow);
+    await state.startRun(selectedTeamId, task, workflow);
   };
 
   return (
@@ -85,10 +150,10 @@ export function TeamsView({ agents, state, onClose }: { agents: Agent[]; state: 
               <Trash2 size={15} onClick={(event) => { event.stopPropagation(); void state.remove(team.id); }} />
             </button>
           ))}
-          {selectedTeamId && <div className="team-run"><label>Task<textarea value={task} onChange={(event) => setTask(event.target.value)} placeholder="Investigate and summarize…" /></label><label>Workflow DAG <small>optional JSON</small><textarea value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} placeholder={'[{"id":"research","task":"Research the API","role":"researcher"},{"id":"review","task":"Review findings","role":"reviewer","needs":["research"]}]'} /></label>{workflowError && <p className="teams-error">{workflowError}</p>}<button className="primary-button" disabled={state.pending || (!task.trim() && !workflowText.trim())} onClick={() => void runTeam()}><Play size={16} /> {state.pending ? 'Running…' : 'Run workflow'}</button></div>}
+          {selectedTeamId && <div className="team-run"><label>Task<textarea value={task} onChange={(event) => setTask(event.target.value)} placeholder="Investigate and summarize…" /></label><label>Workflow DAG <small>optional JSON</small><textarea value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} placeholder={'[{"id":"research","task":"Research the API","role":"researcher"},{"id":"review","task":"Review findings","role":"reviewer","needs":["research"]}]'} /></label>{workflowError && <p className="teams-error">{workflowError}</p>}<button className="primary-button" disabled={state.pending || (!task.trim() && !workflowText.trim())} onClick={() => void runTeam()}><Play size={16} /> {state.pending ? 'Starting…' : 'Run (async)'}</button></div>}
         </div>
       </div>
-      {state.lastRun && <div className="teams-card team-result"><h2>Final orchestrator summary</h2><p>{state.lastRun.orchestrator_summary}</p>{state.lastRun.member_results.map((result) => <details key={result.id}><summary>{result.id} · {result.role} · {result.status}</summary><p>{result.summary || result.error}</p></details>)}</div>}
+      {selectedTeamId && <TeamRunsPanel teamId={selectedTeamId} state={state} />}
     </section>
   );
 }

@@ -167,6 +167,10 @@ class APIHandlers:
             "teams_list": (s.list_teams, "teams retrieved successfully", 200), "teams_create": (lambda: s.create_team(body), "team created successfully", 201),
             "teams_get": (lambda: s.get_team(p["team_id"]), "team retrieved successfully", 200), "teams_update": (lambda: s.update_team(p["team_id"], body), "team updated successfully", 200),
             "teams_delete": (lambda: s.delete_team(p["team_id"]), "team deleted successfully", 200), "teams_run": (lambda: s.run_team(p["team_id"], body), "team run completed successfully", 200),
+            "team_runs_start": (lambda: s.team_runs.start_run(p["team_id"], body), "team run started", 202),
+            "team_runs_list": (lambda: s.team_runs.list_runs(p["team_id"], q.get("limit")), "team runs retrieved successfully", 200),
+            "team_runs_get": (lambda: s.team_runs.get_run(p["team_id"], p["run_id"]), "team run retrieved successfully", 200),
+            "team_runs_cancel": (lambda: s.team_runs.cancel_run(p["team_id"], p["run_id"]), "team run cancelled", 200),
             "providers": (s.providers, "providers retrieved successfully", 200),
             "provider_connect_start": (lambda: s.start_provider_connect(p["provider_id"]), "provider connection started", 200),
             "provider_connect_status": (lambda: s.provider_status(p["provider_id"]), "provider status retrieved", 200),
@@ -355,6 +359,56 @@ class APIHandlers:
                     yield f"event: error\ndata: {json.dumps({'message': str(error)})}\n\n"
                     return
                 await asyncio.sleep(1)
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    async def team_run_event_stream(self, request: Request) -> StreamingResponse:
+        """Stream a team run's transitions from the persisted record, waking on the
+        registry's in-memory pulse so live steps surface without the poll latency."""
+        team_id = request.path_params["team_id"]
+        run_id = request.path_params["run_id"]
+        runs = self.service.team_runs
+        raw_cursor = request.headers.get("Last-Event-ID") or request.query_params.get("after")
+        try:
+            cursor = max(0, int(raw_cursor)) if raw_cursor else 0
+        except (TypeError, ValueError):
+            cursor = 0
+
+        async def events():
+            nonlocal cursor
+            connected = {"run_id": run_id, "team_id": team_id, "revision": cursor}
+            yield f"id: {cursor}\nevent: connected\ndata: {json.dumps(connected, separators=(',', ':'))}\n\n"
+            while not await request.is_disconnected():
+                try:
+                    record = runs.get_run(team_id, run_id)
+                except EXPECTED_ERRORS as error:
+                    yield f"event: error\ndata: {json.dumps({'message': str(error)})}\n\n"
+                    return
+                revision = int(record.get("revision", 0))
+                if revision > cursor:
+                    cursor = revision
+                    payload = json.dumps(runs.sanitized(record), separators=(",", ":"))
+                    yield f"id: {cursor}\nevent: run\ndata: {payload}\n\n"
+                if record.get("status") in {"completed", "failed", "cancelled"}:
+                    done = {"run_id": run_id, "status": record["status"]}
+                    yield f"id: {cursor}\nevent: done\ndata: {json.dumps(done, separators=(',', ':'))}\n\n"
+                    return
+                entry = runs.registry_entry(run_id)
+                if entry is not None:
+                    try:
+                        await asyncio.wait_for(entry.changed.wait(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        pass
+                else:
+                    await asyncio.sleep(1)
 
         return StreamingResponse(
             events(),

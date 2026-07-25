@@ -43,6 +43,8 @@ class Brain4AllApplication:
                 try:
                     yield
                 finally:
+                    with suppress(Exception):
+                        await self.service.team_runs.shutdown()
                     if dispatcher is not None:
                         dispatcher.cancel()
                         with suppress(asyncio.CancelledError):

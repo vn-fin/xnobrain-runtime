@@ -6245,6 +6245,21 @@ body.col-resizing {
 .team-run { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); }
 .team-result { margin-top: 18px; }
 .team-result p { white-space: pre-wrap; line-height: 1.6; }
+.team-runs { margin-top: 18px; }
+.run-history { display: grid; gap: 8px; margin-bottom: 14px; }
+.run-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.run-row.active { border-color: var(--accent); background: var(--panel-2); }
+.run-row .run-id { font-family: var(--mono, monospace); font-size: 12px; }
+.run-row small { margin-left: auto; color: var(--muted); font-size: 11px; }
+.run-detail { padding-top: 14px; border-top: 1px solid var(--border); }
+.run-detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.run-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.run-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; border: 1px solid var(--border); color: var(--muted); background: var(--panel-2); }
+.run-chip.running { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.run-chip.completed { border-color: var(--green); color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
+.run-chip.failed { border-color: var(--danger); color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.run-chip.cancelled { border-color: var(--border); color: var(--muted); }
+.run-chip.pending { opacity: 0.8; }
 .teams-error { margin-bottom: 14px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
 @media (max-width: 900px) { .teams-grid { grid-template-columns: 1fr; } }
 .system-scroll { overflow: auto; padding: 24px; display: grid; gap: 18px; max-width: 980px; width: 100%; margin: 0 auto; }
