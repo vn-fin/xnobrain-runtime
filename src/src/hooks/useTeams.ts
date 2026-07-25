@@ -8,7 +8,7 @@ import {
   type TeamWorkflowStep,
 } from '../api/teams';
 
-export function useTeams() {
+export function useTeams(active = true) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [pending, setPending] = useState(false);
@@ -29,7 +29,7 @@ export function useTeams() {
     }
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { if (active) void refresh(); }, [active, refresh]);
 
   const create = async (input: TeamInput) => {
     setPending(true);

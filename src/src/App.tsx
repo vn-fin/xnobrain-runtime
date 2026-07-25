@@ -36,7 +36,7 @@ export default function App() {
   const sandbox = useSandbox(router.centerView === 'data' && router.settingsSection === 'vm');
   const conversation = useConversation(router.activeAgentId, router.activeConversationId);
   const workspace = useWorkspace(router.activeAgentId);
-  const teams = useTeams();
+  const teams = useTeams(router.centerView === 'teams');
   const kanban = useKanban(router.centerView === 'kanban');
   const analytics = useAnalytics(router.centerView === 'analytics');
   const blends = useBlends();

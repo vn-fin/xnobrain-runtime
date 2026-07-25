@@ -9,6 +9,7 @@ import {
   Monitor,
   Moon,
   MoreHorizontal,
+  Network,
   PanelLeftClose,
   Pencil,
   Plus,
@@ -25,6 +26,7 @@ import type { Agent, CenterView, Conversation } from '../types';
 
 const navItems = [
   { id: 'kanban', label: 'kanban', icon: Columns3 },
+  { id: 'teams', label: 'teams', icon: Network },
   { id: 'analytics', label: 'analytics', icon: BarChart3 },
   { id: 'data', label: 'settings', icon: Settings },
 ] as const;
