@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, FileArchive, Network, Server, ShieldCheck, Upload, X } from 'lucide-react';
-import { ConnectionsView } from '../../components/ConnectionsView';
+import { ConnectionsView, type AccountProps } from '../../components/ConnectionsView';
 import { SandboxView } from '../../components/SandboxView';
 import type { Agent, AsyncStatus, ConnectionProvider, SandboxData } from '../../types';
 import type { ProviderTestOutcome } from '../../hooks/useConnections';
@@ -17,6 +17,7 @@ type SystemViewProps = {
   onDisconnect: (id: string) => void;
   onTestProvider: (id: string) => Promise<ProviderTestOutcome>;
   onSaveKey: (id: string, key: string) => void;
+  accounts: AccountProps;
   sandbox: {
     data: SandboxData | null;
     provisioned: boolean;
@@ -43,6 +44,7 @@ export function SystemView({
   onDisconnect,
   onTestProvider,
   onSaveKey,
+  accounts,
   sandbox,
   onImported,
   onClose,
@@ -162,6 +164,7 @@ export function SystemView({
             onSaveKey={onSaveKey}
             onClose={() => undefined}
             embedded
+            {...accounts}
           />
         </section>}
         {section === 'vm' && <section className="system-card system-integrations-card">

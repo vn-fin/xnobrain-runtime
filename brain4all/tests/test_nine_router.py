@@ -179,6 +179,70 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             [("session", 80), ("weekly", 70)],
         )
 
+    async def test_list_connections_returns_priority_and_email_without_credentials(self) -> None:
+        manager = FakeNineRouterManager(
+            {
+                ("GET", "/api/providers"): {
+                    "connections": [
+                        {"id": "codex-1", "provider": "codex", "authType": "oauth",
+                         "name": "work", "email": "work@example.com", "priority": 1,
+                         "isActive": True, "apiKey": "must-not-leak",
+                         "providerSpecificData": {"token": "must-not-leak"}},
+                        {"id": "codex-2", "provider": "codex", "authType": "oauth",
+                         "name": "home", "email": "home@example.com", "priority": 0,
+                         "isActive": False},
+                    ]
+                }
+            }
+        )
+        rows = (await manager.list_connections())["connections"]
+        by_id = {row["id"]: row for row in rows}
+        self.assertEqual(by_id["codex-1"]["email"], "work@example.com")
+        self.assertEqual(by_id["codex-1"]["priority"], 1)
+        self.assertFalse(by_id["codex-2"]["active"])
+        for row in rows:
+            for forbidden in ("apiKey", "api_key", "providerSpecificData", "data", "token"):
+                self.assertNotIn(forbidden, row)
+
+    async def test_update_connection_puts_partial_body_and_reensures_auto(self) -> None:
+        manager = FakeNineRouterManager(
+            {
+                ("PUT", "/api/providers/codex-2"): {
+                    "connection": {"id": "codex-2", "provider": "codex",
+                                   "authType": "oauth", "isActive": False},
+                },
+                ("GET", "/v1/models?kind=llm"): {"data": []},
+                ("GET", "/api/combos"): {"combos": []},
+                ("GET", "/api/providers"): {"connections": []},
+            }
+        )
+        result = await manager.update_connection("codex-2", active=False)
+        self.assertIn(("PUT", "/api/providers/codex-2", {"isActive": False}), manager.requests)
+        self.assertFalse(result["connection"]["active"])
+        self.assertTrue(any(path == "/api/combos" for _, path, _ in manager.requests))
+
+    async def test_update_connection_requires_a_field(self) -> None:
+        manager = FakeNineRouterManager({})
+        with self.assertRaises(NineRouterAPIError):
+            await manager.update_connection("codex-2")
+
+    async def test_usage_for_connection_returns_all_quota_windows(self) -> None:
+        manager = FakeNineRouterManager(
+            {
+                ("GET", "/api/usage/codex-2"): {
+                    "plan": "plus",
+                    "quotas": {
+                        "session": {"used": 20, "total": 100},
+                        "review_session": {"used": 90, "total": 100},
+                    },
+                }
+            }
+        )
+        payload = await manager.usage_for_connection("codex-2")
+        names = {item["name"] for item in payload["quotas"]}
+        self.assertEqual(names, {"session", "review_session"})  # unfiltered by model
+        self.assertTrue(payload["available"])
+
     def test_generated_agent_names_are_lowercase_and_start_with_a_letter(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

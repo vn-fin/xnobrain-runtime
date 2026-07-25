@@ -21,6 +21,7 @@ export type ConnectionProvider = {
   last_test_status?: string;
   default_model?: string;
   available_models?: string[];
+  connection_count?: number;
 };
 
 // Mirrors agent-gateway models.ProviderConnectInfo (returned by POST /connect)

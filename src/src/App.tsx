@@ -235,6 +235,18 @@ export default function App() {
             onDisconnect={connections.disconnect}
             onTestProvider={connections.test}
             onSaveKey={connections.saveKey}
+            accounts={{
+              connectionsByProvider: connections.connectionsByProvider,
+              usageByConnection: connections.usageByConnection,
+              rowPendingId: connections.rowPendingId,
+              onLoadConnections: connections.loadConnections,
+              onAddAccount: connections.addAccount,
+              onSetAccountActive: connections.setAccountActive,
+              onReorderAccount: connections.reorderAccount,
+              onTestAccount: connections.testAccount,
+              onRemoveAccount: connections.removeAccount,
+              onLoadAccountUsage: connections.loadAccountUsage,
+            }}
             sandbox={{
               data: sandbox.data,
               provisioned: sandbox.provisioned,

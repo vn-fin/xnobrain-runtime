@@ -143,6 +143,8 @@ class NineRouterManager:
                     "default_model": str(item.get("defaultModel") or ""),
                     "test_status": str(item.get("testStatus") or "unknown"),
                     "last_error": str(item.get("lastError") or ""),
+                    "email": str(item.get("email") or ""),
+                    "priority": self._number(item.get("priority")),
                 }
             )
         return {"object": "nine_router.providers", "connections": connections}
@@ -175,6 +177,46 @@ class NineRouterManager:
             "object": "nine_router.provider_delete",
             "id": connection_id,
             "deleted": True,
+        }
+
+    async def update_connection(
+        self,
+        connection_id: Any,
+        *,
+        active: bool | None = None,
+        priority: int | None = None,
+    ) -> dict[str, Any]:
+        """PUT one connection's isActive/priority. Never touches credentials.
+
+        9router re-normalizes priority (verified: sending 5 stored 1), so the
+        caller must read back the stored value rather than trust the request.
+        """
+
+        connection_id = self._safe_id(connection_id, "connection_id")
+        request_body: dict[str, Any] = {}
+        if active is not None:
+            request_body["isActive"] = bool(active)
+        if priority is not None:
+            request_body["priority"] = int(priority)
+        if not request_body:
+            raise NineRouterAPIError(
+                "active or priority is required",
+                code="invalid_provider_connection",
+                status=400,
+            )
+        payload = await self._request(
+            "PUT", f"/api/providers/{quote(connection_id, safe='')}", request_body
+        )
+        # Deactivating a provider's last active account can drop its models, so
+        # re-ensure the auto combo the same way delete_connection() does.
+        models = (await self.list_models(ensure_auto=False))["data"]
+        await self._ensure_auto_combo(models)
+        if isinstance(payload, Mapping) and isinstance(payload.get("connection"), Mapping):
+            return self._filtered_connection_response(payload)
+        return {
+            "object": "nine_router.provider_update",
+            "id": connection_id,
+            "updated": True,
         }
 
     async def test_connection(self, connection_id: Any) -> dict[str, Any]:
@@ -302,17 +344,7 @@ class NineRouterManager:
         payload = await self._request(
             "GET", f"/api/usage/{quote(connection_id, safe='')}"
         )
-        raw_quotas = payload.get("quotas", {}) if isinstance(payload, Mapping) else {}
-        quotas: list[dict[str, Any]] = []
-        if isinstance(raw_quotas, Mapping):
-            for name, raw_quota in raw_quotas.items():
-                if not isinstance(raw_quota, Mapping):
-                    continue
-                quota_name = str(name or "").strip()
-                if not self._quota_matches_model(provider, model_id, quota_name):
-                    continue
-                quotas.append(self._normalize_quota(quota_name, raw_quota))
-
+        quotas = self._quota_list(payload, provider=provider, model_id=model_id)
         message = str(payload.get("message") or "") if isinstance(payload, Mapping) else ""
         return {
             "object": "router.usage",
@@ -323,6 +355,45 @@ class NineRouterManager:
             "message": message,
             "quotas": quotas[:6],
         }
+
+    async def usage_for_connection(self, connection_id: Any) -> dict[str, Any]:
+        """Account-scoped quota windows for one connection, unfiltered by model."""
+
+        connection_id = self._safe_id(connection_id, "connection_id")
+        payload = await self._request(
+            "GET", f"/api/usage/{quote(connection_id, safe='')}"
+        )
+        quotas = self._quota_list(payload)
+        is_mapping = isinstance(payload, Mapping)
+        return {
+            "object": "router.connection_usage",
+            "connection_id": connection_id,
+            "available": bool(quotas),
+            "plan": str(payload.get("plan") or "") if is_mapping else "",
+            "message": str(payload.get("message") or "") if is_mapping else "",
+            "quotas": quotas[:12],
+        }
+
+    def _quota_list(
+        self, payload: Any, *, provider: str = "", model_id: str = ""
+    ) -> list[dict[str, Any]]:
+        """Normalize a 9router usage payload's quota windows.
+
+        When ``model_id`` is given the windows are filtered to that model
+        (the ``usage(model)`` view); otherwise every window is returned (the
+        account-scoped ``usage_for_connection`` view)."""
+
+        raw_quotas = payload.get("quotas", {}) if isinstance(payload, Mapping) else {}
+        quotas: list[dict[str, Any]] = []
+        if isinstance(raw_quotas, Mapping):
+            for name, raw_quota in raw_quotas.items():
+                if not isinstance(raw_quota, Mapping):
+                    continue
+                quota_name = str(name or "").strip()
+                if model_id and not self._quota_matches_model(provider, model_id, quota_name):
+                    continue
+                quotas.append(self._normalize_quota(quota_name, raw_quota))
+        return quotas
 
     async def ensure_auto_combo(self) -> None:
         models = (await self.list_models(ensure_auto=False))["data"]
@@ -433,6 +504,8 @@ class NineRouterManager:
                 "name": str(connection.get("name") or connection.get("displayName") or ""),
                 "active": connection.get("isActive") is not False,
                 "default_model": str(connection.get("defaultModel") or ""),
+                "email": str(connection.get("email") or ""),
+                "priority": self._number(connection.get("priority")),
             },
         }
 

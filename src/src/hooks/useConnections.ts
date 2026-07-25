@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { providersApi, type ProviderTestResult } from '../api/providers';
+import {
+  providersApi,
+  type ProviderTestResult,
+  type ProviderConnection,
+  type ConnectionUsage,
+} from '../api/providers';
 import type { AsyncStatus, ConnectionProvider, ProviderConnectInfo } from '../types';
 import { providerConnectNeedsText } from '../utils/providers';
 import {
@@ -18,6 +23,9 @@ export function useConnections() {
   const [authInfo, setAuthInfo] = useState<ProviderConnectInfo | null>(null);
   const [keyProviderId, setKeyProviderId] = useState('');
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [connectionsByProvider, setConnectionsByProvider] = useState<Record<string, ProviderConnection[]>>({});
+  const [usageByConnection, setUsageByConnection] = useState<Record<string, ConnectionUsage>>({});
+  const [rowPendingId, setRowPendingId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setStatus('loading');
@@ -218,10 +226,117 @@ export function useConnections() {
     }
   };
 
+  // --- multi-account connections ---
+
+  const loadConnections = async (providerId: string) => {
+    try {
+      const rows = await providersApi.listConnections(providerId);
+      setConnectionsByProvider((current) => ({ ...current, [providerId]: rows }));
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'Could not load accounts.');
+    }
+  };
+
+  const loadAccountUsage = async (providerId: string, connectionId: string) => {
+    try {
+      const usage = await providersApi.connectionUsage(providerId, connectionId);
+      setUsageByConnection((current) => ({ ...current, [connectionId]: usage }));
+    } catch {
+      /* per-account usage is best-effort */
+    }
+  };
+
+  const addAccount = async (providerId: string, input?: { api_key: string; name?: string }) => {
+    const provider = connections.find((item) => item.id === providerId);
+    // OAuth providers add a second account through the existing popup flow.
+    if (provider && provider.connection_mode !== 'api-key') {
+      await connect(providerId);
+      return;
+    }
+    if (!input?.api_key.trim()) return;
+    setRowPendingId(providerId);
+    try {
+      await providersApi.addConnection(providerId, {
+        api_key: input.api_key.trim(),
+        name: input.name?.trim() || undefined,
+      });
+      await loadConnections(providerId);
+      await refresh();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'Could not add account.');
+    } finally {
+      setRowPendingId(null);
+    }
+  };
+
+  const setAccountActive = async (providerId: string, connectionId: string, active: boolean) => {
+    setRowPendingId(connectionId);
+    try {
+      await providersApi.patchConnection(providerId, connectionId, { active });
+      await loadConnections(providerId);
+      await refresh();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'Could not update account.');
+    } finally {
+      setRowPendingId(null);
+    }
+  };
+
+  const reorderAccount = async (providerId: string, connectionId: string, direction: 'up' | 'down') => {
+    const rows = connectionsByProvider[providerId] ?? [];
+    const index = rows.findIndex((row) => row.id === connectionId);
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (index < 0 || target < 0 || target >= rows.length) return;
+    setRowPendingId(connectionId);
+    try {
+      // 9router re-normalizes priority, so send the desired rank and re-read.
+      await providersApi.patchConnection(providerId, connectionId, { priority: target });
+      await loadConnections(providerId);
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'Could not reorder account.');
+    } finally {
+      setRowPendingId(null);
+    }
+  };
+
+  const testAccount = async (providerId: string, connectionId: string) => {
+    setRowPendingId(connectionId);
+    try {
+      const result = await providersApi.testConnection(providerId, connectionId);
+      setConnectionsByProvider((current) => ({
+        ...current,
+        [providerId]: (current[providerId] ?? []).map((row) =>
+          row.id === connectionId
+            ? { ...row, test_status: result.healthy ? 'valid' : 'invalid', last_error: result.message ?? '' }
+            : row),
+      }));
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'Could not test account.');
+    } finally {
+      setRowPendingId(null);
+    }
+  };
+
+  const removeAccount = async (providerId: string, connectionId: string) => {
+    setRowPendingId(connectionId);
+    try {
+      await providersApi.deleteConnection(providerId, connectionId);
+      await loadConnections(providerId);
+      await refresh();
+    } catch (value) {
+      setError(value instanceof Error ? value.message : 'Could not remove account.');
+    } finally {
+      setRowPendingId(null);
+    }
+  };
+
   return {
     connections, status, error, refresh, pendingId,
     authProviderId, authInfo, setAuthProviderId, closeAuth,
     keyProviderId, setKeyProviderId,
     connect, submitAuth, disconnect, test, saveKey, loadModels, startConnect, checkConnect,
+    connectionsByProvider, usageByConnection, rowPendingId,
+    loadConnections, loadAccountUsage, addAccount, setAccountActive,
+    reorderAccount, testAccount, removeAccount,
   };
 }

@@ -597,15 +597,21 @@ class PlatformService:
             connections, models = [], []
         result = []
         for provider in SUPPORTED_PROVIDERS:
-            connection = next((item for item in connections if item.get("provider") == provider and item.get("active", True)), None)
+            provider_rows = sorted(
+                (item for item in connections if item.get("provider") == provider),
+                key=lambda item: (int(item.get("priority") or 0), str(item.get("name") or "")),
+            )
+            active_rows = [item for item in provider_rows if item.get("active") is not False]
+            primary = active_rows[0] if active_rows else (provider_rows[0] if provider_rows else {})
             result.append({
                 "id": provider, "display_name": provider.title(), "provider_type": provider,
                 "description": "Credentials are managed by the local 9router runtime.",
                 "connection_mode": "api-key" if provider in API_KEY_PROVIDERS else "cli",
-                "connected": connection is not None,
-                "status": "connected" if connection else "disconnected",
-                "last_test_status": (connection or {}).get("test_status", "unknown"),
-                "default_model": (connection or {}).get("default_model", ""),
+                "connected": bool(active_rows),
+                "status": "connected" if active_rows else "disconnected",
+                "last_test_status": primary.get("test_status", "unknown"),
+                "default_model": primary.get("default_model", ""),
+                "connection_count": len(provider_rows),
                 "available_models": [item["id"] for item in models if item.get("provider") == provider],
             })
         return result
@@ -670,12 +676,90 @@ class PlatformService:
 
     async def test_provider(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
-        connections = (await self.router.list_connections())["connections"]
-        current = next((item for item in connections if item.get("provider") == provider), None)
+        rows = await self._provider_connections(provider)
+        current = next(
+            (item for item in rows if item.get("active") is not False),
+            rows[0] if rows else None,
+        )
         if not current:
             return {"provider_id": provider, "healthy": False, "status": "not_connected", "message": "Provider is not connected"}
         result = await self.router.test_connection(current["id"])
         return {"provider_id": provider, "healthy": bool(result.get("valid")), "status": "healthy" if result.get("valid") else "unhealthy", "message": result.get("error") or ""}
+
+    async def list_provider_connections(self, provider: str) -> dict[str, Any]:
+        self._provider(provider)
+        connections = await self._provider_connections(provider)
+        return {
+            "provider_id": provider,
+            "connected": any(item.get("active") is not False for item in connections),
+            "connections": connections,
+        }
+
+    async def add_provider_connection(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        self._provider(provider)
+        if provider not in API_KEY_PROVIDERS:
+            raise ServiceError(
+                "use the provider connect flow to add an OAuth account",
+                status=400, code="oauth_connect_required",
+            )
+        result = await self.router.create_api_key_connection({
+            "provider": provider,
+            "api_key": body.get("api_key"),
+            "name": body.get("name"),
+            "default_model": body.get("default_model"),
+        })
+        return {"provider_id": provider, "connected": True, "connection": result["connection"]}
+
+    async def patch_provider_connection(self, provider: str, connection_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        await self._owned_connection(provider, connection_id)
+        active = body.get("active")
+        priority = body.get("priority")
+        if active is None and priority is None:
+            raise ServiceError("active or priority is required", code="invalid_request")
+        if priority is not None:
+            priority = max(0, min(999, int(priority)))
+        await self.router.update_connection(connection_id, active=active, priority=priority)
+        # 9router owns priority normalization, so return the stored row, not the request.
+        refreshed = await self._owned_connection(provider, connection_id)
+        return {"provider_id": provider, "connection": refreshed}
+
+    async def test_provider_connection(self, provider: str, connection_id: str) -> dict[str, Any]:
+        await self._owned_connection(provider, connection_id)
+        result = await self.router.test_connection(connection_id)
+        healthy = bool(result.get("valid"))
+        return {
+            "provider_id": provider, "connection_id": connection_id,
+            "healthy": healthy, "status": "healthy" if healthy else "unhealthy",
+            "message": result.get("error") or "",
+        }
+
+    async def delete_provider_connection(self, provider: str, connection_id: str) -> dict[str, Any]:
+        await self._owned_connection(provider, connection_id)
+        await self.router.delete_connection(connection_id)
+        remaining = await self._provider_connections(provider)
+        return {
+            "provider_id": provider, "connection_id": connection_id, "deleted": True,
+            "connected": any(item.get("active") is not False for item in remaining),
+        }
+
+    async def connection_usage(self, provider: str, connection_id: str) -> dict[str, Any]:
+        await self._owned_connection(provider, connection_id)
+        payload = await self.router.usage_for_connection(connection_id)
+        return {"provider_id": provider, **payload}
+
+    async def _provider_connections(self, provider: str) -> list[dict[str, Any]]:
+        connections = (await self.router.list_connections())["connections"]
+        rows = [item for item in connections if item.get("provider") == provider]
+        rows.sort(key=lambda item: (int(item.get("priority") or 0), str(item.get("name") or "")))
+        return rows
+
+    async def _owned_connection(self, provider: str, connection_id: str) -> dict[str, Any]:
+        self._provider(provider)
+        rows = await self._provider_connections(provider)
+        current = next((item for item in rows if item.get("id") == connection_id), None)
+        if current is None:
+            raise ServiceError("connection not found", status=404, code="not_found")
+        return current
 
     @staticmethod
     def _provider(provider: str) -> str:

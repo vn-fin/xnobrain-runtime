@@ -1,9 +1,116 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Activity, Check, ChevronDown, X } from 'lucide-react';
+import {
+  Activity, ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Plus, Trash2, X,
+} from 'lucide-react';
 import { ProviderBrandIcon } from './common';
 import type { ConnectionProvider } from '../types';
 import type { ProviderTestOutcome } from '../hooks/useConnections';
+import type { ProviderConnection, ConnectionUsage } from '../api/providers';
+
+export type AccountProps = {
+  connectionsByProvider: Record<string, ProviderConnection[]>;
+  usageByConnection: Record<string, ConnectionUsage>;
+  rowPendingId: string | null;
+  onLoadConnections: (providerId: string) => void;
+  onAddAccount: (providerId: string, input?: { api_key: string; name?: string }) => void;
+  onSetAccountActive: (providerId: string, connectionId: string, active: boolean) => void;
+  onReorderAccount: (providerId: string, connectionId: string, direction: 'up' | 'down') => void;
+  onTestAccount: (providerId: string, connectionId: string) => void;
+  onRemoveAccount: (providerId: string, connectionId: string) => void;
+  onLoadAccountUsage: (providerId: string, connectionId: string) => void;
+};
+
+function usagePercent(usage: ConnectionUsage | undefined): number | null {
+  if (!usage || !usage.available || usage.quotas.length === 0) return null;
+  return Math.max(0, Math.min(100, Math.min(...usage.quotas.map((q) => q.remaining_percent))));
+}
+
+function statusDotClass(testStatus: string): string {
+  if (testStatus === 'valid' || testStatus === 'healthy') return 'ok';
+  if (testStatus === 'unknown' || !testStatus) return 'unknown';
+  return 'fail';
+}
+
+function AccountRow({
+  providerId, row, usage, pending, actions,
+}: {
+  providerId: string;
+  row: ProviderConnection;
+  usage: ConnectionUsage | undefined;
+  pending: boolean;
+  actions: AccountProps;
+}) {
+  const { t } = useTranslation();
+  const percent = usagePercent(usage);
+  const label = row.email || row.name || row.id;
+  return (
+    <div className={`conn-account-row${row.active ? '' : ' inactive'}`}>
+      <span className={`conn-dot ${statusDotClass(row.test_status)}`} title={row.last_error || row.test_status} />
+      <span className="conn-account-label" title={label}>{label}</span>
+      <span className="conn-account-tag">{row.auth_type}</span>
+      <label className="conn-account-active">
+        <input
+          type="checkbox"
+          checked={row.active}
+          disabled={pending}
+          onChange={(e) => actions.onSetAccountActive(providerId, row.id, e.target.checked)}
+        />
+        {t('connections.accountActive', { defaultValue: 'Active' })}
+      </label>
+      <button className="conn-iconbtn" disabled={pending} title={t('connections.moveUp', { defaultValue: 'Move up' })}
+        onClick={() => actions.onReorderAccount(providerId, row.id, 'up')}>
+        <ArrowUp size={13} />
+      </button>
+      <button className="conn-iconbtn" disabled={pending} title={t('connections.moveDown', { defaultValue: 'Move down' })}
+        onClick={() => actions.onReorderAccount(providerId, row.id, 'down')}>
+        <ArrowDown size={13} />
+      </button>
+      <button className="conn-iconbtn" disabled={pending} title={t('common.test', { defaultValue: 'Test' })}
+        onClick={() => actions.onTestAccount(providerId, row.id)}>
+        <Activity size={13} />
+      </button>
+      <span className="conn-usage-bar" title={percent === null ? t('connections.usageUnavailable', { defaultValue: 'Usage unavailable' }) : `${percent}%`}>
+        {percent === null
+          ? <span className="conn-usage-empty">—</span>
+          : <span className="conn-usage-fill" style={{ width: `${percent}%` }} />}
+      </span>
+      <button className="conn-iconbtn danger" disabled={pending} title={t('connections.removeAccount', { defaultValue: 'Remove account' })}
+        onClick={() => {
+          if (window.confirm(t('connections.removeAccountConfirm', { defaultValue: 'Remove this account?' }))) {
+            actions.onRemoveAccount(providerId, row.id);
+          }
+        }}>
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
+function AddAccount({ provider, actions }: { provider: ConnectionProvider; actions: AccountProps }) {
+  const { t } = useTranslation();
+  const [key, setKey] = useState('');
+  const [name, setName] = useState('');
+  if (provider.connection_mode !== 'api-key') {
+    return (
+      <button className="conn-btn ghost conn-add" onClick={() => actions.onAddAccount(provider.id)}>
+        <Plus size={13} /> {t('connections.addAccount', { defaultValue: 'Add account' })}
+      </button>
+    );
+  }
+  return (
+    <div className="conn-add-form">
+      <input type="text" placeholder={t('connections.accountName', { defaultValue: 'Label (optional)' })}
+        value={name} onChange={(e) => setName(e.target.value)} />
+      <input type="password" placeholder="sk-… / AIza… / sk-ant-…"
+        value={key} onChange={(e) => setKey(e.target.value)} />
+      <button className="conn-btn primary" disabled={!key.trim()}
+        onClick={() => { actions.onAddAccount(provider.id, { api_key: key, name }); setKey(''); setName(''); }}>
+        <Plus size={13} /> {t('connections.addAccount', { defaultValue: 'Add account' })}
+      </button>
+    </div>
+  );
+}
 
 export function ConnectionsView({
   providers,
@@ -16,6 +123,7 @@ export function ConnectionsView({
   onSaveKey,
   onClose,
   embedded = false,
+  ...accounts
 }: {
   providers: ConnectionProvider[];
   keyProviderId: string;
@@ -27,9 +135,10 @@ export function ConnectionsView({
   onSaveKey: (id: string, key: string) => void;
   onClose: () => void;
   embedded?: boolean;
-}) {
+} & AccountProps) {
   const { t } = useTranslation();
   const [apiKey, setApiKey] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [testResults, setTestResults] = useState<Record<string, ProviderTestOutcome>>({});
   const apiKeyProviders = providers.filter((p) => p.connection_mode === 'api-key');
   const selectedKeyProvider = providers.find((p) => p.id === keyProviderId);
@@ -42,6 +151,19 @@ export function ConnectionsView({
     });
     const result = await onTest(id);
     if (result) setTestResults((current) => ({ ...current, [id]: result }));
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        accounts.onLoadConnections(id);
+      }
+      return next;
+    });
   };
 
   return (
@@ -58,43 +180,78 @@ export function ConnectionsView({
 
       <div className="conn-scroll">
         <div className="conn-grid">
-          {providers.map((p) => (
+          {providers.map((p) => {
+            const rows = accounts.connectionsByProvider[p.id] ?? [];
+            const count = p.connection_count ?? (rows.length || (p.connected ? 1 : 0));
+            const isOpen = expanded.has(p.id);
+            return (
             <article className="conn-card" key={p.id}>
               <div className="conn-card-head">
                 <ProviderBrandIcon brand={p.brand} />
                 <strong>{p.display_name}</strong>
                 <span className={p.connected ? 'conn-badge ok' : 'conn-badge'}>
-                  {p.connected ? (p.last_test_status === 'healthy' ? t('connections.healthy') : t('connections.connected')) : t('connections.notConnected')}
+                  {p.connected
+                    ? t('connections.connectedCount', { defaultValue: 'connected · {{count}} account(s)', count })
+                    : t('connections.notConnected')}
                 </span>
               </div>
               <p className="conn-desc">{p.description}</p>
               {p.connected ? (
-                <div className="conn-actions">
-                  <button
-                    className="conn-btn ghost"
-                    disabled={pendingId === p.id}
-                    onClick={() => void runTest(p.id)}
-                  >
-                    {pendingId === p.id ? (
-                      <>
-                        <span className="async-spinner conn-spinner" />
-                        {t('connections.testing')}
-                      </>
-                    ) : (
-                      <>
-                        <Activity size={14} />
-                        {t('common.test')}
-                      </>
-                    )}
+                <>
+                  <button className="conn-accounts-toggle" onClick={() => toggleExpand(p.id)}>
+                    {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    {t('connections.accounts', { defaultValue: 'Accounts' })}
                   </button>
-                  <button
-                    className="conn-btn danger"
-                    disabled={pendingId === p.id}
-                    onClick={() => onDisconnect(p.id)}
-                  >
-                    {t('connections.disconnect')}
-                  </button>
-                </div>
+                  {isOpen && (
+                    <div className="conn-accounts">
+                      {rows.map((row) => (
+                        <AccountRow
+                          key={row.id}
+                          providerId={p.id}
+                          row={row}
+                          usage={accounts.usageByConnection[row.id]}
+                          pending={accounts.rowPendingId === row.id}
+                          actions={accounts}
+                        />
+                      ))}
+                      <AddAccount provider={p} actions={accounts} />
+                      <p className="conn-accounts-hint">
+                        {t('connections.accountsHint', { defaultValue: 'Active accounts rotate; order sets fallback preference.' })}
+                      </p>
+                    </div>
+                  )}
+                  <div className="conn-actions">
+                    <button
+                      className="conn-btn ghost"
+                      disabled={pendingId === p.id}
+                      onClick={() => void runTest(p.id)}
+                    >
+                      {pendingId === p.id ? (
+                        <>
+                          <span className="async-spinner conn-spinner" />
+                          {t('connections.testing')}
+                        </>
+                      ) : (
+                        <>
+                          <Activity size={14} />
+                          {t('common.test')}
+                        </>
+                      )}
+                    </button>
+                    <button
+                      className="conn-btn danger"
+                      disabled={pendingId === p.id}
+                      onClick={() => {
+                        if (window.confirm(t('connections.removeAllConfirm', { defaultValue: 'Remove all {{count}} account(s) for {{name}}?', count, name: p.display_name }))) {
+                          onDisconnect(p.id);
+                        }
+                      }}
+                    >
+                      <Trash2 size={14} />
+                      {t('connections.removeAllAccounts', { defaultValue: 'Remove all accounts' })}
+                    </button>
+                  </div>
+                </>
               ) : (
                 <button className="conn-btn primary" onClick={() => onConnect(p.id)}>
                   {p.connection_mode === 'api-key' ? t('connections.addApiKey') : t('connections.authenticate')}
@@ -123,7 +280,8 @@ export function ConnectionsView({
                 );
               })()}
             </article>
-          ))}
+            );
+          })}
         </div>
 
         <section className="conn-keypanel">

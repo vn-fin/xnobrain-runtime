@@ -38,6 +38,44 @@ export type ProviderUpdateInput = {
   status?: string;
 };
 
+/** One account for a provider. Never carries key/token material. */
+export type ProviderConnection = {
+  id: string;
+  provider: string;
+  auth_type: string;
+  name: string;
+  email: string;
+  active: boolean;
+  priority: number;
+  default_model: string;
+  test_status: string;
+  last_error: string;
+};
+
+export type ConnectionQuota = {
+  name: string;
+  used: number;
+  total: number;
+  remaining_percent: number;
+  reset_at: string;
+  unlimited: boolean;
+};
+
+export type ConnectionUsage = {
+  connection_id: string;
+  available: boolean;
+  plan: string;
+  message: string;
+  quotas: ConnectionQuota[];
+};
+
+export type ConnectionTestResult = {
+  connection_id?: string;
+  healthy?: boolean;
+  status?: string;
+  message?: string;
+};
+
 // Response payload of POST .../test (the envelope's `data` block).
 export type ProviderTestResult = {
   provider_id?: string;
@@ -119,5 +157,40 @@ export const providersApi = {
 
   reasoning(id: string, model: string): Promise<ProviderModelReasoningResponseDTO> {
     return request(`${ROOT}/${encoded(id)}/models/${encoded(model)}/reasoning`);
+  },
+
+  // --- multi-account connections ---
+
+  async listConnections(id: string): Promise<ProviderConnection[]> {
+    const data = await request<{ connections: ProviderConnection[] }>(`${ROOT}/${encoded(id)}/connections`);
+    return data?.connections ?? [];
+  },
+
+  async addConnection(id: string, input: { api_key: string; name?: string; default_model?: string }): Promise<ProviderConnection> {
+    const data = await request<{ connection: ProviderConnection }>(`${ROOT}/${encoded(id)}/connections`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    return data.connection;
+  },
+
+  async patchConnection(id: string, connectionId: string, input: { active?: boolean; priority?: number }): Promise<ProviderConnection> {
+    const data = await request<{ connection: ProviderConnection }>(
+      `${ROOT}/${encoded(id)}/connections/${encoded(connectionId)}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+    );
+    return data.connection;
+  },
+
+  testConnection(id: string, connectionId: string): Promise<ConnectionTestResult> {
+    return request(`${ROOT}/${encoded(id)}/connections/${encoded(connectionId)}/test`, { method: 'POST' });
+  },
+
+  async deleteConnection(id: string, connectionId: string): Promise<void> {
+    await request<unknown>(`${ROOT}/${encoded(id)}/connections/${encoded(connectionId)}`, { method: 'DELETE' });
+  },
+
+  connectionUsage(id: string, connectionId: string): Promise<ConnectionUsage> {
+    return request(`${ROOT}/${encoded(id)}/connections/${encoded(connectionId)}/usage`);
   },
 };

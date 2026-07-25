@@ -46,10 +46,15 @@ workspace files, portable bundles. See `brain4all/routes/setup.py` for the curre
 | 007 | **Plugins & hooks + native tool toggles** | P2 | — | [README](007_plugins_and_hooks/README.md) · [findings](007_plugins_and_hooks/findings.md) · [architecture](007_plugins_and_hooks/architecture.md) · [approaches](007_plugins_and_hooks/approaches.md) · [implementation](007_plugins_and_hooks/implementation.md) · [validation](007_plugins_and_hooks/validation.md) |
 | 008 | **Cron delivery targets & blueprints** | P2 | 005 (for channel targets); Kanban 001–004 (for Kanban target) | [README](008_cron_delivery_and_blueprints/README.md) · [findings](008_cron_delivery_and_blueprints/findings.md) · [architecture](008_cron_delivery_and_blueprints/architecture.md) · [approaches](008_cron_delivery_and_blueprints/approaches.md) · [implementation](008_cron_delivery_and_blueprints/implementation.md) · [validation](008_cron_delivery_and_blueprints/validation.md) |
 | 009 | **Usage analytics & budgets** | P3 | — | [README](009_usage_analytics/README.md) · [findings](009_usage_analytics/findings.md) · [architecture](009_usage_analytics/architecture.md) · [approaches](009_usage_analytics/approaches.md) · [implementation](009_usage_analytics/implementation.md) · [validation](009_usage_analytics/validation.md) |
+| 010 | **Team runs v2** (persistent, observable, cancellable multi-agent runs) | P2 | — | [README](010_team_runs/README.md) · [findings](010_team_runs/findings.md) · [architecture](010_team_runs/architecture.md) · [approaches](010_team_runs/approaches.md) · [implementation](010_team_runs/implementation.md) · [validation](010_team_runs/validation.md) |
+| 011 | **Multi-account provider connections** (9router native multi-account) | P1 | — | [README](011_provider_connections/README.md) · [findings](011_provider_connections/findings.md) · [architecture](011_provider_connections/architecture.md) · [approaches](011_provider_connections/approaches.md) · [implementation](011_provider_connections/implementation.md) · [validation](011_provider_connections/validation.md) |
+| 012 | **Model Blends** (user-named 9router combos: fallback / round-robin / fusion) | P2 | soft: 011 | [README](012_model_blends/README.md) · [findings](012_model_blends/findings.md) · [architecture](012_model_blends/architecture.md) · [approaches](012_model_blends/approaches.md) · [implementation](012_model_blends/implementation.md) · [validation](012_model_blends/validation.md) |
 
 **Recommended order:** 005 → 006 → 007 → 008 → 009. 005/006/007/009 are independent and may
 be parallelized; 008's channel-delivery target requires 005 (its email/Kanban/file targets
-do not).
+do not). The second batch (010–012) is independent of the first: recommended 011 → 012 →
+010 (011 is the sharpest user pain; 012 builds on the same 9router adapter surface; 010 is
+self-contained). 009 is implemented and verified (2026-07-25).
 
 ---
 
@@ -113,3 +118,34 @@ self-improvement visualization (Hermes `curator` + `/api/learning/graph`); Git /
 workspace (`/api/git/*`); credentials pool (`/api/credentials/pool`); dashboard theming;
 in-app Hermes runtime update (`/api/hermes/update`). Each would follow the same six-file
 plan format and the program principles above.
+
+## 010 — Team runs v2
+
+- [ ] Phase 0: compatibility test pins the Hermes/team symbols the engine uses (`AgentManager.chat`, subprocess helpers) and locks the `_run_hermes_command` CancelledError behavior.
+- [ ] **Subprocess-kill fix:** `_run_hermes_command` gains an `except asyncio.CancelledError` branch that kills the child `hermes` process (mirroring `_chat_stream_events`) — without it, cancelling a team run orphans subprocesses.
+- [ ] Run records persisted as atomic files under `DATA_DIR/teams/runs/<team_id>/<run_id>.json` (status machine: pending → running → completed/failed/cancelled); stale `running` records marked `interrupted_by_restart` on first read.
+- [ ] Async run API: `POST /api/v1/teams/{id}/runs` (202), list/detail/cancel routes, and an SSE events route following the `kanban_event_stream` handler pattern; existing synchronous `POST /run` stays backward-compatible.
+- [ ] Shared `_execute_workflow` engine used by both sync and async paths; in-process run registry; cancellation terminates child subprocesses (pgrep-verified in validation).
+- [ ] Frontend: TeamsView Runs panel (history, live per-step status via SSE, cancel).
+- [ ] Cross-profile teams keep chat-per-step (per the approaches analysis — Hermes `delegate_tool` cannot span profiles); no delegate_tool migration in this plan.
+- [ ] `validation.md` acceptance passed with evidence.
+
+## 011 — Multi-account provider connections
+
+- [ ] Phase 0: live-probe test against the pinned 9router (0.5.40) — verify `PUT /api/providers/{id}` body shape for `priority`/`isActive`, response field names, and rotation-vs-priority semantics; skip cleanly when 9router is down.
+- [ ] Adapter: `list_connections` returns per-connection `priority`; new methods for patch (active/priority), per-connection test, and `usage_for_connection(connection_id)`.
+- [ ] Connection-level API: list/add/patch/test/delete a **single** connection under `/agent-gateway/v1/providers/{provider_id}/connections*`; provider "connected" = ≥1 active connection; provider-level disconnect stays as explicit remove-all with confirmation.
+- [ ] Keep the curated 6-provider allowlist for now (Decision A); configurable widening is a follow-up flag.
+- [ ] Frontend: provider cards expand to an accounts list (name/email, active toggle, priority reorder, test dot, per-row quota bar, remove) + per-provider "Add account" (api-key form or OAuth popup reusing existing flows).
+- [ ] Security: no api-key/token material ever appears in Brain4All responses or logs (response-scan test); all credential state lives in 9router only.
+- [ ] `validation.md` acceptance passed with evidence.
+
+## 012 — Model Blends
+
+- [ ] Phase 0: probe the pinned 9router — combos CRUD shapes, `/api/settings` GET/PATCH shape for `comboStrategy`/`comboStrategies`/`comboStickyRoundRobinLimit`, combo name charset, and how combos appear in `/v1/models`.
+- [ ] Adapter refactor: public combo CRUD methods (extracted from `_ensure_auto_combo` internals) + strategy accessors; **fix `list_models` so user blends are not silently filtered out** (today's owner filter hides every custom combo).
+- [ ] Blend API: `GET/POST /agent-gateway/v1/blends`, `PATCH/DELETE /blends/{id}`, `GET /blends/available-models`; strategy embedded in the blend DTO (hydrated from 9router settings); Brain4All stores nothing.
+- [ ] Guards: "auto" is a read-only system blend (409 on modify/delete); blend names cannot collide with real model ids.
+- [ ] Strategies exposed: fallback (ordered), round-robin (sticky limit), fusion (judge model + tuning) with the verified cost/tools caveat surfaced in UI copy ("fusion runs every model per request; tools are disabled").
+- [ ] Frontend: Model Blends management panel (list, create/edit dialog with ordered model multi-select + strategy controls, delete) and blends grouped at the top of agent model pickers; an agent's model accepts a blend name through the existing config path unchanged.
+- [ ] `validation.md` acceptance passed with evidence.

@@ -189,6 +189,23 @@ class ProviderCredential(BaseModel):
     default_model: str | None = None
 
 
+class ConnectionCreate(BaseModel):
+    """Add an API-key account to a provider. The key is passed through to
+    9router and never stored or echoed by Brain4All."""
+
+    api_key: str = Field(min_length=1, max_length=4096)
+    name: str | None = Field(default=None, max_length=128)
+    default_model: str | None = Field(default=None, max_length=128)
+
+
+class ConnectionPatch(BaseModel):
+    """Partial update of one connection. At least one field must be set
+    (service-enforced)."""
+
+    active: bool | None = None
+    priority: int | None = Field(default=None, ge=0, le=999)
+
+
 class BundleExport(BaseModel):
     agent_ids: list[str] = Field(min_length=1)
     include_conversations: bool = False
