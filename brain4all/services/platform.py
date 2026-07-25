@@ -75,6 +75,10 @@ class PlatformService:
         self.kanban = KanbanService(agents)
         from .analytics import AnalyticsService
         self.analytics = AnalyticsService(agents, router, repository)
+        from .blends import BlendService
+        self.blends = BlendService(router)
+        from .team_runs import TeamRunService
+        self.team_runs = TeamRunService(repository, agents, self)
         self._oauth_attempts: dict[str, dict[str, str]] = {}
         self.config.ensure_write_approval_defaults()
         self._ensure_existing_write_approval_defaults()
@@ -471,20 +475,21 @@ class PlatformService:
     def delete_team(self, team_id: str) -> dict[str, Any]:
         if not self.repository.delete_team(team_id):
             raise ServiceError("team not found", status=404, code="not_found")
+        self.repository.delete_team_runs(team_id)
         return {"deleted": True}
 
-    async def run_team(self, team_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        team = self.get_team(team_id)
-        if not team.get("enabled", True):
-            raise ServiceError("team is disabled", status=409, code="team_disabled")
+    def _build_team_workflow(self, team: Mapping[str, Any], body: Mapping[str, Any]) -> list[dict[str, Any]]:
+        """Build and validate the executable workflow for a team run.
+
+        Shared by the legacy sync ``run_team`` and the async ``TeamRunService`` so
+        both paths schedule one identical DAG. Raises the same synchronous 400s as
+        before on invalid workflows.
+        """
         task = str(body.get("task") or "").strip()
         raw_workflow = body.get("workflow") or []
         if not task and not raw_workflow:
             raise ServiceError("task or workflow is required")
-        started = iso()
         members = [item for item in team["members"] if item.get("enabled", True)]
-        semaphore = asyncio.Semaphore(max(1, int(team.get("max_parallel") or 1)))
-        agent_locks: dict[str, asyncio.Lock] = {}
         configured = {
             str(item["agent_id"]): {
                 "agent_id": str(item["agent_id"]),
@@ -498,7 +503,6 @@ class PlatformService:
             "role": "coordinator",
             "allowed_tools": ["todo"],
         }
-
         if raw_workflow:
             workflow = self._team_workflow(raw_workflow, configured, members, task)
         else:
@@ -514,65 +518,33 @@ class PlatformService:
                 for index, member in enumerate(members)
             ]
         self._validate_team_workflow(workflow)
+        return workflow
 
-        async def run_step(step: Mapping[str, Any], completed: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
-            agent_lock = agent_locks.setdefault(str(step["agent_id"]), asyncio.Lock())
-            async with agent_lock, semaphore:
-                upstream = []
-                for dependency in step["needs"]:
-                    result = completed[dependency]
-                    value = result.get("summary") or f"Failed with {result.get('error', 'worker_failed')}"
-                    upstream.append(f"[{dependency}] {value}")
-                prompt = (
-                    f"Role: {step['role']}\n"
-                    "Do not ask for clarification or write memory. Return only a final summary.\n\n"
-                    f"Task: {step['task']}"
-                )
-                if upstream:
-                    prompt += "\n\nUpstream results:\n" + "\n\n".join(upstream)
-                try:
-                    result = await self.agents.chat(
-                        str(step["agent_id"]),
-                        {"message": prompt, "toolsets": list(step["allowed_tools"])},
-                    )
-                    return {
-                        "id": step["id"], "agent_id": step["agent_id"], "role": step["role"],
-                        "needs": list(step["needs"]), "status": "completed",
-                        "summary": str(result.get("response") or ""),
-                    }
-                except Exception as error:
-                    return {
-                        "id": step["id"], "agent_id": step["agent_id"], "role": step["role"],
-                        "needs": list(step["needs"]), "status": "failed",
-                        "error": str(getattr(error, "code", "worker_failed")),
-                    }
-
-        pending = {str(step["id"]): step for step in workflow}
-        completed: dict[str, dict[str, Any]] = {}
-        while pending:
-            ready = [step for step in pending.values() if all(need in completed for need in step["needs"])]
-            if not ready:
-                raise ServiceError("workflow contains a dependency cycle", code="workflow_cycle")
-            batch = await asyncio.gather(*(run_step(step, completed) for step in ready))
-            for result in batch:
-                completed[result["id"]] = result
-                pending.pop(result["id"], None)
-
-        results = [completed[str(step["id"])] for step in workflow]
-        synthesis_instruction = str(body.get("synthesis") or "Synthesize these workflow results into one final answer.").strip()
-        synthesis = synthesis_instruction + "\n\n" + "\n\n".join(
-            f"[{item['id']}] {item['role']}: {item.get('summary') or item.get('error', 'worker_failed')}"
-            for item in results
-        )
-        final = await self.agents.chat(team["orchestrator_id"], {"message": synthesis, "toolsets": ["todo"]})
+    async def run_team(self, team_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        """Legacy synchronous run: execute the DAG inline via the shared engine and
+        return the historical response dict. Sync runs also persist a run record."""
+        record = await self.team_runs.run_sync(team_id, body)
+        results = [self._legacy_step_result(step) for step in record["steps"]]
         return {
             "team_id": team_id,
             "member_results": results,
             "workflow_results": results,
-            "orchestrator_summary": final.get("response", ""),
-            "started_at": started,
-            "completed_at": iso(),
+            "orchestrator_summary": record["orchestrator_summary"],
+            "started_at": record["started_at"],
+            "completed_at": record["ended_at"],
         }
+
+    @staticmethod
+    def _legacy_step_result(step: Mapping[str, Any]) -> dict[str, Any]:
+        base = {
+            "id": step["id"], "agent_id": step["agent_id"], "role": step["role"],
+            "needs": list(step["needs"]), "status": step["status"],
+        }
+        if step["status"] == "failed":
+            base["error"] = step["error"]
+        else:
+            base["summary"] = step["summary"]
+        return base
 
     def get_mcp(self, agent_id: str) -> dict[str, Any]:
         path = self.repository.profile_path(agent_id) / "mcp.json"

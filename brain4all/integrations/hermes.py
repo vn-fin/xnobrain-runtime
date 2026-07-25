@@ -1624,6 +1624,15 @@ class AgentManager:
         )
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+        except asyncio.CancelledError:
+            if proc.returncode is None:
+                proc.terminate()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+            raise
         except asyncio.TimeoutError:
             proc.kill()
             await proc.communicate()

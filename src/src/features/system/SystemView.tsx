@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Download, FileArchive, Network, Server, ShieldCheck, Upload, X } from 'lucide-react';
 import { ConnectionsView, type AccountProps } from '../../components/ConnectionsView';
+import { BlendsSection } from './BlendsSection';
 import { SandboxView } from '../../components/SandboxView';
 import type { Agent, AsyncStatus, ConnectionProvider, SandboxData } from '../../types';
 import type { ProviderTestOutcome } from '../../hooks/useConnections';
@@ -64,6 +65,7 @@ export function SystemView({
     { id: 'profiles', label: 'Profiles' },
     { id: 'vm', label: 'VM' },
     { id: 'connectors', label: 'Connectors' },
+    { id: 'blends', label: 'Model Blends' },
   ];
 
   useEffect(() => {
@@ -166,6 +168,10 @@ export function SystemView({
             embedded
             {...accounts}
           />
+        </section>}
+        {section === 'blends' && <section className="system-card system-integrations-card">
+          <div className="system-card-title"><Network size={18} /><div><strong>Model Blends</strong><small>Group models into one named blend with a routing strategy (fallback, round-robin, or fusion).</small></div></div>
+          <BlendsSection />
         </section>}
         {section === 'vm' && <section className="system-card system-integrations-card">
           <div className="system-card-title"><Server size={18} /><div><strong>VM runtime</strong><small>View live VM health, resource usage, network activity, and create or refresh the sandbox.</small></div></div>

@@ -6,6 +6,7 @@ import { useConnections } from './hooks/useConnections';
 import { useSandbox } from './hooks/useSandbox';
 import { useKanban } from './hooks/useKanban';
 import { useAnalytics } from './hooks/useAnalytics';
+import { useBlends } from './hooks/useBlends';
 import { useConversation } from './hooks/useConversation';
 import { useWorkspace } from './hooks/useWorkspace';
 import { useTeams } from './hooks/useTeams';
@@ -38,6 +39,7 @@ export default function App() {
   const teams = useTeams();
   const kanban = useKanban(router.centerView === 'kanban');
   const analytics = useAnalytics(router.centerView === 'analytics');
+  const blends = useBlends();
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
   const RIGHT_MIN = 280;
@@ -273,6 +275,7 @@ export default function App() {
             agent={activeAgent}
             activeConversation={activeConversation}
             providers={connections.connections}
+            blends={blends.blends.map((blend) => blend.name)}
             runs={conversation.runs}
             usage={conversation.usage}
             usageStatus={conversation.usageStatus}

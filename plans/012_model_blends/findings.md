@@ -291,6 +291,24 @@ live in [validation.md](validation.md).
 
 ## 10. Phase-0 probe list (live 9router, skip-if-down)
 
+> **PROBED 2026-07-25 against 9router v0.5.40 (live). All confirmed. Refinements:**
+> - `GET /api/combos` → `{"combos": [{id, name, kind, models, createdAt, updatedAt}]}`. ✅
+> - **`POST /api/combos` returns the combo object DIRECTLY** (top-level `id`,
+>   not wrapped in `{"combo": ...}`) — the adapter normalizer must read the
+>   top level (fallback to a `combo` key if a future version wraps it). ✅
+> - Created combo appears in `/v1/models?kind=llm` as
+>   `{"id": <name>, "object": "model", "owned_by": "combo"}`. ✅
+> - `PUT /api/combos/{id}` partial (models-only) keeps the name. ✅
+> - Name charset: `"bad name!"` → **400**; `"ok-name_1.x"` accepted. ✅
+> - `GET /api/settings` has **no `password` key**; combo keys present:
+>   `comboStrategy`, `comboStrategies`, `comboStickyRoundRobinLimit`. ✅
+> - `PATCH /api/settings {"comboStrategies": {...}}` **replaces the whole map**
+>   (writing map B removed map A's entry) → read-modify-write is required. ✅
+> - Fusion entry `{"fallbackStrategy": "fusion", "judgeModel": <id>}` round-trips. ✅
+>
+> The original probe list is retained for the compatibility test to re-run on
+> any 9router bump.
+
 Every fact sourced from compiled chunks (§3–§6) is re-proved against the
 running pinned 9router at `http://127.0.0.1:20128` before any dependent code
 is written. Probes (test file named in

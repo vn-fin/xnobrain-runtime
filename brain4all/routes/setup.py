@@ -12,7 +12,7 @@ from fastapi import Body, Request
 from fastapi.responses import Response
 
 from ..models import (
-    AgentBudgetPatch,
+    AgentBudgetPatch, BlendCreate, BlendPatch,
     AgentCreate, AgentMetadataPatch, APIEnvelope, BundleExport, BundleUploadApply,
     BundleUploadComplete, BundleUploadStart, ChatRequest,
     ConfigPatch, ConnectionCreate, ConnectionPatch, ConversationCreate,
@@ -139,6 +139,12 @@ ROUTES = (
     Route("POST", "/agent-gateway/v1/providers/{provider_id}/connections/{connection_id}/test", "provider_connection_test", tags=("Providers",)),
     Route("DELETE", "/agent-gateway/v1/providers/{provider_id}/connections/{connection_id}", "provider_connection_delete", tags=("Providers",)),
     Route("GET", "/agent-gateway/v1/providers/{provider_id}/connections/{connection_id}/usage", "provider_connection_usage", tags=("Providers",)),
+
+    Route("GET", "/agent-gateway/v1/blends", "blends_list", tags=("Blends",)),
+    Route("POST", "/agent-gateway/v1/blends", "blends_create", BlendCreate, tags=("Blends",)),
+    Route("GET", "/agent-gateway/v1/blends/available-models", "blends_available_models", tags=("Blends",)),
+    Route("PATCH", "/agent-gateway/v1/blends/{blend_id}", "blends_patch", BlendPatch, tags=("Blends",)),
+    Route("DELETE", "/agent-gateway/v1/blends/{blend_id}", "blends_delete", tags=("Blends",)),
 
     Route("GET", "/agent-gateway/v1/analytics/agents", "analytics_agents", tags=("Analytics",)),
     Route("GET", "/agent-gateway/v1/analytics/usage", "analytics_usage", tags=("Analytics",)),

@@ -180,6 +180,43 @@ class TeamRun(BaseModel):
     synthesis: str | None = Field(default=None, max_length=20_000)
 
 
+TeamRunStatus = Literal["pending", "running", "completed", "failed", "cancelled"]
+
+
+class TeamRunStepRecord(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    agent_id: str
+    role: str
+    task: str = Field(default="", max_length=20_000)
+    needs: list[str] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)
+    status: TeamRunStatus = "pending"
+    summary: str = ""
+    summary_chars: int = 0
+    error: str | None = None
+    conversation_id: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+
+
+class TeamRunRecord(BaseModel):
+    id: str
+    team_id: str
+    status: TeamRunStatus = "pending"
+    error: str | None = None
+    mode: Literal["async", "sync"] = "async"
+    task: str = ""
+    synthesis_instruction: str = ""
+    orchestrator_id: str = ""
+    orchestrator_summary: str = ""
+    created_at: str
+    started_at: str | None = None
+    ended_at: str | None = None
+    updated_at: str
+    revision: int = 0
+    steps: list[TeamRunStepRecord] = Field(default_factory=list)
+
+
 class ProviderCredential(BaseModel):
     model_config = ConfigDict(extra="allow")
     text: str | None = None
@@ -204,6 +241,26 @@ class ConnectionPatch(BaseModel):
 
     active: bool | None = None
     priority: int | None = Field(default=None, ge=0, le=999)
+
+
+class BlendCreate(BaseModel):
+    """Create a Model Blend (a user-named 9router combo used as one model)."""
+
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+    models: list[str] = Field(min_length=1, max_length=24)
+    strategy: Literal["fallback", "round-robin", "fusion"] = "fallback"
+    judge_model: str | None = Field(default=None, max_length=256)
+    sticky_limit: int | None = Field(default=None, ge=1, le=1000)
+
+
+class BlendPatch(BaseModel):
+    """Partial update of a blend (rename, models/order, strategy, judge, sticky)."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+    models: list[str] | None = Field(default=None, min_length=1, max_length=24)
+    strategy: Literal["fallback", "round-robin", "fusion"] | None = None
+    judge_model: str | None = Field(default=None, max_length=256)
+    sticky_limit: int | None = Field(default=None, ge=1, le=1000)
 
 
 class BundleExport(BaseModel):

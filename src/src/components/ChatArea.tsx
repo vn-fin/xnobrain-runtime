@@ -59,6 +59,7 @@ export function ChatArea({
   agent,
   activeConversation,
   providers,
+  blends = [],
   runs,
   usage,
   usageStatus,
@@ -94,6 +95,7 @@ export function ChatArea({
   agent: Agent;
   activeConversation: Conversation | undefined;
   providers: ConnectionProvider[];
+  blends?: string[];
   runs: ChatRun[];
   usage: ConversationUsage | null;
   usageStatus: AsyncStatus;
@@ -731,6 +733,24 @@ export function ChatArea({
                   </button>
                   {modelOpen && (
                     <div className="model-picker" role="menu">
+                      {blends.length > 0 && (
+                        <div className="model-provider">
+                          <div className="model-provider-name">Blends</div>
+                          {blends.map((blendName) => (
+                            <button
+                              key={`blend:${blendName}`}
+                              className={blendName === agent.model ? 'active' : ''}
+                              onClick={() => {
+                                setModelOpen(false);
+                                void onSelectModel('blend', blendName);
+                              }}
+                            >
+                              <span>{blendName === 'auto' ? 'Auto' : blendName}</span>
+                              {blendName === agent.model && <Check size={14} />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {providers.map((provider) => {
                         const models = provider.available_models?.length
                           ? provider.available_models
