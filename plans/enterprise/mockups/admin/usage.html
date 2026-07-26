@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Usage &amp; cost — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a class="active" href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div><h1>Usage &amp; cost</h1><p>One database. Every member's chats &amp; tokens, collected centrally.</p></div>
+      <div style="display:flex;gap:10px"><button class="btn ghost">Export CSV</button><button class="btn">Schedule report</button></div>
+    </div>
+
+    <div class="cards">
+      <div class="card"><div class="lbl">Tokens · period</div><div class="val mono">48.2M</div><div class="delta up">▲ 12%</div></div>
+      <div class="card"><div class="lbl">Cost · period</div><div class="val mono">$1,914</div><div class="delta">of $3,000 cap</div></div>
+      <div class="card"><div class="lbl">Members reporting</div><div class="val">24 <span style="font-size:15px;color:var(--muted-2)">/ 24</span></div><div class="delta up">all reporting</div></div>
+      <div class="card"><div class="lbl">Devices reporting</div><div class="val">28 <span style="font-size:15px;color:var(--muted-2)">/ 31</span></div><div class="delta down">3 catching up (offline)</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph">
+        <h2>Usage</h2><div class="spacer"></div>
+        <div class="ctrl">Group by <span class="fake-select">member ▾</span></div>
+        <div class="ctrl">Members:
+          <span class="chip">All members <span class="x">▾</span></span>
+          <span class="chip add">+ add</span>
+        </div>
+        <div class="ctrl">Range <span class="seg"><button>24h</button><button>7d</button><button class="active">30d</button><button>90d</button></span></div>
+        <div class="ctrl">Bucket <span class="fake-select">day ▾</span></div>
+        <div class="ctrl">Metric <span class="fake-select">cost ($) ▾</span></div>
+      </div>
+      <div class="chart">
+        <svg viewBox="0 0 720 210" preserveAspectRatio="none">
+          <g stroke="#1c1c1c" stroke-width="1"><line x1="0" y1="40" x2="720" y2="40"/><line x1="0" y1="90" x2="720" y2="90"/><line x1="0" y1="140" x2="720" y2="140"/><line x1="0" y1="190" x2="720" y2="190"/></g>
+          <path d="M0,150 L48,146 L96,140 L144,134 L192,120 L240,126 L288,128 L336,110 L384,95 L432,102 L480,88 L528,80 L576,70 L624,74 L672,62 L720,58 L720,190 L0,190 Z" fill="rgba(79,140,255,.18)"/>
+          <path d="M0,168 L48,166 L96,162 L144,158 L192,150 L240,153 L288,155 L336,144 L384,138 L432,140 L480,132 L528,128 L576,122 L624,124 L672,118 L720,114 L720,190 L0,190 Z" fill="rgba(52,211,153,.16)"/>
+          <path d="M0,182 L48,181 L96,180 L144,179 L192,178 L240,180 L288,181 L336,177 L384,176 L432,178 L480,176 L528,175 L576,172 L624,173 L672,170 L720,168 L720,190 L0,190 Z" fill="rgba(248,214,109,.14)"/>
+          <path d="M0,150 L48,146 L96,140 L144,134 L192,120 L240,126 L288,128 L336,110 L384,95 L432,102 L480,88 L528,80 L576,70 L624,74 L672,62 L720,58" fill="none" stroke="#4f8cff" stroke-width="2"/>
+          <path d="M0,168 L48,166 L96,162 L144,158 L192,150 L240,153 L288,155 L336,144 L384,138 L432,140 L480,132 L528,128 L576,122 L624,124 L672,118 L720,114" fill="none" stroke="#34d399" stroke-width="2"/>
+          <path d="M0,182 L48,181 L96,180 L144,179 L192,178 L240,180 L288,181 L336,177 L384,176 L432,178 L480,176 L528,175 L576,172 L624,173 L672,170 L720,168" fill="none" stroke="#f8d66d" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="legend">
+        <span><i style="background:#4f8cff"></i>Engineering (12)</span>
+        <span><i style="background:#34d399"></i>Legal (4)</span>
+        <span><i style="background:#f8d66d"></i>Support (8)</span>
+        <span style="margin-left:auto;color:var(--muted-2)">Snapshot-upsert accounting · exactly-once · updated 2 min ago</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Breakdown · by member</div>
+      <table>
+        <thead><tr><th>Member</th><th>Team</th><th>Tokens</th><th>Cost</th><th>% of org</th><th>Trend</th></tr></thead>
+        <tbody>
+          <tr><td><div class="who"><span class="av">MA</span><div>Mai Anh<br/><small>mai.anh@nimbus.io</small></div></div></td><td>Engineering</td><td class="mono">3.9M</td><td class="mono">$180</td><td><div class="barcell"><span class="track"><i style="width:100%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">9.4%</span></div></td><td class="delta up">▲ 8%</td></tr>
+          <tr><td><div class="who"><span class="av">DK</span><div>Duy Khanh<br/><small>duy.k@nimbus.io</small></div></div></td><td>Engineering</td><td class="mono">3.1M</td><td class="mono">$142</td><td><div class="barcell"><span class="track"><i style="width:79%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">7.4%</span></div></td><td class="delta up">▲ 3%</td></tr>
+          <tr><td><div class="who"><span class="av">BC</span><div>Bao Chau<br/><small>b.chau@nimbus.io</small></div></div></td><td>Legal</td><td class="mono">2.7M</td><td class="mono">$126</td><td><div class="barcell"><span class="track"><i style="width:69%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">6.6%</span></div></td><td class="delta up">▲ 6%</td></tr>
+          <tr><td><div class="who"><span class="av">PH</span><div>Phuong Hoa<br/><small>p.hoa@nimbus.io</small></div></div></td><td>Legal</td><td class="mono">2.4M</td><td class="mono">$110</td><td><div class="barcell"><span class="track"><i style="width:61%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">5.7%</span></div></td><td class="delta down">▼ 2%</td></tr>
+          <tr><td><div class="who"><span class="av">HN</span><div>Ha Nguyen<br/><small>ha.n@nimbus.io</small></div></div></td><td>Support</td><td class="mono">1.9M</td><td class="mono">$88</td><td><div class="barcell"><span class="track"><i style="width:49%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">4.6%</span></div></td><td class="delta up">▲ 5%</td></tr>
+          <tr><td><div class="who"><span class="av">QT</span><div>Quang Trung<br/><small>q.trung@nimbus.io</small></div></div></td><td>Engineering</td><td class="mono">1.5M</td><td class="mono">$70</td><td><div class="barcell"><span class="track"><i style="width:38%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">3.7%</span></div></td><td class="delta up">▲ 1%</td></tr>
+          <tr><td><div class="who"><span class="av">KN</span><div>Kim Ngan<br/><small>k.ngan@nimbus.io</small></div></div></td><td>Engineering</td><td class="mono">1.4M</td><td class="mono">$64</td><td><div class="barcell"><span class="track"><i style="width:36%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">3.4%</span></div></td><td class="delta up">▲ 4%</td></tr>
+          <tr><td><div class="who"><span class="av">NP</span><div>Nghia Pham<br/><small>n.pham@nimbus.io</small></div></div></td><td>Engineering</td><td class="mono">1.3M</td><td class="mono">$60</td><td><div class="barcell"><span class="track"><i style="width:33%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">3.1%</span></div></td><td class="delta down">▼ 1%</td></tr>
+          <tr><td><div class="who"><span class="av">TL</span><div>Thu Lan<br/><small>thu.lan@nimbus.io</small></div></div></td><td>IT</td><td class="mono">1.2M</td><td class="mono">$54</td><td><div class="barcell"><span class="track"><i style="width:31%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">2.8%</span></div></td><td class="delta down">▼ 4%</td></tr>
+          <tr><td><div class="who"><span class="av">VT</span><div>Vy Tran<br/><small>vy.t@nimbus.io</small></div></div></td><td>Support</td><td class="mono">1.1M</td><td class="mono">$52</td><td><div class="barcell"><span class="track"><i style="width:28%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">2.7%</span></div></td><td class="delta up">▲ 2%</td></tr>
+          <tr><td><div class="who"><span class="av">LD</span><div>Linh Dao<br/><small>l.dao@nimbus.io</small></div></div></td><td>Support</td><td class="mono">0.9M</td><td class="mono">$44</td><td><div class="barcell"><span class="track"><i style="width:23%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">2.3%</span></div></td><td class="delta up">▲ 3%</td></tr>
+          <tr><td style="color:var(--muted)" colspan="2">… 13 other members</td><td class="mono">26.8M</td><td class="mono">$964</td><td><div class="barcell"><span class="track"><i style="width:76%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">47.6%</span></div></td><td class="delta">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="sub">By model</div>
+      <table>
+        <thead><tr><th>Model</th><th>Provider</th><th>Tokens</th><th>Cost</th><th>Requests</th></tr></thead>
+        <tbody>
+          <tr><td>claude-opus-4</td><td>Anthropic</td><td class="mono">20.1M</td><td class="mono">$942</td><td class="mono">16,480</td></tr>
+          <tr><td>claude-sonnet-4</td><td>Anthropic</td><td class="mono">14.2M</td><td class="mono">$460</td><td class="mono">38,220</td></tr>
+          <tr><td>gpt-4o</td><td>OpenAI</td><td class="mono">6.6M</td><td class="mono">$248</td><td class="mono">12,110</td></tr>
+          <tr><td>claude-haiku-4</td><td>Anthropic</td><td class="mono">2.5M</td><td class="mono">$88</td><td class="mono">21,640</td></tr>
+          <tr><td>llama-3.1-70b</td><td>local · vLLM</td><td class="mono">3.4M</td><td class="mono">$104</td><td class="mono">9,540</td></tr>
+          <tr><td>mistral-large</td><td>local · vLLM</td><td class="mono">1.4M</td><td class="mono">$72</td><td class="mono">4,905</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel" style="padding:14px 16px">
+      <span class="hint"><b>Privacy boundary.</b> Only token/cost counts and metadata (session &amp; agent identifiers hashed, model names, timestamps) are collected into this database. Conversation content, titles, prompts and responses never leave members' machines. "Collect all chats" means chat <i>counts and token totals</i> — not chat <i>content</i>.</span>
+    </div>
+
+    <div class="acaption">MOCKUP · Admin <b>Usage &amp; cost</b> — one PostgreSQL of every member's tokens/cost, snapshot-upsert (exactly-once, no double-counting on retries), offline devices catch up on reconnect. Grafana-style controls mirror local analytics.</div>
+  </main>
+</div>
+</body>
+</html>

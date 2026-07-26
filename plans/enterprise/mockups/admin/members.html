@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Members — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a class="active" href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div><h1>Members</h1><p>Org-provisioned accounts. Invite, assign roles, suspend.</p></div>
+      <div style="display:flex;gap:10px"><button class="btn ghost">Import CSV</button><button class="btn">Invite member</button></div>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Invitations · 5 pending</div>
+      <table>
+        <thead><tr><th>Email</th><th>Role</th><th>Invited by</th><th>Sent</th><th>Expires</th><th style="text-align:right">Actions</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="mono">r.giang@nimbus.io <small style="color:var(--muted-2)">· Okta domain</small></td>
+            <td><span class="rp member">member</span></td>
+            <td>Thu Lan</td>
+            <td>2 days ago</td>
+            <td>in 5 days</td>
+            <td style="text-align:right"><button class="btn ghost sm">Resend</button> <button class="btn danger sm">Revoke</button></td>
+          </tr>
+          <tr>
+            <td class="mono">t.bao@nimbus.io</td>
+            <td><span class="rp auditor">auditor</span></td>
+            <td>Thu Lan</td>
+            <td>1 day ago</td>
+            <td>in 6 days</td>
+            <td style="text-align:right"><button class="btn ghost sm">Resend</button> <button class="btn danger sm">Revoke</button></td>
+          </tr>
+          <tr>
+            <td class="mono">n.dung@nimbus.io <small style="color:var(--muted-2)">· pending SCIM push</small></td>
+            <td><span class="rp member">member</span></td>
+            <td>system · SCIM</td>
+            <td>3h ago</td>
+            <td>auto</td>
+            <td style="text-align:right"><button class="btn ghost sm">Resend</button> <button class="btn danger sm">Revoke</button></td>
+          </tr>
+          <tr>
+            <td class="mono">s.vu@nimbus.io <small style="color:var(--muted-2)">· Okta domain</small></td>
+            <td><span class="rp member">member</span></td>
+            <td>Bao Chau</td>
+            <td>5h ago</td>
+            <td>in 6 days</td>
+            <td style="text-align:right"><button class="btn ghost sm">Resend</button> <button class="btn danger sm">Revoke</button></td>
+          </tr>
+          <tr>
+            <td class="mono">d.trang@nimbus.io <small style="color:var(--muted-2)">· Okta domain</small></td>
+            <td><span class="rp auditor">auditor</span></td>
+            <td>Thu Lan</td>
+            <td>6h ago</td>
+            <td>in 6 days</td>
+            <td style="text-align:right"><button class="btn ghost sm">Resend</button> <button class="btn danger sm">Revoke</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="ph">
+        <h2>All members · 24</h2><div class="spacer"></div>
+        <div class="ctrl"><span class="fake-select">role: all ▾</span></div>
+        <div class="ctrl"><span class="fake-select">status: all ▾</span></div>
+        <div class="ctrl"><span class="fake-select">auth: all ▾</span></div>
+      </div>
+      <table>
+        <thead><tr><th>Member</th><th>Role</th><th>Status</th><th>Devices</th><th>Tokens 30d</th><th>Cost 30d</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><div class="who"><span class="av">MA</span><div><a href="member-detail.html">Mai Anh</a><br/><small>mai.anh@nimbus.io · Okta</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td>2</td><td class="mono">3.9M</td><td class="mono">$180</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">TL</span><div>Thu Lan<br/><small>thu.lan@nimbus.io · Okta</small></div></div></td><td><span class="rp admin">org_admin</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td>1</td><td class="mono">1.2M</td><td class="mono">$54</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">DK</span><div>Duy Khanh<br/><small>duy.k@nimbus.io · Okta</small></div></div></td><td><span class="rp manager">org_manager</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td>1</td><td class="mono">3.1M</td><td class="mono">$142</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">BC</span><div>Bao Chau<br/><small>b.chau@nimbus.io · Okta</small></div></div></td><td><span class="rp manager">org_manager</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td>1</td><td class="mono">2.7M</td><td class="mono">$126</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">PH</span><div>Phuong Hoa<br/><small>p.hoa@nimbus.io · local</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td>2</td><td class="mono">2.4M</td><td class="mono">$110</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">HN</span><div>Ha Nguyen<br/><small>ha.n@nimbus.io · SCIM</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td>1</td><td class="mono">1.9M</td><td class="mono">$88</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">QT</span><div>Quang Trung<br/><small>q.trung@nimbus.io · Okta</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td>1</td><td class="mono">1.5M</td><td class="mono">$70</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">KN</span><div>Kim Ngan<br/><small>k.ngan@nimbus.io · Okta</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td>1</td><td class="mono">1.4M</td><td class="mono">$64</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">NP</span><div>Nghia Pham<br/><small>n.pham@nimbus.io · local</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td>2</td><td class="mono">1.3M</td><td class="mono">$60</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">VT</span><div>Vy Tran<br/><small>vy.t@nimbus.io · SCIM</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td>2</td><td class="mono">1.1M</td><td class="mono">$52</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">LD</span><div>Linh Dao<br/><small>l.dao@nimbus.io · SCIM</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td>1</td><td class="mono">0.9M</td><td class="mono">$44</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">TB</span><div>Tuan Bao<br/><small>t.bao@nimbus.io · Okta</small></div></div></td><td><span class="rp auditor">auditor</span></td><td><span class="st invited"><span class="d"></span>Invited</span></td><td>0</td><td class="mono">—</td><td class="mono">—</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">SV</span><div>Son Vu<br/><small>s.vu@nimbus.io · Okta</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st invited"><span class="d"></span>Invited</span></td><td>0</td><td class="mono">—</td><td class="mono">—</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td><div class="who"><span class="av">LM</span><div>Le Minh<br/><small>l.minh@nimbus.io · Okta</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st suspended"><span class="d"></span>Suspended</span></td><td>1</td><td class="mono">0.8M</td><td class="mono">$36</td><td style="color:var(--muted-2)">⋯</td></tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 16px"><span class="hint">Showing 14 of 24 · <a href="#" style="color:var(--accent)">load more</a> — Accounts are created by the organization; members do not self-sign-up. org_manager can view every member's row here; only org_admin can invite, change roles, or suspend.</span></div>
+    </div>
+
+    <div class="acaption">MOCKUP · Admin <b>Members</b> — org-provisioned accounts (invite / import CSV / SCIM), role assignment, suspend. Auth source shown per member (Okta / local / SCIM). Counts and metadata only — never conversation content.</div>
+  </main>
+</div>
+</body>
+</html>

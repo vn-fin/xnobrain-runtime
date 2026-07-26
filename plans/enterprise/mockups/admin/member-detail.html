@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Member · Mai Anh — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a class="active" href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div>
+        <p style="margin:0 0 6px"><a href="members.html" style="color:var(--muted)">← Members</a></p>
+        <h1>Mai Anh</h1><p>mai.anh@nimbus.io · Okta SSO</p>
+      </div>
+      <div style="display:flex;gap:10px"><button class="btn ghost">Reset session</button><button class="btn ghost">Change role ▾</button><button class="btn danger">Suspend</button></div>
+    </div>
+
+    <div class="cards">
+      <div class="card"><div class="lbl">Role</div><div class="val" style="font-size:18px"><span class="rp member">member</span></div></div>
+      <div class="card"><div class="lbl">Status</div><div class="val" style="font-size:18px"><span class="st active"><span class="d"></span>Active</span></div></div>
+      <div class="card"><div class="lbl">Devices</div><div class="val">3</div><div class="delta">1 container · 2 PC</div></div>
+      <div class="card"><div class="lbl">Cost · 30d</div><div class="val mono">$180</div><div class="delta">of $200 seat cap · 3.9M tokens</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Identity</div>
+      <table>
+        <tbody>
+          <tr><th style="width:220px">Email</th><td>mai.anh@nimbus.io</td></tr>
+          <tr><th>Auth source</th><td>Okta SSO <span class="chip" style="margin-left:6px">OIDC</span></td></tr>
+          <tr><th>IdP groups</th><td class="mono">nimbus-eng</td></tr>
+          <tr><th>SCIM externalId</th><td class="mono">00u8f3k1q9ZxYq2p7</td></tr>
+          <tr><th>Joined</th><td>2026-03-11</td></tr>
+          <tr><th>Last active</th><td>2 min ago</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="ph">
+        <h2>Usage</h2><div class="spacer"></div>
+        <div class="ctrl">Range <span class="seg"><button>7d</button><button class="active">30d</button><button>90d</button></span></div>
+        <div class="ctrl">Bucket <span class="fake-select">day ▾</span></div>
+        <div class="ctrl">Metric <span class="fake-select">cost ($) ▾</span></div>
+      </div>
+      <div class="chart">
+        <svg viewBox="0 0 720 210" preserveAspectRatio="none">
+          <g stroke="#1c1c1c" stroke-width="1"><line x1="0" y1="40" x2="720" y2="40"/><line x1="0" y1="90" x2="720" y2="90"/><line x1="0" y1="140" x2="720" y2="140"/><line x1="0" y1="190" x2="720" y2="190"/></g>
+          <path d="M0,165 L48,158 L96,162 L144,150 L192,155 L240,138 L288,145 L336,128 L384,132 L432,118 L480,124 L528,106 L576,110 L624,92 L672,86 L720,72 L720,190 L0,190 Z" fill="rgba(79,140,255,.18)"/>
+          <path d="M0,165 L48,158 L96,162 L144,150 L192,155 L240,138 L288,145 L336,128 L384,132 L432,118 L480,124 L528,106 L576,110 L624,92 L672,86 L720,72" fill="none" stroke="#4f8cff" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="sub" style="border-top:1px solid var(--border)">By agent</div>
+      <table>
+        <thead><tr><th>Agent</th><th>Tokens 30d</th><th>Cost 30d</th></tr></thead>
+        <tbody>
+          <tr><td>Research Copilot</td><td class="mono">2.0M</td><td class="mono">$92</td></tr>
+          <tr><td>Contract Reviewer</td><td class="mono">1.1M</td><td class="mono">$51</td></tr>
+          <tr><td>Release Notes Bot</td><td class="mono">0.5M</td><td class="mono">$24</td></tr>
+          <tr><td>Incident Triage</td><td class="mono">0.3M</td><td class="mono">$13</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Devices</div>
+      <table>
+        <thead><tr><th>Device</th><th>Kind</th><th>Status</th><th>Last seen</th><th>Version</th></tr></thead>
+        <tbody>
+          <tr><td>mai-anh-box <small class="mono" style="color:var(--muted-2)">· dev_7c1a</small></td><td><span class="chip">Incus container</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td>2 min ago</td><td class="mono">v0.9.4</td></tr>
+          <tr><td>MAI-LAPTOP <small class="mono" style="color:var(--muted-2)">· dev_2f9d</small></td><td><span class="chip">PC</span></td><td><span class="st offline"><span class="d"></span>Offline</span></td><td>6h ago · outbox spooled</td><td class="mono">v0.9.3</td></tr>
+          <tr><td>MAI-MBP <small class="mono" style="color:var(--muted-2)">· dev_b840</small></td><td><span class="chip">PC</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td>18 min ago</td><td class="mono">v0.9.4</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel audit">
+      <div class="sub">Recent activity for this member</div>
+      <div class="row"><span class="t mono">10:42:07</span><span class="ev"><b>user.login</b> — OIDC (Okta) <span class="tagline">from 10.4.2.19 · MFA satisfied</span></span><span class="actor">Mai Anh · member</span></div>
+      <div class="row"><span class="t mono">09:31:12</span><span class="ev"><b>device.claimed</b> — MAI-MBP <span class="tagline">anonymous → account-claimed</span></span><span class="actor">Mai Anh · member</span></div>
+      <div class="row"><span class="t mono">Jul 24 16:48</span><span class="ev"><b>usage.snapshot</b> — 128 sessions upserted <span class="tagline">exactly-once · watermark advanced</span></span><span class="actor">system · ingest</span></div>
+      <div class="row"><span class="t mono">Jul 23 08:15</span><span class="ev"><b>device.claimed</b> — MAI-LAPTOP <span class="tagline">anonymous → account-claimed</span></span><span class="actor">Mai Anh · member</span></div>
+      <div class="row"><span class="t mono">Jul 22 14:02</span><span class="ev"><b>role.assigned</b> — member <span class="tagline">via group “nimbus-eng”</span></span><span class="actor">system · SCIM</span></div>
+      <div class="row"><span class="t mono">Jul 22 14:01</span><span class="ev"><b>user.provisioned</b> — account created <span class="tagline">SCIM push from Okta</span></span><span class="actor">system · SCIM</span></div>
+    </div>
+
+    <div class="acaption">MOCKUP · Admin <b>Member detail</b> — one member's identity, usage, devices and activity. Usage is aggregated centrally from the member's device snapshots; conversation content stays on their machines.</div>
+  </main>
+</div>
+</body>
+</html>

@@ -42,7 +42,7 @@ workspace files, portable bundles. See `brain4all/routes/setup.py` for the curre
 | # | Plan | Priority | Depends on | Docs |
 |---|------|----------|-----------|------|
 | 005 | **Messaging channels** (Telegram/Discord/Slack/WhatsApp/Signal via the gateway) | P1 | — | [README](005_messaging_channels/README.md) · [findings](005_messaging_channels/findings.md) · [architecture](005_messaging_channels/architecture.md) · [approaches](005_messaging_channels/approaches.md) · [implementation](005_messaging_channels/implementation.md) · [validation](005_messaging_channels/validation.md) |
-| 006 | **Voice I/O** (TTS speak + STT transcribe) | P2 | — | [README](006_voice_io/README.md) · [findings](006_voice_io/findings.md) · [architecture](006_voice_io/architecture.md) · [approaches](006_voice_io/approaches.md) · [implementation](006_voice_io/implementation.md) · [validation](006_voice_io/validation.md) |
+| 006 | **Voice I/O** — ⛔ relocated to `plans/enterprise/E04` (reference only) | — | — | [README](006_voice_io/README.md) · [findings](006_voice_io/findings.md) · [architecture](006_voice_io/architecture.md) · [approaches](006_voice_io/approaches.md) · [implementation](006_voice_io/implementation.md) · [validation](006_voice_io/validation.md) |
 | 007 | **Plugins & hooks + native tool toggles** | P2 | — | [README](007_plugins_and_hooks/README.md) · [findings](007_plugins_and_hooks/findings.md) · [architecture](007_plugins_and_hooks/architecture.md) · [approaches](007_plugins_and_hooks/approaches.md) · [implementation](007_plugins_and_hooks/implementation.md) · [validation](007_plugins_and_hooks/validation.md) |
 | 008 | **Cron delivery targets & blueprints** | P2 | 005 (for channel targets); Kanban 001–004 (for Kanban target) | [README](008_cron_delivery_and_blueprints/README.md) · [findings](008_cron_delivery_and_blueprints/findings.md) · [architecture](008_cron_delivery_and_blueprints/architecture.md) · [approaches](008_cron_delivery_and_blueprints/approaches.md) · [implementation](008_cron_delivery_and_blueprints/implementation.md) · [validation](008_cron_delivery_and_blueprints/validation.md) |
 | 009 | **Usage analytics & budgets** | P3 | — | [README](009_usage_analytics/README.md) · [findings](009_usage_analytics/findings.md) · [architecture](009_usage_analytics/architecture.md) · [approaches](009_usage_analytics/approaches.md) · [implementation](009_usage_analytics/implementation.md) · [validation](009_usage_analytics/validation.md) |
@@ -69,7 +69,15 @@ self-contained). 009 is implemented and verified (2026-07-25).
 - [ ] Security: bot tokens never appear in responses, logs, traces, or portable bundles (dedicated test).
 - [ ] `validation.md` acceptance passed (real Telegram round-trip) with evidence.
 
-## 006 — Voice I/O
+## 006 — Voice I/O — ⛔ RELOCATED TO ENTERPRISE
+
+**Product decision (2026-07-25): Voice I/O ships as an enterprise capability, not
+local OSS.** Delivery moved to `plans/enterprise/E04_voice_io_enterprise/` (central
+voice gateway with org-managed provider keys, entitlement-gated UI, minutes metered
+into the central usage database). The six files below remain as the verified
+**Hermes-capability reference** (audio endpoints, registries, UI touchpoints) that
+E04 builds on — do not implement this plan locally.
+
 
 - [ ] Phase 0: pin Hermes + compatibility test for `/api/audio/{speak,transcribe}`, `/api/audio/elevenlabs/voices`, and the `tts_registry`/`transcription_registry` `list_providers` symbols.
 - [ ] `integrations/voice.py` adapter over the Hermes audio API/tools; per-agent voice config in `config.yaml` (enabled/provider/voice-id) via the additive upstream hook the plan specifies.

@@ -1,0 +1,70 @@
+/* ============================================================================
+   Enterprise layer — sits ON TOP of the real app.css (the shipping stylesheet).
+   Member mockups link app.css FIRST, then this. Only the enterprise-specific
+   additions live here; everything else comes from the real app styles + tokens.
+   ========================================================================== */
+
+/* Wrap the real .app grid so we can add the org identity strip above it. */
+.ent-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.ent-shell .app { flex: 1; height: auto; min-height: 0; }
+
+/* Org identity strip — the always-on enterprise marker above the app. */
+.ent-strip {
+  flex: 0 0 auto;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+.ent-strip .org { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 600; }
+.ent-strip .logo {
+  width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center;
+  background: var(--accent); color: #04122e; font-weight: 700; font-size: 11px;
+}
+.ent-strip .pill { padding: 2px 9px; border: 1px solid var(--border-2); border-radius: 999px; font-size: 11px; }
+.ent-strip .pill.plan { color: var(--blue); border-color: #1f3a52; background: #0a1622; }
+.ent-strip .spacer { flex: 1; }
+.ent-strip .budget { display: flex; align-items: center; gap: 8px; }
+.ent-strip .ebar { width: 120px; height: 6px; border-radius: 999px; background: var(--panel-3); overflow: hidden; }
+.ent-strip .ebar > i { display: block; height: 100%; background: var(--green); }
+.ent-strip .who { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.ent-strip .avatar {
+  width: 22px; height: 22px; border-radius: 50%; background: #2b3550; color: #cfe0ff;
+  display: grid; place-items: center; font-size: 11px; font-weight: 600;
+}
+
+/* Small enterprise tags reused in top bars / view headers. */
+.ent-tag { font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border-2); color: var(--muted); }
+.ent-tag.blue { color: var(--blue); border-color: #1f3a52; background: #0a1622; }
+.ent-tag.warn { color: var(--yellow); border-color: #4a411f; background: #171204; }
+
+/* An enterprise callout card reused inside analytics / settings views. Styled to
+   match the app's card surfaces (system-card / ana panels). */
+.ent-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 16px;
+}
+.ent-card .ent-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ent-card .ent-card-head .dotb { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.ent-card strong { font-size: 14px; }
+.ent-card .ent-kv { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-top: 1px solid var(--border); }
+.ent-card .ent-kv:first-of-type { border-top: 0; }
+.ent-card .ent-kv span { color: var(--muted); }
+.ent-note { color: var(--muted); font-size: 12.5px; line-height: 1.55; margin: 8px 0 0; }
+.ent-badge { font-size: 11px; padding: 2px 9px; border-radius: 6px; color: var(--green); background: #0f241b; }
+.ent-badge.muted { color: var(--muted); background: var(--hover); }
+
+.mock-caption {
+  padding: 10px 18px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted-2);
+  background: var(--panel);
+}

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Member · Chat — Brain4All Enterprise (mockup)</title>
+<!-- The REAL shipping stylesheet, then the thin enterprise layer. -->
+<link rel="stylesheet" href="../assets/app.css" />
+<link rel="stylesheet" href="../assets/ent.css" />
+<style>
+  /* Mockup-only: icon glyphs stand in for the app's lucide line icons. */
+  .mi { display:inline-grid; place-items:center; width:18px; height:18px; opacity:.85; font-size:15px; line-height:1; }
+</style>
+</head>
+<body>
+<div class="ent-shell">
+  <!-- Enterprise identity strip — the one always-on difference vs localhost -->
+  <div class="ent-strip">
+    <span class="org"><span class="logo">N</span> Nimbus Robotics</span>
+    <span class="pill plan">Enterprise</span>
+    <span class="pill">Region: eu-central</span>
+    <span class="spacer"></span>
+    <span class="budget"><span>Org budget</span><span class="ebar"><i style="width:62%"></i></span><span>$310 / $500</span></span>
+    <span class="who"><span class="avatar">MA</span><span>Mai Anh · Member</span></span>
+  </div>
+
+  <div class="app" style="--right:330px">
+    <!-- LEFT PANEL — real .left-panel structure -->
+    <aside class="left-panel">
+      <div class="brand">
+        <span>Brain4All</span>
+        <button class="icon-button" title="Toggle sidebar"><span class="mi">‹‹</span></button>
+      </div>
+
+      <nav class="main-nav">
+        <a class="nav-row" href="kanban.html"><span class="mi">▦</span><span>Kanban</span></a>
+        <a class="nav-row" href="teams.html"><span class="mi">◑</span><span>Teams</span></a>
+        <a class="nav-row" href="analytics.html"><span class="mi">▤</span><span>Analytics</span></a>
+        <a class="nav-row" href="settings.html"><span class="mi">⚙</span><span>Settings</span></a>
+      </nav>
+
+      <div class="history-section">
+        <div class="section-title agents-title"><span>Assistants</span>
+          <span class="agents-title-actions"><button class="icon-button" title="Search"><span class="mi">⌕</span></button><button class="icon-button" title="New"><span class="mi">＋</span></button></span>
+        </div>
+
+        <div class="agent-row active"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Research Copilot</strong><small>hermes-4-70b · blend: fast</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Contract Reviewer</strong><small>hermes-4-405b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot" style="background:var(--yellow)"></span><span><strong>Support Triage</strong><small>hermes-4-70b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Sales Assistant</strong><small>hermes-4-70b · blend: fast</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Data Analyst</strong><small>hermes-4-405b · blend: balanced</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Onboarding Bot</strong><small>hermes-4-70b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>QA Reviewer</strong><small>hermes-4-405b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+
+        <div class="section-title recent-title"><span class="mi">⟳</span> Recent</div>
+        <div class="history-row"><button class="history-row-main">Q3 supplier risk memo</button></div>
+        <div class="history-row"><button class="history-row-main">Rewrite onboarding email</button></div>
+        <div class="history-row"><button class="history-row-main">Summarize incident #4821</button></div>
+        <div class="history-row"><button class="history-row-main">Compare MSA redline v3 vs v4</button></div>
+        <div class="history-row"><button class="history-row-main">Draft SOC 2 evidence checklist</button></div>
+        <div class="history-row"><button class="history-row-main">Weekly finance channel digest</button></div>
+      </div>
+
+      <div class="left-footer">
+        <div class="theme-switcher" role="group">
+          <button class="active" title="Light"><span class="mi">☀</span></button>
+          <button title="Dark"><span class="mi">☾</span></button>
+          <button title="Auto"><span class="mi">▣</span></button>
+        </div>
+        <div class="lang-switcher"><span class="mi">🌐</span><select aria-label="Language"><option>English</option><option>Tiếng Việt</option></select></div>
+      </div>
+    </aside>
+
+    <!-- CENTER — real .chat-area grid (top-bar / tabs / canvas / composer) -->
+    <main class="chat-area">
+      <header class="top-bar">
+        <div class="agent-switch">
+          <button><span class="mi">🤖</span> Research Copilot <span class="mi">▾</span></button>
+          <span>hermes-4-70b</span>
+        </div>
+        <div class="top-actions">
+          <button title="Edit assistant"><span class="mi">✎</span></button>
+          <button title="Runtime config"><span class="mi">⚙</span></button>
+          <button title="Test"><span class="mi">◔</span></button>
+          <button title="Delete"><span class="mi">🗑</span></button>
+        </div>
+      </header>
+
+      <div class="conversation-tabs">
+        <div class="chat-tab active"><span class="mi" style="width:14px;height:14px">✎</span><span>Q3 supplier risk memo</span><span class="chat-tab-close"><span class="mi" style="width:13px;height:13px">✕</span></span></div>
+        <div class="chat-tab"><span class="mi" style="width:14px;height:14px">✎</span><span>Vendor comparison</span><span class="chat-tab-close"><span class="mi" style="width:13px;height:13px">✕</span></span></div>
+        <button class="chat-tab add" title="New conversation"><span class="mi">＋</span></button>
+      </div>
+
+      <div class="message-canvas">
+        <div class="user-bubble">Pull the token spend for our two supplier-review agents this week and flag anything over budget.</div>
+
+        <article class="assistant-message">
+          <div class="message-content">
+            <p>I checked both agents against the org budget your admin set. Contract Reviewer is the heavier one this week — here's the breakdown.</p>
+            <pre class="message-code-block"><code>Contract Reviewer   412k tok   $6.90   ▲ 38%
+Support Triage       88k tok   $1.20   ▼ 4%
+week total          500k tok   $8.10   (org cap $12/wk → OK)</code></pre>
+            <p>Nothing is over the weekly cap. Contract Reviewer's spike lines up with the 40-page MSA you uploaded Tuesday.</p>
+          </div>
+          <div class="message-actions">
+            <button title="Copy"><span class="mi">⧉</span></button>
+            <button title="Good response"><span class="mi">👍</span></button>
+            <button title="Bad response"><span class="mi">👎</span></button>
+            <button title="Retry"><span class="mi">↻</span></button>
+            <button title="More"><span class="mi">⋯</span></button>
+          </div>
+        </article>
+      </div>
+
+      <footer class="composer-wrap">
+        <div class="composer-stack">
+          <div class="composer">
+            <textarea class="composer-input" rows="1" placeholder="Message Research Copilot…">Draft a one-paragraph summary for the finance channel.</textarea>
+            <div class="composer-row">
+              <div class="composer-add-control"><button class="composer-icon" title="Attach or create file"><span class="mi">＋</span></button></div>
+              <button class="composer-access" title="Approval mode"><span class="mi" style="width:15px;height:15px">⚠</span> Full access <span class="mi" style="width:14px;height:14px">▾</span></button>
+              <div class="composer-row-right">
+                <div class="composer-model-control">
+                  <button class="composer-model" title="Model and reasoning"><span class="mi" style="width:14px;height:14px">◍</span> blend: fast <span class="mi" style="width:14px;height:14px">▾</span></button>
+                </div>
+                <span class="composer-divider"></span>
+                <button class="send-round" title="Send"><span class="mi">↑</span></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-footer-meta">
+            <div class="work-mode-status"><span class="mi" style="width:14px;height:14px">💻</span> Work locally</div>
+            <div class="conversation-quota ready" title="Managed by your organization">
+              <span class="mi" style="width:14px;height:14px">◔</span>
+              <span class="quota-model">hermes-4-70b</span>
+              <span class="quota-window"><span>Seat</span><strong>67%</strong><small>$8.10 / $12.00 wk</small></span>
+              <span class="quota-window"><span>Org</span><strong>62%</strong><small>$310 / $500</small></span>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+    <!-- RIGHT PANEL — real .right-panel structure + one enterprise card -->
+    <aside class="right-panel">
+      <div class="right-resizer"></div>
+      <div class="right-head"><strong>Research Copilot</strong><button class="icon-button" title="Close"><span class="mi">✕</span></button></div>
+      <div class="right-tabs"><button class="active">Skills</button><button>Runtime</button></div>
+
+      <section class="panel-section">
+        <div class="skills-toolbar"><span class="skills-toolbar-title">Agent skills</span><button class="icon-button" title="Add skill"><span class="mi">＋</span></button></div>
+        <p class="skills-hint">4 skills enabled for this assistant.</p>
+        <div class="skill-list">
+          <div class="skill-row"><div class="skill-item-main"><strong>web-search</strong><small>Search the web and cite sources</small></div><label class="toggle"><input type="checkbox" checked /><span></span></label></div>
+          <div class="skill-row"><div class="skill-item-main"><strong>pdf-extract</strong><small>Read and summarize PDF documents</small></div><label class="toggle"><input type="checkbox" checked /><span></span></label></div>
+          <div class="skill-row"><div class="skill-item-main"><strong>spreadsheet</strong><small>Analyze CSV / XLSX data</small></div><label class="toggle"><input type="checkbox" checked /><span></span></label></div>
+          <div class="skill-row"><div class="skill-item-main"><strong>voice-io</strong><small>Speech in / out · Enterprise</small></div><label class="toggle"><input type="checkbox" checked /><span></span></label></div>
+        </div>
+
+        <div class="ent-card" style="margin-top:16px">
+          <div class="ent-card-head"><span class="dotb"></span><strong>Organization</strong></div>
+          <div class="ent-kv"><span>Tenant</span><b>Nimbus Robotics</b></div>
+          <div class="ent-kv"><span>Signed in via</span><b>Okta SSO</b></div>
+          <div class="ent-kv"><span>Role</span><b>Member</b></div>
+          <div class="ent-kv"><span>Provider keys</span><b>Managed by org</b></div>
+          <div class="ent-kv"><span>Voice I/O</span><span class="ent-badge">On · Enterprise</span></div>
+          <p class="ent-note">Usage is reported to your organization — token &amp; cost counts only, never your conversation content. Models, budgets and keys are set by your org admin.</p>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <div class="mock-caption">MOCKUP · Member <b>chat</b> — the real localhost app (shipping <code>app.css</code>, real DOM) plus the org strip, org-managed keys, seat + org budget in the footer, and an Organization card in the panel.</div>
+</div>
+</body>
+</html>

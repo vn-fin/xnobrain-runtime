@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Teams — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a class="active" href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div><h1>Teams</h1><p>Multi-agent teams across the org — read-only.</p></div>
+      <div class="scope">Viewing: <span class="who-mini">All users</span> <span style="color:var(--muted-2)">▾</span></div>
+    </div>
+
+    <div class="viewonly">🔒 View-only — admins can inspect members' multi-agent teams and run history but cannot start, stop or edit them.<span class="spacer"></span><span class="scope">Viewing: <span class="who-mini">All users</span> <span style="color:var(--muted-2)">▾</span></span></div>
+
+    <div class="cards">
+      <div class="card"><div class="lbl">Teams</div><div class="val">14</div><div class="delta up">+2 this month</div></div>
+      <div class="card"><div class="lbl">Runs · 30d</div><div class="val mono">2,652</div><div class="delta up">▲ 11%</div></div>
+      <div class="card"><div class="lbl">Running now</div><div class="val">3</div><div class="delta">across 3 members</div></div>
+      <div class="card"><div class="lbl">Failed · 24h</div><div class="val">2</div><div class="delta down">0.8% of runs</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph">
+        <h2>Teams</h2><div class="spacer"></div>
+        <div class="ctrl"><span class="fake-select">owner: all ▾</span></div>
+        <div class="ctrl"><span class="fake-select">status: all ▾</span></div>
+      </div>
+      <table>
+        <thead><tr><th>Team</th><th>Owner</th><th>Members</th><th>Orchestrator</th><th>Runs 30d</th><th>Last run</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Support Frontline</td><td><div class="who"><span class="av">HN</span><div>Ha Nguyen</div></div></td><td>6 agents</td><td>Support Deflector</td><td class="mono">1,540</td><td>just now</td><td><span class="st active"><span class="d"></span>Active</span></td></tr>
+          <tr><td>Incident Response</td><td><div class="who"><span class="av">QT</span><div>Quang Trung</div></div></td><td>5 agents</td><td>Incident Triage</td><td class="mono">342</td><td>3m ago</td><td><span class="st active"><span class="d"></span>Active</span></td></tr>
+          <tr><td>Research Squad</td><td><div class="who"><span class="av">MA</span><div>Mai Anh</div></div></td><td>4 agents</td><td>Research Copilot</td><td class="mono">210</td><td>8m ago</td><td><span class="st active"><span class="d"></span>Active</span></td></tr>
+          <tr><td>Release Pipeline</td><td><div class="who"><span class="av">DK</span><div>Duy Khanh</div></div></td><td>4 agents</td><td>Release Notes Bot</td><td class="mono">128</td><td>12m ago</td><td><span class="st active"><span class="d"></span>Active</span></td></tr>
+          <tr><td>Sales Enablement</td><td><div class="who"><span class="av">KN</span><div>Kim Ngan</div></div></td><td>3 agents</td><td>Sales Brief Writer</td><td class="mono">118</td><td>25m ago</td><td><span class="st active"><span class="d"></span>Active</span></td></tr>
+          <tr><td>Contract Review Cell</td><td><div class="who"><span class="av">BC</span><div>Bao Chau</div></div></td><td>3 agents</td><td>Contract Reviewer</td><td class="mono">96</td><td>1h ago</td><td><span class="st active"><span class="d"></span>Active</span></td></tr>
+          <tr><td>QA Gatekeeper</td><td><div class="who"><span class="av">NP</span><div>Nghia Pham</div></div></td><td>3 agents</td><td>QA Test Planner</td><td class="mono">74</td><td>2h ago</td><td><span class="st offline"><span class="d"></span>Idle</span></td></tr>
+          <tr><td>Onboarding Flow</td><td><div class="who"><span class="av">LD</span><div>Linh Dao</div></div></td><td>2 agents</td><td>Onboarding Guide</td><td class="mono">44</td><td>1d ago</td><td><span class="st offline"><span class="d"></span>Idle</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Recent runs · across the org</div>
+      <table>
+        <thead><tr><th>Run</th><th>Team</th><th>Owner</th><th>Status</th><th>Duration</th><th>When</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">run_9f4c21</td><td>Support Frontline</td><td><div class="who"><span class="av">HN</span><div>Ha Nguyen</div></div></td><td><span class="chip" style="color:var(--blue);border-color:#1f3350;background:#0a1420">running</span></td><td class="mono">0:41</td><td>just now</td></tr>
+          <tr><td class="mono">run_9f4b0e</td><td>Incident Response</td><td><div class="who"><span class="av">QT</span><div>Quang Trung</div></div></td><td><span class="chip" style="color:var(--green);border-color:#1c3a34;background:#0a1613">done</span></td><td class="mono">1:12</td><td>3m ago</td></tr>
+          <tr><td class="mono">run_9f49a7</td><td>Research Squad</td><td><div class="who"><span class="av">MA</span><div>Mai Anh</div></div></td><td><span class="chip" style="color:var(--green);border-color:#1c3a34;background:#0a1613">done</span></td><td class="mono">2:38</td><td>8m ago</td></tr>
+          <tr><td class="mono">run_9f4712</td><td>Release Pipeline</td><td><div class="who"><span class="av">DK</span><div>Duy Khanh</div></div></td><td><span class="chip" style="color:var(--green);border-color:#1c3a34;background:#0a1613">done</span></td><td class="mono">0:54</td><td>12m ago</td></tr>
+          <tr><td class="mono">run_9f4588</td><td>Sales Enablement</td><td><div class="who"><span class="av">KN</span><div>Kim Ngan</div></div></td><td><span class="chip" style="color:var(--green);border-color:#1c3a34;background:#0a1613">done</span></td><td class="mono">1:03</td><td>25m ago</td></tr>
+          <tr><td class="mono">run_9f43d1</td><td>QA Gatekeeper</td><td><div class="who"><span class="av">NP</span><div>Nghia Pham</div></div></td><td><span class="chip" style="color:var(--danger);border-color:#4a2020;background:#2a1414">failed</span></td><td class="mono">0:19</td><td>52m ago</td></tr>
+          <tr><td class="mono">run_9f4290</td><td>Contract Review Cell</td><td><div class="who"><span class="av">BC</span><div>Bao Chau</div></div></td><td><span class="chip" style="color:var(--green);border-color:#1c3a34;background:#0a1613">done</span></td><td class="mono">3:47</td><td>1h ago</td></tr>
+          <tr><td class="mono">run_9f4103</td><td>Research Squad</td><td><div class="who"><span class="av">MA</span><div>Mai Anh</div></div></td><td><span class="chip" style="color:var(--danger);border-color:#4a2020;background:#2a1414">failed</span></td><td class="mono">0:27</td><td>2h ago · tool timeout</td></tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 16px"><span class="hint">Runs show orchestration <b>metadata</b> — team, owner, status, duration, timestamps. Step outputs and messages between agents stay on the member's machine; only counts and run records reach the control plane.</span></div>
+    </div>
+
+    <div class="acaption">MOCKUP · Admin <b>Teams</b> — read-only oversight of every member's multi-agent teams and run history across the org. Scope to one user or all. Orchestration metadata only — never the content exchanged between agents.</div>
+  </main>
+</div>
+</body>
+</html>

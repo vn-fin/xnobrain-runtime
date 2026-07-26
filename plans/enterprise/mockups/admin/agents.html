@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Agents — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a class="active" href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div><h1>Agents</h1><p>Every assistant across the organization. Read-only oversight.</p></div>
+      <div class="scope">Viewing: <span class="who-mini">All users</span> <span style="color:var(--muted-2)">▾</span></div>
+    </div>
+
+    <div class="viewonly">🔒 View-only — admins can inspect members' agents but not edit them.<span class="spacer"></span><span class="scope">Viewing: <span class="who-mini">All users</span> <span style="color:var(--muted-2)">▾</span></span></div>
+
+    <div class="cards">
+      <div class="card"><div class="lbl">Total agents</div><div class="val">63</div><div class="delta up">+7 this month</div></div>
+      <div class="card"><div class="lbl">Active</div><div class="val">58 <span style="font-size:15px;color:var(--muted-2)">/ 63</span></div><div class="delta up">92% in use</div></div>
+      <div class="card"><div class="lbl">Models in use</div><div class="val">4</div><div class="delta">Hermes family</div></div>
+      <div class="card"><div class="lbl">Blends</div><div class="val">3</div><div class="delta">fast · balanced · deep</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph">
+        <h2>All agents</h2><div class="spacer"></div>
+        <div class="ctrl"><span class="fake-select">owner: all ▾</span></div>
+        <div class="ctrl"><span class="fake-select">model: all ▾</span></div>
+        <div class="ctrl"><span class="fake-select">status: all ▾</span></div>
+      </div>
+      <table>
+        <thead><tr><th>Agent</th><th>Owner</th><th>Model</th><th>Blend</th><th>Skills</th><th>Conversations</th><th>Tokens 30d</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Research Copilot</td><td><div class="who"><span class="av">MA</span><div>Mai Anh</div></div></td><td class="mono">hermes-4-70b</td><td><span class="chip">balanced</span></td><td>7</td><td class="mono">412</td><td class="mono">2.0M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Contract Reviewer</td><td><div class="who"><span class="av">BC</span><div>Bao Chau</div></div></td><td class="mono">hermes-4-405b</td><td><span class="chip">deep</span></td><td>5</td><td class="mono">288</td><td class="mono">1.7M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Release Notes Bot</td><td><div class="who"><span class="av">DK</span><div>Duy Khanh</div></div></td><td class="mono">hermes-4-70b</td><td><span class="chip">fast</span></td><td>3</td><td class="mono">196</td><td class="mono">0.9M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Incident Triage</td><td><div class="who"><span class="av">QT</span><div>Quang Trung</div></div></td><td class="mono">hermes-4-405b</td><td><span class="chip">balanced</span></td><td>9</td><td class="mono">534</td><td class="mono">2.4M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Support Deflector</td><td><div class="who"><span class="av">HN</span><div>Ha Nguyen</div></div></td><td class="mono">hermes-4-70b</td><td><span class="chip">fast</span></td><td>4</td><td class="mono">1,204</td><td class="mono">1.9M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Legal Clause Finder</td><td><div class="who"><span class="av">PH</span><div>Phuong Hoa</div></div></td><td class="mono">hermes-4-405b</td><td><span class="chip">deep</span></td><td>6</td><td class="mono">241</td><td class="mono">1.5M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Standup Summarizer</td><td><div class="who"><span class="av">KN</span><div>Kim Ngan</div></div></td><td class="mono">hermes-4-70b</td><td><span class="chip">fast</span></td><td>2</td><td class="mono">318</td><td class="mono">0.7M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Code Review Assistant</td><td><div class="who"><span class="av">NP</span><div>Nghia Pham</div></div></td><td class="mono">hermes-4-405b</td><td><span class="chip">balanced</span></td><td>8</td><td class="mono">467</td><td class="mono">2.1M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Onboarding Guide</td><td><div class="who"><span class="av">LD</span><div>Linh Dao</div></div></td><td class="mono">hermes-4-70b</td><td style="color:var(--muted-2)">—</td><td>3</td><td class="mono">142</td><td class="mono">0.5M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Sales Brief Writer</td><td><div class="who"><span class="av">DK</span><div>Duy Khanh</div></div></td><td class="mono">hermes-4-70b</td><td><span class="chip">balanced</span></td><td>5</td><td class="mono">203</td><td class="mono">1.1M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Data Query Helper</td><td><div class="who"><span class="av">MA</span><div>Mai Anh</div></div></td><td class="mono">hermes-4-405b</td><td><span class="chip">deep</span></td><td>6</td><td class="mono">377</td><td class="mono">1.6M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Meeting Scribe</td><td><div class="who"><span class="av">VT</span><div>Vy Tran</div></div></td><td class="mono">hermes-4-70b</td><td><span class="chip">fast</span></td><td>2</td><td class="mono">289</td><td class="mono">0.6M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Ticket Router</td><td><div class="who"><span class="av">HN</span><div>Ha Nguyen</div></div></td><td class="mono">hermes-4-70b</td><td><span class="chip">fast</span></td><td>3</td><td class="mono">912</td><td class="mono">1.2M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Roadmap Planner</td><td><div class="who"><span class="av">BC</span><div>Bao Chau</div></div></td><td class="mono">hermes-4-405b</td><td><span class="chip">deep</span></td><td>7</td><td class="mono">158</td><td class="mono">1.0M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Doc Draft Assistant</td><td><div class="who"><span class="av">TL</span><div>Thu Lan</div></div></td><td class="mono">hermes-4-70b</td><td><span class="chip">balanced</span></td><td>4</td><td class="mono">96</td><td class="mono">0.4M</td><td><span class="st offline"><span class="d"></span>Idle</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>QA Test Planner</td><td><div class="who"><span class="av">NP</span><div>Nghia Pham</div></div></td><td class="mono">hermes-4-405b</td><td><span class="chip">balanced</span></td><td>5</td><td class="mono">61</td><td class="mono">0.3M</td><td><span class="st offline"><span class="d"></span>Idle</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+          <tr><td>Knowledge Base Bot</td><td><div class="who"><span class="av">KN</span><div>Kim Ngan</div></div></td><td class="mono">hermes-4-70b</td><td style="color:var(--muted-2)">—</td><td>3</td><td class="mono">224</td><td class="mono">0.8M</td><td><span class="st active"><span class="d"></span>Active</span></td><td><a href="#" style="color:var(--accent)">View</a></td></tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 16px"><span class="hint">Showing 16 of 63 · <a href="#" style="color:var(--accent)">load more</a> — Admins see agent <b>configuration and metadata</b> (name, owner, model, blend, skills, counts) for oversight. Conversation content and agent memory stay on members' machines and never appear here.</span></div>
+    </div>
+
+    <div class="acaption">MOCKUP · Admin <b>Agents</b> — read-only oversight of every member's assistants across the org. Scope the view to one user or all. Counts and configuration metadata only — never conversation content.</div>
+  </main>
+</div>
+</body>
+</html>
