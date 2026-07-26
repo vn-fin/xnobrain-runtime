@@ -1,7 +1,7 @@
 # Brain4All — Enterprise System Specification
 
-**Edition:** Enterprise (commercial), multi-user, self-hosted **or** managed cloud
-**Builds on:** the OSS edition ([`oss.md`](oss.md)) — unchanged local runtime
+**Edition:** Enterprise (commercial, for businesses), multi-user, self-hosted **or** managed cloud
+**Builds on:** the OSS edition ([`oss.md`](oss.md)) at the **Pro** level — unchanged local runtime
 **Status:** planned — see plan packages `plans/enterprise/E01`–`E07`
 
 ---
@@ -14,9 +14,17 @@ OSS runtime on their own machine or container; the control plane sits *above* th
 runtimes to provide identity, central visibility, governance, fleet management, voice,
 and cross-account coordination.
 
+**Every member gets the complete Pro product** — every standalone capability in
+[`oss.md`](oss.md) §2 (assistants, conversations, combos, provider connections with
+multiple accounts, agent teams, Kanban, message channels, cron, usage) plus both Pro
+capabilities (skill marketplace, speech-to-text). Enterprise **only adds**; it never
+removes a capability a Pro user has. What it adds is the layer a *business* needs and an
+individual does not: other people, oversight of them, and control over what they can do.
+
 - **Control plane:** a Go service backed by **PostgreSQL** (the one billing-grade
   database). Runs **self-hosted** on the firm's servers — including **air-gapped** — or
-  as the Brain4All **managed cloud**.
+  as **Enterprise Cloud** on Brain4All's servers, where member runtimes are managed Incus
+  containers with contracted resources ([`plans.md`](plans.md) §7.3).
 - **Deployments (members' runtimes):** unchanged OSS instances, enrolled to the control
   plane by an outbound-only device identity. They **push** metadata to the center; the
   center never needs an inbound connection (NAT-safe).
@@ -37,7 +45,10 @@ and cross-account coordination.
 
 ---
 
-## 2. Functional specification
+## 2. Functional specification — what Enterprise adds
+
+Each subsection is **additive** over the Pro product. Nothing here changes how a member's
+local runtime behaves.
 
 ### 2.1 Organizations, accounts & tenancy  *(E05)*
 - Provision accounts **by the organization** (email invite, CSV import, SCIM) — open
@@ -86,12 +97,14 @@ and cross-account coordination.
 - **Staged version rollout** (canary → stable) with compatibility gates against the
   pinned OSS runtime.
 
-### 2.6 Voice I/O  *(E04 — enterprise capability)*
-- Central **voice gateway** holding **org-managed** TTS/STT provider keys — members
-  never see or configure them.
-- Entitlement-gated voice UI in the member app (reuses the OSS design); zero key
-  distribution.
-- Voice minutes metered into the same central usage database.
+### 2.6 Managed voice gateway  *(E04)*
+- Speech-to-text itself is a **Pro** capability that ships in the OSS runtime
+  ([`oss.md`](oss.md) §3.2). Enterprise does not add the feature — it adds **who holds
+  the keys and who pays**.
+- Central **voice gateway** holding **org-managed** STT/TTS provider keys — members never
+  see, configure, or receive them; no key distribution to endpoints.
+- The same voice UI as Pro, entitlement-gated per member by the org.
+- Voice minutes metered into the same central usage database, chargeable to a cost center.
 
 ### 2.7 Enterprise boards — cross-account Kanban  *(E07 — new)*
 - One **org-owned** Kanban whose tasks can be assigned across **accounts, agents, and
@@ -106,21 +119,43 @@ and cross-account coordination.
   conversation content is centralized** — task titles/descriptions are admin-authored
   board metadata only.
 
-### 2.8 Governance & policy  *(program)*
+### 2.8 Cross-account agent teams  *(program)*
+- Agent teams themselves ship in Free ([`oss.md`](oss.md) §2.9) — one orchestrator and
+  workers **inside one install**. Enterprise adds teams whose workers live on **different
+  members' runtimes**.
+- The orchestrator dispatches each step over the same outbound `device-command-v1`
+  channel used by enterprise boards; each worker runs locally on its owner's machine.
+- Run history, per-step status, and token/cost roll up to the org dashboards with
+  "ran on <member>·<device>" provenance.
+- RBAC-gated: composing a cross-account team requires an explicit permission; a member's
+  runtime only accepts steps for teams its owner is enrolled in.
+
+### 2.9 Private skill catalog  *(program)*
+- An **org-internal marketplace** alongside (or instead of) the public one: skills
+  authored inside the company, never published externally.
+- **Approval workflow:** a skill — public-marketplace or internal — must be approved by an
+  admin before any member's runtime may install it; approvals are content-hash-bound and
+  logged to the audit trail.
+- Org policy can restrict members to the private catalog only, or to an allowlist of
+  public listings.
+
+### 2.10 Governance & policy  *(program)*
 - **Model & capability policy:** org allowlists of models/providers/blends; tool and
-  MCP-server policy; skill/plugin approval for the fleet.
+  MCP-server policy; skill/plugin approval for the fleet (§2.9).
+- **Message-channel policy:** which channels members may connect an agent to, and whether
+  channel credentials are member-supplied or org-supplied.
 - **Data retention & residency:** org-set retention for centrally held metadata; region
   pinning on cloud.
 - **External secrets:** org keys held in the org's Vault/KMS for firms that require it.
 
-### 2.9 Audit & compliance  *(E01/E05 + program)*
+### 2.11 Audit & compliance  *(E01/E05 + program)*
 - **Append-only audit log** of every login, role change, device op, policy change, and
   export — with actor, org scope, and export endpoint.
 - SIEM/log streaming (follow-on); evidence exports.
 - Compliance program artifacts (SOC 2 / ISO 27001 / GDPR DPA) as an organizational
   workstream.
 
-### 2.10 Backup, DR & licensing  *(program)*
+### 2.12 Backup, DR & licensing  *(program)*
 - Managed, encrypted profile-bundle backups (portable-bundle format) and control-plane
   HA + DR runbooks.
 - Fleet license/update management; offline license keys for air-gapped installs.
@@ -144,10 +179,20 @@ and cross-account coordination.
 
 ---
 
-## 4. Relationship to OSS
+## 4. Relationship to OSS Free and Pro
 
-Everything in the OSS spec ([`oss.md`](oss.md)) remains available to each member,
-unchanged and locally executed. Enterprise is **additive**: it never removes a local
-capability, only adds organization-level identity, visibility, governance, fleet, voice,
-and cross-account coordination. Full side-by-side checklist:
-[`compare-features.md`](compare-features.md).
+Everything in the OSS spec ([`oss.md`](oss.md)) — §2 standalone capabilities **and** §3
+Pro capabilities — remains available to each member, unchanged and locally executed.
+Enterprise is strictly **additive**: it never removes a local capability, only adds the
+organization layer.
+
+| A member's capability | Where it comes from |
+|---|---|
+| Assistants, conversations, combos, providers & multi-account, agent teams, Kanban, message channels, cron, usage, MCP, workspace | OSS §2 — same in Free |
+| Skill marketplace (install + publish), speech-to-text | OSS §3 — the Pro delta, included for every seat |
+| Orgs, SSO/RBAC/SCIM, central usage, enforced budgets, enterprise boards, cross-account teams, fleet, voice gateway, private catalog, governance, audit, backup/DR, managed cloud | Enterprise §2 — the business layer |
+
+The dividing line is **people, not power**: an individual on Pro is not missing agent
+features, they are missing colleagues. Full side-by-side checklist:
+[`compare-features.md`](compare-features.md) · packaging and enforcement:
+[`plans.md`](plans.md).

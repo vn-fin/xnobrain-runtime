@@ -2,7 +2,7 @@
 
 **Status:** working note for discussion (2026-07-26). Grounded in: the XNOBrain
 Alignment Addendum (two-track verification, ledger, expiring badges), the marketplace
-spec ([`plans.md`](plans.md) §6), and first-hand research of the local Hermes install
+spec ([`plans.md`](plans.md) §5), and first-hand research of the local Hermes install
 (`.tools/hermes-agent`, v0.19.0 — **183 skills**: 77 built-in + 106 optional).
 
 The core problem: skills are heterogeneous — there is no universal quality metric.
