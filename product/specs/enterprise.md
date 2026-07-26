@@ -1,0 +1,153 @@
+# Brain4All — Enterprise System Specification
+
+**Edition:** Enterprise (commercial), multi-user, self-hosted **or** managed cloud
+**Builds on:** the OSS edition ([`oss.md`](oss.md)) — unchanged local runtime
+**Status:** planned — see plan packages `plans/enterprise/E01`–`E07`
+
+---
+
+## 1. System description
+
+Brain4All Enterprise is a **multi-user, organization-managed** edition built as a
+separate **control plane** on top of the OSS product. Each member still runs the full
+OSS runtime on their own machine or container; the control plane sits *above* those
+runtimes to provide identity, central visibility, governance, fleet management, voice,
+and cross-account coordination.
+
+- **Control plane:** a Go service backed by **PostgreSQL** (the one billing-grade
+  database). Runs **self-hosted** on the firm's servers — including **air-gapped** — or
+  as the Brain4All **managed cloud**.
+- **Deployments (members' runtimes):** unchanged OSS instances, enrolled to the control
+  plane by an outbound-only device identity. They **push** metadata to the center; the
+  center never needs an inbound connection (NAT-safe).
+- **Privacy boundary (absolute):** only **metadata and counts** cross the wire — tokens,
+  cost, task/session status, device health. **Conversation content — prompts, responses,
+  tool arguments, titles, files — never leaves the member's machine.**
+
+### Governing invariants
+- **Enterprise never restricts local operation.** A control-plane outage or lost
+  connection never blocks a member's local chat or agents.
+- **Push, not pull.** Every deployment connects *outbound* over TLS; the frozen
+  `device-command-v1` contract carries commands and `usage-ingest-v1` carries metadata.
+- **Exactly-once accounting.** Cumulative **snapshot upserts** (at-least-once delivery +
+  idempotent write) make usage and task status immune to double-counting across retries
+  and offline catch-up.
+- **Credentials stay central or local, never in between.** Org provider keys live in the
+  org's vault / central store; member machines never receive them.
+
+---
+
+## 2. Functional specification
+
+### 2.1 Organizations, accounts & tenancy  *(E05)*
+- Provision accounts **by the organization** (email invite, CSV import, SCIM) — open
+  self-signup is disabled for org tenants.
+- Model tenancy: on cloud, a user either **belongs to an organization** or stands alone
+  in a **personal tenant**; on self-hosted, all users belong to the org.
+- Account lifecycle: invite → accept → active → suspended → deprovisioned (SCIM maps to
+  the same lifecycle).
+- Org-manager oversight: a built-in **`org_manager`** role can **view all** members'
+  usage, devices, and dashboards without member-management power.
+
+### 2.2 Authentication & RBAC  *(E05)*
+- Pluggable auth backends per deployment: **local accounts** (argon2id), **OIDC**,
+  **SAML 2.0**, **LDAP**, or a **custom external auth service**.
+- **Config-file RBAC:** roles and permissions declared in a versioned `auth.yaml`
+  (role *shapes* in file, per-user *assignments* in DB); hot-reloadable.
+- Built-in roles: `org_admin` (manage members/roles/policies), `org_manager`
+  (read-all oversight), `member` (self-scope), `auditor` (audit read).
+- IdP group → role mapping; SCIM provisioning/deprovisioning; session policies
+  (MFA via IdP, token TTLs); opaque, hashed, revocable session tokens.
+- Break-glass local admin for lockout recovery; air-gapped operation with local/LDAP
+  backends (zero external egress).
+
+### 2.3 Central usage collection  *(E02 — flagship)*
+- Each member's runtime reads its own local `state.db` (read-only) and **pushes
+  session snapshots** (tokens, cost, model, counts) to the control plane.
+- The center stores them as **idempotent upserts** into one PostgreSQL — the single
+  source of truth for chats and tokens across all users.
+- Offline outbox: snapshots spool locally and reconcile on reconnect; the server acks a
+  watermark before the client advances its cursor.
+- Admin dashboards (Grafana-style, same controls as local analytics): scope to all or
+  selected members/agents, pick range/bucket, group by member/team/model/device.
+- CSV / scheduled export for billing.
+
+### 2.4 Budgets, chargeback & entitlements  *(E02 + E01)*
+- Per-user / team / org budgets with **hard or advisory** caps (unlike OSS's
+  advisory-only), cost-center tags, and invoice/chargeback export.
+- Entitlement checks (Check/Reserve/Commit/Release, `-1` = unlimited) gate metered
+  capabilities; telemetry is never used as accounting state.
+
+### 2.5 Fleet management  *(E03)*
+- Provision **per-user Incus containers** (pre-enrolled at boot, persistent data volume)
+  and register **PC-installed** runtimes in the same fleet.
+- Device inventory: identity, owner, kind (container/PC), status, version, heartbeats.
+- Remote lifecycle over the outbound command channel: restart, drain, drain-then-replace.
+- **Staged version rollout** (canary → stable) with compatibility gates against the
+  pinned OSS runtime.
+
+### 2.6 Voice I/O  *(E04 — enterprise capability)*
+- Central **voice gateway** holding **org-managed** TTS/STT provider keys — members
+  never see or configure them.
+- Entitlement-gated voice UI in the member app (reuses the OSS design); zero key
+  distribution.
+- Voice minutes metered into the same central usage database.
+
+### 2.7 Enterprise boards — cross-account Kanban  *(E07 — new)*
+- One **org-owned** Kanban whose tasks can be assigned across **accounts, agents, and
+  agent-teams** (unlike OSS's per-user local board).
+- Admin creates boards and assigns tasks; the control plane **dispatches** each task to
+  the assignee's runtime (`board.task.dispatch` over device-command-v1), which
+  materializes it into the target agent's **local** board and runs it locally.
+- Status/progress flow back as idempotent snapshots; the admin watches all assignees
+  move Backlog → In Progress → Done on one board, with "runs on <member>·<device>"
+  provenance.
+- Offline-safe (spooled dispatch + status); RBAC-gated (`boards.assign`); **no
+  conversation content is centralized** — task titles/descriptions are admin-authored
+  board metadata only.
+
+### 2.8 Governance & policy  *(program)*
+- **Model & capability policy:** org allowlists of models/providers/blends; tool and
+  MCP-server policy; skill/plugin approval for the fleet.
+- **Data retention & residency:** org-set retention for centrally held metadata; region
+  pinning on cloud.
+- **External secrets:** org keys held in the org's Vault/KMS for firms that require it.
+
+### 2.9 Audit & compliance  *(E01/E05 + program)*
+- **Append-only audit log** of every login, role change, device op, policy change, and
+  export — with actor, org scope, and export endpoint.
+- SIEM/log streaming (follow-on); evidence exports.
+- Compliance program artifacts (SOC 2 / ISO 27001 / GDPR DPA) as an organizational
+  workstream.
+
+### 2.10 Backup, DR & licensing  *(program)*
+- Managed, encrypted profile-bundle backups (portable-bundle format) and control-plane
+  HA + DR runbooks.
+- Fleet license/update management; offline license keys for air-gapped installs.
+
+---
+
+## 3. Non-functional requirements
+
+- **Deployment:** self-hosted (incl. air-gapped) **or** managed cloud; same binary/compose.
+- **Tenancy:** multi-user organizations; personal tenants on cloud; strict org isolation.
+- **Database:** one PostgreSQL as the billing-grade source of truth; ClickHouse for
+  high-volume trace telemetry only.
+- **Connectivity:** deployments connect outbound-only (TLS 443, NAT-safe); no inbound to
+  member machines.
+- **Availability:** control-plane outage never degrades local runtimes.
+- **Privacy:** metadata/counts only leave a machine; conversation content, prompts,
+  responses, tool args, titles, files, and credentials never do.
+- **Security:** Ed25519 device identity; hashed/rotating tokens; credentials in
+  vault/9router, never logged or returned.
+- **Accounting integrity:** exactly-once via snapshot upserts; idempotent commands.
+
+---
+
+## 4. Relationship to OSS
+
+Everything in the OSS spec ([`oss.md`](oss.md)) remains available to each member,
+unchanged and locally executed. Enterprise is **additive**: it never removes a local
+capability, only adds organization-level identity, visibility, governance, fleet, voice,
+and cross-account coordination. Full side-by-side checklist:
+[`compare-features.md`](compare-features.md).
