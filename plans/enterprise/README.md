@@ -177,6 +177,7 @@ program research notes in E05 findings).
 | E04 | **Voice I/O as enterprise capability** | both (gateway in enterprise; gated UI in OSS) | [README](E04_voice_io_enterprise/README.md) · findings · architecture · approaches · implementation · validation |
 | E05 | **Orgs, accounts, auth & RBAC** | `brain4all-enterprise` + thin OSS login/entitlement surfaces | [README](E05_orgs_auth_rbac/README.md) · findings · architecture · approaches · implementation · validation |
 | E07 | **Enterprise boards (cross-account Kanban)** | both (board/dispatch in enterprise; local executor in OSS) | [README](E07_enterprise_boards/README.md) · findings · architecture · approaches · implementation · validation |
+| E08 | **Service platform: Go app services + Python AI services** (first build: STT on Groq Whisper v3) | `brain4all-enterprise` (refines E04's gateway split) | [README](E08_service_platform/README.md) · [implementation](E08_service_platform/implementation.md) |
 
 **Order:** E01 → E02 (the user-visible value: one usage database) → E05 (orgs/auth —
 required before real multi-user rollout) → E03 → E04. E02 is deliberately buildable
