@@ -44,6 +44,9 @@ Specs: [`oss.md`](oss.md) · [`enterprise.md`](enterprise.md) · packaging: [`pl
 | Private org skill catalog + approval | ⛔ | ⛔ | ➕ | **Enterprise-only** |
 | **Speech-to-text** (composer + channel voice notes) | ⛔ | ➕ | ✅ | **Pro delta**; Enterprise routes it through the org gateway |
 | Text-to-speech / read-aloud | ⛔ | 🟡 | ✅ | Same voice surface; org keys & metering in Enterprise |
+| Local snapshot before risky writes | ✅ | ✅ | ✅ | **Common** |
+| **Skill & memory snapshot versions** (history, diff, restore, new machine) | ⛔ | ➕ | ✅ | **Pro delta** — hosted, client-side encrypted |
+| Snapshot retention policy + admin key escrow | ⛔ | ⛔ | ➕ | **Enterprise-only** — recover a departed member's agent |
 
 ### Usage, cost & accounting
 | Feature | Free | Pro | Enterprise | Common / Different |
@@ -72,7 +75,7 @@ Specs: [`oss.md`](oss.md) · [`enterprise.md`](enterprise.md) · packaging: [`pl
 |---|:--:|:--:|:--:|---|
 | Self-hosted deployment | ✅ | ✅ | ✅ | **Common — unlimited resources, your hardware** |
 | Brain4All Cloud (our servers) | 🟡 trial | ✅ Pro / Pro Max | ✅ contracted | No permanent free container; cloud is resource-tiered |
-| Air-gapped deployment | ✅ | 🟡 | ✅ | Pro's two paid features need connectivity; §2 does not |
+| Air-gapped deployment | ✅ | 🟡 | ✅ | Pro's three paid features need connectivity; §2 does not |
 | Device / fleet inventory | ⛔ | ⛔ | ➕ | **Enterprise-only** |
 | Provision Incus containers + register PCs | 🟡 | 🟡 | ➕ | OSS runs one local runtime; Enterprise manages a **fleet** |
 | Remote lifecycle (restart / drain) | ⛔ | ⛔ | ➕ | **Enterprise-only** |
@@ -91,7 +94,7 @@ Specs: [`oss.md`](oss.md) · [`enterprise.md`](enterprise.md) · packaging: [`pl
 | External secrets (Vault / KMS) | ⛔ | ⛔ | ➕ | **Enterprise-only** |
 | Append-only audit log | ⛔ | ⛔ | ➕ | **Enterprise-only** |
 | SIEM / log streaming | ⛔ | ⛔ | ➕ | **Enterprise-only (follow-on)** |
-| Entitlements enforcement | ⛔ | 🟡 | ➕ | Pro: the two paid flags only; Enterprise: full org entitlements |
+| Entitlements enforcement | ⛔ | 🟡 | ➕ | Pro: the four paid flags only; Enterprise: full org entitlements |
 | Compliance artifacts (SOC 2 / ISO / GDPR) | ⛔ | ⛔ | ➕ | **Enterprise-only** |
 
 ### Support & billing
@@ -118,17 +121,27 @@ Specs: [`oss.md`](oss.md) · [`enterprise.md`](enterprise.md) · packaging: [`pl
 - ✅ **Self-hosted** deployment (incl. air-gapped for §2 capabilities).
 - ✅ Built on the same OSS engines (Hermes Agent + 9router) — same binary for Free and Pro.
 
-## 3. What separates Free from Pro (exactly two things)
+## 3. What separates Free from Pro (exactly three things)
 
 | | Free | Pro |
 |---|---|---|
 | **Skills** | Built-in system library only. Can browse the marketplace, cannot install or publish. | Install marketplace skills (free + premium) and publish your own with revenue share. |
 | **Speech-to-text** | ⛔ Entitlement-gated (403). | ✅ Dictation in the composer and transcription of channel voice notes. |
+| **Skill & memory snapshot versions** | Local snapshots + manual export only; no retained history. | ✅ Hosted, client-side-encrypted version history: diff, roll back, restore onto a new machine. |
 
 Nothing else. Same agents, same providers, same accounts per provider, same teams, same
 boards, same channels, same cron, same usage. Both are single-user and cannot add members.
 
+All three deltas share one property: each is a **Brain4All-operated service with a real
+marginal cost** — a catalog, transcription compute, stored bytes. Nothing is withheld from
+Free that costs us nothing to provide.
+
 ## 4. What separates Enterprise (the business layer)
+
+**Enterprise = Pro + this layer.** Every seat includes the complete Pro product; the rows
+below are additions, not substitutions. Where a row looks like a change (provider keys,
+voice keys, snapshot retention), Enterprise is adding *org control over* a Pro capability,
+never removing it.
 
 | Aspect | Free / Pro behavior | Enterprise behavior |
 |---|---|---|
@@ -140,6 +153,7 @@ boards, same channels, same cron, same usage. Both are single-user and cannot ad
 | **Agent teams** | Agents within one install | Teams spanning members' runtimes |
 | **Skills** | Public marketplace (Pro) | + private org catalog with approval workflow |
 | **Voice** | Per-user STT, own or Brain4All key (Pro) | Central gateway, org-held keys, minutes metered |
+| **Snapshots** | Per-user history, user-held key (Pro) | + org retention policy and admin **key escrow** |
 | **Models** | Any connected model | Constrained by **org allowlist** |
 | **Hosting** | Self-hosted only | Self-hosted **or** managed cloud |
 | **Backups** | Manual profile export | Managed, encrypted, with DR |
@@ -152,6 +166,7 @@ boards, same channels, same cron, same usage. Both are single-user and cannot ad
 - ➕ Fleet management: device inventory, Incus provisioning, remote lifecycle, staged rollout.
 - ➕ Managed voice gateway with org keys, metered.
 - ➕ Private org skill catalog and approval workflow.
+- ➕ Snapshot retention policy and admin key escrow for departed-member recovery.
 - ➕ Governance: model/capability policy, tool & MCP policy, retention/residency, external secrets.
 - ➕ Audit log, SIEM streaming, org entitlements enforcement, compliance program.
 - ➕ Managed backup/DR, license & update management, managed cloud.
@@ -166,6 +181,8 @@ boards, same channels, same cron, same usage. Both are single-user and cannot ad
   made read-only, never deleted; the user chooses what to keep.
 - 🔒 **Content never centralizes** — only counts and metadata cross the wire; prompts,
   responses, tool arguments, titles, files, and credentials stay on the user's machine.
+  The sole exception is an opt-in skill/memory snapshot, which is **encrypted client-side
+  with a key we never hold** — we store ciphertext, not content.
 - 🔒 **Push-only** — deployments connect outbound; nothing reaches inward to a member's
   machine except idempotent commands they chose to enroll for.
 - 🔒 **Exactly-once accounting** — snapshot upserts make usage/task counts immune to

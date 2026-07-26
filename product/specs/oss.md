@@ -39,7 +39,7 @@ operate the product, and chat works offline once a provider is configured.
 ### Free and Pro are the same build
 
 There is one OSS runtime. **Free** and **Pro** are the same application on the same
-machine; a Pro subscription unlocks exactly two capabilities that require a Brain4All
+machine; a Pro subscription unlocks the three capabilities that require a Brain4All
 service (§3):
 
 | | Free | Pro |
@@ -47,6 +47,7 @@ service (§3):
 | Everything in §2 | ✅ unlimited | ✅ unlimited |
 | Skills | Built-in system library only | **+ marketplace: install & publish** |
 | Speech-to-text | ⛔ | **✅** |
+| Skill & memory snapshot versions | Local only, no history | **+ hosted version history & restore** |
 | Sign-in | Not required | Required (subscription) |
 
 No other capability, and no resource count — agents, conversations, providers, accounts
@@ -180,9 +181,11 @@ without limit and without an account.
 
 ## 3. Pro capabilities *(paid, still single-user)*
 
-The only two capabilities gated behind a subscription. Both require a signed-in account
-because both depend on a Brain4All-operated service; everything in §2 keeps working
-signed-out and offline, and a Pro user who signs out loses only these two.
+The only capabilities gated behind a subscription. Each requires a signed-in account
+because each depends on a Brain4All-operated service — a marketplace, a transcription
+service, and hosted storage — and each therefore carries a marginal cost we must cover.
+Everything in §2 keeps working signed-out and offline; a Pro user who signs out loses
+only these three.
 
 ### 3.1 Skill marketplace
 - **Install** skills from the public marketplace into the local library — free and
@@ -203,6 +206,34 @@ signed-out and offline, and a Pro user who signs out loses only these two.
 - Provider keys stay server-side in the local runtime and are never returned or logged.
 - ⛔ Not available in Free — the UI surface is present but entitlement-gated (403).
 
+### 3.3 Skill & memory snapshot versions
+Brain4All keeps a **version history** of what makes an assistant *itself* — its skills and
+its memory — stored on Brain4All's servers so it survives a lost disk, a bad edit, or a
+new machine.
+
+- **What is versioned, per assistant:**
+  - **Skills** — the installed set, their versions, per-assistant enable/disable state,
+    and skill configuration.
+  - **Memory** — the assistant's memory store as of the snapshot.
+- **Snapshots:** automatic on a schedule and before any risky mutation (the runtime
+  already snapshots locally before persistence-promising writes); plus manual, named
+  snapshots ("before I rewrote its instructions").
+- **History:** browse versions with timestamps and origin, **diff** two versions (skills
+  added/removed/upgraded; memory entries added/changed/removed), and **restore** an
+  assistant to any retained version — skills only, memory only, or both.
+- **Portability:** restore a snapshot onto a **different machine or a fresh install**,
+  which is how a Pro user moves between devices or recovers from hardware loss.
+- **Encryption (non-negotiable):** snapshots are encrypted **client-side with a key the
+  user holds** before upload. Brain4All stores ciphertext and cannot read memory content.
+  This preserves the privacy floor — losing the key means losing the snapshots, and the
+  UI must say so at setup.
+- **Free:** local only. The runtime still snapshots before risky writes and the user can
+  still export a portable bundle by hand (§2.12) — but no retained version history, no
+  diff/restore UI, and nothing stored off the device.
+- **Quota:** retained versions and total snapshot storage are capped per plan
+  ([`plans.md`](plans.md) §7.2); the oldest versions age out first, and a manually named
+  snapshot is never aged out ahead of an automatic one.
+
 ---
 
 ## 4. Non-functional requirements
@@ -212,11 +243,14 @@ signed-out and offline, and a Pro user who signs out loses only these two.
 - **Storage:** local SQLite per profile; no external database.
 - **Connectivity:** operates without any Brain4All service; only reaches the configured
   LLM providers. A Pro install that loses connectivity keeps every §2 capability and
-  loses only marketplace access and hosted transcription.
+  loses only marketplace access, hosted transcription, and snapshot upload (snapshots
+  spool locally and upload on reconnect).
 - **Metering:** nothing in §2 is counted, capped, or plan-gated; local entitlement checks
   always resolve unlimited.
 - **Privacy:** conversation content, prompts, responses, and files never leave the
-  machine; no product telemetry.
+  machine; no product telemetry. The one thing that may leave, on Pro and only by explicit
+  opt-in, is a **client-side-encrypted** skill/memory snapshot (§3.3) — stored as
+  ciphertext we cannot read.
 - **Security:** provider credentials confined to 9router; channel bot tokens confined to
   the assistant's profile; never logged or returned by the API.
 - **Extensibility:** capabilities added via skills, marketplace skills (Pro), message
@@ -240,6 +274,7 @@ full checklist in [`compare-features.md`](compare-features.md).
 | Kanban | ✅ local, per-user | + cross-account **Enterprise boards** |
 | Skills | Built-in (Free) / marketplace (Pro) | + **private org catalog** & approval workflow |
 | Speech-to-text | Pro, per user | + org **voice gateway**, org-held keys, metered |
+| Skill/memory snapshots | Pro, user-held key | + org retention policy & **key escrow** for recovery |
 | Message channels | ✅ per agent, user-owned tokens | + org channel policy & approval |
 | Provider keys | User-owned, local | Org-managed, read-only to the member |
 | Fleet | One local runtime | Managed Incus/PC fleet, versions, staged rollout |

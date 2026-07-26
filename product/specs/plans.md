@@ -16,8 +16,11 @@ decisions. Confusing them is the single biggest source of error in the old spec.
 | **OSS** | Free · Pro | Cloud Pro · Cloud Pro Max |
 | **Enterprise** | Enterprise (self-hosted, incl. air-gapped) | Enterprise Cloud (managed) |
 
-- **Edition** decides *capabilities*: Free → Pro adds the skill marketplace and
-  speech-to-text; Enterprise adds the business layer (orgs, oversight, governance).
+- **Edition** decides *capabilities*, and the editions are strictly cumulative:
+  **Free ⊂ Pro ⊂ Enterprise.** Pro adds the skill marketplace, speech-to-text, and hosted
+  skill/memory snapshot versions; **Enterprise is Pro plus the business layer** (orgs,
+  oversight, governance) — every Pro capability is included for every seat, and no Pro
+  capability is ever taken away.
 - **Deployment** decides *resource limits*: self-hosted has none — it is the user's own
   CPU, RAM, and disk. Cloud has quotas, because it is our CPU, RAM, and disk.
 
@@ -26,9 +29,11 @@ decisions. Confusing them is the single biggest source of error in the old spec.
 
 Two more rules shape everything below:
 
-> **Free and Pro are the same product.** Pro adds exactly two capabilities — the
-> **skill marketplace** and **speech-to-text**. No capability and no resource count
-> differs otherwise on a self-hosted install.
+> **Free and Pro are the same product.** Pro adds exactly three capabilities — the
+> **skill marketplace**, **speech-to-text**, and **hosted skill/memory snapshot
+> versions**. No capability and no resource count differs otherwise on a self-hosted
+> install. All three are the same kind of thing: a Brain4All-operated service with a real
+> marginal cost (a catalog, transcription compute, stored bytes).
 >
 > **Free and Pro are for one person; Enterprise is for a business.** Teamwork here means
 > *between people*, not between agents — agent teams are a standalone feature and ship in
@@ -69,12 +74,14 @@ Everything in §2, unlimited, with no account required.
 - **Skills:** the **built-in system skills only** — the library shipped with the runtime.
   No marketplace: cannot install third-party skills, cannot publish.
 - **Speech-to-text:** ⛔ not available.
+- **Skill & memory snapshot versions:** ⛔ local snapshots and manual portable-bundle
+  export only; no retained history, nothing stored off the device.
 - **Support:** community.
 - **Account:** optional. A signed-out install is fully functional.
 
 ## 4. OSS Pro — *(paid, individual)*
 
-Identical to Free in every respect except the two capabilities below. Same runtime, same
+Identical to Free in every respect except the three capabilities below. Same runtime, same
 machine, same unlimited local resources.
 
 - ➕ **Skill marketplace** — browse, **install** skills from the market (free and
@@ -83,9 +90,38 @@ machine, same unlimited local resources.
 - ➕ **Speech-to-text** — dictate to an agent by voice; voice notes arriving over a
   message channel become transcribed messages. Available in the composer and in channel
   ingestion.
+- ➕ **Skill & memory snapshot versions** — see §4.1.
 - **Support:** priority.
 - **Billing:** self-serve per-user subscription; requires a signed-in account.
 - **Still single-user:** no organizations, no members, no shared workspaces, no RBAC.
+
+### 4.1 Skill & memory snapshot versions
+
+We keep a **version history of what makes an agent itself** — its skills and its memory —
+on Brain4All's servers, so it survives a lost disk, a bad edit, or a move to a new
+machine. Free keeps local snapshots; Pro keeps *versions*, stored and restorable.
+
+| | Free | Pro | Enterprise |
+|---|:--:|:--:|:--:|
+| Local snapshot before risky writes | ✅ | ✅ | ✅ |
+| Manual portable-bundle export | ✅ | ✅ | ✅ |
+| **Retained version history (skills + memory)** | ⛔ | ✅ | ✅ |
+| **Diff two versions** | ⛔ | ✅ | ✅ |
+| **Restore / roll back an agent** | ⛔ | ✅ | ✅ |
+| **Restore onto a new machine** | ⛔ | ✅ | ✅ |
+| Org retention policy + admin key escrow | ⛔ | ⛔ | ➕ |
+
+- **Why it's paid:** it is storage we hold, indefinitely, per user. It is also the
+  stickiest thing we can offer — an agent that has learned you for a year is only
+  irreplaceable if it cannot be lost.
+- **Encrypted client-side with a user-held key.** We store ciphertext and cannot read
+  memory content, which is what keeps this compatible with the privacy floor. The
+  trade-off — lose the key, lose the snapshots — must be stated at setup, not buried.
+- **Quotas** (retained versions, total bytes) are in §7.2 and apply to Pro on *any*
+  deployment, self-hosted included: unlike the §2 capabilities, these bytes sit on our
+  disks wherever the runtime runs.
+- Enterprise adds org-set retention and **admin key escrow**, so a departed member's
+  agent can still be recovered — the one case where a user-held key is not enough.
 
 **What Pro does *not* change:** provider connections, accounts per provider, number of
 agents, teams, kanban boards, channels, cron jobs, MCP servers, conversations, or usage
@@ -114,8 +150,13 @@ A catalog where users discover, install, publish, and monetize skills.
 
 ## 6. Enterprise — *(organization, per-seat)*
 
-Everything in Pro, for every member, **plus the business layer**. The member's local
-runtime is unchanged; the control plane sits above it.
+> **Enterprise = Pro + the business layer.** Every seat includes the entire Pro product —
+> all of §2, plus the marketplace, speech-to-text, and snapshot versions — and Enterprise
+> then adds what a business needs on top. It never removes or downgrades a Pro capability;
+> where it appears to change one (provider keys, voice keys, snapshot retention), it is
+> adding *org control over* it, not taking it away.
+
+The member's local runtime is unchanged; the control plane sits above it.
 
 - **Organization & identity:** org tenant, org-provisioned accounts, OIDC/SAML/LDAP SSO,
   config-file RBAC, org-manager "view all" oversight, SCIM (E05).
@@ -132,6 +173,8 @@ runtime is unchanged; the control plane sits above it.
 - **Managed voice gateway:** org-held STT/TTS keys, entitlement-gated, minutes metered
   centrally — members never handle a key (E04).
 - **Private marketplace:** org-internal skill catalog with an approval workflow.
+- **Snapshot governance:** org-set retention for skill/memory version history, and
+  **admin key escrow** so a departed member's agents remain recoverable.
 - **Governance:** model/provider/blend allowlists, tool and MCP policy, skill approval,
   retention & residency, external secrets (Vault/KMS).
 - **Audit & compliance:** append-only audit log, SIEM streaming, evidence exports,
@@ -221,6 +264,15 @@ safety-sensitive settings, where scaling 5× buys nothing and risks runaway cost
 | Cron/team run logs | 30 days | 90 days |
 | Workspace files | 5 GB | 25 GB |
 | Portable-bundle backups retained | 3 | 10 |
+| **Skill/memory snapshot versions per agent** | 30 | 150 |
+| **Skill/memory snapshot storage (total)** | 2 GB | 10 GB |
+| Automatic snapshot frequency | daily | daily |
+
+> **Note — snapshot storage is the one quota that also applies to self-hosted Pro.**
+> Everything else in §7 is cloud-only, because it is our container. Snapshot bytes sit on
+> our disks no matter where the runtime runs, so the allowance travels with the Pro
+> subscription rather than with the cloud plan. A self-hosted Pro user gets the Cloud Pro
+> allowance (30 versions/agent, 2 GB); Pro Max sizing applies if they buy it.
 
 > **Recommendation — tier retention, don't truncate it.** Aged-out sessions and usage
 > rows should collapse into **pre-aggregated daily rollups** (per agent, per model:
@@ -290,15 +342,16 @@ deployment, not edition (self-hosted = unlimited; cloud = §7).
 | Workspace & files, MCP, portable profiles | ✅ | ✅ | ✅ |
 | Budgets | 🟡 advisory | 🟡 advisory | ✅ enforced |
 
-### The Pro delta (the only two differences)
+### The Pro delta (the only three differences)
 | Capability | Free | Pro | Enterprise |
 |---|:--:|:--:|:--:|
 | **Skill marketplace — install** | ⛔ | ➕ | ✅ |
 | **Skill marketplace — publish + revenue** | ⛔ | ➕ | ✅ |
 | **Speech-to-text** | ⛔ | ➕ | ✅ *(org gateway)* |
+| **Skill & memory snapshot versions** (history, diff, restore) | ⛔ | ➕ | ✅ *(+ org retention & key escrow)* |
 | Support | Community | Priority | Dedicated |
 
-### The Enterprise delta (business layer)
+### The Enterprise delta (business layer — **added on top of all of Pro**)
 | Capability | Free | Pro | Enterprise |
 |---|:--:|:--:|:--:|
 | Organizations & multiple members | ⛔ | ⛔ | ➕ |
@@ -312,6 +365,7 @@ deployment, not edition (self-hosted = unlimited; cloud = §7).
 | Fleet management (Incus/PC, rollout) | ⛔ | ⛔ | ➕ |
 | Managed voice gateway (org keys, metered) | ⛔ | ⛔ | ➕ |
 | Private org skill catalog + approval | ⛔ | ⛔ | ➕ |
+| Snapshot retention policy + admin key escrow | ⛔ | ⛔ | ➕ |
 | Governance policy (models, tools, MCP, skills) | ⛔ | ⛔ | ➕ |
 | Audit log, retention/residency, SIEM | ⛔ | ⛔ | ➕ |
 | Managed backup / DR, license management | ⛔ | ⛔ | ➕ |
@@ -341,9 +395,11 @@ Three layers make the tiers real:
   with the user as first owner.
 
 - **Edition → capability flags.** An edition maps to on/off flags, not to resource
-  quotas. The only flags that differ between Free and Pro are `marketplace.install`,
-  `marketplace.publish`, and `voice.stt`. The entitlements service resolves them per
-  request (Check / Reserve / Commit / Release; `-1` = unlimited, `0` = unavailable).
+  quotas, and the sets nest (Free ⊂ Pro ⊂ Enterprise). The only flags that differ between
+  Free and Pro are `marketplace.install`, `marketplace.publish`, `voice.stt`, and
+  `snapshots.versions`. Enterprise inherits all four and adds the org flags. The
+  entitlements service resolves them per request (Check / Reserve / Commit / Release;
+  `-1` = unlimited, `0` = unavailable).
   - Unavailable feature → **403**; quota exhausted → **429**; not signed in → **401**.
   - **Self-hosted capabilities always resolve unlimited** — regardless of plan, account,
     or connectivity. An edition only governs marketplace, voice, and the enterprise
@@ -386,9 +442,11 @@ its quota table is a *cloud* table that is currently presented as a *plan* table
    provider-connections split must not apply to a self-hosted install.
 4. **`free` gets no cloud row.** There is no free managed container (§7). Add a
    `cloud_trial` entry (Pro sizing, 14 days) instead.
-5. **Add three capability flags** as the *only* Free↔Pro difference:
-   `marketplace.install`, `marketplace.publish`, `voice.stt` — `0` on `free`,
-   `-1`/allowance on `pro` and `enterprise`.
+5. **Add four capability flags** as the *only* Free↔Pro difference:
+   `marketplace.install`, `marketplace.publish`, `voice.stt`, `snapshots.versions` —
+   `0` on `free`, `-1`/allowance on `pro` and `enterprise`. Enterprise must **inherit**
+   the Pro set rather than redeclare it, so a Pro capability can never be lost by
+   upgrading.
 6. **Move Voice I/O back into the local product as a Pro capability.** Plan `006_voice_io`
    was relocated to `plans/enterprise/E04`; speech-to-text must ship in the OSS runtime
    behind the `voice.stt` entitlement, with E04 remaining the *org-managed gateway*
@@ -402,6 +460,10 @@ its quota table is a *cloud* table that is currently presented as a *plan* table
 10. **Add retention-rollup semantics** (§7.2): detailed retention is a window; daily
     rollups are permanent. Current retention rows (7 / 90 / 365 days) stay, but as
     *detailed* retention only.
+11. **Add snapshot-storage quotas** (`snapshot_versions_per_agent`,
+    `snapshot_storage_bytes`) with the unusual property that they apply to **Pro on any
+    deployment**, self-hosted included — they are the only numeric limits that are not
+    cloud-only, because the bytes are ours either way.
 
 All other invariants stand: self-hosted local features stay unlimited; telemetry is never
 a billing source of truth; conversation content never centralizes; `401`/`403`/`429`

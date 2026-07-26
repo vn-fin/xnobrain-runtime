@@ -14,12 +14,18 @@ OSS runtime on their own machine or container; the control plane sits *above* th
 runtimes to provide identity, central visibility, governance, fleet management, voice,
 and cross-account coordination.
 
+> **Enterprise = Pro + the business layer.**
+
 **Every member gets the complete Pro product** — every standalone capability in
 [`oss.md`](oss.md) §2 (assistants, conversations, combos, provider connections with
-multiple accounts, agent teams, Kanban, message channels, cron, usage) plus both Pro
-capabilities (skill marketplace, speech-to-text). Enterprise **only adds**; it never
-removes a capability a Pro user has. What it adds is the layer a *business* needs and an
-individual does not: other people, oversight of them, and control over what they can do.
+multiple accounts, agent teams, Kanban, message channels, cron, usage) plus all three Pro
+capabilities ([`oss.md`](oss.md) §3: skill marketplace, speech-to-text, skill/memory
+snapshot versions). Enterprise **only adds**; it never removes or downgrades a capability
+a Pro user has. Where a Pro capability appears to change under Enterprise — provider keys,
+voice keys, snapshot retention — the org is gaining *control over* it, not taking it away.
+
+What Enterprise adds is the layer a *business* needs and an individual does not: other
+people, oversight of them, and control over what they can do.
 
 - **Control plane:** a Go service backed by **PostgreSQL** (the one billing-grade
   database). Runs **self-hosted** on the firm's servers — including **air-gapped** — or
@@ -155,7 +161,24 @@ local runtime behaves.
 - Compliance program artifacts (SOC 2 / ISO 27001 / GDPR DPA) as an organizational
   workstream.
 
-### 2.12 Backup, DR & licensing  *(program)*
+### 2.12 Snapshot governance  *(program)*
+Skill & memory snapshot versioning is a **Pro** capability ([`oss.md`](oss.md) §3.3) and
+every seat has it. Enterprise adds the org's stake in it:
+
+- **Org retention policy** — minimum and maximum retained versions per agent, and a
+  per-agent storage allowance drawn from an org pool rather than a personal one.
+- **Admin key escrow** — snapshots stay client-side encrypted, but the data key is
+  additionally wrapped to an **org escrow key** held in the org's Vault/KMS. This is the
+  one case a user-held key cannot serve: recovering the agents of a member who has left,
+  been deprovisioned, or lost their key.
+- Escrow is **visible, not silent** — members are shown that org escrow is enabled, and
+  every escrow-key use is written to the audit log with actor and justification.
+- **Restore across seats** — an admin can restore a departed member's agent onto another
+  member's runtime, subject to `snapshots.restore_other` RBAC permission.
+- Snapshot events (created, restored, aged out, escrow-unwrapped) flow to the audit log;
+  snapshot bytes count toward the org's storage line, never toward chargeback for tokens.
+
+### 2.13 Backup, DR & licensing  *(program)*
 - Managed, encrypted profile-bundle backups (portable-bundle format) and control-plane
   HA + DR runbooks.
 - Fleet license/update management; offline license keys for air-gapped installs.
@@ -172,7 +195,10 @@ local runtime behaves.
   member machines.
 - **Availability:** control-plane outage never degrades local runtimes.
 - **Privacy:** metadata/counts only leave a machine; conversation content, prompts,
-  responses, tool args, titles, files, and credentials never do.
+  responses, tool args, titles, files, and credentials never do. Skill/memory snapshots
+  (§2.12) are the sole payload that leaves, and they leave **encrypted client-side** —
+  the control plane stores ciphertext and can decrypt only via an explicit, audited
+  org-escrow operation.
 - **Security:** Ed25519 device identity; hashed/rotating tokens; credentials in
   vault/9router, never logged or returned.
 - **Accounting integrity:** exactly-once via snapshot upserts; idempotent commands.
@@ -189,8 +215,8 @@ organization layer.
 | A member's capability | Where it comes from |
 |---|---|
 | Assistants, conversations, combos, providers & multi-account, agent teams, Kanban, message channels, cron, usage, MCP, workspace | OSS §2 — same in Free |
-| Skill marketplace (install + publish), speech-to-text | OSS §3 — the Pro delta, included for every seat |
-| Orgs, SSO/RBAC/SCIM, central usage, enforced budgets, enterprise boards, cross-account teams, fleet, voice gateway, private catalog, governance, audit, backup/DR, managed cloud | Enterprise §2 — the business layer |
+| Skill marketplace (install + publish), speech-to-text, skill/memory snapshot versions | OSS §3 — the Pro delta, included for every seat |
+| Orgs, SSO/RBAC/SCIM, central usage, enforced budgets, enterprise boards, cross-account teams, fleet, voice gateway, private catalog, snapshot escrow, governance, audit, backup/DR, managed cloud | Enterprise §2 — the business layer |
 
 The dividing line is **people, not power**: an individual on Pro is not missing agent
 features, they are missing colleagues. Full side-by-side checklist:
