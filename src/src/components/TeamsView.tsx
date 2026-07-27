@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   ArrowLeft,
   Bot,
@@ -25,10 +25,10 @@ import {
   Square,
   Trash2,
   Upload,
-  Wrench,
   X,
 } from 'lucide-react';
 import { conversationsApi } from '../api/conversations';
+import { historicalRuns } from '../chat/runEvents';
 import {
   isRunTerminal,
   type Team,
@@ -37,7 +37,7 @@ import {
   type TeamRunStep,
   type TeamWorkflowStep,
 } from '../api/teams';
-import type { Agent, ChatMessage, ConversationUsage } from '../types';
+import type { Agent, ChatMessage, ChatRun, ConversationUsage } from '../types';
 import type { useTeams } from '../hooks/useTeams';
 import {
   systemApi,
@@ -47,6 +47,7 @@ import {
 } from '../features/system/api';
 import { Markdown } from './Markdown';
 import { ConfirmDialog } from './modals';
+import { RunSteps } from './RunSteps';
 
 type TeamsState = ReturnType<typeof useTeams>;
 type TeamsMode = 'library' | 'builder';
@@ -58,12 +59,12 @@ const NODE_WIDTH = 220;
 const NODE_HEIGHT = 118;
 
 type RunGraphNode = { step: TeamRunStep; x: number; y: number };
-type ConversationToolCall = { id: string; name: string; arguments: string };
 type NodeConversationInsight = {
   status: 'loading' | 'ready' | 'error';
   messages: ChatMessage[];
   usage?: ConversationUsage;
-  toolCalls: ConversationToolCall[];
+  runs: ChatRun[];
+  reasoningSteps: number;
   error?: string;
 };
 
@@ -72,46 +73,14 @@ const RUN_NODE_HEIGHT = 116;
 const RUN_NODE_GAP_X = 280;
 const RUN_NODE_GAP_Y = 140;
 
-function parseToolCalls(raw?: string): ConversationToolCall[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    const entries = Array.isArray(parsed) ? parsed : [parsed];
-    return entries.flatMap((entry, index) => {
-      if (!entry || typeof entry !== 'object') return [];
-      const value = entry as Record<string, unknown>;
-      const fn = value.function && typeof value.function === 'object'
-        ? value.function as Record<string, unknown>
-        : value;
-      const name = typeof fn.name === 'string' ? fn.name : '';
-      if (!name) return [];
-      const args = fn.arguments;
-      return [{
-        id: typeof value.id === 'string' ? value.id : `${name}-${index}`,
-        name,
-        arguments: typeof args === 'string' ? args : args === undefined ? '' : JSON.stringify(args),
-      }];
-    });
-  } catch {
-    return [];
-  }
-}
-
 function conversationInsight(messages: ChatMessage[], usage?: ConversationUsage): NodeConversationInsight {
-  const byId = new Map<string, ConversationToolCall>();
-  messages.forEach((message) => {
-    parseToolCalls(message.toolCalls).forEach((call) => byId.set(call.id, call));
-    if (message.role === 'tool' && message.toolName) {
-      const id = message.toolCallId || `${message.toolName}-${message.id}`;
-      if (!byId.has(id)) byId.set(id, { id, name: message.toolName, arguments: '' });
-    }
-  });
-  const toolCalls = [...byId.values()];
+  const runs = historicalRuns(messages);
   return {
     status: 'ready',
     messages,
     usage,
-    toolCalls,
+    runs,
+    reasoningSteps: runs.reduce((total, run) => total + run.steps.length, 0),
   };
 }
 
@@ -257,7 +226,7 @@ function LiveRunGraph({
                 <span className="run-node-status">{step.status}</span>
                 <span className="run-node-metrics" aria-label="Node execution metrics">
                   <span title="Tokens used"><Coins size={10} />{compactNumber(insight?.usage?.totalTokens)}</span>
-                  <span title="Total steps"><Wrench size={10} />{compactNumber(insight?.usage?.steps ?? insight?.toolCalls.length)}</span>
+                  <span title="Reasoning steps"><Brain size={10} />{compactNumber(insight?.reasoningSteps ?? insight?.usage?.steps)}</span>
                   <span title="Execution time"><Clock size={10} />{elapsed(step.started_at, step.ended_at, now)}</span>
                   <span title="Total messages"><MessageSquare size={10} />{compactNumber(insight?.usage?.messages ?? insight?.messages.length)}</span>
                 </span>
@@ -318,6 +287,50 @@ function savedWorkflowRun(team: Team): Pick<TeamRunRecord, 'status' | 'steps'> {
   };
 }
 
+function TeamConversationTranscript({
+  messages,
+  runs,
+}: {
+  messages: ChatMessage[];
+  runs: ChatRun[];
+}) {
+  const isFinalAnswer = (message: ChatMessage) =>
+    message.finishReason === 'stop'
+    || (!message.finishReason && !message.toolCalls && message.content.trim().length > 0);
+  const visibleMessages = messages.filter((message) =>
+    message.role === 'user' || (message.role === 'assistant' && isFinalAnswer(message)));
+  const assistantMessages = visibleMessages.filter((message) => message.role === 'assistant');
+  const unpositionedRuns = runs.filter((run) => run.insertBeforeMessageId === undefined);
+  const fallbackRuns = new Map<string | number, ChatRun[]>();
+  const fallbackOffset = Math.max(0, assistantMessages.length - unpositionedRuns.length);
+  unpositionedRuns.forEach((run, index) => {
+    const message = assistantMessages[Math.min(fallbackOffset + index, assistantMessages.length - 1)];
+    if (message) fallbackRuns.set(message.id, [...(fallbackRuns.get(message.id) ?? []), run]);
+  });
+  const runsForMessage = (message: ChatMessage) => message.role === 'assistant' ? [
+    ...runs.filter((run) => run.insertBeforeMessageId === message.id),
+    ...(fallbackRuns.get(message.id) ?? []),
+  ] : [];
+
+  return (
+    <>
+      {visibleMessages.map((message) => (
+        <Fragment key={message.id}>
+          {message.role === 'user' ? (
+            <div className="user-bubble"><Markdown content={message.content} /></div>
+          ) : (
+            <article className="assistant-message">
+              {runsForMessage(message).map((run) => <RunSteps key={run.id} run={run} />)}
+              <div className="message-content"><Markdown content={message.content} /></div>
+            </article>
+          )}
+        </Fragment>
+      ))}
+      {assistantMessages.length === 0 && unpositionedRuns.map((run) => <RunSteps key={run.id} run={run} />)}
+    </>
+  );
+}
+
 function TeamNodeConversationModal({
   step,
   agent,
@@ -361,12 +374,12 @@ function TeamNodeConversationModal({
 
         <section className="team-conversation-metrics" aria-label="Conversation metrics">
           <span><Coins size={14} /><small>Tokens</small><strong>{insight?.usage ? insight.usage.totalTokens.toLocaleString() : '—'}</strong></span>
-          <span><Wrench size={14} /><small>Steps</small><strong>{insight ? (insight.usage?.steps ?? insight.toolCalls.length).toLocaleString() : '—'}</strong></span>
+          <span><Brain size={14} /><small>Reasoning steps</small><strong>{insight ? insight.reasoningSteps.toLocaleString() : '—'}</strong></span>
           <span><Clock size={14} /><small>Execution time</small><strong>{elapsed(step.started_at, step.ended_at, now)}</strong></span>
           <span><MessageSquare size={14} /><small>Messages</small><strong>{insight ? (insight.usage?.messages ?? insight.messages.length).toLocaleString() : '—'}</strong></span>
         </section>
 
-        <div className="team-conversation-canvas">
+        <div className="message-canvas team-conversation-canvas">
           {!step.conversation_id ? (
             <div className="team-conversation-empty">
               <MessageSquare size={22} />
@@ -379,38 +392,7 @@ function TeamNodeConversationModal({
             <div className="team-conversation-empty error"><X size={22} /><strong>Conversation unavailable</strong><p>{insight.error}</p></div>
           ) : insight.messages.length === 0 ? (
             <div className="team-conversation-empty"><MessageSquare size={22} /><strong>No stored messages</strong></div>
-          ) : insight.messages.map((message) => {
-            const calls = parseToolCalls(message.toolCalls);
-            if (message.role === 'user') {
-              return <div className="team-conversation-user user-bubble" key={message.id}><Markdown content={message.content} /></div>;
-            }
-            if (message.role === 'tool') {
-              return (
-                <details className="team-conversation-tool" key={message.id}>
-                  <summary><Wrench size={14} /><span>{message.toolName || 'Tool'} result</span><ChevronRight size={13} /></summary>
-                  <pre>{message.content || 'No output stored.'}</pre>
-                </details>
-              );
-            }
-            if (message.role !== 'assistant') return null;
-            return (
-              <article className="team-conversation-assistant assistant-message" key={message.id}>
-                {message.reasoning && (
-                  <details className="team-conversation-reasoning">
-                    <summary><Brain size={14} /><span>Reasoning</span><ChevronRight size={13} /></summary>
-                    <div><Markdown content={message.reasoning} /></div>
-                  </details>
-                )}
-                {calls.map((call) => (
-                  <details className="team-conversation-tool" key={`${message.id}-${call.id}`}>
-                    <summary><Wrench size={14} /><span>Used {call.name}</span><ChevronRight size={13} /></summary>
-                    <pre>{call.arguments || 'No arguments stored.'}</pre>
-                  </details>
-                ))}
-                {message.content && <div className="message-content"><Markdown content={message.content} /></div>}
-              </article>
-            );
-          })}
+          ) : <TeamConversationTranscript messages={insight.messages} runs={insight.runs} />}
         </div>
         <footer className="team-conversation-foot">
           <span>Metrics come from this node’s stored Hermes conversation.</span>
@@ -493,7 +475,8 @@ function TeamRunsPanel({
             [conversationId]: {
               status: 'error',
               messages: [],
-              toolCalls: [],
+              runs: [],
+              reasoningSteps: 0,
               error: messagesResult.reason instanceof Error ? messagesResult.reason.message : 'Could not load this conversation.',
             },
           }));

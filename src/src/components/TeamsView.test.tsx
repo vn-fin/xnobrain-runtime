@@ -332,20 +332,22 @@ describe('TeamsView', () => {
     vi.spyOn(conversationsApi, 'messages').mockResolvedValue([
       { id: 'user-1', role: 'user', content: 'Research the launch options.' },
       {
-        id: 'assistant-1',
+        id: 'assistant-tool',
         role: 'assistant',
-        content: 'I found three viable launch plans.',
+        content: '',
         reasoning: 'I compared the available evidence.',
+        finishReason: 'tool_calls',
         toolCalls: JSON.stringify([{
           id: 'call-1',
           function: { name: 'skill_view', arguments: JSON.stringify({ name: 'product-research' }) },
         }]),
       },
       { id: 'tool-1', role: 'tool', content: 'Skill instructions loaded.', toolName: 'skill_view', toolCallId: 'call-1' },
+      { id: 'assistant-final', role: 'assistant', content: 'I found three viable launch plans.', finishReason: 'stop' },
     ]);
     vi.spyOn(conversationsApi, 'usage').mockResolvedValue({
       conversationId: 'conversation-1',
-      messages: 3,
+      messages: 4,
       steps: 1,
       apiCalls: 2,
       model: 'model',
@@ -433,10 +435,14 @@ describe('TeamsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View Researcher conversation' }));
     const dialog = await screen.findByRole('dialog', { name: 'Researcher' });
     expect(dialog).toHaveTextContent('1,234');
-    expect(dialog).toHaveTextContent('product-research');
-    expect(dialog).toHaveTextContent('Steps');
+    expect(dialog).toHaveTextContent('Reasoning steps');
     expect(dialog).toHaveTextContent('Messages');
+    expect(dialog).toHaveTextContent('Research the launch options.');
     expect(dialog).toHaveTextContent('I found three viable launch plans.');
+    fireEvent.click(screen.getByRole('button', { name: /Worked/i }));
+    expect(dialog).toHaveTextContent('I compared the available evidence.');
+    fireEvent.click(screen.getByRole('button', { name: 'Used skills' }));
+    expect(dialog).toHaveTextContent('Viewed skill product-research');
     fireEvent.click(screen.getByRole('button', { name: 'Close node conversation' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));

@@ -242,6 +242,9 @@ class TeamRunLifecycleTests(_TeamRunBase):
             second = await client.post(f"/api/v1/teams/{team_id}/runs", json=self._dag_body())
             self.assertEqual(second.status_code, 409, second.text)
             self.assertEqual(second.json()["error"]["code"], "team_run_active")
+            deleting = await client.delete(f"/api/v1/teams/{team_id}/runs/{first.json()['data']['id']}")
+            self.assertEqual(deleting.status_code, 409, deleting.text)
+            self.assertEqual(deleting.json()["error"]["code"], "team_run_active")
             await client.post(f"/api/v1/teams/{team_id}/runs/{first.json()['data']['id']}/cancel")
 
     async def test_cancel_marks_steps_and_record(self):

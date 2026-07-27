@@ -6811,7 +6811,7 @@ body.col-resizing {
 
 /* Stored Hermes conversation for an individual Team node. */
 .team-conversation-overlay { z-index: 55; }
-.team-conversation-modal { width: min(920px, 96vw); height: min(760px, 90vh); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; padding: 0; overflow: hidden; }
+.team-conversation-modal { width: min(1120px, 96vw); height: min(820px, 92vh); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; padding: 0; overflow: hidden; }
 .team-conversation-head { min-height: 70px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 14px 17px; border-bottom: 1px solid var(--border); }
 .team-conversation-head > span:nth-child(2) { min-width: 0; display: grid; gap: 3px; }
 .team-conversation-head strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
@@ -6826,22 +6826,8 @@ body.col-resizing {
 .team-conversation-metrics svg { grid-row: 1 / 3; color: var(--muted-2); }
 .team-conversation-metrics small { overflow: hidden; color: var(--muted-2); font-size: 8px; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .team-conversation-metrics strong { font-family: var(--mono, monospace); font-size: 11px; }
-.team-conversation-canvas { min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 22px max(22px, 8%); overflow: auto; background: var(--bg); }
-.team-conversation-user { max-width: min(78%, 650px); align-self: flex-end; margin: 0; }
-.team-conversation-assistant { width: min(88%, 720px); align-self: flex-start; margin: 0; padding: 0; }
-.team-conversation-assistant .message-content { color: var(--text); font-size: 12px; line-height: 1.65; }
-.team-conversation-reasoning,
-.team-conversation-tool { width: 100%; margin: 0 0 8px; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--panel); }
-.team-conversation-reasoning summary,
-.team-conversation-tool summary { min-height: 37px; display: flex; align-items: center; gap: 8px; padding: 8px 10px; color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 600; list-style: none; }
-.team-conversation-reasoning summary::-webkit-details-marker,
-.team-conversation-tool summary::-webkit-details-marker { display: none; }
-.team-conversation-reasoning summary svg:last-child,
-.team-conversation-tool summary svg:last-child { margin-left: auto; transition: rotate .15s ease; }
-.team-conversation-reasoning[open] summary svg:last-child,
-.team-conversation-tool[open] summary svg:last-child { rotate: 90deg; }
-.team-conversation-reasoning > div { padding: 1px 12px 11px; color: var(--muted); font-size: 11px; line-height: 1.6; }
-.team-conversation-tool pre { max-height: 210px; margin: 0; padding: 11px 12px; overflow: auto; border-top: 1px solid var(--border); color: var(--muted); background: var(--panel-2); font-family: var(--mono, monospace); font-size: 9px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.team-conversation-canvas { min-height: 0; padding: 42px min(8vw, 110px) 20px; background: var(--bg); }
+.team-conversation-canvas .assistant-message:last-child .message-content { margin-bottom: 0; }
 .team-conversation-empty { min-height: 220px; display: grid; place-items: center; align-content: center; gap: 7px; color: var(--muted-2); text-align: center; }
 .team-conversation-empty strong { color: var(--muted); font-size: 12px; }
 .team-conversation-empty p { max-width: 360px; margin: 0; font-size: 10px; line-height: 1.5; }
@@ -7242,8 +7228,6 @@ body.col-resizing {
   .team-conversation-metrics > span:nth-child(2) { border-right: 0; }
   .team-conversation-metrics > span:nth-child(-n + 2) { border-bottom: 1px solid var(--border); }
   .team-conversation-canvas { padding-inline: 15px; }
-  .team-conversation-user,
-  .team-conversation-assistant { max-width: 94%; width: auto; }
   .team-builder-shell { height: auto; grid-template-columns: 1fr; overflow: visible; }
   .team-builder-sidebar { overflow: visible; border-right: 0; border-bottom: 1px solid #e5eaf0; }
   .team-builder-main { min-height: 680px; }
