@@ -8790,9 +8790,9 @@ body.col-resizing {
   inset: 0;
   z-index: 100;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 112px 24px 24px;
+  padding: 24px;
   background: color-mix(in srgb, var(--bg) 58%, transparent);
   backdrop-filter: blur(2px);
   cursor: wait;
