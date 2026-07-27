@@ -432,6 +432,60 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(imported_id, agent_id)
         self.assertTrue((self.profiles / imported_id / "config.yaml").is_file())
 
+    async def test_team_snapshot_exports_profiles_and_remaps_the_complete_workflow(self):
+        async with self.client() as client:
+            agent_ids = []
+            for name in ("Snapshot coordinator", "Snapshot researcher", "Snapshot reviewer"):
+                created = await client.post(
+                    "/agent-gateway/v1/agents",
+                    json={"display_name": name},
+                )
+                agent_ids.append(created.json()["data"]["id"])
+            created_team = await client.post("/api/v1/teams", json={
+                "name": "Portable Team",
+                "description": "A complete portable workflow.",
+                "orchestrator_id": agent_ids[0],
+                "members": [
+                    {"agent_id": agent_ids[1], "role": "researcher"},
+                    {"agent_id": agent_ids[2], "role": "reviewer"},
+                ],
+                "workflow": [
+                    {"id": "research", "task": "Research.", "agent_id": agent_ids[1], "role": "researcher"},
+                    {"id": "review", "task": "Review.", "agent_id": agent_ids[2], "role": "reviewer", "needs": ["research"]},
+                ],
+            })
+            team_id = created_team.json()["data"]["id"]
+            exported = await client.post(
+                "/api/v1/bundles/export",
+                json={"team_ids": [team_id]},
+            )
+        self.assertEqual(exported.status_code, 200, exported.text)
+        with ZipFile(BytesIO(exported.content)) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            self.assertEqual([team["id"] for team in manifest["teams"]], [team_id])
+            self.assertEqual({agent["id"] for agent in manifest["agents"]}, set(agent_ids))
+            self.assertIn(f"teams/{team_id}.yaml", archive.namelist())
+
+        upload = {"file": ("team.zip", exported.content, "application/zip")}
+        async with self.client() as client:
+            applied = await client.post("/api/v1/bundles/apply", files=upload)
+            self.assertEqual(applied.status_code, 201, applied.text)
+            report = applied.json()["data"]
+            imported_team_id = report["team_id_mappings"][team_id]
+            imported = await client.get(f"/api/v1/teams/{imported_team_id}")
+        self.assertEqual(imported.status_code, 200, imported.text)
+        team = imported.json()["data"]
+        mappings = report["agent_id_mappings"]
+        self.assertEqual(team["orchestrator_id"], mappings[agent_ids[0]])
+        self.assertEqual(
+            [member["agent_id"] for member in team["members"]],
+            [mappings[agent_ids[1]], mappings[agent_ids[2]]],
+        )
+        self.assertEqual(
+            [step["agent_id"] for step in team["workflow"]],
+            [mappings[agent_ids[1]], mappings[agent_ids[2]]],
+        )
+
     async def test_profile_bundle_chunk_transfer_redacts_and_inherits_default_credentials(self):
         (self.root / ".env").write_text("DEFAULT_SECRET=from-default\n", encoding="utf-8")
         (self.root / "auth.json").write_text('{"session":"default-auth"}\n', encoding="utf-8")

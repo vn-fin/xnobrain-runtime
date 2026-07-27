@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Team, TeamRunRecord } from '../api/teams';
+import { systemApi } from '../features/system/api';
 import type { useTeams } from '../hooks/useTeams';
 import type { Agent } from '../types';
 import { TeamsView } from './TeamsView';
@@ -78,6 +79,12 @@ function teamState(overrides: Partial<ReturnType<typeof useTeams>> = {}) {
 }
 
 describe('TeamsView', () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it('builds a connected DAG by clicking agent cards and node ports', async () => {
     const create = vi.fn(async (input) => ({ id: 'team-1', ...input }));
     const state = teamState({ create });
@@ -85,6 +92,9 @@ describe('TeamsView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Create team/i }));
     fireEvent.change(screen.getByPlaceholderText('Product launch team'), { target: { value: 'Launch team' } });
+    fireEvent.change(screen.getByPlaceholderText('Describe what this team is best at…'), {
+      target: { value: 'Researches and reviews product launches.' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /Researcher.*Finds source material/i }));
     fireEvent.click(screen.getByRole('button', { name: /Reviewer.*Checks the findings/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Connect from researcher' }));
@@ -93,6 +103,7 @@ describe('TeamsView', () => {
 
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
     const input = create.mock.calls[0][0];
+    expect(input.description).toBe('Researches and reviews product launches.');
     expect(input.members.map((member) => member.agent_id)).toEqual(['researcher', 'reviewer']);
     expect(input.workflow).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'researcher', needs: [] }),
@@ -133,6 +144,75 @@ describe('TeamsView', () => {
         expect.objectContaining({ id: 'review', needs: ['research'], task: expect.stringContaining('Team objective: Compare launch plans') }),
       ]),
     );
+  });
+
+  it('renames and removes a Team through the overflow menu with confirmation', async () => {
+    const team: Team = {
+      id: 'team-menu',
+      name: 'Menu Team',
+      description: 'A Team managed from its overflow menu.',
+      orchestrator_id: 'lead',
+      members: [{ agent_id: 'researcher', role: 'researcher', allowed_tools: ['web'], enabled: true }],
+      workflow: [],
+      shared_workspace: false,
+      max_parallel: 1,
+      max_depth: 1,
+      enabled: true,
+    };
+    const rename = vi.fn(async () => ({ ...team, name: 'Renamed Team' }));
+    const remove = vi.fn(async () => undefined);
+    const state = teamState({ teams: [team], rename, remove });
+    render(<TeamsView agents={agents} state={state} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Menu Team options' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+    const renameInput = screen.getByRole('textbox', { name: 'Rename Menu Team' });
+    fireEvent.change(renameInput, { target: { value: 'Renamed Team' } });
+    fireEvent.keyDown(renameInput, { key: 'Enter' });
+    await waitFor(() => expect(rename).toHaveBeenCalledWith('team-menu', 'Renamed Team'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Menu Team options' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }));
+    expect(screen.getByText('Remove this Team?')).toBeVisible();
+    expect(screen.getByText(/assistants in this Team will not be deleted/i)).toBeVisible();
+    expect(remove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Team' }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith('team-menu'));
+  });
+
+  it('exports a Team snapshot and offers creation from an exported snapshot', async () => {
+    const team: Team = {
+      id: 'team-export',
+      name: 'Export Team',
+      description: 'A portable Team.',
+      orchestrator_id: 'lead',
+      members: [{ agent_id: 'reviewer', role: 'reviewer', allowed_tools: ['web'], enabled: true }],
+      workflow: [],
+      shared_workspace: false,
+      max_parallel: 1,
+      max_depth: 1,
+      enabled: true,
+    };
+    const exportSnapshot = vi.spyOn(systemApi, 'export').mockResolvedValue({
+      blob: new Blob(['team'], { type: 'application/zip' }),
+      filename: 'team.zip',
+    });
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:team'),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const state = teamState({ teams: [team] });
+    render(<TeamsView agents={agents} state={state} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export Team options' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Export' }));
+    await waitFor(() => expect(exportSnapshot).toHaveBeenCalledWith([], undefined, ['team-export']));
+
+    fireEvent.click(screen.getByRole('button', { name: /Create from snapshot/i }));
+    expect(screen.getByRole('dialog', { name: 'Create from Team snapshot' })).toBeVisible();
+    expect(screen.getByText(/credentials are never taken from the archive/i)).toBeVisible();
   });
 
   it('highlights active graph nodes, reveals returned output, and cancels the run', async () => {

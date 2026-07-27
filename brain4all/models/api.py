@@ -265,7 +265,8 @@ class BlendPatch(BaseModel):
 
 
 class BundleExport(BaseModel):
-    agent_ids: list[str] = Field(min_length=1)
+    agent_ids: list[str] = Field(default_factory=list, max_length=100)
+    team_ids: list[str] = Field(default_factory=list, max_length=100)
     include_conversations: bool = False
 
 
@@ -307,6 +308,7 @@ class TeamMember(BaseModel):
 
 class TeamCreate(BaseModel):
     name: str
+    description: str | None = Field(default=None, max_length=2000)
     orchestrator_id: str
     members: list[TeamMember] = Field(default_factory=list)
     workflow: list[TeamWorkflowStep] = Field(default_factory=list, max_length=64)

@@ -12,6 +12,7 @@ export type TeamMember = {
 export type Team = {
   id: string;
   name: string;
+  description?: string;
   orchestrator_id: string;
   members: TeamMember[];
   workflow?: TeamWorkflowStep[];
@@ -83,10 +84,23 @@ export function isRunTerminal(status: TeamRunStatus): boolean {
 
 export type TeamInput = Omit<Team, 'id'>;
 
+function withTeamDescription(team: Team): Team {
+  const count = (team.members?.length ?? 0) + 1;
+  return {
+    ...team,
+    description: team.description?.trim()
+      || `A coordinated team of ${count} agents for multi-stage work.`,
+  };
+}
+
 export const teamsApi = {
-  list: () => request<Team[]>('/api/v1/teams/'),
-  create: (team: TeamInput) => request<Team>('/api/v1/teams/', { method: 'POST', body: JSON.stringify(team) }),
-  update: (team: Team) => request<Team>(`/api/v1/teams/${encodeURIComponent(team.id)}`, { method: 'PUT', body: JSON.stringify(team) }),
+  list: async () => (await request<Team[]>('/api/v1/teams/')).map(withTeamDescription),
+  create: async (team: TeamInput) => withTeamDescription(
+    await request<Team>('/api/v1/teams/', { method: 'POST', body: JSON.stringify(team) }),
+  ),
+  update: async (team: Team) => withTeamDescription(
+    await request<Team>(`/api/v1/teams/${encodeURIComponent(team.id)}`, { method: 'PUT', body: JSON.stringify(team) }),
+  ),
   remove: (teamId: string) => request<{ deleted: boolean }>(`/api/v1/teams/${encodeURIComponent(teamId)}`, { method: 'DELETE' }),
   run: (teamId: string, task: string, workflow: TeamWorkflowStep[] = [], synthesis?: string) => request<TeamRun>(`/api/v1/teams/${encodeURIComponent(teamId)}/run`, { method: 'POST', body: JSON.stringify({ task, workflow, synthesis }) }),
   startRun: (teamId: string, task: string, workflow: TeamWorkflowStep[] = [], synthesis?: string) =>

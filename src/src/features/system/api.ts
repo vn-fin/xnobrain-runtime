@@ -103,9 +103,13 @@ export const systemApi = {
 
   cancelUpload: (uploadId: string) => request(`/api/v1/bundles/uploads/${uploadId}`, { method: 'DELETE' }),
 
-  export: async (agentIds: string[], onProgress?: (progress: TransferProgress) => void) => {
+  export: async (
+    agentIds: string[],
+    onProgress?: (progress: TransferProgress) => void,
+    teamIds: string[] = [],
+  ) => {
     const transfer = await request<BundleTransfer>('/api/v1/bundles/exports', {
-      method: 'POST', body: JSON.stringify({ agent_ids: agentIds }),
+      method: 'POST', body: JSON.stringify({ agent_ids: agentIds, team_ids: teamIds }),
     });
     const parts: ArrayBuffer[] = [];
     try {

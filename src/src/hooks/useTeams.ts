@@ -43,6 +43,21 @@ export function useTeams(active = true) {
     }
   };
 
+  const rename = async (teamId: string, name: string) => {
+    const current = teams.find((team) => team.id === teamId);
+    const nextName = name.trim();
+    if (!current || !nextName || current.name === nextName) return current;
+    setPending(true);
+    try {
+      const updated = await teamsApi.update({ ...current, name: nextName });
+      setTeams((rows) => rows.map((team) => team.id === teamId ? updated : team));
+      setError('');
+      return updated;
+    } finally {
+      setPending(false);
+    }
+  };
+
   const remove = async (teamId: string) => {
     setPending(true);
     try {
@@ -140,6 +155,6 @@ export function useTeams(active = true) {
 
   return {
     teams, status, pending, error, runs, activeRun, runsStatus,
-    refresh, create, remove, loadRuns, openRun, startRun, cancelRun, setActiveRun,
+    refresh, create, rename, remove, loadRuns, openRun, startRun, cancelRun, setActiveRun,
   };
 }

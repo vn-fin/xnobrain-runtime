@@ -51,6 +51,28 @@ describe('systemApi', () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/parts/0'))).toBe(true);
   });
 
+  it('requests an explicit Team snapshot without relying on coordinator matching', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/bundles/exports')) {
+        return new Response(JSON.stringify({ success: true, data: {
+          export_id: 'export-team', filename: 'team.zip', size: 1,
+          sha256: '0'.repeat(64), chunk_size: 4, total_parts: 1,
+        } }), { status: 201, headers: { 'content-type': 'application/json' } });
+      }
+      if (url.includes('/parts/0')) return new Response(new Uint8Array([1]));
+      return new Response(JSON.stringify({ success: true, data: { deleted: true } }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await systemApi.export([], undefined, ['team-1']);
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body).toEqual({ agent_ids: [], team_ids: ['team-1'] });
+  });
+
   it('uploads bundle inspection as multipart without overriding its boundary', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.body).toBeInstanceOf(FormData);

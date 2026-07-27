@@ -5,16 +5,21 @@ import {
   Check,
   ChevronRight,
   Clock,
+  Download,
+  FileArchive,
   GitBranch,
   List,
   Loader2,
+  MoreHorizontal,
   MousePointer2,
   Network,
+  Pencil,
   Play,
   Plus,
   Save,
   Square,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import {
@@ -27,6 +32,13 @@ import {
 } from '../api/teams';
 import type { Agent } from '../types';
 import type { useTeams } from '../hooks/useTeams';
+import {
+  systemApi,
+  type BundleTransfer,
+  type ImportReport,
+  type TransferProgress,
+} from '../features/system/api';
+import { ConfirmDialog } from './modals';
 
 type TeamsState = ReturnType<typeof useTeams>;
 type TeamsMode = 'library' | 'builder';
@@ -426,6 +438,7 @@ function TeamBuilder({
   onBack: () => void;
 }) {
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [orchestratorId, setOrchestratorId] = useState(agents[0]?.id ?? '');
   const [nodes, setNodes] = useState<DraftNode[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState('');
@@ -527,6 +540,7 @@ function TeamBuilder({
     }
     const input: TeamInput = {
       name: name.trim(),
+      description: description.trim() || undefined,
       orchestrator_id: orchestratorId,
       members: nodes.map((node) => ({
         agent_id: node.agent_id,
@@ -564,6 +578,15 @@ function TeamBuilder({
           <label>
             Team name
             <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Product launch team" />
+          </label>
+          <label>
+            Description
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="Describe what this team is best at…"
+              maxLength={2000}
+            />
           </label>
           <label>
             Coordinator
@@ -710,20 +733,165 @@ function TeamBuilder({
   );
 }
 
+function TeamImportModal({
+  state,
+  onImported,
+  onClose,
+}: {
+  state: TeamsState;
+  onImported: (teamId: string) => void;
+  onClose: () => void;
+}) {
+  const [file, setFile] = useState<File>();
+  const [transfer, setTransfer] = useState<BundleTransfer>();
+  const [progress, setProgress] = useState<TransferProgress>();
+  const [environment, setEnvironment] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const teamCount = transfer?.preview?.inspection.manifest.teams?.length ?? 0;
+
+  const close = () => {
+    if (busy) return;
+    if (transfer?.upload_id) void systemApi.cancelUpload(transfer.upload_id).catch(() => undefined);
+    onClose();
+  };
+
+  const upload = async () => {
+    if (!file) return;
+    setBusy('upload');
+    setError('');
+    setProgress(undefined);
+    try {
+      const result = await systemApi.upload(file, setProgress);
+      setTransfer(result);
+      setEnvironment(Object.fromEntries(
+        (result.preview?.missing_environment ?? []).map((key) => [key, '']),
+      ));
+      if (!(result.preview?.inspection.manifest.teams?.length)) {
+        setError('This archive does not contain an Agent Team snapshot.');
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not inspect the Team snapshot.');
+    } finally {
+      setBusy('');
+      setProgress(undefined);
+    }
+  };
+
+  const apply = async () => {
+    if (!transfer?.upload_id || !teamCount) return;
+    setBusy('apply');
+    setError('');
+    try {
+      const filled = Object.fromEntries(
+        Object.entries(environment).filter(([, value]) => value.trim()),
+      );
+      const report: ImportReport = await systemApi.applyUpload(transfer.upload_id, filled);
+      setTransfer(undefined);
+      await state.refresh();
+      const teamId = Object.values(report.team_id_mappings ?? {})[0];
+      if (!teamId) throw new Error('The snapshot did not create a Team.');
+      onImported(teamId);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not create the Team from this snapshot.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={close}>
+      <div className="app-modal team-import-modal" role="dialog" aria-modal="true" aria-labelledby="team-import-title" onClick={(event) => event.stopPropagation()}>
+        <div className="app-modal-head">
+          <strong id="team-import-title">Create from Team snapshot</strong>
+          <button className="icon-button" onClick={close} aria-label="Close Team import"><X size={17} /></button>
+        </div>
+        <p className="app-modal-sub">
+          Import a verified Brain4All ZIP. Referenced assistants are cloned with new IDs when needed; credentials are never taken from the archive.
+        </p>
+        <label className="profile-upload-picker">
+          <FileArchive size={20} />
+          <span>
+            <strong>{file?.name ?? 'Choose a .zip Team snapshot'}</strong>
+            <small>Checksums and safe archive limits are verified before import.</small>
+          </span>
+          <input
+            type="file"
+            accept=".zip,application/zip"
+            onChange={(event) => {
+              if (transfer?.upload_id) void systemApi.cancelUpload(transfer.upload_id);
+              setFile(event.target.files?.[0]);
+              setTransfer(undefined);
+              setError('');
+            }}
+          />
+        </label>
+        {busy === 'upload' && (
+          <div className="profile-transfer-progress">
+            <span style={{ width: `${progress?.percent ?? 0}%` }} />
+            <small>{progress?.percent ?? 0}% uploaded</small>
+          </div>
+        )}
+        {transfer?.preview && teamCount > 0 && (
+          <div className="profile-import-preview">
+            <strong>{teamCount} Team snapshot ready</strong>
+            <small>
+              {transfer.preview.inspection.manifest.agents.length} referenced assistants · {transfer.preview.inspection.files} verified files
+            </small>
+            {(transfer.preview.missing_environment ?? []).map((key) => (
+              <label key={key}>
+                {key}
+                <input
+                  type="password"
+                  value={environment[key] ?? ''}
+                  onChange={(event) => setEnvironment((current) => ({ ...current, [key]: event.target.value }))}
+                  placeholder="Optional missing environment value"
+                  autoComplete="off"
+                />
+              </label>
+            ))}
+          </div>
+        )}
+        {error && <div className="system-error" role="alert">{error}</div>}
+        <div className="modal-actions">
+          <button className="conn-btn ghost" onClick={close}>Cancel</button>
+          {!transfer ? (
+            <button className="conn-btn primary" disabled={!file || !!busy} onClick={() => void upload()}>
+              <Upload size={15} /> {busy === 'upload' ? 'Uploading…' : 'Upload & inspect'}
+            </button>
+          ) : (
+            <button className="conn-btn primary" disabled={!!busy || !teamCount} onClick={() => void apply()}>
+              <Plus size={15} /> {busy === 'apply' ? 'Creating…' : 'Create Team from snapshot'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TeamLibrary({
   agents,
   state,
   selectedTeamId,
   setSelectedTeamId,
   onCreate,
+  onImport,
 }: {
   agents: Agent[];
   state: TeamsState;
   selectedTeamId: string;
   setSelectedTeamId: (id: string) => void;
   onCreate: () => void;
+  onImport: () => void;
 }) {
   const [task, setTask] = useState('');
+  const [menuTeamId, setMenuTeamId] = useState('');
+  const [renamingTeamId, setRenamingTeamId] = useState('');
+  const [renameValue, setRenameValue] = useState('');
+  const [exportingTeamId, setExportingTeamId] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [removeTeam, setRemoveTeam] = useState<Team>();
   const selectedTeam = state.teams.find((team) => team.id === selectedTeamId);
   const { loadRuns } = state;
 
@@ -748,6 +916,55 @@ function TeamLibrary({
     }
   };
 
+  const startRename = (team: Team) => {
+    setMenuTeamId('');
+    setRenamingTeamId(team.id);
+    setRenameValue(team.name);
+  };
+
+  const commitRename = async (team: Team) => {
+    const name = renameValue.trim();
+    setRenamingTeamId('');
+    if (!name || name === team.name) return;
+    try {
+      await state.rename(team.id, name);
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : 'Could not rename the Team.');
+    }
+  };
+
+  const exportTeam = async (team: Team) => {
+    setExportingTeamId(team.id);
+    setActionError('');
+    try {
+      const download = await systemApi.export([], undefined, [team.id]);
+      const url = URL.createObjectURL(download.blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = download.filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setMenuTeamId('');
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : 'Could not export the Team snapshot.');
+    } finally {
+      setExportingTeamId('');
+    }
+  };
+
+  const confirmRemove = async () => {
+    if (!removeTeam) return;
+    const teamId = removeTeam.id;
+    try {
+      await state.remove(teamId);
+      if (selectedTeamId === teamId) {
+        setSelectedTeamId(state.teams.find((team) => team.id !== teamId)?.id ?? '');
+      }
+    } finally {
+      setRemoveTeam(undefined);
+    }
+  };
+
   return (
     <div className="team-library-layout">
       <aside className="team-library-list">
@@ -755,18 +972,60 @@ function TeamLibrary({
           <div><span className="teams-kicker">Your workspace</span><h2>Saved teams</h2></div>
           <span className="teams-count">{state.teams.length}</span>
         </div>
-        <button className="team-new-card" onClick={onCreate}><span><Plus size={17} /></span><div><strong>Create a new team</strong><small>Design a visual workflow</small></div></button>
+        <div className="team-create-options">
+          <button className="team-new-card" onClick={onCreate}><span><Plus size={17} /></span><div><strong>Create a new team</strong><small>Design a visual workflow</small></div></button>
+          <button className="team-new-card import" onClick={onImport}><span><Upload size={17} /></span><div><strong>Create from snapshot</strong><small>Import a verified Team ZIP</small></div></button>
+        </div>
         {state.status === 'loading' && <p className="teams-empty-copy">Loading teams…</p>}
-        {state.teams.map((team) => (
+        {state.teams.map((team) => renamingTeamId === team.id ? (
+          <div className={`team-list-item renaming ${selectedTeamId === team.id ? 'active' : ''}`} key={team.id}>
+            <input
+              className="team-list-rename"
+              aria-label={`Rename ${team.name}`}
+              value={renameValue}
+              autoFocus
+              onFocus={(event) => event.currentTarget.select()}
+              onChange={(event) => setRenameValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') { event.preventDefault(); void commitRename(team); }
+                if (event.key === 'Escape') { event.preventDefault(); setRenamingTeamId(''); }
+              }}
+              onBlur={() => void commitRename(team)}
+            />
+          </div>
+        ) : (
           <div className={`team-list-item ${selectedTeamId === team.id ? 'active' : ''}`} key={team.id}>
             <button className="team-list-select" onClick={() => setSelectedTeamId(team.id)}>
               <span className="team-list-icon"><GitBranch size={17} /></span>
-              <span><strong>{team.name}</strong><small>{team.members.length + 1} agents · {team.workflow?.length || team.members.length} stages</small></span>
+              <span><strong>{team.name}</strong><small>{team.description}</small></span>
               <ChevronRight size={15} />
             </button>
-            <button className="team-list-delete" aria-label={`Delete ${team.name}`} onClick={() => void state.remove(team.id)}><Trash2 size={14} /></button>
+            <button
+              className="team-list-more"
+              aria-label={`${team.name} options`}
+              aria-expanded={menuTeamId === team.id}
+              onClick={(event) => {
+                event.stopPropagation();
+                setActionError('');
+                setMenuTeamId((current) => current === team.id ? '' : team.id);
+              }}
+            >
+              <MoreHorizontal size={15} />
+            </button>
+            {menuTeamId === team.id && (
+              <div className="team-row-menu" role="menu">
+                <button role="menuitem" onClick={() => startRename(team)}><Pencil size={14} /> Rename</button>
+                <button role="menuitem" disabled={exportingTeamId === team.id} onClick={() => void exportTeam(team)}>
+                  <Download size={14} /> {exportingTeamId === team.id ? 'Exporting…' : 'Export'}
+                </button>
+                <button role="menuitem" className="danger" onClick={() => { setMenuTeamId(''); setRemoveTeam(team); }}>
+                  <Trash2 size={14} /> Remove
+                </button>
+              </div>
+            )}
           </div>
         ))}
+        {actionError && <div className="teams-action-error" role="alert">{actionError}</div>}
         {state.status !== 'loading' && state.teams.length === 0 && (
           <div className="team-library-empty"><Network size={23} /><strong>No teams yet</strong><span>Create a workflow to get started.</span></div>
         )}
@@ -778,7 +1037,7 @@ function TeamLibrary({
             <div className="team-detail-hero">
               <div className="team-detail-title">
                 <span className="team-detail-icon"><Network size={22} /></span>
-                <div><span className="teams-kicker">Agent team</span><h2>{selectedTeam.name}</h2><p>{selectedTeam.members.length + 1} profiles collaborate through {selectedTeam.workflow?.length || selectedTeam.members.length} workflow stages.</p></div>
+                <div><span className="teams-kicker">Agent team</span><h2>{selectedTeam.name}</h2><p>{selectedTeam.description}</p></div>
               </div>
               <span className={`team-status ${selectedTeam.enabled ? 'enabled' : ''}`}><i />{selectedTeam.enabled ? 'Ready' : 'Paused'}</span>
             </div>
@@ -809,6 +1068,16 @@ function TeamLibrary({
           <div className="team-detail-empty"><Network size={28} /><h2>Select a team</h2><p>Choose a saved team to inspect its workflow and start a run.</p></div>
         )}
       </main>
+      {removeTeam && (
+        <ConfirmDialog
+          title="Remove this Team?"
+          message={`“${removeTeam.name}” and its saved workflow will be permanently removed. The assistants in this Team will not be deleted.`}
+          confirmLabel="Remove Team"
+          danger
+          onConfirm={() => void confirmRemove()}
+          onCancel={() => setRemoveTeam(undefined)}
+        />
+      )}
     </div>
   );
 }
@@ -816,6 +1085,7 @@ function TeamLibrary({
 export function TeamsView({ agents, state, onClose }: { agents: Agent[]; state: TeamsState; onClose: () => void }) {
   const [mode, setMode] = useState<TeamsMode>('library');
   const [selectedTeamId, setSelectedTeamId] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
 
   const saved = (team: Team) => {
     if (team.id) setSelectedTeamId(team.id);
@@ -832,6 +1102,7 @@ export function TeamsView({ agents, state, onClose }: { agents: Agent[]; state: 
         <nav className="teams-mode-tabs" aria-label="Team views">
           <button className={mode === 'library' ? 'active' : ''} onClick={() => setMode('library')}><List size={15} /> Team library</button>
           <button className={mode === 'builder' ? 'active' : ''} onClick={() => setMode('builder')}><GitBranch size={15} /> Create team</button>
+          <button onClick={() => setImportOpen(true)}><Upload size={15} /> Import snapshot</button>
         </nav>
         <button className="icon-button" aria-label="Close teams" onClick={onClose}><X size={19} /></button>
       </header>
@@ -845,8 +1116,20 @@ export function TeamsView({ agents, state, onClose }: { agents: Agent[]; state: 
             selectedTeamId={selectedTeamId}
             setSelectedTeamId={setSelectedTeamId}
             onCreate={() => setMode('builder')}
+            onImport={() => setImportOpen(true)}
           />
         )}
+      {importOpen && (
+        <TeamImportModal
+          state={state}
+          onImported={(teamId) => {
+            setSelectedTeamId(teamId);
+            setMode('library');
+            setImportOpen(false);
+          }}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
     </section>
   );
 }

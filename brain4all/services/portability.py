@@ -279,7 +279,12 @@ class PortabilityService:
                             member["agent_id"] = mappings[old]
                         else:
                             member["enabled"] = False
+                            member["diagnostic"] = f"Profile {old or 'unknown'} was not included in the imported snapshot."
                             disabled_members += 1
+                    for step in team.get("workflow", []):
+                        old = str(step.get("agent_id") or "")
+                        if old in mappings:
+                            step["agent_id"] = mappings[old]
                     self.repository.put_team(team)
             return {
                 "export_id": manifest["export_id"],
@@ -303,9 +308,28 @@ class PortabilityService:
             shutil.rmtree(stage, ignore_errors=True)
 
     def _export_to_path(self, body: Mapping[str, Any], target: Path) -> dict[str, Any]:
-        agent_ids = list(dict.fromkeys(str(item).strip() for item in body.get("agent_ids", []) if str(item).strip()))
-        if not agent_ids:
-            raise StoreError("at least one agent is required")
+        requested_team_ids = list(dict.fromkeys(
+            str(item).strip()
+            for item in body.get("team_ids", [])
+            if str(item).strip()
+        ))
+        selected_teams: list[dict[str, Any]] = []
+        team_agents: list[str] = []
+        for team_id in requested_team_ids:
+            team = self.repository.get_team(team_id)
+            selected_teams.append(team)
+            team_agents.extend([
+                str(team.get("orchestrator_id") or ""),
+                *(str(member.get("agent_id") or "") for member in team.get("members", [])),
+                *(str(step.get("agent_id") or "") for step in team.get("workflow", [])),
+            ])
+        agent_ids = list(dict.fromkeys(
+            str(item).strip()
+            for item in [*(body.get("agent_ids", []) or []), *team_agents]
+            if str(item).strip()
+        ))
+        if not agent_ids and not requested_team_ids:
+            raise StoreError("at least one agent or team is required")
         include_conversations = bool(body.get("include_conversations", False))
         export_id = uuid.uuid4().hex
         created_at = datetime.now(timezone.utc).isoformat()
@@ -333,8 +357,9 @@ class PortabilityService:
         selected = set(agent_ids)
         teams: list[dict[str, str]] = []
         team_payloads: list[tuple[str, bytes]] = []
-        for team in self.repository.list_teams():
-            if str(team.get("orchestrator_id") or "") not in selected:
+        team_rows = selected_teams if requested_team_ids else self.repository.list_teams()
+        for team in team_rows:
+            if not requested_team_ids and str(team.get("orchestrator_id") or "") not in selected:
                 continue
             team_id = str(team.get("id") or "")
             if team_id:
@@ -372,9 +397,17 @@ class PortabilityService:
         if size > MAX_COMPRESSED:
             target.unlink(missing_ok=True)
             raise StoreError("bundle size is invalid", code="invalid_bundle")
+        filename = f"brain4all-{export_id}.zip"
+        if len(selected_teams) == 1:
+            team_name = re.sub(
+                r"[^a-z0-9]+",
+                "-",
+                str(selected_teams[0].get("name") or "team").strip().lower(),
+            ).strip("-")[:80] or "team"
+            filename = f"brain4all-team-{team_name}-{export_id[:8]}.zip"
         return {
             "bundle_export_id": export_id,
-            "filename": f"brain4all-{export_id}.zip",
+            "filename": filename,
             "size": size,
             "sha256": self._hash_file(target),
             "created_at": created_at,

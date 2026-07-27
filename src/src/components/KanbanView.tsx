@@ -185,6 +185,77 @@ function AgentPicker({
   );
 }
 
+function TeamPicker({
+  teams,
+  value,
+  onChange,
+}: {
+  teams: Team[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const available = teams.filter((team) => team.enabled);
+  const selected = available.find((team) => team.id === value);
+  return (
+    <div className="kb-agent-picker kb-team-picker">
+      <button
+        type="button"
+        className="kb-agent-trigger kb-team-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {selected ? (
+          <>
+            <span className="kb-team-avatar" style={{ background: colorFor(selected.id) }}>
+              {monogram(selected.name)}
+            </span>
+            <span className="kb-team-trigger-copy">
+              <strong>{selected.name}</strong>
+              <small>{selected.description}</small>
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="kb-team-avatar empty"><Users size={15} /></span>
+            <span className="kb-team-trigger-copy">
+              <strong>Choose a saved team</strong>
+              <small>{available.length ? `${available.length} available` : 'No enabled teams'}</small>
+            </span>
+          </>
+        )}
+        <ChevronRight size={14} />
+      </button>
+      {open && (
+        <div className="kb-agent-menu kb-team-menu" role="listbox" aria-label="Choose agent team">
+          {available.length === 0 ? (
+            <span className="kb-team-menu-empty">Create and enable a Team before assigning it here.</span>
+          ) : available.map((team) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={value === team.id}
+              key={team.id}
+              onClick={() => { onChange(team.id); setOpen(false); }}
+            >
+              <span className="kb-team-avatar" style={{ background: colorFor(team.id) }}>
+                {monogram(team.name)}
+              </span>
+              <span>
+                <strong>{team.name}</strong>
+                <small>{team.description}</small>
+                <em>{team.members.length + 1} agents · {team.workflow?.length || team.members.length} stages</em>
+              </span>
+              {value === team.id && <Check size={14} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function enabledSkillsFor(agents: Agent[], assignee: string) {
   const agent = agents.find((item) => item.id === assignee || item.name === assignee);
   return agent?.skills.filter((skill) => skill.installed && skill.enabled) ?? [];
@@ -931,12 +1002,7 @@ function NewTaskModal({
               </>
             ) : (
               <>
-                <select className="kb-team-select" value={teamId} onChange={(event) => setTeamId(event.target.value)}>
-                  <option value="">Choose a saved team…</option>
-                  {teams.filter((team) => team.enabled).map((team) => (
-                    <option value={team.id} key={team.id}>{team.name}</option>
-                  ))}
-                </select>
+                <TeamPicker teams={teams} value={teamId} onChange={setTeamId} />
                 <small className="kb-field-help">The saved DAG expands into native Hermes Kanban tasks.</small>
               </>
             )}
@@ -955,6 +1021,7 @@ function NewTaskModal({
             return (
               <div className="kb-team-preview">
                 <div><Users size={15} /><strong>{team.name}</strong><span>{steps.length + 1} nodes</span></div>
+                <p>{team.description}</p>
                 <div className="kb-team-preview-flow">
                   {steps.map((step) => (
                     <span key={step.id}>

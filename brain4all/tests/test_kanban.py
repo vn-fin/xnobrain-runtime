@@ -156,6 +156,10 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                 ],
             })
             self.assertEqual(team.status_code, 201, team.text)
+            self.assertEqual(
+                team.json()["data"]["description"],
+                "A coordinated team of 3 agents for multi-stage work.",
+            )
             team_id = team.json()["data"]["id"]
 
             created = await client.post(

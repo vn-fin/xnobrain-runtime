@@ -468,18 +468,34 @@ class PlatformService:
             "kanban_task_id": str(task["id"]),
         }
 
+    @staticmethod
+    def _team_with_description(team: Mapping[str, Any]) -> dict[str, Any]:
+        result = dict(team)
+        if not str(result.get("description") or "").strip():
+            count = len(result.get("members") or []) + 1
+            result["description"] = (
+                f"A coordinated team of {count} agents for multi-stage work."
+            )
+        return result
+
     def list_teams(self) -> list[dict[str, Any]]:
-        return self.repository.list_teams()
+        return [
+            self._team_with_description(team)
+            for team in self.repository.list_teams()
+        ]
 
     def get_team(self, team_id: str) -> dict[str, Any]:
-        return self.repository.get_team(team_id)
+        return self._team_with_description(self.repository.get_team(team_id))
 
     def create_team(self, body: Mapping[str, Any]) -> dict[str, Any]:
         return self._put_team(uuid.uuid4().hex, body, created_at=iso())
 
     def update_team(self, team_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         current = self.repository.get_team(team_id)
-        return self._put_team(team_id, body, created_at=current["created_at"])
+        payload = dict(body)
+        if "description" not in payload:
+            payload["description"] = current.get("description")
+        return self._put_team(team_id, payload, created_at=current["created_at"])
 
     def delete_team(self, team_id: str) -> dict[str, Any]:
         if not self.repository.delete_team(team_id):
@@ -869,6 +885,10 @@ class PlatformService:
             "id": team_id,
             "user_id": "local",
             "name": name,
+            "description": (
+                str(body.get("description") or "").strip()
+                or f"A coordinated team of {len(members) + 1} agents for multi-stage work."
+            ),
             "orchestrator_id": orchestrator,
             "members": members,
             "workflow": workflow,

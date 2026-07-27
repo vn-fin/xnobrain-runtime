@@ -30,6 +30,7 @@ const researchAgent: Agent = {
 const launchTeam: Team = {
   id: 'launch-team',
   name: 'Launch Team',
+  description: 'Researches evidence and reviews launch plans.',
   orchestrator_id: 'research-agent',
   members: [{ agent_id: 'research-agent', role: 'researcher', allowed_tools: ['web'], enabled: true }],
   workflow: [{ id: 'research', task: 'Research the launch', agent_id: 'research-agent', role: 'researcher', needs: [] }],
@@ -255,8 +256,15 @@ describe('KanbanView', () => {
     await user.click(screen.getByRole('button', { name: /New task/ }));
     const modal = screen.getByRole('dialog');
     await user.click(within(modal).getByRole('button', { name: 'Agent team' }));
-    await user.selectOptions(within(modal).getByDisplayValue('Choose a saved team…'), 'launch-team');
+    await user.click(within(modal).getByRole('button', { name: /Choose a saved team/ }));
+    const teamOption = within(modal).getByRole('option', { name: /Launch Team.*Researches evidence and reviews launch plans/i });
+    expect(teamOption).toBeVisible();
+    await user.click(teamOption);
     expect(within(modal).getByText('Launch Team', { selector: '.kb-team-preview strong' })).toBeVisible();
+    expect(within(modal).getByText(
+      'Researches evidence and reviews launch plans.',
+      { selector: '.kb-team-preview > p' },
+    )).toBeVisible();
     expect(within(modal).getByText('Synthesis')).toBeVisible();
 
     await user.type(within(modal).getByLabelText('Title'), 'Prepare launch');
