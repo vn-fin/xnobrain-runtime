@@ -215,6 +215,65 @@ describe('TeamsView', () => {
     expect(screen.getByText(/credentials are never taken from the archive/i)).toBeVisible();
   });
 
+  it('creates a Team from an inspected snapshot and selects the imported copy', async () => {
+    vi.spyOn(systemApi, 'upload').mockResolvedValue({
+      upload_id: 'upload-team',
+      filename: 'team.zip',
+      size: 100,
+      sha256: '0'.repeat(64),
+      chunk_size: 100,
+      total_parts: 1,
+      complete: true,
+      preview: {
+        inspection: {
+          manifest: {
+            export_id: 'export-team',
+            source_version: '0.2.0',
+            agents: [{ id: 'lead', name: 'Lead' }],
+            teams: [{ id: 'source-team', name: 'Source Team' }],
+          },
+          files: 4,
+          expanded_bytes: 100,
+          warnings: [],
+        },
+        collisions: [],
+        approval_resets: 1,
+        paused_cron_jobs: 0,
+        providers_reset: 1,
+        quarantined_code: [],
+        storage_required: 100,
+        missing_environment: [],
+      },
+    });
+    const apply = vi.spyOn(systemApi, 'applyUpload').mockResolvedValue({
+      export_id: 'export-team',
+      agent_id_mappings: { lead: 'lead-copy' },
+      team_id_mappings: { 'source-team': 'source-team-copy' },
+      disabled_team_members: 0,
+      paused_cron_jobs: 0,
+      approval_resets: 1,
+      providers_reset: 1,
+      quarantined_code: [],
+      warnings: [],
+    });
+    const refresh = vi.fn(async () => undefined);
+    const state = teamState({ refresh });
+    render(<TeamsView agents={agents} state={state} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Create from snapshot/i }));
+    const file = new File(['snapshot'], 'team.zip', { type: 'application/zip' });
+    fireEvent.change(screen.getByLabelText(/Choose a .zip Team snapshot/i), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Upload & inspect/i }));
+    expect(await screen.findByText('1 Team snapshot ready')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /Create Team from snapshot/i }));
+
+    await waitFor(() => expect(apply).toHaveBeenCalledWith('upload-team', {}));
+    expect(refresh).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create from Team snapshot' })).toBeNull());
+  });
+
   it('highlights active graph nodes, reveals returned output, and cancels the run', async () => {
     const team: Team = {
       id: 'team-1',
