@@ -54,6 +54,7 @@ export type AnalyticsState = {
   available: SelectableAgent[];
   summary: UsageSummary | null;
   status: AnalyticsStatus;
+  progress: { completed: number; total: number };
   error: string | null;
   generatedAt: string | null;
   refresh: () => Promise<void>;
@@ -67,9 +68,11 @@ export function useAnalytics(
   const [controls, setControlsState] = useState<AnalyticsControls>(() => loadControls());
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [status, setStatus] = useState<AnalyticsStatus>('idle');
+  const [progress, setProgress] = useState({ completed: 0, total: 3 });
   const [error, setError] = useState<string | null>(null);
   const automaticLoadKey = useRef('');
   const requestSerial = useRef(0);
+  const refreshInFlight = useRef<Promise<void> | null>(null);
 
   const setControls = useCallback((next: AnalyticsControls) => {
     setControlsState(next);
@@ -80,30 +83,51 @@ export function useAnalytics(
     }
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(() => {
+    if (refreshInFlight.current) return refreshInFlight.current;
     const serial = ++requestSerial.current;
-    setStatus((current) => (current === 'ready' ? 'ready' : 'loading'));
-    setError(null);
-    try {
-      const query = toQuery(controls);
-      const [overview, breakdown, timeseries] = await Promise.all([
-        analyticsApi.overview(query),
-        analyticsApi.models(query),
-        analyticsApi.timeseries(query),
-      ]);
-      if (serial !== requestSerial.current) return;
-      setSummary({
-        ...overview,
-        by_model: breakdown.by_model,
-        by_provider: breakdown.by_provider,
-        series: timeseries.series,
-      });
-      setStatus('ready');
-    } catch (cause) {
-      if (serial !== requestSerial.current) return;
-      setError(cause instanceof Error ? cause.message : 'Failed to load usage');
-      setStatus('error');
-    }
+    const task = (async () => {
+      setStatus('loading');
+      setProgress({ completed: 0, total: 3 });
+      setError(null);
+      const track = async <T,>(request: Promise<T>): Promise<T> => {
+        try {
+          return await request;
+        } finally {
+          if (serial === requestSerial.current) {
+            setProgress((current) => ({ ...current, completed: Math.min(current.total, current.completed + 1) }));
+          }
+        }
+      };
+      try {
+        const query = toQuery(controls);
+        const [overview, breakdown, timeseries] = await Promise.allSettled([
+          track(analyticsApi.overview(query)),
+          track(analyticsApi.models(query)),
+          track(analyticsApi.timeseries(query)),
+        ]);
+        if (serial !== requestSerial.current) return;
+        const failure = [overview, breakdown, timeseries].find((result) => result.status === 'rejected');
+        if (failure?.status === 'rejected') throw failure.reason;
+        if (overview.status !== 'fulfilled' || breakdown.status !== 'fulfilled' || timeseries.status !== 'fulfilled') return;
+        setSummary({
+          ...overview.value,
+          by_model: breakdown.value.by_model,
+          by_provider: breakdown.value.by_provider,
+          series: timeseries.value.series,
+        });
+        setStatus('ready');
+      } catch (cause) {
+        if (serial !== requestSerial.current) return;
+        setError(cause instanceof Error ? cause.message : 'Failed to load usage');
+        setStatus('error');
+      }
+    })();
+    refreshInFlight.current = task;
+    void task.finally(() => {
+      if (refreshInFlight.current === task) refreshInFlight.current = null;
+    });
+    return task;
   }, [controls]);
 
   useEffect(() => {
@@ -140,6 +164,7 @@ export function useAnalytics(
     available,
     summary,
     status,
+    progress,
     error,
     generatedAt: summary?.generated_at ?? null,
     refresh,

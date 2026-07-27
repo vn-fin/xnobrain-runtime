@@ -52,6 +52,8 @@ function pct(value: number, total: number): number {
 
 export function AnalyticsView({ state, onClose }: { state: AnalyticsState; onClose: () => void }) {
   const { controls, setControls, available, summary, status, error, generatedAt } = state;
+  const progress = state.progress ?? { completed: 0, total: 3 };
+  const loading = status === 'loading';
   const [pickerOpen, setPickerOpen] = useState(false);
   const [metric, setMetric] = useState<'tokens' | 'cost'>('tokens');
   const selectedCount = controls.agents.length;
@@ -71,8 +73,9 @@ export function AnalyticsView({ state, onClose }: { state: AnalyticsState; onClo
   }
 
   return (
-    <main className="analytics-page">
-      <header className="analytics-header">
+    <main className={`analytics-page ${loading ? 'is-loading' : ''}`} aria-busy={loading}>
+      <div className="analytics-content" inert={loading ? true : undefined}>
+        <header className="analytics-header">
         <div>
           <div className="analytics-eyebrow"><Sparkles size={13} /> Usage intelligence</div>
           <h1>Understand every model request</h1>
@@ -81,9 +84,9 @@ export function AnalyticsView({ state, onClose }: { state: AnalyticsState; onClo
         <button className="analytics-icon-button" onClick={onClose} title="Close analytics" aria-label="Close analytics">
           <X size={17} />
         </button>
-      </header>
+        </header>
 
-      <section className="analytics-toolbar" aria-label="Analytics controls">
+        <section className="analytics-toolbar" aria-label="Analytics controls">
         <div className="analytics-agent-picker">
           <button
             className="analytics-control analytics-agent-trigger"
@@ -166,24 +169,53 @@ export function AnalyticsView({ state, onClose }: { state: AnalyticsState; onClo
         {generatedAt && (
           <span className="analytics-as-of">Updated {new Date(generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
         )}
-      </section>
-
-      {status === 'error' && (
-        <section className="analytics-error">
-          <div><strong>Usage could not be loaded.</strong><span>{error}</span></div>
-          <button onClick={() => void state.refresh()}>Retry</button>
         </section>
-      )}
-      {!summary && status === 'loading' && <AnalyticsSkeleton />}
-      {summary && (
-        <Dashboard
-          summary={summary}
-          metric={metric}
-          setMetric={setMetric}
-          setBudget={state.setBudget}
-        />
-      )}
+
+        {status === 'error' && (
+          <section className="analytics-error">
+            <div><strong>Usage could not be loaded.</strong><span>{error}</span></div>
+            <button onClick={() => void state.refresh()}>Retry</button>
+          </section>
+        )}
+        {!summary && loading && <AnalyticsSkeleton />}
+        {summary && (
+          <Dashboard
+            summary={summary}
+            metric={metric}
+            setMetric={setMetric}
+            setBudget={state.setBudget}
+          />
+        )}
+      </div>
+      {loading && <AnalyticsLoadingProgress completed={progress.completed} total={progress.total} />}
     </main>
+  );
+}
+
+function AnalyticsLoadingProgress({ completed, total }: { completed: number; total: number }) {
+  const safeTotal = Math.max(1, total);
+  const safeCompleted = Math.max(0, Math.min(completed, safeTotal));
+  return (
+    <div className="analytics-loading-shield" role="status" aria-live="polite">
+      <div className="analytics-loading-card">
+        <span className="analytics-loading-spinner"><RefreshCw size={18} /></span>
+        <div>
+          <strong>Loading analytics</strong>
+          <span>Fetching usage, model breakdown, and timeline…</span>
+        </div>
+        <span className="analytics-loading-count">{safeCompleted}/{safeTotal}</span>
+        <div
+          className="analytics-loading-track"
+          role="progressbar"
+          aria-label="Analytics API loading progress"
+          aria-valuemin={0}
+          aria-valuemax={safeTotal}
+          aria-valuenow={safeCompleted}
+        >
+          <span style={{ width: `${safeCompleted / safeTotal * 100}%` }} />
+        </div>
+      </div>
+    </div>
   );
 }
 
