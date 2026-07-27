@@ -59,7 +59,14 @@ export function useTeams(active = true) {
     if (!teamId) return;
     setRunsStatus('loading');
     try {
-      setRuns(await teamsApi.listRuns(teamId));
+      const rows = await teamsApi.listRuns(teamId);
+      setRuns(rows);
+      const live = rows.find((run) => !isRunTerminal(run.status));
+      if (live) {
+        setActiveRun(await teamsApi.getRun(teamId, live.id));
+      } else {
+        setActiveRun((current) => current?.team_id === teamId ? current : undefined);
+      }
       setRunsStatus('ready');
     } catch (reason) {
       setRunsStatus('error');

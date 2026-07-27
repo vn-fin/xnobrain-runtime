@@ -4,8 +4,10 @@ import {
   Bot,
   Check,
   ChevronRight,
+  Clock,
   GitBranch,
   List,
+  Loader2,
   MousePointer2,
   Network,
   Play,
@@ -35,26 +37,272 @@ const CANVAS_HEIGHT = 620;
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 118;
 
-function StepChip({ step }: { step: TeamRunStep }) {
+type RunGraphNode = { step: TeamRunStep; x: number; y: number };
+
+function runGraphLayout(steps: TeamRunStep[]) {
+  const byId = new Map(steps.map((step) => [step.id, step]));
+  const levels = new Map<string, number>();
+  const levelOf = (id: string, visiting = new Set<string>()): number => {
+    if (levels.has(id)) return levels.get(id) as number;
+    if (visiting.has(id)) return 0;
+    visiting.add(id);
+    const step = byId.get(id);
+    const level = step?.needs.length ? Math.max(...step.needs.map((need) => levelOf(need, visiting))) + 1 : 0;
+    visiting.delete(id);
+    levels.set(id, level);
+    return level;
+  };
+  steps.forEach((step) => levelOf(step.id));
+  const grouped = new Map<number, TeamRunStep[]>();
+  steps.forEach((step) => {
+    const level = levels.get(step.id) ?? 0;
+    grouped.set(level, [...(grouped.get(level) ?? []), step]);
+  });
+  const maxLevel = Math.max(0, ...levels.values());
+  const maxRows = Math.max(1, ...[...grouped.values()].map((rows) => rows.length));
+  const width = Math.max(760, 340 + (maxLevel + 1) * 230);
+  const height = Math.max(250, 80 + maxRows * 112);
+  const nodes: RunGraphNode[] = [];
+  grouped.forEach((rows, level) => {
+    const blockHeight = (rows.length - 1) * 106;
+    rows.forEach((step, row) => nodes.push({
+      step,
+      x: 150 + level * 230,
+      y: height / 2 - 39 - blockHeight / 2 + row * 106,
+    }));
+  });
+  return { nodes, width, height, finishX: width - 105 };
+}
+
+function runEdge(fromX: number, fromY: number, toX: number, toY: number) {
+  const bend = Math.max(45, (toX - fromX) * .45);
+  return `M ${fromX} ${fromY} C ${fromX + bend} ${fromY}, ${toX - bend} ${toY}, ${toX} ${toY}`;
+}
+
+function elapsed(startedAt: string | null, endedAt: string | null, now: number) {
+  if (!startedAt) return 'Not started';
+  const start = Date.parse(startedAt);
+  const end = endedAt ? Date.parse(endedAt) : now;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 'In progress';
+  const seconds = Math.max(0, Math.round((end - start) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function LiveRunGraph({
+  run,
+  agents,
+  selectedStepId,
+  onSelectStep,
+  now,
+}: {
+  run: TeamRunRecord;
+  agents: Agent[];
+  selectedStepId: string;
+  onSelectStep: (id: string) => void;
+  now: number;
+}) {
+  const layout = runGraphLayout(run.steps);
+  const byId = new Map(layout.nodes.map((node) => [node.step.id, node]));
+  const dependedOn = new Set(run.steps.flatMap((step) => step.needs));
+  const roots = layout.nodes.filter((node) => node.step.needs.length === 0);
+  const leaves = layout.nodes.filter((node) => !dependedOn.has(node.step.id));
+  const allWorkersFinished = run.steps.length > 0 && run.steps.every((step) => isRunTerminal(step.status));
+  const coordinatorStatus = run.status === 'completed'
+    ? 'completed'
+    : run.status === 'failed' || run.status === 'cancelled'
+      ? run.status
+      : allWorkersFinished
+        ? 'running'
+        : 'pending';
+  const selectedStep = run.steps.find((step) => step.id === selectedStepId);
+  const coordinatorSelected = !selectedStep && coordinatorStatus === 'running';
+
   return (
-    <span className={`run-chip ${step.status}`} title={step.error ?? step.summary ?? ''}>
-      {step.id} · {step.role} · {step.status}
-    </span>
+    <div className="run-live-layout">
+      <div className="run-dag-scroll">
+        <div className="run-dag" style={{ width: layout.width, height: layout.height }} aria-label="Live team workflow">
+          <div className="run-dag-grid" />
+          <svg viewBox={`0 0 ${layout.width} ${layout.height}`} aria-hidden="true">
+            <defs>
+              <marker id="run-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" />
+              </marker>
+            </defs>
+            {roots.map(({ step, x, y }) => (
+              <path key={`start-${step.id}`} className={`run-dag-edge ${step.status}`} d={runEdge(92, layout.height / 2, x, y + 39)} />
+            ))}
+            {layout.nodes.flatMap(({ step, x, y }) => step.needs.map((need) => {
+              const parent = byId.get(need);
+              if (!parent) return null;
+              return (
+                <path
+                  key={`${need}-${step.id}`}
+                  className={`run-dag-edge ${step.status}`}
+                  d={runEdge(parent.x + 184, parent.y + 39, x, y + 39)}
+                />
+              );
+            }))}
+            {leaves.map(({ step, x, y }) => (
+              <path key={`${step.id}-finish`} className={`run-dag-edge ${coordinatorStatus}`} d={runEdge(x + 184, y + 39, layout.finishX, layout.height / 2)} />
+            ))}
+          </svg>
+          <div className={`run-dag-terminal start ${run.status === 'pending' ? 'pending' : 'completed'}`} style={{ left: 20, top: layout.height / 2 - 31 }}>
+            <Play size={12} fill="currentColor" /><span><strong>Start</strong><small>Objective received</small></span>
+          </div>
+          {layout.nodes.map(({ step, x, y }) => {
+            const agent = agents.find((candidate) => candidate.id === step.agent_id);
+            return (
+              <button
+                key={step.id}
+                className={`run-dag-node ${step.status} ${selectedStepId === step.id ? 'selected' : ''}`}
+                style={{ left: x, top: y }}
+                onClick={() => onSelectStep(step.id)}
+                aria-label={`${agent?.title ?? step.role}: ${step.status}`}
+              >
+                <span className="run-node-state">
+                  {step.status === 'running' ? <Loader2 size={15} /> : step.status === 'completed' ? <Check size={14} /> : step.status === 'failed' ? <X size={14} /> : <i />}
+                </span>
+                <span className="run-node-copy">
+                  <strong>{agent?.title ?? step.role}</strong>
+                  <small>{step.role}</small>
+                </span>
+                <span className="run-node-status">{step.status}</span>
+              </button>
+            );
+          })}
+          <button
+            className={`run-dag-terminal finish ${coordinatorStatus} ${coordinatorSelected ? 'selected' : ''}`}
+            style={{ left: layout.finishX, top: layout.height / 2 - 31 }}
+            onClick={() => onSelectStep('')}
+            aria-label={`Coordinator: ${coordinatorStatus}`}
+          >
+            {coordinatorStatus === 'running' ? <Loader2 size={14} /> : <Check size={13} />}
+            <span><strong>Finish</strong><small>{coordinatorStatus === 'running' ? 'Synthesizing' : 'Coordinator'}</small></span>
+          </button>
+        </div>
+      </div>
+      <aside className="run-activity-panel" aria-live="polite">
+        {selectedStep ? (
+          <>
+            <div className="run-activity-heading">
+              <span className={`run-activity-dot ${selectedStep.status}`} />
+              <div>
+                <strong>{agents.find((agent) => agent.id === selectedStep.agent_id)?.title ?? selectedStep.role}</strong>
+                <small>{selectedStep.status === 'running' ? 'Working now' : selectedStep.status}</small>
+              </div>
+            </div>
+            <div className="run-activity-meta">
+              <span><Clock size={12} /> {elapsed(selectedStep.started_at, selectedStep.ended_at, now)}</span>
+              <span>{selectedStep.allowed_tools.join(', ') || 'No tools'}</span>
+            </div>
+            {selectedStep.status === 'running' && (
+              <div className="run-working">
+                <span><i /><i /><i /></span>
+                <strong>Hermes is working</strong>
+                <p>The stream currently reports stage transitions. The returned summary will appear here as soon as this agent finishes.</p>
+              </div>
+            )}
+            {selectedStep.status === 'pending' && (
+              <div className="run-waiting"><Clock size={15} /><p>Waiting for {selectedStep.needs.length ? selectedStep.needs.join(', ') : 'an execution slot'}.</p></div>
+            )}
+            {(selectedStep.summary || selectedStep.error) && (
+              <div className={`run-agent-output ${selectedStep.error ? 'error' : ''}`}>
+                <span>{selectedStep.error ? 'Error' : `Returned output · ${selectedStep.summary_chars.toLocaleString()} chars`}</span>
+                <p>{selectedStep.summary || selectedStep.error}</p>
+              </div>
+            )}
+          </>
+        ) : coordinatorStatus === 'running' ? (
+          <>
+            <div className="run-activity-heading">
+              <span className="run-activity-dot running" />
+              <div><strong>Coordinator</strong><small>Synthesizing now</small></div>
+            </div>
+            <div className="run-working">
+              <span><i /><i /><i /></span>
+              <strong>Building the final answer</strong>
+              <p>All agent summaries are complete. The coordinator is combining their results.</p>
+            </div>
+          </>
+        ) : (
+          <div className="run-activity-empty"><MousePointer2 size={18} /><p>Select a graph node to inspect its status and latest output.</p></div>
+        )}
+      </aside>
+    </div>
   );
 }
 
-function TeamRunsPanel({ teamId, state }: { teamId: string; state: TeamsState }) {
+function TeamRunsPanel({ teamId, agents, state }: { teamId: string; agents: Agent[]; state: TeamsState }) {
   const { runs, activeRun, runsStatus, openRun, cancelRun } = state;
   const canCancel = activeRun && activeRun.team_id === teamId && !isRunTerminal(activeRun.status);
+  const [selectedStepId, setSelectedStepId] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!activeRun || activeRun.team_id !== teamId) return;
+    const running = activeRun.steps.filter((step) => step.status === 'running');
+    if (running.length) {
+      setSelectedStepId((current) => running.some((step) => step.id === current) ? current : running[0].id);
+    } else if (activeRun.status === 'running' && activeRun.steps.every((step) => isRunTerminal(step.status))) {
+      setSelectedStepId('');
+    } else {
+      setSelectedStepId((current) => activeRun.steps.some((step) => step.id === current) ? current : activeRun.steps[0]?.id ?? '');
+    }
+  }, [activeRun?.id, activeRun?.revision, activeRun, teamId]);
+
+  useEffect(() => {
+    if (!canCancel) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [canCancel]);
+
+  const cancel = async () => {
+    if (!activeRun) return;
+    setCancelling(true);
+    try {
+      await cancelRun(teamId, activeRun.id);
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   return (
     <div className="teams-card team-runs">
       <div className="teams-section-heading">
         <div>
-          <span className="teams-kicker">Execution history</span>
-          <h2>Recent runs</h2>
+          <span className="teams-kicker">{canCancel ? 'Live execution' : 'Execution details'}</span>
+          <h2>{activeRun?.team_id === teamId ? `Run ${activeRun.id.replace(/^tr_/, '').slice(0, 8)}` : 'Team runs'}</h2>
         </div>
-        <span className="teams-count">{runs.length}</span>
+        <div className="run-header-actions">
+          {activeRun?.team_id === teamId && <span className={`run-chip ${activeRun.status}`}>{activeRun.status}</span>}
+          {canCancel && (
+            <button className="team-cancel-button" disabled={cancelling} onClick={() => void cancel()}>
+              <Square size={12} fill="currentColor" /> {cancelling ? 'Cancelling…' : 'Cancel run'}
+            </button>
+          )}
+        </div>
+      </div>
+      {activeRun && activeRun.team_id === teamId && (
+        <>
+          <div className="run-progress-summary">
+            <span><strong>{activeRun.steps.filter((step) => step.status === 'completed').length}</strong> of {activeRun.steps.length} agents complete</span>
+            <span>
+              {activeRun.steps.filter((step) => step.status === 'running').length
+                + (activeRun.status === 'running' && activeRun.steps.length > 0 && activeRun.steps.every((step) => isRunTerminal(step.status)) ? 1 : 0)} active now
+            </span>
+            <span>Revision {activeRun.revision}</span>
+          </div>
+          <LiveRunGraph run={activeRun} agents={agents} selectedStepId={selectedStepId} onSelectStep={setSelectedStepId} now={now} />
+          {activeRun.error && <p className="teams-error">Run failed: {activeRun.error}</p>}
+          {isRunTerminal(activeRun.status) && activeRun.orchestrator_summary && (
+            <div className="team-result"><h3>Coordinator summary</h3><p>{activeRun.orchestrator_summary}</p></div>
+          )}
+        </>
+      )}
+      <div className="run-history-heading">
+        <span>Recent runs</span><span>{runs.length}</span>
       </div>
       {runsStatus === 'loading' && <p className="teams-empty-copy">Loading runs…</p>}
       {runsStatus !== 'loading' && runs.length === 0 && <p className="teams-empty-copy">No runs yet. Trigger this team to see live progress here.</p>}
@@ -71,32 +319,6 @@ function TeamRunsPanel({ teamId, state }: { teamId: string; state: TeamsState })
           </button>
         ))}
       </div>
-      {activeRun && activeRun.team_id === teamId && (
-        <div className="run-detail">
-          <div className="run-detail-head">
-            <strong>Run {activeRun.id.replace(/^tr_/, '').slice(0, 8)}</strong>
-            <span className={`run-chip ${activeRun.status}`}>{activeRun.status}</span>
-            {canCancel && (
-              <button className="conn-btn ghost" onClick={() => void cancelRun(teamId, activeRun.id)}>
-                <Square size={13} /> Cancel
-              </button>
-            )}
-          </div>
-          <div className="run-chips">
-            {activeRun.steps.map((step) => <StepChip key={step.id} step={step} />)}
-          </div>
-          {activeRun.error && <p className="teams-error">Run failed: {activeRun.error}</p>}
-          {isRunTerminal(activeRun.status) && activeRun.orchestrator_summary && (
-            <div className="team-result"><h3>Coordinator summary</h3><p>{activeRun.orchestrator_summary}</p></div>
-          )}
-          {activeRun.steps.map((step) => (
-            <details key={step.id}>
-              <summary>{step.id} · {step.role} · {step.status}</summary>
-              <p>{step.summary || step.error || 'Waiting for output…'}</p>
-            </details>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -581,7 +803,7 @@ function TeamLibrary({
                 </button>
               </div>
             </section>
-            <TeamRunsPanel teamId={selectedTeam.id} state={state} />
+            <TeamRunsPanel teamId={selectedTeam.id} agents={agents} state={state} />
           </>
         ) : (
           <div className="team-detail-empty"><Network size={28} /><h2>Select a team</h2><p>Choose a saved team to inspect its workflow and start a run.</p></div>
