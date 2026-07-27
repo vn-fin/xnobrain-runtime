@@ -196,6 +196,8 @@ export type ChatRun = {
 export type ConversationUsage = {
   conversationId: string;
   messages: number;
+  steps?: number;
+  executionSeconds?: number;
   apiCalls: number;
   model: string;
   totalTokens: number;

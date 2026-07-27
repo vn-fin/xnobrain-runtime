@@ -31,6 +31,8 @@ function mapUsage(dto: ConversationUsageDTO): ConversationUsage {
   return {
     conversationId: dto.conversation_id ?? '',
     messages: dto.messages ?? 0,
+    steps: dto.steps ?? dto.tool_calls ?? 0,
+    executionSeconds: dto.execution_seconds,
     apiCalls: dto.api_calls ?? 0,
     model: dto.model ?? '',
     totalTokens: dto.tokens?.total ?? 0,

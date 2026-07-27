@@ -6,6 +6,7 @@ import os
 from io import BytesIO
 import json
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -617,6 +618,74 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.json()["data"]["title"], "New Conversation")
         self.assertEqual(second.json()["data"]["title"], "New Conversation 2")
         self.assertEqual(third.json()["data"]["title"], "New Conversation 3")
+
+    async def test_conversation_usage_is_aggregated_from_the_hermes_session(self):
+        async with self.client() as client:
+            created = await client.post(
+                "/agent-gateway/v1/agents",
+                json={"display_name": "Usage worker"},
+            )
+            agent_id = created.json()["data"]["id"]
+            conversation = await client.post(
+                f"/conversations/v1/conversations?agent={agent_id}",
+                json={"title": "Usage test"},
+            )
+            conversation_id = conversation.json()["data"]["id"]
+
+            database = self.profiles / agent_id / "state.db"
+            connection = sqlite3.connect(database)
+            try:
+                connection.execute(
+                    """
+                    UPDATE sessions
+                    SET model = ?, started_at = ?, ended_at = ?, message_count = ?,
+                        tool_call_count = ?, input_tokens = ?, output_tokens = ?,
+                        cache_read_tokens = ?, cache_write_tokens = ?,
+                        reasoning_tokens = ?, api_call_count = ?,
+                        estimated_cost_usd = ?, cost_status = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        "test/model", 100.0, 103.25, 3, 1, 1_000, 200,
+                        100, 20, 50, 2, 0.25, "estimated", conversation_id,
+                    ),
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO messages
+                        (session_id, role, content, tool_call_id, tool_name, timestamp, token_count)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (conversation_id, "user", "question", None, None, 100.0, 10),
+                        (conversation_id, "assistant", "", None, None, 101.0, 20),
+                        (conversation_id, "tool", "result", "call-1", "search", 102.0, 30),
+                    ],
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            response = await client.get(
+                f"/conversations/v1/conversations/{conversation_id}/usage?agent={agent_id}",
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        usage = response.json()["data"]
+        self.assertEqual(usage["tokens"], {
+            "cache_read": 100,
+            "cache_write": 20,
+            "input": 1_000,
+            "output": 200,
+            "reasoning": 50,
+            "total": 1_320,
+        })
+        self.assertEqual(usage["steps"], 1)
+        self.assertEqual(usage["tool_calls"], 1)
+        self.assertEqual(usage["messages"], 3)
+        self.assertEqual(usage["execution_seconds"], 3.25)
+        self.assertEqual(usage["api_calls"], 2)
+        self.assertEqual(usage["cost"]["total_usd"], 0.25)
 
 
 if __name__ == "__main__":

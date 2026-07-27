@@ -289,6 +289,68 @@ class PlatformService:
         result["messages"] = payload["messages"]
         return result
 
+    def conversation_usage(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
+        payload = self.agents.get_conversation(agent_id, conversation_id)
+        session = dict(payload["conversation"])
+        messages = list(payload["messages"])
+
+        def integer(field: str) -> int:
+            try:
+                return max(0, int(session.get(field) or 0))
+            except (TypeError, ValueError):
+                return 0
+
+        def number(field: str) -> float:
+            try:
+                return max(0.0, float(session.get(field) or 0))
+            except (TypeError, ValueError):
+                return 0.0
+
+        input_tokens = integer("input_tokens")
+        output_tokens = integer("output_tokens")
+        cache_read_tokens = integer("cache_read_tokens")
+        cache_write_tokens = integer("cache_write_tokens")
+        reasoning_tokens = integer("reasoning_tokens")
+        total_tokens = input_tokens + output_tokens + cache_read_tokens + cache_write_tokens
+        if total_tokens == 0:
+            total_tokens = sum(
+                max(0, int(message.get("token_count") or 0))
+                for message in messages
+                if str(message.get("token_count") or "").lstrip("-").isdigit()
+            )
+
+        started_at = number("started_at")
+        ended_at = number("ended_at")
+        execution_seconds = max(0.0, ended_at - started_at) if started_at and ended_at else 0.0
+        tool_steps = sum(1 for message in messages if message.get("role") == "tool")
+        actual_cost = session.get("actual_cost_usd")
+        cost = number("actual_cost_usd") if actual_cost is not None else number("estimated_cost_usd")
+
+        return {
+            "conversation_id": conversation_id,
+            "api_calls": integer("api_call_count"),
+            "duration": f"{execution_seconds:.2f}s",
+            "execution_seconds": round(execution_seconds, 3),
+            "messages": len(messages),
+            "steps": tool_steps,
+            "tool_calls": tool_steps,
+            "model": str(session.get("model") or ""),
+            "source": str(session.get("source") or ""),
+            "tokens": {
+                "cache_read": cache_read_tokens,
+                "cache_write": cache_write_tokens,
+                "input": input_tokens,
+                "output": output_tokens,
+                "reasoning": reasoning_tokens,
+                "total": total_tokens,
+            },
+            "cost": {
+                "source": str(session.get("cost_source") or ""),
+                "status": str(session.get("cost_status") or ""),
+                "total_usd": cost,
+            },
+        }
+
     def rename_conversation(self, agent_id: str, conversation_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         payload = self.agents.update_conversation(agent_id, conversation_id, {"title": body.get("title")})
         return self._conversation_dto(agent_id, payload["conversation"])
@@ -911,7 +973,7 @@ class PlatformService:
 
     @staticmethod
     def _conversation_dto(agent_id: str, item: Mapping[str, Any]) -> dict[str, Any]:
-        return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Conversation"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tools") or 0), "created_at": item.get("created_at"), "updated_at": item.get("updated_at")}
+        return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Conversation"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tool_call_count") or item.get("tools") or 0), "created_at": item.get("created_at"), "updated_at": item.get("updated_at")}
 
     @staticmethod
     def _agent_dto(item: Mapping[str, Any]) -> dict[str, Any]:

@@ -297,6 +297,7 @@ describe('TeamsView', () => {
     vi.spyOn(conversationsApi, 'usage').mockResolvedValue({
       conversationId: 'conversation-1',
       messages: 3,
+      steps: 1,
       apiCalls: 2,
       model: 'model',
       totalTokens: 1234,
@@ -384,7 +385,8 @@ describe('TeamsView', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Researcher' });
     expect(dialog).toHaveTextContent('1,234');
     expect(dialog).toHaveTextContent('product-research');
-    expect(dialog).toHaveTextContent('Reasoning events');
+    expect(dialog).toHaveTextContent('Steps');
+    expect(dialog).toHaveTextContent('Messages');
     expect(dialog).toHaveTextContent('I found three viable launch plans.');
     fireEvent.click(screen.getByRole('button', { name: 'Close node conversation' }));
 

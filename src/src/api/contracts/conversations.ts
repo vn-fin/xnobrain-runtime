@@ -39,7 +39,10 @@ export type ConversationUsageDTO = {
   api_calls?: number;
   compressions?: number;
   duration?: string;
+  execution_seconds?: number;
   messages?: number;
+  steps?: number;
+  tool_calls?: number;
   model?: string;
   source?: string;
   tokens?: {

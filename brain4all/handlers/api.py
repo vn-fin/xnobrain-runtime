@@ -127,7 +127,7 @@ class APIHandlers:
             "conversations_create": (lambda: s.create_conversation(agent(), body), "conversation created successfully", 201),
             "conversations_get": (lambda: s.get_conversation(agent(), p["conversation_id"]), "conversation retrieved successfully", 200),
             "messages_list": (lambda: {"messages": s.get_conversation(agent(), p["conversation_id"])["messages"]}, "messages retrieved successfully", 200),
-            "conversations_usage": (lambda: {"conversation_id": p["conversation_id"], "tokens": {"total": 0}, "cost": {"total_usd": 0}}, "usage retrieved successfully", 200),
+            "conversations_usage": (lambda: s.conversation_usage(agent(), p["conversation_id"]), "usage retrieved successfully", 200),
             "conversations_rename": (lambda: s.rename_conversation(agent(), p["conversation_id"], body), "conversation renamed successfully", 200),
             "conversations_delete": (lambda: s.delete_conversation(agent(), p["conversation_id"]), "conversation deleted successfully", 200),
             "run_stop": (lambda: s.stop_run(p["run_id"]), "run stopped successfully", 200),

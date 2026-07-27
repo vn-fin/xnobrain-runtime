@@ -22,7 +22,6 @@ import {
   Plus,
   Save,
   Send,
-  Sparkles,
   Square,
   Trash2,
   Upload,
@@ -65,8 +64,6 @@ type NodeConversationInsight = {
   messages: ChatMessage[];
   usage?: ConversationUsage;
   toolCalls: ConversationToolCall[];
-  skillNames: string[];
-  reasoningEvents: number;
   error?: string;
 };
 
@@ -110,24 +107,11 @@ function conversationInsight(messages: ChatMessage[], usage?: ConversationUsage)
     }
   });
   const toolCalls = [...byId.values()];
-  const skillNames = [...new Set(toolCalls
-    .filter((call) => call.name.toLowerCase().includes('skill'))
-    .map((call) => {
-      try {
-        const args = JSON.parse(call.arguments || '{}') as Record<string, unknown>;
-        const target = args.name ?? args.skill ?? args.skill_id;
-        return typeof target === 'string' && target.trim() ? target.trim() : call.name;
-      } catch {
-        return call.name;
-      }
-    }))];
   return {
     status: 'ready',
     messages,
     usage,
     toolCalls,
-    skillNames,
-    reasoningEvents: messages.filter((message) => Boolean(message.reasoning?.trim())).length,
   };
 }
 
@@ -272,10 +256,10 @@ function LiveRunGraph({
                 </span>
                 <span className="run-node-status">{step.status}</span>
                 <span className="run-node-metrics" aria-label="Node execution metrics">
-                  <span title="Execution time"><Clock size={10} />{elapsed(step.started_at, step.ended_at, now)}</span>
-                  <span title="Tool calls"><Wrench size={10} />{compactNumber(insight?.toolCalls.length)}</span>
                   <span title="Tokens used"><Coins size={10} />{compactNumber(insight?.usage?.totalTokens)}</span>
-                  <span title="Skills used"><Sparkles size={10} />{compactNumber(insight?.skillNames.length)}</span>
+                  <span title="Total steps"><Wrench size={10} />{compactNumber(insight?.usage?.steps ?? insight?.toolCalls.length)}</span>
+                  <span title="Execution time"><Clock size={10} />{elapsed(step.started_at, step.ended_at, now)}</span>
+                  <span title="Total messages"><MessageSquare size={10} />{compactNumber(insight?.usage?.messages ?? insight?.messages.length)}</span>
                 </span>
               </button>
               <button
@@ -376,19 +360,11 @@ function TeamNodeConversationModal({
         </header>
 
         <section className="team-conversation-metrics" aria-label="Conversation metrics">
-          <span><Clock size={14} /><small>Execution time</small><strong>{elapsed(step.started_at, step.ended_at, now)}</strong></span>
-          <span><Wrench size={14} /><small>Tool calls</small><strong>{insight ? insight.toolCalls.length.toLocaleString() : '—'}</strong></span>
           <span><Coins size={14} /><small>Tokens</small><strong>{insight?.usage ? insight.usage.totalTokens.toLocaleString() : '—'}</strong></span>
-          <span><Sparkles size={14} /><small>Skills used</small><strong>{insight ? insight.skillNames.length.toLocaleString() : '—'}</strong></span>
-          <span><MessageSquare size={14} /><small>Messages</small><strong>{insight ? insight.messages.length.toLocaleString() : '—'}</strong></span>
-          <span><Brain size={14} /><small>Reasoning events</small><strong>{insight ? insight.reasoningEvents.toLocaleString() : '—'}</strong></span>
+          <span><Wrench size={14} /><small>Steps</small><strong>{insight ? (insight.usage?.steps ?? insight.toolCalls.length).toLocaleString() : '—'}</strong></span>
+          <span><Clock size={14} /><small>Execution time</small><strong>{elapsed(step.started_at, step.ended_at, now)}</strong></span>
+          <span><MessageSquare size={14} /><small>Messages</small><strong>{insight ? (insight.usage?.messages ?? insight.messages.length).toLocaleString() : '—'}</strong></span>
         </section>
-
-        <div className="team-conversation-meta">
-          {insight?.usage?.model && <span>Model <strong>{insight.usage.model}</strong></span>}
-          {insight?.usage && <span>API calls <strong>{insight.usage.apiCalls.toLocaleString()}</strong></span>}
-          {insight?.skillNames.length ? <span>Skills <strong>{insight.skillNames.join(', ')}</strong></span> : null}
-        </div>
 
         <div className="team-conversation-canvas">
           {!step.conversation_id ? (
@@ -516,8 +492,6 @@ function TeamRunsPanel({
               status: 'error',
               messages: [],
               toolCalls: [],
-              skillNames: [],
-              reasoningEvents: 0,
               error: messagesResult.reason instanceof Error ? messagesResult.reason.message : 'Could not load this conversation.',
             },
           }));
