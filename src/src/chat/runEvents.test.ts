@@ -55,6 +55,24 @@ describe('reduceRunEvent (live API format)', () => {
     expect(run?.steps[0].status).toBe('error');
   });
 
+  it('uses terminal run failure and cancellation events', () => {
+    const failed = fold([
+      stream[0],
+      body({ event: 'tool.started', run_id: RUN_ID, tool: 'terminal' }),
+      body({ event: 'run.failed', run_id: RUN_ID, timestamp: 2, message: 'failed' }),
+    ]);
+    expect(failed?.status).toBe('error');
+    expect(failed?.steps[0].status).toBe('error');
+
+    const cancelled = fold([
+      stream[0],
+      body({ event: 'tool.started', run_id: RUN_ID, tool: 'terminal' }),
+      body({ event: 'run.cancelled', run_id: RUN_ID, timestamp: 2 }),
+    ]);
+    expect(cancelled?.status).toBe('cancelled');
+    expect(cancelled?.steps[0].status).toBe('cancelled');
+  });
+
   it('accumulates visible text only from message.delta frames', () => {
     const run = fold(stream);
     expect(run?.assistantContent).toBe(OUTPUT);
@@ -65,6 +83,28 @@ describe('reduceRunEvent (live API format)', () => {
     expect(run?.reasoning).toEqual(['Count the letter r in strawberry.']);
     expect(run?.reasoningStreaming).toBe(false);
     expect(run?.assistantContent).not.toContain('Count the letter');
+    expect(run?.timeline).toEqual([
+      { kind: 'tools', stepIds: [`${RUN_ID}-0-terminal`] },
+      { kind: 'reasoning', text: 'Count the letter r in strawberry.' },
+    ]);
+  });
+
+  it('labels MCP and skill tools as distinct activity', () => {
+    const mcp: ChatRunStep = {
+      id: 'mcp',
+      toolName: 'mcp__news_server__search_headlines',
+      preview: '',
+      status: 'completed',
+    };
+    const skill: ChatRunStep = {
+      id: 'skill',
+      toolName: 'skill_view',
+      preview: 'news-summary',
+      status: 'completed',
+    };
+    expect(toolKind(mcp)).toBe('mcp');
+    expect(stepLabel(mcp)).toBe('MCP news server · search headlines');
+    expect(toolKind(skill)).toBe('skill');
   });
 
   it('surfaces and clears pending approval requests', () => {
@@ -90,6 +130,23 @@ describe('reduceRunEvent (live API format)', () => {
     const resumed = reduceRunEvent(waiting, body({ event: 'approval.responded', run_id: RUN_ID, choice: 'once', resolved: 1 }));
     expect(resumed?.status).toBe('running');
     expect(resumed?.approval).toBeUndefined();
+  });
+
+  it('shows whether an approved staged write was actually saved', () => {
+    const run = fold([
+      stream[0],
+      body({ event: 'tool.started', run_id: RUN_ID, tool: 'skill_manage' }),
+      body({
+        event: 'write.applied',
+        run_id: RUN_ID,
+        tool: 'skill_manage',
+        subsystem: 'skills',
+        pending_id: 'pending-1',
+      }),
+      body({ event: 'tool.completed', run_id: RUN_ID, tool: 'skill_manage', error: false }),
+    ]);
+    expect(run?.steps[0].progress).toBe('Skill write saved');
+    expect(run?.steps[0].status).toBe('completed');
   });
 
   it('identifies memory write approvals for persistent allow choices', () => {

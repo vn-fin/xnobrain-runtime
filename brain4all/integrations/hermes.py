@@ -671,20 +671,83 @@ class AgentManager:
         self,
         prepared: Mapping[str, Any],
         *,
+        run_id: str,
         stream_delta_callback,
+        tool_progress_callback,
+        approval_notify_callback,
         agent_ref: list[Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Run one turn through Hermes' native session-aware API adapter."""
+        """Run one turn through Hermes' native session and approval machinery."""
         from gateway.config import PlatformConfig
         from gateway.platforms.api_server import (
             APIServerAdapter,
             _api_request_profile,
         )
         from gateway.run import _profile_runtime_scope
+        from tools.approval import register_gateway_notify, unregister_gateway_notify
 
         profile_dir = Path(prepared["profile_dir"])
         conversation_id = str(prepared["conversation_id"])
-        adapter = APIServerAdapter(PlatformConfig(enabled=True))
+
+        class RunScopedAPIServerAdapter(APIServerAdapter):
+            @staticmethod
+            def _bind_api_server_session(
+                *,
+                chat_id: str = "",
+                session_key: str = "",
+                session_id: str = "",
+            ) -> list:
+                # Keep the conversation ID as the stable memory scope passed to
+                # _create_agent(), while matching /v1/runs' isolated approval
+                # namespace in the executor thread.
+                return APIServerAdapter._bind_api_server_session(
+                    chat_id=chat_id,
+                    session_key=run_id,
+                    session_id=session_id,
+                )
+
+            def _create_agent(self, *args: Any, **kwargs: Any) -> Any:
+                agent = super()._create_agent(*args, **kwargs)
+                run_conversation = agent.run_conversation
+
+                def run_with_memory_approval(*run_args: Any, **run_kwargs: Any) -> Any:
+                    from tools import terminal_tool
+                    from tools.approval import _await_gateway_decision
+
+                    previous_callback = terminal_tool._get_approval_callback()
+
+                    def approve_memory(
+                        command: str,
+                        description: str,
+                        **_approval_kwargs: Any,
+                    ) -> str:
+                        decision = _await_gateway_decision(
+                            run_id,
+                            approval_notify_callback,
+                            {
+                                "command": command,
+                                "description": description,
+                                "pattern_key": "memory.write_approval",
+                                "pattern_keys": ["memory.write_approval"],
+                                "subsystem": "memory",
+                                "allow_permanent": True,
+                                "allow_session": False,
+                            },
+                            surface="api_server",
+                        )
+                        choice = str(decision.get("choice") or "deny")
+                        return "once" if choice == "always" else choice
+
+                    terminal_tool.set_approval_callback(approve_memory)
+                    try:
+                        return run_conversation(*run_args, **run_kwargs)
+                    finally:
+                        terminal_tool.set_approval_callback(previous_callback)
+
+                agent.run_conversation = run_with_memory_approval
+                return agent
+
+        adapter = RunScopedAPIServerAdapter(PlatformConfig(enabled=True))
         session_db = self._session_db(profile_dir)
         adapter._session_db = session_db
         # Brain4All may also expose legacy agent directories. Pin the native
@@ -692,6 +755,7 @@ class AgentManager:
         # the profile name a second time.
         adapter._profile_scope = lambda _profile: _profile_runtime_scope(profile_dir)
         profile_token = _api_request_profile.set(str(prepared["name"]))
+        register_gateway_notify(run_id, approval_notify_callback)
         try:
             history = await adapter._conversation_history_for_session(conversation_id)
             session = self._session(profile_dir, conversation_id) or {}
@@ -700,15 +764,20 @@ class AgentManager:
                 conversation_history=history,
                 session_id=conversation_id,
                 stream_delta_callback=stream_delta_callback,
+                tool_progress_callback=tool_progress_callback,
                 agent_ref=agent_ref,
+                gateway_session_key=conversation_id,
                 requested_model=str(prepared.get("requested_model") or "") or None,
                 session_model=str(session.get("model") or prepared.get("model") or "") or None,
             )
         finally:
-            _api_request_profile.reset(profile_token)
-            close = getattr(session_db, "close", None)
-            if callable(close):
-                close()
+            try:
+                unregister_gateway_notify(run_id)
+            finally:
+                _api_request_profile.reset(profile_token)
+                close = getattr(session_db, "close", None)
+                if callable(close):
+                    close()
 
     async def _chat_stream_events(self, prepared: Mapping[str, Any]):
         timeout_seconds = int(prepared["timeout_seconds"])
@@ -731,7 +800,9 @@ class AgentManager:
         state: dict[str, Any] = {
             "agent_ref": None,
             "stop_requested": False,
-            "approval_session": conversation_id,
+            "approval_session": run_id,
+            "event_loop": loop,
+            "event_queue": queue,
         }
 
         class AgentRef(list):
@@ -756,11 +827,203 @@ class AgentManager:
             else:
                 loop.call_soon_threadsafe(queue.put_nowait, ("delta", delta))
 
+        def enqueue_event(event: Mapping[str, Any]) -> None:
+            payload = dict(event)
+            try:
+                running_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                running_loop = None
+            if running_loop is loop:
+                queue.put_nowait(("event", payload))
+            else:
+                loop.call_soon_threadsafe(queue.put_nowait, ("event", payload))
+
+        def on_tool_progress(
+            event_type: str,
+            tool_name: str | None = None,
+            preview: str | None = None,
+            args: Any = None,
+            **kwargs: Any,
+        ) -> None:
+            del args
+            timestamp = time.time()
+            if event_type == "tool.started":
+                enqueue_event({
+                    "event": "tool.started",
+                    "run_id": run_id,
+                    "timestamp": timestamp,
+                    "tool": tool_name or "tool",
+                    "preview": preview or "",
+                })
+            elif event_type == "tool.completed":
+                write_status = resolve_staged_write(
+                    tool_name or "tool",
+                    kwargs.get("result"),
+                )
+                enqueue_event({
+                    "event": "tool.completed",
+                    "run_id": run_id,
+                    "timestamp": timestamp,
+                    "tool": tool_name or "tool",
+                    "duration": round(float(kwargs.get("duration") or 0), 3),
+                    "error": bool(kwargs.get("is_error", False))
+                    or write_status in {"rejected", "failed"},
+                })
+            elif event_type == "tool.failed":
+                enqueue_event({
+                    "event": "tool.failed",
+                    "run_id": run_id,
+                    "timestamp": timestamp,
+                    "tool": tool_name or "tool",
+                    "duration": round(float(kwargs.get("duration") or 0), 3),
+                    "error": True,
+                })
+            elif event_type == "reasoning.available":
+                enqueue_event({
+                    "event": "reasoning.available",
+                    "run_id": run_id,
+                    "timestamp": timestamp,
+                    "text": preview or "",
+                })
+
+        def on_approval(approval_data: Mapping[str, Any]) -> None:
+            from gateway.platforms.api_server import _approval_event_choices
+            from gateway.run import _redact_approval_command
+
+            smart_denied = bool(approval_data.get("smart_denied"))
+            allow_permanent = approval_data.get("allow_permanent") is not False
+            event = {
+                "event": "approval.request",
+                "run_id": run_id,
+                "timestamp": time.time(),
+                "command": _redact_approval_command(approval_data.get("command")),
+                "description": str(approval_data.get("description") or "Approval required"),
+                "pattern_keys": list(approval_data.get("pattern_keys") or []),
+                "smart_denied": smart_denied,
+                "allow_permanent": allow_permanent,
+                "choices": _approval_event_choices(
+                    smart_denied=smart_denied,
+                    allow_permanent=allow_permanent,
+                ),
+            }
+            subsystem = str(approval_data.get("subsystem") or "")
+            pending_id = str(approval_data.get("pending_id") or "")
+            if subsystem in {"memory", "skills"}:
+                event["subsystem"] = subsystem
+            if pending_id:
+                event["pending_id"] = pending_id
+            enqueue_event(event)
+
+        def resolve_staged_write(tool_name: str, raw_result: Any) -> str:
+            """Turn Hermes' staged write result into a run-scoped approval."""
+            if isinstance(raw_result, Mapping):
+                result = dict(raw_result)
+            elif isinstance(raw_result, str):
+                try:
+                    decoded = json.loads(raw_result)
+                except (TypeError, ValueError):
+                    return ""
+                result = dict(decoded) if isinstance(decoded, Mapping) else {}
+            else:
+                return ""
+            pending_id = str(result.get("pending_id") or "")
+            if not result.get("staged") or not pending_id:
+                return ""
+
+            normalized_tool = tool_name.lower()
+            if normalized_tool == "memory" or normalized_tool.endswith("__memory"):
+                subsystem = "memory"
+            elif "skill_manage" in normalized_tool:
+                subsystem = "skills"
+            else:
+                return ""
+
+            from tools import write_approval
+            from tools.approval import _await_gateway_decision
+
+            record = write_approval.get_pending(subsystem, pending_id)
+            if record is None:
+                enqueue_event({
+                    "event": "write.failed",
+                    "run_id": run_id,
+                    "timestamp": time.time(),
+                    "tool": tool_name,
+                    "subsystem": subsystem,
+                    "pending_id": pending_id,
+                    "status": "missing",
+                })
+                return "failed"
+
+            summary = str(record.get("summary") or f"Pending {subsystem} write")
+            decision = _await_gateway_decision(
+                run_id,
+                on_approval,
+                {
+                    "command": summary,
+                    "description": (
+                        "Memory write requires approval"
+                        if subsystem == "memory"
+                        else "Skill write requires approval"
+                    ),
+                    "pattern_key": f"{subsystem}.write_approval",
+                    "pattern_keys": [f"{subsystem}.write_approval"],
+                    "subsystem": subsystem,
+                    "pending_id": pending_id,
+                    "allow_permanent": True,
+                    "allow_session": False,
+                },
+                surface="api_server",
+            )
+            choice = str(decision.get("choice") or "")
+            if not decision.get("resolved") or not choice:
+                status = "pending"
+            elif choice == "deny":
+                write_approval.discard_pending(subsystem, pending_id)
+                status = "rejected"
+            else:
+                try:
+                    if subsystem == "memory":
+                        from tools.memory_tool import apply_memory_pending, load_on_disk_store
+
+                        applied = apply_memory_pending(
+                            dict(record.get("payload") or {}),
+                            load_on_disk_store(),
+                        )
+                        success = bool(applied.get("success"))
+                    else:
+                        from tools.skill_manager_tool import apply_skill_pending
+
+                        applied = json.loads(
+                            apply_skill_pending(dict(record.get("payload") or {}))
+                        )
+                        success = bool(applied.get("success"))
+                except Exception:
+                    success = False
+                if success:
+                    write_approval.discard_pending(subsystem, pending_id)
+                    status = "applied"
+                else:
+                    status = "failed"
+
+            enqueue_event({
+                "event": f"write.{status}",
+                "run_id": run_id,
+                "timestamp": time.time(),
+                "tool": tool_name,
+                "subsystem": subsystem,
+                "pending_id": pending_id,
+                "status": status,
+            })
+            return status
+
         async def run_agent() -> None:
             try:
                 result, usage = await self._run_session_agent(
                     prepared,
+                    run_id=run_id,
                     stream_delta_callback=on_delta,
+                    tool_progress_callback=on_tool_progress,
+                    approval_notify_callback=on_approval,
                     agent_ref=agent_ref,
                 )
                 # Flush callbacks already scheduled from the worker thread
@@ -803,6 +1066,9 @@ class AgentManager:
                         "timestamp": time.time(),
                         "delta": text,
                     })
+                    continue
+                if kind == "event":
+                    yield self._sse_data(payload)
                     continue
                 if kind == "failed":
                     raise payload
@@ -852,6 +1118,12 @@ class AgentManager:
             agent = agent_ref[0]
             if agent is not None:
                 agent.interrupt("client disconnected")
+            try:
+                from tools.approval import unregister_gateway_notify
+
+                unregister_gateway_notify(run_id)
+            except ImportError:
+                pass
             if not task.done():
                 try:
                     await asyncio.wait_for(asyncio.shield(task), timeout=5)
@@ -863,6 +1135,12 @@ class AgentManager:
             agent = agent_ref[0]
             if agent is not None:
                 agent.interrupt("agent command timed out")
+            try:
+                from tools.approval import unregister_gateway_notify
+
+                unregister_gateway_notify(run_id)
+            except ImportError:
+                pass
             yield self._sse_data({
                 "event": "run.failed",
                 "run_id": run_id,
@@ -893,6 +1171,12 @@ class AgentManager:
         agent = state["agent_ref"][0]
         if agent is not None:
             await asyncio.to_thread(agent.interrupt, "run stopped by user")
+        try:
+            from tools.approval import unregister_gateway_notify
+
+            unregister_gateway_notify(run_id)
+        except ImportError:
+            pass
         return {"run_id": run_id, "stopped": True, "status": "stopping"}
 
     def resolve_approval(self, run_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -916,6 +1200,23 @@ class AgentManager:
             raise AgentAPIError("Hermes approval core is unavailable", code="approval_unavailable", status=503) from error
         if resolved == 0:
             raise AgentAPIError("run has no pending approval", code="approval_not_pending", status=409)
+        if state is not None:
+            event_loop = state.get("event_loop")
+            event_queue = state.get("event_queue")
+            if event_loop is not None and event_queue is not None:
+                event_loop.call_soon_threadsafe(
+                    event_queue.put_nowait,
+                    (
+                        "event",
+                        {
+                            "event": "approval.responded",
+                            "run_id": run_id,
+                            "timestamp": time.time(),
+                            "choice": choice,
+                            "resolved": resolved,
+                        },
+                    ),
+                )
         return {"run_id": run_id, "choice": choice, "resolved": resolved}
 
     def _chat_sse_chunk(

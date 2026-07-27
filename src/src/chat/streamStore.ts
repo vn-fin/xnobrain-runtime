@@ -172,9 +172,15 @@ async function execute(key: string, text: string) {
       if (next) patch(key, { runs: [...runsSnap.slice(0, -1), next] });
     }
 
-    if (type === 'error') {
-      const message = typeof event.data === 'string' ? event.data : String(data.message ?? 'Chat stream failed.');
+    if (type === 'error' || type === 'run.failed') {
+      const message = typeof event.data === 'string'
+        ? event.data
+        : String(data.message ?? data.error ?? 'Chat stream failed.');
       patch(key, { error: message });
+      return;
+    }
+    if (type === 'run.cancelled') {
+      runtime.cancelled = true;
       return;
     }
     if (type === 'assistant.completed' || type === 'message.completed') {

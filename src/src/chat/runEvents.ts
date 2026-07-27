@@ -132,7 +132,14 @@ export function reduceRunEvent(run: ChatRun | null, event: SSEEvent): ChatRun | 
       status: 'running',
       startedAt: ts(data),
     };
-    return { ...run, steps: [...run.steps, step] };
+    const timeline = [...(run.timeline ?? [])];
+    const last = timeline[timeline.length - 1];
+    if (last?.kind === 'tools') {
+      timeline[timeline.length - 1] = { ...last, stepIds: [...last.stepIds, step.id] };
+    } else {
+      timeline.push({ kind: 'tools', stepIds: [step.id] });
+    }
+    return { ...run, steps: [...run.steps, step], timeline };
   }
   if (type === 'tool.progress') {
     const toolName = toolNameOf(data);
@@ -140,6 +147,25 @@ export function reduceRunEvent(run: ChatRun | null, event: SSEEvent): ChatRun | 
     if (index < 0) return run;
     const actual = run.steps.length - 1 - index;
     return { ...run, steps: run.steps.map((step, i) => i === actual ? { ...step, progress: string(data.delta) } : step) };
+  }
+  if (type.startsWith('write.')) {
+    const toolName = toolNameOf(data);
+    const index = [...run.steps].reverse().findIndex((step) =>
+      step.status === 'running' && (!toolName || step.toolName === toolName));
+    if (index < 0) return run;
+    const actual = run.steps.length - 1 - index;
+    const subsystem = string(data.subsystem) === 'skills' ? 'Skill' : 'Memory';
+    const progress = type === 'write.applied'
+      ? `${subsystem} write saved`
+      : type === 'write.rejected'
+        ? `${subsystem} write denied`
+        : type === 'write.pending'
+          ? `${subsystem} write remains pending`
+          : `${subsystem} write could not be saved`;
+    return {
+      ...run,
+      steps: run.steps.map((step, i) => i === actual ? { ...step, progress } : step),
+    };
   }
   if (type === 'tool.completed' || type === 'tool.failed') {
     const toolName = toolNameOf(data);
@@ -171,28 +197,56 @@ export function reduceRunEvent(run: ChatRun | null, event: SSEEvent): ChatRun | 
     const delta = string(data.delta) || string(data.text);
     if (!delta) return run;
     const parts = run.reasoning ? [...run.reasoning] : [];
-    if (run.reasoningStreaming && parts.length > 0) parts[parts.length - 1] += delta;
-    else parts.push(delta);
-    return { ...run, reasoning: parts, reasoningStreaming: true };
+    const timeline = [...(run.timeline ?? [])];
+    const last = timeline[timeline.length - 1];
+    if (run.reasoningStreaming && parts.length > 0) {
+      parts[parts.length - 1] += delta;
+      if (last?.kind === 'reasoning') timeline[timeline.length - 1] = { ...last, text: last.text + delta };
+      else timeline.push({ kind: 'reasoning', text: delta });
+    } else {
+      parts.push(delta);
+      timeline.push({ kind: 'reasoning', text: delta });
+    }
+    return { ...run, reasoning: parts, reasoningStreaming: true, timeline };
   }
   if (type === 'reasoning.available' || type === 'reasoning.completed') {
     const text = string(data.text);
     if (!text) return { ...run, reasoningStreaming: false };
     const parts = run.reasoning ? [...run.reasoning] : [];
-    if (run.reasoningStreaming && parts.length > 0) parts[parts.length - 1] = text;
-    else if (!parts.includes(text)) parts.push(text);
-    return { ...run, reasoning: parts, reasoningStreaming: false };
+    const timeline = [...(run.timeline ?? [])];
+    const last = timeline[timeline.length - 1];
+    if (run.reasoningStreaming && parts.length > 0) {
+      parts[parts.length - 1] = text;
+      if (last?.kind === 'reasoning') timeline[timeline.length - 1] = { ...last, text };
+      else timeline.push({ kind: 'reasoning', text });
+    } else if (!parts.includes(text)) {
+      parts.push(text);
+      timeline.push({ kind: 'reasoning', text });
+    }
+    return { ...run, reasoning: parts, reasoningStreaming: false, timeline };
   }
   if (type === 'assistant.completed' || type === 'message.completed') {
     return { ...run, assistantContent: string(data.content) || run.assistantContent, messageId: string(data.message_id) || run.messageId };
   }
-  if (type === 'error') {
+  if (type === 'error' || type === 'run.failed') {
     return {
       ...run,
       status: 'error',
       endedAt: ts(data),
       approval: undefined,
       steps: run.steps.map((step) => step.status === 'running' ? { ...step, status: 'error' } : step),
+    };
+  }
+  if (type === 'run.cancelled') {
+    return {
+      ...run,
+      status: 'cancelled',
+      endedAt: ts(data),
+      approval: undefined,
+      reasoningStreaming: false,
+      steps: run.steps.map((step) => step.status === 'running'
+        ? { ...step, status: 'cancelled', endedAt: ts(data) }
+        : step),
     };
   }
   if (type === 'run.completed') {
@@ -255,6 +309,10 @@ export function stepLabel(step: ChatRunStep): string {
   const output = parsed(step.output);
   const args = record(step.args);
   const preview = shortPreview(step.preview);
+  if (step.toolName.startsWith('mcp__')) {
+    const [, server = 'server', tool = 'tool'] = step.toolName.split('__');
+    return `MCP ${server.replaceAll('_', ' ')} · ${tool.replaceAll('_', ' ')}`;
+  }
   if (step.toolName === 'write_file') {
     const path = string(args.path) || string(output.resolved_path) || step.preview;
     return `Created ${basename(path) || 'file'}`;
@@ -276,18 +334,19 @@ export function stepLabel(step: ChatRunStep): string {
   return `${step.toolName.replaceAll('_', ' ')}${preview ? ` · ${preview}` : ''}`;
 }
 
-export type ToolKind = 'terminal' | 'file-write' | 'code' | 'search' | 'read' | 'list' | 'skill' | 'generic';
+export type ToolKind = 'terminal' | 'file-write' | 'code' | 'search' | 'read' | 'list' | 'skill' | 'mcp' | 'generic';
 
 /** Maps a tool step to a visual category so the UI can pick an icon. */
 export function toolKind(step: ChatRunStep): ToolKind {
   const name = step.toolName.toLowerCase();
+  if (name.startsWith('mcp__')) return 'mcp';
+  if (name.includes('skill')) return 'skill';
   if (name.includes('terminal') || name.includes('shell') || name.includes('bash') || name.includes('command')) return 'terminal';
   if (name.includes('write') || name.includes('create') || name.includes('edit')) return 'file-write';
   if (name.includes('execute') || name.includes('code') || name.includes('python')) return 'code';
   if (name.includes('search') || name.includes('grep') || name.includes('find')) return 'search';
   if (name.includes('read') || name.includes('view') || name.includes('cat')) return 'read';
   if (name.includes('list') || name.includes('ls') || name.includes('tree')) return 'list';
-  if (name.includes('skill')) return 'skill';
   return 'generic';
 }
 
@@ -301,6 +360,8 @@ export function toolGroupSummary(steps: ChatRunStep[]): string {
     let phrase: string;
     if (name.includes('compact') || name === 'context') {
       phrase = 'compacted context';
+    } else if (name.startsWith('mcp__')) {
+      phrase = 'used MCP tools';
     } else if (name.includes('web') || name.includes('browser') || name.includes('navigate') || name.includes('fetch')) {
       phrase = 'searched the web';
     } else {

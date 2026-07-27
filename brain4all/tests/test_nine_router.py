@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -412,9 +413,40 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             async def run_session_agent(
                 _prepared,
                 *,
+                run_id,
                 stream_delta_callback,
+                tool_progress_callback,
+                approval_notify_callback,
                 agent_ref,
             ):
+                self.assertRegex(run_id, r"^run_[0-9a-f]{32}$")
+                tool_progress_callback(
+                    "tool.started",
+                    "mcp__news__search",
+                    "latest headlines",
+                    {"query": "latest headlines"},
+                )
+                tool_progress_callback(
+                    "reasoning.available",
+                    "_thinking",
+                    "Review the search results.",
+                    None,
+                )
+                tool_progress_callback(
+                    "tool.completed",
+                    "mcp__news__search",
+                    None,
+                    None,
+                    duration=0.125,
+                    is_error=False,
+                    result="private tool output",
+                )
+                approval_notify_callback({
+                    "command": "rm -rf ./cache",
+                    "description": "Delete the cache directory",
+                    "pattern_keys": ["rm_recursive"],
+                    "allow_permanent": False,
+                })
                 stream_delta_callback("First ")
                 await asyncio.sleep(0)
                 stream_delta_callback("second")
@@ -444,6 +476,17 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
             payload = b"".join(chunks)
             self.assertEqual(payload.count(b'"event":"message.delta"'), 2)
+            self.assertIn(b'"event":"tool.started"', payload)
+            self.assertIn(b'"tool":"mcp__news__search"', payload)
+            self.assertIn(b'"event":"reasoning.available"', payload)
+            self.assertIn(b'"text":"Review the search results."', payload)
+            self.assertIn(b'"event":"tool.completed"', payload)
+            self.assertIn(b'"duration":0.125', payload)
+            self.assertNotIn(b"private tool output", payload)
+            self.assertNotIn(b'"args"', payload)
+            self.assertIn(b'"event":"approval.request"', payload)
+            self.assertIn(b'"description":"Delete the cache directory"', payload)
+            self.assertIn(b'"allow_permanent":false', payload)
             self.assertLess(
                 payload.index(b'"delta":"First "'),
                 payload.index(b'"delta":"second"'),
@@ -479,12 +522,39 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 def __init__(self, _config):
                     self._session_db = None
 
+                @staticmethod
+                def _bind_api_server_session(*, chat_id="", session_key="", session_id=""):
+                    from gateway.session_context import set_session_vars
+
+                    return set_session_vars(
+                        platform="api_server",
+                        chat_id=chat_id,
+                        session_key=session_key,
+                        session_id=session_id,
+                        async_delivery=False,
+                    )
+
                 async def _conversation_history_for_session(self, session_id):
                     return self._session_db.get_messages_as_conversation(session_id)
 
                 async def _run_agent(self, **kwargs):
                     observed.update(kwargs)
-                    kwargs["stream_delta_callback"]("I remember.")
+                    def execute():
+                        from gateway.session_context import clear_session_vars
+                        from tools.approval import get_current_session_key
+
+                        tokens = self._bind_api_server_session(
+                            chat_id=kwargs["session_id"],
+                            session_key=kwargs["gateway_session_key"],
+                            session_id=kwargs["session_id"],
+                        )
+                        try:
+                            observed["approval_session_key"] = get_current_session_key()
+                            kwargs["stream_delta_callback"]("I remember.")
+                        finally:
+                            clear_session_vars(tokens)
+
+                    await asyncio.to_thread(execute)
                     return (
                         {"final_response": "I remember.", "messages": []},
                         {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
@@ -505,7 +575,10 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             ):
                 result, usage = await manager._run_session_agent(
                     prepared,
+                    run_id="run_" + "a" * 32,
                     stream_delta_callback=deltas.append,
+                    tool_progress_callback=lambda *_args, **_kwargs: None,
+                    approval_notify_callback=lambda _data: None,
                     agent_ref=[None],
                 )
 
@@ -514,9 +587,211 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 ["Remember this.", "I will remember."],
             )
             self.assertEqual(observed["session_id"], conversation_id)
+            self.assertEqual(observed["gateway_session_key"], conversation_id)
+            self.assertEqual(observed["approval_session_key"], "run_" + "a" * 32)
+            self.assertIn("tool_progress_callback", observed)
             self.assertEqual(deltas, ["I remember."])
             self.assertEqual(result["final_response"], "I remember.")
             self.assertEqual(usage["total_tokens"], 5)
+
+    async def test_run_approval_resolves_run_scope_and_emits_response_event(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            run_id = "run_" + "b" * 32
+            queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+            manager._active_runs[run_id] = {
+                "approval_session": run_id,
+                "event_loop": asyncio.get_running_loop(),
+                "event_queue": queue,
+            }
+
+            with patch("tools.approval.resolve_gateway_approval", return_value=1) as resolve:
+                result = manager.resolve_approval(run_id, {"choice": "once"})
+
+            resolve.assert_called_once_with(run_id, "once", False)
+            self.assertEqual(result["resolved"], 1)
+            kind, event = await queue.get()
+            self.assertEqual(kind, "event")
+            self.assertEqual(event["event"], "approval.responded")
+            self.assertEqual(event["run_id"], run_id)
+
+    async def test_native_runner_approves_memory_before_the_tool_saves(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            manager.create_agent({"name": "news"})
+            conversation = manager.create_conversation("news", {"title": "News"})
+            prepared = manager._prepare_chat_command(
+                "news",
+                {
+                    "message": "Remember my preference",
+                    "conversation_id": conversation["conversation"]["id"],
+                },
+                require_conversation=True,
+            )
+            observed: dict[str, Any] = {}
+            approvals: list[dict[str, Any]] = []
+
+            class FakeAgent:
+                def run_conversation(self, **_kwargs):
+                    from tools import terminal_tool
+
+                    callback = terminal_tool._get_approval_callback()
+                    observed["choice"] = callback(
+                        "Use concise summaries",
+                        "Save to memory: response preference",
+                        allow_permanent=False,
+                    )
+                    return {"final_response": "Saved.", "messages": []}
+
+            class FakeSessionAdapter:
+                def __init__(self, _config):
+                    self._session_db = None
+
+                async def _conversation_history_for_session(self, _session_id):
+                    return []
+
+                def _create_agent(self, **_kwargs):
+                    return FakeAgent()
+
+                async def _run_agent(self, **kwargs):
+                    def execute():
+                        from tools import terminal_tool
+
+                        agent = self._create_agent(
+                            stream_delta_callback=kwargs["stream_delta_callback"],
+                        )
+                        result = agent.run_conversation()
+                        observed["callback_restored"] = (
+                            terminal_tool._get_approval_callback() is None
+                        )
+                        return result
+
+                    result = await asyncio.to_thread(execute)
+                    return result, {
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "total_tokens": 2,
+                    }
+
+            def approve(run_id, notify, data, *, surface):
+                self.assertEqual(run_id, "run_" + "c" * 32)
+                self.assertEqual(surface, "api_server")
+                notify(data)
+                return {"resolved": True, "choice": "once"}
+
+            with (
+                patch(
+                    "gateway.platforms.api_server.APIServerAdapter",
+                    FakeSessionAdapter,
+                ),
+                patch("tools.approval._await_gateway_decision", side_effect=approve),
+            ):
+                result, _usage = await manager._run_session_agent(
+                    prepared,
+                    run_id="run_" + "c" * 32,
+                    stream_delta_callback=lambda _delta: None,
+                    tool_progress_callback=lambda *_args, **_kwargs: None,
+                    approval_notify_callback=approvals.append,
+                    agent_ref=[None],
+                )
+
+            self.assertEqual(observed["choice"], "once")
+            self.assertTrue(observed["callback_restored"])
+            self.assertEqual(approvals[0]["subsystem"], "memory")
+            self.assertEqual(result["final_response"], "Saved.")
+
+    async def test_staged_skill_write_is_approved_applied_and_streamed(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+
+            async def run_session_agent(
+                _prepared,
+                *,
+                run_id,
+                stream_delta_callback,
+                tool_progress_callback,
+                approval_notify_callback,
+                agent_ref,
+            ):
+                del stream_delta_callback, approval_notify_callback, agent_ref
+                tool_progress_callback(
+                    "tool.started",
+                    "skill_manage",
+                    "create news-summary",
+                    None,
+                )
+                tool_progress_callback(
+                    "tool.completed",
+                    "skill_manage",
+                    None,
+                    None,
+                    duration=0.25,
+                    is_error=False,
+                    result=json.dumps({
+                        "success": True,
+                        "staged": True,
+                        "pending_id": "pending-1",
+                    }),
+                )
+                return (
+                    {"final_response": "The skill was saved.", "messages": []},
+                    {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+                )
+
+            def approve(_run_id, notify, data, *, surface):
+                self.assertEqual(surface, "api_server")
+                notify(data)
+                return {"resolved": True, "choice": "once"}
+
+            prepared = {
+                "name": "news",
+                "profile_dir": root / "profile",
+                "conversation_id": "20260727_093154_c2b5fe",
+                "message": "Create the skill",
+                "model": "cx/gpt-5.5",
+                "requested_model": "",
+                "timeout_seconds": 30,
+            }
+            pending = {
+                "id": "pending-1",
+                "summary": "create 'news-summary'",
+                "payload": {"action": "create", "name": "news-summary"},
+            }
+            with (
+                patch.object(manager, "_run_session_agent", side_effect=run_session_agent),
+                patch("tools.write_approval.get_pending", return_value=pending),
+                patch("tools.approval._await_gateway_decision", side_effect=approve),
+                patch(
+                    "tools.skill_manager_tool.apply_skill_pending",
+                    return_value='{"success": true}',
+                ) as apply,
+                patch("tools.write_approval.discard_pending", return_value=True) as discard,
+            ):
+                payload = b"".join([
+                    event async for event in manager._chat_stream_events(prepared)
+                ])
+
+            self.assertIn(b'"event":"approval.request"', payload)
+            self.assertIn(b'"subsystem":"skills"', payload)
+            self.assertIn(b'"pending_id":"pending-1"', payload)
+            self.assertIn(b'"event":"write.applied"', payload)
+            apply.assert_called_once_with(pending["payload"])
+            discard.assert_called_once_with("skills", "pending-1")
 
     async def test_agent_stream_closes_cleanly_without_a_provider(self) -> None:
         with TemporaryDirectory() as temp_dir:

@@ -8,6 +8,7 @@ import {
   FileText,
   FolderTree,
   LoaderCircle,
+  Plug,
   Search,
   ShieldAlert,
   Sparkles,
@@ -69,6 +70,7 @@ function ToolGlyph({ step }: { step: ChatRunStep }) {
   if (kind === 'search') return <Search size={size} />;
   if (kind === 'list') return <FolderTree size={size} />;
   if (kind === 'skill') return <Sparkles size={size} />;
+  if (kind === 'mcp') return <Plug size={size} />;
   return <Wrench size={size} />;
 }
 
