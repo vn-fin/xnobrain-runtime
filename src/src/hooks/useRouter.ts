@@ -11,6 +11,9 @@ export type RouteState = {
   teamId: string;
   teamRunId: string;
   teamCreate: boolean;
+  kanbanTaskId: string;
+  kanbanAgentId: string;
+  kanbanConversationId: string;
   rightView: RightView;
   agentSearch: string;
   skillsSearch: string;
@@ -26,6 +29,9 @@ export function parseRoute(pathname: string, search: string): RouteState {
   let teamId = '';
   let teamRunId = '';
   let teamCreate = false;
+  let kanbanTaskId = '';
+  let kanbanAgentId = '';
+  let kanbanConversationId = '';
   let rightView: RightView = 'workspace';
   let settingsSection: SettingsSection = 'profiles';
 
@@ -47,7 +53,12 @@ export function parseRoute(pathname: string, search: string): RouteState {
       if (seg[2] === 'runs') teamRunId = seg[3] ?? '';
     }
   }
-  else if (seg[0] === 'kanban' || seg[0] === 'board') centerView = 'kanban';
+  else if (seg[0] === 'kanban' || seg[0] === 'board') {
+    centerView = 'kanban';
+    if (seg[1] === 'tasks') kanbanTaskId = seg[2] ?? '';
+    kanbanAgentId = sp.get('agent') ?? '';
+    kanbanConversationId = sp.get('conversation') ?? '';
+  }
   else if (seg[0] === 'analytics' || seg[0] === 'usage') centerView = 'analytics';
   else if (seg[0] === 'data' || seg[0] === 'settings') {
     centerView = 'data';
@@ -70,6 +81,9 @@ export function parseRoute(pathname: string, search: string): RouteState {
     teamId,
     teamRunId,
     teamCreate,
+    kanbanTaskId,
+    kanbanAgentId,
+    kanbanConversationId,
     rightView,
     agentSearch: sp.get('agentq') ?? '',
     skillsSearch: sp.get('q') ?? '',
@@ -94,7 +108,13 @@ export function computeUrl(state: RouteState): string {
     if (state.teamRunId) path += `/runs/${encodeURIComponent(state.teamRunId)}`;
     return path;
   }
-  if (state.centerView === 'kanban') return '/kanban';
+  if (state.centerView === 'kanban') {
+    if (!state.kanbanTaskId) return '/kanban';
+    const path = `/kanban/tasks/${encodeURIComponent(state.kanbanTaskId)}`;
+    if (state.kanbanAgentId) params.set('agent', state.kanbanAgentId);
+    if (state.kanbanConversationId) params.set('conversation', state.kanbanConversationId);
+    return `${path}${params.size ? `?${params}` : ''}`;
+  }
   if (state.centerView === 'analytics') return '/analytics';
   if (state.centerView === 'skills') {
     if (state.skillsSearch.trim()) params.set('q', state.skillsSearch.trim());
@@ -124,6 +144,9 @@ export function useRouter() {
   const [activeTeamId, setActiveTeamId] = useState(bootRoute.teamId);
   const [activeTeamRunId, setActiveTeamRunId] = useState(bootRoute.teamRunId);
   const [teamCreate, setTeamCreate] = useState(bootRoute.teamCreate);
+  const [kanbanTaskId, setKanbanTaskId] = useState(bootRoute.kanbanTaskId);
+  const [kanbanAgentId, setKanbanAgentId] = useState(bootRoute.kanbanAgentId);
+  const [kanbanConversationId, setKanbanConversationId] = useState(bootRoute.kanbanConversationId);
   const [agentSearch, setAgentSearch] = useState(bootRoute.agentSearch);
   const [skillsSearch, setSkillsSearch] = useState(bootRoute.skillsSearch);
   const [skillsGroupFilter, setSkillsGroupFilter] = useState(bootRoute.skillsGroupFilter);
@@ -132,6 +155,7 @@ export function useRouter() {
     const url = computeUrl({
       centerView, settingsSection, agentId: activeAgentId, conversationId: activeConversationId,
       teamId: activeTeamId, teamRunId: activeTeamRunId, teamCreate, rightView,
+      kanbanTaskId, kanbanAgentId, kanbanConversationId,
       agentSearch, skillsSearch, skillsGroupFilter,
     });
     const current = window.location.pathname + window.location.search;
@@ -140,7 +164,8 @@ export function useRouter() {
     else window.history.replaceState(null, '', url);
   }, [
     centerView, settingsSection, activeAgentId, activeConversationId, activeTeamId, activeTeamRunId,
-    teamCreate, rightView, agentSearch, skillsSearch, skillsGroupFilter,
+    teamCreate, kanbanTaskId, kanbanAgentId, kanbanConversationId,
+    rightView, agentSearch, skillsSearch, skillsGroupFilter,
   ]);
 
   useEffect(() => {
@@ -153,6 +178,9 @@ export function useRouter() {
       setActiveTeamId(state.teamId);
       setActiveTeamRunId(state.teamRunId);
       setTeamCreate(state.teamCreate);
+      setKanbanTaskId(state.kanbanTaskId);
+      setKanbanAgentId(state.kanbanAgentId);
+      setKanbanConversationId(state.kanbanConversationId);
       setRightView(state.rightView);
       setAgentSearch(state.agentSearch);
       setSkillsSearch(state.skillsSearch);
@@ -187,6 +215,13 @@ export function useRouter() {
     setCenterView('teams');
   }, []);
 
+  const openKanbanTask = useCallback((taskId = '', agentId = '', conversationId = '') => {
+    setKanbanTaskId(taskId);
+    setKanbanAgentId(taskId ? agentId : '');
+    setKanbanConversationId(taskId ? conversationId : '');
+    setCenterView('kanban');
+  }, []);
+
   const reconcileAgents = useCallback((agents: Agent[]) => {
     const next = reconcileSelection(activeAgentId, activeConversationId, agents);
     setActiveAgentId(next.agentId);
@@ -194,11 +229,13 @@ export function useRouter() {
     const currentState: RouteState = {
       centerView, settingsSection, agentId: next.agentId, conversationId: next.conversationId,
       teamId: activeTeamId, teamRunId: activeTeamRunId, teamCreate, rightView,
+      kanbanTaskId, kanbanAgentId, kanbanConversationId,
       agentSearch, skillsSearch, skillsGroupFilter,
     };
     window.history.replaceState(null, '', computeUrl(currentState));
   }, [
     activeAgentId, activeConversationId, activeTeamId, activeTeamRunId, teamCreate,
+    kanbanTaskId, kanbanAgentId, kanbanConversationId,
     centerView, settingsSection, rightView, agentSearch, skillsSearch, skillsGroupFilter,
   ]);
 
@@ -206,6 +243,7 @@ export function useRouter() {
     centerView, setCenterView, settingsSection, setSettingsSection, rightView, setRightView,
     activeAgentId, setActiveAgentId, activeConversationId, setActiveConversationId,
     activeTeamId, activeTeamRunId, teamCreate, openTeam, createTeam,
+    kanbanTaskId, kanbanAgentId, kanbanConversationId, openKanbanTask,
     agentSearch, setAgentSearch, skillsSearch, setSkillsSearch,
     skillsGroupFilter, setSkillsGroupFilter,
     openChat, reconcileAgents,

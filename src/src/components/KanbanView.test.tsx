@@ -235,6 +235,19 @@ describe('KanbanView', () => {
 
     await user.click(within(drawer).getByRole('button', { name: 'View conversation' }));
     expect(screen.getByRole('dialog', { name: 'Prepare the weekly report' })).toBeVisible();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.filter(([input]) => String(input).includes(
+        '/conversations/20260727_140600_abcdef/messages?agent=research-agent',
+      ))).toHaveLength(1);
+      expect(fetchMock.mock.calls.filter(([input]) => String(input).includes(
+        '/conversations/20260727_140600_abcdef/usage?agent=research-agent',
+      ))).toHaveLength(1);
+    });
+    await user.click(screen.getByRole('button', { name: 'Close task conversation' }));
+    await user.click(within(drawer).getByRole('button', { name: 'View conversation' }));
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes(
+      '/conversations/20260727_140600_abcdef/messages?agent=research-agent',
+    ))).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Close task conversation' }));
 
     await user.click(within(drawer).getByRole('button', { name: 'Cancel task' }));

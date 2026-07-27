@@ -43,6 +43,32 @@ type KanbanState = ReturnType<typeof useKanban>;
 
 const PRIORITY_LABEL: Record<KanbanPriority, string> = { high: 'High', medium: 'Medium', low: 'Low' };
 const ASSIGNEE_COLORS = ['#4f8cff', '#34d399', '#f8d66d', '#c084fc', '#fb923c', '#7dd3fc'];
+type ConversationLoad = { messages: ChatMessage[]; usage?: ConversationUsage };
+const conversationLoads = new Map<string, Promise<ConversationLoad>>();
+
+function loadConversation(agentId: string, conversationId: string): Promise<ConversationLoad> {
+  const key = `${agentId}\0${conversationId}`;
+  const existing = conversationLoads.get(key);
+  if (existing) return existing;
+  const pending = Promise.allSettled([
+    conversationsApi.messages(agentId, conversationId),
+    conversationsApi.usage(agentId, conversationId),
+  ]).then(([messageResult, usageResult]) => {
+    if (messageResult.status === 'rejected') throw messageResult.reason;
+    return {
+      messages: messageResult.value,
+      usage: usageResult.status === 'fulfilled' ? usageResult.value : undefined,
+    };
+  });
+  conversationLoads.set(key, pending);
+  void pending.then(
+    () => window.setTimeout(() => {
+      if (conversationLoads.get(key) === pending) conversationLoads.delete(key);
+    }, 1_000),
+    () => conversationLoads.delete(key),
+  );
+  return pending;
+}
 
 function monogram(name: string): string {
   return name
@@ -471,26 +497,26 @@ function KanbanConversationModal({
 
   useEffect(() => {
     if (!link) return undefined;
-    const controller = new AbortController();
+    let active = true;
     setStatus('loading');
-    void Promise.allSettled([
-      conversationsApi.messages(link.agentId, link.id, controller.signal),
-      conversationsApi.usage(link.agentId, link.id, controller.signal),
-    ]).then(([messageResult, usageResult]) => {
-      if (controller.signal.aborted) return;
-      if (messageResult.status === 'rejected') {
-        setError(messageResult.reason instanceof Error
-          ? messageResult.reason.message
-          : 'Could not load this conversation.');
+    setError('');
+    void loadConversation(link.agentId, link.id).then(
+      (result) => {
+        if (!active) return;
+        setMessages(result.messages);
+        setUsage(result.usage);
+        setStatus('ready');
+      },
+      (reason: unknown) => {
+        if (!active) return;
+        setError(reason instanceof Error ? reason.message : 'Could not load this conversation.');
         setStatus('error');
-        return;
-      }
-      setMessages(messageResult.value);
-      if (usageResult.status === 'fulfilled') setUsage(usageResult.value);
-      setStatus('ready');
-    });
-    return () => controller.abort();
-  }, [link]);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [link?.agentId, link?.id]);
 
   const visibleMessages = messages.filter((message) =>
     message.role === 'user'
@@ -560,6 +586,9 @@ function TaskDrawer({
   state,
   onMove,
   onArchive,
+  conversationOpen,
+  onOpenConversation,
+  onCloseConversation,
   onClose,
 }: {
   task: KanbanTask;
@@ -567,6 +596,9 @@ function TaskDrawer({
   state: KanbanState;
   onMove: (taskId: string, status: KanbanColumnId) => void;
   onArchive: (task: KanbanTask) => void;
+  conversationOpen: boolean;
+  onOpenConversation: () => void;
+  onCloseConversation: () => void;
   onClose: () => void;
 }) {
   const board = state.board;
@@ -582,7 +614,6 @@ function TaskDrawer({
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [conversationOpen, setConversationOpen] = useState(false);
   const movableStatuses = task.allowedStatuses.filter((status) => status !== 'archived');
   const scheduleCompleted = task.schedule?.recurrence === 'once'
     && task.schedule.occurrenceCount > 0
@@ -861,7 +892,7 @@ function TaskDrawer({
                   <span className="kb-label">Conversation tracking</span>
                   <small>Follow the worker’s stored Hermes conversation.</small>
                 </div>
-                <button className="kb-text-action" onClick={() => setConversationOpen(true)}>
+                <button className="kb-text-action" onClick={onOpenConversation}>
                   View conversation
                 </button>
               </div>
@@ -1042,7 +1073,7 @@ function TaskDrawer({
         </div>}
       </div>
       {conversationOpen && task.conversation && (
-        <KanbanConversationModal task={task} agents={agents} onClose={() => setConversationOpen(false)} />
+        <KanbanConversationModal task={task} agents={agents} onClose={onCloseConversation} />
       )}
     </div>
   );
@@ -1319,11 +1350,19 @@ export function KanbanView({
   teams,
   agents,
   state,
+  routeTaskId,
+  routeAgentId,
+  routeConversationId,
+  onNavigate,
   onClose,
 }: {
   teams: Team[];
   agents: Agent[];
   state: KanbanState;
+  routeTaskId?: string;
+  routeAgentId?: string;
+  routeConversationId?: string;
+  onNavigate?: (taskId: string, agentId?: string, conversationId?: string) => void;
   onClose: () => void;
 }) {
   const { board, view, setView, search, setSearch, visibleTasks, columnOf, statusLabel } = state;
@@ -1337,6 +1376,7 @@ export function KanbanView({
   const [columnFilter, setColumnFilter] = useState<'all' | KanbanColumnId>('all');
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dropColumn, setDropColumn] = useState<KanbanColumnId | null>(null);
+  const [conversationOpen, setConversationOpen] = useState(false);
 
   const openTask = useMemo(
     () => (openTaskId ? board?.tasks.find((task) => task.id === openTaskId) ?? null : null),
@@ -1344,14 +1384,63 @@ export function KanbanView({
   );
 
   useEffect(() => {
+    if (routeTaskId === undefined || !board) return;
+    if (!routeTaskId) {
+      setOpenTaskId(null);
+      setConversationOpen(false);
+      return;
+    }
+    const requested = board.tasks.find((task) => task.id === routeTaskId);
+    if (!requested) return;
+    setTaskScope(requested.status === 'archived' ? 'archived' : 'current');
+    setOpenTaskId(requested.id);
+    void state.refreshTask(requested.id);
+  }, [board?.id, routeTaskId]);
+
+  useEffect(() => {
+    if (routeConversationId === undefined) return;
+    setConversationOpen(Boolean(
+      routeConversationId
+      && routeAgentId
+      && openTask?.conversation?.id === routeConversationId
+      && openTask.conversation.agentId === routeAgentId,
+    ));
+  }, [openTask?.conversation?.agentId, openTask?.conversation?.id, routeAgentId, routeConversationId]);
+
+  useEffect(() => {
     if (!state.requestedTaskId || !board) return;
     const requested = board.tasks.find((task) => task.id === state.requestedTaskId);
     if (!requested) return;
     setTaskScope(requested.status === 'archived' ? 'archived' : 'current');
     setOpenTaskId(requested.id);
-    void state.refreshTask(requested.id);
+    if (onNavigate) onNavigate(requested.id);
+    else void state.refreshTask(requested.id);
     state.clearRequestedTask();
-  }, [board, state]);
+  }, [board, onNavigate, state]);
+
+  const showTask = (taskId: string) => {
+    setOpenTaskId(taskId);
+    setConversationOpen(false);
+    if (onNavigate) onNavigate(taskId);
+    else void state.refreshTask(taskId);
+  };
+
+  const closeTask = () => {
+    setOpenTaskId(null);
+    setConversationOpen(false);
+    onNavigate?.('');
+  };
+
+  const showConversation = () => {
+    if (!openTask?.conversation) return;
+    setConversationOpen(true);
+    onNavigate?.(openTask.id, openTask.conversation.agentId, openTask.conversation.id);
+  };
+
+  const closeConversation = () => {
+    setConversationOpen(false);
+    if (openTask) onNavigate?.(openTask.id);
+  };
 
   const assigneeOptions = useMemo(() => {
     const ids = new Set(board?.tasks.flatMap((task) => task.assignees) ?? []);
@@ -1410,7 +1499,7 @@ export function KanbanView({
   const confirmArchive = () => {
     if (!archiveTask) return;
     void state.moveTask(archiveTask.id, 'archived');
-    setOpenTaskId(null);
+    closeTask();
     setArchiveTask(null);
   };
 
@@ -1436,7 +1525,7 @@ export function KanbanView({
                     setAgentFilter('all');
                     setPriorityFilter('all');
                     setColumnFilter('all');
-                    setOpenTaskId(null);
+                    closeTask();
                   }}
                 >
                   {state.boards.map((item) => (
@@ -1462,7 +1551,7 @@ export function KanbanView({
               onClick={() => {
                 setTaskScope('current');
                 setColumnFilter('all');
-                setOpenTaskId(null);
+                closeTask();
               }}
             >
               Current <span>{currentCount}</span>
@@ -1474,7 +1563,7 @@ export function KanbanView({
               onClick={() => {
                 setTaskScope('archived');
                 setColumnFilter('all');
-                setOpenTaskId(null);
+                closeTask();
               }}
             >
               Archived <span>{archivedCount}</span>
@@ -1685,10 +1774,7 @@ export function KanbanView({
                         agents={agents}
                         statusLabel={statusLabel}
                         column={column.id}
-                        onOpen={() => {
-                          setOpenTaskId(task.id);
-                          void state.refreshTask(task.id);
-                        }}
+                        onOpen={() => showTask(task.id)}
                         onDragStart={() => setDraggedTaskId(task.id)}
                         onDragEnd={() => {
                           setDraggedTaskId(null);
@@ -1739,10 +1825,7 @@ export function KanbanView({
                   agents={agents}
                   statusLabel={statusLabel}
                   column="archived"
-                  onOpen={() => {
-                    setOpenTaskId(task.id);
-                    void state.refreshTask(task.id);
-                  }}
+                  onOpen={() => showTask(task.id)}
                   onDragStart={() => undefined}
                   onDragEnd={() => undefined}
                 />
@@ -1790,10 +1873,7 @@ export function KanbanView({
                       <span />
                     </div>
                     {items.map((task) => (
-                      <button key={task.id} className="kb-row" onClick={() => {
-                        setOpenTaskId(task.id);
-                        void state.refreshTask(task.id);
-                      }}>
+                      <button key={task.id} className="kb-row" onClick={() => showTask(task.id)}>
                         <span className="kb-row-task">
                           <PriorityTitle task={task} />
                           <span className="kb-row-id">{task.id}</span>
@@ -1829,7 +1909,10 @@ export function KanbanView({
           state={state}
           onMove={moveTask}
           onArchive={setArchiveTask}
-          onClose={() => setOpenTaskId(null)}
+          conversationOpen={conversationOpen}
+          onOpenConversation={showConversation}
+          onCloseConversation={closeConversation}
+          onClose={closeTask}
         />
       )}
       {newTaskOpen && <NewTaskModal teams={teams} agents={agents} state={state} initialStatus={newTaskStatus} onClose={() => setNewTaskOpen(false)} />}

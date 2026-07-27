@@ -354,7 +354,16 @@ export default function App() {
             onClose={() => router.setCenterView('chat')}
           />
         ) : centerView === 'kanban' ? (
-          <KanbanView teams={teams.teams} agents={assistants.agents} state={kanban} onClose={() => router.setCenterView('chat')} />
+          <KanbanView
+            teams={teams.teams}
+            agents={assistants.agents}
+            state={kanban}
+            routeTaskId={router.kanbanTaskId}
+            routeAgentId={router.kanbanAgentId}
+            routeConversationId={router.kanbanConversationId}
+            onNavigate={router.openKanbanTask}
+            onClose={() => router.setCenterView('chat')}
+          />
         ) : centerView === 'analytics' ? (
           <AnalyticsView state={analytics} onClose={() => router.setCenterView('chat')} />
         ) : (
@@ -488,8 +497,7 @@ export default function App() {
         liveStatus={kanban.liveStatus}
         onOpenTask={(taskId) => {
           kanban.setActiveBoardId('default');
-          if (taskId) kanban.requestOpenTask(taskId);
-          router.setCenterView('kanban');
+          router.openKanbanTask(taskId);
         }}
       />
     </div>

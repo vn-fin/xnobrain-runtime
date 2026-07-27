@@ -10,6 +10,9 @@ const state = (settingsSection: RouteState['settingsSection']): RouteState => ({
   teamId: '',
   teamRunId: '',
   teamCreate: false,
+  kanbanTaskId: '',
+  kanbanAgentId: '',
+  kanbanConversationId: '',
   rightView: 'workspace',
   agentSearch: '',
   skillsSearch: '',
@@ -75,5 +78,41 @@ describe('Team routes', () => {
     expect(result.current.activeTeamId).toBe('team-01');
     expect(result.current.activeTeamRunId).toBe('tr_123');
     expect(result.current.teamCreate).toBe(false);
+  });
+});
+
+describe('Kanban routes', () => {
+  beforeEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('tracks a task and its worker conversation in the URL', () => {
+    const path = '/kanban/tasks/task-01?agent=agent-01&conversation=conversation-01';
+    const route = parseRoute('/kanban/tasks/task-01', '?agent=agent-01&conversation=conversation-01');
+    expect(route).toMatchObject({
+      centerView: 'kanban',
+      kanbanTaskId: 'task-01',
+      kanbanAgentId: 'agent-01',
+      kanbanConversationId: 'conversation-01',
+    });
+    expect(computeUrl({ ...state('profiles'), ...route })).toBe(path);
+  });
+
+  it('updates and restores Kanban task state on popstate', async () => {
+    const { result } = renderHook(() => useRouter());
+
+    act(() => result.current.openKanbanTask('task-01', 'agent-01', 'conversation-01'));
+    await waitFor(() => expect(window.location.href).toContain(
+      '/kanban/tasks/task-01?agent=agent-01&conversation=conversation-01',
+    ));
+
+    act(() => {
+      window.history.replaceState(null, '', '/kanban/tasks/task-02');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(result.current.centerView).toBe('kanban');
+    expect(result.current.kanbanTaskId).toBe('task-02');
+    expect(result.current.kanbanAgentId).toBe('');
+    expect(result.current.kanbanConversationId).toBe('');
   });
 });
