@@ -659,7 +659,7 @@ function TeamRunsPanel({
             {selectedStep.status === 'running' && (
               <div className="run-working compact">
                 <span><i /><i /><i /></span>
-                <strong>Hermes is working</strong>
+                <strong>Team is working</strong>
                 <p>The result will update here when this stage finishes.</p>
               </div>
             )}
@@ -892,7 +892,7 @@ function TeamBuilder({
   );
   const [synthesisSkills, setSynthesisSkills] = useState(
     initialTeam?.synthesis_skills
-      ?? enabledSkillIds(initialTeam?.synthesis_agent_id ?? initialTeam?.orchestrator_id ?? agents[0]?.id ?? ''),
+    ?? enabledSkillIds(initialTeam?.synthesis_agent_id ?? initialTeam?.orchestrator_id ?? agents[0]?.id ?? ''),
   );
   const [drag, setDrag] = useState<{ id: string; pointerId: number; dx: number; dy: number }>();
   const canvasRef = useRef<HTMLDivElement>(null);
