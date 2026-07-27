@@ -51,7 +51,7 @@ export default function App() {
   );
   const teams = useTeams(router.centerView === 'teams');
   const kanban = useKanban(router.centerView === 'kanban');
-  const analytics = useAnalytics(router.centerView === 'analytics');
+  const analytics = useAnalytics(router.centerView === 'analytics', assistants.agents);
   const blends = useBlends(router.centerView === 'chat');
 
   // Resizable right panel width (persisted). Applied as the --right grid column.

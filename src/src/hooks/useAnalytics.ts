@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   analyticsApi,
   type AnalyticsQuery,
@@ -60,9 +60,11 @@ export type AnalyticsState = {
   setBudget: (agentId: string, patch: BudgetPatch) => Promise<void>;
 };
 
-export function useAnalytics(active: boolean): AnalyticsState {
+export function useAnalytics(
+  active: boolean,
+  agents: ReadonlyArray<{ id: string; title: string; name: string }>,
+): AnalyticsState {
   const [controls, setControlsState] = useState<AnalyticsControls>(() => loadControls());
-  const [available, setAvailable] = useState<SelectableAgent[]>([]);
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [status, setStatus] = useState<AnalyticsStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -73,14 +75,6 @@ export function useAnalytics(active: boolean): AnalyticsState {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       /* storage may be unavailable; controls still live in state */
-    }
-  }, []);
-
-  const loadAgents = useCallback(async () => {
-    try {
-      setAvailable(await analyticsApi.agents());
-    } catch {
-      /* the picker degrades to whatever the summary reports */
     }
   }, []);
 
@@ -97,10 +91,6 @@ export function useAnalytics(active: boolean): AnalyticsState {
   }, [controls]);
 
   useEffect(() => {
-    if (active) void loadAgents();
-  }, [active, loadAgents]);
-
-  useEffect(() => {
     if (active) void refresh();
   }, [active, refresh]);
 
@@ -110,6 +100,15 @@ export function useAnalytics(active: boolean): AnalyticsState {
       await refresh();
     },
     [refresh],
+  );
+  const available = useMemo<SelectableAgent[]>(
+    () => agents
+      .map((agent) => ({
+        agent_id: agent.id,
+        display_name: agent.title || agent.name || agent.id,
+      }))
+      .sort((a, b) => a.display_name.localeCompare(b.display_name)),
+    [agents],
   );
 
   return {

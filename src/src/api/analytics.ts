@@ -29,6 +29,8 @@ export type ModelUsage = {
   sessions: number;
 };
 
+export type ProviderUsage = Omit<ModelUsage, 'model'>;
+
 export type BucketUsage = {
   bucket: string;
   input_tokens: number;
@@ -78,6 +80,28 @@ export type QuotaOverlay = {
   quotas: QuotaWindow[];
 };
 
+export type AnalyticsSource = {
+  kind: 'nine_router' | 'live_profiles';
+  durable: boolean;
+  label: string;
+  message: string;
+};
+
+export type RequestStatus = {
+  total: number;
+  successful: number;
+  failed: number;
+  success_rate: number;
+};
+
+export type UsageAttribution = {
+  live_totals: UsageTotals;
+  attributed_tokens: number;
+  unattributed_tokens: number;
+  coverage_percent: number;
+  deleted_usage_included: boolean;
+};
+
 export type UsageSummary = {
   range_from: number;
   range_to: number;
@@ -90,8 +114,12 @@ export type UsageSummary = {
   totals: UsageTotals;
   agents: AgentUsage[];
   by_model: ModelUsage[];
+  by_provider: ProviderUsage[];
   series: BucketUsage[];
   quota: QuotaOverlay;
+  source: AnalyticsSource;
+  request_status: RequestStatus;
+  attribution: UsageAttribution;
 };
 
 export type SelectableAgent = { agent_id: string; display_name: string };
@@ -128,8 +156,6 @@ function queryString(query: AnalyticsQuery): string {
 const ROOT = '/agent-gateway/v1/analytics';
 
 export const analyticsApi = {
-  agents: async (): Promise<SelectableAgent[]> =>
-    (await request<{ agents: SelectableAgent[] }>(`${ROOT}/agents`)).agents,
   usage: (query: AnalyticsQuery): Promise<UsageSummary> =>
     request<UsageSummary>(`${ROOT}/usage?${queryString(query)}`),
   getBudget: (agentId: string): Promise<BudgetStatus> =>

@@ -1,13 +1,15 @@
-"""Read-only usage aggregation over each agent's Hermes ``state.db``.
+"""Read-only usage aggregation over Hermes and 9router SQLite ledgers.
 
-This adapter never writes Hermes state. It opens each profile's ``state.db`` with
-``?mode=ro`` and aggregates the accounting columns Brain4All's own schema
-guarantees (see ``brain4all/integrations/hermes.py`` ``_ensure_session_schema``).
-It holds no policy and does no HTTP.
+This adapter never writes runtime state. It opens SQLite files with ``?mode=ro``:
+profile ``state.db`` files provide current-agent attribution, while 9router's
+``usageHistory`` is the durable workspace ledger that survives conversation and
+agent deletion. It holds no policy and does no HTTP.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -98,6 +100,161 @@ def aggregate_profile(
         conn.close()
 
 
+def aggregate_router_usage(
+    data_dir: Path,
+    *,
+    start_epoch: float,
+    end_epoch: float,
+    bucket: str = "day",
+) -> dict[str, Any]:
+    """Aggregate 9router's durable ``usageHistory`` ledger.
+
+    The table is owned by 9router and contains no Brain4All agent identifier.
+    Consequently this function deliberately returns workspace totals, provider
+    and model breakdowns, and request status only; agent attribution continues
+    to come from profile databases.
+    """
+    empty: dict[str, Any] = {
+        "available": False,
+        "totals": _zero_totals(),
+        "by_model": [],
+        "by_provider": [],
+        "series": [],
+        "request_status": {
+            "total": 0, "successful": 0, "failed": 0, "success_rate": 0.0,
+        },
+    }
+    db = data_dir / "db" / "data.sqlite"
+    if not db.is_file():
+        return empty
+    try:
+        conn = _open_ro(db)
+    except sqlite3.Error:
+        return empty
+    start_iso = _epoch_iso(start_epoch)
+    end_iso = _epoch_iso(end_epoch)
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='usageHistory'"
+        ).fetchone()
+        if exists is None:
+            return empty
+        rows = conn.execute(
+            """
+            SELECT timestamp, COALESCE(provider,'unknown') AS provider,
+                   COALESCE(model,'unknown') AS model,
+                   COALESCE(promptTokens,0) AS prompt_tokens,
+                   COALESCE(completionTokens,0) AS completion_tokens,
+                   COALESCE(cost,0) AS cost,
+                   COALESCE(status,'') AS status,
+                   COALESCE(tokens,'') AS tokens
+            FROM usageHistory
+            WHERE timestamp > ? AND timestamp <= ?
+            ORDER BY timestamp
+            """,
+            (start_iso, end_iso),
+        ).fetchall()
+    except sqlite3.Error:
+        return empty
+    finally:
+        conn.close()
+
+    totals = _zero_totals()
+    models: dict[tuple[str, str], dict[str, Any]] = {}
+    providers: dict[str, dict[str, Any]] = {}
+    series: dict[str, dict[str, Any]] = {}
+    successful = 0
+    for row in rows:
+        input_tokens = int(row["prompt_tokens"] or 0)
+        output_tokens = int(row["completion_tokens"] or 0)
+        cost = float(row["cost"] or 0)
+        token_meta = _token_metadata(str(row["tokens"] or ""))
+        cache_read = int(
+            token_meta.get("cachedTokens")
+            or token_meta.get("cached_tokens")
+            or token_meta.get("cache_read_tokens")
+            or 0
+        )
+        cache_write = int(
+            token_meta.get("cacheCreationTokens")
+            or token_meta.get("cache_creation_tokens")
+            or token_meta.get("cache_creation_input_tokens")
+            or token_meta.get("cache_write_tokens")
+            or 0
+        )
+        reasoning = int(
+            token_meta.get("reasoningTokens")
+            or token_meta.get("reasoning_tokens")
+            or 0
+        )
+        totals["input_tokens"] += input_tokens
+        totals["output_tokens"] += output_tokens
+        totals["cache_read_tokens"] += cache_read
+        totals["cache_write_tokens"] += cache_write
+        totals["reasoning_tokens"] += reasoning
+        totals["estimated_cost_usd"] += cost
+        totals["api_calls"] += 1
+
+        provider = str(row["provider"] or "unknown")
+        model = str(row["model"] or "unknown")
+        model_row = models.setdefault(
+            (model, provider),
+            {
+                "model": model, "provider": provider, "input_tokens": 0,
+                "output_tokens": 0, "estimated_cost_usd": 0.0,
+                "actual_cost_usd": 0.0, "sessions": 0,
+            },
+        )
+        _add_router_row(model_row, input_tokens, output_tokens, cost)
+        provider_row = providers.setdefault(
+            provider,
+            {
+                "provider": provider, "input_tokens": 0, "output_tokens": 0,
+                "estimated_cost_usd": 0.0, "actual_cost_usd": 0.0,
+                "sessions": 0,
+            },
+        )
+        _add_router_row(provider_row, input_tokens, output_tokens, cost)
+
+        label = _timestamp_bucket(str(row["timestamp"] or ""), bucket)
+        if label:
+            bucket_row = series.setdefault(
+                label,
+                {
+                    "bucket": label, "input_tokens": 0, "output_tokens": 0,
+                    "estimated_cost_usd": 0.0, "actual_cost_usd": 0.0,
+                    "sessions": 0,
+                },
+            )
+            _add_router_row(bucket_row, input_tokens, output_tokens, cost)
+
+        if _successful_status(str(row["status"] or "")):
+            successful += 1
+
+    request_total = len(rows)
+    failed = request_total - successful
+    return {
+        "available": True,
+        "totals": totals,
+        "by_model": sorted(
+            models.values(),
+            key=lambda item: -(item["input_tokens"] + item["output_tokens"]),
+        ),
+        "by_provider": sorted(
+            providers.values(),
+            key=lambda item: -(item["input_tokens"] + item["output_tokens"]),
+        ),
+        "series": [series[key] for key in sorted(series)],
+        "request_status": {
+            "total": request_total,
+            "successful": successful,
+            "failed": failed,
+            "success_rate": round(successful / request_total * 100, 1)
+            if request_total else 0.0,
+        },
+    }
+
+
 def period_spend(profile_dir: Path, *, since_epoch: float, cost_basis: str) -> float:
     """Single read-only SUM of the chosen cost column since ``since_epoch``.
 
@@ -129,3 +286,50 @@ def _zero_totals() -> dict[str, Any]:
         "cache_write_tokens": 0, "reasoning_tokens": 0, "estimated_cost_usd": 0.0,
         "actual_cost_usd": 0.0, "sessions": 0, "api_calls": 0,
     }
+
+
+def _epoch_iso(value: float) -> str:
+    return datetime.fromtimestamp(value, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _token_metadata(value: str) -> dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _timestamp_bucket(value: str, bucket: str) -> str:
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    stamp = stamp.astimezone(timezone.utc)
+    if bucket == "hour":
+        return stamp.strftime("%Y-%m-%dT%H")
+    if bucket == "month":
+        return stamp.strftime("%Y-%m")
+    return stamp.strftime("%Y-%m-%d")
+
+
+def _add_router_row(
+    row: dict[str, Any], input_tokens: int, output_tokens: int, cost: float,
+) -> None:
+    row["input_tokens"] += input_tokens
+    row["output_tokens"] += output_tokens
+    row["estimated_cost_usd"] += cost
+    # The existing merge helpers use ``sessions`` as the count field. For
+    # 9router rows it represents requests; the public UI labels it accordingly.
+    row["sessions"] += 1
+
+
+def _successful_status(value: str) -> bool:
+    normalized = value.strip().lower()
+    if not normalized:
+        return True
+    return normalized in {"ok", "success", "successful", "completed", "complete", "200"}

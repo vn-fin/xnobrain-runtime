@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -16,10 +17,17 @@ import yaml
 
 from brain4all.app import Brain4AllApplication
 from brain4all.integrations import AgentManager, GlobalConfigManager
-from brain4all.integrations.analytics import aggregate_profile, period_spend
+from brain4all.integrations.analytics import (
+    aggregate_profile,
+    aggregate_router_usage,
+    period_spend,
+)
 
 
 class FakeRouter:
+    def __init__(self, data_dir: Path):
+        self.data_dir = data_dir
+
     async def list_connections(self):
         return {"connections": []}
 
@@ -44,6 +52,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         base = Path(self.temporary.name)
         self.root = base / "root"
         self.profiles = base / "profiles"
+        self.router_data = base / "nine-router"
         self.root.mkdir(parents=True)
         self.profiles.mkdir(parents=True)
         (self.root / "config.yaml").write_text(yaml.safe_dump({
@@ -61,7 +70,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         composition = Brain4AllApplication(
             AgentManager(root_profile=self.root, profiles_root=self.profiles,
                          legacy_agents_root=base / "legacy-agents"),
-            GlobalConfigManager(root_profile=self.root), FakeRouter(),
+            GlobalConfigManager(root_profile=self.root), FakeRouter(self.router_data),
         )
         composition.register(app)
         self.app = app
@@ -90,6 +99,50 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
                 (uuid.uuid4().hex, "api", model, provider,
                  started_at if started_at is not None else time.time() - 3600,
                  inp, out, 0, 0, 0, est, act, 1),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _insert_router(
+        self,
+        *,
+        model: str,
+        inp: int,
+        out: int,
+        cost: float,
+        provider: str = "codex",
+        status: str = "success",
+        timestamp: str | None = None,
+    ):
+        db_dir = self.router_data / "db"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        db = db_dir / "data.sqlite"
+        conn = sqlite3.connect(db)
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS usageHistory (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT, provider TEXT, model TEXT,
+                    connectionId TEXT, apiKey TEXT, endpoint TEXT,
+                    promptTokens INTEGER, completionTokens INTEGER,
+                    cost REAL, status TEXT, tokens TEXT, meta TEXT
+                )
+                """
+            )
+            stamp = timestamp or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            conn.execute(
+                """
+                INSERT INTO usageHistory (
+                    timestamp, provider, model, connectionId, apiKey, endpoint,
+                    promptTokens, completionTokens, cost, status, tokens, meta
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    stamp, provider, model, "", "", "/v1/chat/completions",
+                    inp, out, cost, status, "{}", "{}",
+                ),
             )
             conn.commit()
         finally:
@@ -125,6 +178,28 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
 
         spend = period_spend(profile, since_epoch=now - 30 * 86400, cost_basis="estimated")
         self.assertAlmostEqual(spend, 0.14, places=6)
+
+    def test_aggregate_router_usage_models_providers_and_status(self):
+        self._insert_router(model="gpt-5", inp=200, out=50, cost=0.25)
+        self._insert_router(
+            model="claude", provider="claude", inp=100, out=20,
+            cost=0.10, status="error",
+        )
+        result = aggregate_router_usage(
+            self.router_data,
+            start_epoch=time.time() - 86400,
+            end_epoch=time.time() + 1,
+            bucket="day",
+        )
+        self.assertTrue(result["available"])
+        self.assertEqual(result["totals"]["input_tokens"], 300)
+        self.assertEqual(result["totals"]["output_tokens"], 70)
+        self.assertEqual(result["totals"]["api_calls"], 2)
+        self.assertEqual({row["model"] for row in result["by_model"]}, {"gpt-5", "claude"})
+        self.assertEqual(
+            {row["provider"] for row in result["by_provider"]}, {"codex", "claude"})
+        self.assertEqual(result["request_status"]["successful"], 1)
+        self.assertEqual(result["request_status"]["failed"], 1)
 
     # ---- integration: routes end-to-end ------------------------------------
 
@@ -164,6 +239,31 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             # subset totals equal that agent's per-agent totals alone
             self.assertEqual(data["agents"][0]["agent_id"], a)
             self.assertEqual(data["agents"][0]["totals"]["input_tokens"], 100)
+
+    async def test_workspace_usage_survives_agent_deletion(self):
+        async with self.client() as client:
+            deleted = await self._create_agent(client, "Disposable")
+            kept = await self._create_agent(client, "Kept")
+            self._insert(deleted, model="gpt-5", inp=100, out=20, est=0.10)
+            self._insert_router(model="gpt-5", inp=500, out=80, cost=0.42)
+
+            before = (await client.get(
+                "/agent-gateway/v1/analytics/usage?days=30"
+            )).json()["data"]
+            self.assertEqual(before["totals"]["total_tokens"], 580)
+            self.assertEqual(before["source"]["kind"], "nine_router")
+            self.assertTrue(before["source"]["durable"])
+
+            removed = await client.delete(f"/agent-gateway/v1/agents/{deleted}/delete")
+            self.assertEqual(removed.status_code, 200, removed.text)
+
+            after = (await client.get(
+                "/agent-gateway/v1/analytics/usage?days=30"
+            )).json()["data"]
+            self.assertEqual(after["totals"]["total_tokens"], 580)
+            self.assertEqual(after["totals"]["cost_usd"], 0.42)
+            self.assertEqual({row["agent_id"] for row in after["agents"]}, {kept})
+            self.assertTrue(after["attribution"]["deleted_usage_included"])
 
     async def test_time_range_and_bucket(self):
         async with self.client() as client:

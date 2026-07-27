@@ -1,10 +1,11 @@
 """Usage analytics and advisory budgets, computed on read.
 
-Aggregates each agent's Hermes ``state.db`` (read-only) into cross-agent totals,
-per-model breakdowns, and a dense time series, with an optional 9router quota
-overlay and advisory per-agent budgets. It adds no persistent store: results are
-computed live and memoized in ephemeral process caches. Budget config is the only
-mutation and is written to the agent's ``config.yaml`` with a snapshot first.
+The unfiltered workspace view uses 9router's durable usage ledger, so deleting a
+conversation or agent cannot erase historical totals. Current profile
+``state.db`` files remain the live attribution source because 9router has no
+agent identifier. Agent-filtered views therefore intentionally use live profile
+data. Budget config is the only mutation and is written to the agent's
+``config.yaml`` with a snapshot first.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from typing import Any, Mapping
 
 import yaml
 
-from ..integrations.analytics import aggregate_profile, period_spend
+from ..integrations.analytics import aggregate_profile, aggregate_router_usage, period_spend
 from .platform import ServiceError
 
 
@@ -58,7 +59,14 @@ class AnalyticsService:
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
     ) -> dict[str, Any]:
         items = self._resolve_items(agent_ids)
-        summary = await self._summary(items, start_epoch, end_epoch, bucket)
+        live_summary = await self._summary(items, start_epoch, end_epoch, bucket)
+        summary = await self._with_durable_workspace(
+            live_summary,
+            selected=bool(agent_ids),
+            start=start_epoch,
+            end=end_epoch,
+            bucket=bucket,
+        )
         by_path = {str(item.get("name") or ""): item for item in items}
         for row in summary["agents"]:
             item = by_path.get(row["agent_id"])
@@ -90,21 +98,28 @@ class AnalyticsService:
     async def models_breakdown(
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
     ) -> dict[str, Any]:
-        summary = await self._summary(
+        live = await self._summary(
             self._resolve_items(agent_ids), start_epoch, end_epoch, "day")
+        summary = await self._with_durable_workspace(
+            live, selected=bool(agent_ids), start=start_epoch, end=end_epoch, bucket="day",
+        )
         return {
             "range_from": start_epoch, "range_to": end_epoch,
             "by_model": summary["by_model"], "totals": summary["totals"],
+            "source": summary["source"],
         }
 
     async def timeseries(
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
     ) -> dict[str, Any]:
-        summary = await self._summary(
+        live = await self._summary(
             self._resolve_items(agent_ids), start_epoch, end_epoch, bucket)
+        summary = await self._with_durable_workspace(
+            live, selected=bool(agent_ids), start=start_epoch, end=end_epoch, bucket=bucket,
+        )
         return {
             "range_from": start_epoch, "range_to": end_epoch,
-            "bucket": bucket, "series": summary["series"],
+            "bucket": bucket, "series": summary["series"], "source": summary["source"],
         }
 
     def get_budget(self, agent_id: str) -> dict[str, Any]:
@@ -215,6 +230,118 @@ class AnalyticsService:
             return {"agent_id": agent_id, "display_name": display, "partial": partial}
 
         return list(await asyncio.gather(*(read_one(item) for item in items)))
+
+    async def _with_durable_workspace(
+        self,
+        live: dict[str, Any],
+        *,
+        selected: bool,
+        start: float,
+        end: float,
+        bucket: str,
+    ) -> dict[str, Any]:
+        """Overlay durable 9router totals for the unfiltered workspace view."""
+        if selected:
+            return {
+                **live,
+                "source": {
+                    "kind": "live_profiles",
+                    "durable": False,
+                    "label": "Current agent profiles",
+                    "message": (
+                        "Agent filters use live profile attribution. Usage from deleted "
+                        "conversations or agents cannot be assigned to this selection."
+                    ),
+                },
+                "by_provider": _providers_from_models(live["by_model"]),
+                "request_status": {
+                    "total": int(live["totals"]["api_calls"]),
+                    "successful": int(live["totals"]["api_calls"]),
+                    "failed": 0,
+                    "success_rate": 100.0 if live["totals"]["api_calls"] else 0.0,
+                },
+                "attribution": _attribution(live["totals"], live["totals"], durable=False),
+            }
+
+        data_dir = getattr(self.router, "data_dir", None)
+        if data_dir is None:
+            return {
+                **live,
+                "source": {
+                    "kind": "live_profiles",
+                    "durable": False,
+                    "label": "Current agent profiles",
+                    "message": "9router usage history is unavailable; totals use live profiles.",
+                },
+                "by_provider": _providers_from_models(live["by_model"]),
+                "request_status": {
+                    "total": int(live["totals"]["api_calls"]),
+                    "successful": int(live["totals"]["api_calls"]),
+                    "failed": 0,
+                    "success_rate": 100.0 if live["totals"]["api_calls"] else 0.0,
+                },
+                "attribution": _attribution(live["totals"], live["totals"], durable=False),
+            }
+
+        effective = "day" if bucket == "week" else bucket
+        async with self._sem:
+            router_partial = await asyncio.to_thread(
+                aggregate_router_usage,
+                Path(data_dir),
+                start_epoch=start,
+                end_epoch=end,
+                bucket=effective,
+            )
+        if not router_partial.get("available"):
+            return {
+                **live,
+                "source": {
+                    "kind": "live_profiles",
+                    "durable": False,
+                    "label": "Current agent profiles",
+                    "message": "9router usage history is unavailable; totals use live profiles.",
+                },
+                "by_provider": _providers_from_models(live["by_model"]),
+                "request_status": {
+                    "total": int(live["totals"]["api_calls"]),
+                    "successful": int(live["totals"]["api_calls"]),
+                    "failed": 0,
+                    "success_rate": 100.0 if live["totals"]["api_calls"] else 0.0,
+                },
+                "attribution": _attribution(live["totals"], live["totals"], durable=False),
+            }
+
+        durable = self._merge(
+            [{
+                "agent_id": "__nine_router__",
+                "display_name": "9router",
+                "partial": router_partial,
+            }],
+            start,
+            end,
+            bucket,
+        )
+        durable["agents"] = live["agents"]
+        # Sessions only exist in Brain4All's live profile records. Requests,
+        # tokens, cost, model/provider rows and the time series are durable.
+        durable["totals"]["sessions"] = live["totals"]["sessions"]
+        durable["source"] = {
+            "kind": "nine_router",
+            "durable": True,
+            "label": "9router usage ledger",
+            "message": (
+                "Workspace totals include historical usage after conversations or "
+                "agents are deleted. Agent attribution includes current profiles only."
+            ),
+        }
+        durable["by_provider"] = [
+            _finish_model(dict(row)) for row in router_partial.get("by_provider") or []
+        ]
+        durable["request_status"] = router_partial["request_status"]
+        durable["attribution"] = _attribution(
+            live["totals"], durable["totals"], durable=True,
+        )
+        return durable
 
     def _merge(
         self, partials: list[dict[str, Any]], start: float, end: float, bucket: str,
@@ -392,6 +519,39 @@ def _finish_bucket(acc: dict[str, Any]) -> dict[str, Any]:
     acc = dict(acc)
     acc["total_tokens"] = int(acc["input_tokens"]) + int(acc["output_tokens"])
     return _apply_cost(acc)
+
+
+def _providers_from_models(rows: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    providers: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        provider = str(row.get("provider") or "unknown")
+        _accumulate_model(
+            providers.setdefault(provider, _zero_model("", provider)),
+            row,
+        )
+    result = [_finish_model(row) for row in providers.values()]
+    result.sort(key=lambda row: -(row["input_tokens"] + row["output_tokens"]))
+    return result
+
+
+def _attribution(
+    live_totals: Mapping[str, Any],
+    workspace_totals: Mapping[str, Any],
+    *,
+    durable: bool,
+) -> dict[str, Any]:
+    live_tokens = int(live_totals.get("total_tokens") or 0)
+    workspace_tokens = int(workspace_totals.get("total_tokens") or 0)
+    attributed = min(live_tokens, workspace_tokens) if durable else live_tokens
+    unattributed = max(0, workspace_tokens - attributed)
+    coverage = round(attributed / workspace_tokens * 100, 1) if workspace_tokens else 0.0
+    return {
+        "live_totals": dict(live_totals),
+        "attributed_tokens": attributed,
+        "unattributed_tokens": unattributed,
+        "coverage_percent": coverage,
+        "deleted_usage_included": durable,
+    }
 
 
 def _apply_cost(row: dict[str, Any]) -> dict[str, Any]:
