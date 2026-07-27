@@ -14,6 +14,7 @@ export type Team = {
   name: string;
   orchestrator_id: string;
   members: TeamMember[];
+  workflow?: TeamWorkflowStep[];
   shared_workspace: boolean;
   max_parallel: number;
   max_depth: number;

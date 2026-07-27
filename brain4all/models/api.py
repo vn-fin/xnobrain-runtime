@@ -308,6 +308,7 @@ class TeamCreate(BaseModel):
     name: str
     orchestrator_id: str
     members: list[TeamMember] = Field(default_factory=list)
+    workflow: list[TeamWorkflowStep] = Field(default_factory=list, max_length=64)
     max_parallel: int = Field(default=1, gt=0)
     max_depth: int = Field(default=1, gt=0)
     enabled: bool = True

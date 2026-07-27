@@ -321,9 +321,17 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                     {"agent_id": ids[1], "role": "researcher", "allowed_tools": ["web"]},
                     {"agent_id": ids[2], "role": "reviewer", "allowed_tools": ["web"]},
                 ],
+                "workflow": [
+                    {"id": "research", "task": "Research the API", "role": "researcher"},
+                    {"id": "review", "task": "Review the findings", "role": "reviewer", "needs": ["research"]},
+                ],
                 "max_parallel": 2,
             })
         team_id = team_response.json()["data"]["id"]
+        self.assertEqual(
+            [step["id"] for step in team_response.json()["data"]["workflow"]],
+            ["research", "review"],
+        )
         prompts: list[tuple[str, str]] = []
 
         async def fake_chat(agent_id, body):
@@ -337,10 +345,6 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.composition.service.agents.chat = AsyncMock(side_effect=fake_chat)
         async with self.client() as client:
             response = await client.post(f"/api/v1/teams/{team_id}/run", json={
-                "workflow": [
-                    {"id": "research", "task": "Research the API", "role": "researcher"},
-                    {"id": "review", "task": "Review the findings", "role": "reviewer", "needs": ["research"]},
-                ],
                 "synthesis": "Produce the final answer.",
             })
         self.assertEqual(response.status_code, 200, response.text)

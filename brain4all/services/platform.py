@@ -495,7 +495,7 @@ class PlatformService:
         before on invalid workflows.
         """
         task = str(body.get("task") or "").strip()
-        raw_workflow = body.get("workflow") or []
+        raw_workflow = body.get("workflow") or team.get("workflow") or []
         if not task and not raw_workflow:
             raise ServiceError("task or workflow is required")
         members = [item for item in team["members"] if item.get("enabled", True)]
@@ -848,7 +848,37 @@ class PlatformService:
             if any(tool not in SAFE_TOOLSETS for tool in tools):
                 raise ServiceError("team member contains a privileged toolset")
             members.append({"agent_id": agent_id, "role": role, "allowed_tools": tools, "enabled": bool(raw.get("enabled", True))})
-        team = {"id": team_id, "user_id": "local", "name": name, "orchestrator_id": orchestrator, "members": members, "shared_workspace": False, "max_parallel": max(1, int(body.get("max_parallel") or 1)), "max_depth": max(1, int(body.get("max_depth") or 1)), "enabled": bool(body.get("enabled", True)), "created_at": created_at, "updated_at": iso()}
+        configured = {
+            str(item["agent_id"]): {
+                "agent_id": str(item["agent_id"]),
+                "role": str(item["role"]),
+                "allowed_tools": list(item["allowed_tools"]),
+            }
+            for item in members
+        }
+        configured[orchestrator] = {
+            "agent_id": orchestrator,
+            "role": "coordinator",
+            "allowed_tools": ["todo"],
+        }
+        workflow = []
+        if body.get("workflow"):
+            workflow = self._team_workflow(body["workflow"], configured, members, "")
+            self._validate_team_workflow(workflow)
+        team = {
+            "id": team_id,
+            "user_id": "local",
+            "name": name,
+            "orchestrator_id": orchestrator,
+            "members": members,
+            "workflow": workflow,
+            "shared_workspace": False,
+            "max_parallel": max(1, int(body.get("max_parallel") or 1)),
+            "max_depth": max(1, int(body.get("max_depth") or 1)),
+            "enabled": bool(body.get("enabled", True)),
+            "created_at": created_at,
+            "updated_at": iso(),
+        }
         return self.repository.put_team(team)
 
     @staticmethod
