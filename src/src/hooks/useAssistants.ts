@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { agentsApi } from '../api/agents';
 import { conversationsApi } from '../api/conversations';
 import { skillsApi } from '../api/skills';
-import type { ResponsePagination } from '../api/client';
+import { ApiError, type ResponsePagination } from '../api/client';
 import type { AgentConfigDTO } from '../api/contracts/agentGateway';
 import type { Agent, AgentSkill, AgentSkillMap, AsyncStatus, GlobalRuntimeConfig, SkillStateMap } from '../types';
 
@@ -270,7 +270,22 @@ export function useAssistants() {
   };
 
   const createConversation = async (agentId: string, _model?: string) => {
-    const conversation = await conversationsApi.create(agentId);
+    const previousIds = new Set(
+      agentsRef.current.find((agent) => agent.id === agentId)?.conversations.map((item) => item.id) ?? [],
+    );
+    let conversation: Agent['conversations'][number];
+    try {
+      conversation = await conversationsApi.create(agentId);
+    } catch (value) {
+      if (!(value instanceof ApiError) || value.status !== 409) throw value;
+      const conversations = await loadConversations(agentId, true);
+      const recovered = conversations.find((item) => !previousIds.has(item.id));
+      if (!recovered) throw value;
+      // Older running backends could commit the session before a title
+      // conflict returned 409. Reconcile that successful write immediately so
+      // the user can continue without refreshing the page.
+      return recovered.id;
+    }
     loadedConversations.current.add(agentId);
     setAgents((current) => current.map((agent) => agent.id === agentId
       ? { ...agent, conversations: [...agent.conversations, conversation] }

@@ -1301,10 +1301,33 @@ class AgentManager:
         )
         title = self._conversation_title(body)
         model = self._conversation_model(profile_dir, body)
+        default_title = title is None or title.casefold() == DEFAULT_CONVERSATION_TITLE.casefold()
         with self._conversation_lock:
-            if title is None or title.casefold() == DEFAULT_CONVERSATION_TITLE.casefold():
-                title = self._next_default_conversation_title(profile_dir)
-            self._create_session(profile_dir, session_id, model=model, title=title)
+            if self._session(profile_dir, session_id) is not None:
+                raise AgentAPIError(
+                    "conversation already exists",
+                    code="conversation_exists",
+                    status=409,
+                )
+            for _attempt in range(100):
+                if default_title:
+                    title = self._next_default_conversation_title(profile_dir)
+                try:
+                    self._create_session(profile_dir, session_id, model=model, title=title)
+                    break
+                except AgentAPIError as exc:
+                    # Another process can claim the next numbered title between
+                    # our read and insert. Re-read and continue the sequence;
+                    # the insert is atomic, so no empty session is left behind.
+                    if default_title and exc.code == "conversation_name_exists":
+                        continue
+                    raise
+            else:
+                raise AgentAPIError(
+                    "could not allocate a conversation name",
+                    code="conversation_name_conflict",
+                    status=409,
+                )
         return self.get_conversation(name, session_id)
 
     def update_conversation(
@@ -1906,22 +1929,20 @@ class AgentManager:
         model: str,
         title: str | None,
     ) -> None:
+        # SessionDB creates the row and assigns its title in two separate
+        # transactions. A title conflict therefore used to leave an untitled
+        # session behind while the API returned 409. Initialize the native
+        # schema first, then insert the row and title together atomically.
         try:
             db = self._session_db(profile_dir)
-            db.create_session(
-                session_id=session_id,
-                source="api",
-                model=model,
-                user_id=None,
-                parent_session_id=None,
-            )
-            if title is not None:
-                db.set_session_title(session_id, title)
-            return
-        except Exception as exc:
-            if "UNIQUE" in str(exc).upper() or "already" in str(exc).lower():
-                raise AgentAPIError("conversation already exists", code="conversation_exists", status=409) from exc
-            self._create_session_sqlite(profile_dir, session_id, model=model, title=title)
+            close = getattr(db, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            # The SQLite fallback also initializes the small compatible schema
+            # used by tests and degraded local installations.
+            pass
+        self._create_session_sqlite(profile_dir, session_id, model=model, title=title)
 
     def _create_session_sqlite(
         self,
@@ -1943,7 +1964,17 @@ class AgentManager:
             )
             conn.commit()
         except sqlite3.IntegrityError as exc:
-            raise AgentAPIError("conversation already exists", code="conversation_exists", status=409) from exc
+            if "title" in str(exc).lower():
+                raise AgentAPIError(
+                    "conversation name already exists",
+                    code="conversation_name_exists",
+                    status=409,
+                ) from exc
+            raise AgentAPIError(
+                "conversation already exists",
+                code="conversation_exists",
+                status=409,
+            ) from exc
         finally:
             conn.close()
 

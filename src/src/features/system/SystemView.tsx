@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Download, FileArchive, Network, Server, ShieldCheck, Upload, X } from 'lucide-react';
 import { ConnectionsView, type AccountProps } from '../../components/ConnectionsView';
 import { BlendsSection } from './BlendsSection';
@@ -61,6 +61,7 @@ export function SystemView({
   const [progress, setProgress] = useState<TransferProgress>();
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const deploymentLoadStarted = useRef(false);
   const tabs: Array<{ id: SettingsSection; label: string }> = [
     { id: 'profiles', label: 'Profiles' },
     { id: 'vm', label: 'VM' },
@@ -69,8 +70,10 @@ export function SystemView({
   ];
 
   useEffect(() => {
+    if (section !== 'profiles' || deploymentLoadStarted.current) return;
+    deploymentLoadStarted.current = true;
     void systemApi.deployment().then(setDeployment).catch((value) => setError(value instanceof Error ? value.message : 'Could not load deployment mode.'));
-  }, []);
+  }, [section]);
 
   const run = async (name: string, action: () => Promise<void>) => {
     setBusy(name); setError('');

@@ -424,6 +424,31 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 "New Conversation",
             )
 
+    def test_default_conversation_retries_an_atomic_title_conflict(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            manager.create_agent({"name": "news"})
+            manager.create_conversation("news", {})
+            profile_dir = manager._profile_dir("news")
+            real_next_title = manager._next_default_conversation_title(profile_dir)
+
+            with patch.object(
+                manager,
+                "_next_default_conversation_title",
+                side_effect=["New Conversation", real_next_title],
+            ):
+                second = manager.create_conversation("news", {})
+
+            self.assertEqual(second["conversation"]["title"], "New Conversation 2")
+            sessions = manager.list_conversations("news")["conversations"]
+            self.assertEqual(len(sessions), 2)
+            self.assertTrue(all(item["title"] for item in sessions))
+
     def test_conversation_stream_does_not_create_a_missing_session(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

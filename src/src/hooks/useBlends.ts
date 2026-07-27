@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   blendsApi,
   type Blend,
@@ -27,6 +27,7 @@ export function useBlends(active = true): BlendsState {
   const [status, setStatus] = useState<BlendsStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const loadActive = useRef(false);
 
   const refresh = useCallback(async () => {
     setStatus((current) => (current === 'ready' ? 'ready' : 'loading'));
@@ -43,7 +44,13 @@ export function useBlends(active = true): BlendsState {
   }, []);
 
   useEffect(() => {
-    if (active) void refresh();
+    if (!active) {
+      loadActive.current = false;
+      return;
+    }
+    if (loadActive.current) return;
+    loadActive.current = true;
+    void refresh();
   }, [active, refresh]);
 
   // create/update/delete let errors propagate so the editor can show them.
