@@ -71,7 +71,7 @@ class PlatformService:
         self.runtime = runtime
         self.portability = PortabilityService(repository, config.root_profile)
         from .kanban import KanbanService
-        self.kanban = KanbanService(agents)
+        self.kanban = KanbanService(agents, repository)
         from .analytics import AnalyticsService
         self.analytics = AnalyticsService(agents, router, repository)
         from .blends import BlendService

@@ -16,9 +16,13 @@ import {
   Save,
   Search,
   Terminal,
+  Users,
+  Workflow,
+  Octagon,
   X,
 } from 'lucide-react';
 import { ARCHIVED_COLUMN, KANBAN_COLUMNS } from '../api/kanban';
+import type { Team } from '../api/teams';
 import type { useKanban } from '../hooks/useKanban';
 import type { Agent, KanbanColumnId, KanbanPriority, KanbanTask } from '../types';
 
@@ -279,7 +283,7 @@ function TaskCard({
   return (
     <button
       className={`kb-card col-${column} status-${task.nativeStatus}`}
-      draggable={column !== 'archived' && task.nativeStatus !== 'scheduled'}
+      draggable={!task.team && column !== 'archived' && task.nativeStatus !== 'scheduled'}
       onDragStart={(event) => {
         if (column === 'archived' || task.nativeStatus === 'scheduled') return;
         event.dataTransfer.effectAllowed = 'move';
@@ -296,6 +300,13 @@ function TaskCard({
         <span className={`kb-substate native-${task.nativeStatus}`}>{nativeStatusLabel(task.nativeStatus)}</span>
       </div>
       <PriorityTitle task={task} />
+      {task.team && (
+        <div className="kb-team-badge">
+          <Users size={13} />
+          <span>{task.team.name}</span>
+          <strong>{task.team.nodes.filter((node) => node.status === 'running').length} active</strong>
+        </div>
+      )}
       <p className="kb-card-desc">{task.description}</p>
       {task.tags.length > 0 && (
         <div className="kb-tags">
@@ -366,7 +377,7 @@ function TaskDrawer({
   onClose: () => void;
 }) {
   const board = state.board;
-  const editable = ['triage', 'todo', 'ready', 'scheduled'].includes(task.nativeStatus);
+  const editable = !task.team && ['triage', 'todo', 'ready', 'scheduled'].includes(task.nativeStatus);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description);
@@ -514,13 +525,17 @@ function TaskDrawer({
 
           <section className="kb-detail-section kb-drawer-grid">
             <div className="kb-owner-field">
-              <span className="kb-label">Assignee</span>
-              <AgentPicker
-                agents={agents}
-                value={task.assignees[0] ?? ''}
-                disabled={!editable}
-                onChange={(value) => void state.assignTask(task.id, value || null)}
-              />
+              <span className="kb-label">{task.team ? 'Agent team' : 'Assignee'}</span>
+              {task.team ? (
+                <span className="kb-team-owner"><Users size={15} /> {task.team.name}</span>
+              ) : (
+                <AgentPicker
+                  agents={agents}
+                  value={task.assignees[0] ?? ''}
+                  disabled={!editable}
+                  onChange={(value) => void state.assignTask(task.id, value || null)}
+                />
+              )}
               {editable && <small className="kb-field-help">One agent owns and runs each task.</small>}
             </div>
             <div>
@@ -534,6 +549,53 @@ function TaskDrawer({
               <span className="kb-value">{task.progress}%</span>
             </div>
           </section>
+
+          {task.team && (
+            <section className="kb-detail-section kb-team-run">
+              <div className="kb-section-heading">
+                <div>
+                  <span className="kb-label">Team workflow</span>
+                  <small>Live Hermes task state for every DAG node.</small>
+                </div>
+                <span className={`kb-team-run-state ${task.team.status}`}>
+                  <span /> {task.team.status.replaceAll('_', ' ')}
+                </span>
+              </div>
+              <div className="kb-team-progress">
+                <span style={{ width: `${task.team.progress}%` }} />
+              </div>
+              <div className="kb-team-dag" aria-label={`${task.team.name} workflow`}>
+                {task.team.nodes.map((node) => {
+                  const person = resolveAssignee(node.agentId, agents);
+                  const active = node.status === 'running';
+                  return (
+                    <div className={`kb-team-node ${node.status}${active ? ' active' : ''}`} key={node.taskId}>
+                      <div className="kb-team-node-deps">
+                        {node.needs.length ? <><Workflow size={11} /> {node.needs.join(', ')}</> : 'Start'}
+                      </div>
+                      <div className="kb-team-node-main">
+                        <span className="kb-avatar" style={{ background: person.color }}>{monogram(person.name)}</span>
+                        <span>
+                          <strong>{node.role}</strong>
+                          <small>{person.name}</small>
+                        </span>
+                        <span className={`kb-substate native-${node.status}`}>
+                          {nativeStatusLabel(node.status as KanbanTask['nativeStatus'])}
+                        </span>
+                      </div>
+                      {node.summary && <p>{node.summary}</p>}
+                      {active && <div className="kb-team-node-pulse" />}
+                    </div>
+                  );
+                })}
+              </div>
+              {!task.team.cancelled && !['done', 'cancelled'].includes(task.team.status) && (
+                <button className="conn-btn danger-solid kb-team-cancel" onClick={() => void state.cancelTeamTask(task.id)}>
+                  <Octagon size={14} /> Cancel team run
+                </button>
+              )}
+            </section>
+          )}
 
           {task.schedule && (
             <section className="kb-detail-section kb-schedule-detail">
@@ -753,11 +815,13 @@ function TaskDrawer({
 
 function NewTaskModal({
   agents,
+  teams,
   state,
   initialStatus,
   onClose,
 }: {
   agents: Agent[];
+  teams: Team[];
   state: KanbanState;
   initialStatus?: string;
   onClose: () => void;
@@ -770,6 +834,8 @@ function NewTaskModal({
   );
   const [priority, setPriority] = useState<KanbanPriority>('medium');
   const [assignee, setAssignee] = useState('');
+  const [assignmentType, setAssignmentType] = useState<'agent' | 'team'>('agent');
+  const [teamId, setTeamId] = useState('');
   const [skills, setSkills] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<'once' | 'interval'>('once');
   const [scheduledAt, setScheduledAt] = useState(defaultScheduledAt);
@@ -795,8 +861,9 @@ function NewTaskModal({
       description: description.trim(),
       status: status as KanbanColumnId,
       priority,
-      assignee: assignee || null,
-      skills,
+      assignee: assignmentType === 'agent' ? assignee || null : null,
+      teamId: assignmentType === 'team' ? teamId : null,
+      skills: assignmentType === 'agent' ? skills : [],
       schedule: status === 'scheduled' ? {
         recurrence,
         scheduled_at: scheduledAt,
@@ -848,10 +915,58 @@ function NewTaskModal({
             </label>
           </div>
           <div className="kb-field">
-            Assignee
-            <AgentPicker agents={agents} value={assignee} onChange={setAssignee} />
-            <small className="kb-field-help">One agent owns and runs each task.</small>
+            Run with
+            <div className="kb-assignment-tabs">
+              <button type="button" className={assignmentType === 'agent' ? 'active' : ''} onClick={() => setAssignmentType('agent')}>
+                One agent
+              </button>
+              <button type="button" className={assignmentType === 'team' ? 'active' : ''} onClick={() => { setAssignmentType('team'); setStatus('todo'); }}>
+                Agent team
+              </button>
+            </div>
+            {assignmentType === 'agent' ? (
+              <>
+                <AgentPicker agents={agents} value={assignee} onChange={setAssignee} />
+                <small className="kb-field-help">One agent owns and runs this task.</small>
+              </>
+            ) : (
+              <>
+                <select className="kb-team-select" value={teamId} onChange={(event) => setTeamId(event.target.value)}>
+                  <option value="">Choose a saved team…</option>
+                  {teams.filter((team) => team.enabled).map((team) => (
+                    <option value={team.id} key={team.id}>{team.name}</option>
+                  ))}
+                </select>
+                <small className="kb-field-help">The saved DAG expands into native Hermes Kanban tasks.</small>
+              </>
+            )}
           </div>
+          {assignmentType === 'team' && teamId && (() => {
+            const team = teams.find((item) => item.id === teamId);
+            if (!team) return null;
+            const steps = team.workflow?.length
+              ? team.workflow
+              : team.members.filter((member) => member.enabled).map((member, index) => ({
+                  id: `worker-${index + 1}`,
+                  role: member.role,
+                  agent_id: member.agent_id,
+                  needs: [] as string[],
+                }));
+            return (
+              <div className="kb-team-preview">
+                <div><Users size={15} /><strong>{team.name}</strong><span>{steps.length + 1} nodes</span></div>
+                <div className="kb-team-preview-flow">
+                  {steps.map((step) => (
+                    <span key={step.id}>
+                      <small>{step.needs?.length ? step.needs.join(' + ') : 'Start'}</small>
+                      <strong>{step.role || 'worker'}</strong>
+                    </span>
+                  ))}
+                  <span className="coordinator"><small>Final</small><strong>Synthesis</strong></span>
+                </div>
+              </div>
+            );
+          })()}
           <label className={invalid && !description.trim() ? 'kb-field invalid' : 'kb-field'}>
             Description <span className="kb-required">Required</span>
             <textarea
@@ -861,7 +976,7 @@ function NewTaskModal({
             />
             <small className="kb-field-help">The assigned agent uses this as its working brief.</small>
           </label>
-          {status === 'scheduled' && (
+          {assignmentType === 'agent' && status === 'scheduled' && (
             <div className="kb-schedule-form">
               <div className="kb-schedule-form-head">
                 <Clock size={17} />
@@ -911,17 +1026,17 @@ function NewTaskModal({
               </div>
             </div>
           )}
-          <div className="kb-field">
+          {assignmentType === 'agent' && <div className="kb-field">
             Skills used for this task
             <SkillPicker agents={agents} assignee={assignee} selected={skills} onChange={setSkills} />
             <small className="kb-field-help">Skills are loaded for this task only.</small>
-          </div>
+          </div>}
         </div>
         <div className="kb-modal-foot">
           <button className="conn-btn ghost" onClick={onClose}>Cancel</button>
           <button
             className="primary-button"
-            disabled={!title.trim() || !description.trim() || (status === 'scheduled' && !scheduledAt)}
+            disabled={!title.trim() || !description.trim() || (assignmentType === 'team' && !teamId) || (status === 'scheduled' && !scheduledAt)}
             onClick={() => void submit()}
           >
             <Plus size={16} /> Create task
@@ -970,10 +1085,12 @@ function ArchiveConfirm({
 }
 
 export function KanbanView({
+  teams,
   agents,
   state,
   onClose,
 }: {
+  teams: Team[];
   agents: Agent[];
   state: KanbanState;
   onClose: () => void;
@@ -1484,7 +1601,7 @@ export function KanbanView({
           onClose={() => setOpenTaskId(null)}
         />
       )}
-      {newTaskOpen && <NewTaskModal agents={agents} state={state} initialStatus={newTaskStatus} onClose={() => setNewTaskOpen(false)} />}
+      {newTaskOpen && <NewTaskModal teams={teams} agents={agents} state={state} initialStatus={newTaskStatus} onClose={() => setNewTaskOpen(false)} />}
       {archiveTask && (
         <ArchiveConfirm
           task={archiveTask}

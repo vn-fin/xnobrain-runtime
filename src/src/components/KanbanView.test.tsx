@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useKanban } from '../hooks/useKanban';
+import type { Team } from '../api/teams';
 import type { Agent } from '../types';
 import { KanbanView } from './KanbanView';
 
@@ -26,9 +27,21 @@ const researchAgent: Agent = {
   ],
 };
 
-function TestBoard({ agents = [] }: { agents?: Agent[] }) {
+const launchTeam: Team = {
+  id: 'launch-team',
+  name: 'Launch Team',
+  orchestrator_id: 'research-agent',
+  members: [{ agent_id: 'research-agent', role: 'researcher', allowed_tools: ['web'], enabled: true }],
+  workflow: [{ id: 'research', task: 'Research the launch', agent_id: 'research-agent', role: 'researcher', needs: [] }],
+  shared_workspace: false,
+  max_parallel: 2,
+  max_depth: 4,
+  enabled: true,
+};
+
+function TestBoard({ agents = [], teams = [] }: { agents?: Agent[]; teams?: Team[] }) {
   const state = useKanban();
-  return <KanbanView agents={agents} state={state} onClose={vi.fn()} />;
+  return <KanbanView teams={teams} agents={agents} state={state} onClose={vi.fn()} />;
 }
 
 describe('KanbanView', () => {
@@ -230,6 +243,34 @@ describe('KanbanView', () => {
       );
       expect(request).toBeDefined();
       expect(JSON.parse(String(request?.[1]?.body)).skills).toEqual(['writing']);
+    });
+  });
+
+  it('selects a saved team, previews its DAG, and creates a grouped team task', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    render(<TestBoard agents={[researchAgent]} teams={[launchTeam]} />);
+
+    await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
+    await user.click(screen.getByRole('button', { name: /New task/ }));
+    const modal = screen.getByRole('dialog');
+    await user.click(within(modal).getByRole('button', { name: 'Agent team' }));
+    await user.selectOptions(within(modal).getByDisplayValue('Choose a saved team…'), 'launch-team');
+    expect(within(modal).getByText('Launch Team', { selector: '.kb-team-preview strong' })).toBeVisible();
+    expect(within(modal).getByText('Synthesis')).toBeVisible();
+
+    await user.type(within(modal).getByLabelText('Title'), 'Prepare launch');
+    await user.type(within(modal).getByLabelText(/Description/), 'Produce an evidence-backed launch plan.');
+    await user.click(within(modal).getByRole('button', { name: /Create task/ }));
+
+    await waitFor(() => {
+      const request = fetchMock.mock.calls.find(([input, init]) =>
+        String(input).endsWith('/kanban/boards/default/tasks') && init?.method === 'POST'
+      );
+      const body = JSON.parse(String(request?.[1]?.body));
+      expect(body.team_id).toBe('launch-team');
+      expect(body.assignee).toBeNull();
+      expect(body.skills).toEqual([]);
     });
   });
 

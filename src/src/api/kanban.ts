@@ -137,6 +137,26 @@ function taskFromApi(raw: RawTask): KanbanTask {
       occurrenceCount: Number(raw.schedule.occurrence_count ?? 0),
       lastRunAt: raw.schedule.last_run_at == null ? null : String(raw.schedule.last_run_at),
     } : null,
+    team: raw.team && typeof raw.team === 'object' ? {
+      id: String(raw.team.id ?? ''),
+      name: String(raw.team.name ?? 'Agent team'),
+      orchestratorId: String(raw.team.orchestrator_id ?? ''),
+      status: String(raw.team.status ?? 'todo'),
+      synthesisTaskId: raw.team.synthesis_task_id == null ? null : String(raw.team.synthesis_task_id),
+      progress: Number(raw.team.progress ?? 0),
+      cancelled: Boolean(raw.team.cancelled),
+      nodes: Array.isArray(raw.team.nodes) ? raw.team.nodes.map((node: any) => ({
+        stepId: String(node.step_id ?? ''),
+        taskId: String(node.task_id ?? ''),
+        title: String(node.title ?? ''),
+        agentId: String(node.agent_id ?? ''),
+        role: String(node.role ?? 'worker'),
+        needs: Array.isArray(node.needs) ? node.needs.map(String) : [],
+        status: String(node.status ?? 'todo'),
+        kanbanStatus: String(node.kanban_status ?? 'todo'),
+        summary: node.summary == null ? null : String(node.summary),
+      })) : [],
+    } : null,
   };
 }
 
@@ -169,6 +189,7 @@ export const kanbanApi = {
         status: input.status,
         priority: input.priority,
         assignee: input.assignee,
+        team_id: input.teamId || undefined,
         skills: input.skills,
         schedule: input.schedule,
       }),
@@ -202,6 +223,14 @@ export const kanbanApi = {
 
   async archiveTask(boardId: string, taskId: string): Promise<KanbanTask> {
     const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/archive`, { method: 'POST' });
+    return taskFromApi(data);
+  },
+
+  async cancelTeamTask(boardId: string, taskId: string): Promise<KanbanTask> {
+    const data = await request<RawTask>(
+      `/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/team/cancel`,
+      { method: 'POST' },
+    );
     return taskFromApi(data);
   },
 

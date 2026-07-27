@@ -8,18 +8,22 @@ public Hermes operations.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from typing import Any, Mapping
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..integrations import kanban as kb_adapter
 from ..integrations.kanban import KanbanUnavailable
+from ..repositories import StoreError
 from .platform import ServiceError
 
 
 PRODUCT_STATUSES = ("backlog", "todo", "running", "done", "archived")
 PRIORITY_TO_INT = {"low": 0, "medium": 1, "high": 2}
 INT_TO_PRIORITY = {0: "low", 1: "medium", 2: "high"}
+TEAM_META_PREFIX = "[brain4all:team] "
+TEAM_CANCEL_PREFIX = "[brain4all:team-cancelled]"
 
 
 def _iso(epoch: int | None) -> str | None:
@@ -84,8 +88,112 @@ def _allowed_moves(raw: str) -> list[str]:
 class KanbanService:
     """Translate the HTTP product contract into Hermes Kanban operations."""
 
-    def __init__(self, agents: Any | None = None):
+    def __init__(self, agents: Any | None = None, repository: Any | None = None):
         self.agents = agents
+        self.repository = repository
+
+    @staticmethod
+    def _team_metadata(comments: list[Any]) -> tuple[dict[str, Any] | None, bool]:
+        metadata = None
+        cancelled = False
+        for comment in comments:
+            text = str(getattr(comment, "body", ""))
+            if text.startswith(TEAM_META_PREFIX):
+                try:
+                    candidate = json.loads(text[len(TEAM_META_PREFIX):])
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(candidate, dict):
+                    metadata = candidate
+            elif text.startswith(TEAM_CANCEL_PREFIX):
+                cancelled = True
+        return metadata, cancelled
+
+    def _team_projection(
+        self,
+        conn: Any,
+        metadata: Mapping[str, Any],
+        *,
+        cancelled: bool,
+    ) -> dict[str, Any]:
+        kb = self._ready()
+        projected: list[dict[str, Any]] = []
+        all_ids: list[str] = []
+        for node in list(metadata.get("nodes") or []):
+            if not isinstance(node, Mapping):
+                continue
+            task_id = str(node.get("task_id") or "")
+            task = kb.get_task(conn, task_id)
+            if task is None:
+                continue
+            raw_status = str(task.status)
+            runs = kb_adapter.task_runs(conn, task_id)
+            summary = getattr(task, "result", None) or next(
+                (str(run.summary) for run in reversed(runs) if getattr(run, "summary", None)),
+                None,
+            )
+            projected.append({
+                "step_id": str(node.get("step_id") or task_id),
+                "task_id": task_id,
+                "title": str(task.title),
+                "agent_id": str(node.get("agent_id") or getattr(task, "assignee", "") or ""),
+                "role": str(node.get("role") or "worker"),
+                "needs": [str(item) for item in node.get("needs") or []],
+                "status": raw_status,
+                "kanban_status": _status(raw_status),
+                "summary": summary,
+            })
+            all_ids.append(task_id)
+        synthesis_id = str(metadata.get("synthesis_task_id") or "")
+        synthesis = kb.get_task(conn, synthesis_id) if synthesis_id else None
+        if synthesis is not None:
+            raw_status = str(synthesis.status)
+            runs = kb_adapter.task_runs(conn, synthesis_id)
+            summary = getattr(synthesis, "result", None) or next(
+                (str(run.summary) for run in reversed(runs) if getattr(run, "summary", None)),
+                None,
+            )
+            projected.append({
+                "step_id": "__synthesis__",
+                "task_id": synthesis_id,
+                "title": str(synthesis.title),
+                "agent_id": str(metadata.get("orchestrator_id") or getattr(synthesis, "assignee", "") or ""),
+                "role": "coordinator",
+                "needs": [str(item) for item in metadata.get("leaf_step_ids") or []],
+                "status": raw_status,
+                "kanban_status": _status(raw_status),
+                "summary": summary,
+            })
+            all_ids.append(synthesis_id)
+        terminal = {"done", "archived"}
+        complete_count = sum(1 for node in projected if node["status"] in terminal)
+        if cancelled:
+            status = "cancelled"
+            kanban_status = "done"
+        elif projected and all(node["status"] in terminal for node in projected):
+            status = "done"
+            kanban_status = "done"
+        elif any(node["status"] in {"ready", "running", "review"} for node in projected):
+            status = "running"
+            kanban_status = "running"
+        elif any(node["status"] == "blocked" for node in projected):
+            status = "blocked"
+            kanban_status = "done"
+        else:
+            status = "todo"
+            kanban_status = "todo"
+        return {
+            "id": str(metadata.get("team_id") or ""),
+            "name": str(metadata.get("team_name") or "Agent team"),
+            "orchestrator_id": str(metadata.get("orchestrator_id") or ""),
+            "status": status,
+            "kanban_status": kanban_status,
+            "nodes": projected,
+            "task_ids": all_ids,
+            "synthesis_task_id": synthesis_id or None,
+            "progress": round(100 * complete_count / len(projected)) if projected else 0,
+            "cancelled": cancelled,
+        }
 
     def delete_assignee_tasks(self, agent_id: str) -> int:
         try:
@@ -205,6 +313,7 @@ class KanbanService:
                     "kanban_status": _status(parent.status),
                 })
         comments = kb_adapter.task_comments(conn, task.id)
+        team_metadata, team_cancelled = self._team_metadata(comments)
         attachments = kb_adapter.task_attachments(conn, task.id)
         runs = kb_adapter.task_runs(conn, task.id)
         raw_status = str(task.status)
@@ -256,7 +365,13 @@ class KanbanService:
                 if schedule is not None
                 else None
             ),
-            "comments": [self._comment_dto(item) for item in comments],
+            "comments": [
+                self._comment_dto(item)
+                for item in comments
+                if not str(getattr(item, "body", "")).startswith(
+                    (TEAM_META_PREFIX, TEAM_CANCEL_PREFIX)
+                )
+            ],
             "attachments": [self._attachment_dto(item) for item in attachments],
             "runs": [self._run_dto(item) for item in runs],
             "worker": self._worker_dto(task),
@@ -288,6 +403,40 @@ class KanbanService:
             result["events"] = []
             result["worker_activity"] = None
             result["conversation"] = None
+        result["team"] = None
+        if team_metadata is not None:
+            team = self._team_projection(conn, team_metadata, cancelled=team_cancelled)
+            if raw_status == "archived":
+                team["status"] = "archived"
+                team["kanban_status"] = "archived"
+            result["team"] = team
+            result["kanban_status"] = team["kanban_status"]
+            result["allowed_kanban_statuses"] = (
+                ["archived"] if team["status"] in {"done", "blocked", "cancelled"} else []
+            )
+            result["state_detail"] = {
+                "kind": team["status"],
+                "label": team["status"].replace("_", " ").title(),
+                "reason": None,
+            }
+            result["assignee"] = team["orchestrator_id"] or None
+            result["assignees"] = list(dict.fromkeys(
+                node["agent_id"] for node in team["nodes"] if node["agent_id"]
+            ))
+            result["progress"] = team["progress"]
+            result["block"] = (
+                "A team stage needs attention" if team["status"] == "blocked" else None
+            )
+            synthesis = next(
+                (node for node in team["nodes"] if node["step_id"] == "__synthesis__"),
+                None,
+            )
+            result["summary"] = (
+                "Team run cancelled"
+                if team_cancelled
+                else synthesis.get("summary") if synthesis and synthesis["status"] == "done" else None
+            )
+            result["result"] = result["summary"]
         return result
 
     @staticmethod
@@ -345,6 +494,13 @@ class KanbanService:
         kb = self._ready()
         raw = kb.list_tasks(conn, assignee=assignee or None, include_archived=include_archived, order_by="updated")
         rows = [self._task_dto(conn, task, board=board) for task in raw]
+        member_ids = {
+            task_id
+            for row in rows
+            if row.get("team")
+            for task_id in row["team"]["task_ids"]
+        }
+        rows = [row for row in rows if row["id"] not in member_ids]
         if status:
             if status not in PRODUCT_STATUSES:
                 raise ServiceError("invalid Kanban status", code="invalid_request")
@@ -390,6 +546,11 @@ class KanbanService:
         schedule_values = self._schedule_values(body.get("schedule")) if status == "scheduled" else None
         if status != "scheduled" and body.get("schedule") is not None:
             raise ServiceError("choose Scheduled to set a task schedule", code="invalid_schedule")
+        team_id = str(body.get("team_id") or "").strip()
+        if team_id and body.get("assignee"):
+            raise ServiceError("choose either an agent or a team", code="invalid_request")
+        if team_id and status != "todo":
+            raise ServiceError("team tasks must start in Todo", code="invalid_request")
         try:
             workspace_kind, workspace_path = self._workspace_for_assignee(
                 body.get("assignee"),
@@ -399,6 +560,17 @@ class KanbanService:
         except ValueError as exc:
             raise ServiceError(str(exc), code="invalid_workspace") from exc
         with kb_adapter.connection(normalized) as conn:
+            if team_id:
+                return self._create_team_task(
+                    conn,
+                    normalized,
+                    team_id=team_id,
+                    title=title,
+                    description=description,
+                    priority=PRIORITY_TO_INT.get(str(body.get("priority") or "medium"), 1),
+                    created_by=created_by,
+                    idempotency_key=body.get("idempotency_key"),
+                )
             task_id = kb_adapter.create_task(
                 conn,
                 title=title,
@@ -435,6 +607,177 @@ class KanbanService:
                 )
                 task = kb.get_task(conn, task_id)
             return self._task_dto(conn, task, board=normalized)
+
+    def _create_team_task(
+        self,
+        conn: Any,
+        board: str,
+        *,
+        team_id: str,
+        title: str,
+        description: str,
+        priority: int,
+        created_by: str,
+        idempotency_key: Any,
+    ) -> dict[str, Any]:
+        if self.repository is None:
+            raise ServiceError("team tasks are unavailable", status=503, code="kanban_not_ready")
+        try:
+            team = self.repository.get_team(team_id)
+        except StoreError as exc:
+            raise ServiceError(
+                str(exc),
+                status=exc.status,
+                code=exc.code,
+            ) from exc
+        if not team.get("enabled", True):
+            raise ServiceError("team is disabled", status=409, code="team_disabled")
+        workflow = list(team.get("workflow") or [])
+        if not workflow:
+            workflow = [
+                {
+                    "id": f"worker-{index + 1}",
+                    "task": description,
+                    "agent_id": member.get("agent_id"),
+                    "role": member.get("role") or "worker",
+                    "needs": [],
+                }
+                for index, member in enumerate(team.get("members") or [])
+                if member.get("enabled", True)
+            ]
+        if not workflow:
+            raise ServiceError("team has no enabled workflow", status=409, code="team_has_no_workers")
+        step_ids = [str(step.get("id") or "") for step in workflow]
+        if any(not step_id for step_id in step_ids) or len(set(step_ids)) != len(step_ids):
+            raise ServiceError("team workflow is invalid", status=409, code="invalid_team")
+        seen_steps: set[str] = set()
+        for step, step_id in zip(workflow, step_ids):
+            needs = [str(item) for item in step.get("needs") or []]
+            if any(parent not in seen_steps for parent in needs):
+                raise ServiceError(
+                    "team workflow dependencies are not in topological order",
+                    status=409,
+                    code="invalid_team",
+                )
+            if not str(step.get("agent_id") or ""):
+                raise ServiceError("team workflow step has no agent", status=409, code="invalid_team")
+            seen_steps.add(step_id)
+        root_id = kb_adapter.create_task(
+            conn,
+            title=title,
+            body=description,
+            assignee=None,
+            created_by=created_by,
+            priority=priority,
+            parents=(),
+            idempotency_key=idempotency_key,
+            workspace_kind="scratch",
+            initial_status="running",
+            board=board,
+        )
+        kb = self._ready()
+        if not kb.complete_task(conn, root_id, summary="Team workflow created"):
+            raise ServiceError("team workflow could not be started", status=409, code="invalid_transition")
+        task_ids: dict[str, str] = {}
+        nodes: list[dict[str, Any]] = []
+        for step in workflow:
+            step_id = str(step["id"])
+            needs = [str(item) for item in step.get("needs") or []]
+            if any(parent not in task_ids for parent in needs):
+                raise ServiceError("team workflow dependencies are not in topological order", status=409, code="invalid_team")
+            agent_id = str(step.get("agent_id") or "")
+            if not agent_id:
+                raise ServiceError("team workflow step has no agent", status=409, code="invalid_team")
+            role = str(step.get("role") or "worker")
+            instruction = str(step.get("task") or description).strip()
+            workspace_kind, workspace_path = self._workspace_for_assignee(agent_id)
+            task_id = kb_adapter.create_task(
+                conn,
+                title=f"{title} · {role}",
+                body=(
+                    f"Team objective:\n{description}\n\n"
+                    f"Your role: {role}\nStage instructions:\n{instruction}"
+                ),
+                assignee=agent_id,
+                created_by=f"team:{team_id}",
+                priority=priority,
+                parents=[task_ids[item] for item in needs] or [root_id],
+                workspace_kind=workspace_kind,
+                workspace_path=workspace_path,
+                initial_status="running",
+                board=board,
+            )
+            task_ids[step_id] = task_id
+            nodes.append({
+                "step_id": step_id,
+                "task_id": task_id,
+                "agent_id": agent_id,
+                "role": role,
+                "needs": needs,
+            })
+        depended_on = {item for step in workflow for item in step.get("needs") or []}
+        leaf_ids = [step_id for step_id in step_ids if step_id not in depended_on]
+        orchestrator = str(team.get("orchestrator_id") or "")
+        if not orchestrator:
+            raise ServiceError("team has no orchestrator", status=409, code="invalid_team")
+        workspace_kind, workspace_path = self._workspace_for_assignee(orchestrator)
+        synthesis_id = kb_adapter.create_task(
+            conn,
+            title=f"{title} · Synthesis",
+            body=(
+                f"Synthesize the completed team stages into one final answer.\n\n"
+                f"Original objective:\n{description}"
+            ),
+            assignee=orchestrator,
+            created_by=f"team:{team_id}",
+            priority=priority,
+            parents=[task_ids[item] for item in leaf_ids],
+            workspace_kind=workspace_kind,
+            workspace_path=workspace_path,
+            initial_status="running",
+            board=board,
+        )
+        metadata = {
+            "version": 1,
+            "team_id": team_id,
+            "team_name": str(team.get("name") or team_id),
+            "orchestrator_id": orchestrator,
+            "nodes": nodes,
+            "leaf_step_ids": leaf_ids,
+            "synthesis_task_id": synthesis_id,
+        }
+        kb.add_comment(
+            conn,
+            root_id,
+            "brain4all",
+            TEAM_META_PREFIX + json.dumps(metadata, separators=(",", ":")),
+        )
+        root = kb.get_task(conn, root_id)
+        return self._task_dto(conn, root, board=board, include_detail=True)
+
+    def cancel_team_task(self, board: str, task_id: str) -> dict[str, Any]:
+        normalized = self._board(board)
+        kb = self._ready()
+        with kb_adapter.connection(normalized) as conn:
+            task = kb.get_task(conn, task_id)
+            if task is None:
+                raise ServiceError("task not found", status=404, code="task_not_found")
+            comments = kb_adapter.task_comments(conn, task_id)
+            metadata, cancelled = self._team_metadata(comments)
+            if metadata is None:
+                raise ServiceError("task is not a team run", status=409, code="invalid_request")
+            if cancelled:
+                return self._task_dto(conn, task, board=normalized, include_detail=True)
+            projection = self._team_projection(conn, metadata, cancelled=False)
+            for member_id in projection["task_ids"]:
+                member = kb.get_task(conn, member_id)
+                if member is None or str(member.status) in {"done", "archived"}:
+                    continue
+                if str(member.status) == "running":
+                    kb.reclaim_task(conn, member_id, reason="Team run cancelled from Brain4All")
+                kb.archive_task(conn, member_id)
+            kb.add_comment(conn, task_id, "brain4all", TEAM_CANCEL_PREFIX)
+            return self._task_dto(conn, task, board=normalized, include_detail=True)
 
     def patch_task(self, board: str, task_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         normalized = self._board(board)
@@ -660,6 +1003,20 @@ class KanbanService:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             if unarchive:
                 raise ServiceError("Archived tasks cannot be restored", status=501, code="kanban_contract_incompatible")
+            comments = kb_adapter.task_comments(conn, task_id)
+            metadata, cancelled = self._team_metadata(comments)
+            if metadata is not None:
+                projection = self._team_projection(conn, metadata, cancelled=cancelled)
+                if projection["status"] not in {"done", "blocked", "cancelled"}:
+                    raise ServiceError(
+                        "Cancel the active team run before archiving it",
+                        status=409,
+                        code="invalid_transition",
+                    )
+                for member_id in projection["task_ids"]:
+                    member = kb.get_task(conn, member_id)
+                    if member is not None and str(member.status) != "archived":
+                        kb.archive_task(conn, member_id)
             if not kb.archive_task(conn, task_id):
                 raise ServiceError("task could not be archived", status=409, code="invalid_transition")
             if kb_adapter.task_schedule(conn, task_id) is not None:

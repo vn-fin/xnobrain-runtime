@@ -155,6 +155,7 @@ class APIHandlers:
             "kanban_task_assign": (lambda: s.kanban.assign_task(p["board_slug"], p["task_id"], body), "Kanban task assignment updated", 200),
             "kanban_task_schedule": (lambda: s.kanban.schedule_action(p["board_slug"], p["task_id"], body["action"]), "Kanban task schedule updated", 200),
             "kanban_task_archive": (lambda: s.kanban.archive_task(p["board_slug"], p["task_id"]), "Kanban task archived", 200),
+            "kanban_team_cancel": (lambda: s.kanban.cancel_team_task(p["board_slug"], p["task_id"]), "Kanban team run cancelled", 200),
             "kanban_task_unarchive": (lambda: s.kanban.archive_task(p["board_slug"], p["task_id"], unarchive=True), "Kanban task unarchived", 200),
             "kanban_comments": (lambda: s.kanban.list_comments(p["board_slug"], p["task_id"]), "Kanban comments retrieved successfully", 200),
             "kanban_comment_create": (lambda: s.kanban.add_comment(p["board_slug"], p["task_id"], body), "Kanban comment added successfully", 201),

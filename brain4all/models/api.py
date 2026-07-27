@@ -66,6 +66,7 @@ class KanbanTaskCreate(BaseModel):
     status: Literal["backlog", "todo", "scheduled"] = "todo"
     priority: Literal["high", "medium", "low"] = "medium"
     assignee: str | None = Field(default=None, max_length=128)
+    team_id: str | None = Field(default=None, max_length=128)
     parents: list[str] = Field(default_factory=list, max_length=100)
     workspace_kind: Literal["scratch", "dir", "worktree"] | None = None
     workspace_path: str | None = Field(default=None, max_length=2000)

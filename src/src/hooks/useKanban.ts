@@ -233,6 +233,19 @@ export function useKanban(active = true) {
     return task;
   }, [board]);
 
+  const cancelTeamTask = useCallback(async (taskId: string) => {
+    if (!board) return null;
+    try {
+      const updated = await kanbanApi.cancelTeamTask(board.id, taskId);
+      replaceTask(board.id, taskId, updated);
+      notify('success', `Cancelled “${updated.title}”.`);
+      return updated;
+    } catch (cause) {
+      notify('error', cause instanceof Error ? cause.message : 'The team run could not be cancelled.');
+      return null;
+    }
+  }, [board, notify, replaceTask]);
+
   const addStatus = useCallback(async (_label: string, _column: KanbanStatusDef['column']) => {
     throw new Error('Kanban uses the five default statuses.');
   }, []);
@@ -383,6 +396,7 @@ export function useKanban(active = true) {
     refreshTask,
     detailLoading,
     createTask,
+    cancelTeamTask,
     addStatus,
     refresh: () => load(),
     liveStatus,

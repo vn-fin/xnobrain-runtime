@@ -331,6 +331,29 @@ export type KanbanTaskSchedule = {
   lastRunAt: string | null;
 };
 
+export type KanbanTeamNode = {
+  stepId: string;
+  taskId: string;
+  title: string;
+  agentId: string;
+  role: string;
+  needs: string[];
+  status: KanbanNativeStatus | 'archived';
+  kanbanStatus: KanbanColumnId;
+  summary: string | null;
+};
+
+export type KanbanTeamGroup = {
+  id: string;
+  name: string;
+  orchestratorId: string;
+  status: string;
+  nodes: KanbanTeamNode[];
+  synthesisTaskId: string | null;
+  progress: number;
+  cancelled: boolean;
+};
+
 /** The fixed product status vocabulary. */
 export type KanbanStatusDef = {
   id: KanbanColumnId;
@@ -368,6 +391,7 @@ export type KanbanTask = {
   summary?: string | null;
   result?: string | null;
   schedule: KanbanTaskSchedule | null;
+  team: KanbanTeamGroup | null;
 };
 
 export type KanbanBoard = {
@@ -388,6 +412,7 @@ export type NewKanbanTaskInput = {
   status: KanbanColumnId | 'scheduled';
   priority: KanbanPriority;
   assignee: string | null;
+  teamId?: string | null;
   skills: string[];
   schedule?: {
     recurrence: 'once' | 'interval';

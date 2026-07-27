@@ -104,6 +104,7 @@ ROUTES = (
     Route("POST", "/agent-gateway/v1/kanban/boards/{board_slug}/tasks/{task_id}/assign", "kanban_task_assign", KanbanAssign, tags=("Kanban",)),
     Route("POST", "/agent-gateway/v1/kanban/boards/{board_slug}/tasks/{task_id}/schedule", "kanban_task_schedule", KanbanScheduleAction, tags=("Kanban",)),
     Route("POST", "/agent-gateway/v1/kanban/boards/{board_slug}/tasks/{task_id}/archive", "kanban_task_archive", tags=("Kanban",)),
+    Route("POST", "/agent-gateway/v1/kanban/boards/{board_slug}/tasks/{task_id}/team/cancel", "kanban_team_cancel", tags=("Kanban",)),
     Route("POST", "/agent-gateway/v1/kanban/boards/{board_slug}/tasks/{task_id}/unarchive", "kanban_task_unarchive", tags=("Kanban",)),
     Route("GET", "/agent-gateway/v1/kanban/boards/{board_slug}/tasks/{task_id}/comments", "kanban_comments", tags=("Kanban",)),
     Route("POST", "/agent-gateway/v1/kanban/boards/{board_slug}/tasks/{task_id}/comments", "kanban_comment_create", KanbanComment, tags=("Kanban",)),

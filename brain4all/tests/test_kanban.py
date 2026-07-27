@@ -133,6 +133,76 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             boards_with_archive = await client.get("/agent-gateway/v1/kanban/boards?include_archived=true")
             self.assertEqual(boards_with_archive.json()["data"][0]["tasks"][0]["kanban_status"], "archived")
 
+    async def test_saved_team_expands_to_grouped_native_dag_and_can_cancel(self):
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            agent_ids = []
+            for name in ("Coordinator", "Researcher", "Reviewer"):
+                response = await client.post(
+                    "/agent-gateway/v1/agents",
+                    json={"display_name": name},
+                )
+                self.assertEqual(response.status_code, 201, response.text)
+                agent_ids.append(response.json()["data"]["id"])
+            team = await client.post("/api/v1/teams", json={
+                "name": "Launch team",
+                "orchestrator_id": agent_ids[0],
+                "members": [
+                    {"agent_id": agent_ids[1], "role": "researcher", "allowed_tools": ["web"]},
+                    {"agent_id": agent_ids[2], "role": "reviewer", "allowed_tools": ["web"]},
+                ],
+                "workflow": [
+                    {"id": "research", "task": "Research the launch", "role": "researcher"},
+                    {"id": "review", "task": "Review the research", "role": "reviewer", "needs": ["research"]},
+                ],
+            })
+            self.assertEqual(team.status_code, 201, team.text)
+            team_id = team.json()["data"]["id"]
+
+            created = await client.post(
+                "/agent-gateway/v1/kanban/boards/default/tasks",
+                json={
+                    "title": "Prepare launch",
+                    "description": "Produce an evidence-backed launch plan.",
+                    "status": "todo",
+                    "team_id": team_id,
+                },
+            )
+            self.assertEqual(created.status_code, 201, created.text)
+            task = created.json()["data"]
+            self.assertEqual(task["team"]["name"], "Launch team")
+            self.assertEqual(
+                [node["step_id"] for node in task["team"]["nodes"]],
+                ["research", "review", "__synthesis__"],
+            )
+            self.assertEqual(task["team"]["nodes"][1]["needs"], ["research"])
+            self.assertEqual(task["assignees"], agent_ids[1:] + [agent_ids[0]])
+            root_id = task["id"]
+
+            listed = await client.get("/agent-gateway/v1/kanban/boards/default/tasks")
+            self.assertEqual(listed.status_code, 200, listed.text)
+            self.assertEqual([item["id"] for item in listed.json()["data"]["tasks"]], [root_id])
+
+            cancelled = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{root_id}/team/cancel",
+            )
+            self.assertEqual(cancelled.status_code, 200, cancelled.text)
+            self.assertTrue(cancelled.json()["data"]["team"]["cancelled"])
+            self.assertEqual(cancelled.json()["data"]["team"]["status"], "cancelled")
+            self.assertEqual(cancelled.json()["data"]["summary"], "Team run cancelled")
+
+            archived = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{root_id}/archive",
+            )
+            self.assertEqual(archived.status_code, 200, archived.text)
+            self.assertEqual(archived.json()["data"]["kanban_status"], "archived")
+            self.assertEqual(archived.json()["data"]["team"]["status"], "archived")
+            visible = await client.get("/agent-gateway/v1/kanban/boards/default/tasks")
+            self.assertEqual(visible.json()["data"]["tasks"], [])
+            history = await client.get(
+                "/agent-gateway/v1/kanban/boards/default/tasks?include_archived=true",
+            )
+            self.assertEqual([item["id"] for item in history.json()["data"]["tasks"]], [root_id])
+
     async def test_compatibility_cron_creation_is_visible_on_default_board(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
             agent = await client.post("/agent-gateway/v1/agents", json={"name": "Scheduled worker"})
