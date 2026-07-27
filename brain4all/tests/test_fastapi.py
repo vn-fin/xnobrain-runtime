@@ -519,6 +519,33 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             [item["id"] for item in conversations.json()["data"]["conversations"]],
         )
 
+    async def test_default_conversation_names_are_numbered_by_the_backend(self):
+        async with self.client() as client:
+            created = await client.post(
+                "/agent-gateway/v1/agents",
+                json={"display_name": "Conversation numbering"},
+            )
+            agent_id = created.json()["data"]["id"]
+            first = await client.post(
+                f"/conversations/v1/conversations?agent={agent_id}",
+                json={},
+            )
+            second = await client.post(
+                f"/conversations/v1/conversations?agent={agent_id}",
+                json={},
+            )
+            third = await client.post(
+                f"/conversations/v1/conversations?agent={agent_id}",
+                json={"title": "New Conversation"},
+            )
+
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(third.status_code, 201, third.text)
+        self.assertEqual(first.json()["data"]["title"], "New Conversation")
+        self.assertEqual(second.json()["data"]["title"], "New Conversation 2")
+        self.assertEqual(third.json()["data"]["title"], "New Conversation 3")
+
 
 if __name__ == "__main__":
     unittest.main()

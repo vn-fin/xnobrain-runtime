@@ -56,7 +56,7 @@ export const conversationsApi = {
     return (data.conversations ?? []).map(mapConversation);
   },
 
-  async create(agentId: string, title = 'New conversation'): Promise<Conversation> {
+  async create(agentId: string, title = 'New Conversation'): Promise<Conversation> {
     const data = await request<ConversationSummaryDTO>(pathWithAgent(ROOT, agentId), {
       method: 'POST',
       body: JSON.stringify(title.trim() ? { title: title.trim() } : {}),

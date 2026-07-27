@@ -375,6 +375,55 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("--oneshot", command)
             self.assertNotIn("-z", command)
 
+    def test_default_conversation_titles_continue_without_duplicates(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            manager.create_agent({"name": "news"})
+
+            first = manager.create_conversation("news", {})
+            second = manager.create_conversation(
+                "news",
+                {"title": "New Conversation"},
+            )
+            third = manager.create_conversation(
+                "news",
+                {"title": "new conversation"},
+            )
+            custom = manager.create_conversation(
+                "news",
+                {"title": "Daily Briefing"},
+            )
+
+            self.assertEqual(first["conversation"]["title"], "New Conversation")
+            self.assertEqual(second["conversation"]["title"], "New Conversation 2")
+            self.assertEqual(third["conversation"]["title"], "New Conversation 3")
+            self.assertEqual(custom["conversation"]["title"], "Daily Briefing")
+
+            manager.delete_conversation(
+                "news",
+                second["conversation"]["id"],
+            )
+            fourth = manager.create_conversation("news", {})
+            self.assertEqual(fourth["conversation"]["title"], "New Conversation 4")
+
+            titles = [
+                item["title"]
+                for item in manager.list_conversations("news")["conversations"]
+            ]
+            self.assertEqual(len(titles), len(set(titles)))
+
+            manager.create_agent({"name": "research"})
+            research = manager.create_conversation("research", {})
+            self.assertEqual(
+                research["conversation"]["title"],
+                "New Conversation",
+            )
+
     def test_conversation_stream_does_not_create_a_missing_session(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

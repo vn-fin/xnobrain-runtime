@@ -144,7 +144,7 @@ class WorkspaceCreate(WorkspaceWrite):
 
 
 class ConversationCreate(BaseModel):
-    title: str = Field(default="New conversation", max_length=200)
+    title: str = Field(default="New Conversation", max_length=200)
 
 
 class ConversationRename(BaseModel):

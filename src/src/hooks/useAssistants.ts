@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { agentsApi } from '../api/agents';
 import { conversationsApi } from '../api/conversations';
 import { skillsApi } from '../api/skills';
-import { ApiError, type ResponsePagination } from '../api/client';
+import type { ResponsePagination } from '../api/client';
 import type { AgentConfigDTO } from '../api/contracts/agentGateway';
 import type { Agent, AgentSkill, AgentSkillMap, AsyncStatus, GlobalRuntimeConfig, SkillStateMap } from '../types';
 
@@ -20,18 +20,6 @@ function deriveSkills(agents: Agent[]) {
     }
   }
   return { enabled, states };
-}
-
-/** Picks a conversation title that doesn't collide with existing ones, since
- * the backend rejects duplicate titles for an agent with a 409 conflict. */
-function uniqueConversationTitle(existing: string[], base = 'New conversation'): string {
-  const taken = new Set(existing.map((title) => title.trim().toLowerCase()));
-  if (!taken.has(base.toLowerCase())) return base;
-  for (let i = 2; i < 1000; i += 1) {
-    const candidate = `${base} ${i}`;
-    if (!taken.has(candidate.toLowerCase())) return candidate;
-  }
-  return `${base} ${Date.now()}`;
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -114,7 +102,7 @@ export function useAssistants() {
     let conversations: Agent['conversations'] = [];
     let profileSkills: AgentSkill[] = [];
     try {
-      const conversation = await conversationsApi.create(agent.id, 'New conversation');
+      const conversation = await conversationsApi.create(agent.id);
       conversationId = conversation.id;
       conversations = [conversation];
     } catch (value) {
@@ -203,20 +191,7 @@ export function useAssistants() {
   };
 
   const createConversation = async (agentId: string, _model?: string) => {
-    const existing = agents.find((agent) => agent.id === agentId)?.conversations ?? [];
-    const title = uniqueConversationTitle(existing.map((conversation) => conversation.title));
-    let conversation;
-    try {
-      conversation = await conversationsApi.create(agentId, title);
-    } catch (error) {
-      // The backend returns 409 when the title already exists (e.g. a race with
-      // another tab, or a stale local list). Retry once with a unique suffix.
-      if (error instanceof ApiError && error.status === 409) {
-        conversation = await conversationsApi.create(agentId, `${title} · ${new Date().toLocaleTimeString()}`);
-      } else {
-        throw error;
-      }
-    }
+    const conversation = await conversationsApi.create(agentId);
     const conversations = await conversationsApi.list(agentId);
     setComposedAgents(agents.map((agent) => agent.id === agentId
       ? { ...agent, conversations }

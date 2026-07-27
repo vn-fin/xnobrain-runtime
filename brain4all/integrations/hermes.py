@@ -48,6 +48,11 @@ DEFAULT_ROOT_PROFILE = str(Path.home() / ".hermes")
 DEFAULT_PROFILES_ROOT = str(Path.home() / ".hermes" / "profiles")
 DEFAULT_LEGACY_AGENTS_ROOT = str(Path.home() / ".hermes" / "legacy-agents")
 DEFAULT_AGENT_CONFIG_DIR = str(Path.home() / ".config" / "sandbox-agent")
+DEFAULT_CONVERSATION_TITLE = "New Conversation"
+DEFAULT_CONVERSATION_TITLE_RE = re.compile(
+    r"^New Conversation(?: ([1-9][0-9]*))?$",
+    re.IGNORECASE,
+)
 METADATA_FILE = "agent.json"
 PROFILES_REGISTRY_FILE = "profiles.yaml"
 CREDENTIAL_FILES = (".env", "auth.json")
@@ -110,6 +115,7 @@ class AgentManager:
         self._active_runs: dict[str, dict[str, Any]] = {}
         self._stopped_runs: set[str] = set()
         self._registry_lock = threading.RLock()
+        self._conversation_lock = threading.RLock()
         self.sync_profiles_registry()
 
     def list_agents(self) -> dict[str, Any]:
@@ -1295,7 +1301,10 @@ class AgentManager:
         )
         title = self._conversation_title(body)
         model = self._conversation_model(profile_dir, body)
-        self._create_session(profile_dir, session_id, model=model, title=title)
+        with self._conversation_lock:
+            if title is None or title.casefold() == DEFAULT_CONVERSATION_TITLE.casefold():
+                title = self._next_default_conversation_title(profile_dir)
+            self._create_session(profile_dir, session_id, model=model, title=title)
         return self.get_conversation(name, session_id)
 
     def update_conversation(
@@ -1845,6 +1854,35 @@ class AgentManager:
         if "title" in body:
             return self._nullable_text(body["title"], field="title", max_chars=256)
         return None
+
+    def _next_default_conversation_title(self, profile_dir: Path) -> str:
+        db_path = profile_dir / "state.db"
+        if not db_path.is_file():
+            return DEFAULT_CONVERSATION_TITLE
+        conn = self._open_readonly_db(db_path)
+        try:
+            titles = [
+                str(row["title"] or "").strip()
+                for row in conn.execute(
+                    "SELECT title FROM sessions WHERE title IS NOT NULL"
+                ).fetchall()
+            ]
+        except sqlite3.Error:
+            titles = []
+        finally:
+            conn.close()
+
+        highest = 0
+        for title in titles:
+            match = DEFAULT_CONVERSATION_TITLE_RE.fullmatch(title)
+            if match is None:
+                continue
+            highest = max(highest, int(match.group(1) or 1))
+        return (
+            DEFAULT_CONVERSATION_TITLE
+            if highest == 0
+            else f"{DEFAULT_CONVERSATION_TITLE} {highest + 1}"
+        )
 
     def _conversation_model(self, profile_dir: Path, body: Mapping[str, Any]) -> str:
         if body.get("model"):

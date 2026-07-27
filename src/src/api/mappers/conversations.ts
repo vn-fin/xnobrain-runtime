@@ -10,7 +10,7 @@ function formatTimestamp(epoch?: number): string {
 export function mapConversation(dto: ConversationSummaryDTO): Conversation {
   return {
     id: dto.id ?? '',
-    title: dto.title ?? 'New conversation',
+    title: dto.title ?? 'New Conversation',
     preview: dto.preview ?? '',
     startedAt: formatTimestamp(dto.last_active_at ?? dto.started_at),
     model: dto.model ?? '',

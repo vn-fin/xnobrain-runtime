@@ -280,7 +280,7 @@ class PlatformService:
         return {"conversations": [self._conversation_dto(agent_id, item) for item in payload["conversations"]], "pagination": {"page": 1, "limit": 50, "has_more": False}}
 
     def create_conversation(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        payload = self.agents.create_conversation(agent_id, {"title": body.get("title") or "New conversation"})
+        payload = self.agents.create_conversation(agent_id, {"title": body.get("title") or "New Conversation"})
         return self._conversation_dto(agent_id, payload["conversation"])
 
     def get_conversation(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
@@ -861,7 +861,7 @@ class PlatformService:
 
     @staticmethod
     def _conversation_dto(agent_id: str, item: Mapping[str, Any]) -> dict[str, Any]:
-        return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New conversation"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tools") or 0), "created_at": item.get("created_at"), "updated_at": item.get("updated_at")}
+        return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Conversation"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tools") or 0), "created_at": item.get("created_at"), "updated_at": item.get("updated_at")}
 
     @staticmethod
     def _agent_dto(item: Mapping[str, Any]) -> dict[str, Any]:
