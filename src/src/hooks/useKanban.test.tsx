@@ -1,3 +1,4 @@
+import { StrictMode, type PropsWithChildren } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useKanban } from './useKanban';
@@ -24,18 +25,20 @@ vi.mock('../api/kanban', () => ({
 describe('useKanban global event feed', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('keeps one default-board stream without loading board data until Kanban opens', async () => {
+  it('keeps one stream and loads boards once per activation under StrictMode', async () => {
+    const wrapper = ({ children }: PropsWithChildren) => <StrictMode>{children}</StrictMode>;
     const { rerender, unmount } = renderHook(
       ({ active }: { active: boolean }) => useKanban(active),
-      { initialProps: { active: false } },
+      { initialProps: { active: true }, wrapper },
     );
 
     await waitFor(() => expect(mocks.watchBoard).toHaveBeenCalledTimes(1));
     expect(mocks.watchBoard.mock.calls[0][0]).toBe('default');
-    expect(mocks.getBoards).not.toHaveBeenCalled();
-
-    rerender({ active: true });
     await waitFor(() => expect(mocks.getBoards).toHaveBeenCalledTimes(1));
+
+    rerender({ active: false });
+    rerender({ active: true });
+    await waitFor(() => expect(mocks.getBoards).toHaveBeenCalledTimes(2));
     expect(mocks.watchBoard).toHaveBeenCalledTimes(1);
     unmount();
   });

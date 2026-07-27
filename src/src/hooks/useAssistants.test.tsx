@@ -1,3 +1,4 @@
+import { StrictMode, type PropsWithChildren } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Agent } from '../types';
@@ -51,7 +52,7 @@ vi.mock('../api/skills', () => ({
 describe('useAssistants lazy collections', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('loads only agent summaries at startup and fetches one selected collection on demand', async () => {
+  it('loads agent summaries once under StrictMode and fetches selected collections on demand', async () => {
     mocks.listAgents.mockResolvedValue(agents);
     mocks.listConversations.mockResolvedValue([
       { id: 'conversation-one', title: 'New Conversation', updated: 'now', messages: 0 },
@@ -60,7 +61,8 @@ describe('useAssistants lazy collections', () => {
     mocks.listDefaultSkills.mockResolvedValue({ skills: [], pagination: undefined });
     mocks.getGlobalConfig.mockResolvedValue(null);
 
-    const { result } = renderHook(() => useAssistants());
+    const wrapper = ({ children }: PropsWithChildren) => <StrictMode>{children}</StrictMode>;
+    const { result } = renderHook(() => useAssistants(), { wrapper });
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
     expect(mocks.listAgents).toHaveBeenCalledTimes(1);

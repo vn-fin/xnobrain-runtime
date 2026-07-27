@@ -60,6 +60,7 @@ export function useAssistants() {
   const libraryLoaded = useRef(false);
   const defaultConfigRequest = useRef<Promise<GlobalRuntimeConfig | null> | null>(null);
   const defaultConfigLoaded = useRef(false);
+  const initialLoadStarted = useRef(false);
 
   agentsRef.current = agents;
   const { enabled: agentSkills, states: skillStates } = useMemo(() => deriveSkills(agents), [agents]);
@@ -85,6 +86,8 @@ export function useAssistants() {
   }, []);
 
   useEffect(() => {
+    if (initialLoadStarted.current) return;
+    initialLoadStarted.current = true;
     void refresh();
   }, [refresh]);
 

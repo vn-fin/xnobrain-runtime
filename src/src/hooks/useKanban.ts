@@ -34,6 +34,7 @@ export function useKanban(active = true) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [requestedTaskId, setRequestedTaskId] = useState<string | null>(null);
   const noticeId = useRef(0);
+  const boardLoadActive = useRef(false);
 
   const notify = useCallback((kind: KanbanNotice['kind'], message: string) => {
     noticeId.current += 1;
@@ -75,7 +76,13 @@ export function useKanban(active = true) {
   }, []);
 
   useEffect(() => {
-    if (active) void load();
+    if (!active) {
+      boardLoadActive.current = false;
+      return;
+    }
+    if (boardLoadActive.current) return;
+    boardLoadActive.current = true;
+    void load();
   }, [active, load]);
   const activeRef = useRef(active);
   const loadRef = useRef(load);
@@ -233,78 +240,109 @@ export function useKanban(active = true) {
   // The default-board event feed is the one global subscription. Board
   // details remain route-scoped and are fetched only while Kanban is open.
   const streamBoardId = 'default';
+  const streamRef = useRef<{
+    controller: AbortController;
+    reconnectTimer?: number;
+    refreshTimer?: number;
+    cursor?: number;
+  } | null>(null);
+  const streamStopTimer = useRef<number>();
   useEffect(() => {
-    const controller = new AbortController();
-    let reconnectTimer: number | undefined;
-    let refreshTimer: number | undefined;
-    let cursor: number | undefined;
+    if (streamStopTimer.current !== undefined) {
+      window.clearTimeout(streamStopTimer.current);
+      streamStopTimer.current = undefined;
+    }
 
-    const connect = async () => {
-      if (cursor == null) setLiveStatus('connecting');
-      try {
-        await kanbanApi.watchBoard(streamBoardId, (event) => {
-          const eventId = Number(event.id);
-          if (Number.isFinite(eventId)) cursor = eventId;
-          if (event.event === 'connected') {
+    let stream = streamRef.current;
+    if (!stream) {
+      const connection = { controller: new AbortController() } as {
+        controller: AbortController;
+        reconnectTimer?: number;
+        refreshTimer?: number;
+        cursor?: number;
+      };
+      stream = connection;
+      streamRef.current = connection;
+
+      const connect = async () => {
+        if (connection.cursor == null) setLiveStatus('connecting');
+        try {
+          await kanbanApi.watchBoard(streamBoardId, (event) => {
+            const eventId = Number(event.id);
+            if (Number.isFinite(eventId)) connection.cursor = eventId;
+            if (event.event === 'connected') {
+              setLiveStatus('live');
+              return;
+            }
+            if (event.event === 'error') {
+              setLiveStatus('offline');
+              return;
+            }
+            if (event.event !== 'task' || !event.data || typeof event.data !== 'object') return;
+            const data = event.data as Record<string, unknown>;
+            const item: KanbanEvent = {
+              id: Number(data.id ?? eventId),
+              taskId: String(data.task_id ?? ''),
+              title: String(data.title ?? data.task_id ?? 'Task'),
+              kind: String(data.kind ?? 'updated'),
+              createdAt: String(data.created_at ?? ''),
+              assignee: data.assignee == null ? null : String(data.assignee),
+              nativeStatus: String(data.status ?? 'todo') as KanbanNativeStatus,
+              status: String(data.kanban_status ?? 'todo') as KanbanColumnId,
+            };
+            setEvents((current) => [item, ...current.filter((existing) => existing.id !== item.id)].slice(0, 20));
+            setBoards((current) => current.map((currentBoard) => currentBoard.id === streamBoardId
+              ? {
+                  ...currentBoard,
+                  tasks: currentBoard.tasks.map((task) => task.id === item.taskId
+                    ? {
+                        ...task,
+                        events: [
+                          ...task.events.filter((existing) => existing.id !== item.id),
+                          {
+                            id: item.id,
+                            kind: item.kind,
+                            payload: data.payload && typeof data.payload === 'object'
+                              ? data.payload as Record<string, unknown>
+                              : null,
+                            createdAt: item.createdAt,
+                          },
+                        ],
+                      }
+                    : task),
+                }
+              : currentBoard));
             setLiveStatus('live');
-            return;
-          }
-          if (event.event === 'error') {
-            setLiveStatus('offline');
-            return;
-          }
-          if (event.event !== 'task' || !event.data || typeof event.data !== 'object') return;
-          const data = event.data as Record<string, unknown>;
-          const item: KanbanEvent = {
-            id: Number(data.id ?? eventId),
-            taskId: String(data.task_id ?? ''),
-            title: String(data.title ?? data.task_id ?? 'Task'),
-            kind: String(data.kind ?? 'updated'),
-            createdAt: String(data.created_at ?? ''),
-            assignee: data.assignee == null ? null : String(data.assignee),
-            nativeStatus: String(data.status ?? 'todo') as KanbanNativeStatus,
-            status: String(data.kanban_status ?? 'todo') as KanbanColumnId,
-          };
-          setEvents((current) => [item, ...current.filter((existing) => existing.id !== item.id)].slice(0, 20));
-          setBoards((current) => current.map((currentBoard) => currentBoard.id === streamBoardId
-            ? {
-                ...currentBoard,
-                tasks: currentBoard.tasks.map((task) => task.id === item.taskId
-                  ? {
-                      ...task,
-                      events: [
-                        ...task.events.filter((existing) => existing.id !== item.id),
-                        {
-                          id: item.id,
-                          kind: item.kind,
-                          payload: data.payload && typeof data.payload === 'object'
-                            ? data.payload as Record<string, unknown>
-                            : null,
-                          createdAt: item.createdAt,
-                        },
-                      ],
-                    }
-                  : task),
-              }
-            : currentBoard));
-          setLiveStatus('live');
-          if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
-          if (activeRef.current) {
-            refreshTimer = window.setTimeout(() => void loadRef.current(false), 120);
-          }
-        }, controller.signal, cursor);
-      } catch {
-        if (controller.signal.aborted) return;
-        setLiveStatus('offline');
-      }
-      if (!controller.signal.aborted) reconnectTimer = window.setTimeout(() => void connect(), 1_000);
-    };
+            if (connection.refreshTimer !== undefined) window.clearTimeout(connection.refreshTimer);
+            if (activeRef.current) {
+              connection.refreshTimer = window.setTimeout(() => void loadRef.current(false), 120);
+            }
+          }, connection.controller.signal, connection.cursor);
+        } catch {
+          if (connection.controller.signal.aborted) return;
+          setLiveStatus('offline');
+        }
+        if (!connection.controller.signal.aborted) {
+          connection.reconnectTimer = window.setTimeout(() => void connect(), 1_000);
+        }
+      };
 
-    void connect();
+      void connect();
+    }
+    const mountedStream = stream;
+
     return () => {
-      controller.abort();
-      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
-      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+      // StrictMode immediately re-runs mount effects in development. Deferring
+      // teardown by one task lets that setup retain this connection, while a
+      // real unmount still closes it promptly.
+      streamStopTimer.current = window.setTimeout(() => {
+        if (streamRef.current !== mountedStream) return;
+        mountedStream.controller.abort();
+        if (mountedStream.reconnectTimer !== undefined) window.clearTimeout(mountedStream.reconnectTimer);
+        if (mountedStream.refreshTimer !== undefined) window.clearTimeout(mountedStream.refreshTimer);
+        streamRef.current = null;
+        streamStopTimer.current = undefined;
+      }, 0);
     };
   }, []);
 
