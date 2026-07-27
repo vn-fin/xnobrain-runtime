@@ -1,38 +1,46 @@
+import { StrictMode, type PropsWithChildren } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { UsageSummary } from '../api/analytics';
 import { useAnalytics } from './useAnalytics';
 
-const summary = {
-  generated_at: '2026-07-27T00:00:00Z',
-  agents: [],
-} as unknown as UsageSummary;
-
 const mocks = vi.hoisted(() => ({
-  usage: vi.fn(async () => summary),
+  overview: vi.fn(async () => ({
+    generated_at: '2026-07-27T00:00:00Z',
+    agents: [],
+  })),
+  models: vi.fn(async () => ({ by_model: [], by_provider: [] })),
+  timeseries: vi.fn(async () => ({ series: [] })),
   setBudget: vi.fn(),
 }));
 
 vi.mock('../api/analytics', () => ({
   analyticsApi: {
-    usage: mocks.usage,
+    overview: mocks.overview,
+    models: mocks.models,
+    timeseries: mocks.timeseries,
     setBudget: mocks.setBudget,
   },
 }));
 
 describe('useAnalytics', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
 
-  it('reuses global agent summaries and makes only the usage request', async () => {
+  it('reuses global agents and loads each analytics section once in parallel', async () => {
     const agents = [
       { id: 'one', title: 'News Summary', name: 'one' },
       { id: 'two', title: '', name: 'Research' },
     ];
-    const { result } = renderHook(() => useAnalytics(true, agents));
+    const wrapper = ({ children }: PropsWithChildren) => <StrictMode>{children}</StrictMode>;
+    const { result } = renderHook(() => useAnalytics(true, agents), { wrapper });
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
-    expect(mocks.usage).toHaveBeenCalledTimes(1);
+    expect(mocks.overview).toHaveBeenCalledTimes(1);
+    expect(mocks.models).toHaveBeenCalledTimes(1);
+    expect(mocks.timeseries).toHaveBeenCalledTimes(1);
     expect(result.current.available).toEqual([
       { agent_id: 'one', display_name: 'News Summary' },
       { agent_id: 'two', display_name: 'Research' },

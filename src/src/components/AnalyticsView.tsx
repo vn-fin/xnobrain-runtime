@@ -361,6 +361,7 @@ function PanelHeader({ eyebrow, title, trailing }: {
 }
 
 function TimeChart({ summary, metric }: { summary: UsageSummary; metric: 'tokens' | 'cost' }) {
+  const [hovered, setHovered] = useState<number | null>(null);
   const series = summary.series;
   const values = series.map((row) => metric === 'tokens' ? row.total_tokens : row.cost_usd);
   if (!series.length) return <div className="analytics-empty">No usage in this range.</div>;
@@ -376,6 +377,15 @@ function TimeChart({ summary, metric }: { summary: UsageSummary; metric: 'tokens
   const barWidth = Math.max(1, Math.min(42, slotWidth * 0.68));
   const xFor = (index: number) => left + index * slotWidth + (slotWidth - barWidth) / 2;
   const labelEvery = Math.max(1, Math.ceil(series.length / 8));
+  const hoveredRow = hovered == null ? null : series[hovered];
+  const hoveredValue = hovered == null ? 0 : values[hovered];
+  const tooltipLeft = hovered == null
+    ? 50
+    : Math.max(9, Math.min(91, (xFor(hovered) + barWidth / 2) / width * 100));
+  const tooltipTop = Math.max(
+    18,
+    hovered == null ? 50 : (top + plotHeight - hoveredValue / max * plotHeight) / height * 100,
+  );
 
   return (
     <div className="analytics-chart">
@@ -384,15 +394,23 @@ function TimeChart({ summary, metric }: { summary: UsageSummary; metric: 'tokens
         {[0, 0.33, 0.66, 1].map((ratio) => (
           <line key={ratio} x1={left} x2={width - left} y1={top + plotHeight * ratio} y2={top + plotHeight * ratio} className="analytics-grid-line" />
         ))}
-        {series.map((row, index) => (
+        {series.map((row, index) => {
+          const heightValue = values[index] / max * plotHeight;
+          const visualHeight = Math.max(1, heightValue);
+          return (
           <g key={row.bucket}>
             <rect
               x={xFor(index)}
-              y={top + plotHeight - values[index] / max * plotHeight}
+              y={top + plotHeight - visualHeight}
               width={barWidth}
-              height={values[index] / max * plotHeight}
+              height={visualHeight}
               rx={Math.min(3, barWidth / 3)}
-              className="analytics-chart-bar"
+              className={`analytics-chart-bar ${hovered === index ? 'hovered' : ''}`}
+              tabIndex={0}
+              onMouseEnter={() => setHovered(index)}
+              onMouseLeave={() => setHovered(null)}
+              onFocus={() => setHovered(index)}
+              onBlur={() => setHovered(null)}
             >
               <title>{row.bucket}: {metric === 'tokens' ? `${fmtTokens(values[index])} tokens` : fmtUsd(values[index])}</title>
             </rect>
@@ -402,8 +420,23 @@ function TimeChart({ summary, metric }: { summary: UsageSummary; metric: 'tokens
               </text>
             )}
           </g>
-        ))}
+          );
+        })}
       </svg>
+      {hoveredRow && (
+        <div
+          className="analytics-chart-tooltip"
+          style={{ left: `${tooltipLeft}%`, top: `${tooltipTop}%` }}
+          role="status"
+        >
+          <strong>{hoveredRow.bucket}</strong>
+          <div><span>Total tokens</span><b>{hoveredRow.total_tokens.toLocaleString()}</b></div>
+          <div><span>Input</span><b>{hoveredRow.input_tokens.toLocaleString()}</b></div>
+          <div><span>Output</span><b>{hoveredRow.output_tokens.toLocaleString()}</b></div>
+          <div><span>Requests</span><b>{hoveredRow.sessions.toLocaleString()}</b></div>
+          <div><span>Cost</span><b>{fmtUsd(hoveredRow.cost_usd)}</b></div>
+        </div>
+      )}
     </div>
   );
 }

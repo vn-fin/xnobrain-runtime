@@ -153,6 +153,7 @@ ROUTES = (
 
     Route("GET", "/agent-gateway/v1/analytics/agents", "analytics_agents", tags=("Analytics",)),
     Route("GET", "/agent-gateway/v1/analytics/usage", "analytics_usage", tags=("Analytics",)),
+    Route("GET", "/agent-gateway/v1/analytics/overview", "analytics_overview", tags=("Analytics",)),
     Route("GET", "/agent-gateway/v1/analytics/models", "analytics_models", tags=("Analytics",)),
     Route("GET", "/agent-gateway/v1/analytics/timeseries", "analytics_timeseries", tags=("Analytics",)),
     Route("GET", "/agent-gateway/v1/analytics/agents/{agent_id}/usage", "analytics_agent_usage", tags=("Analytics",)),

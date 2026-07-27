@@ -122,6 +122,25 @@ export type UsageSummary = {
   attribution: UsageAttribution;
 };
 
+export type UsageOverview = Omit<UsageSummary, 'by_model' | 'by_provider' | 'series'>;
+
+export type UsageBreakdown = {
+  range_from: number;
+  range_to: number;
+  totals: UsageTotals;
+  by_model: ModelUsage[];
+  by_provider: ProviderUsage[];
+  source: AnalyticsSource;
+};
+
+export type UsageTimeseries = {
+  range_from: number;
+  range_to: number;
+  bucket: Bucket;
+  series: BucketUsage[];
+  source: AnalyticsSource;
+};
+
 export type SelectableAgent = { agent_id: string; display_name: string };
 
 export type BudgetPatch = {
@@ -158,6 +177,12 @@ const ROOT = '/agent-gateway/v1/analytics';
 export const analyticsApi = {
   usage: (query: AnalyticsQuery): Promise<UsageSummary> =>
     request<UsageSummary>(`${ROOT}/usage?${queryString(query)}`),
+  overview: (query: AnalyticsQuery): Promise<UsageOverview> =>
+    request<UsageOverview>(`${ROOT}/overview?${queryString(query)}`),
+  models: (query: AnalyticsQuery): Promise<UsageBreakdown> =>
+    request<UsageBreakdown>(`${ROOT}/models?${queryString(query)}`),
+  timeseries: (query: AnalyticsQuery): Promise<UsageTimeseries> =>
+    request<UsageTimeseries>(`${ROOT}/timeseries?${queryString(query)}`),
   getBudget: (agentId: string): Promise<BudgetStatus> =>
     request<BudgetStatus>(`${ROOT}/agents/${encodeURIComponent(agentId)}/budget`),
   setBudget: (agentId: string, patch: BudgetPatch): Promise<BudgetStatus> =>

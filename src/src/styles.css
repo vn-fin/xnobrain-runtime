@@ -8514,7 +8514,9 @@ body.col-resizing {
 .analytics-chart svg { display: block; width: 100%; height: 240px; overflow: visible; }
 .analytics-grid-line { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 5; }
 .analytics-chart-bar { fill: #58ad91; transition: fill .15s ease, opacity .15s ease; }
-.analytics-chart-bar:hover { fill: #72c3a9; }
+.analytics-chart-bar:hover,
+.analytics-chart-bar:focus,
+.analytics-chart-bar.hovered { fill: #72c3a9; outline: none; }
 .analytics-chart-label { fill: var(--muted-2); font-size: 9px; }
 .analytics-chart-max {
   position: absolute;
@@ -8523,6 +8525,41 @@ body.col-resizing {
   color: var(--muted-2);
   font-family: 'IBM Plex Mono', monospace;
   font-size: 9px;
+}
+.analytics-chart-tooltip {
+  position: absolute;
+  z-index: 3;
+  width: 178px;
+  padding: 10px 11px;
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--elevated-hi) 96%, transparent);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .32);
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 8px));
+}
+.analytics-chart-tooltip > strong {
+  display: block;
+  padding-bottom: 7px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+}
+.analytics-chart-tooltip > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+.analytics-chart-tooltip b {
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
 }
 
 .analytics-donut-wrap {

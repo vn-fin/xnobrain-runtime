@@ -11,6 +11,7 @@ data. Budget config is the only mutation and is written to the agent's
 from __future__ import annotations
 
 import asyncio
+import copy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import time
@@ -40,6 +41,8 @@ class AnalyticsService:
         self.repository = repository
         self._partials: dict[tuple, tuple[int, dict[str, Any]]] = {}
         self._merged: dict[tuple, tuple[float, dict[str, Any]]] = {}
+        self._workspace: dict[tuple, tuple[float, dict[str, Any]]] = {}
+        self._workspace_lock = asyncio.Lock()
         self._sem = asyncio.Semaphore(8)
 
     # ---- public API ---------------------------------------------------------
@@ -59,14 +62,34 @@ class AnalyticsService:
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
     ) -> dict[str, Any]:
         items = self._resolve_items(agent_ids)
-        live_summary = await self._summary(items, start_epoch, end_epoch, bucket)
-        summary = await self._with_durable_workspace(
-            live_summary,
-            selected=bool(agent_ids),
-            start=start_epoch,
-            end=end_epoch,
-            bucket=bucket,
+        summary = await self._workspace_summary(
+            items, selected=bool(agent_ids),
+            start=start_epoch, end=end_epoch, bucket=bucket,
         )
+        return await self._decorate_overview(summary, items, agent_ids)
+
+    async def usage_overview(
+        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
+    ) -> dict[str, Any]:
+        """Return dashboard totals and attribution without chart payloads."""
+        items = self._resolve_items(agent_ids)
+        summary = await self._workspace_summary(
+            items, selected=bool(agent_ids),
+            start=start_epoch, end=end_epoch, bucket=bucket,
+        )
+        complete = await self._decorate_overview(summary, items, agent_ids)
+        return {
+            key: value
+            for key, value in complete.items()
+            if key not in {"by_model", "by_provider", "series"}
+        }
+
+    async def _decorate_overview(
+        self,
+        summary: dict[str, Any],
+        items: list[dict[str, Any]],
+        agent_ids: list[str],
+    ) -> dict[str, Any]:
         by_path = {str(item.get("name") or ""): item for item in items}
         for row in summary["agents"]:
             item = by_path.get(row["agent_id"])
@@ -96,26 +119,26 @@ class AnalyticsService:
         return agent_row
 
     async def models_breakdown(
-        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
+        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
     ) -> dict[str, Any]:
-        live = await self._summary(
-            self._resolve_items(agent_ids), start_epoch, end_epoch, "day")
-        summary = await self._with_durable_workspace(
-            live, selected=bool(agent_ids), start=start_epoch, end=end_epoch, bucket="day",
+        items = self._resolve_items(agent_ids)
+        summary = await self._workspace_summary(
+            items, selected=bool(agent_ids),
+            start=start_epoch, end=end_epoch, bucket=bucket,
         )
         return {
             "range_from": start_epoch, "range_to": end_epoch,
             "by_model": summary["by_model"], "totals": summary["totals"],
-            "source": summary["source"],
+            "by_provider": summary["by_provider"], "source": summary["source"],
         }
 
     async def timeseries(
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
     ) -> dict[str, Any]:
-        live = await self._summary(
-            self._resolve_items(agent_ids), start_epoch, end_epoch, bucket)
-        summary = await self._with_durable_workspace(
-            live, selected=bool(agent_ids), start=start_epoch, end=end_epoch, bucket=bucket,
+        items = self._resolve_items(agent_ids)
+        summary = await self._workspace_summary(
+            items, selected=bool(agent_ids),
+            start=start_epoch, end=end_epoch, bucket=bucket,
         )
         return {
             "range_from": start_epoch, "range_to": end_epoch,
@@ -198,6 +221,38 @@ class AnalyticsService:
             self._merged.clear()
         self._merged[key] = (now, summary)
         return summary
+
+    async def _workspace_summary(
+        self,
+        items: list[Mapping[str, Any]],
+        *,
+        selected: bool,
+        start: float,
+        end: float,
+        bucket: str,
+    ) -> dict[str, Any]:
+        """Single-flight computation shared by parallel dashboard endpoints."""
+        key = (
+            frozenset(str(item.get("name") or "") for item in items),
+            selected, round(start), round(end), bucket,
+        )
+        now = time.time()
+        cached = self._workspace.get(key)
+        if cached and now - cached[0] < _MERGED_TTL:
+            return copy.deepcopy(cached[1])
+        async with self._workspace_lock:
+            now = time.time()
+            cached = self._workspace.get(key)
+            if cached and now - cached[0] < _MERGED_TTL:
+                return copy.deepcopy(cached[1])
+            live = await self._summary(items, start, end, bucket)
+            summary = await self._with_durable_workspace(
+                live, selected=selected, start=start, end=end, bucket=bucket,
+            )
+            if len(self._workspace) > _CACHE_CAP:
+                self._workspace.clear()
+            self._workspace[key] = (now, summary)
+            return copy.deepcopy(summary)
 
     async def _collect_partials(
         self, items: list[Mapping[str, Any]], start: float, end: float, effective: str,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +10,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 import uuid
 
 from fastapi import FastAPI
@@ -223,6 +225,34 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual({row["model"] for row in data["by_model"]}, {"m1", "m2"})
             self.assertEqual(len(data["agents"]), 2)
             self.assertEqual(data["agents_available"], 2)
+
+    async def test_parallel_dashboard_endpoints_share_one_computation(self):
+        async with self.client() as client:
+            await self._create_agent(client, "Agent A")
+            self._insert_router(model="gpt-5", inp=200, out=50, cost=0.25)
+            query = "?from=2026-07-01&to=2026-08-01&bucket=hour"
+            with patch(
+                "brain4all.services.analytics.aggregate_router_usage",
+                wraps=aggregate_router_usage,
+            ) as aggregate:
+                overview_response, models_response, series_response = await asyncio.gather(
+                    client.get(f"/agent-gateway/v1/analytics/overview{query}"),
+                    client.get(f"/agent-gateway/v1/analytics/models{query}"),
+                    client.get(f"/agent-gateway/v1/analytics/timeseries{query}"),
+                )
+
+            self.assertEqual(overview_response.status_code, 200)
+            self.assertEqual(models_response.status_code, 200)
+            self.assertEqual(series_response.status_code, 200)
+            overview = overview_response.json()["data"]
+            models = models_response.json()["data"]
+            series = series_response.json()["data"]
+            self.assertNotIn("series", overview)
+            self.assertNotIn("by_model", overview)
+            self.assertEqual(models["by_model"][0]["model"], "gpt-5")
+            self.assertEqual(models["by_provider"][0]["provider"], "codex")
+            self.assertEqual(series["bucket"], "hour")
+            self.assertEqual(aggregate.call_count, 1)
 
     async def test_agent_multiselect_scopes_totals_and_reads(self):
         async with self.client() as client:

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   analyticsApi,
   type AnalyticsQuery,
@@ -68,6 +68,8 @@ export function useAnalytics(
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [status, setStatus] = useState<AnalyticsStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  const automaticLoadKey = useRef('');
+  const requestSerial = useRef(0);
 
   const setControls = useCallback((next: AnalyticsControls) => {
     setControlsState(next);
@@ -79,20 +81,41 @@ export function useAnalytics(
   }, []);
 
   const refresh = useCallback(async () => {
+    const serial = ++requestSerial.current;
     setStatus((current) => (current === 'ready' ? 'ready' : 'loading'));
     setError(null);
     try {
-      setSummary(await analyticsApi.usage(toQuery(controls)));
+      const query = toQuery(controls);
+      const [overview, breakdown, timeseries] = await Promise.all([
+        analyticsApi.overview(query),
+        analyticsApi.models(query),
+        analyticsApi.timeseries(query),
+      ]);
+      if (serial !== requestSerial.current) return;
+      setSummary({
+        ...overview,
+        by_model: breakdown.by_model,
+        by_provider: breakdown.by_provider,
+        series: timeseries.series,
+      });
       setStatus('ready');
     } catch (cause) {
+      if (serial !== requestSerial.current) return;
       setError(cause instanceof Error ? cause.message : 'Failed to load usage');
       setStatus('error');
     }
   }, [controls]);
 
   useEffect(() => {
-    if (active) void refresh();
-  }, [active, refresh]);
+    if (!active) {
+      automaticLoadKey.current = '';
+      return;
+    }
+    const key = JSON.stringify(toQuery(controls));
+    if (automaticLoadKey.current === key) return;
+    automaticLoadKey.current = key;
+    void refresh();
+  }, [active, controls, refresh]);
 
   const setBudget = useCallback(
     async (agentId: string, patch: BudgetPatch) => {
