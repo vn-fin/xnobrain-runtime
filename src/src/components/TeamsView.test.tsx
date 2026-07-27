@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { conversationsApi } from '../api/conversations';
 import type { Team, TeamRunRecord } from '../api/teams';
 import { systemApi } from '../features/system/api';
 import type { useTeams } from '../hooks/useTeams';
@@ -133,10 +134,14 @@ describe('TeamsView', () => {
     const state = teamState({ teams: [team], startRun });
     render(<TeamsView agents={agents} state={state} onClose={vi.fn()} />);
 
-    fireEvent.change(screen.getByPlaceholderText(/Research the market/i), { target: { value: 'Compare launch plans' } });
-    fireEvent.click(screen.getByRole('button', { name: /Run team/i }));
+    expect(screen.getByLabelText('Live team workflow')).toBeVisible();
+    expect(screen.queryByText('Agent team', { exact: true })).not.toBeInTheDocument();
+    const composer = screen.getByRole('textbox', { name: 'Team objective' });
+    fireEvent.change(composer, { target: { value: 'Compare launch plans' } });
+    fireEvent.keyDown(composer, { key: 'Enter' });
 
     await waitFor(() => expect(startRun).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Run this team')).not.toBeInTheDocument();
     expect(startRun).toHaveBeenCalledWith(
       'team-1',
       'Compare launch plans',
@@ -275,6 +280,33 @@ describe('TeamsView', () => {
   });
 
   it('highlights active graph nodes, reveals returned output, and cancels the run', async () => {
+    vi.spyOn(conversationsApi, 'messages').mockResolvedValue([
+      { id: 'user-1', role: 'user', content: 'Research the launch options.' },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'I found three viable launch plans.',
+        reasoning: 'I compared the available evidence.',
+        toolCalls: JSON.stringify([{
+          id: 'call-1',
+          function: { name: 'skill_view', arguments: JSON.stringify({ name: 'product-research' }) },
+        }]),
+      },
+      { id: 'tool-1', role: 'tool', content: 'Skill instructions loaded.', toolName: 'skill_view', toolCallId: 'call-1' },
+    ]);
+    vi.spyOn(conversationsApi, 'usage').mockResolvedValue({
+      conversationId: 'conversation-1',
+      messages: 3,
+      apiCalls: 2,
+      model: 'model',
+      totalTokens: 1234,
+      totalCostUsd: 0,
+      provider: 'openai',
+      plan: '',
+      quotaAvailable: true,
+      quotaMessage: '',
+      limits: [],
+    });
     const team: Team = {
       id: 'team-1',
       name: 'Launch team',
@@ -348,7 +380,18 @@ describe('TeamsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Researcher: completed' }));
     expect(screen.getByText('Research found three viable launch plans.')).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole('button', { name: 'View Researcher conversation' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Researcher' });
+    expect(dialog).toHaveTextContent('1,234');
+    expect(dialog).toHaveTextContent('product-research');
+    expect(dialog).toHaveTextContent('Reasoning events');
+    expect(dialog).toHaveTextContent('I found three viable launch plans.');
+    fireEvent.click(screen.getByRole('button', { name: 'Close node conversation' }));
+
     fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
     await waitFor(() => expect(cancelRun).toHaveBeenCalledWith('team-1', 'tr_live1234'));
+
+    fireEvent.click(screen.getByRole('button', { name: /Execution details/i }));
+    expect(screen.queryByLabelText('Live team workflow')).not.toBeInTheDocument();
   });
 });

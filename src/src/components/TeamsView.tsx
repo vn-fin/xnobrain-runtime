@@ -2,14 +2,18 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import {
   ArrowLeft,
   Bot,
+  Brain,
   Check,
+  ChevronDown,
   ChevronRight,
   Clock,
+  Coins,
   Download,
   FileArchive,
   GitBranch,
   List,
   Loader2,
+  MessageSquare,
   MoreHorizontal,
   MousePointer2,
   Network,
@@ -17,11 +21,15 @@ import {
   Play,
   Plus,
   Save,
+  Send,
+  Sparkles,
   Square,
   Trash2,
   Upload,
+  Wrench,
   X,
 } from 'lucide-react';
+import { conversationsApi } from '../api/conversations';
 import {
   isRunTerminal,
   type Team,
@@ -30,7 +38,7 @@ import {
   type TeamRunStep,
   type TeamWorkflowStep,
 } from '../api/teams';
-import type { Agent } from '../types';
+import type { Agent, ChatMessage, ConversationUsage } from '../types';
 import type { useTeams } from '../hooks/useTeams';
 import {
   systemApi,
@@ -38,6 +46,7 @@ import {
   type ImportReport,
   type TransferProgress,
 } from '../features/system/api';
+import { Markdown } from './Markdown';
 import { ConfirmDialog } from './modals';
 
 type TeamsState = ReturnType<typeof useTeams>;
@@ -50,6 +59,82 @@ const NODE_WIDTH = 220;
 const NODE_HEIGHT = 118;
 
 type RunGraphNode = { step: TeamRunStep; x: number; y: number };
+type ConversationToolCall = { id: string; name: string; arguments: string };
+type NodeConversationInsight = {
+  status: 'loading' | 'ready' | 'error';
+  messages: ChatMessage[];
+  usage?: ConversationUsage;
+  toolCalls: ConversationToolCall[];
+  skillNames: string[];
+  reasoningEvents: number;
+  error?: string;
+};
+
+const RUN_NODE_WIDTH = 236;
+const RUN_NODE_HEIGHT = 116;
+const RUN_NODE_GAP_X = 280;
+const RUN_NODE_GAP_Y = 140;
+
+function parseToolCalls(raw?: string): ConversationToolCall[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+    return entries.flatMap((entry, index) => {
+      if (!entry || typeof entry !== 'object') return [];
+      const value = entry as Record<string, unknown>;
+      const fn = value.function && typeof value.function === 'object'
+        ? value.function as Record<string, unknown>
+        : value;
+      const name = typeof fn.name === 'string' ? fn.name : '';
+      if (!name) return [];
+      const args = fn.arguments;
+      return [{
+        id: typeof value.id === 'string' ? value.id : `${name}-${index}`,
+        name,
+        arguments: typeof args === 'string' ? args : args === undefined ? '' : JSON.stringify(args),
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function conversationInsight(messages: ChatMessage[], usage?: ConversationUsage): NodeConversationInsight {
+  const byId = new Map<string, ConversationToolCall>();
+  messages.forEach((message) => {
+    parseToolCalls(message.toolCalls).forEach((call) => byId.set(call.id, call));
+    if (message.role === 'tool' && message.toolName) {
+      const id = message.toolCallId || `${message.toolName}-${message.id}`;
+      if (!byId.has(id)) byId.set(id, { id, name: message.toolName, arguments: '' });
+    }
+  });
+  const toolCalls = [...byId.values()];
+  const skillNames = [...new Set(toolCalls
+    .filter((call) => call.name.toLowerCase().includes('skill'))
+    .map((call) => {
+      try {
+        const args = JSON.parse(call.arguments || '{}') as Record<string, unknown>;
+        const target = args.name ?? args.skill ?? args.skill_id;
+        return typeof target === 'string' && target.trim() ? target.trim() : call.name;
+      } catch {
+        return call.name;
+      }
+    }))];
+  return {
+    status: 'ready',
+    messages,
+    usage,
+    toolCalls,
+    skillNames,
+    reasoningEvents: messages.filter((message) => Boolean(message.reasoning?.trim())).length,
+  };
+}
+
+function compactNumber(value: number | undefined) {
+  if (value === undefined) return '—';
+  return new Intl.NumberFormat(undefined, { notation: value >= 1_000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value);
+}
 
 function runGraphLayout(steps: TeamRunStep[]) {
   const byId = new Map(steps.map((step) => [step.id, step]));
@@ -72,15 +157,15 @@ function runGraphLayout(steps: TeamRunStep[]) {
   });
   const maxLevel = Math.max(0, ...levels.values());
   const maxRows = Math.max(1, ...[...grouped.values()].map((rows) => rows.length));
-  const width = Math.max(760, 340 + (maxLevel + 1) * 230);
-  const height = Math.max(250, 80 + maxRows * 112);
+  const width = Math.max(900, 340 + (maxLevel + 1) * RUN_NODE_GAP_X);
+  const height = Math.max(300, 20 + maxRows * RUN_NODE_GAP_Y);
   const nodes: RunGraphNode[] = [];
   grouped.forEach((rows, level) => {
-    const blockHeight = (rows.length - 1) * 106;
+    const blockHeight = (rows.length - 1) * RUN_NODE_GAP_Y;
     rows.forEach((step, row) => nodes.push({
       step,
-      x: 150 + level * 230,
-      y: height / 2 - 39 - blockHeight / 2 + row * 106,
+      x: 150 + level * RUN_NODE_GAP_X,
+      y: height / 2 - RUN_NODE_HEIGHT / 2 - blockHeight / 2 + row * RUN_NODE_GAP_Y,
     }));
   });
   return { nodes, width, height, finishX: width - 105 };
@@ -106,13 +191,17 @@ function LiveRunGraph({
   agents,
   selectedStepId,
   onSelectStep,
+  insights,
   now,
+  onOpenConversation,
 }: {
-  run: TeamRunRecord;
+  run: Pick<TeamRunRecord, 'status' | 'steps'>;
   agents: Agent[];
   selectedStepId: string;
   onSelectStep: (id: string) => void;
+  insights: Record<string, NodeConversationInsight>;
   now: number;
+  onOpenConversation: (step: TeamRunStep) => void;
 }) {
   const layout = runGraphLayout(run.steps);
   const byId = new Map(layout.nodes.map((node) => [node.step.id, node]));
@@ -127,48 +216,50 @@ function LiveRunGraph({
       : allWorkersFinished
         ? 'running'
         : 'pending';
-  const selectedStep = run.steps.find((step) => step.id === selectedStepId);
-  const coordinatorSelected = !selectedStep && coordinatorStatus === 'running';
+  const coordinatorSelected = !run.steps.some((step) => step.id === selectedStepId);
 
   return (
     <div className="run-live-layout">
-      <div className="run-dag-scroll">
-        <div className="run-dag" style={{ width: layout.width, height: layout.height }} aria-label="Live team workflow">
-          <div className="run-dag-grid" />
-          <svg viewBox={`0 0 ${layout.width} ${layout.height}`} aria-hidden="true">
-            <defs>
-              <marker id="run-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" />
-              </marker>
-            </defs>
-            {roots.map(({ step, x, y }) => (
-              <path key={`start-${step.id}`} className={`run-dag-edge ${step.status}`} d={runEdge(92, layout.height / 2, x, y + 39)} />
-            ))}
-            {layout.nodes.flatMap(({ step, x, y }) => step.needs.map((need) => {
-              const parent = byId.get(need);
-              if (!parent) return null;
-              return (
-                <path
-                  key={`${need}-${step.id}`}
-                  className={`run-dag-edge ${step.status}`}
-                  d={runEdge(parent.x + 184, parent.y + 39, x, y + 39)}
-                />
-              );
-            }))}
-            {leaves.map(({ step, x, y }) => (
-              <path key={`${step.id}-finish`} className={`run-dag-edge ${coordinatorStatus}`} d={runEdge(x + 184, y + 39, layout.finishX, layout.height / 2)} />
-            ))}
-          </svg>
-          <div className={`run-dag-terminal start ${run.status === 'pending' ? 'pending' : 'completed'}`} style={{ left: 20, top: layout.height / 2 - 31 }}>
-            <Play size={12} fill="currentColor" /><span><strong>Start</strong><small>Objective received</small></span>
-          </div>
-          {layout.nodes.map(({ step, x, y }) => {
-            const agent = agents.find((candidate) => candidate.id === step.agent_id);
+      <div className="run-dag" style={{ width: layout.width, height: layout.height }} aria-label="Live team workflow">
+        <div className="run-dag-grid" />
+        <svg viewBox={`0 0 ${layout.width} ${layout.height}`} aria-hidden="true">
+          <defs>
+            <marker id="run-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" />
+            </marker>
+          </defs>
+          {roots.map(({ step, x, y }) => (
+            <path key={`start-${step.id}`} className={`run-dag-edge ${step.status}`} d={runEdge(92, layout.height / 2, x, y + RUN_NODE_HEIGHT / 2)} />
+          ))}
+          {layout.nodes.flatMap(({ step, x, y }) => step.needs.map((need) => {
+            const parent = byId.get(need);
+            if (!parent) return null;
             return (
+              <path
+                key={`${need}-${step.id}`}
+                className={`run-dag-edge ${step.status}`}
+                d={runEdge(parent.x + RUN_NODE_WIDTH, parent.y + RUN_NODE_HEIGHT / 2, x, y + RUN_NODE_HEIGHT / 2)}
+              />
+            );
+          }))}
+          {leaves.map(({ step, x, y }) => (
+            <path key={`${step.id}-finish`} className={`run-dag-edge ${coordinatorStatus}`} d={runEdge(x + RUN_NODE_WIDTH, y + RUN_NODE_HEIGHT / 2, layout.finishX, layout.height / 2)} />
+          ))}
+        </svg>
+        <div className={`run-dag-terminal start ${run.status === 'pending' ? 'pending' : 'completed'}`} style={{ left: 20, top: layout.height / 2 - 31 }}>
+          <Play size={12} fill="currentColor" /><span><strong>Start</strong><small>Objective received</small></span>
+        </div>
+        {layout.nodes.map(({ step, x, y }) => {
+          const agent = agents.find((candidate) => candidate.id === step.agent_id);
+          const insight = step.conversation_id ? insights[step.conversation_id] : undefined;
+          return (
+            <div
+              key={step.id}
+              className={`run-dag-node ${step.status} ${selectedStepId === step.id ? 'selected' : ''}`}
+              style={{ left: x, top: y }}
+            >
               <button
-                key={step.id}
-                className={`run-dag-node ${step.status} ${selectedStepId === step.id ? 'selected' : ''}`}
-                style={{ left: x, top: y }}
+                className="run-node-select"
                 onClick={() => onSelectStep(step.id)}
                 aria-label={`${agent?.title ?? step.role}: ${step.status}`}
               >
@@ -180,89 +271,222 @@ function LiveRunGraph({
                   <small>{step.role}</small>
                 </span>
                 <span className="run-node-status">{step.status}</span>
+                <span className="run-node-metrics" aria-label="Node execution metrics">
+                  <span title="Execution time"><Clock size={10} />{elapsed(step.started_at, step.ended_at, now)}</span>
+                  <span title="Tool calls"><Wrench size={10} />{compactNumber(insight?.toolCalls.length)}</span>
+                  <span title="Tokens used"><Coins size={10} />{compactNumber(insight?.usage?.totalTokens)}</span>
+                  <span title="Skills used"><Sparkles size={10} />{compactNumber(insight?.skillNames.length)}</span>
+                </span>
               </button>
-            );
-          })}
-          <button
-            className={`run-dag-terminal finish ${coordinatorStatus} ${coordinatorSelected ? 'selected' : ''}`}
-            style={{ left: layout.finishX, top: layout.height / 2 - 31 }}
-            onClick={() => onSelectStep('')}
-            aria-label={`Coordinator: ${coordinatorStatus}`}
-          >
-            {coordinatorStatus === 'running' ? <Loader2 size={14} /> : <Check size={13} />}
-            <span><strong>Finish</strong><small>{coordinatorStatus === 'running' ? 'Synthesizing' : 'Coordinator'}</small></span>
-          </button>
-        </div>
+              <button
+                className="run-node-more"
+                onClick={() => onOpenConversation(step)}
+                aria-label={`View ${agent?.title ?? step.role} conversation`}
+                title="View conversation details"
+              >
+                <MoreHorizontal size={15} />
+              </button>
+            </div>
+          );
+        })}
+        <button
+          className={`run-dag-terminal finish ${coordinatorStatus} ${coordinatorSelected ? 'selected' : ''}`}
+          style={{ left: layout.finishX, top: layout.height / 2 - 31 }}
+          onClick={() => onSelectStep('')}
+          aria-label={`Coordinator: ${coordinatorStatus}`}
+        >
+          {coordinatorStatus === 'running' ? <Loader2 size={14} /> : <Check size={13} />}
+          <span><strong>Finish</strong><small>{coordinatorStatus === 'running' ? 'Synthesizing' : 'Coordinator'}</small></span>
+        </button>
       </div>
-      <aside className="run-activity-panel" aria-live="polite">
-        {selectedStep ? (
-          <>
-            <div className="run-activity-heading">
-              <span className={`run-activity-dot ${selectedStep.status}`} />
-              <div>
-                <strong>{agents.find((agent) => agent.id === selectedStep.agent_id)?.title ?? selectedStep.role}</strong>
-                <small>{selectedStep.status === 'running' ? 'Working now' : selectedStep.status}</small>
-              </div>
-            </div>
-            <div className="run-activity-meta">
-              <span><Clock size={12} /> {elapsed(selectedStep.started_at, selectedStep.ended_at, now)}</span>
-              <span>{selectedStep.allowed_tools.join(', ') || 'No tools'}</span>
-            </div>
-            {selectedStep.status === 'running' && (
-              <div className="run-working">
-                <span><i /><i /><i /></span>
-                <strong>Hermes is working</strong>
-                <p>The stream currently reports stage transitions. The returned summary will appear here as soon as this agent finishes.</p>
-              </div>
-            )}
-            {selectedStep.status === 'pending' && (
-              <div className="run-waiting"><Clock size={15} /><p>Waiting for {selectedStep.needs.length ? selectedStep.needs.join(', ') : 'an execution slot'}.</p></div>
-            )}
-            {(selectedStep.summary || selectedStep.error) && (
-              <div className={`run-agent-output ${selectedStep.error ? 'error' : ''}`}>
-                <span>{selectedStep.error ? 'Error' : `Returned output · ${selectedStep.summary_chars.toLocaleString()} chars`}</span>
-                <p>{selectedStep.summary || selectedStep.error}</p>
-              </div>
-            )}
-          </>
-        ) : coordinatorStatus === 'running' ? (
-          <>
-            <div className="run-activity-heading">
-              <span className="run-activity-dot running" />
-              <div><strong>Coordinator</strong><small>Synthesizing now</small></div>
-            </div>
-            <div className="run-working">
-              <span><i /><i /><i /></span>
-              <strong>Building the final answer</strong>
-              <p>All agent summaries are complete. The coordinator is combining their results.</p>
-            </div>
-          </>
-        ) : (
-          <div className="run-activity-empty"><MousePointer2 size={18} /><p>Select a graph node to inspect its status and latest output.</p></div>
-        )}
-      </aside>
     </div>
   );
 }
 
-function TeamRunsPanel({ teamId, agents, state }: { teamId: string; agents: Agent[]; state: TeamsState }) {
+function savedWorkflowRun(team: Team): Pick<TeamRunRecord, 'status' | 'steps'> {
+  const workflow = team.workflow?.length
+    ? team.workflow
+    : team.members.map((member, index) => ({
+      id: `worker-${index + 1}`,
+      task: '',
+      agent_id: member.agent_id,
+      role: member.role,
+      needs: [],
+      allowed_tools: member.allowed_tools,
+    }));
+  return {
+    status: 'pending',
+    steps: workflow.map((step) => ({
+      id: step.id,
+      agent_id: step.agent_id ?? '',
+      role: step.role ?? step.id,
+      task: step.task,
+      needs: step.needs ?? [],
+      allowed_tools: step.allowed_tools ?? [],
+      status: 'pending',
+      summary: '',
+      summary_chars: 0,
+      error: null,
+      conversation_id: null,
+      started_at: null,
+      ended_at: null,
+    })),
+  };
+}
+
+function TeamNodeConversationModal({
+  step,
+  agent,
+  insight,
+  now,
+  onClose,
+}: {
+  step: TeamRunStep;
+  agent?: Agent;
+  insight?: NodeConversationInsight;
+  now: number;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [onClose]);
+
+  return (
+    <div className="modal-overlay team-conversation-overlay" onClick={onClose}>
+      <div
+        className="app-modal team-conversation-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="team-conversation-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="team-conversation-head">
+          <span className={`run-node-state ${step.status}`}>
+            {step.status === 'running' ? <Loader2 size={16} /> : step.status === 'completed' ? <Check size={15} /> : step.status === 'failed' ? <X size={15} /> : <i />}
+          </span>
+          <span>
+            <strong id="team-conversation-title">{agent?.title ?? step.role}</strong>
+            <small>{step.role} · {step.status}</small>
+          </span>
+          <button className="icon-button" onClick={onClose} aria-label="Close node conversation"><X size={17} /></button>
+        </header>
+
+        <section className="team-conversation-metrics" aria-label="Conversation metrics">
+          <span><Clock size={14} /><small>Execution time</small><strong>{elapsed(step.started_at, step.ended_at, now)}</strong></span>
+          <span><Wrench size={14} /><small>Tool calls</small><strong>{insight ? insight.toolCalls.length.toLocaleString() : '—'}</strong></span>
+          <span><Coins size={14} /><small>Tokens</small><strong>{insight?.usage ? insight.usage.totalTokens.toLocaleString() : '—'}</strong></span>
+          <span><Sparkles size={14} /><small>Skills used</small><strong>{insight ? insight.skillNames.length.toLocaleString() : '—'}</strong></span>
+          <span><MessageSquare size={14} /><small>Messages</small><strong>{insight ? insight.messages.length.toLocaleString() : '—'}</strong></span>
+          <span><Brain size={14} /><small>Reasoning events</small><strong>{insight ? insight.reasoningEvents.toLocaleString() : '—'}</strong></span>
+        </section>
+
+        <div className="team-conversation-meta">
+          {insight?.usage?.model && <span>Model <strong>{insight.usage.model}</strong></span>}
+          {insight?.usage && <span>API calls <strong>{insight.usage.apiCalls.toLocaleString()}</strong></span>}
+          {insight?.skillNames.length ? <span>Skills <strong>{insight.skillNames.join(', ')}</strong></span> : null}
+        </div>
+
+        <div className="team-conversation-canvas">
+          {!step.conversation_id ? (
+            <div className="team-conversation-empty">
+              <MessageSquare size={22} />
+              <strong>No conversation yet</strong>
+              <p>This trace becomes available after Hermes starts this node.</p>
+            </div>
+          ) : insight?.status === 'loading' || !insight ? (
+            <div className="team-conversation-empty"><Loader2 className="run-step-spin" size={22} /><strong>Loading conversation…</strong></div>
+          ) : insight.status === 'error' ? (
+            <div className="team-conversation-empty error"><X size={22} /><strong>Conversation unavailable</strong><p>{insight.error}</p></div>
+          ) : insight.messages.length === 0 ? (
+            <div className="team-conversation-empty"><MessageSquare size={22} /><strong>No stored messages</strong></div>
+          ) : insight.messages.map((message) => {
+            const calls = parseToolCalls(message.toolCalls);
+            if (message.role === 'user') {
+              return <div className="team-conversation-user user-bubble" key={message.id}><Markdown content={message.content} /></div>;
+            }
+            if (message.role === 'tool') {
+              return (
+                <details className="team-conversation-tool" key={message.id}>
+                  <summary><Wrench size={14} /><span>{message.toolName || 'Tool'} result</span><ChevronRight size={13} /></summary>
+                  <pre>{message.content || 'No output stored.'}</pre>
+                </details>
+              );
+            }
+            if (message.role !== 'assistant') return null;
+            return (
+              <article className="team-conversation-assistant assistant-message" key={message.id}>
+                {message.reasoning && (
+                  <details className="team-conversation-reasoning">
+                    <summary><Brain size={14} /><span>Reasoning</span><ChevronRight size={13} /></summary>
+                    <div><Markdown content={message.reasoning} /></div>
+                  </details>
+                )}
+                {calls.map((call) => (
+                  <details className="team-conversation-tool" key={`${message.id}-${call.id}`}>
+                    <summary><Wrench size={14} /><span>Used {call.name}</span><ChevronRight size={13} /></summary>
+                    <pre>{call.arguments || 'No arguments stored.'}</pre>
+                  </details>
+                ))}
+                {message.content && <div className="message-content"><Markdown content={message.content} /></div>}
+              </article>
+            );
+          })}
+        </div>
+        <footer className="team-conversation-foot">
+          <span>Metrics come from this node’s stored Hermes conversation.</span>
+          <button className="conn-btn" onClick={onClose}>Close</button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function TeamRunsPanel({
+  team,
+  agents,
+  state,
+  task,
+  setTask,
+  onRun,
+}: {
+  team: Team;
+  agents: Agent[];
+  state: TeamsState;
+  task: string;
+  setTask: (value: string) => void;
+  onRun: () => Promise<void>;
+}) {
   const { runs, activeRun, runsStatus, openRun, cancelRun } = state;
-  const canCancel = activeRun && activeRun.team_id === teamId && !isRunTerminal(activeRun.status);
+  const teamRuns = runs.filter((historyRun) => historyRun.team_id === team.id);
+  const run = activeRun?.team_id === team.id ? activeRun : undefined;
+  const canCancel = Boolean(run && !isRunTerminal(run.status));
   const [selectedStepId, setSelectedStepId] = useState('');
+  const [graphOpen, setGraphOpen] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [conversationStep, setConversationStep] = useState<TeamRunStep>();
+  const [insights, setInsights] = useState<Record<string, NodeConversationInsight>>({});
+  const selectedStep = run?.steps.find((step) => step.id === selectedStepId);
+  const graphRun = run ?? savedWorkflowRun(team);
+  const allWorkersFinished = Boolean(run?.steps.length && run.steps.every((step) => isRunTerminal(step.status)));
+  const coordinatorWorking = run?.status === 'running' && allWorkersFinished;
 
   useEffect(() => {
-    if (!activeRun || activeRun.team_id !== teamId) return;
-    const running = activeRun.steps.filter((step) => step.status === 'running');
+    if (!run) return;
+    const running = run.steps.filter((step) => step.status === 'running');
     if (running.length) {
       setSelectedStepId((current) => running.some((step) => step.id === current) ? current : running[0].id);
-    } else if (activeRun.status === 'running' && activeRun.steps.every((step) => isRunTerminal(step.status))) {
+    } else if (run.status === 'running' && run.steps.every((step) => isRunTerminal(step.status))) {
       setSelectedStepId('');
     } else {
-      setSelectedStepId((current) => activeRun.steps.some((step) => step.id === current) ? current : activeRun.steps[0]?.id ?? '');
+      setSelectedStepId((current) => run.steps.some((step) => step.id === current) ? current : run.steps[0]?.id ?? '');
     }
-  }, [activeRun?.id, activeRun?.revision, activeRun, teamId]);
+  }, [run?.id, run?.revision, run]);
 
   useEffect(() => {
     if (!canCancel) return undefined;
@@ -270,67 +494,245 @@ function TeamRunsPanel({ teamId, agents, state }: { teamId: string; agents: Agen
     return () => window.clearInterval(timer);
   }, [canCancel]);
 
+  useEffect(() => {
+    const targets = run?.steps.filter((step) => step.conversation_id) ?? [];
+    if (!targets.length) return undefined;
+    const controller = new AbortController();
+    targets.forEach((step) => {
+      const conversationId = step.conversation_id as string;
+      setInsights((current) => ({
+        ...current,
+        [conversationId]: { ...(current[conversationId] ?? conversationInsight([])), status: 'loading' },
+      }));
+      void Promise.allSettled([
+        conversationsApi.messages(step.agent_id, conversationId, controller.signal),
+        conversationsApi.usage(step.agent_id, conversationId, controller.signal),
+      ]).then(([messagesResult, usageResult]) => {
+        if (controller.signal.aborted) return;
+        if (messagesResult.status === 'rejected') {
+          setInsights((current) => ({
+            ...current,
+            [conversationId]: {
+              status: 'error',
+              messages: [],
+              toolCalls: [],
+              skillNames: [],
+              reasoningEvents: 0,
+              error: messagesResult.reason instanceof Error ? messagesResult.reason.message : 'Could not load this conversation.',
+            },
+          }));
+          return;
+        }
+        const usage = usageResult.status === 'fulfilled' ? usageResult.value : undefined;
+        setInsights((current) => ({ ...current, [conversationId]: conversationInsight(messagesResult.value, usage) }));
+      });
+    });
+    return () => controller.abort();
+  }, [run?.id, run?.revision]);
+
   const cancel = async () => {
-    if (!activeRun) return;
+    if (!run) return;
     setCancelling(true);
     try {
-      await cancelRun(teamId, activeRun.id);
+      await cancelRun(team.id, run.id);
     } finally {
       setCancelling(false);
     }
   };
 
+  const send = async () => {
+    if (canCancel || submitting || state.pending || !task.trim()) return;
+    setSubmitting(true);
+    try {
+      await onRun();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
-    <div className="teams-card team-runs">
-      <div className="teams-section-heading">
-        <div>
-          <span className="teams-kicker">{canCancel ? 'Live execution' : 'Execution details'}</span>
-          <h2>{activeRun?.team_id === teamId ? `Run ${activeRun.id.replace(/^tr_/, '').slice(0, 8)}` : 'Team runs'}</h2>
-        </div>
-        <div className="run-header-actions">
-          {activeRun?.team_id === teamId && <span className={`run-chip ${activeRun.status}`}>{activeRun.status}</span>}
-          {canCancel && (
-            <button className="team-cancel-button" disabled={cancelling} onClick={() => void cancel()}>
-              <Square size={12} fill="currentColor" /> {cancelling ? 'Cancelling…' : 'Cancel run'}
-            </button>
-          )}
-        </div>
-      </div>
-      {activeRun && activeRun.team_id === teamId && (
-        <>
-          <div className="run-progress-summary">
-            <span><strong>{activeRun.steps.filter((step) => step.status === 'completed').length}</strong> of {activeRun.steps.length} agents complete</span>
-            <span>
-              {activeRun.steps.filter((step) => step.status === 'running').length
-                + (activeRun.status === 'running' && activeRun.steps.length > 0 && activeRun.steps.every((step) => isRunTerminal(step.status)) ? 1 : 0)} active now
-            </span>
-            <span>Revision {activeRun.revision}</span>
+    <div className="team-execution-stack">
+      <section className="teams-card team-execution-card">
+        <button
+          className="team-execution-toggle"
+          aria-expanded={graphOpen}
+          onClick={() => setGraphOpen((current) => !current)}
+        >
+          <span className="team-execution-toggle-icon"><GitBranch size={16} /></span>
+          <span>
+            <strong>Execution details</strong>
+            <small>{run ? `Run ${run.id.replace(/^tr_/, '').slice(0, 8)} · ${run.status}` : `${team.workflow?.length || team.members.length} workflow stages`}</small>
+          </span>
+          {run && <span className={`run-chip ${run.status}`}>{run.status}</span>}
+          <ChevronDown size={16} className={graphOpen ? 'open' : ''} />
+        </button>
+
+        {graphOpen && (
+          <div className="team-execution-body">
+            {run ? (
+              <>
+                <div className="run-progress-summary">
+                  <span><strong>{run.steps.filter((step) => step.status === 'completed').length}</strong> of {run.steps.length} agents complete</span>
+                  <span>
+                    {run.steps.filter((step) => step.status === 'running').length + (coordinatorWorking ? 1 : 0)} active now
+                  </span>
+                  <span>Revision {run.revision}</span>
+                </div>
+              </>
+            ) : (
+              <div className="run-progress-summary">
+                <span><strong>0</strong> of {graphRun.steps.length} agents complete</span>
+                <span>0 active now</span>
+                <span>Ready</span>
+              </div>
+            )}
+            <LiveRunGraph
+              run={graphRun}
+              agents={agents}
+              selectedStepId={selectedStepId}
+              onSelectStep={run ? setSelectedStepId : () => undefined}
+              insights={insights}
+              now={now}
+              onOpenConversation={setConversationStep}
+            />
+            {run?.error && <p className="teams-error">Run failed: {run.error}</p>}
           </div>
-          <LiveRunGraph run={activeRun} agents={agents} selectedStepId={selectedStepId} onSelectStep={setSelectedStepId} now={now} />
-          {activeRun.error && <p className="teams-error">Run failed: {activeRun.error}</p>}
-          {isRunTerminal(activeRun.status) && activeRun.orchestrator_summary && (
-            <div className="team-result"><h3>Coordinator summary</h3><p>{activeRun.orchestrator_summary}</p></div>
+        )}
+
+        <div className="run-history-compact">
+          <span className="run-history-label">Executions</span>
+          {runsStatus === 'loading' && <small>Loading…</small>}
+          {runsStatus !== 'loading' && teamRuns.length === 0 && <small>No runs yet</small>}
+          {teamRuns.slice(0, 5).map((historyRun: TeamRunRecord) => (
+            <button
+              key={historyRun.id}
+              className={run?.id === historyRun.id ? 'active' : ''}
+              onClick={() => void openRun(team.id, historyRun.id)}
+              aria-label={`Open run ${historyRun.id.replace(/^tr_/, '').slice(0, 8)}`}
+            >
+              <span className={`run-activity-dot ${historyRun.status}`} />
+              <strong>{historyRun.id.replace(/^tr_/, '').slice(0, 8)}</strong>
+              <small>{historyRun.status}</small>
+            </button>
+          ))}
+          {teamRuns.length > 5 && <span className="run-history-more">+{teamRuns.length - 5}</span>}
+        </div>
+      </section>
+
+      <section className="teams-card team-results-card" aria-live="polite">
+        <div className="team-results-heading">
+          <span><Bot size={15} /></span>
+          <div><strong>Results</strong><small>{run ? 'Select a graph node to inspect its latest output' : 'The Team response will appear here'}</small></div>
+          {selectedStep && <span className={`run-chip ${selectedStep.status}`}>{selectedStep.status}</span>}
+        </div>
+
+        {selectedStep ? (
+          <div className="team-result-content">
+            <div className="team-result-source">
+              <span className={`run-activity-dot ${selectedStep.status}`} />
+              <strong>{agents.find((agent) => agent.id === selectedStep.agent_id)?.title ?? selectedStep.role}</strong>
+              <small>{selectedStep.status === 'running' ? 'Working now' : selectedStep.status}</small>
+              <span><Clock size={12} /> {elapsed(selectedStep.started_at, selectedStep.ended_at, now)}</span>
+            </div>
+            {selectedStep.status === 'running' && (
+              <div className="run-working compact">
+                <span><i /><i /><i /></span>
+                <strong>Hermes is working</strong>
+                <p>The result will update here when this stage finishes.</p>
+              </div>
+            )}
+            {selectedStep.status === 'pending' && (
+              <div className="run-waiting compact"><Clock size={15} /><p>Waiting for {selectedStep.needs.length ? selectedStep.needs.join(', ') : 'an execution slot'}.</p></div>
+            )}
+            {(selectedStep.summary || selectedStep.error) && (
+              <div className={`run-agent-output ${selectedStep.error ? 'error' : ''}`}>
+                <span>{selectedStep.error ? 'Error' : `Returned output · ${selectedStep.summary_chars.toLocaleString()} chars`}</span>
+                <p>{selectedStep.summary || selectedStep.error}</p>
+              </div>
+            )}
+            {isRunTerminal(selectedStep.status) && !selectedStep.summary && !selectedStep.error && (
+              <p className="team-results-empty">This stage returned no text output.</p>
+            )}
+          </div>
+        ) : coordinatorWorking ? (
+          <div className="run-working compact">
+            <span><i /><i /><i /></span>
+            <strong>Building the final answer</strong>
+            <p>All agent stages are complete. The coordinator is combining their results.</p>
+          </div>
+        ) : run?.orchestrator_summary ? (
+          <div className="team-result-content final">
+            <span className="team-final-label"><Check size={13} /> Final answer</span>
+            <p>{run.orchestrator_summary}</p>
+          </div>
+        ) : run ? (
+          <div className="team-results-empty">
+            <MousePointer2 size={17} />
+            <span>Select a node in the execution graph to inspect its result.</span>
+          </div>
+        ) : (
+          <div className="team-results-empty">
+            <Bot size={17} />
+            <span>Send an objective below to start this Team.</span>
+          </div>
+        )}
+      </section>
+
+      <form
+        className={`team-chat-composer ${canCancel ? 'is-running' : ''}`}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
+        <textarea
+          value={task}
+          disabled={canCancel || submitting || state.pending}
+          aria-label="Team objective"
+          onChange={(event) => setTask(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !canCancel && !submitting && !state.pending) {
+              event.preventDefault();
+              void send();
+            }
+          }}
+          placeholder={canCancel ? 'The Team is working on your objective…' : 'Message this Team…'}
+          rows={1}
+        />
+        <div className="team-composer-hint">
+          {canCancel ? (
+            <span><Loader2 size={12} /> Execution updates are streaming to the graph</span>
+          ) : (
+            <span>Enter to send · Shift+Enter for a new line</span>
           )}
-        </>
-      )}
-      <div className="run-history-heading">
-        <span>Recent runs</span><span>{runs.length}</span>
-      </div>
-      {runsStatus === 'loading' && <p className="teams-empty-copy">Loading runs…</p>}
-      {runsStatus !== 'loading' && runs.length === 0 && <p className="teams-empty-copy">No runs yet. Trigger this team to see live progress here.</p>}
-      <div className="run-history">
-        {runs.map((run: TeamRunRecord) => (
+        </div>
+        {canCancel ? (
           <button
-            key={run.id}
-            className={activeRun?.id === run.id ? 'run-row active' : 'run-row'}
-            onClick={() => void openRun(teamId, run.id)}
+            type="button"
+            className="team-composer-action cancel"
+            disabled={cancelling}
+            onClick={() => void cancel()}
+            aria-label="Cancel run"
           >
-            <span className="run-id">{run.id.replace(/^tr_/, '').slice(0, 8)}</span>
-            <span className={`run-chip ${run.status}`}>{run.status}</span>
-            <small>{run.steps.length} stages · {run.started_at ?? run.created_at}</small>
+            {cancelling ? <Loader2 size={15} /> : <Square size={13} fill="currentColor" />}
+            <span>{cancelling ? 'Cancelling…' : 'Cancel'}</span>
           </button>
-        ))}
-      </div>
+        ) : (
+          <button type="submit" className="team-composer-action send" disabled={submitting || state.pending || !task.trim()} aria-label="Send objective">
+            {submitting || state.pending ? <Loader2 size={16} /> : <Send size={16} />}
+            <span>{submitting || state.pending ? 'Starting…' : 'Send'}</span>
+          </button>
+        )}
+      </form>
+      {conversationStep && (
+        <TeamNodeConversationModal
+          step={conversationStep}
+          agent={agents.find((agent) => agent.id === conversationStep.agent_id)}
+          insight={conversationStep.conversation_id ? insights[conversationStep.conversation_id] : undefined}
+          now={now}
+          onClose={() => setConversationStep(undefined)}
+        />
+      )}
     </div>
   );
 }
@@ -392,37 +794,6 @@ function WorkflowEdges({ nodes }: { nodes: DraftNode[] }) {
         <path key={`${node.id}-finish`} className="team-edge virtual" d={curve(node.x + NODE_WIDTH, node.y + NODE_HEIGHT / 2, 796, 310)} />
       ))}
     </svg>
-  );
-}
-
-function TeamPreview({ team, agents }: { team: Team; agents: Agent[] }) {
-  const workflow = team.workflow?.length
-    ? team.workflow
-    : team.members.map((member, index) => ({
-      id: `worker-${index + 1}`,
-      task: '',
-      agent_id: member.agent_id,
-      role: member.role,
-      needs: [],
-    }));
-  return (
-    <div className="team-preview" aria-label={`${team.name} workflow`}>
-      <div className="team-preview-terminal start"><Play size={12} fill="currentColor" /> Start</div>
-      <ChevronRight size={16} />
-      <div className="team-preview-stages">
-        {workflow.map((step) => (
-          <div className="team-preview-node" key={step.id}>
-            <Bot size={15} />
-            <span>
-              <strong>{agents.find((agent) => agent.id === step.agent_id)?.title ?? step.role ?? step.id}</strong>
-              <small>{step.role ?? step.id}{step.needs?.length ? ` · after ${step.needs.join(', ')}` : ''}</small>
-            </span>
-          </div>
-        ))}
-      </div>
-      <ChevronRight size={16} />
-      <div className="team-preview-terminal finish"><Check size={13} /> Finish</div>
-    </div>
   );
 }
 
@@ -911,6 +1282,7 @@ function TeamLibrary({
     }));
     try {
       await state.startRun(selectedTeam.id, task.trim(), workflow);
+      setTask('');
     } catch {
       // The shared teams banner reports the API failure.
     }
@@ -1034,35 +1406,14 @@ function TeamLibrary({
       <main className="team-library-detail">
         {selectedTeam ? (
           <>
-            <div className="team-detail-hero">
-              <div className="team-detail-title">
-                <span className="team-detail-icon"><Network size={22} /></span>
-                <div><span className="teams-kicker">Agent team</span><h2>{selectedTeam.name}</h2><p>{selectedTeam.description}</p></div>
-              </div>
-              <span className={`team-status ${selectedTeam.enabled ? 'enabled' : ''}`}><i />{selectedTeam.enabled ? 'Ready' : 'Paused'}</span>
-            </div>
-            <section className="team-detail-section">
-              <div className="teams-section-heading">
-                <div><span className="teams-kicker">Execution graph</span><h2>Workflow</h2></div>
-                <span className="team-policy-pill">Max {selectedTeam.max_parallel} parallel</span>
-              </div>
-              <TeamPreview team={selectedTeam} agents={agents} />
-            </section>
-            <section className="team-trigger-card">
-              <div>
-                <span className="teams-kicker">Run this team</span>
-                <h2>What should the team accomplish?</h2>
-                <p>The objective is passed to every stage. Dependencies receive summaries from the stages before them.</p>
-              </div>
-              <textarea value={task} onChange={(event) => setTask(event.target.value)} placeholder="e.g. Research the market, compare the top options, and deliver a recommendation…" />
-              <div className="team-trigger-foot">
-                <span><Check size={13} /> Tool policies and DAG cycles are validated before execution</span>
-                <button className="primary-button" disabled={state.pending || !task.trim()} onClick={() => void run()}>
-                  <Play size={15} fill="currentColor" /> {state.pending ? 'Starting…' : 'Run team'}
-                </button>
-              </div>
-            </section>
-            <TeamRunsPanel teamId={selectedTeam.id} agents={agents} state={state} />
+            <TeamRunsPanel
+              team={selectedTeam}
+              agents={agents}
+              state={state}
+              task={task}
+              setTask={setTask}
+              onRun={run}
+            />
           </>
         ) : (
           <div className="team-detail-empty"><Network size={28} /><h2>Select a team</h2><p>Choose a saved team to inspect its workflow and start a run.</p></div>
