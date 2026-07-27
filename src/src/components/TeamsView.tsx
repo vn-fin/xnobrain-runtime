@@ -436,7 +436,7 @@ function TeamRunsPanel({
   setTask: (value: string) => void;
   onRun: () => Promise<void>;
 }) {
-  const { runs, activeRun, runsStatus, openRun, cancelRun } = state;
+  const { runs, activeRun, runsStatus, openRun, deleteRun, cancelRun } = state;
   const teamRuns = runs.filter((historyRun) => historyRun.team_id === team.id);
   const run = activeRun?.team_id === team.id ? activeRun : undefined;
   const canCancel = Boolean(run && !isRunTerminal(run.status));
@@ -446,6 +446,8 @@ function TeamRunsPanel({
   const [cancelling, setCancelling] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [conversationStep, setConversationStep] = useState<TeamRunStep>();
+  const [runToDelete, setRunToDelete] = useState<TeamRunRecord>();
+  const [deletingRun, setDeletingRun] = useState(false);
   const [insights, setInsights] = useState<Record<string, NodeConversationInsight>>({});
   const selectedStep = run?.steps.find((step) => step.id === selectedStepId);
   const graphRun = run ?? savedWorkflowRun(team);
@@ -514,6 +516,17 @@ function TeamRunsPanel({
     }
   };
 
+  const confirmDeleteRun = async () => {
+    if (!runToDelete || deletingRun) return;
+    setDeletingRun(true);
+    try {
+      await deleteRun(team.id, runToDelete.id);
+      setRunToDelete(undefined);
+    } finally {
+      setDeletingRun(false);
+    }
+  };
+
   const send = async () => {
     if (canCancel || submitting || state.pending || !task.trim()) return;
     setSubmitting(true);
@@ -578,16 +591,29 @@ function TeamRunsPanel({
           {runsStatus === 'loading' && <small>Loading…</small>}
           {runsStatus !== 'loading' && teamRuns.length === 0 && <small>No runs yet</small>}
           {teamRuns.slice(0, 5).map((historyRun: TeamRunRecord) => (
-            <button
+            <div
               key={historyRun.id}
-              className={run?.id === historyRun.id ? 'active' : ''}
-              onClick={() => void openRun(team.id, historyRun.id)}
-              aria-label={`Open run ${historyRun.id.replace(/^tr_/, '').slice(0, 8)}`}
+              className={`run-history-item ${run?.id === historyRun.id ? 'active' : ''}`}
             >
-              <span className={`run-activity-dot ${historyRun.status}`} />
-              <strong>{historyRun.id.replace(/^tr_/, '').slice(0, 8)}</strong>
-              <small>{historyRun.status}</small>
-            </button>
+              <button
+                className="run-history-open"
+                onClick={() => void openRun(team.id, historyRun.id)}
+                aria-label={`Open run ${historyRun.id.replace(/^tr_/, '').slice(0, 8)}`}
+              >
+                <span className={`run-activity-dot ${historyRun.status}`} />
+                <strong>{historyRun.id.replace(/^tr_/, '').slice(0, 8)}</strong>
+                <small>{historyRun.status}</small>
+              </button>
+              <button
+                className="run-history-delete"
+                disabled={!isRunTerminal(historyRun.status)}
+                onClick={() => setRunToDelete(historyRun)}
+                aria-label={`Delete run ${historyRun.id.replace(/^tr_/, '').slice(0, 8)}`}
+                title={isRunTerminal(historyRun.status) ? 'Delete execution' : 'Cancel this execution before deleting it'}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
           ))}
           {teamRuns.length > 5 && <span className="run-history-more">+{teamRuns.length - 5}</span>}
         </div>
@@ -705,6 +731,18 @@ function TeamRunsPanel({
           insight={conversationStep.conversation_id ? insights[conversationStep.conversation_id] : undefined}
           now={now}
           onClose={() => setConversationStep(undefined)}
+        />
+      )}
+      {runToDelete && (
+        <ConfirmDialog
+          title="Delete this execution?"
+          message={`Run ${runToDelete.id.replace(/^tr_/, '').slice(0, 8)} will be permanently removed from this Team's execution history. Agent conversations will not be deleted.`}
+          confirmLabel={deletingRun ? 'Deleting…' : 'Delete execution'}
+          danger
+          onConfirm={() => void confirmDeleteRun()}
+          onCancel={() => {
+            if (!deletingRun) setRunToDelete(undefined);
+          }}
         />
       )}
     </div>

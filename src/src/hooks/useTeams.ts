@@ -97,6 +97,21 @@ export function useTeams(active = true) {
     }
   }, []);
 
+  const deleteRun = async (teamId: string, runId: string) => {
+    setPending(true);
+    try {
+      await teamsApi.deleteRun(teamId, runId);
+      setRuns((current) => current.filter((run) => run.id !== runId));
+      setActiveRun((current) => current?.id === runId ? undefined : current);
+      setError('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not delete execution');
+      throw reason;
+    } finally {
+      setPending(false);
+    }
+  };
+
   const startRun = async (teamId: string, task: string, workflow: TeamWorkflowStep[] = [], synthesis?: string) => {
     setPending(true);
     try {
@@ -155,6 +170,6 @@ export function useTeams(active = true) {
 
   return {
     teams, status, pending, error, runs, activeRun, runsStatus,
-    refresh, create, rename, remove, loadRuns, openRun, startRun, cancelRun, setActiveRun,
+    refresh, create, rename, remove, loadRuns, openRun, deleteRun, startRun, cancelRun, setActiveRun,
   };
 }

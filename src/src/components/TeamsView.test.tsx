@@ -72,6 +72,7 @@ function teamState(overrides: Partial<ReturnType<typeof useTeams>> = {}) {
     remove: vi.fn(),
     loadRuns: vi.fn(),
     openRun: vi.fn(),
+    deleteRun: vi.fn(),
     startRun: vi.fn(),
     cancelRun: vi.fn(),
     setActiveRun: vi.fn(),
@@ -218,6 +219,54 @@ describe('TeamsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Create from snapshot/i }));
     expect(screen.getByRole('dialog', { name: 'Create from Team snapshot' })).toBeVisible();
     expect(screen.getByText(/credentials are never taken from the archive/i)).toBeVisible();
+  });
+
+  it('deletes a completed execution only after confirmation', async () => {
+    const team: Team = {
+      id: 'team-history',
+      name: 'History Team',
+      orchestrator_id: 'lead',
+      members: [{ agent_id: 'researcher', role: 'researcher', allowed_tools: [], enabled: true }],
+      workflow: [],
+      shared_workspace: false,
+      max_parallel: 1,
+      max_depth: 1,
+      enabled: true,
+    };
+    const run: TeamRunRecord = {
+      id: 'tr_delete1234',
+      team_id: team.id,
+      status: 'completed',
+      error: null,
+      mode: 'async',
+      task: 'Finished work',
+      synthesis_instruction: 'Synthesize.',
+      orchestrator_id: 'lead',
+      orchestrator_summary: 'Done.',
+      created_at: '2026-07-27T04:35:29Z',
+      started_at: '2026-07-27T04:35:29Z',
+      ended_at: '2026-07-27T04:35:42Z',
+      updated_at: '2026-07-27T04:35:42Z',
+      revision: 4,
+      steps: [],
+    };
+    const deleteRun = vi.fn(async () => undefined);
+    const state = teamState({
+      teams: [team],
+      runs: [run],
+      activeRun: run,
+      runsStatus: 'ready',
+      deleteRun,
+    });
+    render(<TeamsView agents={agents} state={state} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete run delete12' }));
+    expect(screen.getByText('Delete this execution?')).toBeVisible();
+    expect(screen.getByText(/Agent conversations will not be deleted/i)).toBeVisible();
+    expect(deleteRun).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete execution' }));
+    await waitFor(() => expect(deleteRun).toHaveBeenCalledWith('team-history', 'tr_delete1234'));
   });
 
   it('creates a Team from an inspected snapshot and selects the imported copy', async () => {

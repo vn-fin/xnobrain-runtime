@@ -107,6 +107,11 @@ export const teamsApi = {
     request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs`, { method: 'POST', body: JSON.stringify({ task, workflow, synthesis }) }),
   listRuns: (teamId: string) => request<TeamRunRecord[]>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs`),
   getRun: (teamId: string, runId: string) => request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}`),
+  deleteRun: (teamId: string, runId: string) =>
+    request<{ id: string; team_id: string; deleted: boolean }>(
+      `/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}`,
+      { method: 'DELETE' },
+    ),
   cancelRun: (teamId: string, runId: string) =>
     request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
   async watchRun(

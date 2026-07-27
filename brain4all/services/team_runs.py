@@ -97,6 +97,19 @@ class TeamRunService:
             raise ServiceError("run has already finished", status=409, code="run_already_finished")
         return record
 
+    def delete_run(self, team_id: str, run_id: str) -> dict[str, Any]:
+        self.platform.get_team(team_id)
+        record = self._heal_if_stale(self.repository.get_team_run(team_id, run_id))
+        if record["status"] not in TERMINAL_STATUSES:
+            raise ServiceError(
+                "cancel the active run before deleting it",
+                status=409,
+                code="team_run_active",
+            )
+        if not self.repository.delete_team_run(team_id, run_id):
+            raise ServiceError("team run not found", status=404, code="run_not_found")
+        return {"id": run_id, "team_id": team_id, "deleted": True}
+
     async def shutdown(self) -> None:
         tasks = [entry.task for entry in list(self._active.values()) if entry.task and not entry.task.done()]
         for task in tasks:

@@ -259,6 +259,15 @@ class FileRepository:
         self.prune_team_runs(team_id)
         return run
 
+    def delete_team_run(self, team_id: Any, run_id: Any) -> bool:
+        path = self._team_run_dir(team_id) / f"{self._id(run_id, 'run id')}.json"
+        with self._lock:
+            if not path.is_file():
+                return False
+            path.unlink()
+            self._sync_dir(path.parent)
+            return True
+
     def prune_team_runs(self, team_id: Any, keep: int = TEAM_RUN_RETENTION) -> int:
         directory = self._team_run_dir(team_id)
         if not directory.is_dir():

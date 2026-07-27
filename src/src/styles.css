@@ -6604,23 +6604,25 @@ body.col-resizing {
 }
 .run-history-label { margin-right: 2px; color: var(--muted-2); font-size: 8px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
 .run-history-compact > small { color: var(--muted-2); font-size: 9px; }
-.run-history-compact button {
+.run-history-item {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 5px;
-  padding: 5px 7px;
   border: 1px solid var(--border);
   border-radius: 7px;
   color: var(--muted);
   background: var(--panel-2);
   font: inherit;
-  cursor: pointer;
+  overflow: hidden;
 }
-.run-history-compact button:hover,
-.run-history-compact button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
-.run-history-compact button strong { font-family: var(--mono, monospace); font-size: 8px; }
-.run-history-compact button small { color: var(--muted-2); font-size: 8px; text-transform: capitalize; }
+.run-history-item:hover,
+.run-history-item.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
+.run-history-open { display: flex; align-items: center; gap: 5px; padding: 5px 7px; color: inherit; }
+.run-history-open strong { font-family: var(--mono, monospace); font-size: 8px; }
+.run-history-open small { color: var(--muted-2); font-size: 8px; text-transform: capitalize; }
+.run-history-delete { width: 26px; height: 26px; display: grid; place-items: center; border-left: 1px solid var(--border); color: var(--muted-2); }
+.run-history-delete:hover:not(:disabled) { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.run-history-delete:disabled { cursor: not-allowed; opacity: .32; }
 .run-history-compact .run-activity-dot { width: 6px; height: 6px; }
 .run-history-more { color: var(--muted-2); font-size: 9px; }
 

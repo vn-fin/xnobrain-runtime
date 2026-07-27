@@ -171,6 +171,7 @@ class APIHandlers:
             "team_runs_start": (lambda: s.team_runs.start_run(p["team_id"], body), "team run started", 202),
             "team_runs_list": (lambda: s.team_runs.list_runs(p["team_id"], q.get("limit")), "team runs retrieved successfully", 200),
             "team_runs_get": (lambda: s.team_runs.get_run(p["team_id"], p["run_id"]), "team run retrieved successfully", 200),
+            "team_runs_delete": (lambda: s.team_runs.delete_run(p["team_id"], p["run_id"]), "team run deleted", 200),
             "team_runs_cancel": (lambda: s.team_runs.cancel_run(p["team_id"], p["run_id"]), "team run cancelled", 200),
             "providers": (s.providers, "providers retrieved successfully", 200),
             "provider_connect_start": (lambda: s.start_provider_connect(p["provider_id"]), "provider connection started", 200),

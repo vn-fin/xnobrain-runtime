@@ -183,6 +183,28 @@ class TeamRunLifecycleTests(_TeamRunBase):
         self.assertEqual(set(stored), _RUN_SCHEMA_KEYS)
         self.assertEqual(set(stored["steps"][0]), _STEP_SCHEMA_KEYS)
 
+    async def test_completed_run_can_be_deleted(self):
+        async with self.client() as client:
+            team_id, ids = await self._make_team(client)
+            self._mock_completing_chat(ids)
+            started = await client.post(f"/api/v1/teams/{team_id}/runs", json=self._dag_body())
+            run_id = started.json()["data"]["id"]
+            await self._poll_until_terminal(client, team_id, run_id)
+
+            deleted = await client.delete(f"/api/v1/teams/{team_id}/runs/{run_id}")
+            missing = await client.get(f"/api/v1/teams/{team_id}/runs/{run_id}")
+            history = await client.get(f"/api/v1/teams/{team_id}/runs")
+
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        self.assertEqual(deleted.json()["data"], {
+            "id": run_id,
+            "team_id": team_id,
+            "deleted": True,
+        })
+        self.assertEqual(missing.status_code, 404)
+        self.assertNotIn(run_id, [record["id"] for record in history.json()["data"]])
+        self.assertFalse((self.data_dir / "teams" / "runs" / team_id / f"{run_id}.json").exists())
+
     async def test_sync_run_persists_and_keeps_legacy_shape(self):
         async with self.client() as client:
             team_id, ids = await self._make_team(client)

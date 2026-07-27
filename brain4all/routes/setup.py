@@ -127,6 +127,7 @@ ROUTES = (
     Route("POST", "/api/v1/teams/{team_id}/runs", "team_runs_start", TeamRun, tags=("Teams",)),
     Route("GET", "/api/v1/teams/{team_id}/runs", "team_runs_list", tags=("Teams",)),
     Route("GET", "/api/v1/teams/{team_id}/runs/{run_id}", "team_runs_get", tags=("Teams",)),
+    Route("DELETE", "/api/v1/teams/{team_id}/runs/{run_id}", "team_runs_delete", tags=("Teams",)),
     Route("POST", "/api/v1/teams/{team_id}/runs/{run_id}/cancel", "team_runs_cancel", tags=("Teams",)),
     Route("GET", "/api/v1/teams/{team_id}/runs/{run_id}/events", "team_run_event_stream", special="team_run_stream", tags=("Teams",)),
 
