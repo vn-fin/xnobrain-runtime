@@ -22,13 +22,13 @@ afterEach(() => {
 });
 
 describe('useSandbox stream activation', () => {
-  it('uses a one-time detail check outside VM and streams only while VM is active', async () => {
+  it('does not request runtime data until its UI is active', async () => {
     const { rerender, unmount } = renderHook(
       ({ vmActive }: { vmActive: boolean }) => useSandbox(vmActive),
       { initialProps: { vmActive: false } },
     );
 
-    await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(1));
+    expect(mocks.get).not.toHaveBeenCalled();
     expect(mocks.stream).not.toHaveBeenCalled();
 
     rerender({ vmActive: true });
