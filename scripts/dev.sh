@@ -121,7 +121,7 @@ HERMES_HOME="$hermes_home" \
   HERMES_PROFILES_ROOT="${HERMES_PROFILES_ROOT:-$hermes_home/profiles}" \
   NINE_ROUTER_DATA_DIR="$router_data_dir" \
   NINE_ROUTER_URL="${NINE_ROUTER_URL:-http://$router_host:$router_port}" \
-  BRAIN4ALL_RELOAD=1 \
+  BRAIN4ALL_RELOAD=0 \
   API_SERVER_HOST="$backend_host" \
   API_SERVER_PORT="$backend_port" \
   "$python_bin" server.py &
