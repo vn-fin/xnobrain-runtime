@@ -14,6 +14,10 @@ export type Team = {
   name: string;
   description?: string;
   orchestrator_id: string;
+  coordinator_prompt?: string;
+  coordinator_skills?: string[];
+  synthesis_agent_id?: string;
+  synthesis_skills?: string[];
   members: TeamMember[];
   workflow?: TeamWorkflowStep[];
   shared_workspace: boolean;
@@ -94,6 +98,8 @@ function withTeamDescription(team: Team): Team {
     ...team,
     shared_workspace: team.shared_workspace ?? false,
     communication_level: team.communication_level ?? 1,
+    coordinator_prompt: team.coordinator_prompt ?? '',
+    synthesis_agent_id: team.synthesis_agent_id || team.orchestrator_id,
     synthesis_instruction: team.synthesis_instruction?.trim()
       || 'Synthesize these workflow results into one final answer.',
     description: team.description?.trim()

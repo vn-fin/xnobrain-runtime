@@ -870,7 +870,9 @@ class PlatformService:
             if requested_tools is not None:
                 if not isinstance(requested_tools, list):
                     raise ServiceError("allowed_tools must be a list", code="invalid_workflow")
-                if any(str(tool) not in allowed for tool in requested_tools):
+                if any(str(tool) not in SAFE_TOOLSETS for tool in requested_tools):
+                    raise ServiceError("workflow step contains a privileged toolset", code="invalid_workflow_tools")
+                if allowed and any(str(tool) not in allowed for tool in requested_tools):
                     raise ServiceError("workflow step exceeds its assigned tool policy", code="invalid_workflow_tools")
                 allowed = sorted({str(tool) for tool in requested_tools})
             needs = raw.get("needs") or []
@@ -915,6 +917,8 @@ class PlatformService:
         if not name or not orchestrator:
             raise ServiceError("name and orchestrator_id are required")
         self.agents.describe_agent(orchestrator, include_memory=False)
+        synthesis_agent = str(body.get("synthesis_agent_id") or orchestrator).strip()
+        self.agents.describe_agent(synthesis_agent, include_memory=False)
         seen = {orchestrator}
         members = []
         for raw in body.get("members") or []:
@@ -955,6 +959,10 @@ class PlatformService:
                 or f"A coordinated team of {len(members) + 1} agents for multi-stage work."
             ),
             "orchestrator_id": orchestrator,
+            "coordinator_prompt": str(body.get("coordinator_prompt") or "").strip(),
+            "coordinator_skills": self._team_step_skills(body.get("coordinator_skills")),
+            "synthesis_agent_id": synthesis_agent,
+            "synthesis_skills": self._team_step_skills(body.get("synthesis_skills")),
             "members": members,
             "workflow": workflow,
             "shared_workspace": bool(body.get("shared_workspace", False)),

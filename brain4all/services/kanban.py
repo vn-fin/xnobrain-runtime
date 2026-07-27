@@ -181,8 +181,8 @@ class KanbanService:
                 "step_id": "__synthesis__",
                 "task_id": synthesis_id,
                 "title": str(synthesis.title),
-                "agent_id": str(metadata.get("orchestrator_id") or getattr(synthesis, "assignee", "") or ""),
-                "role": "coordinator",
+                "agent_id": str(metadata.get("synthesis_agent_id") or getattr(synthesis, "assignee", "") or ""),
+                "role": "synthesizer",
                 "needs": [str(item) for item in metadata.get("leaf_step_ids") or []],
                 "status": raw_status,
                 "kanban_status": _status(raw_status),
@@ -719,6 +719,35 @@ class KanbanService:
             raise ServiceError("team workflow could not be started", status=409, code="invalid_transition")
         task_ids: dict[str, str] = {}
         nodes: list[dict[str, Any]] = []
+        root_parent_id = root_id
+        orchestrator = str(team.get("orchestrator_id") or "")
+        coordinator_prompt = str(team.get("coordinator_prompt") or "").strip()
+        if coordinator_prompt:
+            if not orchestrator:
+                raise ServiceError("team has no orchestrator", status=409, code="invalid_team")
+            self._enable_agent_automation(orchestrator)
+            workspace_kind, workspace_path = self._workspace_for_assignee(orchestrator)
+            root_parent_id = kb_adapter.create_task(
+                conn,
+                title=f"{title} · Coordination",
+                body=f"{coordinator_prompt}\n\nTeam objective:\n{description}",
+                assignee=orchestrator,
+                created_by=f"team:{team_id}",
+                priority=priority,
+                parents=[root_id],
+                workspace_kind=workspace_kind,
+                workspace_path=workspace_path,
+                skills=list(team.get("coordinator_skills") or []) or None,
+                initial_status="running",
+                board=board,
+            )
+            nodes.append({
+                "step_id": "__coordination__",
+                "task_id": root_parent_id,
+                "agent_id": orchestrator,
+                "role": "coordinator",
+                "needs": [],
+            })
         for step in workflow:
             step_id = str(step["id"])
             needs = [str(item) for item in step.get("needs") or []]
@@ -741,7 +770,7 @@ class KanbanService:
                 assignee=agent_id,
                 created_by=f"team:{team_id}",
                 priority=priority,
-                parents=[task_ids[item] for item in needs] or [root_id],
+                parents=[task_ids[item] for item in needs] or [root_parent_id],
                 workspace_kind=workspace_kind,
                 workspace_path=workspace_path,
                 skills=list(step.get("skills") or []) or None,
@@ -754,15 +783,15 @@ class KanbanService:
                 "task_id": task_id,
                 "agent_id": agent_id,
                 "role": role,
-                "needs": needs,
+                "needs": needs or (["__coordination__"] if coordinator_prompt else []),
             })
         depended_on = {item for step in workflow for item in step.get("needs") or []}
         leaf_ids = [step_id for step_id in step_ids if step_id not in depended_on]
-        orchestrator = str(team.get("orchestrator_id") or "")
         if not orchestrator:
             raise ServiceError("team has no orchestrator", status=409, code="invalid_team")
-        self._enable_agent_automation(orchestrator)
-        workspace_kind, workspace_path = self._workspace_for_assignee(orchestrator)
+        synthesis_agent = str(team.get("synthesis_agent_id") or orchestrator)
+        self._enable_agent_automation(synthesis_agent)
+        workspace_kind, workspace_path = self._workspace_for_assignee(synthesis_agent)
         synthesis_id = kb_adapter.create_task(
             conn,
             title=f"{title} · Synthesis",
@@ -770,12 +799,13 @@ class KanbanService:
                 f"{team.get('synthesis_instruction') or 'Synthesize the completed team stages into one final answer.'}\n\n"
                 f"Original objective:\n{description}"
             ),
-            assignee=orchestrator,
+            assignee=synthesis_agent,
             created_by=f"team:{team_id}",
             priority=priority,
             parents=[task_ids[item] for item in leaf_ids],
             workspace_kind=workspace_kind,
             workspace_path=workspace_path,
+            skills=list(team.get("synthesis_skills") or []) or None,
             initial_status="running",
             board=board,
         )
@@ -784,6 +814,7 @@ class KanbanService:
             "team_id": team_id,
             "team_name": str(team.get("name") or team_id),
             "orchestrator_id": orchestrator,
+            "synthesis_agent_id": synthesis_agent,
             "nodes": nodes,
             "leaf_step_ids": leaf_ids,
             "synthesis_task_id": synthesis_id,

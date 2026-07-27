@@ -312,6 +312,10 @@ class TeamCreate(BaseModel):
     name: str
     description: str | None = Field(default=None, max_length=2000)
     orchestrator_id: str
+    coordinator_prompt: str | None = Field(default=None, max_length=20_000)
+    coordinator_skills: list[str] = Field(default_factory=list)
+    synthesis_agent_id: str | None = None
+    synthesis_skills: list[str] = Field(default_factory=list)
     members: list[TeamMember] = Field(default_factory=list)
     workflow: list[TeamWorkflowStep] = Field(default_factory=list, max_length=64)
     shared_workspace: bool = False

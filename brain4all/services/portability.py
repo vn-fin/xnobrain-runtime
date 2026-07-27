@@ -273,6 +273,10 @@ class PortabilityService:
                     team_mappings[source_id] = target_id
                     team["id"] = target_id
                     team["orchestrator_id"] = mappings.get(str(team.get("orchestrator_id") or ""), str(team.get("orchestrator_id") or ""))
+                    team["synthesis_agent_id"] = mappings.get(
+                        str(team.get("synthesis_agent_id") or ""),
+                        str(team.get("synthesis_agent_id") or team.get("orchestrator_id") or ""),
+                    )
                     for member in team.get("members", []):
                         old = str(member.get("agent_id") or "")
                         if old in mappings:
@@ -320,6 +324,7 @@ class PortabilityService:
             selected_teams.append(team)
             team_agents.extend([
                 str(team.get("orchestrator_id") or ""),
+                str(team.get("synthesis_agent_id") or ""),
                 *(str(member.get("agent_id") or "") for member in team.get("members", [])),
                 *(str(step.get("agent_id") or "") for step in team.get("workflow", [])),
             ])

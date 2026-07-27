@@ -135,7 +135,7 @@ describe('TeamsView', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Terminal & processes' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'File operations' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Skills' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'News research' }));
+    expect(screen.getByRole('checkbox', { name: 'News research' })).toBeChecked();
 
     fireEvent.click(screen.getByRole('button', { name: /Reviewer.*Checks the findings/i }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'researcher' }));
@@ -189,7 +189,7 @@ describe('TeamsView', () => {
     expect(screen.getByDisplayValue('Editable team')).toBeVisible();
     expect(screen.getByRole('checkbox', { name: 'Web search' })).toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Terminal & processes' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'News research' }));
+    expect(screen.getByRole('checkbox', { name: 'News research' })).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
@@ -197,6 +197,45 @@ describe('TeamsView', () => {
       allowed_tools: ['web', 'terminal'],
       skills: ['news-research'],
     }));
+  });
+
+  it('uses one profile for multiple nodes and customizes coordinator and synthesis roles', async () => {
+    const create = vi.fn(async (input) => ({ id: 'team-repeat', ...input }));
+    const state = teamState({ create });
+    render(<TeamsView agents={agents} state={state} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Create team/i }));
+    fireEvent.change(screen.getByPlaceholderText('Product launch team'), { target: { value: 'Repeated profile team' } });
+    fireEvent.click(screen.getByRole('button', { name: /Researcher.*Finds source material/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Researcher.*Finds source material/i }));
+    expect(screen.getByText('researcher-2', { selector: '.team-inspector-head h3' })).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText('Coordinator prompt'), {
+      target: { value: 'Plan the workflow and give each stage precise guidance.' },
+    });
+    fireEvent.click(screen.getByText('Execution & communication'));
+    fireEvent.change(screen.getByLabelText('Synthesis agent'), { target: { value: 'researcher' } });
+    fireEvent.change(screen.getByLabelText('Synthesis prompt'), {
+      target: { value: 'Combine the stage outputs into one cited answer.' },
+    });
+    expect(screen.getAllByRole('checkbox', { name: 'News research' }).every((checkbox) =>
+      (checkbox as HTMLInputElement).checked
+    )).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /Save team/i }));
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    const input = create.mock.calls[0][0];
+    expect(input.members).toHaveLength(1);
+    expect(input.members[0].agent_id).toBe('researcher');
+    expect(input.workflow.map((step) => step.agent_id)).toEqual(['researcher', 'researcher']);
+    expect(input.workflow.map((step) => step.skills)).toEqual([
+      ['news-research'],
+      ['news-research'],
+    ]);
+    expect(input.coordinator_prompt).toContain('precise guidance');
+    expect(input.synthesis_agent_id).toBe('researcher');
+    expect(input.synthesis_instruction).toContain('cited answer');
+    expect(input.synthesis_skills).toEqual(['news-research']);
   });
 
   it('restores deep-linked Team, execution, and creation views', async () => {

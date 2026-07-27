@@ -6499,6 +6499,10 @@ body.col-resizing {
 .team-policy-settings small { color: #98a2b3; font-size: 8px; font-weight: 400; line-height: 1.4; }
 .team-policy-settings .team-policy-check { grid-template-columns: auto 1fr; align-items: center; }
 .team-policy-settings .team-policy-check input { width: 14px; height: 14px; margin: 0; padding: 0; }
+.team-role-skills { display: grid; gap: 6px; color: #667085; font-size: 10px; font-weight: 650; }
+.team-role-skills > div { display: grid; gap: 4px; max-height: 120px; overflow-y: auto; }
+.team-builder-form .team-role-skills label, .team-policy-settings .team-role-skills label { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 7px; margin: 0; padding: 3px 1px; font-size: 9px; font-weight: 500; }
+.team-builder-form .team-role-skills input, .team-policy-settings .team-role-skills input { width: 13px; height: 13px; margin: 0; padding: 0; box-shadow: none; }
 .team-agent-palette { padding: 16px 10px; }
 .team-palette-heading { display: flex; justify-content: space-between; padding: 0 6px 8px; color: #475467; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .team-palette-heading small { color: #98a2b3; }

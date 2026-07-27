@@ -302,6 +302,29 @@ class TeamRunService:
                 mode=0o640,
             )
 
+        coordinator_guidance = ""
+        coordinator_prompt = str(team.get("coordinator_prompt") or "").strip()
+        if coordinator_prompt:
+            workflow_outline = "\n".join(
+                f"- {step['id']} ({step['role']}): {step['task']}"
+                for step in workflow
+            )
+            coordinator_request: dict[str, Any] = {
+                "message": (
+                    f"{coordinator_prompt}\n\n"
+                    f"Team objective:\n{record.get('task') or 'Use the saved workflow objective.'}\n\n"
+                    f"Workflow:\n{workflow_outline}\n\n"
+                    "Return concise execution guidance for the worker stages."
+                ),
+            }
+            if team.get("coordinator_skills"):
+                coordinator_request["skills"] = list(team["coordinator_skills"])
+            coordinated = await self.agents.chat(
+                str(team["orchestrator_id"]),
+                coordinator_request,
+            )
+            coordinator_guidance = str(coordinated.get("response") or "").strip()
+
         def request_for(step: Mapping[str, Any], message: str) -> dict[str, Any]:
             request: dict[str, Any] = {"message": message}
             if step["allowed_tools"]:
@@ -341,6 +364,8 @@ class TeamRunService:
                 )
                 if upstream and communication_level >= 1:
                     prompt += "\n\nUpstream results:\n" + "\n\n".join(upstream)
+                if coordinator_guidance:
+                    prompt += "\n\nCoordinator guidance:\n" + coordinator_guidance
                 if scratchpad is not None:
                     prompt += (
                         f"\n\nShared team scratchpad: {scratchpad}\n"
@@ -439,7 +464,13 @@ class TeamRunService:
             for item in results
         )
         try:
-            final = await self.agents.chat(team["orchestrator_id"], {"message": synthesis})
+            synthesis_request: dict[str, Any] = {"message": synthesis}
+            if team.get("synthesis_skills"):
+                synthesis_request["skills"] = list(team["synthesis_skills"])
+            final = await self.agents.chat(
+                str(team.get("synthesis_agent_id") or team["orchestrator_id"]),
+                synthesis_request,
+            )
         except asyncio.CancelledError:
             raise
         except EXPECTED_ERRORS as error:

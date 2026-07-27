@@ -844,6 +844,11 @@ function TeamBuilder({
   onSaved: (team: Team) => void;
   onBack: () => void;
 }) {
+  const enabledSkillIds = (agentId: string) => (
+    agents.find((agent) => agent.id === agentId)?.skills
+      .filter((skill) => skill.enabled)
+      .map((skill) => skill.skill_id) ?? []
+  );
   const initialWorkflow = initialTeam?.workflow?.length
     ? initialTeam.workflow
     : initialTeam?.members.map((member, index) => ({
@@ -864,7 +869,7 @@ function TeamBuilder({
     role: step.role ?? step.id,
     needs: step.needs ?? [],
     allowed_tools: step.allowed_tools ?? [],
-    skills: step.skills ?? [],
+    skills: step.skills ?? enabledSkillIds(step.agent_id ?? ''),
     x: 170 + (index % 2) * 260,
     y: 95 + Math.floor(index / 2) * 165,
   })));
@@ -878,11 +883,22 @@ function TeamBuilder({
   const [synthesisInstruction, setSynthesisInstruction] = useState(
     initialTeam?.synthesis_instruction ?? 'Synthesize these workflow results into one final answer.',
   );
+  const [coordinatorPrompt, setCoordinatorPrompt] = useState(initialTeam?.coordinator_prompt ?? '');
+  const [coordinatorSkills, setCoordinatorSkills] = useState(
+    initialTeam?.coordinator_skills ?? enabledSkillIds(initialTeam?.orchestrator_id ?? agents[0]?.id ?? ''),
+  );
+  const [synthesisAgentId, setSynthesisAgentId] = useState(
+    initialTeam?.synthesis_agent_id ?? initialTeam?.orchestrator_id ?? agents[0]?.id ?? '',
+  );
+  const [synthesisSkills, setSynthesisSkills] = useState(
+    initialTeam?.synthesis_skills
+      ?? enabledSkillIds(initialTeam?.synthesis_agent_id ?? initialTeam?.orchestrator_id ?? agents[0]?.id ?? ''),
+  );
   const [drag, setDrag] = useState<{ id: string; pointerId: number; dx: number; dy: number }>();
   const canvasRef = useRef<HTMLDivElement>(null);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedAgent = agents.find((agent) => agent.id === selectedNode?.agent_id);
-  const availableAgents = agents.filter((agent) => agent.id !== orchestratorId && !nodes.some((node) => node.agent_id === agent.id));
+  const availableAgents = agents.filter((agent) => agent.id !== orchestratorId);
 
   useEffect(() => {
     if (!agents.some((agent) => agent.id === orchestratorId)) setOrchestratorId(agents[0]?.id ?? '');
@@ -902,7 +918,7 @@ function TeamBuilder({
       task: `Complete the ${role.replace(/-/g, ' ')} stage for the team objective.`,
       needs: [],
       allowed_tools: [],
-      skills: [],
+      skills: enabledSkillIds(agent.id),
       x: 170 + (index % 2) * 260,
       y: 95 + Math.floor(index / 2) * 165,
     };
@@ -990,14 +1006,25 @@ function TeamBuilder({
       setMessage('Every agent needs a role and stage instruction.');
       return;
     }
+    const memberNodes = new Map<string, DraftNode[]>();
+    nodes.forEach((node) => memberNodes.set(
+      node.agent_id,
+      [...(memberNodes.get(node.agent_id) ?? []), node],
+    ));
     const input: TeamInput = {
       name: name.trim(),
       description: description.trim() || undefined,
       orchestrator_id: orchestratorId,
-      members: nodes.map((node) => ({
-        agent_id: node.agent_id,
-        role: node.role.trim(),
-        allowed_tools: node.allowed_tools ?? [],
+      coordinator_prompt: coordinatorPrompt.trim(),
+      coordinator_skills: coordinatorSkills,
+      synthesis_agent_id: synthesisAgentId || orchestratorId,
+      synthesis_skills: synthesisSkills,
+      members: [...memberNodes.entries()].map(([agentId, stages]) => ({
+        agent_id: agentId,
+        role: stages[0].role.trim(),
+        allowed_tools: stages.some((stage) => !(stage.allowed_tools?.length))
+          ? []
+          : [...new Set(stages.flatMap((stage) => stage.allowed_tools ?? []))],
         enabled: true,
       })),
       workflow: nodes.map(({ x: _x, y: _y, ...node }) => ({
@@ -1050,13 +1077,48 @@ function TeamBuilder({
             <select
               value={orchestratorId}
               onChange={(event) => {
-                setOrchestratorId(event.target.value);
-                setNodes((current) => current.filter((node) => node.agent_id !== event.target.value));
+                const nextId = event.target.value;
+                const previousId = orchestratorId;
+                setOrchestratorId(nextId);
+                setCoordinatorSkills(enabledSkillIds(nextId));
+                if (synthesisAgentId === previousId) {
+                  setSynthesisAgentId(nextId);
+                  setSynthesisSkills(enabledSkillIds(nextId));
+                }
+                setNodes((current) => current.filter((node) => node.agent_id !== nextId));
               }}
             >
               {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.title}</option>)}
             </select>
           </label>
+          <label>
+            Coordinator prompt
+            <textarea
+              aria-label="Coordinator prompt"
+              value={coordinatorPrompt}
+              onChange={(event) => setCoordinatorPrompt(event.target.value)}
+              placeholder="How should the coordinator guide this team?"
+            />
+          </label>
+          <div className="team-role-skills">
+            <span>Coordinator skills</span>
+            <div>
+              {(agents.find((agent) => agent.id === orchestratorId)?.skills ?? [])
+                .filter((skill) => skill.enabled)
+                .map((skill) => (
+                  <label key={skill.skill_id}>
+                    <input
+                      type="checkbox"
+                      checked={coordinatorSkills.includes(skill.skill_id)}
+                      onChange={(event) => setCoordinatorSkills(event.target.checked
+                        ? [...new Set([...coordinatorSkills, skill.skill_id])]
+                        : coordinatorSkills.filter((id) => id !== skill.skill_id))}
+                    />
+                    {skill.name}
+                  </label>
+                ))}
+            </div>
+          </div>
         </div>
         <details className="team-policy-settings">
           <summary>Execution & communication</summary>
@@ -1096,13 +1158,45 @@ function TeamBuilder({
             />
           </label>
           <label>
-            Synthesis instruction
+            Synthesis agent
+            <select
+              aria-label="Synthesis agent"
+              value={synthesisAgentId}
+              onChange={(event) => {
+                setSynthesisAgentId(event.target.value);
+                setSynthesisSkills(enabledSkillIds(event.target.value));
+              }}
+            >
+              {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.title}</option>)}
+            </select>
+          </label>
+          <label>
+            Synthesis prompt
             <textarea
-              aria-label="Synthesis instruction"
+              aria-label="Synthesis prompt"
               value={synthesisInstruction}
               onChange={(event) => setSynthesisInstruction(event.target.value)}
             />
           </label>
+          <div className="team-role-skills">
+            <span>Synthesis skills</span>
+            <div>
+              {(agents.find((agent) => agent.id === synthesisAgentId)?.skills ?? [])
+                .filter((skill) => skill.enabled)
+                .map((skill) => (
+                  <label key={skill.skill_id}>
+                    <input
+                      type="checkbox"
+                      checked={synthesisSkills.includes(skill.skill_id)}
+                      onChange={(event) => setSynthesisSkills(event.target.checked
+                        ? [...new Set([...synthesisSkills, skill.skill_id])]
+                        : synthesisSkills.filter((id) => id !== skill.skill_id))}
+                    />
+                    {skill.name}
+                  </label>
+                ))}
+            </div>
+          </div>
           <label className="team-policy-check">
             <input
               type="checkbox"
