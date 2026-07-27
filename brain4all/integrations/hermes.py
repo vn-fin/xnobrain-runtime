@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import codecs
 import json
 import os
 import re
@@ -108,7 +107,7 @@ class AgentManager:
             or self.root_profile.parent / "legacy-agents"
         )
         self.nine_router = NineRouterManager()
-        self._active_runs: dict[str, asyncio.subprocess.Process] = {}
+        self._active_runs: dict[str, dict[str, Any]] = {}
         self._stopped_runs: set[str] = set()
         self._registry_lock = threading.RLock()
         self.sync_profiles_registry()
@@ -655,17 +654,63 @@ class AgentManager:
             "profile_dir": profile_dir,
             "workspace_dir": self._workspace_dir(name),
             "conversation_id": conversation_id,
+            "message": message,
             "provider": provider,
             "model": model,
+            "requested_model": (
+                self._nonempty_string(body["model"], "model")
+                if body.get("model")
+                else ""
+            ),
             "engine": engine,
             "command": command,
             "timeout_seconds": timeout_seconds,
         }
 
+    async def _run_session_agent(
+        self,
+        prepared: Mapping[str, Any],
+        *,
+        stream_delta_callback,
+        agent_ref: list[Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Run one turn through Hermes' native session-aware API adapter."""
+        from gateway.config import PlatformConfig
+        from gateway.platforms.api_server import (
+            APIServerAdapter,
+            _api_request_profile,
+        )
+        from gateway.run import _profile_runtime_scope
+
+        profile_dir = Path(prepared["profile_dir"])
+        conversation_id = str(prepared["conversation_id"])
+        adapter = APIServerAdapter(PlatformConfig(enabled=True))
+        session_db = self._session_db(profile_dir)
+        adapter._session_db = session_db
+        # Brain4All may also expose legacy agent directories. Pin the native
+        # adapter to the already validated profile path instead of resolving
+        # the profile name a second time.
+        adapter._profile_scope = lambda _profile: _profile_runtime_scope(profile_dir)
+        profile_token = _api_request_profile.set(str(prepared["name"]))
+        try:
+            history = await adapter._conversation_history_for_session(conversation_id)
+            session = self._session(profile_dir, conversation_id) or {}
+            return await adapter._run_agent(
+                user_message=str(prepared["message"]),
+                conversation_history=history,
+                session_id=conversation_id,
+                stream_delta_callback=stream_delta_callback,
+                agent_ref=agent_ref,
+                requested_model=str(prepared.get("requested_model") or "") or None,
+                session_model=str(session.get("model") or prepared.get("model") or "") or None,
+            )
+        finally:
+            _api_request_profile.reset(profile_token)
+            close = getattr(session_db, "close", None)
+            if callable(close):
+                close()
+
     async def _chat_stream_events(self, prepared: Mapping[str, Any]):
-        profile_dir = prepared["profile_dir"]
-        workspace_dir = prepared["workspace_dir"]
-        command = list(prepared["command"])
         timeout_seconds = int(prepared["timeout_seconds"])
         conversation_id = str(prepared.get("conversation_id") or "")
         model = str(prepared.get("model") or "")
@@ -680,108 +725,174 @@ class AgentManager:
                 yield self._chat_sse_error(str(exc))
                 yield self._chat_sse_done(chat_id, created, model, conversation_id)
                 return
-        env = self._command_env(profile_dir, str(prepared.get("engine") or "hermes"))
-        proc = await asyncio.create_subprocess_exec(
-            *command,
-            cwd=str(workspace_dir),
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        self._active_runs[run_id] = proc
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+        state: dict[str, Any] = {
+            "agent_ref": None,
+            "stop_requested": False,
+            "approval_session": conversation_id,
+        }
+
+        class AgentRef(list):
+            def __setitem__(self, index, value):
+                super().__setitem__(index, value)
+                if state["stop_requested"] and value is not None:
+                    value.interrupt("run stopped by user")
+
+        agent_ref: list[Any] = AgentRef([None])
+        state["agent_ref"] = agent_ref
+        output_chunks: list[str] = []
+
+        def on_delta(delta: str | None) -> None:
+            if not delta:
+                return
+            try:
+                running_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                running_loop = None
+            if running_loop is loop:
+                queue.put_nowait(("delta", delta))
+            else:
+                loop.call_soon_threadsafe(queue.put_nowait, ("delta", delta))
+
+        async def run_agent() -> None:
+            try:
+                result, usage = await self._run_session_agent(
+                    prepared,
+                    stream_delta_callback=on_delta,
+                    agent_ref=agent_ref,
+                )
+                # Flush callbacks already scheduled from the worker thread
+                # before placing the terminal event behind them.
+                await asyncio.sleep(0)
+                await queue.put(("completed", (result, usage)))
+            except Exception as exc:
+                await queue.put(("failed", exc))
+
+        task = asyncio.create_task(run_agent())
+        state["task"] = task
+        self._active_runs[run_id] = state
         yield self._sse_data({
             "event": "run.started", "run_id": run_id,
             "session_id": conversation_id, "status": "started",
             "timestamp": time.time(), "model": model,
         })
-        stderr_chunks: list[bytes] = []
-        output_chunks: list[str] = []
-
-        async def drain_stderr() -> None:
-            while True:
-                chunk = await proc.stderr.read(8192)
-                if not chunk:
-                    return
-                stderr_chunks.append(chunk)
-
-        stderr_task = asyncio.create_task(drain_stderr())
-        decoder = codecs.getincrementaldecoder("utf-8")("replace")
         deadline = time.monotonic() + timeout_seconds
-        sent_role = False
-        timed_out = False
-
         try:
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise asyncio.TimeoutError
-                chunk = await asyncio.wait_for(proc.stdout.read(1024), timeout=remaining)
-                if not chunk:
-                    break
-                text = decoder.decode(chunk)
-                if text:
+                try:
+                    kind, payload = await asyncio.wait_for(
+                        queue.get(),
+                        timeout=min(15.0, remaining),
+                    )
+                except asyncio.TimeoutError:
+                    if time.monotonic() < deadline:
+                        yield b": keepalive\n\n"
+                        continue
+                    raise
+                if kind == "delta":
+                    text = str(payload)
                     output_chunks.append(text)
-                    yield self._sse_data({"event": "message.delta", "run_id": run_id, "timestamp": time.time(), "delta": text})
-                    sent_role = True
-            tail = decoder.decode(b"", final=True)
-            if tail:
-                output_chunks.append(tail)
-                yield self._sse_data({"event": "message.delta", "run_id": run_id, "timestamp": time.time(), "delta": tail})
-                sent_role = True
-            remaining = max(0.1, deadline - time.monotonic())
-            await asyncio.wait_for(proc.wait(), timeout=remaining)
+                    yield self._sse_data({
+                        "event": "message.delta",
+                        "run_id": run_id,
+                        "timestamp": time.time(),
+                        "delta": text,
+                    })
+                    continue
+                if kind == "failed":
+                    raise payload
+
+                result, usage = payload
+                output = str(result.get("final_response") or "")
+                if not output_chunks and output:
+                    # Some non-streaming-compatible providers can only return
+                    # a final response. Preserve a usable fallback for them.
+                    output_chunks.append(output)
+                    yield self._sse_data({
+                        "event": "message.delta",
+                        "run_id": run_id,
+                        "timestamp": time.time(),
+                        "delta": output,
+                    })
+                if state["stop_requested"] or bool(result.get("interrupted")):
+                    yield self._sse_data({
+                        "event": "run.cancelled",
+                        "run_id": run_id,
+                        "timestamp": time.time(),
+                    })
+                elif result.get("failed") and not output:
+                    yield self._sse_data({
+                        "event": "run.failed",
+                        "run_id": run_id,
+                        "timestamp": time.time(),
+                        "message": str(result.get("error") or "agent command failed"),
+                    })
+                else:
+                    yield self._sse_data({
+                        "event": "run.completed",
+                        "run_id": run_id,
+                        "timestamp": time.time(),
+                        "output": output,
+                        "usage": {
+                            "input_tokens": int(usage.get("input_tokens") or 0),
+                            "output_tokens": int(usage.get("output_tokens") or 0),
+                            "total_tokens": int(usage.get("total_tokens") or 0),
+                        },
+                    })
+                yield b"data: [DONE]\n\n"
+                return
         except asyncio.CancelledError:
             self._stopped_runs.add(run_id)
-            if proc.returncode is None:
-                proc.terminate()
+            state["stop_requested"] = True
+            agent = agent_ref[0]
+            if agent is not None:
+                agent.interrupt("client disconnected")
+            if not task.done():
                 try:
-                    await asyncio.wait_for(proc.wait(), timeout=5)
+                    await asyncio.wait_for(asyncio.shield(task), timeout=5)
                 except asyncio.TimeoutError:
-                    proc.kill()
-                    await proc.wait()
+                    pass
             raise
         except asyncio.TimeoutError:
-            timed_out = True
-            proc.kill()
-            await proc.wait()
-        finally:
-            await stderr_task
-            self._active_runs.pop(run_id, None)
-
-        if timed_out:
-            yield self._sse_data({"event": "run.failed", "run_id": run_id, "timestamp": time.time(), "message": "agent command timed out"})
-            yield b"data: [DONE]\n\n"
-            return
-        output = "".join(output_chunks).strip()
-        stderr = b"".join(stderr_chunks).decode("utf-8", "replace").strip()
-        provider_error = self._provider_error(output)
-        if int(proc.returncode or 0) != 0 or provider_error:
-            if run_id in self._stopped_runs:
-                self._stopped_runs.discard(run_id)
-                yield self._sse_data({"event": "run.cancelled", "run_id": run_id, "timestamp": time.time()})
-            else:
-                yield self._sse_data({"event": "run.failed", "run_id": run_id, "timestamp": time.time(), "message": provider_error or stderr or "agent command failed"})
-        else:
+            state["stop_requested"] = True
+            agent = agent_ref[0]
+            if agent is not None:
+                agent.interrupt("agent command timed out")
             yield self._sse_data({
-                "event": "run.completed", "run_id": run_id,
-                "timestamp": time.time(), "output": output,
-                "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+                "event": "run.failed",
+                "run_id": run_id,
+                "timestamp": time.time(),
+                "message": "agent command timed out",
             })
-        yield b"data: [DONE]\n\n"
+            yield b"data: [DONE]\n\n"
+        except Exception as exc:
+            yield self._sse_data({
+                "event": "run.failed",
+                "run_id": run_id,
+                "timestamp": time.time(),
+                "message": str(exc) or "agent command failed",
+            })
+            yield b"data: [DONE]\n\n"
+        finally:
+            self._active_runs.pop(run_id, None)
+            self._stopped_runs.discard(run_id)
 
     async def stop_run(self, run_id: str) -> dict[str, Any]:
         if not re.fullmatch(r"run_[0-9a-f]{32}", str(run_id)):
             raise AgentAPIError("invalid run id", code="invalid_run")
-        proc = self._active_runs.get(run_id)
-        if proc is None or proc.returncode is not None:
+        state = self._active_runs.get(run_id)
+        if state is None or state["task"].done():
             raise AgentAPIError("run not found", code="run_not_found", status=404)
         self._stopped_runs.add(run_id)
-        proc.terminate()
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=5)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
+        state["stop_requested"] = True
+        agent = state["agent_ref"][0]
+        if agent is not None:
+            await asyncio.to_thread(agent.interrupt, "run stopped by user")
         return {"run_id": run_id, "stopped": True, "status": "stopping"}
 
     def resolve_approval(self, run_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -790,7 +901,17 @@ class AgentManager:
             raise AgentAPIError("invalid approval choice", code="invalid_approval_choice")
         try:
             from tools.approval import resolve_gateway_approval
-            resolved = resolve_gateway_approval(run_id, choice, bool(body.get("resolve_all", False)))
+            state = self._active_runs.get(run_id)
+            approval_session = (
+                str(state.get("approval_session") or run_id)
+                if state is not None
+                else run_id
+            )
+            resolved = resolve_gateway_approval(
+                approval_session,
+                choice,
+                bool(body.get("resolve_all", False)),
+            )
         except ImportError as error:
             raise AgentAPIError("Hermes approval core is unavailable", code="approval_unavailable", status=503) from error
         if resolved == 0:

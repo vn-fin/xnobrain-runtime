@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -398,6 +399,124 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(raised.exception.status, 404)
             self.assertEqual(raised.exception.code, "conversation_not_found")
             self.assertIsNone(manager._session(profile, missing_id))
+
+    async def test_conversation_stream_emits_incremental_model_deltas(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+
+            async def run_session_agent(
+                _prepared,
+                *,
+                stream_delta_callback,
+                agent_ref,
+            ):
+                stream_delta_callback("First ")
+                await asyncio.sleep(0)
+                stream_delta_callback("second")
+                return (
+                    {"final_response": "First second", "messages": []},
+                    {"input_tokens": 7, "output_tokens": 2, "total_tokens": 9},
+                )
+
+            prepared = {
+                "name": "news",
+                "profile_dir": root / "profile",
+                "conversation_id": "20260727_093154_c2b5fe",
+                "message": "Continue",
+                "model": "cx/gpt-5.5",
+                "requested_model": "",
+                "timeout_seconds": 30,
+            }
+            with patch.object(
+                manager,
+                "_run_session_agent",
+                side_effect=run_session_agent,
+            ):
+                chunks = [
+                    event
+                    async for event in manager._chat_stream_events(prepared)
+                ]
+
+            payload = b"".join(chunks)
+            self.assertEqual(payload.count(b'"event":"message.delta"'), 2)
+            self.assertLess(
+                payload.index(b'"delta":"First "'),
+                payload.index(b'"delta":"second"'),
+            )
+            self.assertIn(
+                b'"usage":{"input_tokens":7,"output_tokens":2,"total_tokens":9}',
+                payload,
+            )
+            self.assertTrue(payload.endswith(b"data: [DONE]\n\n"))
+
+    async def test_native_session_runner_loads_existing_history(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            manager.create_agent({"name": "news"})
+            conversation = manager.create_conversation(
+                "news",
+                {"title": "News Summary"},
+            )
+            conversation_id = conversation["conversation"]["id"]
+            profile = manager._profile_dir("news")
+            db = manager._session_db(profile)
+            db.append_message(conversation_id, "user", "Remember this.")
+            db.append_message(conversation_id, "assistant", "I will remember.")
+            db.close()
+            observed: dict[str, Any] = {}
+
+            class FakeSessionAdapter:
+                def __init__(self, _config):
+                    self._session_db = None
+
+                async def _conversation_history_for_session(self, session_id):
+                    return self._session_db.get_messages_as_conversation(session_id)
+
+                async def _run_agent(self, **kwargs):
+                    observed.update(kwargs)
+                    kwargs["stream_delta_callback"]("I remember.")
+                    return (
+                        {"final_response": "I remember.", "messages": []},
+                        {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
+                    )
+
+            prepared = manager._prepare_chat_command(
+                "news",
+                {
+                    "message": "What did I ask you to remember?",
+                    "conversation_id": conversation_id,
+                },
+                require_conversation=True,
+            )
+            deltas: list[str] = []
+            with patch(
+                "gateway.platforms.api_server.APIServerAdapter",
+                FakeSessionAdapter,
+            ):
+                result, usage = await manager._run_session_agent(
+                    prepared,
+                    stream_delta_callback=deltas.append,
+                    agent_ref=[None],
+                )
+
+            self.assertEqual(
+                [item["content"] for item in observed["conversation_history"]],
+                ["Remember this.", "I will remember."],
+            )
+            self.assertEqual(observed["session_id"], conversation_id)
+            self.assertEqual(deltas, ["I remember."])
+            self.assertEqual(result["final_response"], "I remember.")
+            self.assertEqual(usage["total_tokens"], 5)
 
     async def test_agent_stream_closes_cleanly_without_a_provider(self) -> None:
         with TemporaryDirectory() as temp_dir:
