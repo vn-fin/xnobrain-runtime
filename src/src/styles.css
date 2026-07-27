@@ -8392,42 +8392,6 @@ body.col-resizing {
 .analytics-bucket { padding-right: 24px; }
 .analytics-as-of { margin-left: auto; color: var(--muted-2); font-size: 10px; }
 
-.analytics-source-banner {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 11px 13px;
-  margin-bottom: 14px;
-  border: 1px solid rgba(88, 173, 145, .28);
-  border-radius: 12px;
-  background: linear-gradient(90deg, rgba(88, 173, 145, .09), rgba(88, 173, 145, .025));
-}
-
-.analytics-source-banner.live {
-  border-color: rgba(211, 154, 74, .3);
-  background: linear-gradient(90deg, rgba(211, 154, 74, .10), rgba(211, 154, 74, .025));
-}
-
-.analytics-source-icon {
-  display: inline-flex;
-  width: 30px;
-  height: 30px;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  border-radius: 9px;
-  background: rgba(88, 173, 145, .14);
-  color: var(--analytics-accent);
-}
-
-.analytics-source-banner.live .analytics-source-icon { color: #d39a4a; background: rgba(211, 154, 74, .13); }
-.analytics-source-banner > div:nth-child(2) { min-width: 0; flex: 1; }
-.analytics-source-banner strong,
-.analytics-source-banner span { display: block; }
-.analytics-source-banner strong { font-size: 12px; }
-.analytics-source-banner span { margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.45; }
-
-.analytics-source-badge,
 .analytics-live-pill {
   display: inline-flex !important;
   align-items: center;
@@ -8549,8 +8513,8 @@ body.col-resizing {
 .analytics-chart { position: relative; min-height: 220px; }
 .analytics-chart svg { display: block; width: 100%; height: 240px; overflow: visible; }
 .analytics-grid-line { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 5; }
-.analytics-chart-line { fill: none; stroke: #58ad91; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.analytics-chart-point { fill: var(--panel); stroke: #69b69e; stroke-width: 2; }
+.analytics-chart-bar { fill: #58ad91; transition: fill .15s ease, opacity .15s ease; }
+.analytics-chart-bar:hover { fill: #72c3a9; }
 .analytics-chart-label { fill: var(--muted-2); font-size: 9px; }
 .analytics-chart-max {
   position: absolute;
@@ -8837,7 +8801,6 @@ body.col-resizing {
   .analytics-dates { order: 5; width: 100%; }
   .analytics-dates input { flex: 1; min-width: 0; }
   .analytics-as-of { display: none; }
-  .analytics-source-badge { display: none !important; }
   .analytics-kpis,
   .analytics-breakdown-grid { grid-template-columns: 1fr; }
   .analytics-agent-table { overflow-x: auto; }

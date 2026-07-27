@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import {
   Activity,
   Bot,
@@ -6,7 +6,6 @@ import {
   CircleDollarSign,
   Database,
   RefreshCw,
-  ShieldCheck,
   Sparkles,
   X,
   Zap,
@@ -200,12 +199,6 @@ function Dashboard({
   setBudget: AnalyticsState['setBudget'];
 }) {
   const totals = summary.totals;
-  const source = summary.source ?? {
-    kind: 'live_profiles' as const,
-    durable: false,
-    label: 'Current agent profiles',
-    message: 'Restart the backend to enable durable 9router usage totals.',
-  };
   const requestStatus = summary.request_status ?? {
     total: totals.api_calls,
     successful: totals.api_calls,
@@ -220,22 +213,9 @@ function Dashboard({
     deleted_usage_included: false,
   };
   const averageCost = totals.api_calls ? totals.cost_usd / totals.api_calls : 0;
-  const durable = source.durable;
 
   return (
     <>
-      <section className={`analytics-source-banner ${durable ? 'durable' : 'live'}`}>
-        <div className="analytics-source-icon">{durable ? <Database size={17} /> : <Activity size={17} />}</div>
-        <div>
-          <strong>{source.label}</strong>
-          <span>{source.message}</span>
-        </div>
-        <div className="analytics-source-badge">
-          {durable ? <ShieldCheck size={13} /> : <Activity size={13} />}
-          {durable ? 'Deletion-safe totals' : 'Live attribution'}
-        </div>
-      </section>
-
       <section className="analytics-kpis">
         <MetricCard
           icon={<Zap size={17} />}
@@ -381,7 +361,6 @@ function PanelHeader({ eyebrow, title, trailing }: {
 }
 
 function TimeChart({ summary, metric }: { summary: UsageSummary; metric: 'tokens' | 'cost' }) {
-  const id = useId().replace(/:/g, '');
   const series = summary.series;
   const values = series.map((row) => metric === 'tokens' ? row.total_tokens : row.cost_usd);
   if (!series.length) return <div className="analytics-empty">No usage in this range.</div>;
@@ -391,35 +370,34 @@ function TimeChart({ summary, metric }: { summary: UsageSummary; metric: 'tokens
   const top = 18;
   const bottom = 34;
   const plotHeight = height - top - bottom;
+  const plotWidth = width - left * 2;
   const max = Math.max(1, ...values);
-  const xFor = (index: number) => left + (series.length === 1 ? (width - left * 2) / 2 : index * (width - left * 2) / (series.length - 1));
-  const yFor = (value: number) => top + plotHeight - value / max * plotHeight;
-  const points = values.map((value, index) => `${xFor(index)},${yFor(value)}`).join(' ');
-  const area = `${left},${top + plotHeight} ${points} ${width - left},${top + plotHeight}`;
+  const slotWidth = plotWidth / Math.max(1, series.length);
+  const barWidth = Math.max(1, Math.min(42, slotWidth * 0.68));
+  const xFor = (index: number) => left + index * slotWidth + (slotWidth - barWidth) / 2;
   const labelEvery = Math.max(1, Math.ceil(series.length / 8));
 
   return (
     <div className="analytics-chart">
       <div className="analytics-chart-max">{metric === 'tokens' ? fmtTokens(max) : fmtUsd(max)}</div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${metric} over time`}>
-        <defs>
-          <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#55a98f" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="#55a98f" stopOpacity="0" />
-          </linearGradient>
-        </defs>
         {[0, 0.33, 0.66, 1].map((ratio) => (
           <line key={ratio} x1={left} x2={width - left} y1={top + plotHeight * ratio} y2={top + plotHeight * ratio} className="analytics-grid-line" />
         ))}
-        <polygon points={area} fill={`url(#${id})`} />
-        <polyline points={points} className="analytics-chart-line" />
         {series.map((row, index) => (
           <g key={row.bucket}>
-            <circle cx={xFor(index)} cy={yFor(values[index])} r="3" className="analytics-chart-point">
+            <rect
+              x={xFor(index)}
+              y={top + plotHeight - values[index] / max * plotHeight}
+              width={barWidth}
+              height={values[index] / max * plotHeight}
+              rx={Math.min(3, barWidth / 3)}
+              className="analytics-chart-bar"
+            >
               <title>{row.bucket}: {metric === 'tokens' ? `${fmtTokens(values[index])} tokens` : fmtUsd(values[index])}</title>
-            </circle>
+            </rect>
             {index % labelEvery === 0 && (
-              <text x={xFor(index)} y={height - 10} textAnchor="middle" className="analytics-chart-label">
+              <text x={xFor(index) + barWidth / 2} y={height - 10} textAnchor="middle" className="analytics-chart-label">
                 {row.bucket.replace(/^\d{4}-/, '')}
               </text>
             )}
