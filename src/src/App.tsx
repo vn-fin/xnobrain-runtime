@@ -341,7 +341,18 @@ export default function App() {
             onClose={() => router.setCenterView('chat')}
           />
         ) : centerView === 'teams' ? (
-          <TeamsView agents={assistants.agents} state={teams} onClose={() => router.setCenterView('chat')} />
+          <TeamsView
+            agents={assistants.agents}
+            state={teams}
+            routeTeamId={router.activeTeamId}
+            routeRunId={router.activeTeamRunId}
+            routeCreate={router.teamCreate}
+            onNavigate={(teamId, runId, create, replace) => {
+              if (create) router.createTeam();
+              else router.openTeam(teamId, runId, replace);
+            }}
+            onClose={() => router.setCenterView('chat')}
+          />
         ) : centerView === 'kanban' ? (
           <KanbanView teams={teams.teams} agents={assistants.agents} state={kanban} onClose={() => router.setCenterView('chat')} />
         ) : centerView === 'analytics' ? (

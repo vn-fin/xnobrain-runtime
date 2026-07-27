@@ -410,6 +410,8 @@ function TeamRunsPanel({
   task,
   setTask,
   onRun,
+  requestedRunId,
+  onSelectRun,
 }: {
   team: Team;
   agents: Agent[];
@@ -417,6 +419,8 @@ function TeamRunsPanel({
   task: string;
   setTask: (value: string) => void;
   onRun: () => Promise<void>;
+  requestedRunId: string;
+  onSelectRun: (runId: string) => void;
 }) {
   const { runs, activeRun, runsStatus, openRun, deleteRun, cancelRun } = state;
   const teamRuns = runs.filter((historyRun) => historyRun.team_id === team.id);
@@ -447,6 +451,11 @@ function TeamRunsPanel({
       setSelectedStepId((current) => run.steps.some((step) => step.id === current) ? current : run.steps[0]?.id ?? '');
     }
   }, [run?.id, run?.revision, run]);
+
+  useEffect(() => {
+    if (!requestedRunId || run?.id === requestedRunId) return;
+    void openRun(team.id, requestedRunId);
+  }, [openRun, requestedRunId, run?.id, team.id]);
 
   useEffect(() => {
     if (!canCancel) return undefined;
@@ -504,6 +513,7 @@ function TeamRunsPanel({
     setDeletingRun(true);
     try {
       await deleteRun(team.id, runToDelete.id);
+      if (requestedRunId === runToDelete.id) onSelectRun('');
       setRunToDelete(undefined);
     } finally {
       setDeletingRun(false);
@@ -580,7 +590,10 @@ function TeamRunsPanel({
             >
               <button
                 className="run-history-open"
-                onClick={() => void openRun(team.id, historyRun.id)}
+                onClick={() => {
+                  onSelectRun(historyRun.id);
+                  void openRun(team.id, historyRun.id);
+                }}
                 aria-label={`Open run ${historyRun.id.replace(/^tr_/, '').slice(0, 8)}`}
               >
                 <span className={`run-activity-dot ${historyRun.status}`} />
@@ -1241,13 +1254,17 @@ function TeamLibrary({
   state,
   selectedTeamId,
   setSelectedTeamId,
+  selectedRunId,
+  onSelectRun,
   onCreate,
   onImport,
 }: {
   agents: Agent[];
   state: TeamsState;
   selectedTeamId: string;
-  setSelectedTeamId: (id: string) => void;
+  setSelectedTeamId: (id: string, replace?: boolean) => void;
+  selectedRunId: string;
+  onSelectRun: (runId: string) => void;
   onCreate: () => void;
   onImport: () => void;
 }) {
@@ -1262,8 +1279,9 @@ function TeamLibrary({
   const { loadRuns } = state;
 
   useEffect(() => {
-    if (!selectedTeamId && state.teams[0]) setSelectedTeamId(state.teams[0].id);
-  }, [selectedTeamId, setSelectedTeamId, state.teams]);
+    if (state.status !== 'ready' || !state.teams[0]) return;
+    if (!state.teams.some((team) => team.id === selectedTeamId)) setSelectedTeamId(state.teams[0].id, true);
+  }, [selectedTeamId, setSelectedTeamId, state.status, state.teams]);
 
   useEffect(() => {
     if (selectedTeamId) void loadRuns(selectedTeamId);
@@ -1276,7 +1294,8 @@ function TeamLibrary({
       task: `${step.task}\n\nTeam objective: ${task.trim()}`,
     }));
     try {
-      await state.startRun(selectedTeam.id, task.trim(), workflow);
+      const started = await state.startRun(selectedTeam.id, task.trim(), workflow);
+      if (started?.id) onSelectRun(started.id);
       setTask('');
     } catch {
       // The shared teams banner reports the API failure.
@@ -1325,7 +1344,7 @@ function TeamLibrary({
     try {
       await state.remove(teamId);
       if (selectedTeamId === teamId) {
-        setSelectedTeamId(state.teams.find((team) => team.id !== teamId)?.id ?? '');
+        setSelectedTeamId(state.teams.find((team) => team.id !== teamId)?.id ?? '', true);
       }
     } finally {
       setRemoveTeam(undefined);
@@ -1408,6 +1427,8 @@ function TeamLibrary({
               task={task}
               setTask={setTask}
               onRun={run}
+              requestedRunId={selectedRunId}
+              onSelectRun={onSelectRun}
             />
           </>
         ) : (
@@ -1428,14 +1449,54 @@ function TeamLibrary({
   );
 }
 
-export function TeamsView({ agents, state, onClose }: { agents: Agent[]; state: TeamsState; onClose: () => void }) {
-  const [mode, setMode] = useState<TeamsMode>('library');
-  const [selectedTeamId, setSelectedTeamId] = useState('');
+export function TeamsView({
+  agents,
+  state,
+  onClose,
+  routeTeamId = '',
+  routeRunId = '',
+  routeCreate = false,
+  onNavigate,
+}: {
+  agents: Agent[];
+  state: TeamsState;
+  onClose: () => void;
+  routeTeamId?: string;
+  routeRunId?: string;
+  routeCreate?: boolean;
+  onNavigate?: (teamId?: string, runId?: string, create?: boolean, replace?: boolean) => void;
+}) {
+  const [mode, setMode] = useState<TeamsMode>(routeCreate ? 'builder' : 'library');
+  const [selectedTeamId, setSelectedTeamId] = useState(routeTeamId);
+  const [selectedRunId, setSelectedRunId] = useState(routeRunId);
   const [importOpen, setImportOpen] = useState(false);
+  const routeReady = useRef(false);
+
+  useEffect(() => {
+    if (!routeReady.current) {
+      routeReady.current = true;
+      return;
+    }
+    setMode(routeCreate ? 'builder' : 'library');
+    setSelectedTeamId(routeTeamId);
+    setSelectedRunId(routeRunId);
+  }, [routeCreate, routeRunId, routeTeamId]);
+
+  const navigateLibrary = (teamId = selectedTeamId, runId = '', replace = false) => {
+    setMode('library');
+    setSelectedTeamId(teamId);
+    setSelectedRunId(runId);
+    onNavigate?.(teamId, runId, false, replace);
+  };
+
+  const navigateBuilder = () => {
+    setMode('builder');
+    setSelectedRunId('');
+    onNavigate?.('', '', true);
+  };
 
   const saved = (team: Team) => {
-    if (team.id) setSelectedTeamId(team.id);
-    setMode('library');
+    navigateLibrary(team.id);
   };
 
   return (
@@ -1446,22 +1507,24 @@ export function TeamsView({ agents, state, onClose }: { agents: Agent[]; state: 
           <div><h1>Agent teams</h1><p>Design, connect, and run collaborative Hermes workflows.</p></div>
         </div>
         <nav className="teams-mode-tabs" aria-label="Team views">
-          <button className={mode === 'library' ? 'active' : ''} onClick={() => setMode('library')}><List size={15} /> Team library</button>
-          <button className={mode === 'builder' ? 'active' : ''} onClick={() => setMode('builder')}><GitBranch size={15} /> Create team</button>
+          <button className={mode === 'library' ? 'active' : ''} onClick={() => navigateLibrary()}><List size={15} /> Team library</button>
+          <button className={mode === 'builder' ? 'active' : ''} onClick={navigateBuilder}><GitBranch size={15} /> Create team</button>
           <button onClick={() => setImportOpen(true)}><Upload size={15} /> Import snapshot</button>
         </nav>
         <button className="icon-button" aria-label="Close teams" onClick={onClose}><X size={19} /></button>
       </header>
       {state.error && <div className="teams-error">{state.error}</div>}
       {mode === 'builder'
-        ? <TeamBuilder agents={agents} state={state} onSaved={saved} onBack={() => setMode('library')} />
+        ? <TeamBuilder agents={agents} state={state} onSaved={saved} onBack={() => navigateLibrary()} />
         : (
           <TeamLibrary
             agents={agents}
             state={state}
             selectedTeamId={selectedTeamId}
-            setSelectedTeamId={setSelectedTeamId}
-            onCreate={() => setMode('builder')}
+            setSelectedTeamId={(teamId, replace) => navigateLibrary(teamId, '', replace)}
+            selectedRunId={selectedRunId}
+            onSelectRun={(runId) => navigateLibrary(selectedTeamId, runId)}
+            onCreate={navigateBuilder}
             onImport={() => setImportOpen(true)}
           />
         )}
@@ -1469,8 +1532,7 @@ export function TeamsView({ agents, state, onClose }: { agents: Agent[]; state: 
         <TeamImportModal
           state={state}
           onImported={(teamId) => {
-            setSelectedTeamId(teamId);
-            setMode('library');
+            navigateLibrary(teamId);
             setImportOpen(false);
           }}
           onClose={() => setImportOpen(false)}

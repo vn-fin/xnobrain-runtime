@@ -8,6 +8,9 @@ export type RouteState = {
   settingsSection: SettingsSection;
   agentId: string;
   conversationId: string;
+  teamId: string;
+  teamRunId: string;
+  teamCreate: boolean;
   rightView: RightView;
   agentSearch: string;
   skillsSearch: string;
@@ -20,6 +23,9 @@ export function parseRoute(pathname: string, search: string): RouteState {
   let centerView: CenterView = 'chat';
   let agentId = '';
   let conversationId = '';
+  let teamId = '';
+  let teamRunId = '';
+  let teamCreate = false;
   let rightView: RightView = 'workspace';
   let settingsSection: SettingsSection = 'profiles';
 
@@ -32,7 +38,15 @@ export function parseRoute(pathname: string, search: string): RouteState {
     settingsSection = 'connectors';
   }
   else if (seg[0] === 'skills') centerView = 'skills';
-  else if (seg[0] === 'teams') centerView = 'teams';
+  else if (seg[0] === 'teams') {
+    centerView = 'teams';
+    if (seg[1] === 'new') {
+      teamCreate = true;
+    } else {
+      teamId = seg[1] ?? '';
+      if (seg[2] === 'runs') teamRunId = seg[3] ?? '';
+    }
+  }
   else if (seg[0] === 'kanban' || seg[0] === 'board') centerView = 'kanban';
   else if (seg[0] === 'analytics' || seg[0] === 'usage') centerView = 'analytics';
   else if (seg[0] === 'data' || seg[0] === 'settings') {
@@ -53,6 +67,9 @@ export function parseRoute(pathname: string, search: string): RouteState {
     settingsSection,
     agentId,
     conversationId,
+    teamId,
+    teamRunId,
+    teamCreate,
     rightView,
     agentSearch: sp.get('agentq') ?? '',
     skillsSearch: sp.get('q') ?? '',
@@ -70,7 +87,13 @@ export function reconcileSelection(agentId: string, conversationId: string, agen
 export function computeUrl(state: RouteState): string {
   const params = new URLSearchParams();
   if (state.centerView === 'data') return `/settings/${state.settingsSection}`;
-  if (state.centerView === 'teams') return '/teams';
+  if (state.centerView === 'teams') {
+    if (state.teamCreate) return '/teams/new';
+    if (!state.teamId) return '/teams';
+    let path = `/teams/${encodeURIComponent(state.teamId)}`;
+    if (state.teamRunId) path += `/runs/${encodeURIComponent(state.teamRunId)}`;
+    return path;
+  }
   if (state.centerView === 'kanban') return '/kanban';
   if (state.centerView === 'analytics') return '/analytics';
   if (state.centerView === 'skills') {
@@ -98,20 +121,27 @@ export function useRouter() {
   const [rightView, setRightView] = useState<RightView>(bootRoute.rightView);
   const [activeAgentId, setActiveAgentId] = useState(bootRoute.agentId);
   const [activeConversationId, setActiveConversationId] = useState(bootRoute.conversationId);
+  const [activeTeamId, setActiveTeamId] = useState(bootRoute.teamId);
+  const [activeTeamRunId, setActiveTeamRunId] = useState(bootRoute.teamRunId);
+  const [teamCreate, setTeamCreate] = useState(bootRoute.teamCreate);
   const [agentSearch, setAgentSearch] = useState(bootRoute.agentSearch);
   const [skillsSearch, setSkillsSearch] = useState(bootRoute.skillsSearch);
   const [skillsGroupFilter, setSkillsGroupFilter] = useState(bootRoute.skillsGroupFilter);
 
   useEffect(() => {
     const url = computeUrl({
-      centerView, settingsSection, agentId: activeAgentId, conversationId: activeConversationId, rightView,
+      centerView, settingsSection, agentId: activeAgentId, conversationId: activeConversationId,
+      teamId: activeTeamId, teamRunId: activeTeamRunId, teamCreate, rightView,
       agentSearch, skillsSearch, skillsGroupFilter,
     });
     const current = window.location.pathname + window.location.search;
     if (url === current) return;
     if (url.split('?')[0] !== window.location.pathname) window.history.pushState(null, '', url);
     else window.history.replaceState(null, '', url);
-  }, [centerView, settingsSection, activeAgentId, activeConversationId, rightView, agentSearch, skillsSearch, skillsGroupFilter]);
+  }, [
+    centerView, settingsSection, activeAgentId, activeConversationId, activeTeamId, activeTeamRunId,
+    teamCreate, rightView, agentSearch, skillsSearch, skillsGroupFilter,
+  ]);
 
   useEffect(() => {
     const onPop = () => {
@@ -120,6 +150,9 @@ export function useRouter() {
       setSettingsSection(state.settingsSection);
       setActiveAgentId(state.agentId);
       setActiveConversationId(state.conversationId);
+      setActiveTeamId(state.teamId);
+      setActiveTeamRunId(state.teamRunId);
+      setTeamCreate(state.teamCreate);
       setRightView(state.rightView);
       setAgentSearch(state.agentSearch);
       setSkillsSearch(state.skillsSearch);
@@ -135,20 +168,44 @@ export function useRouter() {
     setCenterView('chat');
   }, []);
 
+  const openTeam = useCallback((teamId = '', runId = '', replace = false) => {
+    setActiveTeamId(teamId);
+    setActiveTeamRunId(runId);
+    setTeamCreate(false);
+    setCenterView('teams');
+    if (replace) {
+      let path = teamId ? `/teams/${encodeURIComponent(teamId)}` : '/teams';
+      if (runId) path += `/runs/${encodeURIComponent(runId)}`;
+      window.history.replaceState(null, '', path);
+    }
+  }, []);
+
+  const createTeam = useCallback(() => {
+    setActiveTeamId('');
+    setActiveTeamRunId('');
+    setTeamCreate(true);
+    setCenterView('teams');
+  }, []);
+
   const reconcileAgents = useCallback((agents: Agent[]) => {
     const next = reconcileSelection(activeAgentId, activeConversationId, agents);
     setActiveAgentId(next.agentId);
     setActiveConversationId(next.conversationId);
     const currentState: RouteState = {
-      centerView, settingsSection, agentId: next.agentId, conversationId: next.conversationId, rightView,
+      centerView, settingsSection, agentId: next.agentId, conversationId: next.conversationId,
+      teamId: activeTeamId, teamRunId: activeTeamRunId, teamCreate, rightView,
       agentSearch, skillsSearch, skillsGroupFilter,
     };
     window.history.replaceState(null, '', computeUrl(currentState));
-  }, [activeAgentId, activeConversationId, centerView, settingsSection, rightView, agentSearch, skillsSearch, skillsGroupFilter]);
+  }, [
+    activeAgentId, activeConversationId, activeTeamId, activeTeamRunId, teamCreate,
+    centerView, settingsSection, rightView, agentSearch, skillsSearch, skillsGroupFilter,
+  ]);
 
   return {
     centerView, setCenterView, settingsSection, setSettingsSection, rightView, setRightView,
     activeAgentId, setActiveAgentId, activeConversationId, setActiveConversationId,
+    activeTeamId, activeTeamRunId, teamCreate, openTeam, createTeam,
     agentSearch, setAgentSearch, skillsSearch, setSkillsSearch,
     skillsGroupFilter, setSkillsGroupFilter,
     openChat, reconcileAgents,

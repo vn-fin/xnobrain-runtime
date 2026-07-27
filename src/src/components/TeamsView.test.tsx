@@ -113,6 +113,77 @@ describe('TeamsView', () => {
     ]));
   });
 
+  it('restores deep-linked Team, execution, and creation views', async () => {
+    const team: Team = {
+      id: 'team-route',
+      name: 'Routed Team',
+      orchestrator_id: 'lead',
+      members: [{ agent_id: 'researcher', role: 'researcher', allowed_tools: [], enabled: true }],
+      workflow: [],
+      shared_workspace: false,
+      max_parallel: 1,
+      max_depth: 1,
+      enabled: true,
+    };
+    const run: TeamRunRecord = {
+      id: 'tr_route1234',
+      team_id: team.id,
+      status: 'completed',
+      error: null,
+      mode: 'async',
+      task: 'Test routing',
+      synthesis_instruction: 'Synthesize.',
+      orchestrator_id: 'lead',
+      orchestrator_summary: 'Done.',
+      created_at: '2026-07-27T04:35:29Z',
+      started_at: '2026-07-27T04:35:29Z',
+      ended_at: '2026-07-27T04:35:42Z',
+      updated_at: '2026-07-27T04:35:42Z',
+      revision: 2,
+      steps: [],
+    };
+    const openRun = vi.fn(async () => undefined);
+    const onNavigate = vi.fn();
+    const state = teamState({ teams: [team], runs: [run], runsStatus: 'ready', openRun });
+    const view = render(
+      <TeamsView
+        agents={agents}
+        state={state}
+        routeTeamId={team.id}
+        routeRunId={run.id}
+        onNavigate={onNavigate}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(openRun).toHaveBeenCalledWith(team.id, run.id));
+    expect(screen.getByLabelText('Live team workflow')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: /Create team/i }));
+    expect(onNavigate).toHaveBeenLastCalledWith('', '', true);
+    view.rerender(
+      <TeamsView
+        agents={agents}
+        state={state}
+        routeCreate
+        onNavigate={onNavigate}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByPlaceholderText('Product launch team')).toBeVisible();
+
+    view.rerender(
+      <TeamsView
+        agents={agents}
+        state={state}
+        routeTeamId={team.id}
+        onNavigate={onNavigate}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Live team workflow')).toBeVisible();
+  });
+
   it('runs the workflow saved with the selected team', async () => {
     const team: Team = {
       id: 'team-1',
