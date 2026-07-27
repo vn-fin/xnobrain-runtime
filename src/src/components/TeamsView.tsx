@@ -332,7 +332,7 @@ function TeamBuilder({
   };
 
   return (
-    <div className="team-builder-shell">
+    <div className={`team-builder-shell ${selectedNode ? 'has-inspector' : ''}`}>
       <aside className="team-builder-sidebar">
         <button className="teams-back-button" onClick={onBack}>
           <ArrowLeft size={15} /> Team library
