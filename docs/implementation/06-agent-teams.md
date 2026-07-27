@@ -23,12 +23,16 @@ are rejected before execution.
 
 Saved workflow stages may either inherit the assigned profile's normal Hermes
 tool configuration or select an explicit safe toolset allowlist. Stages may
-also preload enabled skills from that profile. The communication policy follows
-the issue #344 levels: L0 schedules isolated stages, L1 passes dependency
-summaries, L2 adds a durable per-run shared scratchpad, and L3 adds a bounded
-turn-based review/revision exchange between directly connected stages. The
-visual editor must support arbitrary acyclic node dependencies, not only edges
-from the Start node.
+also preload skills from that profile; every enabled profile skill is selected
+by default, while users can opt out per stage. A profile can back multiple
+distinct workflow nodes, with execution still serialized per profile. The
+coordinator and synthesis roles have independently selectable profiles, skill
+sets, and custom prompts. The communication policy follows the issue #344
+levels: L0 schedules isolated stages, L1 passes dependency summaries, L2 adds a
+durable per-run shared scratchpad, and L3 adds a bounded turn-based
+review/revision exchange between directly connected stages. The visual editor
+must support arbitrary acyclic node dependencies, not only edges from the Start
+node.
 
 ## Acceptance criteria
 

@@ -858,7 +858,7 @@ function TeamBuilder({
       role: member.role,
       needs: [],
       allowed_tools: member.allowed_tools,
-      skills: [],
+      skills: enabledSkillIds(member.agent_id),
     })) ?? [];
   const [name, setName] = useState(initialTeam?.name ?? '');
   const [description, setDescription] = useState(initialTeam?.description ?? '');

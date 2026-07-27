@@ -13,6 +13,7 @@ from typing import Any, Mapping
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from ..integrations import AgentAPIError
 from ..integrations import kanban as kb_adapter
 from ..integrations.kanban import KanbanUnavailable
 from ..repositories import StoreError
@@ -114,6 +115,19 @@ class KanbanService:
             "approval_mode": "off",
             "skills_write_approval": False,
             "memory_write_approval": False,
+        })
+
+    def _enabled_agent_skills(self, agent_id: str) -> list[str]:
+        if self.agents is None:
+            return []
+        try:
+            skills = self.agents.list_skills(agent_id).get("skills", [])
+        except (AgentAPIError, StoreError):
+            return []
+        return sorted({
+            str(item.get("skill_id") or "").strip()
+            for item in skills
+            if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
         })
 
     @staticmethod
@@ -727,6 +741,9 @@ class KanbanService:
                 raise ServiceError("team has no orchestrator", status=409, code="invalid_team")
             self._enable_agent_automation(orchestrator)
             workspace_kind, workspace_path = self._workspace_for_assignee(orchestrator)
+            coordinator_skills = team.get("coordinator_skills")
+            if coordinator_skills is None:
+                coordinator_skills = self._enabled_agent_skills(orchestrator)
             root_parent_id = kb_adapter.create_task(
                 conn,
                 title=f"{title} · Coordination",
@@ -737,7 +754,7 @@ class KanbanService:
                 parents=[root_id],
                 workspace_kind=workspace_kind,
                 workspace_path=workspace_path,
-                skills=list(team.get("coordinator_skills") or []) or None,
+                skills=list(coordinator_skills or []) or None,
                 initial_status="running",
                 board=board,
             )
@@ -760,6 +777,9 @@ class KanbanService:
             role = str(step.get("role") or "worker")
             instruction = str(step.get("task") or description).strip()
             workspace_kind, workspace_path = self._workspace_for_assignee(agent_id)
+            step_skills = step.get("skills")
+            if step_skills is None:
+                step_skills = self._enabled_agent_skills(agent_id)
             task_id = kb_adapter.create_task(
                 conn,
                 title=f"{title} · {role}",
@@ -773,7 +793,7 @@ class KanbanService:
                 parents=[task_ids[item] for item in needs] or [root_parent_id],
                 workspace_kind=workspace_kind,
                 workspace_path=workspace_path,
-                skills=list(step.get("skills") or []) or None,
+                skills=list(step_skills or []) or None,
                 initial_status="running",
                 board=board,
             )
@@ -792,6 +812,9 @@ class KanbanService:
         synthesis_agent = str(team.get("synthesis_agent_id") or orchestrator)
         self._enable_agent_automation(synthesis_agent)
         workspace_kind, workspace_path = self._workspace_for_assignee(synthesis_agent)
+        synthesis_skills = team.get("synthesis_skills")
+        if synthesis_skills is None:
+            synthesis_skills = self._enabled_agent_skills(synthesis_agent)
         synthesis_id = kb_adapter.create_task(
             conn,
             title=f"{title} · Synthesis",
@@ -805,7 +828,7 @@ class KanbanService:
             parents=[task_ids[item] for item in leaf_ids],
             workspace_kind=workspace_kind,
             workspace_path=workspace_path,
-            skills=list(team.get("synthesis_skills") or []) or None,
+            skills=list(synthesis_skills or []) or None,
             initial_status="running",
             board=board,
         )

@@ -154,6 +154,11 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                     {"id": "review", "task": "Review the research", "role": "reviewer", "needs": ["research"]},
                     {"id": "research", "task": "Research the launch", "role": "researcher", "skills": ["news-research"]},
                 ],
+                "coordinator_prompt": "Plan the stages before work begins.",
+                "coordinator_skills": ["team-planning"],
+                "synthesis_agent_id": agent_ids[2],
+                "synthesis_skills": ["final-writing"],
+                "synthesis_instruction": "Create the final cited launch plan.",
             })
             self.assertEqual(team.status_code, 201, team.text)
             self.assertEqual(
@@ -176,10 +181,12 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(task["team"]["name"], "Launch team")
             self.assertEqual(
                 [node["step_id"] for node in task["team"]["nodes"]],
-                ["research", "review", "__synthesis__"],
+                ["__coordination__", "research", "review", "__synthesis__"],
             )
-            self.assertEqual(task["team"]["nodes"][1]["needs"], ["research"])
-            self.assertEqual(task["assignees"], agent_ids[1:] + [agent_ids[0]])
+            self.assertEqual(task["team"]["nodes"][1]["needs"], ["__coordination__"])
+            self.assertEqual(task["team"]["nodes"][2]["needs"], ["research"])
+            self.assertEqual(task["team"]["nodes"][-1]["agent_id"], agent_ids[2])
+            self.assertEqual(task["assignees"], [agent_ids[0], *agent_ids[1:]])
             root_id = task["id"]
 
             listed = await client.get("/agent-gateway/v1/kanban/boards/default/tasks")

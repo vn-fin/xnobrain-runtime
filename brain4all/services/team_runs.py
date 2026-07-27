@@ -215,6 +215,17 @@ class TeamRunService:
     def _cap(text: str) -> str:
         return text[:SUMMARY_CAP] + "\n…[truncated]" if len(text) > SUMMARY_CAP else text
 
+    def _enabled_agent_skills(self, agent_id: str) -> list[str]:
+        try:
+            skills = self.agents.list_skills(agent_id).get("skills", [])
+        except EXPECTED_ERRORS:
+            return []
+        return sorted({
+            str(item.get("skill_id") or "").strip()
+            for item in skills
+            if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
+        })
+
     # ---- persistence + staleness ---------------------------------------
 
     async def _persist(self, record: dict[str, Any]) -> None:
@@ -317,8 +328,11 @@ class TeamRunService:
                     "Return concise execution guidance for the worker stages."
                 ),
             }
-            if team.get("coordinator_skills"):
-                coordinator_request["skills"] = list(team["coordinator_skills"])
+            coordinator_skills = team.get("coordinator_skills")
+            if coordinator_skills is None:
+                coordinator_skills = self._enabled_agent_skills(str(team["orchestrator_id"]))
+            if coordinator_skills:
+                coordinator_request["skills"] = list(coordinator_skills)
             coordinated = await self.agents.chat(
                 str(team["orchestrator_id"]),
                 coordinator_request,
@@ -465,10 +479,14 @@ class TeamRunService:
         )
         try:
             synthesis_request: dict[str, Any] = {"message": synthesis}
-            if team.get("synthesis_skills"):
-                synthesis_request["skills"] = list(team["synthesis_skills"])
+            synthesis_agent = str(team.get("synthesis_agent_id") or team["orchestrator_id"])
+            synthesis_skills = team.get("synthesis_skills")
+            if synthesis_skills is None:
+                synthesis_skills = self._enabled_agent_skills(synthesis_agent)
+            if synthesis_skills:
+                synthesis_request["skills"] = list(synthesis_skills)
             final = await self.agents.chat(
-                str(team.get("synthesis_agent_id") or team["orchestrator_id"]),
+                synthesis_agent,
                 synthesis_request,
             )
         except asyncio.CancelledError:

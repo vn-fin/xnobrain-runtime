@@ -601,6 +601,7 @@ class PlatformService:
                     "id": f"worker-{index + 1}",
                     "task": task,
                     "needs": [],
+                    "skills": self._enabled_team_skills(str(member["agent_id"])),
                     **configured[str(member["agent_id"])],
                 }
                 for index, member in enumerate(members)
@@ -884,7 +885,11 @@ class PlatformService:
                 "agent_id": requested_agent,
                 "role": requested_role or str(assignment["role"]),
                 "allowed_tools": allowed,
-                "skills": self._team_step_skills(raw.get("skills")),
+                "skills": (
+                    self._enabled_team_skills(requested_agent)
+                    if raw.get("skills") is None
+                    else self._team_step_skills(raw.get("skills"))
+                ),
                 "needs": [str(item).strip() for item in needs],
             })
         return workflow
@@ -960,9 +965,17 @@ class PlatformService:
             ),
             "orchestrator_id": orchestrator,
             "coordinator_prompt": str(body.get("coordinator_prompt") or "").strip(),
-            "coordinator_skills": self._team_step_skills(body.get("coordinator_skills")),
+            "coordinator_skills": (
+                self._enabled_team_skills(orchestrator)
+                if body.get("coordinator_skills") is None
+                else self._team_step_skills(body.get("coordinator_skills"))
+            ),
             "synthesis_agent_id": synthesis_agent,
-            "synthesis_skills": self._team_step_skills(body.get("synthesis_skills")),
+            "synthesis_skills": (
+                self._enabled_team_skills(synthesis_agent)
+                if body.get("synthesis_skills") is None
+                else self._team_step_skills(body.get("synthesis_skills"))
+            ),
             "members": members,
             "workflow": workflow,
             "shared_workspace": bool(body.get("shared_workspace", False)),
@@ -989,6 +1002,17 @@ class PlatformService:
         if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", skill) for skill in skills):
             raise ServiceError("workflow skill id is invalid", code="invalid_workflow")
         return skills
+
+    def _enabled_team_skills(self, agent_id: str) -> list[str]:
+        try:
+            skills = self.agents.list_skills(agent_id).get("skills", [])
+        except (AgentAPIError, StoreError):
+            return []
+        return sorted({
+            str(item.get("skill_id") or "").strip()
+            for item in skills
+            if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
+        })
 
     @staticmethod
     def _schedule_seconds(schedule: str) -> int:

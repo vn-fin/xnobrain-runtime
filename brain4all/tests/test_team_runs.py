@@ -155,6 +155,52 @@ class _TeamRunBase(unittest.IsolatedAsyncioTestCase):
 
 
 class TeamRunLifecycleTests(_TeamRunBase):
+    async def test_team_defaults_to_all_enabled_skills_and_reuses_a_profile_across_nodes(self):
+        async with self.client() as client:
+            ids = []
+            for display_name in ("Coordinator", "Researcher"):
+                response = await client.post("/agent-gateway/v1/agents", json={"display_name": display_name})
+                ids.append(response.json()["data"]["id"])
+
+            def listed_skills(agent_id):
+                enabled = "team-planning" if agent_id == ids[0] else "news-research"
+                return {"skills": [
+                    {"skill_id": enabled, "enabled": True},
+                    {"skill_id": "disabled-skill", "enabled": False},
+                ]}
+
+            with patch.object(self.composition.service.agents, "list_skills", side_effect=listed_skills):
+                created = await client.post("/api/v1/teams", json={
+                    "name": "Repeated profile DAG",
+                    "orchestrator_id": ids[0],
+                    "members": [
+                        {"agent_id": ids[1], "role": "researcher", "allowed_tools": []},
+                    ],
+                    "workflow": [
+                        {
+                            "id": "research", "task": "Research the subject",
+                            "agent_id": ids[1], "role": "researcher",
+                        },
+                        {
+                            "id": "verify", "task": "Verify the research",
+                            "agent_id": ids[1], "role": "verifier",
+                            "skills": [], "needs": ["research"],
+                        },
+                    ],
+                    "synthesis_agent_id": ids[1],
+                })
+
+        self.assertEqual(created.status_code, 201, created.text)
+        team = created.json()["data"]
+        self.assertEqual(team["coordinator_skills"], ["team-planning"])
+        self.assertEqual(team["synthesis_skills"], ["news-research"])
+        self.assertEqual(
+            [step["agent_id"] for step in team["workflow"]],
+            [ids[1], ids[1]],
+        )
+        self.assertEqual(team["workflow"][0]["skills"], ["news-research"])
+        self.assertEqual(team["workflow"][1]["skills"], [])
+
     async def test_async_run_lifecycle(self):
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
@@ -207,6 +253,11 @@ class TeamRunLifecycleTests(_TeamRunBase):
                 ],
                 "communication_level": 3,
                 "shared_workspace": True,
+                "coordinator_prompt": "Guide the workers with a source-first plan.",
+                "coordinator_skills": ["team-planning"],
+                "synthesis_agent_id": ids[2],
+                "synthesis_skills": ["final-writing"],
+                "synthesis_instruction": "Synthesize these workflow results with citations.",
                 "max_parallel": 2,
                 "max_depth": 1,
             })
@@ -217,7 +268,9 @@ class TeamRunLifecycleTests(_TeamRunBase):
             async def capable_chat(agent_id, body):
                 calls.append((agent_id, dict(body)))
                 message = body["message"]
-                if agent_id == ids[0]:
+                if "Return concise execution guidance" in message:
+                    return {"response": "Verify dates and cite primary sources."}
+                if "Synthesize these workflow results with citations" in message:
                     return {"response": "final synthesis"}
                 if "Review the downstream" in message:
                     return {"response": "Cite the primary source."}
@@ -233,15 +286,24 @@ class TeamRunLifecycleTests(_TeamRunBase):
         self.assertEqual(response.status_code, 200, response.text)
         result = response.json()["data"]
         self.assertEqual(result["workflow_results"][1]["summary"], "reviewed result")
+        self.assertEqual(result["orchestrator_summary"], "final synthesis")
+        coordinator_call = next(body for agent_id, body in calls if agent_id == ids[0])
+        self.assertEqual(coordinator_call["skills"], ["team-planning"])
         research_call = next(body for agent_id, body in calls if agent_id == ids[1] and "Task: Research current news" in body["message"])
         self.assertNotIn("toolsets", research_call)
         self.assertEqual(research_call["skills"], ["news-research"])
+        self.assertIn("Verify dates and cite primary sources.", research_call["message"])
         reviewer_call = next(body for agent_id, body in calls if agent_id == ids[2] and "Task: Review the findings" in body["message"])
         self.assertIn("[research] research result", reviewer_call["message"])
         self.assertIn("Shared team scratchpad:", reviewer_call["message"])
         scratchpads = list((self.data_dir / "teams" / "workspaces" / team_id).glob("*/SCRATCHPAD.md"))
         self.assertEqual(len(scratchpads), 1)
         self.assertIn("reviewed result", scratchpads[0].read_text(encoding="utf-8"))
+        synthesis_call = next(
+            body for agent_id, body in calls
+            if agent_id == ids[2] and "Synthesize these workflow results with citations" in body["message"]
+        )
+        self.assertEqual(synthesis_call["skills"], ["final-writing"])
 
     async def test_completed_run_can_be_deleted(self):
         async with self.client() as client:
