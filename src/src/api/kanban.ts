@@ -234,6 +234,14 @@ export const kanbanApi = {
     return taskFromApi(data);
   },
 
+  async cancelTask(boardId: string, taskId: string): Promise<KanbanTask> {
+    const data = await request<RawTask>(
+      `/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/cancel`,
+      { method: 'POST' },
+    );
+    return taskFromApi(data);
+  },
+
   async assignTask(boardId: string, taskId: string, assignee: string | null): Promise<KanbanTask> {
     const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/assign`, {
       method: 'POST',

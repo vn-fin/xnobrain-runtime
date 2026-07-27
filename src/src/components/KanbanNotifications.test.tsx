@@ -36,4 +36,16 @@ describe('KanbanNotifications', () => {
     expect(screen.getByText('task-42')).toBeVisible();
     expect(screen.getByText('Live')).toBeVisible();
   });
+
+  it('ignores routine worker heartbeat events', () => {
+    render(<KanbanNotifications
+      events={[{ ...event, id: 43, kind: 'heartbeat', nativeStatus: 'running', status: 'running' }]}
+      liveStatus="live"
+      onOpenTask={vi.fn()}
+    />);
+
+    expect(screen.queryByText('Prepare the daily report')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Task notifications' }));
+    expect(screen.getByText('No new task activity')).toBeVisible();
+  });
 });

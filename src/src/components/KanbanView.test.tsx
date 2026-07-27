@@ -107,6 +107,11 @@ describe('KanbanView', () => {
           parents: [],
           tags: providerTask ? [] : ['report'],
           progress: archived ? 100 : 50,
+          conversation: providerTask || archived ? null : {
+            id: '20260727_140600_abcdef',
+            agent_id: 'research-agent',
+            url: '/agents/research-agent/conversations/20260727_140600_abcdef',
+          },
           updated_at: new Date().toISOString(),
         } }), { status: 200 });
       }
@@ -214,6 +219,28 @@ describe('KanbanView', () => {
     expect(within(moveSelect).getByRole('option', { name: 'Backlog' })).toBeDisabled();
     expect(within(moveSelect).getByRole('option', { name: 'Todo' })).toBeDisabled();
     expect(within(moveSelect).getByRole('option', { name: 'Done' })).toBeEnabled();
+  });
+
+  it('shows conversation tracking in task details and cancels a running task', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    render(<TestBoard agents={[researchAgent]} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' }));
+    const drawer = screen.getByRole('dialog');
+    await waitFor(() => expect(within(drawer).getByText('Conversation tracking')).toBeVisible());
+    expect(within(drawer).getByRole('link', {
+      name: /agents\/research-agent\/conversations\/20260727_140600_abcdef/,
+    })).toBeVisible();
+
+    await user.click(within(drawer).getByRole('button', { name: 'View conversation' }));
+    expect(screen.getByRole('dialog', { name: 'Prepare the weekly report' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Close task conversation' }));
+
+    await user.click(within(drawer).getByRole('button', { name: 'Cancel task' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) =>
+      String(input).endsWith('/tasks/t-1042/cancel') && init?.method === 'POST'
+    )).toBe(true));
   });
 
   it('enables every enabled agent skill by default and sends unchecked selections', async () => {

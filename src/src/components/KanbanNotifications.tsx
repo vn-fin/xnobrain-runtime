@@ -39,7 +39,11 @@ export function KanbanNotifications({
   const [open, setOpen] = useState(false);
   const [readIds, setReadIds] = useState<Set<number>>(() => new Set());
   const [previewId, setPreviewId] = useState<number | null>(null);
-  const latestId = events[0]?.id;
+  const visibleEvents = useMemo(
+    () => events.filter((event) => event.kind.toLowerCase() !== 'heartbeat'),
+    [events],
+  );
+  const latestId = visibleEvents[0]?.id;
   const previousLatestId = useRef<number | undefined>();
 
   useEffect(() => {
@@ -51,10 +55,12 @@ export function KanbanNotifications({
   }, [latestId]);
 
   const unread = useMemo(
-    () => events.filter((event) => !readIds.has(event.id)).length,
-    [events, readIds],
+    () => visibleEvents.filter((event) => !readIds.has(event.id)).length,
+    [visibleEvents, readIds],
   );
-  const preview = previewId == null ? null : events.find((event) => event.id === previewId) ?? null;
+  const preview = previewId == null
+    ? null
+    : visibleEvents.find((event) => event.id === previewId) ?? null;
 
   const markRead = (event: KanbanEvent) => {
     setReadIds((current) => new Set(current).add(event.id));
@@ -117,7 +123,7 @@ export function KanbanNotifications({
             </div>
             {unread > 0 && (
               <button
-                onClick={() => setReadIds(new Set(events.map((event) => event.id)))}
+                onClick={() => setReadIds(new Set(visibleEvents.map((event) => event.id)))}
                 title="Mark all as read"
               >
                 <CheckCheck size={15} /> Mark read
@@ -125,13 +131,13 @@ export function KanbanNotifications({
             )}
           </header>
           <div className="kanban-notification-list">
-            {events.length === 0 ? (
+            {visibleEvents.length === 0 ? (
               <div className="kanban-notification-empty">
                 <Bell size={20} />
                 <strong>No new task activity</strong>
                 <span>Agent progress and task changes will appear here.</span>
               </div>
-            ) : events.map((event) => (
+            ) : visibleEvents.map((event) => (
               <button
                 className={`kanban-notification-item${readIds.has(event.id) ? '' : ' unread'}`}
                 key={event.id}

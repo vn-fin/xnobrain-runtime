@@ -92,6 +92,30 @@ class KanbanService:
         self.agents = agents
         self.repository = repository
 
+    def _enable_agent_automation(self, agent_id: Any) -> None:
+        """Make an assigned profile non-interactive before a worker can start."""
+        name = str(agent_id or "").strip()
+        if not name or self.agents is None or self.repository is None:
+            return
+        described = self.agents.describe_agent(name, include_memory=False)
+        config = described.get("config") if isinstance(described, Mapping) else {}
+        if (
+            isinstance(config, Mapping)
+            and str(config.get("approval_mode") or "") == "off"
+            and config.get("skills_write_approval") is False
+            and config.get("memory_write_approval") is False
+        ):
+            return
+        profile = self.repository.profile_path(name)
+        config_path = profile / "config.yaml"
+        if config_path.is_file():
+            self.repository.snapshot(name, "config", "config", config_path.read_bytes())
+        self.agents.update_config(name, {
+            "approval_mode": "off",
+            "skills_write_approval": False,
+            "memory_write_approval": False,
+        })
+
     @staticmethod
     def _team_metadata(comments: list[Any]) -> tuple[dict[str, Any] | None, bool]:
         metadata = None
@@ -385,7 +409,11 @@ class KanbanService:
             activity = kb_adapter.safe_worker_activity(task.id, board=board)
             session_id = activity.get("session_id")
             assignee = getattr(task, "assignee", None)
-            result["events"] = [self._event_dto(item, task) for item in events]
+            result["events"] = [
+                self._event_dto(item, task)
+                for item in events
+                if str(getattr(item, "kind", "")) != "heartbeat"
+            ]
             result["worker_activity"] = activity
             result["conversation"] = (
                 {
@@ -590,6 +618,7 @@ class KanbanService:
                 initial_status="running",
                 board=normalized,
             )
+            self._enable_agent_automation(body.get("assignee"))
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("The created task could not be loaded", status=503, code="kanban_contract_incompatible")
@@ -688,6 +717,7 @@ class KanbanService:
             agent_id = str(step.get("agent_id") or "")
             if not agent_id:
                 raise ServiceError("team workflow step has no agent", status=409, code="invalid_team")
+            self._enable_agent_automation(agent_id)
             role = str(step.get("role") or "worker")
             instruction = str(step.get("task") or description).strip()
             workspace_kind, workspace_path = self._workspace_for_assignee(agent_id)
@@ -720,6 +750,7 @@ class KanbanService:
         orchestrator = str(team.get("orchestrator_id") or "")
         if not orchestrator:
             raise ServiceError("team has no orchestrator", status=409, code="invalid_team")
+        self._enable_agent_automation(orchestrator)
         workspace_kind, workspace_path = self._workspace_for_assignee(orchestrator)
         synthesis_id = kb_adapter.create_task(
             conn,
@@ -777,6 +808,47 @@ class KanbanService:
                     kb.reclaim_task(conn, member_id, reason="Team run cancelled from Brain4All")
                 kb.archive_task(conn, member_id)
             kb.add_comment(conn, task_id, "brain4all", TEAM_CANCEL_PREFIX)
+            return self._task_dto(conn, task, board=normalized, include_detail=True)
+
+    def cancel_task(self, board: str, task_id: str) -> dict[str, Any]:
+        """Stop one active worker and close the task without allowing respawn."""
+        normalized = self._board(board)
+        kb = self._ready()
+        with kb_adapter.connection(normalized) as conn:
+            task = kb.get_task(conn, task_id)
+            if task is None:
+                raise ServiceError("task not found", status=404, code="task_not_found")
+            if str(task.status) != "running":
+                raise ServiceError(
+                    "only a running task can be cancelled",
+                    status=409,
+                    code="task_not_running",
+                )
+            comments = kb_adapter.task_comments(conn, task_id)
+            metadata, _ = self._team_metadata(comments)
+            if metadata is not None:
+                raise ServiceError(
+                    "cancel this task through the team run action",
+                    status=409,
+                    code="invalid_request",
+                )
+            if not kb.reclaim_task(
+                conn,
+                task_id,
+                reason="Task cancelled from Brain4All",
+            ):
+                raise ServiceError(
+                    "task could not be cancelled",
+                    status=409,
+                    code="cancel_failed",
+                )
+            if not kb.complete_task(conn, task_id, summary="Task cancelled"):
+                raise ServiceError(
+                    "task was stopped but could not be closed",
+                    status=409,
+                    code="cancel_failed",
+                )
+            task = kb.get_task(conn, task_id)
             return self._task_dto(conn, task, board=normalized, include_detail=True)
 
     def patch_task(self, board: str, task_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -860,6 +932,7 @@ class KanbanService:
                 )
             except ValueError as exc:
                 raise ServiceError(str(exc), status=409, code="assignment_invalid") from exc
+            self._enable_agent_automation(body.get("assignee"))
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
@@ -1111,7 +1184,11 @@ class KanbanService:
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
-            return [self._event_dto(item, task) for item in kb.list_events(conn, task_id)]
+            return [
+                self._event_dto(item, task)
+                for item in kb.list_events(conn, task_id)
+                if str(getattr(item, "kind", "")) != "heartbeat"
+            ]
 
     def board_events(self, board: str, *, after_id: int = 0, limit: int = 200) -> list[dict[str, Any]]:
         """Read board events through public task/event operations."""

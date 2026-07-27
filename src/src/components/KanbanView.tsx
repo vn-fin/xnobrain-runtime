@@ -7,9 +7,12 @@ import {
   ChevronRight,
   Clock,
   Columns3,
+  Coins,
+  Brain,
   ExternalLink,
   Link2,
   List,
+  Loader2,
   MessageSquare,
   Plus,
   RefreshCw,
@@ -21,11 +24,20 @@ import {
   Octagon,
   X,
 } from 'lucide-react';
+import { conversationsApi } from '../api/conversations';
 import { ARCHIVED_COLUMN, KANBAN_COLUMNS } from '../api/kanban';
 import type { Team } from '../api/teams';
 import type { useKanban } from '../hooks/useKanban';
-import type { Agent, KanbanColumnId, KanbanPriority, KanbanTask } from '../types';
+import type {
+  Agent,
+  ChatMessage,
+  ConversationUsage,
+  KanbanColumnId,
+  KanbanPriority,
+  KanbanTask,
+} from '../types';
 import { formatKanbanEvent } from './kanbanEventFormat';
+import { Markdown } from './Markdown';
 
 type KanbanState = ReturnType<typeof useKanban>;
 
@@ -433,6 +445,115 @@ function TaskCard({
   );
 }
 
+function KanbanConversationModal({
+  task,
+  agents,
+  onClose,
+}: {
+  task: KanbanTask;
+  agents: Agent[];
+  onClose: () => void;
+}) {
+  const link = task.conversation;
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [usage, setUsage] = useState<ConversationUsage>();
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [error, setError] = useState('');
+  const assignee = resolveAssignee(link?.agentId ?? task.assignees[0] ?? '', agents);
+
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!link) return undefined;
+    const controller = new AbortController();
+    setStatus('loading');
+    void Promise.allSettled([
+      conversationsApi.messages(link.agentId, link.id, controller.signal),
+      conversationsApi.usage(link.agentId, link.id, controller.signal),
+    ]).then(([messageResult, usageResult]) => {
+      if (controller.signal.aborted) return;
+      if (messageResult.status === 'rejected') {
+        setError(messageResult.reason instanceof Error
+          ? messageResult.reason.message
+          : 'Could not load this conversation.');
+        setStatus('error');
+        return;
+      }
+      setMessages(messageResult.value);
+      if (usageResult.status === 'fulfilled') setUsage(usageResult.value);
+      setStatus('ready');
+    });
+    return () => controller.abort();
+  }, [link]);
+
+  const visibleMessages = messages.filter((message) =>
+    message.role === 'user'
+    || (message.role === 'assistant' && message.content.trim().length > 0),
+  );
+
+  return (
+    <div className="modal-overlay team-conversation-overlay" onClick={(event) => {
+      event.stopPropagation();
+      onClose();
+    }}>
+      <div
+        className="app-modal team-conversation-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="kanban-conversation-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="team-conversation-head">
+          <span className={`run-node-state ${task.nativeStatus}`}>
+            {task.nativeStatus === 'running' ? <Loader2 size={16} /> : <Check size={15} />}
+          </span>
+          <span>
+            <strong id="kanban-conversation-title">{task.title}</strong>
+            <small>{assignee.name} · {nativeStatusLabel(task.nativeStatus)}</small>
+          </span>
+          <button className="icon-button" onClick={onClose} aria-label="Close task conversation">
+            <X size={17} />
+          </button>
+        </header>
+        <section className="team-conversation-metrics" aria-label="Conversation metrics">
+          <span><Coins size={14} /><small>Tokens</small><strong>{usage ? usage.totalTokens.toLocaleString() : '—'}</strong></span>
+          <span><Brain size={14} /><small>Steps</small><strong>{usage?.steps != null ? usage.steps.toLocaleString() : '—'}</strong></span>
+          <span><Clock size={14} /><small>Execution time</small><strong>{usage?.executionSeconds != null ? `${usage.executionSeconds.toFixed(1)}s` : '—'}</strong></span>
+          <span><MessageSquare size={14} /><small>Messages</small><strong>{usage ? usage.messages.toLocaleString() : visibleMessages.length.toLocaleString()}</strong></span>
+        </section>
+        <div className="message-canvas team-conversation-canvas">
+          {status === 'loading' ? (
+            <div className="team-conversation-empty">
+              <Loader2 className="run-step-spin" size={22} />
+              <strong>Loading conversation…</strong>
+            </div>
+          ) : status === 'error' ? (
+            <div className="team-conversation-empty error">
+              <X size={22} /><strong>Conversation unavailable</strong><p>{error}</p>
+            </div>
+          ) : visibleMessages.length === 0 ? (
+            <div className="team-conversation-empty"><MessageSquare size={22} /><strong>No stored messages</strong></div>
+          ) : visibleMessages.map((message) => (
+            message.role === 'user'
+              ? <div className="user-bubble" key={message.id}><Markdown content={message.content} /></div>
+              : <article className="assistant-message" key={message.id}><div className="message-content"><Markdown content={message.content} /></div></article>
+          ))}
+        </div>
+        <footer className="team-conversation-foot">
+          {link && <a className="kb-conversation-link" href={link.url}>Open tracking URL <ExternalLink size={13} /></a>}
+          <button className="conn-btn" onClick={onClose}>Close</button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
 function TaskDrawer({
   task,
   agents,
@@ -460,6 +581,8 @@ function TaskDrawer({
   });
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [conversationOpen, setConversationOpen] = useState(false);
   const movableStatuses = task.allowedStatuses.filter((status) => status !== 'archived');
   const scheduleCompleted = task.schedule?.recurrence === 'once'
     && task.schedule.occurrenceCount > 0
@@ -495,6 +618,15 @@ function TaskDrawer({
     if (saved) setComment('');
   };
 
+  const cancel = async () => {
+    setCancelling(true);
+    try {
+      await state.cancelTask(task.id);
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   return (
     <div className="kb-overlay" onClick={onClose}>
       <div className="kb-drawer" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
@@ -508,6 +640,16 @@ function TaskDrawer({
             <h2>{task.title}</h2>
           </div>
           <div className="kb-drawer-head-actions">
+            {!task.team && task.nativeStatus === 'running' && (
+              <button
+                className="conn-btn danger-solid"
+                disabled={cancelling}
+                onClick={() => void cancel()}
+              >
+                {cancelling ? <Loader2 size={14} /> : <Octagon size={14} />}
+                {cancelling ? 'Cancelling…' : 'Cancel task'}
+              </button>
+            )}
             <button
               className="icon-button"
               aria-label="Refresh task details"
@@ -712,6 +854,24 @@ function TaskDrawer({
             </section>
           )}
 
+          {task.conversation && (
+            <section className="kb-detail-section kb-conversation-tracking">
+              <div className="kb-section-heading">
+                <div>
+                  <span className="kb-label">Conversation tracking</span>
+                  <small>Follow the worker’s stored Hermes conversation.</small>
+                </div>
+                <button className="kb-text-action" onClick={() => setConversationOpen(true)}>
+                  View conversation
+                </button>
+              </div>
+              <a className="kb-conversation-link" href={task.conversation.url}>
+                {task.conversation.url} <ExternalLink size={13} />
+              </a>
+              <code className="kb-conversation-id">{task.conversation.id}</code>
+            </section>
+          )}
+
           {task.result && (
             <section className="kb-detail-section kb-result-section">
               <div className="kb-section-heading">
@@ -719,14 +879,8 @@ function TaskDrawer({
                   <span className="kb-label">Result</span>
                   <small>Final handoff from the worker.</small>
                 </div>
-                {task.conversation && (
-                  <a className="kb-conversation-link" href={task.conversation.url}>
-                    Open conversation <ExternalLink size={13} />
-                  </a>
-                )}
               </div>
               <div className="kb-result">{task.result}</div>
-              {task.conversation && <code className="kb-conversation-id">{task.conversation.id}</code>}
             </section>
           )}
 
@@ -887,6 +1041,9 @@ function TaskDrawer({
           )}
         </div>}
       </div>
+      {conversationOpen && task.conversation && (
+        <KanbanConversationModal task={task} agents={agents} onClose={() => setConversationOpen(false)} />
+      )}
     </div>
   );
 }

@@ -8544,6 +8544,16 @@ body.col-resizing {
   background: color-mix(in srgb, var(--green) 5%, var(--elevated));
 }
 
+.kb-conversation-tracking {
+  display: grid;
+  gap: 10px;
+}
+
+.kb-conversation-tracking > .kb-conversation-link {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .kb-result {
   color: var(--text);
   font-size: 13px;

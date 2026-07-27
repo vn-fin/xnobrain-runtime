@@ -509,6 +509,57 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("private prompt", detail.text)
             self.assertNotIn("secret tool output", detail.text)
 
+    async def test_assigned_automation_approvals_heartbeat_filter_and_cancel(self):
+        from hermes_cli import kanban_db
+
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            agent = await client.post("/agent-gateway/v1/agents", json={"name": "Automation worker"})
+            self.assertEqual(agent.status_code, 201, agent.text)
+            agent_id = agent.json()["data"]["id"]
+            created = await client.post(
+                "/agent-gateway/v1/kanban/boards/default/tasks",
+                json={
+                    "title": "Autonomous task",
+                    "description": "Read and update files without waiting for approval.",
+                    "status": "todo",
+                    "assignee": agent_id,
+                },
+            )
+            self.assertEqual(created.status_code, 201, created.text)
+            task_id = created.json()["data"]["id"]
+
+            profile = self.profiles / agent_id
+            config_response = await client.get(
+                f"/agent-gateway/v1/agents/{agent_id}/detail",
+            )
+            self.assertEqual(config_response.status_code, 200, config_response.text)
+            config = config_response.json()["data"]["config"]
+            self.assertEqual(config["approval_mode"], "off")
+            self.assertFalse(config["skills_write_approval"])
+            self.assertFalse(config["memory_write_approval"])
+            self.assertTrue(any((profile / "snapshots" / "config").rglob("*")))
+
+            with kanban_db.connect_closing(board="default") as conn:
+                claimed = kanban_db.claim_task(conn, task_id, claimer="test")
+                self.assertIsNotNone(claimed)
+                self.assertTrue(kanban_db.heartbeat_worker(conn, task_id, note="still working"))
+
+            detail = await client.get(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}",
+            )
+            self.assertEqual(detail.status_code, 200, detail.text)
+            self.assertFalse(any(
+                event["kind"] == "heartbeat"
+                for event in detail.json()["data"]["events"]
+            ))
+
+            cancelled = await client.post(
+                f"/agent-gateway/v1/kanban/boards/default/tasks/{task_id}/cancel",
+            )
+            self.assertEqual(cancelled.status_code, 200, cancelled.text)
+            self.assertEqual(cancelled.json()["data"]["status"], "done")
+            self.assertEqual(cancelled.json()["data"]["summary"], "Task cancelled")
+
     async def test_sqlite_schedule_locks_moves_and_releases_without_claiming(self):
         scheduled_at = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(microsecond=0)
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:

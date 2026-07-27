@@ -42,4 +42,32 @@ describe('useKanban global event feed', () => {
     expect(mocks.watchBoard).toHaveBeenCalledTimes(1);
     unmount();
   });
+
+  it('drops heartbeat SSE events before they reach notification state', async () => {
+    mocks.watchBoard.mockImplementationOnce(async (
+      _boardId: string,
+      onEvent: (event: { id: string; event: string; data: unknown }) => void,
+      signal: AbortSignal,
+    ) => {
+      onEvent({ id: '0', event: 'connected', data: { cursor: 0 } });
+      onEvent({
+        id: '1',
+        event: 'task',
+        data: {
+          id: 1,
+          task_id: 'task-1',
+          title: 'Routine check-in',
+          kind: 'heartbeat',
+          created_at: '2026-07-27T14:06:00Z',
+          status: 'running',
+          kanban_status: 'running',
+        },
+      });
+      await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
+    });
+    const { result, unmount } = renderHook(() => useKanban(false));
+    await waitFor(() => expect(mocks.watchBoard).toHaveBeenCalled());
+    expect(result.current.events).toEqual([]);
+    unmount();
+  });
 });

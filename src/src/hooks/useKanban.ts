@@ -246,6 +246,19 @@ export function useKanban(active = true) {
     }
   }, [board, notify, replaceTask]);
 
+  const cancelTask = useCallback(async (taskId: string) => {
+    if (!board) return null;
+    try {
+      const updated = await kanbanApi.cancelTask(board.id, taskId);
+      replaceTask(board.id, taskId, updated);
+      notify('success', `Cancelled “${updated.title}”.`);
+      return updated;
+    } catch (cause) {
+      notify('error', cause instanceof Error ? cause.message : 'The task could not be cancelled.');
+      return null;
+    }
+  }, [board, notify, replaceTask]);
+
   const addStatus = useCallback(async (_label: string, _column: KanbanStatusDef['column']) => {
     throw new Error('Kanban uses the five default statuses.');
   }, []);
@@ -293,6 +306,7 @@ export function useKanban(active = true) {
             }
             if (event.event !== 'task' || !event.data || typeof event.data !== 'object') return;
             const data = event.data as Record<string, unknown>;
+            if (String(data.kind ?? '').toLowerCase() === 'heartbeat') return;
             const item: KanbanEvent = {
               id: Number(data.id ?? eventId),
               taskId: String(data.task_id ?? ''),
@@ -396,6 +410,7 @@ export function useKanban(active = true) {
     refreshTask,
     detailLoading,
     createTask,
+    cancelTask,
     cancelTeamTask,
     addStatus,
     refresh: () => load(),
