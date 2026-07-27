@@ -173,6 +173,7 @@ class TeamWorkflowStep(BaseModel):
     role: str | None = None
     needs: list[str] = Field(default_factory=list)
     allowed_tools: list[str] | None = None
+    skills: list[str] | None = None
 
 
 class TeamRun(BaseModel):
@@ -191,6 +192,7 @@ class TeamRunStepRecord(BaseModel):
     task: str = Field(default="", max_length=20_000)
     needs: list[str] = Field(default_factory=list)
     allowed_tools: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
     status: TeamRunStatus = "pending"
     summary: str = ""
     summary_chars: int = 0
@@ -302,7 +304,7 @@ class AgentBudgetPatch(BaseModel):
 class TeamMember(BaseModel):
     agent_id: str
     role: str
-    allowed_tools: list[str] = Field(default_factory=lambda: ["web"])
+    allowed_tools: list[str] = Field(default_factory=list)
     enabled: bool = True
 
 
@@ -312,6 +314,9 @@ class TeamCreate(BaseModel):
     orchestrator_id: str
     members: list[TeamMember] = Field(default_factory=list)
     workflow: list[TeamWorkflowStep] = Field(default_factory=list, max_length=64)
+    shared_workspace: bool = False
+    communication_level: Literal[0, 1, 2, 3] = 1
+    synthesis_instruction: str | None = Field(default=None, max_length=20_000)
     max_parallel: int = Field(default=1, gt=0)
     max_depth: int = Field(default=1, gt=0)
     enabled: bool = True

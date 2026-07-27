@@ -30,8 +30,9 @@ from .portability import PortabilityService
 SUPPORTED_PROVIDERS = ("claude", "codex", "antigravity", "openai", "anthropic", "gemini")
 API_KEY_PROVIDERS = frozenset({"openai", "anthropic", "gemini"})
 SAFE_TOOLSETS = frozenset({
-    "browser", "code_execution", "file", "image_gen", "terminal", "todo",
-    "tts", "video", "video_gen", "vision", "web", "x_search",
+    "browser", "code_execution", "computer_use", "context_engine", "file",
+    "image_gen", "session_search", "skills", "terminal", "todo", "tts",
+    "video", "video_gen", "vision", "web", "x_search",
 })
 _EVERY = re.compile(r"^@every\s+(\d+)([smhd])$")
 
@@ -881,6 +882,7 @@ class PlatformService:
                 "agent_id": requested_agent,
                 "role": requested_role or str(assignment["role"]),
                 "allowed_tools": allowed,
+                "skills": self._team_step_skills(raw.get("skills")),
                 "needs": [str(item).strip() for item in needs],
             })
         return workflow
@@ -922,7 +924,8 @@ class PlatformService:
                 raise ServiceError("team members require unique agent_id and role")
             self.agents.describe_agent(agent_id, include_memory=False)
             seen.add(agent_id)
-            tools = sorted(set(raw.get("allowed_tools") or ["web"]))
+            raw_tools = raw.get("allowed_tools")
+            tools = sorted(set(raw_tools if raw_tools is not None else []))
             if any(tool not in SAFE_TOOLSETS for tool in tools):
                 raise ServiceError("team member contains a privileged toolset")
             members.append({"agent_id": agent_id, "role": role, "allowed_tools": tools, "enabled": bool(raw.get("enabled", True))})
@@ -954,7 +957,12 @@ class PlatformService:
             "orchestrator_id": orchestrator,
             "members": members,
             "workflow": workflow,
-            "shared_workspace": False,
+            "shared_workspace": bool(body.get("shared_workspace", False)),
+            "communication_level": max(0, min(3, int(body.get("communication_level", 1)))),
+            "synthesis_instruction": (
+                str(body.get("synthesis_instruction") or "").strip()
+                or "Synthesize these workflow results into one final answer."
+            ),
             "max_parallel": max(1, int(body.get("max_parallel") or 1)),
             "max_depth": max(1, int(body.get("max_depth") or 1)),
             "enabled": bool(body.get("enabled", True)),
@@ -962,6 +970,17 @@ class PlatformService:
             "updated_at": iso(),
         }
         return self.repository.put_team(team)
+
+    @staticmethod
+    def _team_step_skills(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ServiceError("skills must be a list", code="invalid_workflow")
+        skills = sorted({str(item).strip() for item in value if str(item).strip()})
+        if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", skill) for skill in skills):
+            raise ServiceError("workflow skill id is invalid", code="invalid_workflow")
+        return skills
 
     @staticmethod
     def _schedule_seconds(schedule: str) -> int:

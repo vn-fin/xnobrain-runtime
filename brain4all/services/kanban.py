@@ -679,18 +679,28 @@ class KanbanService:
         step_ids = [str(step.get("id") or "") for step in workflow]
         if any(not step_id for step_id in step_ids) or len(set(step_ids)) != len(step_ids):
             raise ServiceError("team workflow is invalid", status=409, code="invalid_team")
-        seen_steps: set[str] = set()
-        for step, step_id in zip(workflow, step_ids):
+        known_steps = set(step_ids)
+        for step in workflow:
             needs = [str(item) for item in step.get("needs") or []]
-            if any(parent not in seen_steps for parent in needs):
-                raise ServiceError(
-                    "team workflow dependencies are not in topological order",
-                    status=409,
-                    code="invalid_team",
-                )
+            if any(parent not in known_steps for parent in needs):
+                raise ServiceError("team workflow dependency does not exist", status=409, code="invalid_team")
             if not str(step.get("agent_id") or ""):
                 raise ServiceError("team workflow step has no agent", status=409, code="invalid_team")
-            seen_steps.add(step_id)
+        ordered: list[dict[str, Any]] = []
+        remaining = list(workflow)
+        completed: set[str] = set()
+        while remaining:
+            ready = [
+                step for step in remaining
+                if all(str(parent) in completed for parent in step.get("needs") or [])
+            ]
+            if not ready:
+                raise ServiceError("team workflow contains a dependency cycle", status=409, code="invalid_team")
+            ordered.extend(ready)
+            completed.update(str(step["id"]) for step in ready)
+            remaining = [step for step in remaining if step not in ready]
+        workflow = ordered
+        step_ids = [str(step["id"]) for step in workflow]
         root_id = kb_adapter.create_task(
             conn,
             title=title,
@@ -734,6 +744,7 @@ class KanbanService:
                 parents=[task_ids[item] for item in needs] or [root_id],
                 workspace_kind=workspace_kind,
                 workspace_path=workspace_path,
+                skills=list(step.get("skills") or []) or None,
                 initial_status="running",
                 board=board,
             )
@@ -756,7 +767,7 @@ class KanbanService:
             conn,
             title=f"{title} · Synthesis",
             body=(
-                f"Synthesize the completed team stages into one final answer.\n\n"
+                f"{team.get('synthesis_instruction') or 'Synthesize the completed team stages into one final answer.'}\n\n"
                 f"Original objective:\n{description}"
             ),
             assignee=orchestrator,

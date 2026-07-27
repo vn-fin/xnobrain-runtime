@@ -37,7 +37,17 @@ const agents: Agent[] = [
     skillsWriteApproval: true,
     memoryWriteApproval: true,
     workspace: '',
-    skills: [],
+    skills: [
+      {
+        skill_id: 'news-research',
+        name: 'News research',
+        category: 'research',
+        description: 'Research current news.',
+        enabled: true,
+        installed: true,
+        path: '',
+      },
+    ],
     conversations: [],
   },
   {
@@ -69,6 +79,7 @@ function teamState(overrides: Partial<ReturnType<typeof useTeams>> = {}) {
     runsStatus: 'idle',
     refresh: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(),
     remove: vi.fn(),
     loadRuns: vi.fn(),
     openRun: vi.fn(),
@@ -111,6 +122,81 @@ describe('TeamsView', () => {
       expect.objectContaining({ id: 'researcher', needs: [] }),
       expect.objectContaining({ id: 'reviewer', needs: ['researcher'] }),
     ]));
+  });
+
+  it('configures dependencies, tools, skills, and L-level team communication', async () => {
+    const create = vi.fn(async (input) => ({ id: 'team-capable', ...input }));
+    const state = teamState({ create });
+    render(<TeamsView agents={agents} state={state} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Create team/i }));
+    fireEvent.change(screen.getByPlaceholderText('Product launch team'), { target: { value: 'Capable team' } });
+    fireEvent.click(screen.getByRole('button', { name: /Researcher.*Finds source material/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Terminal & processes' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'File operations' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Skills' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'News research' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Reviewer.*Checks the findings/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'researcher' }));
+    fireEvent.click(screen.getByText('Execution & communication'));
+    fireEvent.change(screen.getByLabelText('Communication level'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Parallel agents'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save team/i }));
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    const input = create.mock.calls[0][0];
+    expect(input.communication_level).toBe(2);
+    expect(input.shared_workspace).toBe(true);
+    expect(input.max_parallel).toBe(2);
+    expect(input.workflow).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'researcher',
+        allowed_tools: ['terminal', 'file', 'skills'],
+        skills: ['news-research'],
+      }),
+      expect.objectContaining({ id: 'reviewer', needs: ['researcher'] }),
+    ]));
+  });
+
+  it('edits capability policies on an existing saved team', async () => {
+    const team: Team = {
+      id: 'team-edit',
+      name: 'Editable team',
+      orchestrator_id: 'lead',
+      members: [{ agent_id: 'researcher', role: 'researcher', allowed_tools: ['web'], enabled: true }],
+      workflow: [{
+        id: 'researcher',
+        task: 'Research the objective.',
+        agent_id: 'researcher',
+        role: 'researcher',
+        needs: [],
+        allowed_tools: ['web'],
+      }],
+      shared_workspace: false,
+      communication_level: 1,
+      synthesis_instruction: 'Synthesize.',
+      max_parallel: 1,
+      max_depth: 1,
+      enabled: true,
+    };
+    const update = vi.fn(async (input) => input);
+    const state = teamState({ teams: [team], update });
+    render(<TeamsView agents={agents} state={state} routeTeamId={team.id} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editable team options' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit workflow' }));
+    expect(screen.getByDisplayValue('Editable team')).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: 'Web search' })).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Terminal & processes' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'News research' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0][0].workflow[0]).toEqual(expect.objectContaining({
+      allowed_tools: ['web', 'terminal'],
+      skills: ['news-research'],
+    }));
   });
 
   it('restores deep-linked Team, execution, and creation views', async () => {

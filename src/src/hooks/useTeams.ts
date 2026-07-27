@@ -58,6 +58,18 @@ export function useTeams(active = true) {
     }
   };
 
+  const update = async (input: Team) => {
+    setPending(true);
+    try {
+      const updated = await teamsApi.update(input);
+      setTeams((rows) => rows.map((team) => team.id === input.id ? updated : team));
+      setError('');
+      return updated;
+    } finally {
+      setPending(false);
+    }
+  };
+
   const remove = async (teamId: string) => {
     setPending(true);
     try {
@@ -170,6 +182,6 @@ export function useTeams(active = true) {
 
   return {
     teams, status, pending, error, runs, activeRun, runsStatus,
-    refresh, create, rename, remove, loadRuns, openRun, deleteRun, startRun, cancelRun, setActiveRun,
+    refresh, create, update, rename, remove, loadRuns, openRun, deleteRun, startRun, cancelRun, setActiveRun,
   };
 }

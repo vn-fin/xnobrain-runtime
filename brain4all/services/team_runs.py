@@ -150,7 +150,11 @@ class TeamRunService:
     def _new_record(self, team: Mapping[str, Any], body: Mapping[str, Any], workflow: list[Mapping[str, Any]], *, mode: str) -> dict[str, Any]:
         now = iso()
         task = str(body.get("task") or "").strip()
-        synthesis = str(body.get("synthesis") or "Synthesize these workflow results into one final answer.").strip()
+        synthesis = str(
+            body.get("synthesis")
+            or team.get("synthesis_instruction")
+            or "Synthesize these workflow results into one final answer."
+        ).strip()
         steps = [
             {
                 "id": str(step["id"]),
@@ -159,6 +163,7 @@ class TeamRunService:
                 "task": str(step["task"]),
                 "needs": [str(need) for need in step["needs"]],
                 "allowed_tools": [str(tool) for tool in step["allowed_tools"]],
+                "skills": [str(skill) for skill in step.get("skills") or []],
                 "status": "pending",
                 "summary": "",
                 "summary_chars": 0,
@@ -269,9 +274,53 @@ class TeamRunService:
             await self._finalize(record, "failed", error="internal_error")
 
     async def _execute_workflow(self, record: dict[str, Any], team: Mapping[str, Any], workflow: list[Mapping[str, Any]]) -> str:
-        semaphore = asyncio.Semaphore(max(1, int(team.get("max_parallel") or 1)))
+        communication_level = max(0, min(3, int(team.get("communication_level", 1))))
+        # L3 is deliberately turn-based. Serializing stages avoids two dialogue
+        # participants holding each other's per-profile execution lock.
+        max_parallel = 1 if communication_level >= 3 else max(1, int(team.get("max_parallel") or 1))
+        semaphore = asyncio.Semaphore(max_parallel)
         agent_locks: dict[str, asyncio.Lock] = {}
         steps_by_id = {str(step["id"]): step for step in record["steps"]}
+        workflow_by_id = {str(step["id"]): step for step in workflow}
+        scratchpad_lock = asyncio.Lock()
+        scratchpad = None
+        if communication_level >= 2 or team.get("shared_workspace"):
+            scratchpad = (
+                self.repository.teams_root
+                / "workspaces"
+                / str(team["id"])
+                / str(record["id"])
+                / "SCRATCHPAD.md"
+            )
+            self.repository.atomic_write(
+                scratchpad,
+                (
+                    f"# Shared scratchpad\n\n"
+                    f"Team: {team['name']}\n"
+                    f"Run: {record['id']}\n\n"
+                ).encode("utf-8"),
+                mode=0o640,
+            )
+
+        def request_for(step: Mapping[str, Any], message: str) -> dict[str, Any]:
+            request: dict[str, Any] = {"message": message}
+            if step["allowed_tools"]:
+                request["toolsets"] = list(step["allowed_tools"])
+            if step.get("skills"):
+                request["skills"] = list(step["skills"])
+            return request
+
+        async def append_scratchpad(step: Mapping[str, Any], summary: str) -> None:
+            if scratchpad is None:
+                return
+            async with scratchpad_lock:
+                current = scratchpad.read_text(encoding="utf-8")
+                addition = f"\n## {step['id']} · {step['role']}\n\n{self._cap(summary)}\n"
+                self.repository.atomic_write(
+                    scratchpad,
+                    (current + addition).encode("utf-8"),
+                    mode=0o640,
+                )
 
         async def run_step(step: Mapping[str, Any], completed: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
             step_record = steps_by_id[str(step["id"])]
@@ -290,14 +339,65 @@ class TeamRunService:
                     "Do not ask for clarification or write memory. Return only a final summary.\n\n"
                     f"Task: {step['task']}"
                 )
-                if upstream:
+                if upstream and communication_level >= 1:
                     prompt += "\n\nUpstream results:\n" + "\n\n".join(upstream)
+                if scratchpad is not None:
+                    prompt += (
+                        f"\n\nShared team scratchpad: {scratchpad}\n"
+                        "Read it before working. You may add useful intermediate findings "
+                        "when file access is enabled; do not overwrite other agents' entries."
+                    )
                 try:
                     result = await self.agents.chat(
                         str(step["agent_id"]),
-                        {"message": prompt, "toolsets": list(step["allowed_tools"])},
+                        request_for(step, prompt),
                     )
                     summary = str(result.get("response") or "")
+                    if communication_level >= 3 and step["needs"]:
+                        feedback = []
+                        for dependency in step["needs"]:
+                            parent = workflow_by_id[str(dependency)]
+                            feedback_prompt = (
+                                f"You are the upstream {parent['role']} agent in a team dialogue. "
+                                f"Review the downstream {step['role']} draft against your findings "
+                                "and return concise, actionable corrections only.\n\n"
+                                f"Your result:\n{completed[dependency].get('summary', '')}\n\n"
+                                f"Downstream draft:\n{summary}"
+                            )
+                            parent_lock = agent_locks.setdefault(
+                                str(parent["agent_id"]), asyncio.Lock()
+                            )
+                            try:
+                                if str(parent["agent_id"]) == str(step["agent_id"]):
+                                    response = await self.agents.chat(
+                                        str(parent["agent_id"]),
+                                        {"message": feedback_prompt, "toolsets": ["todo"]},
+                                    )
+                                else:
+                                    async with parent_lock:
+                                        response = await self.agents.chat(
+                                            str(parent["agent_id"]),
+                                            {"message": feedback_prompt, "toolsets": ["todo"]},
+                                        )
+                            except EXPECTED_ERRORS:
+                                continue
+                            text = str(response.get("response") or "").strip()
+                            if text:
+                                feedback.append(f"[{dependency}] {text}")
+                        if feedback:
+                            revision_prompt = (
+                                f"Role: {step['role']}\n"
+                                "Revise your draft using the upstream agents' feedback. "
+                                "Return only the improved final summary.\n\n"
+                                f"Task: {step['task']}\n\nDraft:\n{summary}\n\n"
+                                "Team feedback:\n" + "\n\n".join(feedback)
+                            )
+                            result = await self.agents.chat(
+                                str(step["agent_id"]),
+                                request_for(step, revision_prompt),
+                            )
+                            summary = str(result.get("response") or summary)
+                    await append_scratchpad(step, summary)
                     step_record["summary"] = self._cap(summary)
                     step_record["summary_chars"] = len(summary)
                     if result.get("conversation_id"):
@@ -339,7 +439,7 @@ class TeamRunService:
             for item in results
         )
         try:
-            final = await self.agents.chat(team["orchestrator_id"], {"message": synthesis, "toolsets": ["todo"]})
+            final = await self.agents.chat(team["orchestrator_id"], {"message": synthesis})
         except asyncio.CancelledError:
             raise
         except EXPECTED_ERRORS as error:

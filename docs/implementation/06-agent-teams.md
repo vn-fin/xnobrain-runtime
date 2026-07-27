@@ -21,6 +21,15 @@ different profiles, repeated use of one profile is serialized, dependency
 summaries are injected into downstream steps, and cyclic or out-of-team graphs
 are rejected before execution.
 
+Saved workflow stages may either inherit the assigned profile's normal Hermes
+tool configuration or select an explicit safe toolset allowlist. Stages may
+also preload enabled skills from that profile. The communication policy follows
+the issue #344 levels: L0 schedules isolated stages, L1 passes dependency
+summaries, L2 adds a durable per-run shared scratchpad, and L3 adds a bounded
+turn-based review/revision exchange between directly connected stages. The
+visual editor must support arbitrary acyclic node dependencies, not only edges
+from the Start node.
+
 ## Acceptance criteria
 
 - A team cannot reference an agent outside its owner/tenant.

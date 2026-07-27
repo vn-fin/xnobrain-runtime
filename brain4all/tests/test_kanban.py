@@ -151,8 +151,8 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                     {"agent_id": agent_ids[2], "role": "reviewer", "allowed_tools": ["web"]},
                 ],
                 "workflow": [
-                    {"id": "research", "task": "Research the launch", "role": "researcher"},
                     {"id": "review", "task": "Review the research", "role": "reviewer", "needs": ["research"]},
+                    {"id": "research", "task": "Research the launch", "role": "researcher", "skills": ["news-research"]},
                 ],
             })
             self.assertEqual(team.status_code, 201, team.text)

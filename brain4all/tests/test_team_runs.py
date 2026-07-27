@@ -30,7 +30,7 @@ from brain4all.repositories.files import TEAM_RUN_RETENTION
 
 _HERMES_BINARY = shutil.which(os.environ.get("HERMES_CLI", "hermes"))
 _STEP_SCHEMA_KEYS = {
-    "id", "agent_id", "role", "task", "needs", "allowed_tools", "status",
+    "id", "agent_id", "role", "task", "needs", "allowed_tools", "skills", "status",
     "summary", "summary_chars", "error", "conversation_id", "started_at", "ended_at",
 }
 _RUN_SCHEMA_KEYS = {
@@ -182,6 +182,66 @@ class TeamRunLifecycleTests(_TeamRunBase):
         stored = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(set(stored), _RUN_SCHEMA_KEYS)
         self.assertEqual(set(stored["steps"][0]), _STEP_SCHEMA_KEYS)
+
+    async def test_team_inherits_agent_tools_and_supports_skills_scratchpad_and_dialogue(self):
+        async with self.client() as client:
+            team_id, ids = await self._make_team(client)
+            updated = await client.put(f"/api/v1/teams/{team_id}", json={
+                "name": "Capable DAG team",
+                "orchestrator_id": ids[0],
+                "members": [
+                    {"agent_id": ids[1], "role": "researcher", "allowed_tools": []},
+                    {"agent_id": ids[2], "role": "reviewer", "allowed_tools": []},
+                ],
+                "workflow": [
+                    {
+                        "id": "research", "task": "Research current news",
+                        "agent_id": ids[1], "role": "researcher",
+                        "allowed_tools": [], "skills": ["news-research"],
+                    },
+                    {
+                        "id": "review", "task": "Review the findings",
+                        "agent_id": ids[2], "role": "reviewer", "needs": ["research"],
+                        "allowed_tools": [], "skills": ["critical-review"],
+                    },
+                ],
+                "communication_level": 3,
+                "shared_workspace": True,
+                "max_parallel": 2,
+                "max_depth": 1,
+            })
+            self.assertEqual(updated.status_code, 200, updated.text)
+
+            calls: list[tuple[str, dict]] = []
+
+            async def capable_chat(agent_id, body):
+                calls.append((agent_id, dict(body)))
+                message = body["message"]
+                if agent_id == ids[0]:
+                    return {"response": "final synthesis"}
+                if "Review the downstream" in message:
+                    return {"response": "Cite the primary source."}
+                if "Revise your draft" in message:
+                    return {"response": "reviewed result", "conversation_id": "c-review-final"}
+                if agent_id == ids[1]:
+                    return {"response": "research result", "conversation_id": "c-research"}
+                return {"response": "review draft", "conversation_id": "c-review"}
+
+            self.composition.service.agents.chat = AsyncMock(side_effect=capable_chat)
+            response = await client.post(f"/api/v1/teams/{team_id}/run", json={})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()["data"]
+        self.assertEqual(result["workflow_results"][1]["summary"], "reviewed result")
+        research_call = next(body for agent_id, body in calls if agent_id == ids[1] and "Task: Research current news" in body["message"])
+        self.assertNotIn("toolsets", research_call)
+        self.assertEqual(research_call["skills"], ["news-research"])
+        reviewer_call = next(body for agent_id, body in calls if agent_id == ids[2] and "Task: Review the findings" in body["message"])
+        self.assertIn("[research] research result", reviewer_call["message"])
+        self.assertIn("Shared team scratchpad:", reviewer_call["message"])
+        scratchpads = list((self.data_dir / "teams" / "workspaces" / team_id).glob("*/SCRATCHPAD.md"))
+        self.assertEqual(len(scratchpads), 1)
+        self.assertIn("reviewed result", scratchpads[0].read_text(encoding="utf-8"))
 
     async def test_completed_run_can_be_deleted(self):
         async with self.client() as client:

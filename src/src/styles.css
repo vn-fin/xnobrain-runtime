@@ -6490,6 +6490,15 @@ body.col-resizing {
 .team-builder-form input, .team-builder-form select, .team-builder-form textarea, .team-node-inspector input, .team-node-inspector textarea { width: 100%; box-sizing: border-box; padding: 8px 9px; border: 1px solid #d7dce3; border-radius: 8px; color: #344054; background: #fff; font: inherit; font-size: 11px; outline: none; }
 .team-builder-form textarea { min-height: 68px; resize: vertical; line-height: 1.45; }
 .team-builder-form input:focus, .team-builder-form select:focus, .team-builder-form textarea:focus, .team-node-inspector input:focus, .team-node-inspector textarea:focus { border-color: #8b5cf6; box-shadow: 0 0 0 3px #8b5cf615; }
+.team-policy-settings { margin: 0; padding: 12px 16px; border-bottom: 1px solid #edf0f3; color: #667085; }
+.team-policy-settings summary { cursor: pointer; color: #475467; font-size: 10px; font-weight: 750; }
+.team-policy-settings[open] summary { margin-bottom: 12px; }
+.team-policy-settings label { display: grid; gap: 5px; margin: 10px 0; font-size: 10px; font-weight: 650; }
+.team-policy-settings input, .team-policy-settings select, .team-policy-settings textarea { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid #d7dce3; border-radius: 7px; color: #344054; background: #fff; font: inherit; font-size: 10px; }
+.team-policy-settings textarea { min-height: 64px; resize: vertical; }
+.team-policy-settings small { color: #98a2b3; font-size: 8px; font-weight: 400; line-height: 1.4; }
+.team-policy-settings .team-policy-check { grid-template-columns: auto 1fr; align-items: center; }
+.team-policy-settings .team-policy-check input { width: 14px; height: 14px; margin: 0; padding: 0; }
 .team-agent-palette { padding: 16px 10px; }
 .team-palette-heading { display: flex; justify-content: space-between; padding: 0 6px 8px; color: #475467; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .team-palette-heading small { color: #98a2b3; }
@@ -6556,6 +6565,9 @@ body.col-resizing {
 .team-inspector-section { display: grid; gap: 7px; padding-top: 14px; border-top: 1px solid #edf0f3; color: #667085; font-size: 10px; font-weight: 650; }
 .team-inspector-section small { color: #98a2b3; font-size: 9px; font-weight: 400; }
 .team-inspector-section button { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border: 0; border-radius: 6px; color: #5b4bb7; background: #f2efff; font: inherit; font-size: 9px; cursor: pointer; }
+.team-inspector-options { display: grid; gap: 5px; max-height: 155px; overflow-y: auto; }
+.team-node-inspector .team-inspector-options label { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 7px; margin: 0; padding: 4px 2px; color: #475467; font-size: 9px; font-weight: 550; }
+.team-node-inspector .team-inspector-options input { width: 13px; height: 13px; margin: 0; padding: 0; border-radius: 3px; box-shadow: none; }
 .team-inspector-empty { min-height: 280px; display: grid; place-content: center; justify-items: center; gap: 9px; color: #98a2b3; text-align: center; font-size: 10px; line-height: 1.5; }
 
 /* Runs shared by the library */

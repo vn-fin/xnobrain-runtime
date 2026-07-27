@@ -17,6 +17,8 @@ export type Team = {
   members: TeamMember[];
   workflow?: TeamWorkflowStep[];
   shared_workspace: boolean;
+  communication_level?: 0 | 1 | 2 | 3;
+  synthesis_instruction?: string;
   max_parallel: number;
   max_depth: number;
   enabled: boolean;
@@ -38,6 +40,7 @@ export type TeamWorkflowStep = {
   role?: string;
   needs?: string[];
   allowed_tools?: string[];
+  skills?: string[];
 };
 
 export type TeamRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -49,6 +52,7 @@ export type TeamRunStep = {
   task: string;
   needs: string[];
   allowed_tools: string[];
+  skills?: string[];
   status: TeamRunStatus;
   summary: string;
   summary_chars: number;
@@ -88,6 +92,10 @@ function withTeamDescription(team: Team): Team {
   const count = (team.members?.length ?? 0) + 1;
   return {
     ...team,
+    shared_workspace: team.shared_workspace ?? false,
+    communication_level: team.communication_level ?? 1,
+    synthesis_instruction: team.synthesis_instruction?.trim()
+      || 'Synthesize these workflow results into one final answer.',
     description: team.description?.trim()
       || `A coordinated team of ${count} agents for multi-stage work.`,
   };

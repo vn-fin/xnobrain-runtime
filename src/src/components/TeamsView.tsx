@@ -57,6 +57,30 @@ const CANVAS_WIDTH = 900;
 const CANVAS_HEIGHT = 620;
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 118;
+const TEAM_TOOLSETS = [
+  ['web', 'Web search'],
+  ['browser', 'Browser automation'],
+  ['terminal', 'Terminal & processes'],
+  ['file', 'File operations'],
+  ['code_execution', 'Code execution'],
+  ['skills', 'Skills'],
+  ['vision', 'Vision'],
+  ['image_gen', 'Image generation'],
+  ['video', 'Video analysis'],
+  ['video_gen', 'Video generation'],
+  ['x_search', 'X search'],
+  ['tts', 'Text to speech'],
+  ['computer_use', 'Computer use'],
+  ['session_search', 'Session search'],
+  ['context_engine', 'Context engine'],
+  ['todo', 'Task planning'],
+] as const;
+const COMMUNICATION_LEVELS = [
+  { value: 0, label: 'L0 · Isolated', description: 'Dependencies control order; results are not shared.' },
+  { value: 1, label: 'L1 · Result passing', description: 'Downstream stages receive upstream summaries.' },
+  { value: 2, label: 'L2 · Shared scratchpad', description: 'Agents also collaborate through a run workspace.' },
+  { value: 3, label: 'L3 · Team dialogue', description: 'Upstream agents review dependent drafts before completion.' },
+] as const;
 
 type RunGraphNode = { step: TeamRunStep; x: number; y: number };
 type NodeConversationInsight = {
@@ -266,6 +290,7 @@ function savedWorkflowRun(team: Team): Pick<TeamRunRecord, 'status' | 'steps'> {
       role: member.role,
       needs: [],
       allowed_tools: member.allowed_tools,
+      skills: [],
     }));
   return {
     status: 'pending',
@@ -276,6 +301,7 @@ function savedWorkflowRun(team: Team): Pick<TeamRunRecord, 'status' | 'steps'> {
       task: step.task,
       needs: step.needs ?? [],
       allowed_tools: step.allowed_tools ?? [],
+      skills: step.skills ?? [],
       status: 'pending',
       summary: '',
       summary_chars: 0,
@@ -808,24 +834,54 @@ function WorkflowEdges({ nodes }: { nodes: DraftNode[] }) {
 function TeamBuilder({
   agents,
   state,
+  initialTeam,
   onSaved,
   onBack,
 }: {
   agents: Agent[];
   state: TeamsState;
+  initialTeam?: Team;
   onSaved: (team: Team) => void;
   onBack: () => void;
 }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [orchestratorId, setOrchestratorId] = useState(agents[0]?.id ?? '');
-  const [nodes, setNodes] = useState<DraftNode[]>([]);
-  const [selectedNodeId, setSelectedNodeId] = useState('');
+  const initialWorkflow = initialTeam?.workflow?.length
+    ? initialTeam.workflow
+    : initialTeam?.members.map((member, index) => ({
+      id: `worker-${index + 1}`,
+      task: `Complete the ${member.role} stage for the team objective.`,
+      agent_id: member.agent_id,
+      role: member.role,
+      needs: [],
+      allowed_tools: member.allowed_tools,
+      skills: [],
+    })) ?? [];
+  const [name, setName] = useState(initialTeam?.name ?? '');
+  const [description, setDescription] = useState(initialTeam?.description ?? '');
+  const [orchestratorId, setOrchestratorId] = useState(initialTeam?.orchestrator_id ?? agents[0]?.id ?? '');
+  const [nodes, setNodes] = useState<DraftNode[]>(() => initialWorkflow.map((step, index) => ({
+    ...step,
+    agent_id: step.agent_id ?? '',
+    role: step.role ?? step.id,
+    needs: step.needs ?? [],
+    allowed_tools: step.allowed_tools ?? [],
+    skills: step.skills ?? [],
+    x: 170 + (index % 2) * 260,
+    y: 95 + Math.floor(index / 2) * 165,
+  })));
+  const [selectedNodeId, setSelectedNodeId] = useState(initialWorkflow[0]?.id ?? '');
   const [connectFrom, setConnectFrom] = useState('');
   const [message, setMessage] = useState('');
+  const [communicationLevel, setCommunicationLevel] = useState<0 | 1 | 2 | 3>(initialTeam?.communication_level ?? 1);
+  const [sharedWorkspace, setSharedWorkspace] = useState(initialTeam?.shared_workspace ?? false);
+  const [maxParallel, setMaxParallel] = useState(initialTeam?.max_parallel ?? 3);
+  const [maxDepth, setMaxDepth] = useState(initialTeam?.max_depth ?? 1);
+  const [synthesisInstruction, setSynthesisInstruction] = useState(
+    initialTeam?.synthesis_instruction ?? 'Synthesize these workflow results into one final answer.',
+  );
   const [drag, setDrag] = useState<{ id: string; pointerId: number; dx: number; dy: number }>();
   const canvasRef = useRef<HTMLDivElement>(null);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+  const selectedAgent = agents.find((agent) => agent.id === selectedNode?.agent_id);
   const availableAgents = agents.filter((agent) => agent.id !== orchestratorId && !nodes.some((node) => node.agent_id === agent.id));
 
   useEffect(() => {
@@ -845,7 +901,8 @@ function TeamBuilder({
       role,
       task: `Complete the ${role.replace(/-/g, ' ')} stage for the team objective.`,
       needs: [],
-      allowed_tools: ['web'],
+      allowed_tools: [],
+      skills: [],
       x: 170 + (index % 2) * 260,
       y: 95 + Math.floor(index / 2) * 165,
     };
@@ -877,6 +934,22 @@ function TeamBuilder({
       ? { ...node, needs: [...new Set([...(node.needs ?? []), connectFrom])] }
       : node));
     setConnectFrom('');
+    setMessage('');
+  };
+
+  const toggleDependency = (nodeId: string, dependencyId: string) => {
+    const node = nodes.find((item) => item.id === nodeId);
+    if (!node) return;
+    if (node.needs?.includes(dependencyId)) {
+      updateNode(nodeId, { needs: node.needs.filter((id) => id !== dependencyId) });
+      setMessage('');
+      return;
+    }
+    if (createsCycle(nodes, dependencyId, nodeId)) {
+      setMessage('That dependency would create a cycle.');
+      return;
+    }
+    updateNode(nodeId, { needs: [...new Set([...(node.needs ?? []), dependencyId])] });
     setMessage('');
   };
 
@@ -924,7 +997,7 @@ function TeamBuilder({
       members: nodes.map((node) => ({
         agent_id: node.agent_id,
         role: node.role.trim(),
-        allowed_tools: ['web'],
+        allowed_tools: node.allowed_tools ?? [],
         enabled: true,
       })),
       workflow: nodes.map(({ x: _x, y: _y, ...node }) => ({
@@ -932,15 +1005,20 @@ function TeamBuilder({
         role: node.role.trim(),
         task: node.task.trim(),
         needs: node.needs ?? [],
-        allowed_tools: ['web'],
+        allowed_tools: node.allowed_tools ?? [],
+        skills: node.skills ?? [],
       })),
-      shared_workspace: false,
-      max_parallel: Math.max(1, nodes.length),
-      max_depth: 1,
+      shared_workspace: sharedWorkspace || communicationLevel >= 2,
+      communication_level: communicationLevel,
+      synthesis_instruction: synthesisInstruction.trim(),
+      max_parallel: Math.max(1, Math.min(maxParallel, nodes.length)),
+      max_depth: maxDepth,
       enabled: true,
     };
     try {
-      onSaved(await state.create(input));
+      onSaved(initialTeam
+        ? await state.update({ id: initialTeam.id, ...input })
+        : await state.create(input));
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : 'Could not save the team.');
     }
@@ -980,6 +1058,61 @@ function TeamBuilder({
             </select>
           </label>
         </div>
+        <details className="team-policy-settings">
+          <summary>Execution & communication</summary>
+          <label>
+            Communication level
+            <select
+              aria-label="Communication level"
+              value={communicationLevel}
+              onChange={(event) => setCommunicationLevel(Number(event.target.value) as 0 | 1 | 2 | 3)}
+            >
+              {COMMUNICATION_LEVELS.map((level) => (
+                <option key={level.value} value={level.value}>{level.label}</option>
+              ))}
+            </select>
+            <small>{COMMUNICATION_LEVELS[communicationLevel].description}</small>
+          </label>
+          <label>
+            Parallel agents
+            <input
+              aria-label="Parallel agents"
+              type="number"
+              min={1}
+              max={64}
+              value={maxParallel}
+              onChange={(event) => setMaxParallel(Math.max(1, Number(event.target.value) || 1))}
+            />
+          </label>
+          <label>
+            Delegation depth
+            <input
+              aria-label="Delegation depth"
+              type="number"
+              min={1}
+              max={8}
+              value={maxDepth}
+              onChange={(event) => setMaxDepth(Math.max(1, Math.min(8, Number(event.target.value) || 1)))}
+            />
+          </label>
+          <label>
+            Synthesis instruction
+            <textarea
+              aria-label="Synthesis instruction"
+              value={synthesisInstruction}
+              onChange={(event) => setSynthesisInstruction(event.target.value)}
+            />
+          </label>
+          <label className="team-policy-check">
+            <input
+              type="checkbox"
+              checked={sharedWorkspace || communicationLevel >= 2}
+              disabled={communicationLevel >= 2}
+              onChange={(event) => setSharedWorkspace(event.target.checked)}
+            />
+            Shared run workspace
+          </label>
+        </details>
         <div className="team-agent-palette">
           <div className="team-palette-heading">
             <span>Available agents</span>
@@ -996,7 +1129,7 @@ function TeamBuilder({
         </div>
         <div className="team-safety-note">
           <Check size={14} />
-          <span><strong>Safe delegation</strong><small>Web-only workers · no shared memory writes · flat depth</small></span>
+          <span><strong>Per-agent capabilities</strong><small>Configure tools, skills, dependencies, and context on each stage.</small></span>
         </div>
       </aside>
 
@@ -1008,7 +1141,7 @@ function TeamBuilder({
           </div>
           <div className="team-toolbar-help"><MousePointer2 size={14} /> Drag cards to arrange · click ports to connect</div>
           <button className="primary-button" disabled={state.pending} onClick={() => void save()}>
-            <Save size={15} /> {state.pending ? 'Saving…' : 'Save team'}
+            <Save size={15} /> {state.pending ? 'Saving…' : initialTeam ? 'Save changes' : 'Save team'}
           </button>
         </div>
         {message && <div className="teams-inline-message" role="alert">{message}</div>}
@@ -1047,7 +1180,10 @@ function TeamBuilder({
                     <button className="team-node-remove" aria-label={`Remove ${node.id}`} onClick={(event) => { event.stopPropagation(); removeNode(node.id); }}><X size={13} /></button>
                   </div>
                   <p>{node.task}</p>
-                  <div className="team-node-foot"><span>WEB</span><span>{node.needs?.length ?? 0} input{node.needs?.length === 1 ? '' : 's'}</span></div>
+                  <div className="team-node-foot">
+                    <span>{node.allowed_tools?.length ? `${node.allowed_tools.length} TOOLS` : 'AGENT DEFAULTS'}</span>
+                    <span>{node.needs?.length ?? 0} input{node.needs?.length === 1 ? '' : 's'}</span>
+                  </div>
                   <button
                     className={`team-node-port output ${connectFrom === node.id ? 'active' : ''}`}
                     aria-label={`Connect from ${node.id}`}
@@ -1097,11 +1233,61 @@ function TeamBuilder({
             <div className="team-inspector-section">
               <span>Depends on</span>
               {(selectedNode.needs ?? []).length === 0 && <small>No dependencies — starts immediately</small>}
-              {(selectedNode.needs ?? []).map((need) => (
-                <button key={need} onClick={() => updateNode(selectedNode.id, { needs: selectedNode.needs?.filter((id) => id !== need) })}>
-                  {need}<X size={12} />
-                </button>
-              ))}
+              <div className="team-inspector-options">
+                {nodes.filter((node) => node.id !== selectedNode.id).map((node) => (
+                  <label key={node.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.needs?.includes(node.id) ?? false}
+                      onChange={() => toggleDependency(selectedNode.id, node.id)}
+                    />
+                    {node.id}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="team-inspector-section">
+              <span>Tool access</span>
+              <small>No selection inherits the agent’s normal conversation tool configuration.</small>
+              <div className="team-inspector-options">
+                {TEAM_TOOLSETS.map(([id, label]) => (
+                  <label key={id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.allowed_tools?.includes(id) ?? false}
+                      onChange={(event) => updateNode(selectedNode.id, {
+                        allowed_tools: event.target.checked
+                          ? [...new Set([...(selectedNode.allowed_tools ?? []), id])]
+                          : (selectedNode.allowed_tools ?? []).filter((tool) => tool !== id),
+                      })}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="team-inspector-section">
+              <span>Preloaded skills</span>
+              <small>Selected skills are loaded before this stage starts.</small>
+              <div className="team-inspector-options">
+                {(selectedAgent?.skills ?? []).filter((skill) => skill.enabled).map((skill) => (
+                  <label key={skill.skill_id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedNode.skills?.includes(skill.skill_id) ?? false}
+                      onChange={(event) => updateNode(selectedNode.id, {
+                        skills: event.target.checked
+                          ? [...new Set([...(selectedNode.skills ?? []), skill.skill_id])]
+                          : (selectedNode.skills ?? []).filter((id) => id !== skill.skill_id),
+                      })}
+                    />
+                    {skill.name}
+                  </label>
+                ))}
+                {!selectedAgent?.skills.some((skill) => skill.enabled) && (
+                  <small>No enabled skills on this agent profile.</small>
+                )}
+              </div>
             </div>
           </>
         ) : (
@@ -1257,6 +1443,7 @@ function TeamLibrary({
   selectedRunId,
   onSelectRun,
   onCreate,
+  onEdit,
   onImport,
 }: {
   agents: Agent[];
@@ -1266,6 +1453,7 @@ function TeamLibrary({
   selectedRunId: string;
   onSelectRun: (runId: string) => void;
   onCreate: () => void;
+  onEdit: (team: Team) => void;
   onImport: () => void;
 }) {
   const [task, setTask] = useState('');
@@ -1400,6 +1588,7 @@ function TeamLibrary({
             </button>
             {menuTeamId === team.id && (
               <div className="team-row-menu" role="menu">
+                <button role="menuitem" onClick={() => { setMenuTeamId(''); onEdit(team); }}><GitBranch size={14} /> Edit workflow</button>
                 <button role="menuitem" onClick={() => startRename(team)}><Pencil size={14} /> Rename</button>
                 <button role="menuitem" disabled={exportingTeamId === team.id} onClick={() => void exportTeam(team)}>
                   <Download size={14} /> {exportingTeamId === team.id ? 'Exporting…' : 'Export'}
@@ -1469,6 +1658,7 @@ export function TeamsView({
   const [mode, setMode] = useState<TeamsMode>(routeCreate ? 'builder' : 'library');
   const [selectedTeamId, setSelectedTeamId] = useState(routeTeamId);
   const [selectedRunId, setSelectedRunId] = useState(routeRunId);
+  const [editingTeam, setEditingTeam] = useState<Team>();
   const [importOpen, setImportOpen] = useState(false);
   const routeReady = useRef(false);
 
@@ -1478,11 +1668,13 @@ export function TeamsView({
       return;
     }
     setMode(routeCreate ? 'builder' : 'library');
+    setEditingTeam(undefined);
     setSelectedTeamId(routeTeamId);
     setSelectedRunId(routeRunId);
   }, [routeCreate, routeRunId, routeTeamId]);
 
   const navigateLibrary = (teamId = selectedTeamId, runId = '', replace = false) => {
+    setEditingTeam(undefined);
     setMode('library');
     setSelectedTeamId(teamId);
     setSelectedRunId(runId);
@@ -1490,9 +1682,17 @@ export function TeamsView({
   };
 
   const navigateBuilder = () => {
+    setEditingTeam(undefined);
     setMode('builder');
     setSelectedRunId('');
     onNavigate?.('', '', true);
+  };
+
+  const editTeam = (team: Team) => {
+    setEditingTeam(team);
+    setMode('builder');
+    setSelectedTeamId(team.id);
+    setSelectedRunId('');
   };
 
   const saved = (team: Team) => {
@@ -1515,7 +1715,16 @@ export function TeamsView({
       </header>
       {state.error && <div className="teams-error">{state.error}</div>}
       {mode === 'builder'
-        ? <TeamBuilder agents={agents} state={state} onSaved={saved} onBack={() => navigateLibrary()} />
+        ? (
+          <TeamBuilder
+            key={editingTeam?.id ?? 'new'}
+            agents={agents}
+            state={state}
+            initialTeam={editingTeam}
+            onSaved={saved}
+            onBack={() => navigateLibrary()}
+          />
+        )
         : (
           <TeamLibrary
             agents={agents}
@@ -1525,6 +1734,7 @@ export function TeamsView({
             selectedRunId={selectedRunId}
             onSelectRun={(runId) => navigateLibrary(selectedTeamId, runId)}
             onCreate={navigateBuilder}
+            onEdit={editTeam}
             onImport={() => setImportOpen(true)}
           />
         )}
