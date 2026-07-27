@@ -12,9 +12,12 @@ Run with the pinned 9router 0.5.40 (`Dockerfile.backend` line 18) running
 locally:
 
 ```
-python -m unittest brain4all.tests.test_blends_probe -v
+RUN_LIVE_NINE_ROUTER_PROBES=1 \
+  python -m unittest brain4all.tests.test_blends_probe -v
 ```
 
+- Without the explicit opt-in variable, the suite reports **skipped** so
+  routine `make test` / `make check` runs never mutate a live 9router.
 - All 12 probes from [findings.md](findings.md) §10 pass (combos CRUD shapes,
   name charset, duplicate handling, partial PUT, delete, `owned_by:"combo"`
   in `/v1/models`, settings GET/PATCH shape, whole-map `comboStrategies`

@@ -14,7 +14,9 @@ The dependency is already pinned (`Dockerfile.backend` line 18
 Do not bump it in this plan.
 
 File: `brain4all/tests/test_blends_probe.py` (new). A live-probe suite that
-runs against the local 9router and **skips cleanly when it is not running**
+runs against the local 9router only with
+`RUN_LIVE_NINE_ROUTER_PROBES=1`, and **skips cleanly otherwise or when the
+router is not running**
 (mirror the guard style of `@unittest.skipUnless(HERMES_AVAILABLE, ...)` in
 `brain4all/tests/test_kanban.py` line 52 — here, attempt
 `NineRouterManager().status()` in `setUpClass` and `raise unittest.SkipTest`

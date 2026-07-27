@@ -1,8 +1,9 @@
 """Phase 0 probe for plan 012 (Model Blends over 9router combos).
 
 Re-proves the combo/settings/model behaviors the plan depends on against a
-running pinned 9router. Skips cleanly when 9router is not up (the rest of the
-suite fakes the router). Restores the settings it touches.
+running pinned 9router. This mutating probe is opt-in so routine test discovery
+cannot create combos in a developer's live router. Restores the settings it
+touches.
 
 Observed against 9router v0.5.40 (2026-07-25):
   * GET  /api/combos          -> {"combos": [{id,name,kind,models,createdAt,updatedAt}]}
@@ -26,6 +27,7 @@ import aiohttp
 from brain4all.integrations.nine_router import NineRouterAPIError, NineRouterManager
 
 BASE = os.environ.get("NINE_ROUTER_URL", "http://127.0.0.1:20128")
+RUN_LIVE_PROBE = os.environ.get("RUN_LIVE_NINE_ROUTER_PROBES") == "1"
 
 
 async def _router_up() -> bool:
@@ -40,6 +42,8 @@ async def _router_up() -> bool:
 
 class BlendsLiveProbeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        if not RUN_LIVE_PROBE:
+            self.skipTest("set RUN_LIVE_NINE_ROUTER_PROBES=1 to run mutating live probes")
         if not await _router_up():
             self.skipTest("9router is not running on " + BASE)
         self.manager = NineRouterManager(base_url=BASE)
