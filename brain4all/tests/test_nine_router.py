@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 from unittest.mock import patch
 
-from brain4all.integrations.hermes import AgentManager
+from brain4all.integrations.hermes import AgentAPIError, AgentManager
 from brain4all.integrations.nine_router import (
     NINE_ROUTER_API_BASE_URL,
     NINE_ROUTER_PROVIDER,
@@ -335,6 +335,69 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(list(profiles.iterdir()), [])
             self.assertEqual(manager.list_agents()["agents"], [])
+
+    def test_conversation_stream_resumes_the_open_session(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            manager.create_agent({"name": "news"})
+            conversation = manager.create_conversation(
+                "news",
+                {"title": "News Summary"},
+            )
+            conversation_id = conversation["conversation"]["id"]
+
+            prepared = manager._prepare_chat_command(
+                "news",
+                {
+                    "message": "Summarize what we discussed.",
+                    "conversation_id": conversation_id,
+                },
+                require_conversation=True,
+            )
+
+            command = prepared["command"]
+            self.assertEqual(prepared["conversation_id"], conversation_id)
+            self.assertEqual(
+                command[command.index("--resume") : command.index("--resume") + 2],
+                ["--resume", conversation_id],
+            )
+            self.assertEqual(
+                command[-4:],
+                ["chat", "--quiet", "--query", "Summarize what we discussed."],
+            )
+            self.assertNotIn("--oneshot", command)
+            self.assertNotIn("-z", command)
+
+    def test_conversation_stream_does_not_create_a_missing_session(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            manager.create_agent({"name": "news"})
+            profile = manager._profile_dir("news")
+            missing_id = "20260727_092138_26112b"
+
+            with self.assertRaises(AgentAPIError) as raised:
+                manager._prepare_chat_command(
+                    "news",
+                    {
+                        "message": "This must not create a conversation.",
+                        "conversation_id": missing_id,
+                    },
+                    require_conversation=True,
+                )
+
+            self.assertEqual(raised.exception.status, 404)
+            self.assertEqual(raised.exception.code, "conversation_not_found")
+            self.assertIsNone(manager._session(profile, missing_id))
 
     async def test_agent_stream_closes_cleanly_without_a_provider(self) -> None:
         with TemporaryDirectory() as temp_dir:

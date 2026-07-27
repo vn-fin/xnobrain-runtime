@@ -545,7 +545,7 @@ class AgentManager:
         return self.list_skills(name)
 
     async def chat(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
-        prepared = self._prepare_chat_command(raw_name, body, ensure_conversation=False)
+        prepared = self._prepare_chat_command(raw_name, body, require_conversation=False)
         if prepared["model"] == NINE_ROUTER_DEFAULT_MODEL:
             await self.nine_router.ensure_auto_combo()
         name = prepared["name"]
@@ -585,7 +585,7 @@ class AgentManager:
         }
 
     def chat_stream(self, raw_name: Any, body: Mapping[str, Any]):
-        prepared = self._prepare_chat_command(raw_name, body, ensure_conversation=True)
+        prepared = self._prepare_chat_command(raw_name, body, require_conversation=True)
         return self._chat_stream_events(prepared)
 
     def _prepare_chat_command(
@@ -593,7 +593,7 @@ class AgentManager:
         raw_name: Any,
         body: Mapping[str, Any],
         *,
-        ensure_conversation: bool,
+        require_conversation: bool,
     ) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
@@ -602,14 +602,16 @@ class AgentManager:
         conversation_id = ""
         if body.get("conversation_id"):
             conversation_id = self._session_id(body["conversation_id"])
-        if ensure_conversation and not conversation_id:
-            conversation_id = _new_conversation_id()
-        if ensure_conversation and self._session(profile_dir, conversation_id) is None:
-            self._create_session(
-                profile_dir,
-                conversation_id,
-                model=self._conversation_model(profile_dir, body),
-                title=None,
+        if require_conversation and not conversation_id:
+            raise AgentAPIError(
+                "conversation is required",
+                code="conversation_required",
+            )
+        if require_conversation and self._session(profile_dir, conversation_id) is None:
+            raise AgentAPIError(
+                f"Conversation not found: {conversation_id}",
+                code="conversation_not_found",
+                status=404,
             )
 
         provider = self._conversation_provider(profile_dir, body)
@@ -637,7 +639,14 @@ class AgentManager:
             command.extend(["--toolsets", ",".join(normalized_toolsets)])
         if bool(body.get("yolo", False)):
             command.append("--yolo")
-        command.extend(["-z", message])
+        if require_conversation:
+            # Hermes' one-shot mode deliberately bypasses the CLI session
+            # loader, even when --resume is present. The quiet query path
+            # restores the selected session's SQLite transcript before the
+            # turn and persists the new messages back to that same session.
+            command.extend(["chat", "--quiet", "--query", message])
+        else:
+            command.extend(["-z", message])
 
         timeout_seconds = int(body.get("timeout_seconds") or DEFAULT_CHAT_TIMEOUT_SECONDS)
         timeout_seconds = max(1, min(timeout_seconds, MAX_CHAT_TIMEOUT_SECONDS))

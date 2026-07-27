@@ -495,6 +495,30 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stopped.status_code, 404)
         self.assertEqual(stopped.json()["error"]["code"], "run_not_found")
 
+    async def test_chat_stream_rejects_a_conversation_that_is_not_opened(self):
+        missing_id = "20260727_092138_26112b"
+        async with self.client() as client:
+            created = await client.post(
+                "/agent-gateway/v1/agents",
+                json={"display_name": "Session worker"},
+            )
+            agent_id = created.json()["data"]["id"]
+            streamed = await client.post(
+                f"/conversations/v1/conversations/{missing_id}/chat/stream?agent={agent_id}",
+                json={"input": "Do not create a conversation for this message."},
+            )
+            conversations = await client.get(
+                f"/conversations/v1/conversations?agent={agent_id}",
+            )
+
+        self.assertEqual(streamed.status_code, 200)
+        self.assertIn("event: error", streamed.text)
+        self.assertIn(f"Conversation not found: {missing_id}", streamed.text)
+        self.assertNotIn(
+            missing_id,
+            [item["id"] for item in conversations.json()["data"]["conversations"]],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
