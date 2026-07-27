@@ -433,6 +433,10 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((self.profiles / imported_id / "config.yaml").is_file())
 
     async def test_team_snapshot_exports_profiles_and_remaps_the_complete_workflow(self):
+        (self.root / "auth.json").write_text(
+            json.dumps({"version": 1, "session": "team-snapshot-secret"}, indent=2) + "\n",
+            encoding="utf-8",
+        )
         async with self.client() as client:
             agent_ids = []
             for name in ("Snapshot coordinator", "Snapshot researcher", "Snapshot reviewer"):
@@ -441,6 +445,10 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                     json={"display_name": name},
                 )
                 agent_ids.append(created.json()["data"]["id"])
+            (self.profiles / agent_ids[0] / "workspace" / "secret.txt").write_text(
+                "team-snapshot-secret\n",
+                encoding="utf-8",
+            )
             created_team = await client.post("/api/v1/teams", json={
                 "name": "Portable Team",
                 "description": "A complete portable workflow.",
@@ -462,6 +470,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exported.status_code, 200, exported.text)
         with ZipFile(BytesIO(exported.content)) as archive:
             manifest = json.loads(archive.read("manifest.json"))
+            self.assertEqual(manifest["version"], 1)
+            self.assertNotIn(b"team-snapshot-secret", archive.read("manifest.json"))
+            self.assertNotIn(
+                b"team-snapshot-secret",
+                archive.read(f"profiles/{agent_ids[0]}/workspace/secret.txt"),
+            )
             self.assertEqual([team["id"] for team in manifest["teams"]], [team_id])
             self.assertEqual({agent["id"] for agent in manifest["agents"]}, set(agent_ids))
             self.assertIn(f"teams/{team_id}.yaml", archive.namelist())

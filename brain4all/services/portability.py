@@ -626,8 +626,11 @@ class PortabilityService:
                         values.add(current.encode())
 
                 collect(loaded)
+                continue
             for line in raw.splitlines():
-                candidate = line.split("=", 1)[-1].strip().strip('"\'')
+                if "=" not in line or line.lstrip().startswith("#"):
+                    continue
+                candidate = line.split("=", 1)[1].strip().strip('"\'')
                 if len(candidate) >= 6:
                     values.add(candidate.encode())
         config_path = profile / "config.yaml"
