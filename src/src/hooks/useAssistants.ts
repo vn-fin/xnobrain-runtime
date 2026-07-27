@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { agentsApi } from '../api/agents';
 import { conversationsApi } from '../api/conversations';
 import { skillsApi } from '../api/skills';
@@ -44,8 +44,6 @@ function mapGlobalConfig(config: AgentConfigDTO | null): GlobalRuntimeConfig | n
 export function useAssistants() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [library, setLibrary] = useState<AgentSkill[]>([]);
-  const [agentSkills, setAgentSkills] = useState<AgentSkillMap>({});
-  const [skillStates, setSkillStates] = useState<SkillStateMap>({});
   const [agentSkillPages, setAgentSkillPages] = useState<Record<string, ResponsePagination>>({});
   const [defaultConfig, setDefaultConfig] = useState<GlobalRuntimeConfig | null>(null);
   const [status, setStatus] = useState<AsyncStatus>('loading');
@@ -53,46 +51,127 @@ export function useAssistants() {
   const [pending, setPending] = useState(false);
   const [skillInstallPending, setSkillInstallPending] = useState(false);
   const [skillInstallError, setSkillInstallError] = useState('');
+  const agentsRef = useRef(agents);
+  const loadedConversations = useRef(new Set<string>());
+  const conversationRequests = useRef(new Map<string, Promise<Agent['conversations']>>());
+  const loadedSkills = useRef(new Set<string>());
+  const skillRequests = useRef(new Map<string, Promise<AgentSkill[]>>());
+  const libraryRequest = useRef<Promise<AgentSkill[]> | null>(null);
+  const libraryLoaded = useRef(false);
+  const defaultConfigRequest = useRef<Promise<GlobalRuntimeConfig | null> | null>(null);
+  const defaultConfigLoaded = useRef(false);
 
-  const setComposedAgents = useCallback((next: Agent[]) => {
-    const derived = deriveSkills(next);
-    setAgents(next);
-    setAgentSkills(derived.enabled);
-    setSkillStates(derived.states);
-  }, []);
+  agentsRef.current = agents;
+  const { enabled: agentSkills, states: skillStates } = useMemo(() => deriveSkills(agents), [agents]);
 
   const refresh = useCallback(async () => {
     setStatus('loading');
     setError('');
     try {
-      const [baseAgents, defaultSkillsPage, globalConfig] = await Promise.all([
-        agentsApi.list(),
-        skillsApi.listDefault(),
-        agentsApi.getGlobalConfig().catch(() => null),
-      ]);
-      setLibrary(defaultSkillsPage.skills);
-      setDefaultConfig(mapGlobalConfig(globalConfig));
-      const pages: Record<string, ResponsePagination> = {};
-      const composed = await Promise.all(baseAgents.map(async (agent) => {
-        const [conversations, skillsPage] = await Promise.all([
-          conversationsApi.list(agent.id),
-          skillsApi.list(agent.id),
-        ]);
-        if (skillsPage.pagination) pages[agent.id] = skillsPage.pagination;
-        return { ...agent, conversations, skills: skillsPage.skills };
+      const baseAgents = await agentsApi.list();
+      setAgents((current) => baseAgents.map((agent) => {
+        const cached = current.find((item) => item.id === agent.id);
+        return {
+          ...agent,
+          conversations: cached?.conversations ?? [],
+          skills: cached?.skills ?? [],
+        };
       }));
-      setComposedAgents(composed);
-      setAgentSkillPages(pages);
       setStatus('ready');
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Could not load assistants.');
       setStatus('error');
     }
-  }, [setComposedAgents]);
+  }, []);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const loadConversations = useCallback(async (agentId: string, force = false) => {
+    if (!agentId) return [];
+    if (!force && loadedConversations.current.has(agentId)) {
+      return agentsRef.current.find((agent) => agent.id === agentId)?.conversations ?? [];
+    }
+    const pendingRequest = conversationRequests.current.get(agentId);
+    if (pendingRequest && !force) return pendingRequest;
+
+    const request = conversationsApi.list(agentId)
+      .then((conversations) => {
+        loadedConversations.current.add(agentId);
+        setAgents((current) => current.map((agent) =>
+          agent.id === agentId ? { ...agent, conversations } : agent));
+        return conversations;
+      })
+      .finally(() => {
+        if (conversationRequests.current.get(agentId) === request) {
+          conversationRequests.current.delete(agentId);
+        }
+      });
+    conversationRequests.current.set(agentId, request);
+    return request;
+  }, []);
+
+  const loadAgentSkills = useCallback(async (agentId: string, force = false) => {
+    if (!agentId) return [];
+    if (!force && loadedSkills.current.has(agentId)) {
+      return agentsRef.current.find((agent) => agent.id === agentId)?.skills ?? [];
+    }
+    const pendingRequest = skillRequests.current.get(agentId);
+    if (pendingRequest && !force) return pendingRequest;
+
+    const request = skillsApi.list(agentId)
+      .then(({ skills, pagination }) => {
+        loadedSkills.current.add(agentId);
+        setAgents((current) => current.map((agent) =>
+          agent.id === agentId ? { ...agent, skills } : agent));
+        if (pagination) {
+          setAgentSkillPages((current) => ({ ...current, [agentId]: pagination }));
+        }
+        return skills;
+      })
+      .finally(() => {
+        if (skillRequests.current.get(agentId) === request) {
+          skillRequests.current.delete(agentId);
+        }
+      });
+    skillRequests.current.set(agentId, request);
+    return request;
+  }, []);
+
+  const loadLibrary = useCallback(async (force = false) => {
+    if (!force && libraryLoaded.current) return library;
+    if (libraryRequest.current && !force) return libraryRequest.current;
+    const request = skillsApi.listDefault()
+      .then((page) => {
+        libraryLoaded.current = true;
+        setLibrary(page.skills);
+        return page.skills;
+      })
+      .finally(() => {
+        if (libraryRequest.current === request) libraryRequest.current = null;
+      });
+    libraryRequest.current = request;
+    return request;
+  }, [library]);
+
+  const loadDefaultConfig = useCallback(async (force = false) => {
+    if (!force && defaultConfigLoaded.current) return defaultConfig;
+    if (defaultConfigRequest.current && !force) return defaultConfigRequest.current;
+    const request = agentsApi.getGlobalConfig()
+      .then(mapGlobalConfig)
+      .catch(() => null)
+      .then((config) => {
+        defaultConfigLoaded.current = true;
+        setDefaultConfig(config);
+        return config;
+      })
+      .finally(() => {
+        if (defaultConfigRequest.current === request) defaultConfigRequest.current = null;
+      });
+    defaultConfigRequest.current = request;
+    return request;
+  }, [defaultConfig]);
 
   const createAgent = async (name: string, description: string) => {
     setPending(true);
@@ -100,22 +179,17 @@ export function useAssistants() {
     const agent = await agentsApi.create(name, description);
     let conversationId = '';
     let conversations: Agent['conversations'] = [];
-    let profileSkills: AgentSkill[] = [];
     try {
       const conversation = await conversationsApi.create(agent.id);
       conversationId = conversation.id;
       conversations = [conversation];
+      loadedConversations.current.add(agent.id);
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Agent created, but its first conversation could not be created.');
-    }
-    try {
-      profileSkills = (await skillsApi.list(agent.id)).skills;
-    } catch (value) {
-      setError(value instanceof Error ? value.message : 'Agent created, but its skills could not be loaded.');
     } finally {
       setPending(false);
     }
-    setComposedAgents([...agents, { ...agent, conversations, skills: profileSkills }]);
+    setAgents((current) => [...current, { ...agent, conversations, skills: [] }]);
     return { agentId: agent.id, conversationId };
   };
 
@@ -124,7 +198,7 @@ export function useAssistants() {
     setError('');
     try {
       const updated = await agentsApi.update(id, updates);
-      setComposedAgents(agents.map((agent) => agent.id === id
+      setAgents((current) => current.map((agent) => agent.id === id
         ? { ...updated, conversations: agent.conversations, skills: agent.skills }
         : agent));
     } catch (value) {
@@ -142,7 +216,7 @@ export function useAssistants() {
     setError('');
     try {
       const updated = await agentsApi.rename(id, clean);
-      setComposedAgents(agents.map((agent) => agent.id === id
+      setAgents((current) => current.map((agent) => agent.id === id
         ? { ...updated, conversations: agent.conversations, skills: agent.skills }
         : agent));
     } catch (value) {
@@ -157,8 +231,10 @@ export function useAssistants() {
     setPending(true);
     try {
       await agentsApi.remove(id);
-      const remaining = agents.filter((agent) => agent.id !== id);
-      setComposedAgents(remaining);
+      const remaining = agentsRef.current.filter((agent) => agent.id !== id);
+      loadedConversations.current.delete(id);
+      loadedSkills.current.delete(id);
+      setAgents(remaining);
       return remaining[0] ? { agentId: remaining[0].id, conversationId: remaining[0].conversations[0]?.id ?? '' } : null;
     } finally {
       setPending(false);
@@ -185,16 +261,16 @@ export function useAssistants() {
     if (updates.memoryWriteApproval !== undefined) payload.memory_write_approval = updates.memoryWriteApproval;
     await agentsApi.updateConfig(agentId, payload);
     const updated = await agentsApi.detail(agentId);
-    setComposedAgents(agents.map((agent) => agent.id === agentId
+    setAgents((current) => current.map((agent) => agent.id === agentId
       ? { ...updated, conversations: agent.conversations, skills: agent.skills }
       : agent));
   };
 
   const createConversation = async (agentId: string, _model?: string) => {
     const conversation = await conversationsApi.create(agentId);
-    const conversations = await conversationsApi.list(agentId);
-    setComposedAgents(agents.map((agent) => agent.id === agentId
-      ? { ...agent, conversations }
+    loadedConversations.current.add(agentId);
+    setAgents((current) => current.map((agent) => agent.id === agentId
+      ? { ...agent, conversations: [...agent.conversations, conversation] }
       : agent));
     return conversation.id;
   };
@@ -203,7 +279,7 @@ export function useAssistants() {
     const clean = title.trim();
     if (!clean) return;
     const updated = await conversationsApi.rename(agentId, conversationId, clean);
-    setComposedAgents(agents.map((agent) => agent.id === agentId
+    setAgents((current) => current.map((agent) => agent.id === agentId
       ? {
           ...agent,
           conversations: agent.conversations.map((conversation) =>
@@ -215,7 +291,7 @@ export function useAssistants() {
   const deleteConversation = async (agentId: string, conversationId: string) => {
     await conversationsApi.remove(agentId, conversationId);
     let nextId: string | null = null;
-    setComposedAgents(agents.map((agent) => {
+    setAgents((current) => current.map((agent) => {
       if (agent.id !== agentId) return agent;
       const conversations = agent.conversations.filter((item) => item.id !== conversationId);
       nextId = conversations[0]?.id ?? null;
@@ -228,21 +304,16 @@ export function useAssistants() {
   // PATCH /agent-gateway/v1/agents-skills/{agent_id}/{skill_id}. Optimistically
   // reflects the new state so the toggle feels instant, then reconciles.
   const setSkillEnabled = async (agentId: string, skillId: string, enabled: boolean) => {
-    const previous = agents;
-    const optimistic = agents.map((agent) => agent.id === agentId
+    const previous = agentsRef.current;
+    const optimistic = previous.map((agent) => agent.id === agentId
       ? { ...agent, skills: agent.skills.map((skill) => skill.skill_id === skillId ? { ...skill, enabled } : skill) }
       : agent);
-    setComposedAgents(optimistic);
+    setAgents(optimistic);
     try {
       await skillsApi.setEnabled(agentId, skillId, enabled);
-      const currentPage = agentSkillPages[agentId]?.page;
-      const { skills, pagination } = await skillsApi.list(agentId, currentPage);
-      setComposedAgents(optimistic.map((agent) => agent.id === agentId ? { ...agent, skills } : agent));
-      if (pagination) {
-        setAgentSkillPages((current) => ({ ...current, [agentId]: pagination }));
-      }
+      await loadAgentSkills(agentId, true);
     } catch (value) {
-      setComposedAgents(previous);
+      setAgents(previous);
       setError(value instanceof Error ? value.message : 'Could not update skill.');
       throw value;
     }
@@ -257,7 +328,7 @@ export function useAssistants() {
       return;
     }
 
-    const previous = agents;
+    const previous = agentsRef.current;
     try {
       await skillsApi.install(agentId, {
         skill_id: skill.skill_id,
@@ -265,14 +336,9 @@ export function useAssistants() {
         category: skill.category,
         enable: true,
       });
-      const currentPage = agentSkillPages[agentId]?.page;
-      const { skills, pagination } = await skillsApi.list(agentId, currentPage);
-      setComposedAgents(agents.map((agent) => agent.id === agentId ? { ...agent, skills } : agent));
-      if (pagination) {
-        setAgentSkillPages((current) => ({ ...current, [agentId]: pagination }));
-      }
+      await loadAgentSkills(agentId, true);
     } catch (value) {
-      setComposedAgents(previous);
+      setAgents(previous);
       setError(value instanceof Error ? value.message : 'Could not update skill.');
       throw value;
     }
@@ -282,7 +348,7 @@ export function useAssistants() {
   // reports more than one page via its pagination block).
   const loadSkillsPage = async (agentId: string, page: number) => {
     const { skills, pagination } = await skillsApi.list(agentId, page);
-    setComposedAgents(agents.map((agent) => agent.id === agentId ? { ...agent, skills } : agent));
+    setAgents((current) => current.map((agent) => agent.id === agentId ? { ...agent, skills } : agent));
     setAgentSkillPages((prev) => ({ ...prev, [agentId]: pagination ?? prev[agentId] }));
   };
 
@@ -293,7 +359,7 @@ export function useAssistants() {
     setSkillInstallError('');
     try {
       await skillsApi.installDefault({ source: clean, enable: true, force });
-      await refresh();
+      await loadLibrary(true);
       return true;
     } catch (value) {
       setSkillInstallError(value instanceof Error ? value.message : 'Could not install skill.');
@@ -308,7 +374,7 @@ export function useAssistants() {
     if (!skill) return [];
     const results = await Promise.allSettled(agentIds.map((agentId) =>
       skillsApi.install(agentId, { skill_id: skill.skill_id, name: skill.name, category: skill.category, enable: true })));
-    await refresh();
+    await Promise.all(agentIds.map((agentId) => loadAgentSkills(agentId, true)));
     return results;
   };
 
@@ -321,13 +387,13 @@ export function useAssistants() {
       return skillsApi.install(agentId, { skill_id: skillId, name: skill.name, category: skill.category, enable: true });
     }));
     const results = await Promise.allSettled(operations);
-    await refresh();
+    await Promise.all(agentIds.map((agentId) => loadAgentSkills(agentId, true)));
     return results;
   };
 
   return {
     agents, library, agentSkills, skillStates, agentSkillPages, defaultConfig, status, error, pending,
-    skillInstallPending, skillInstallError, refresh,
+    skillInstallPending, skillInstallError, refresh, loadConversations, loadAgentSkills, loadLibrary, loadDefaultConfig,
     createAgent, updateAgent, renameAgent, deleteAgent, testAgent, setDefaultModel, setWriteApprovals,
     createConversation, deleteConversation, renameConversation,
     toggleAgentSkill, setSkillEnabled, loadSkillsPage, installDefaultSkill, installExistingSkill, applySkillsToAgents,

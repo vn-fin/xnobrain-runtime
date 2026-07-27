@@ -21,7 +21,7 @@ function sorted(entries: WorkspaceEntry[]) {
   });
 }
 
-export function useWorkspace(agentId: string) {
+export function useWorkspace(agentId: string, active = true) {
   const [entriesByPath, setEntriesByPath] = useState<Record<string, WorkspaceEntry[]>>({});
   const [cwd, setCwd] = useState('');
   const [loading, setLoading] = useState(false);
@@ -69,12 +69,12 @@ export function useWorkspace(agentId: string) {
   }, [agentId]);
 
   useEffect(() => {
-    if (!agentId || loadedAgent.current === agentId) return;
+    if (!active || !agentId || loadedAgent.current === agentId) return;
     loadedAgent.current = agentId;
     setEntriesByPath({});
     setCwd('');
     void loadPath('');
-  }, [agentId, loadPath]);
+  }, [active, agentId, loadPath]);
 
   const navigate = useCallback((path: string) => {
     setCwd(path);

@@ -31,12 +31,6 @@ export function useSandbox(active: boolean) {
     }
   }, []);
 
-  // Non-VM screens need only the initial provisioned/not-provisioned answer
-  // (not a persistent statistics stream).
-  useEffect(() => {
-    if (!active && !checked.current) void refresh();
-  }, [active, refresh]);
-
   useEffect(() => {
     if (!active) return undefined;
     const controller = new AbortController();

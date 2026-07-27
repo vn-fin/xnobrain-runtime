@@ -2,7 +2,6 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type 
 import { useTranslation } from 'react-i18next';
 import {
   ArrowUp,
-  BarChart3,
   Bot,
   Check,
   ChevronDown,
@@ -11,7 +10,6 @@ import {
   Copy,
   FileText,
   Gauge,
-  Laptop,
   LoaderCircle,
   MessageSquarePlus,
   MoreHorizontal,
@@ -41,7 +39,6 @@ import type {
   ChatRun,
   ConnectionProvider,
   Conversation,
-  ConversationUsage,
   RunApprovalChoice,
   WorkspaceEntry,
 } from '../types';
@@ -61,9 +58,6 @@ export function ChatArea({
   providers,
   blends = [],
   runs,
-  usage,
-  usageStatus,
-  usageError,
   messages,
   queuedMessages = [],
   onEditQueued,
@@ -77,7 +71,6 @@ export function ChatArea({
   onStop,
   onResolveRunApproval,
   onRetry,
-  onRequestUsage,
   onSelectModel,
   onOpenSettings,
   onOpenRuntime,
@@ -97,9 +90,6 @@ export function ChatArea({
   providers: ConnectionProvider[];
   blends?: string[];
   runs: ChatRun[];
-  usage: ConversationUsage | null;
-  usageStatus: AsyncStatus;
-  usageError: string;
   messages: ChatMessage[];
   queuedMessages?: Array<{ id: string; content: string }>;
   onEditQueued?: (id: string, content: string) => void;
@@ -113,7 +103,6 @@ export function ChatArea({
   onStop: () => void;
   onResolveRunApproval: (runId: string, choice: RunApprovalChoice) => void | Promise<void>;
   onRetry: () => void;
-  onRequestUsage: () => void | Promise<void>;
   onSelectModel: (providerId: string, model: string) => void | Promise<void>;
   onOpenSettings: () => void;
   onOpenRuntime: () => void;
@@ -131,7 +120,6 @@ export function ChatArea({
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [modelOpen, setModelOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [fileDragOver, setFileDragOver] = useState(false);
@@ -182,19 +170,10 @@ export function ChatArea({
     ...runs.filter((run) => run.insertBeforeMessageId === message.id),
     ...(fallbackRuns.get(message.id) ?? []),
   ] : [];
-  const quotaLimits = usage?.limits.slice(0, 2) ?? [];
-  const quotaModel = usage?.model || currentModelLabel;
-  const quotaName = (name: string) => {
-    const normalized = name.toLowerCase();
-    if (normalized === 'session' || normalized.includes('5h')) return '5h';
-    if (normalized === 'weekly' || normalized.includes('7d')) return 'Weekly';
-    return name.replaceAll('_', ' ');
-  };
-
   useEffect(() => {
     const canvas = messageCanvasRef.current;
     if (canvas) canvas.scrollTop = canvas.scrollHeight;
-  }, [messages, queuedMessages, runs, usageStatus, chatError]);
+  }, [messages, queuedMessages, runs, chatError]);
 
   const submit = () => {
     if (streaming) return;
@@ -706,18 +685,6 @@ export function ChatArea({
               disabled={!activeConversation}
             />
             <div className="composer-row">
-              <div className="composer-add-control">
-                <button className="composer-icon" title="Attach or create file" onClick={() => setAddOpen((open) => !open)}>
-                  <Plus size={18} />
-                </button>
-                {addOpen && (
-                  <div className="composer-add-menu">
-                    <button onClick={() => { setAddOpen(false); void onRequestUsage(); }}>
-                      <BarChart3 size={15} /> Usage
-                    </button>
-                  </div>
-                )}
-              </div>
               <button className="composer-access" title={t('modals.approvalMode')}>
                 <ShieldAlert size={15} />
                 {t('chat.fullAccess')}
@@ -806,30 +773,6 @@ export function ChatArea({
             </div>
           </div>
 
-          <div className="chat-footer-meta">
-            <div className="work-mode-status">
-              <Laptop size={14} />
-              {t('chat.workLocally')}
-            </div>
-            <div className={`conversation-quota ${usageStatus}`} aria-live="polite" title={usage?.quotaMessage || undefined}>
-              <Gauge size={14} />
-              <span className="quota-model">{quotaModel}</span>
-              {usageStatus === 'loading' && !usage && <LoaderCircle className="run-step-spin" size={13} />}
-              {quotaLimits.map((limit) => (
-                <span className="quota-window" key={`${limit.name}-${limit.resetsAt}`}>
-                  <span>{quotaName(limit.name)}</span>
-                  <strong>{limit.unlimited ? 'Unlimited' : `${limit.remainingPercent}%`}</strong>
-                  {(limit.resetsIn || limit.resetsAt) && (
-                    <small>{limit.resetsIn ? `resets in ${limit.resetsIn}` : `resets ${new Date(limit.resetsAt).toLocaleString()}`}</small>
-                  )}
-                </span>
-              ))}
-              {usageStatus === 'ready' && quotaLimits.length === 0 && (
-                <span className="quota-fallback">{usage?.quotaMessage || `${usage?.totalTokens.toLocaleString() ?? 0} tokens`}</span>
-              )}
-              {usageStatus === 'error' && <span className="quota-fallback">{usageError || 'Usage unavailable'}</span>}
-            </div>
-          </div>
         </div>
       </footer>
     </>

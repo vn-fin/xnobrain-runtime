@@ -407,6 +407,7 @@ export type KanbanTaskPatchInput = {
 export type KanbanEvent = {
   id: number;
   taskId: string;
+  title: string;
   kind: string;
   createdAt: string;
   assignee: string | null;

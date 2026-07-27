@@ -995,6 +995,16 @@ export function KanbanView({
     [board, openTaskId],
   );
 
+  useEffect(() => {
+    if (!state.requestedTaskId || !board) return;
+    const requested = board.tasks.find((task) => task.id === state.requestedTaskId);
+    if (!requested) return;
+    setTaskScope(requested.status === 'archived' ? 'archived' : 'current');
+    setOpenTaskId(requested.id);
+    void state.refreshTask(requested.id);
+    state.clearRequestedTask();
+  }, [board, state]);
+
   const assigneeOptions = useMemo(() => {
     const ids = new Set(board?.tasks.flatMap((task) => task.assignees) ?? []);
     return [...ids]

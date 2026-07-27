@@ -784,6 +784,7 @@ class KanbanService:
         return {
             "id": int(event.id),
             "task_id": str(event.task_id),
+            "title": str(task.title),
             "kind": str(event.kind),
             "payload": self._safe_event_payload(event.payload),
             "created_at": _iso(event.created_at),

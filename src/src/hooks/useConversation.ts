@@ -21,7 +21,6 @@ export function useConversation(agentId: string, conversationId: string) {
   const loadController = useRef<AbortController>();
   const loadKey = useRef<string | null>(null);
   const generation = useRef(0);
-  const wasStreaming = useRef(false);
 
   // Streaming state lives in the shared store so it survives tab switches.
   const session = useSyncExternalStore(
@@ -68,7 +67,6 @@ export function useConversation(agentId: string, conversationId: string) {
       setServerMessages(nextMessages);
       setServerRuns(historicalRuns(nextMessages));
       setStatus('ready');
-      void requestUsage(generation.current);
       // Drop any finished session whose result is now in the server history.
       streamStore.clearIfIdle(agentId, conversationId);
     } catch (value) {
@@ -76,7 +74,7 @@ export function useConversation(agentId: string, conversationId: string) {
       setError(value instanceof Error ? value.message : 'Could not load conversation.');
       setStatus('error');
     }
-  }, [agentId, conversationId, requestUsage]);
+  }, [agentId, conversationId]);
 
   // Mark the active conversation so the store knows which completions are
   // "background" (and should raise a notification).
@@ -93,12 +91,6 @@ export function useConversation(agentId: string, conversationId: string) {
     // No stream teardown here: streams intentionally keep running in the
     // background when switching conversations.
   }, [refresh, key]);
-
-  useEffect(() => {
-    const completed = wasStreaming.current && !session.streaming;
-    wasStreaming.current = session.streaming;
-    if (completed) void requestUsage();
-  }, [session.streaming, requestUsage]);
 
   const sendMessage = async (input: string) => {
     const text = input.trim();

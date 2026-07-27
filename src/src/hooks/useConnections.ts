@@ -15,7 +15,7 @@ import {
 
 /** Result of a provider connection test, plus a normalized `ok` flag. */
 export type ProviderTestOutcome = ProviderTestResult & { ok: boolean };
-export function useConnections() {
+export function useConnections(active = true) {
   const [connections, setConnections] = useState<ConnectionProvider[]>([]);
   const [status, setStatus] = useState<AsyncStatus>('loading');
   const [error, setError] = useState('');
@@ -42,8 +42,8 @@ export function useConnections() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (active) void refresh();
+  }, [active, refresh]);
 
   // CLI/device-code authentication can complete in the provider popup, so
   // poll the providers list. API-key providers never enter this flow: they only

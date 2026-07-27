@@ -302,6 +302,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             task_id = created.json()["data"]["id"]
             rows = self.composition.service.kanban.board_events("default", after_id=0)
             event = next(item for item in rows if item["task_id"] == task_id and item["kind"] == "created")
+            self.assertEqual(event["title"], "Event task")
             self.assertEqual(event["status"], "triage")
             self.assertEqual(event["kanban_status"], "backlog")
             self.assertNotIn("body", event["payload"])

@@ -32,6 +32,7 @@ export function useKanban(active = true) {
   const [events, setEvents] = useState<KanbanEvent[]>([]);
   const [notice, setNotice] = useState<KanbanNotice | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [requestedTaskId, setRequestedTaskId] = useState<string | null>(null);
   const noticeId = useRef(0);
 
   const notify = useCallback((kind: KanbanNotice['kind'], message: string) => {
@@ -76,6 +77,10 @@ export function useKanban(active = true) {
   useEffect(() => {
     if (active) void load();
   }, [active, load]);
+  const activeRef = useRef(active);
+  const loadRef = useRef(load);
+  activeRef.current = active;
+  loadRef.current = load;
 
   const board = useMemo(
     () => boards.find((item) => item.id === activeBoardId) ?? boards[0] ?? null,
@@ -225,9 +230,10 @@ export function useKanban(active = true) {
     throw new Error('Kanban uses the five default statuses.');
   }, []);
 
-  const streamBoardId = activeBoardId || boards[0]?.id || '';
+  // The default-board event feed is the one global subscription. Board
+  // details remain route-scoped and are fetched only while Kanban is open.
+  const streamBoardId = 'default';
   useEffect(() => {
-    if (!active || !streamBoardId) return undefined;
     const controller = new AbortController();
     let reconnectTimer: number | undefined;
     let refreshTimer: number | undefined;
@@ -252,6 +258,7 @@ export function useKanban(active = true) {
           const item: KanbanEvent = {
             id: Number(data.id ?? eventId),
             taskId: String(data.task_id ?? ''),
+            title: String(data.title ?? data.task_id ?? 'Task'),
             kind: String(data.kind ?? 'updated'),
             createdAt: String(data.created_at ?? ''),
             assignee: data.assignee == null ? null : String(data.assignee),
@@ -282,7 +289,9 @@ export function useKanban(active = true) {
             : currentBoard));
           setLiveStatus('live');
           if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
-          refreshTimer = window.setTimeout(() => void load(false), 120);
+          if (activeRef.current) {
+            refreshTimer = window.setTimeout(() => void loadRef.current(false), 120);
+          }
         }, controller.signal, cursor);
       } catch {
         if (controller.signal.aborted) return;
@@ -297,7 +306,7 @@ export function useKanban(active = true) {
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
       if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
     };
-  }, [active, load, streamBoardId]);
+  }, []);
 
   // Tasks filtered by the search box, sorted by priority within their group.
   const visibleTasks = useMemo(() => {
@@ -340,6 +349,9 @@ export function useKanban(active = true) {
     refresh: () => load(),
     liveStatus,
     events,
+    requestedTaskId,
+    requestOpenTask: (taskId: string) => setRequestedTaskId(taskId),
+    clearRequestedTask: () => setRequestedTaskId(null),
     notice,
     dismissNotice: () => setNotice(null),
   };

@@ -19,6 +19,7 @@ import { Onboarding } from './components/Onboarding';
 import { SystemView } from './features/system/SystemView';
 import { TeamsView } from './components/TeamsView';
 import { KanbanView } from './components/KanbanView';
+import { KanbanNotifications } from './components/KanbanNotifications';
 import { AnalyticsView } from './components/AnalyticsView';
 import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
@@ -29,17 +30,29 @@ export default function App() {
   const { t } = useTranslation();
   const router = useRouter();
   const assistants = useAssistants();
-  const connections = useConnections();
-  // The first onboarding step needs the same local runtime status as the
-  // Runtime view. Without this, a fresh installation remains on “Checking…”
-  // because the stream is only activated after navigating away from onboarding.
-  const sandbox = useSandbox(router.centerView === 'data' && router.settingsSection === 'vm');
-  const conversation = useConversation(router.activeAgentId, router.activeConversationId);
-  const workspace = useWorkspace(router.activeAgentId);
+  const assistantsReady = assistants.status === 'ready';
+  const onboarding = assistantsReady && assistants.agents.length === 0;
+  const connections = useConnections(
+    assistantsReady
+    && (onboarding || router.centerView === 'chat'
+      || (router.centerView === 'data' && router.settingsSection === 'connectors')),
+  );
+  const sandbox = useSandbox(
+    assistantsReady
+    && (onboarding || (router.centerView === 'data' && router.settingsSection === 'vm')),
+  );
+  const conversation = useConversation(
+    router.centerView === 'chat' ? router.activeAgentId : '',
+    router.centerView === 'chat' ? router.activeConversationId : '',
+  );
+  const workspace = useWorkspace(
+    router.activeAgentId,
+    router.centerView === 'chat' && router.rightView === 'workspace',
+  );
   const teams = useTeams(router.centerView === 'teams');
   const kanban = useKanban(router.centerView === 'kanban');
   const analytics = useAnalytics(router.centerView === 'analytics');
-  const blends = useBlends();
+  const blends = useBlends(router.centerView === 'chat');
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
   const RIGHT_MIN = 280;
@@ -70,10 +83,14 @@ export default function App() {
   workspaceRefreshRef.current = workspace.refresh;
   const activeAgentIdRef = useRef(router.activeAgentId);
   activeAgentIdRef.current = router.activeAgentId;
+  const workspaceVisibleRef = useRef(router.centerView === 'chat' && router.rightView === 'workspace');
+  workspaceVisibleRef.current = router.centerView === 'chat' && router.rightView === 'workspace';
 
   useEffect(() => {
     const unsubscribe = streamStore.onComplete((event) => {
-      if (event.agentId === activeAgentIdRef.current) void workspaceRefreshRef.current();
+      if (event.agentId === activeAgentIdRef.current && workspaceVisibleRef.current) {
+        void workspaceRefreshRef.current();
+      }
       if (event.active) return;
       const agent = assistants.agents.find((a) => a.id === event.agentId);
       const convo = agent?.conversations.find((c) => c.id === event.conversationId);
@@ -95,10 +112,64 @@ export default function App() {
     assistants.renameConversation(router.activeAgentId, conversationId, title);
 
   useEffect(() => {
-    if (assistants.status === 'ready') router.reconcileAgents(assistants.agents);
-    // Reconcile only when the server-backed collection changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assistants.status, assistants.agents]);
+    if (!assistantsReady || assistants.agents.length === 0) return;
+    if (assistants.agents.some((agent) => agent.id === router.activeAgentId)) return;
+    router.setActiveAgentId(assistants.agents[0].id);
+    router.setActiveConversationId('');
+  }, [
+    assistants.agents,
+    assistantsReady,
+    router.activeAgentId,
+    router.setActiveAgentId,
+    router.setActiveConversationId,
+  ]);
+
+  useEffect(() => {
+    if (!assistantsReady || router.centerView !== 'chat' || !activeAgent) return undefined;
+    if (activeAgent.id !== router.activeAgentId) return undefined;
+    let cancelled = false;
+    void assistants.loadConversations(activeAgent.id).then((rows) => {
+      if (cancelled) return;
+      const selected = rows.find((item) => item.id === router.activeConversationId) ?? rows[0];
+      if ((selected?.id ?? '') !== router.activeConversationId) {
+        router.setActiveConversationId(selected?.id ?? '');
+      }
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [
+    activeAgent,
+    assistants.loadConversations,
+    assistantsReady,
+    router.activeAgentId,
+    router.activeConversationId,
+    router.centerView,
+    router.setActiveConversationId,
+  ]);
+
+  useEffect(() => {
+    if (!assistantsReady) return;
+    if (onboarding) {
+      void assistants.loadDefaultConfig();
+      return;
+    }
+    if (router.centerView === 'skills') {
+      void assistants.loadLibrary();
+      void Promise.all(assistants.agents.map((agent) => assistants.loadAgentSkills(agent.id)));
+    } else if (router.centerView === 'chat' && router.rightView === 'skills' && activeAgent) {
+      void assistants.loadLibrary();
+      void assistants.loadAgentSkills(activeAgent.id);
+    }
+  }, [
+    activeAgent,
+    assistants.agents,
+    assistants.loadAgentSkills,
+    assistants.loadDefaultConfig,
+    assistants.loadLibrary,
+    assistantsReady,
+    onboarding,
+    router.centerView,
+    router.rightView,
+  ]);
 
   const { centerView } = router;
 
@@ -200,7 +271,11 @@ export default function App() {
         agentSearch={router.agentSearch}
         onAgentSearch={router.setAgentSearch}
         onNavigate={router.setCenterView}
-        onSelectAgent={(agent) => router.openChat(agent.id, agent.conversations[0]?.id ?? '')}
+        onSelectAgent={(agent) => {
+          void assistants.loadConversations(agent.id).then((rows) => {
+            router.openChat(agent.id, rows[0]?.id ?? '');
+          });
+        }}
         onSelectConversation={(id) => router.openChat(router.activeAgentId, id)}
         onRenameAgent={assistants.renameAgent}
         onExportAgent={exportProfile}
@@ -278,9 +353,6 @@ export default function App() {
             providers={connections.connections}
             blends={blends.blends.map((blend) => blend.name)}
             runs={conversation.runs}
-            usage={conversation.usage}
-            usageStatus={conversation.usageStatus}
-            usageError={conversation.usageError}
             messages={conversation.messages}
             queuedMessages={conversation.queuedMessages}
             onEditQueued={conversation.editQueuedMessage}
@@ -294,7 +366,6 @@ export default function App() {
             onStop={conversation.stopStream}
             onResolveRunApproval={conversation.resolveRunApproval}
             onRetry={conversation.refresh}
-            onRequestUsage={conversation.requestUsage}
             onSelectModel={(provider, model) => assistants.updateAgent(activeAgent.id, { provider, model })}
             onTestAgent={() => void assistants.testAgent(activeAgent.id)}
             onOpenSettings={() => setSettingsOpen(true)}
@@ -400,6 +471,16 @@ export default function App() {
           ))}
         </div>
       )}
+
+      <KanbanNotifications
+        events={kanban.events}
+        liveStatus={kanban.liveStatus}
+        onOpenTask={(taskId) => {
+          kanban.setActiveBoardId('default');
+          if (taskId) kanban.requestOpenTask(taskId);
+          router.setCenterView('kanban');
+        }}
+      />
     </div>
   );
 }
