@@ -55,6 +55,8 @@
     "settings": "助手设置",
     "runtimeConfig": "运行时配置",
     "test": "测试助手",
+    "renameAction": "重命名",
+    "exportAction": "导出",
     "delete": "删除助手"
   },
   "chat": {
@@ -207,7 +209,7 @@
     "back": "返回",
     "confirmSave": "确认保存",
     "deleteAgentTitle": "删除助手",
-    "deleteAgentMsg": "删除“{{name}}”？这将移除其会话和配置。此操作无法撤销。"
+    "deleteAgentMsg": "删除“{{name}}”？所有会话、工作区文件、配置、技能、记忆和已分配的看板任务都将被永久删除。此操作无法撤销。"
   },
   "cron": {
     "title": "定时任务",

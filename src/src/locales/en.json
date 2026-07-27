@@ -78,9 +78,11 @@
     "runtimeConfig": "Runtime config",
     "test": "Test assistant",
     "rename": "Rename assistant",
+    "renameAction": "Rename",
     "renameLabel": "Assistant name",
     "menu": "Assistant options",
     "export": "Export profile",
+    "exportAction": "Export",
     "delete": "Delete assistant"
   },
   "chat": {
@@ -271,7 +273,7 @@
     "back": "Back",
     "confirmSave": "Confirm save",
     "deleteAgentTitle": "Delete assistant",
-    "deleteAgentMsg": "Delete “{{name}}”? This removes its conversations and configuration. This action cannot be undone."
+    "deleteAgentMsg": "Delete “{{name}}”? All conversations, workspace files, configuration, skills, memory, and assigned Kanban tasks will be permanently deleted. This action cannot be undone."
   },
   "cron": {
     "title": "Cron jobs",

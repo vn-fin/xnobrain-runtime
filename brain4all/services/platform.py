@@ -180,9 +180,19 @@ class PlatformService:
         return self.get_agent(agent_id)
 
     def delete_agent(self, agent_id: str) -> dict[str, Any]:
-        target = self.repository.soft_delete_profile(agent_id)
+        # Validate the profile before mutating Kanban so a missing assistant
+        # cannot trigger an unrelated cleanup.
+        profile = self.repository.profile_path(agent_id)
+        if not profile.is_dir():
+            raise StoreError("agent not found", status=404, code="not_found")
+        deleted_tasks = self.kanban.delete_assignee_tasks(agent_id)
+        self.repository.hard_delete_profile(agent_id)
         self.agents.sync_profiles_registry()
-        return {"deleted": True, "recoverable": True, "trash_path": str(target)}
+        return {
+            "deleted": True,
+            "recoverable": False,
+            "kanban_tasks_deleted": deleted_tasks,
+        }
 
     def global_config(self) -> dict[str, Any]:
         return self.config.get_config()
@@ -859,7 +869,28 @@ class PlatformService:
         config = dict(item.get("config") or {})
         name = str(item.get("name") or item.get("profile_name") or "")
         display_name = str(metadata.get("display_name") or metadata.get("title") or metadata.get("name") or name)
-        return {"id": name, "name": name, "display_name": display_name, "title": display_name, "description": str(metadata.get("description") or ""), "status": str(metadata.get("status") or "active"), "config": {"provider": str(config.get("provider") or "nine-router"), "model": str(config.get("model") or "auto"), "reasoning_effort": str(config.get("effort") or "medium"), "approval_mode": str(config.get("approval_mode") or "on"), "skills_write_approval": bool(config.get("skills_write_approval", True)), "memory_write_approval": bool(config.get("memory_write_approval", True))}, "created_at": metadata.get("created_at"), "updated_at": metadata.get("updated_at"), "metadata": {**metadata, "profile_path": item.get("profile_path"), "workspace_path": item.get("workspace_path")}}
+        public_metadata = {
+            "display_name": display_name,
+            "description": str(metadata.get("description") or ""),
+        }
+        return {
+            "id": name,
+            "name": display_name,
+            "display_name": display_name,
+            "title": display_name,
+            "description": str(metadata.get("description") or ""),
+            "status": str(metadata.get("status") or "active"),
+            "config": {
+                "model": str(config.get("model") or "auto"),
+                "reasoning_effort": str(config.get("effort") or "medium"),
+                "approval_mode": str(config.get("approval_mode") or "on"),
+                "skills_write_approval": bool(config.get("skills_write_approval", True)),
+                "memory_write_approval": bool(config.get("memory_write_approval", True)),
+            },
+            "created_at": metadata.get("created_at"),
+            "updated_at": metadata.get("updated_at"),
+            "metadata": public_metadata,
+        }
 
 
 EXPECTED_ERRORS = (ServiceError, StoreError, AgentAPIError, ConfigAPIError, NineRouterAPIError)

@@ -148,7 +148,16 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         profile = created.json()["data"]
         self.assertRegex(profile["id"], r"^[a-z][a-z0-9]{5}$")
         self.assertNotEqual(profile["id"], "Research Lead")
+        self.assertEqual(profile["name"], "Research Lead")
         self.assertEqual(profile["display_name"], "Research Lead")
+        self.assertNotIn("provider", profile["config"])
+        self.assertNotIn("profile_path", profile["metadata"])
+        self.assertNotIn("workspace_path", profile["metadata"])
+        self.assertNotIn(str(self.profiles), created.text)
+        self.assertEqual(profile["metadata"], {
+            "display_name": "Research Lead",
+            "description": "Coordinates research workflows.",
+        })
         registry_path = self.root / "profiles.yaml"
         registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
         entries = {item["name"]: item for item in registry["profiles"]}

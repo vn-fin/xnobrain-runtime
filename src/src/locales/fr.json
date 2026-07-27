@@ -55,6 +55,8 @@
     "settings": "Paramètres de l'assistant",
     "runtimeConfig": "Configuration d'exécution",
     "test": "Tester l'assistant",
+    "renameAction": "Renommer",
+    "exportAction": "Exporter",
     "delete": "Supprimer l'assistant"
   },
   "chat": {
@@ -207,7 +209,7 @@
     "back": "Retour",
     "confirmSave": "Confirmer l'enregistrement",
     "deleteAgentTitle": "Supprimer l'assistant",
-    "deleteAgentMsg": "Supprimer “{{name}}” ? Cela supprime ses conversations et sa configuration. Cette action est irréversible."
+    "deleteAgentMsg": "Supprimer « {{name}} » ? Les conversations, fichiers de l’espace de travail, configurations, compétences, mémoires et tâches Kanban assignées seront définitivement supprimés. Cette action est irréversible."
   },
   "cron": {
     "title": "Tâches cron",

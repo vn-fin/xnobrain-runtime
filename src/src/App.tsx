@@ -204,6 +204,7 @@ export default function App() {
         onSelectConversation={(id) => router.openChat(router.activeAgentId, id)}
         onRenameAgent={assistants.renameAgent}
         onExportAgent={exportProfile}
+        onRequestDeleteAgent={setDeleteAgentId}
         onRenameConversation={handleRenameConversation}
         onRequestDeleteConversation={(id) => setDeleteConversationId(id)}
         onNewAgent={() => setCreateAgentOpen(true)}

@@ -62,6 +62,17 @@ class NineRouterPinTests(unittest.TestCase):
         versions.add(match.group(1))
         self.assertEqual(len(versions), 1, f"pins disagree: {versions}")
 
+    def test_installer_bootstraps_pip_before_using_it(self):
+        """A reusable Hermes venv may not include pip."""
+        installer = (_REPO / "scripts" / "install-linux.sh").read_text(encoding="utf-8")
+        bootstrap = 'if ! "$project_python" -m pip --version >/dev/null 2>&1; then'
+        self.assertIn(bootstrap, installer)
+        self.assertIn('"$project_python" -m ensurepip --upgrade', installer)
+        self.assertLess(
+            installer.index(bootstrap),
+            installer.index('"$project_python" -m pip install -r "$project_dir/requirements.txt"'),
+        )
+
 
 class NineRouterLiveProbeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

@@ -12,10 +12,10 @@ describe('agentsApi profile display names', () => {
       success: true,
       data: {
         id: 'a1b2c3',
-        name: 'a1b2c3',
+        name: 'Research Lead',
         display_name: 'Research Lead',
         description: 'Coordinates research.',
-        config: { provider: 'nine-router', model: 'auto' },
+        config: { model: 'auto' },
       },
     }), { status: 201, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
@@ -27,8 +27,10 @@ describe('agentsApi profile display names', () => {
       description: 'Coordinates research.',
     });
     expect(profile.id).toBe('a1b2c3');
-    expect(profile.name).toBe('a1b2c3');
+    expect(profile.name).toBe('Research Lead');
     expect(profile.title).toBe('Research Lead');
+    expect(profile.provider).toBe('nine-router');
+    expect(profile.workspace).toBe('a1b2c3/workspace');
   });
 
   it('renames only the profile display name', async () => {
@@ -36,10 +38,10 @@ describe('agentsApi profile display names', () => {
       success: true,
       data: {
         id: 'a1b2c3',
-        name: 'a1b2c3',
+        name: 'Operations Lead',
         display_name: 'Operations Lead',
         description: 'Coordinates research.',
-        config: { provider: 'nine-router', model: 'auto' },
+        config: { model: 'auto' },
       },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
@@ -50,7 +52,7 @@ describe('agentsApi profile display names', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
       display_name: 'Operations Lead',
     });
-    expect(profile.name).toBe('a1b2c3');
+    expect(profile.name).toBe('Operations Lead');
     expect(profile.title).toBe('Operations Lead');
   });
 
@@ -64,9 +66,9 @@ describe('agentsApi profile display names', () => {
         success: true,
         data: {
           id: 'a1b2c3',
-          name: 'a1b2c3',
+          name: 'Research Lead',
           display_name: 'Research Lead',
-          config: { provider: 'nine-router', model: 'cx/gpt-5.4' },
+          config: { model: 'cx/gpt-5.4' },
         },
       }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
@@ -77,5 +79,24 @@ describe('agentsApi profile display names', () => {
       provider: 'nine-router',
       model: 'cx/gpt-5.4',
     });
+  });
+
+  it('calls the permanent assistant delete endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: {
+        deleted: true,
+        recoverable: false,
+        kanban_tasks_deleted: 2,
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await agentsApi.remove('a1b2c3');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/agent-gateway/v1/agents/a1b2c3/delete',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
   });
 });

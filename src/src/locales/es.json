@@ -55,6 +55,8 @@
     "settings": "Ajustes del asistente",
     "runtimeConfig": "Configuración de ejecución",
     "test": "Probar asistente",
+    "renameAction": "Renombrar",
+    "exportAction": "Exportar",
     "delete": "Eliminar asistente"
   },
   "chat": {
@@ -207,7 +209,7 @@
     "back": "Atrás",
     "confirmSave": "Confirmar guardado",
     "deleteAgentTitle": "Eliminar asistente",
-    "deleteAgentMsg": "¿Eliminar “{{name}}”? Esto elimina sus conversaciones y configuración. Esta acción no se puede deshacer."
+    "deleteAgentMsg": "¿Eliminar “{{name}}”? Se eliminarán permanentemente todas las conversaciones, archivos del espacio de trabajo, configuración, habilidades, memoria y tareas Kanban asignadas. Esta acción no se puede deshacer."
   },
   "cron": {
     "title": "Tareas cron",

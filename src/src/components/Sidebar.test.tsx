@@ -1,0 +1,66 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import i18n from '../i18n';
+import type { Agent } from '../types';
+import { Sidebar } from './Sidebar';
+
+vi.mock('../theme', () => ({
+  useTheme: () => ({ preference: 'dark', setPreference: vi.fn(), resolved: 'dark' }),
+}));
+
+const agent: Agent = {
+  id: 'a1b2c3',
+  name: 'a1b2c3',
+  title: 'Research Lead',
+  description: '',
+  status: 'ready',
+  provider: 'nine-router',
+  model: 'auto',
+  reasoningEffort: 'medium',
+  approvalMode: 'manual',
+  skillsWriteApproval: true,
+  memoryWriteApproval: true,
+  workspace: '',
+  skills: [],
+  conversations: [],
+};
+
+describe('Sidebar assistant actions', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  it('shows simplified actions and requests delete from the three-dot menu', () => {
+    const requestDelete = vi.fn();
+    render(
+      <Sidebar
+        agents={[agent]}
+        activeAgent={agent}
+        activeConversation={undefined}
+        centerView="chat"
+        agentSearch=""
+        onAgentSearch={vi.fn()}
+        onNavigate={vi.fn()}
+        onSelectAgent={vi.fn()}
+        onSelectConversation={vi.fn()}
+        onRenameAgent={vi.fn()}
+        onExportAgent={vi.fn()}
+        onRequestDeleteAgent={requestDelete}
+        onRenameConversation={vi.fn()}
+        onRequestDeleteConversation={vi.fn()}
+        onNewAgent={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assistant options' }));
+
+    const menu = screen.getByRole('menu');
+    expect(menu).toHaveTextContent('Rename');
+    expect(menu).toHaveTextContent('Export');
+    const deleteButton = screen.getByRole('button', { name: 'Delete' });
+    expect(deleteButton).toHaveClass('danger');
+
+    fireEvent.click(deleteButton);
+    expect(requestDelete).toHaveBeenCalledWith('a1b2c3');
+  });
+});

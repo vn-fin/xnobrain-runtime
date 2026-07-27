@@ -81,6 +81,20 @@ def remove_board(slug: str, *, archive: bool = True) -> dict[str, Any]:
     return dict(_module().remove_board(board_slug(slug), archive=archive))
 
 
+def delete_assignee_tasks(assignee: str) -> int:
+    """Permanently delete every task assigned to a profile on every board."""
+    kb = _module()
+    deleted = 0
+    for board in kb.list_boards(include_archived=True):
+        slug = board_slug(str(board.get("slug") or "default"))
+        with connection(slug) as conn:
+            tasks = kb.list_tasks(conn, assignee=assignee, include_archived=True)
+            for task in tasks:
+                if kb.delete_task(conn, str(task.id)):
+                    deleted += 1
+    return deleted
+
+
 def current_board() -> str:
     return str(_module().get_current_board())
 

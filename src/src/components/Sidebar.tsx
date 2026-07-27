@@ -43,6 +43,7 @@ export function Sidebar({
   onSelectConversation,
   onRenameAgent,
   onExportAgent,
+  onRequestDeleteAgent,
   onRenameConversation,
   onRequestDeleteConversation,
   onNewAgent,
@@ -58,6 +59,7 @@ export function Sidebar({
   onSelectConversation: (conversationId: string) => void;
   onRenameAgent: (agentId: string, displayName: string) => void | Promise<void>;
   onExportAgent: (agentId: string) => Promise<void>;
+  onRequestDeleteAgent: (agentId: string) => void;
   onRenameConversation: (conversationId: string, title: string) => void | Promise<void>;
   onRequestDeleteConversation: (conversationId: string) => void;
   onNewAgent: () => void;
@@ -222,10 +224,17 @@ export function Sidebar({
               {agentMenuId === agent.id && (
                 <div className="row-menu" role="menu">
                   <button className="row-menu-item" disabled={exportingAgentId === agent.id} onClick={() => startAgentRename(agent)}>
-                    <Pencil size={14} /> {t('agents.rename')}
+                    <Pencil size={14} /> {t('agents.renameAction', { defaultValue: 'Rename' })}
                   </button>
                   <button className="row-menu-item" disabled={exportingAgentId === agent.id} onClick={() => void exportAgent(agent)}>
-                    <Download size={14} /> {exportingAgentId === agent.id ? 'Exporting…' : t('agents.export', { defaultValue: 'Export profile' })}
+                    <Download size={14} /> {exportingAgentId === agent.id ? 'Exporting…' : t('agents.exportAction', { defaultValue: 'Export' })}
+                  </button>
+                  <button
+                    className="row-menu-item danger"
+                    disabled={exportingAgentId === agent.id}
+                    onClick={() => { setAgentMenuId(null); onRequestDeleteAgent(agent.id); }}
+                  >
+                    <Trash2 size={14} /> {t('common.delete')}
                   </button>
                 </div>
               )}

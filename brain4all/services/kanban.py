@@ -87,6 +87,16 @@ class KanbanService:
     def __init__(self, agents: Any | None = None):
         self.agents = agents
 
+    def delete_assignee_tasks(self, agent_id: str) -> int:
+        try:
+            return kb_adapter.delete_assignee_tasks(agent_id)
+        except (KanbanUnavailable, ValueError) as exc:
+            raise ServiceError(
+                str(exc),
+                status=503,
+                code="kanban_not_ready",
+            ) from exc
+
     def _workspace_for_assignee(
         self,
         assignee: Any,

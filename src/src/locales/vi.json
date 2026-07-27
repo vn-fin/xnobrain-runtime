@@ -55,6 +55,8 @@
     "settings": "Cài đặt trợ lý",
     "runtimeConfig": "Cấu hình runtime",
     "test": "Kiểm tra trợ lý",
+    "renameAction": "Đổi tên",
+    "exportAction": "Xuất",
     "delete": "Xóa trợ lý"
   },
   "chat": {
@@ -207,7 +209,7 @@
     "back": "Quay lại",
     "confirmSave": "Xác nhận lưu",
     "deleteAgentTitle": "Xóa trợ lý",
-    "deleteAgentMsg": "Xóa “{{name}}”? Thao tác này xóa các cuộc trò chuyện và cấu hình của nó. Không thể hoàn tác."
+    "deleteAgentMsg": "Xóa “{{name}}”? Tất cả cuộc trò chuyện, tệp trong không gian làm việc, cấu hình, kỹ năng, bộ nhớ và tác vụ Kanban được giao sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
   },
   "cron": {
     "title": "Công việc định kỳ",

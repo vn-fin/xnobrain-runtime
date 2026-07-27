@@ -55,6 +55,8 @@
     "settings": "Assistenteneinstellungen",
     "runtimeConfig": "Laufzeitkonfiguration",
     "test": "Assistent testen",
+    "renameAction": "Umbenennen",
+    "exportAction": "Exportieren",
     "delete": "Assistent löschen"
   },
   "chat": {
@@ -207,7 +209,7 @@
     "back": "Zurück",
     "confirmSave": "Speichern bestätigen",
     "deleteAgentTitle": "Assistent löschen",
-    "deleteAgentMsg": "„{{name}}“ löschen? Dies entfernt seine Konversationen und Konfiguration. Diese Aktion kann nicht rückgängig gemacht werden."
+    "deleteAgentMsg": "„{{name}}“ löschen? Alle Konversationen, Arbeitsbereichsdateien, Konfigurationen, Fähigkeiten, Erinnerungen und zugewiesenen Kanban-Aufgaben werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
   },
   "cron": {
     "title": "Cron-Jobs",

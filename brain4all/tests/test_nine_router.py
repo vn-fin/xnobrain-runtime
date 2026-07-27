@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
+from unittest.mock import patch
 
 from brain4all.integrations.hermes import AgentManager
 from brain4all.integrations.nine_router import (
@@ -263,6 +264,8 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             (root_profile / "skills" / "office" / "writer").mkdir(parents=True)
             (root_profile / "memories").mkdir()
             (root_profile / "plugins" / "calendar").mkdir(parents=True)
+            (root_profile / "cron").mkdir()
+            (root_profile / "home").mkdir()
             (root_profile / "config.yaml").write_text(
                 "model:\n  default: auto\nterminal:\n  home_mode: profile\n",
                 encoding="utf-8",
@@ -275,6 +278,14 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             )
             (root_profile / "plugins" / "calendar" / "config.yaml").write_text(
                 "enabled: true\n",
+                encoding="utf-8",
+            )
+            (root_profile / "cron" / "ticker_heartbeat").write_text(
+                "runtime state\n",
+                encoding="utf-8",
+            )
+            (root_profile / "home" / "runtime-cache").write_text(
+                "runtime state\n",
                 encoding="utf-8",
             )
             (root_profile / "skills" / "office" / "writer" / "SKILL.md").write_text(
@@ -299,8 +310,31 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 "Baseline office conventions\n",
             )
             self.assertTrue((profile / "plugins" / "calendar" / "config.yaml").is_file())
+            self.assertFalse((profile / "cron" / "ticker_heartbeat").exists())
+            self.assertFalse((profile / "home" / "runtime-cache").exists())
             for dirname in ("sessions", "logs", "memories", "cron", "plugins", "home"):
                 self.assertTrue((profile / dirname).is_dir(), dirname)
+
+    def test_failed_agent_creation_removes_the_partial_generated_profile(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            profiles = root / "profiles"
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=profiles,
+                legacy_agents_root=root / "legacy",
+            )
+
+            with patch.object(
+                manager,
+                "_copy_seed_profile",
+                side_effect=PermissionError("runtime state is unreadable"),
+            ):
+                with self.assertRaises(PermissionError):
+                    manager.create_agent({"display_name": "News Summary"})
+
+            self.assertEqual(list(profiles.iterdir()), [])
+            self.assertEqual(manager.list_agents()["agents"], [])
 
     async def test_agent_stream_closes_cleanly_without_a_provider(self) -> None:
         with TemporaryDirectory() as temp_dir:

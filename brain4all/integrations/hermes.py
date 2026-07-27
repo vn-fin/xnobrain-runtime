@@ -54,7 +54,7 @@ PROFILES_REGISTRY_FILE = "profiles.yaml"
 CREDENTIAL_FILES = (".env", "auth.json")
 AGENT_CREDENTIAL_ENV_KEYS = ("NINE_ROUTER_API_KEY",)
 SEED_FILES = ("config.yaml", "SOUL.md", "AGENTS.md", "mcp.json", *CREDENTIAL_FILES)
-SEED_DIRS = ("memories", "cron", "plugins", "home")
+SEED_DIRS = ("memories", "plugins")
 PROFILE_STATE_DIRS = (
     "skills",
     "sessions",
@@ -144,44 +144,52 @@ class AgentManager:
 
         profile_dir = self._profile_dir(name)
         workspace_dir = self._workspace_dir(name)
-        profile_dir.mkdir(parents=True, exist_ok=True)
-        workspace_dir.mkdir(parents=True, exist_ok=True)
-        for dirname in PROFILE_STATE_DIRS:
-            (profile_dir / dirname).mkdir(parents=True, exist_ok=True)
+        try:
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            workspace_dir.mkdir(parents=True, exist_ok=True)
+            for dirname in PROFILE_STATE_DIRS:
+                (profile_dir / dirname).mkdir(parents=True, exist_ok=True)
 
-        if not existed or bool(body.get("refresh_seed", False)):
-            self._copy_seed_profile(profile_dir, copy_credentials=bool(body.get("copy_credentials", True)))
-            self._copy_root_skills(profile_dir, overwrite=True)
-        self._ensure_router_profile(profile_dir, body.get("model"))
-        self._write_workspace_cwd(profile_dir, workspace_dir)
-        self._ensure_workspace_agents(profile_dir, workspace_dir)
-        self._initialize_state_db(profile_dir)
+            if not existed or bool(body.get("refresh_seed", False)):
+                self._copy_seed_profile(profile_dir, copy_credentials=bool(body.get("copy_credentials", True)))
+                self._copy_root_skills(profile_dir, overwrite=True)
+            self._ensure_router_profile(profile_dir, body.get("model"))
+            self._write_workspace_cwd(profile_dir, workspace_dir)
+            self._ensure_workspace_agents(profile_dir, workspace_dir)
+            self._initialize_state_db(profile_dir)
 
-        metadata = self._read_metadata(profile_dir)
-        now = time.time()
-        metadata.setdefault("name", name)
-        metadata.setdefault("profile_name", name)
-        metadata.setdefault("created_at", now)
-        metadata["updated_at"] = now
-        for field in ("description", "title", "display_name"):
-            if field in body:
-                value = body.get(field)
-                metadata[field] = "" if value is None else str(value).strip()
-        metadata.setdefault("display_name", str(metadata.get("title") or name))
-        self._write_metadata(profile_dir, metadata)
-        self._write_profile_manifest(profile_dir, metadata)
-        self.sync_profiles_registry()
+            metadata = self._read_metadata(profile_dir)
+            now = time.time()
+            metadata.setdefault("name", name)
+            metadata.setdefault("profile_name", name)
+            metadata.setdefault("created_at", now)
+            metadata["updated_at"] = now
+            for field in ("description", "title", "display_name"):
+                if field in body:
+                    value = body.get(field)
+                    metadata[field] = "" if value is None else str(value).strip()
+            metadata.setdefault("display_name", str(metadata.get("title") or name))
+            self._write_metadata(profile_dir, metadata)
+            self._write_profile_manifest(profile_dir, metadata)
+            self.sync_profiles_registry()
 
-        if "soul" in body:
-            self._write_text(profile_dir / "SOUL.md", body.get("soul"))
-        if "memory" in body:
-            self.write_memory(name, {"memory": body.get("memory")})
-        if "instructions" in body:
-            self._write_text(workspace_dir / "AGENTS.md", body.get("instructions"))
-        if isinstance(body.get("config"), Mapping):
-            self.update_config(name, body["config"])
-
-        return self.describe_agent(name), 200 if existed else 201
+            if "soul" in body:
+                self._write_text(profile_dir / "SOUL.md", body.get("soul"))
+            if "memory" in body:
+                self.write_memory(name, {"memory": body.get("memory")})
+            if "instructions" in body:
+                self._write_text(workspace_dir / "AGENTS.md", body.get("instructions"))
+            if isinstance(body.get("config"), Mapping):
+                self.update_config(name, body["config"])
+            return self.describe_agent(name), 200 if existed else 201
+        except Exception:
+            if not existed:
+                shutil.rmtree(profile_dir, ignore_errors=True)
+                try:
+                    self.sync_profiles_registry()
+                except Exception:
+                    pass
+            raise
 
     def describe_agent(self, raw_name: Any, *, include_memory: bool = True) -> dict[str, Any]:
         name = self._agent_name(raw_name)

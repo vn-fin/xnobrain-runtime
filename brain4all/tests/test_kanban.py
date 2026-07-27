@@ -155,6 +155,73 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(tasks.json()["data"]["tasks"][0]["kanban_status"], "todo")
             self.assertIsNotNone(tasks.json()["data"]["tasks"][0]["schedule"])
 
+    async def test_deleting_agent_hard_deletes_profile_and_assigned_tasks_on_every_board(self):
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            created_agent = await client.post(
+                "/agent-gateway/v1/agents",
+                json={"display_name": "Disposable assistant"},
+            )
+            self.assertEqual(created_agent.status_code, 201, created_agent.text)
+            agent_id = created_agent.json()["data"]["id"]
+
+            created_board = await client.post(
+                "/agent-gateway/v1/kanban/boards",
+                json={"slug": "project", "name": "Project"},
+            )
+            self.assertEqual(created_board.status_code, 201, created_board.text)
+
+            for board in ("default", "project"):
+                task = await client.post(
+                    f"/agent-gateway/v1/kanban/boards/{board}/tasks",
+                    json={
+                        "title": f"{board} assigned task",
+                        "description": "This task belongs to the deleted assistant.",
+                        "status": "backlog",
+                        "assignee": agent_id,
+                    },
+                )
+                self.assertEqual(task.status_code, 201, task.text)
+
+            retained = await client.post(
+                "/agent-gateway/v1/kanban/boards/default/tasks",
+                json={
+                    "title": "Unassigned task",
+                    "description": "This task must remain.",
+                    "status": "backlog",
+                },
+            )
+            self.assertEqual(retained.status_code, 201, retained.text)
+
+            deleted = await client.delete(
+                f"/agent-gateway/v1/agents/{agent_id}/delete",
+            )
+            self.assertEqual(deleted.status_code, 200, deleted.text)
+            self.assertEqual(
+                deleted.json()["data"],
+                {
+                    "deleted": True,
+                    "recoverable": False,
+                    "kanban_tasks_deleted": 2,
+                },
+            )
+            self.assertFalse((self.profiles / agent_id).exists())
+            self.assertEqual(
+                list((Path(self.temp.name) / "trash" / "profiles").iterdir()),
+                [],
+            )
+
+            default_tasks = await client.get(
+                "/agent-gateway/v1/kanban/boards/default/tasks?include_archived=true",
+            )
+            project_tasks = await client.get(
+                "/agent-gateway/v1/kanban/boards/project/tasks?include_archived=true",
+            )
+            self.assertEqual(
+                [task["title"] for task in default_tasks.json()["data"]["tasks"]],
+                ["Unassigned task"],
+            )
+            self.assertEqual(project_tasks.json()["data"]["tasks"], [])
+
     async def test_pre_run_assignment_and_clean_transition_conflict(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
             researcher = await client.post(

@@ -73,6 +73,14 @@ class FileRepository:
             self._sync_dir(target.parent)
         return target
 
+    def hard_delete_profile(self, agent_id: Any) -> None:
+        source = self.profile_path(agent_id)
+        if not source.is_dir():
+            raise StoreError("agent not found", status=404, code="not_found")
+        with self._lock:
+            shutil.rmtree(source)
+            self._sync_dir(source.parent)
+
     def snapshot(self, agent_id: Any, kind: str, target: str, content: bytes) -> dict[str, Any]:
         agent_id = self._id(agent_id, "agent id")
         if kind not in {"memory", "skills", "config"}:

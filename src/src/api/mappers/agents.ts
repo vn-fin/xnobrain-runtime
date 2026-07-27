@@ -9,13 +9,15 @@ export function mapAgent(dto: AgentDTO): Agent {
     name: dto.name ?? '',
     description: dto.description ?? '',
     status: dto.status ?? 'unknown',
-    provider: config?.provider ?? '',
+    // nine-router is the only runtime transport and is intentionally omitted
+    // from the public agent DTO because it is not a user-selectable provider.
+    provider: config?.provider ?? 'nine-router',
     model: config?.model ?? '',
     reasoningEffort: config?.reasoning_effort ?? config?.effort ?? '',
     approvalMode: config?.approval_mode === 'auto' ? 'auto' : 'manual',
     skillsWriteApproval: config?.skills_write_approval ?? true,
     memoryWriteApproval: config?.memory_write_approval ?? true,
-    workspace: dto.name ? `/home/user/agents/${dto.name}/workspace` : '',
+    workspace: dto.id ? `${dto.id}/workspace` : '',
     skills: [],
     conversations: [],
   };

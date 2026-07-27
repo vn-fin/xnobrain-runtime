@@ -55,6 +55,8 @@
     "settings": "アシスタント設定",
     "runtimeConfig": "ランタイム設定",
     "test": "アシスタントをテスト",
+    "renameAction": "名前を変更",
+    "exportAction": "エクスポート",
     "delete": "アシスタントを削除"
   },
   "chat": {
@@ -207,7 +209,7 @@
     "back": "戻る",
     "confirmSave": "保存を確認",
     "deleteAgentTitle": "アシスタントを削除",
-    "deleteAgentMsg": "「{{name}}」を削除しますか？会話と設定が削除されます。この操作は元に戻せません。"
+    "deleteAgentMsg": "「{{name}}」を削除しますか？すべての会話、ワークスペースファイル、設定、スキル、メモリ、割り当てられたKanbanタスクが完全に削除されます。この操作は元に戻せません。"
   },
   "cron": {
     "title": "Cron ジョブ",

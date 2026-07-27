@@ -221,6 +221,17 @@ else
 fi
 project_python="$project_python/bin/python"
 
+# Hermes can create a working virtual environment without installing pip.  The
+# environment is reused on subsequent installs, so bootstrap pip before any
+# dependency or editable-package installation.
+if ! "$project_python" -m pip --version >/dev/null 2>&1; then
+  echo "Bootstrapping pip in project Python environment: $project_python"
+  if ! "$project_python" -m ensurepip --upgrade; then
+    echo "Project Python environment has no pip and could not bootstrap it: $project_python" >&2
+    exit 1
+  fi
+fi
+
 # Reuse an existing project venv when present, but make sure it also contains
 # the freshly installed Hermes package instead of silently falling back to a
 # user's unrelated global installation.
