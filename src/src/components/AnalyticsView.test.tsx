@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UsageSummary } from '../api/analytics';
 import type { AnalyticsState } from '../hooks/useAnalytics';
 import { AnalyticsView } from './AnalyticsView';
@@ -54,6 +54,8 @@ const summary: UsageSummary = {
 };
 
 describe('AnalyticsView chart', () => {
+  afterEach(cleanup);
+
   it('shows exact bucket details when a bar is hovered', () => {
     const state = {
       controls: { agents: [], days: 1, bucket: 'hour' },
@@ -74,5 +76,26 @@ describe('AnalyticsView chart', () => {
     expect(screen.getByRole('status')).toHaveTextContent('1,500');
     expect(screen.getByRole('status')).toHaveTextContent('1,200');
     expect(screen.getByRole('status')).toHaveTextContent('$0.2500');
+  });
+
+  it('blocks the Analytics surface and shows API progress while loading', () => {
+    const state = {
+      controls: { agents: [], days: 30, bucket: 'day' },
+      setControls: vi.fn(),
+      available: [],
+      summary,
+      status: 'loading',
+      progress: { completed: 2, total: 3 },
+      error: null,
+      generatedAt: summary.generated_at,
+      refresh: vi.fn(),
+      setBudget: vi.fn(),
+    } as AnalyticsState;
+    const { container } = render(<AnalyticsView state={state} onClose={vi.fn()} />);
+
+    expect(container.querySelector('.analytics-page')).toHaveAttribute('aria-busy', 'true');
+    expect(container.querySelector('.analytics-content')).toHaveAttribute('inert');
+    expect(screen.getByText('Loading analytics').closest('[role="status"]')).toBeVisible();
+    expect(screen.getByRole('progressbar', { name: 'Analytics API loading progress' })).toHaveAttribute('aria-valuenow', '2');
   });
 });

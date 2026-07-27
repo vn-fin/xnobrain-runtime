@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
   Bot,
@@ -54,12 +54,24 @@ export function AnalyticsView({ state, onClose }: { state: AnalyticsState; onClo
   const { controls, setControls, available, summary, status, error, generatedAt } = state;
   const progress = state.progress ?? { completed: 0, total: 3 };
   const loading = status === 'loading';
+  const contentRef = useRef<HTMLDivElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [metric, setMetric] = useState<'tokens' | 'cost'>('tokens');
   const selectedCount = controls.agents.length;
   const agentLabel = selectedCount
     ? `${selectedCount} selected`
     : `All usage`;
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    if (loading) {
+      content.setAttribute('inert', '');
+      setPickerOpen(false);
+    } else {
+      content.removeAttribute('inert');
+    }
+  }, [loading]);
 
   function patch(next: Partial<AnalyticsControls>) {
     setControls({ ...controls, ...next });
@@ -74,7 +86,7 @@ export function AnalyticsView({ state, onClose }: { state: AnalyticsState; onClo
 
   return (
     <main className={`analytics-page ${loading ? 'is-loading' : ''}`} aria-busy={loading}>
-      <div className="analytics-content" inert={loading ? true : undefined}>
+      <div className="analytics-content" ref={contentRef}>
         <header className="analytics-header">
         <div>
           <div className="analytics-eyebrow"><Sparkles size={13} /> Usage intelligence</div>
