@@ -25,6 +25,7 @@ import { ARCHIVED_COLUMN, KANBAN_COLUMNS } from '../api/kanban';
 import type { Team } from '../api/teams';
 import type { useKanban } from '../hooks/useKanban';
 import type { Agent, KanbanColumnId, KanbanPriority, KanbanTask } from '../types';
+import { formatKanbanEvent } from './kanbanEventFormat';
 
 type KanbanState = ReturnType<typeof useKanban>;
 
@@ -828,17 +829,23 @@ function TaskDrawer({
             </div>
             <div className="kb-event-timeline">
               {task.events.length === 0 && <span className="kb-muted">No events yet.</span>}
-              {[...task.events].reverse().map((event) => (
-                <div key={event.id}>
-                  <span className="kb-event-marker" />
-                  <div>
-                    <header><strong>{event.kind.replaceAll('_', ' ')}</strong><time>{eventTime(event.createdAt)}</time></header>
-                    {event.payload && Object.keys(event.payload).length > 0 && (
-                      <code>{JSON.stringify(event.payload)}</code>
-                    )}
+              {[...task.events].reverse().map((event) => {
+                const presentation = formatKanbanEvent(event, (agentId) => resolveAssignee(agentId, agents).name);
+                return (
+                  <div className={`kb-event ${presentation.tone}`} key={event.id}>
+                    <span className="kb-event-marker" />
+                    <div>
+                      <header><strong>{presentation.title}</strong><time>{eventTime(event.createdAt)}</time></header>
+                      <p>{presentation.description}</p>
+                      {presentation.details.length > 0 && (
+                        <ul>
+                          {presentation.details.map((detail) => <li key={detail}>{detail}</li>)}
+                        </ul>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         </div>
