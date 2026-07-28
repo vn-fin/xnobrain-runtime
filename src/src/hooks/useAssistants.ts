@@ -354,7 +354,7 @@ export function useAssistants() {
         skill_id: skill.skill_id,
         name: skill.name,
         category: skill.category,
-        enable: true,
+        enable: false,
       });
       await loadAgentSkills(agentId, true);
     } catch (value) {
@@ -378,7 +378,7 @@ export function useAssistants() {
     setSkillInstallPending(true);
     setSkillInstallError('');
     try {
-      await skillsApi.installDefault({ source: clean, enable: true, force });
+      await skillsApi.installDefault({ source: clean, enable: false, force });
       await loadLibrary(true);
       return true;
     } catch (value) {
@@ -410,7 +410,7 @@ export function useAssistants() {
     const skill = library.find((item) => item.skill_id === skillId);
     if (!skill) return [];
     const results = await Promise.allSettled(agentIds.map((agentId) =>
-      skillsApi.install(agentId, { skill_id: skill.skill_id, name: skill.name, category: skill.category, enable: true })));
+      skillsApi.install(agentId, { skill_id: skill.skill_id, name: skill.name, category: skill.category, enable: false })));
     await Promise.all(agentIds.map((agentId) => loadAgentSkills(agentId, true)));
     return results;
   };
@@ -421,7 +421,7 @@ export function useAssistants() {
       const skill = library.find((item) => item.skill_id === skillId);
       if (!skill) throw new Error(`Unknown skill: ${skillId}`);
       if (state?.installed) return skillsApi.setEnabled(agentId, skillId, true);
-      return skillsApi.install(agentId, { skill_id: skillId, name: skill.name, category: skill.category, enable: true });
+      return skillsApi.install(agentId, { skill_id: skillId, name: skill.name, category: skill.category, enable: false });
     }));
     const results = await Promise.allSettled(operations);
     await Promise.all(agentIds.map((agentId) => loadAgentSkills(agentId, true)));

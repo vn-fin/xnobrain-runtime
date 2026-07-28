@@ -36,13 +36,13 @@ describe('skillsApi', () => {
     }), { status: 201, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await skillsApi.installDefault({ source: 'skills-sh/anthropics/skills/pdf', enable: true });
+    const result = await skillsApi.installDefault({ source: 'skills-sh/anthropics/skills/pdf', enable: false });
 
     expect(fetchMock.mock.calls[0][0]).toBe(`${window.location.origin}/agent-gateway/v1/agents-skills`);
     expect(fetchMock.mock.calls[0][1].method).toBe('POST');
     expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
       source: 'skills-sh/anthropics/skills/pdf',
-      enable: true,
+      enable: false,
     });
     expect(result[0].skill_id).toBe('pdf');
   });

@@ -6,7 +6,8 @@ BIG_BROTHER_DESCRIPTION = (
     "Platform coordinator for agents, skills, usage, and Kanban work."
 )
 BIG_BROTHER_SKILL_ID = "big-brother-control"
-BIG_BROTHER_SKILL_CATEGORY = "custom"
+BIG_BROTHER_SKILL_CATEGORY = "big-brother"
+CUSTOM_SKILL_CATEGORY = "custom"
 BIG_BROTHER_NATIVE_TOOLSETS = (
     "browser",
     "clarify",

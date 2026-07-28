@@ -26,6 +26,7 @@ from ..defaults import (
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
     BIG_BROTHER_SKILL_CATEGORY,
+    CUSTOM_SKILL_CATEGORY,
 )
 from .nine_router import (
     NINE_ROUTER_DEFAULT_MODEL,
@@ -271,8 +272,8 @@ class AgentManager:
                 if not skill_id or self._find_agent_skill(self.root_profile, skill_id):
                     continue
                 relative = skill_file.parent.relative_to(legacy_skills)
-                if relative.parts[:1] != (BIG_BROTHER_SKILL_CATEGORY,):
-                    relative = Path(BIG_BROTHER_SKILL_CATEGORY) / relative
+                if relative.parts[:1] != (CUSTOM_SKILL_CATEGORY,):
+                    relative = Path(CUSTOM_SKILL_CATEGORY) / relative
                 destination = root_skills / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 temporary = destination.parent / (
@@ -661,23 +662,27 @@ class AgentManager:
         if not isinstance(body, Mapping):
             raise AgentAPIError("request body must be an object", code="invalid_skill_request")
         target_profile = profile_dir
-        enable = bool(body.get("enable", True))
+        enable = bool(body.get("enable", False))
         if "content" in body:
             skill_id = self._skill_id(body.get("skill_id") or body.get("name"))
             content = self._text_value(body["content"], field="content", max_chars=MAX_TEXT_CHARS)
-            skill_dir = target_profile / "skills" / skill_id
+            category = self._safe_category(body.get("category") or CUSTOM_SKILL_CATEGORY)
+            skill_dir = target_profile / "skills" / category / skill_id
             skill_dir.mkdir(parents=True, exist_ok=True)
             self._write_text(skill_dir / "SKILL.md", content)
             self._set_skill_enabled(profile_dir, skill_id, enable)
             payload = self.list_skills(name)
             return payload
 
+        before = self._skill_files_for_profile(profile_dir)
         source = self._nonempty_string(body.get("source"), "source")
         command = [self._hermes_binary(), "skills", "install", source, "--yes"]
         if body.get("name"):
             command.extend(["--name", self._skill_id(body["name"])])
-        if body.get("category"):
-            command.extend(["--category", self._safe_category(body["category"])])
+        command.extend([
+            "--category",
+            self._safe_category(body.get("category") or CUSTOM_SKILL_CATEGORY),
+        ])
         if bool(body.get("force", False)):
             command.append("--force")
         result = await self._run_hermes_command(
@@ -692,8 +697,11 @@ class AgentManager:
                 code="skill_install_failed",
                 status=422,
             )
+        changed_skill_ids = self._changed_skill_ids(profile_dir, before)
         if body.get("name"):
-            self._set_skill_enabled(profile_dir, self._skill_id(body["name"]), enable)
+            changed_skill_ids.add(self._skill_id(body["name"]))
+        for skill_id in changed_skill_ids:
+            self._set_skill_enabled(profile_dir, skill_id, enable)
         payload = self.list_skills(name)
         payload["command"] = result
         return payload
@@ -1865,6 +1873,8 @@ class AgentManager:
         for skill_file in sorted(skills_root.rglob("SKILL.md")):
             source = skill_file.parent
             rel_parent = source.relative_to(skills_root)
+            if rel_parent.parts[:1] == (BIG_BROTHER_SKILL_CATEGORY,):
+                continue
             frontmatter = self._read_skill_frontmatter(skill_file)
             skill_id = str(frontmatter.get("name") or source.name).strip()
             if skill_id in disabled:
@@ -1878,6 +1888,32 @@ class AgentManager:
             shutil.copytree(source, destination)
             copied.append(str(rel_parent))
         return copied
+
+    @staticmethod
+    def _skill_files_for_profile(profile_dir: Path) -> dict[str, bytes]:
+        skills_root = profile_dir / "skills"
+        if not skills_root.is_dir():
+            return {}
+        return {
+            path.relative_to(skills_root).as_posix(): path.read_bytes()
+            for path in skills_root.rglob("SKILL.md")
+            if path.is_file()
+        }
+
+    def _changed_skill_ids(
+        self,
+        profile_dir: Path,
+        before: Mapping[str, bytes],
+    ) -> set[str]:
+        skills_root = profile_dir / "skills"
+        changed = set()
+        for path in skills_root.rglob("SKILL.md"):
+            relative = path.relative_to(skills_root).as_posix()
+            if before.get(relative) == path.read_bytes():
+                continue
+            frontmatter = self._read_skill_frontmatter(path)
+            changed.add(str(frontmatter.get("name") or path.parent.name).strip())
+        return {item for item in changed if item}
 
     def _clear_seeded_disabled_skills(self, profile_dir: Path) -> None:
         config = self._read_config(profile_dir)

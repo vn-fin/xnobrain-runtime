@@ -140,7 +140,13 @@ class FileRepository:
         profile = self.profile_path(agent_id)
         source = profile / item["path"]
         if item["kind"] == "skills":
-            destination = profile / "skills" / item["target"] / "SKILL.md"
+            destination = profile / "skills" / "custom" / item["target"] / "SKILL.md"
+            skills_root = profile / "skills"
+            if skills_root.is_dir():
+                for skill_file in skills_root.rglob("SKILL.md"):
+                    if skill_file.parent.name == item["target"]:
+                        destination = skill_file
+                        break
         elif item["kind"] == "memory":
             filename = "USER.md" if item["target"] == "user" else "MEMORY.md"
             destination = profile / "memories" / filename

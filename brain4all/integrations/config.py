@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 import yaml
 
+from ..defaults import CUSTOM_SKILL_CATEGORY
 from .nine_router import (
     NINE_ROUTER_API_BASE_URL,
     NINE_ROUTER_DEFAULT_MODEL,
@@ -172,13 +173,12 @@ class GlobalConfigManager:
 
         self.root_profile.mkdir(parents=True, exist_ok=True)
         before = self._skill_files()
+        enable = bool(body.get("enable", False))
         if "content" in body:
             skill_id = self._skill_id(body.get("skill_id") or body.get("name"))
             content = self._text_value(body["content"], field="content", max_chars=MAX_TEXT_CHARS)
-            category = (
-                self._safe_category(body["category"])
-                if body.get("category")
-                else ""
+            category = self._safe_category(
+                body.get("category") or CUSTOM_SKILL_CATEGORY
             )
             skill_dir = self.root_profile / "skills"
             if category:
@@ -186,15 +186,19 @@ class GlobalConfigManager:
             skill_dir /= skill_id
             skill_dir.mkdir(parents=True, exist_ok=True)
             self._write_text(skill_dir / "SKILL.md", content, field="content")
-            self._snapshot_skill_changes(before, self._skill_files())
+            after = self._skill_files()
+            self._snapshot_skill_changes(before, after)
+            self._set_skills_enabled({skill_id}, enable)
             return self.list_skills()
 
         source = self._nonempty_string(body.get("source"), "source")
         command = [self._hermes_binary(), "skills", "install", source, "--yes"]
         if body.get("name"):
             command.extend(["--name", self._skill_id(body["name"])])
-        if body.get("category"):
-            command.extend(["--category", self._safe_category(body["category"])])
+        command.extend([
+            "--category",
+            self._safe_category(body.get("category") or CUSTOM_SKILL_CATEGORY),
+        ])
         if bool(body.get("force", False)):
             command.append("--force")
         result = await self._run_command(
@@ -207,7 +211,12 @@ class GlobalConfigManager:
                 code="skill_install_failed",
                 status=422,
             )
-        self._snapshot_skill_changes(before, self._skill_files())
+        after = self._skill_files()
+        self._snapshot_skill_changes(before, after)
+        changed = self._changed_skill_ids(before, after)
+        if body.get("name"):
+            changed.add(self._skill_id(body["name"]))
+        self._set_skills_enabled(changed, enable)
         return self.list_skills()
 
     def list_skills(self) -> dict[str, Any]:
@@ -370,6 +379,37 @@ class GlobalConfigManager:
         digest = hashlib.sha256(payload).hexdigest()
         snapshot = self.root_profile / "snapshots" / "config" / f"{time.time_ns()}-{digest[:12]}.yaml"
         self._atomic_write(snapshot, payload, mode=0o440)
+
+    def _changed_skill_ids(
+        self,
+        before: Mapping[str, bytes],
+        after: Mapping[str, bytes],
+    ) -> set[str]:
+        changed = set()
+        skills_root = self.root_profile / "skills"
+        for relative, payload in after.items():
+            if before.get(relative) == payload:
+                continue
+            path = skills_root / relative
+            frontmatter = self._read_skill_frontmatter(path)
+            changed.add(str(frontmatter.get("name") or path.parent.name).strip())
+        return {item for item in changed if item}
+
+    def _set_skills_enabled(self, skill_ids: set[str], enabled: bool) -> None:
+        if not skill_ids:
+            return
+        config = self._read_config()
+        disabled = self._disabled_skills(config)
+        previous = set(disabled)
+        if enabled:
+            disabled.difference_update(skill_ids)
+        else:
+            disabled.update(skill_ids)
+        if disabled == previous:
+            return
+        self._snapshot_config()
+        self._set_nested(config, ("skills", "disabled"), sorted(disabled))
+        self._write_config(config)
 
     def _scan_skills(self, config: Mapping[str, Any]) -> list[dict[str, Any]]:
         seen: set[str] = set()

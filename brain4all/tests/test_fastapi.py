@@ -142,6 +142,22 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 "enabled-default": True,
             },
         )
+        self.assertTrue(
+            (
+                self.root
+                / "skills"
+                / "big-brother"
+                / "big-brother-control"
+                / "SKILL.md"
+            ).is_file()
+        )
+        self.assertNotIn(
+            "big-brother-control",
+            {
+                item["skill_id"]
+                for item in self.composition.service.list_default_skills()
+            },
+        )
         self.assertFalse((self.profiles / BIG_BROTHER_AGENT_ID).exists())
         self.assertEqual(first["metadata"]["display_name"], "Big Brother")
         self.assertEqual(
@@ -200,6 +216,13 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             "global-from-big-brother",
             {item["skill_id"] for item in installed},
         )
+        self.assertFalse(
+            next(
+                item["enabled"]
+                for item in installed
+                if item["skill_id"] == "global-from-big-brother"
+            )
+        )
         self.assertIn(
             "global-from-big-brother",
             {
@@ -213,11 +236,8 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             item["skill_id"]
             for item in self.composition.service.list_skills(custom["id"])
         }
-        self.assertIn("big-brother-control", custom_skill_ids)
-        self.assertIn("global-from-big-brother", custom_skill_ids)
-        self.assertTrue(
-            (self.profiles / custom["id"] / "skills" / "custom").exists()
-        )
+        self.assertNotIn("big-brother-control", custom_skill_ids)
+        self.assertNotIn("global-from-big-brother", custom_skill_ids)
 
     async def test_big_brother_migrates_legacy_named_profile_data_to_root(self):
         legacy = self.profiles / BIG_BROTHER_AGENT_ID
@@ -370,7 +390,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         async def install_from_url(_command, *, timeout_seconds):
             self.assertGreater(timeout_seconds, 0)
-            skill = self.root / "skills" / "office" / "office-helper" / "SKILL.md"
+            skill = self.root / "skills" / "custom" / "office-helper" / "SKILL.md"
             skill.parent.mkdir(parents=True, exist_ok=True)
             skill.write_text(
                 "---\nname: office-helper\ndescription: Helps with office files\n---\n",
@@ -384,9 +404,14 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 201, response.text)
         data = response.json()["data"]
         self.assertEqual([item["skill_id"] for item in data], ["office-helper"])
+        self.assertFalse(data[0]["enabled"])
+        self.assertEqual(data[0]["relative_path"], "custom/office-helper")
         self.assertNotIn("internal installer output", response.text)
         command = self.composition.service.config._run_command.await_args.args[0]
         self.assertEqual(command[1:4], ["skills", "install", source])
+        self.assertIn(["--category", "custom"], [
+            command[index:index + 2] for index in range(len(command) - 1)
+        ])
         snapshots = list((self.root / "snapshots" / "skills").rglob("*.md"))
         self.assertEqual(len(snapshots), 1)
 
@@ -529,7 +554,13 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(memory.status_code, 200, memory.text)
         self.assertEqual(mcp.status_code, 200, mcp.text)
 
-        self.assertTrue((profile / "skills" / "notes" / "SKILL.md").is_file())
+        self.assertTrue((profile / "skills" / "custom" / "notes" / "SKILL.md").is_file())
+        installed_notes = next(
+            item
+            for item in skill.json()["data"]
+            if item["skill_id"] == "notes"
+        )
+        self.assertFalse(installed_notes["enabled"])
         self.assertTrue((profile / "mcp.json").is_file())
         snapshots = snapshot_response.json()["data"]
         self.assertEqual({item["kind"] for item in snapshots}, {"skills", "memory"})

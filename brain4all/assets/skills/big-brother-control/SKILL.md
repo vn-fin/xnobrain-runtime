@@ -34,31 +34,9 @@ before guessing an unfamiliar command or option.
 
 ## Install and Manage Skills
 
-A documentation page is not necessarily an installable skill URL. When the
-user provides a documentation page:
-
-1. Read it with `web_extract` when available. If the web backend is not
-   configured, use `curl -fsSL URL` through `terminal`.
-2. Find its `hermes skills install ...` identifier.
-3. Run the command through `terminal`, adding `--category custom --yes` unless
-   the user explicitly requests another profile.
-4. Verify with `hermes skills list`.
-
-For example, the Finance Stocks documentation identifies this command:
-
-```bash
-hermes skills install official/finance/stocks --category custom --yes
-hermes skills list
-```
-
-Use `hermes -p PROFILE skills install ... --yes` to install for another
-profile. Use native `skills_list`, `skill_view`, and `skill_manage` for skill
-documents already available in the current session.
-
-Big Brother's installed skills live below `$HERMES_HOME/skills/custom/`,
-normally `~/.hermes/skills/custom/`. They are global skills owned by the
-default Hermes profile. Enabled skills are copied into newly created custom
-profiles.
+Do not explain CLI installation commands. Direct the user to the Brain4All
+[Skills page](/skills) to explore, install, enable, disable, or remove skills.
+Newly installed skills are placed in the `custom` category and start disabled.
 
 ## Agents and Profiles
 

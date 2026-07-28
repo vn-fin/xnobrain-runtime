@@ -25,6 +25,7 @@ from ..defaults import (
     BIG_BROTHER_NATIVE_TOOLSETS,
     BIG_BROTHER_SKILL_CATEGORY,
     BIG_BROTHER_SKILL_ID,
+    CUSTOM_SKILL_CATEGORY,
     DEFAULT_PROFILE_MODEL,
     LEGACY_BIG_BROTHER_TOOLSET,
 )
@@ -229,7 +230,20 @@ class PlatformService:
                 "skill_id": BIG_BROTHER_SKILL_ID,
                 "category": BIG_BROTHER_SKILL_CATEGORY,
                 "content": bundled_skill,
+                "enable": True,
             })
+        elif not next(
+            (
+                item.get("enabled", True)
+                for item in self.config.list_skills()["skills"]
+                if item.get("skill_id") == BIG_BROTHER_SKILL_ID
+            ),
+            True,
+        ):
+            self.config.set_skill_enabled(
+                BIG_BROTHER_SKILL_ID,
+                {"enabled": True},
+            )
         self.agents.update_profile_registry(
             BIG_BROTHER_AGENT_ID,
             display_name=BIG_BROTHER_DISPLAY_NAME,
@@ -239,24 +253,27 @@ class PlatformService:
 
     def _migrate_big_brother_skill_category(self, profile: Path) -> None:
         """Move the former root-level bundled skill out of profile inheritance."""
-        legacy = profile / "skills" / BIG_BROTHER_SKILL_ID
-        if not legacy.is_dir():
-            return
         destination = (
             profile / "skills" / BIG_BROTHER_SKILL_CATEGORY / BIG_BROTHER_SKILL_ID
         )
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if not destination.exists():
-            os.replace(legacy, destination)
-            return
-        archive = (
-            profile
-            / "snapshots"
-            / "migrations"
-            / f"legacy-{BIG_BROTHER_SKILL_ID}-{time.time_ns()}"
-        )
-        archive.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(legacy, archive)
+        for legacy in (
+            profile / "skills" / BIG_BROTHER_SKILL_ID,
+            profile / "skills" / CUSTOM_SKILL_CATEGORY / BIG_BROTHER_SKILL_ID,
+        ):
+            if not legacy.is_dir():
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if not destination.exists():
+                os.replace(legacy, destination)
+                continue
+            archive = (
+                profile
+                / "snapshots"
+                / "migrations"
+                / f"legacy-{BIG_BROTHER_SKILL_ID}-{time.time_ns()}"
+            )
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(legacy, archive)
 
     def _ensure_big_brother_toolsets(self, profile: Path) -> None:
         """Repair required capabilities without removing user-added toolsets."""
@@ -456,11 +473,22 @@ class PlatformService:
 
     def list_default_skills(self) -> list[dict[str, Any]]:
         """List only the skills installed in the default Hermes profile."""
-        return self.config.list_skills()["skills"]
+        return [
+            item
+            for item in self.config.list_skills()["skills"]
+            if Path(str(item.get("relative_path") or "")).parts[:1]
+            != (BIG_BROTHER_SKILL_CATEGORY,)
+        ]
 
     async def install_default_skill(self, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         """Install a URL, hub identifier, or local SKILL.md into the root profile."""
-        return (await self.config.install_skill(body))["skills"]
+        return (
+            await self.config.install_skill({
+                **dict(body),
+                "category": CUSTOM_SKILL_CATEGORY,
+                "enable": False,
+            })
+        )["skills"]
 
     def set_default_skill_enabled(self, skill_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         """Change whether new profiles inherit a default-profile skill."""
@@ -471,10 +499,15 @@ class PlatformService:
             return (
                 await self.config.install_skill({
                     **dict(body),
-                    "category": BIG_BROTHER_SKILL_CATEGORY,
+                    "category": CUSTOM_SKILL_CATEGORY,
+                    "enable": False,
                 })
             )["skills"]
-        payload = await self.agents.install_skill(agent_id, body)
+        payload = await self.agents.install_skill(agent_id, {
+            **dict(body),
+            "category": CUSTOM_SKILL_CATEGORY,
+            "enable": False,
+        })
         skill_id = str(body.get("skill_id") or body.get("name") or "").strip()
         if skill_id and "content" in body:
             self.repository.snapshot(agent_id, "skills", skill_id, str(body["content"]).encode())
