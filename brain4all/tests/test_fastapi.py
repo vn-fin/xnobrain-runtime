@@ -288,6 +288,36 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         deployment = deployment_response.json()["data"]
         self.assertFalse(deployment["database"])
 
+    def test_existing_profile_model_is_migrated_to_auto_once(self):
+        profile = self.profiles / "legacy-model"
+        profile.mkdir()
+        config_path = profile / "config.yaml"
+        config_path.write_text(
+            yaml.safe_dump({"model": {"default": "pinned-old-model"}}),
+            encoding="utf-8",
+        )
+
+        self.composition.service._ensure_existing_write_approval_defaults()
+        migrated = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        self.assertEqual(migrated["model"]["default"], "auto")
+        self.assertTrue(
+            migrated["brain4all"][BIG_BROTHER_MODEL_DEFAULT_MARKER]
+        )
+
+        migrated["model"]["default"] = "user-selected-model"
+        config_path.write_text(
+            yaml.safe_dump(migrated, sort_keys=False),
+            encoding="utf-8",
+        )
+        self.composition.service._ensure_existing_write_approval_defaults()
+        preserved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        self.assertEqual(preserved["model"]["default"], "user-selected-model")
+        self.assertTrue(
+            self.composition.service.repository.list_snapshots(
+                "legacy-model", "config"
+            )
+        )
+
     async def test_local_only_deployment_has_no_enterprise_proxy_routes(self):
         with patch.dict(os.environ, {"ENTERPRISE_API_URL": "https://control.example.test"}):
             async with self.client() as client:

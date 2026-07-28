@@ -14,3 +14,5 @@ skills:
   disabled: []
 memory:
   write_approval: true
+brain4all:
+  model_default_initialized: true

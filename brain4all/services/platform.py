@@ -115,6 +115,19 @@ class PlatformService:
             if not isinstance(config, dict):
                 continue
             changed = False
+            brain4all_config = config.get("brain4all")
+            if not isinstance(brain4all_config, dict):
+                brain4all_config = {}
+                config["brain4all"] = brain4all_config
+                changed = True
+            if not bool(brain4all_config.get(BIG_BROTHER_MODEL_DEFAULT_MARKER)):
+                model = config.get("model")
+                if not isinstance(model, dict):
+                    model = {}
+                    config["model"] = model
+                model["default"] = DEFAULT_PROFILE_MODEL
+                brain4all_config[BIG_BROTHER_MODEL_DEFAULT_MARKER] = True
+                changed = True
             for subsystem in ("skills", "memory"):
                 section = config.get(subsystem)
                 if not isinstance(section, dict):
