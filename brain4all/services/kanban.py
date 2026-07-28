@@ -8,7 +8,10 @@ public Hermes operations.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
+from pathlib import Path
+import time
 from typing import Any, Mapping
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -107,10 +110,21 @@ class KanbanService:
             and config.get("memory_write_approval") is False
         ):
             return
-        profile = self.repository.profile_path(name)
+        profile = Path(str(described["profile_path"]))
         config_path = profile / "config.yaml"
         if config_path.is_file():
-            self.repository.snapshot(name, "config", "config", config_path.read_bytes())
+            payload = config_path.read_bytes()
+            if profile == self.agents.root_profile:
+                digest = hashlib.sha256(payload).hexdigest()
+                snapshot = (
+                    profile / "snapshots" / "config" / "config"
+                    / f"{time.time_ns()}-{digest[:12]}.yaml"
+                )
+                self.repository.atomic_write(
+                    snapshot, payload, mode=0o440, replace=False
+                )
+            else:
+                self.repository.snapshot(name, "config", "config", payload)
         self.agents.update_config(name, {
             "approval_mode": "off",
             "skills_write_approval": False,

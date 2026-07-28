@@ -20,6 +20,7 @@ from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile, ZipInfo
 import yaml
 
 from ..repositories import FileRepository, StoreError
+from ..defaults import BIG_BROTHER_AGENT_ID
 
 
 BUNDLE_FORMAT = "brain4all-bundle"
@@ -344,7 +345,11 @@ class PortabilityService:
         secrets = self._known_secret_values()
 
         for agent_id in agent_ids:
-            profile = self.repository.profile_path(agent_id)
+            profile = (
+                self.root_profile
+                if agent_id == BIG_BROTHER_AGENT_ID
+                else self.repository.profile_path(agent_id)
+            )
             if not profile.is_dir():
                 raise StoreError(f"agent not found: {agent_id}", status=404, code="not_found")
             agents.append(self._metadata(profile, agent_id))

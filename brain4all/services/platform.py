@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 import logging
 import os
@@ -160,43 +161,31 @@ class PlatformService:
         return [self._agent_dto(item) for item in self.agents.list_agents()["agents"]]
 
     async def ensure_default_agent(self) -> dict[str, Any]:
-        """Create and repair the product-owned oversight profile idempotently."""
-        profile = self.repository.profile_path(BIG_BROTHER_AGENT_ID)
-        if not profile.is_dir():
-            self.agents.create_agent({
-                "name": BIG_BROTHER_AGENT_ID,
-                "display_name": BIG_BROTHER_DISPLAY_NAME,
-                "title": BIG_BROTHER_DISPLAY_NAME,
-                "description": BIG_BROTHER_DESCRIPTION,
-                "idempotent": True,
-                "soul": (
-                    "You are Big Brother, Brain4All's platform coordinator. "
-                    "Watch the operational state of agents and Kanban work, "
-                    "surface blockers clearly, and help the user coordinate "
-                    "the platform. Be direct, careful, and privacy-preserving. "
-                    "Big Brother is Watching You!!!!"
-                ),
-                "instructions": (
-                    "Use the big-brother-control skill for platform oversight. "
-                    "Never inspect raw profile databases, credentials, prompts, "
-                    "message bodies, or tool output from another agent."
-                ),
-                "config": {
-                    "config": {
-                        "toolsets": ["kanban"],
-                        "platform_toolsets": {
-                            "api_server": list(BIG_BROTHER_NATIVE_TOOLSETS),
-                        },
-                        "approvals": {"mode": "off"},
-                        "skills": {"write_approval": False},
-                        "memory": {"write_approval": False},
-                        "brain4all": {
-                            BIG_BROTHER_APPROVAL_DEFAULT_MARKER: True,
-                        },
-                    },
-                },
-            })
+        """Expose and repair the root Hermes profile as Big Brother."""
+        profile = self.config.root_profile
+        profile.mkdir(parents=True, exist_ok=True)
+        (profile / "workspace").mkdir(parents=True, exist_ok=True)
+        metadata_path = profile / "agent.json"
+        metadata = {}
+        if metadata_path.is_file():
+            try:
+                loaded = json.loads(metadata_path.read_text(encoding="utf-8"))
+                metadata = loaded if isinstance(loaded, dict) else {}
+            except (OSError, json.JSONDecodeError):
+                metadata = {}
+        next_metadata = {
+            **metadata,
+            "name": BIG_BROTHER_AGENT_ID,
+            "profile_name": "default",
+            "display_name": BIG_BROTHER_DISPLAY_NAME,
+            "title": BIG_BROTHER_DISPLAY_NAME,
+            "description": BIG_BROTHER_DESCRIPTION,
+            "updated_at": time.time(),
+        }
+        if next_metadata != metadata:
+            self.repository.atomic_json(metadata_path, next_metadata)
 
+        self.agents.migrate_legacy_big_brother_profile()
         self._ensure_big_brother_toolsets(profile)
         bundled_skill_path = (
             Path(__file__).resolve().parent.parent
@@ -206,27 +195,22 @@ class PlatformService:
             / "SKILL.md"
         )
         bundled_skill = bundled_skill_path.read_text(encoding="utf-8")
-        installed_skill_path = (
-            profile / "skills" / BIG_BROTHER_SKILL_ID / "SKILL.md"
-        )
+        installed_skill_path = profile / "skills" / BIG_BROTHER_SKILL_ID / "SKILL.md"
         installed_skill = (
             installed_skill_path.read_text(encoding="utf-8")
             if installed_skill_path.is_file()
             else None
         )
         if installed_skill != bundled_skill:
-            if installed_skill is not None:
-                self.repository.snapshot(
-                    BIG_BROTHER_AGENT_ID,
-                    "skills",
-                    BIG_BROTHER_SKILL_ID,
-                    installed_skill.encode("utf-8"),
-                )
-            await self.agents.install_skill(BIG_BROTHER_AGENT_ID, {
+            await self.config.install_skill({
                 "skill_id": BIG_BROTHER_SKILL_ID,
                 "content": bundled_skill,
-                "enable": True,
             })
+        self.agents.update_profile_registry(
+            BIG_BROTHER_AGENT_ID,
+            display_name=BIG_BROTHER_DISPLAY_NAME,
+            description=BIG_BROTHER_DESCRIPTION,
+        )
         return self.get_agent(BIG_BROTHER_AGENT_ID)
 
     def _ensure_big_brother_toolsets(self, profile: Path) -> None:
@@ -291,11 +275,7 @@ class PlatformService:
             changed = True
 
         if changed:
-            if path.is_file():
-                self.repository.snapshot(
-                    BIG_BROTHER_AGENT_ID, "config", "config", path.read_bytes()
-                )
-            self.repository.atomic_yaml(path, config)
+            self.config.update_config({"config": config})
 
     def create_agent(self, body: Mapping[str, Any]) -> dict[str, Any]:
         display_name = str(body.get("display_name") or body.get("name") or "").strip()
@@ -311,8 +291,42 @@ class PlatformService:
     def get_agent(self, agent_id: str) -> dict[str, Any]:
         return self._agent_dto(self.agents.describe_agent(agent_id))
 
+    def _agent_profile_path(self, agent_id: str) -> Path:
+        if agent_id == BIG_BROTHER_AGENT_ID:
+            return self.config.root_profile
+        return self.repository.profile_path(agent_id)
+
+    def _snapshot_agent(
+        self,
+        agent_id: str,
+        kind: str,
+        target: str,
+        content: bytes,
+    ) -> dict[str, Any]:
+        if agent_id != BIG_BROTHER_AGENT_ID:
+            return self.repository.snapshot(agent_id, kind, target, content)
+        digest = hashlib.sha256(content).hexdigest()
+        snapshot_id = f"{time.time_ns()}-{digest[:12]}"
+        suffix = ".yaml" if kind == "config" else ".md"
+        relative = Path("snapshots") / kind / target / f"{snapshot_id}{suffix}"
+        self.repository.atomic_write(
+            self.config.root_profile / relative,
+            content,
+            mode=0o440,
+            replace=False,
+        )
+        return {
+            "id": snapshot_id,
+            "agent_id": agent_id,
+            "kind": kind,
+            "target": target,
+            "hash": digest,
+            "path": relative.as_posix(),
+            "created_at": time.time(),
+        }
+
     def update_agent_metadata(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        profile = self.repository.profile_path(agent_id)
+        profile = self._agent_profile_path(agent_id)
         metadata_path = profile / "agent.json"
         current = {}
         if metadata_path.is_file():
@@ -361,16 +375,20 @@ class PlatformService:
         return self.config.update_config(body)
 
     def update_agent_config(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        translated = dict(body)
+        if "reasoning_effort" in translated:
+            translated["effort"] = translated.pop("reasoning_effort")
+        if agent_id == BIG_BROTHER_AGENT_ID:
+            return self.config.update_config(translated)["config"]
         profile = self.repository.profile_path(agent_id)
         path = profile / "config.yaml"
         if path.is_file():
             self.repository.snapshot(agent_id, "config", "config", path.read_bytes())
-        translated = dict(body)
-        if "reasoning_effort" in translated:
-            translated["effort"] = translated.pop("reasoning_effort")
         return self.agents.update_config(agent_id, translated)["config"]
 
     def list_skills(self, agent_id: str) -> list[dict[str, Any]]:
+        if agent_id == BIG_BROTHER_AGENT_ID:
+            return self.config.list_skills()["skills"]
         return self.agents.list_skills(agent_id)["skills"]
 
     def list_default_skills(self) -> list[dict[str, Any]]:
@@ -386,6 +404,8 @@ class PlatformService:
         return self.config.set_skill_enabled(skill_id, body)["skills"]
 
     async def install_skill(self, agent_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
+        if agent_id == BIG_BROTHER_AGENT_ID:
+            return (await self.config.install_skill(body))["skills"]
         payload = await self.agents.install_skill(agent_id, body)
         skill_id = str(body.get("skill_id") or body.get("name") or "").strip()
         if skill_id and "content" in body:
@@ -393,6 +413,8 @@ class PlatformService:
         return payload["skills"]
 
     def set_skill_enabled(self, agent_id: str, skill_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
+        if agent_id == BIG_BROTHER_AGENT_ID:
+            return self.config.set_skill_enabled(skill_id, body)["skills"]
         payload = self.agents.set_skill_enabled(agent_id, skill_id, body)
         path = self.repository.profile_path(agent_id) / "skills" / skill_id / "SKILL.md"
         if path.is_file():
@@ -400,6 +422,8 @@ class PlatformService:
         return payload["skills"]
 
     def remove_skill(self, agent_id: str, skill_id: str) -> list[dict[str, Any]]:
+        if agent_id == BIG_BROTHER_AGENT_ID:
+            return self.config.delete_skill(skill_id)["skills"]
         path = self.repository.profile_path(agent_id) / "skills" / skill_id / "SKILL.md"
         if path.is_file():
             self.repository.snapshot(agent_id, "skills", skill_id, path.read_bytes())
@@ -411,13 +435,17 @@ class PlatformService:
     def write_memory(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         result = self.agents.write_memory(agent_id, body)
         memory = str(result.get("memory") or body.get("memory") or "")
-        self.repository.snapshot(agent_id, "memory", "memory", memory.encode())
+        self._snapshot_agent(agent_id, "memory", "memory", memory.encode())
         return result
 
     def list_snapshots(self, agent_id: str, kind: str | None = None) -> list[dict[str, Any]]:
+        if agent_id == BIG_BROTHER_AGENT_ID:
+            return self._list_root_snapshots(kind)
         return self.repository.list_snapshots(agent_id, kind)
 
     def restore_snapshot(self, agent_id: str, snapshot_id: str) -> dict[str, Any]:
+        if agent_id == BIG_BROTHER_AGENT_ID:
+            return self._restore_root_snapshot(snapshot_id)
         return self.repository.restore_snapshot(agent_id, snapshot_id)
 
     def list_workspace(self, agent_id: str, path: str = ".") -> dict[str, Any]:
@@ -821,7 +849,7 @@ class PlatformService:
         return base
 
     def get_mcp(self, agent_id: str) -> dict[str, Any]:
-        path = self.repository.profile_path(agent_id) / "mcp.json"
+        path = self._agent_profile_path(agent_id) / "mcp.json"
         if not path.is_file():
             return {"servers": {}}
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -831,9 +859,62 @@ class PlatformService:
         payload = copy.deepcopy(dict(body))
         if not isinstance(payload.get("servers", {}), dict):
             raise ServiceError("servers must be an object")
-        path = self.repository.profile_path(agent_id) / "mcp.json"
+        path = self._agent_profile_path(agent_id) / "mcp.json"
         self.repository.atomic_json(path, payload)
         return payload
+
+    def _list_root_snapshots(self, kind: str | None = None) -> list[dict[str, Any]]:
+        root = self.config.root_profile / "snapshots"
+        if not root.is_dir():
+            return []
+        result = []
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(self.config.root_profile)
+            parts = relative.parts
+            if len(parts) < 3 or parts[0] != "snapshots":
+                continue
+            current_kind = parts[1]
+            if current_kind not in {"memory", "skills", "config"}:
+                continue
+            if kind and current_kind != kind:
+                continue
+            target = "config" if current_kind == "config" else path.parent.name
+            payload = path.read_bytes()
+            result.append({
+                "id": path.stem,
+                "agent_id": BIG_BROTHER_AGENT_ID,
+                "kind": current_kind,
+                "target": target,
+                "hash": hashlib.sha256(payload).hexdigest(),
+                "path": relative.as_posix(),
+                "created_at": path.stat().st_mtime,
+            })
+        return sorted(result, key=lambda item: item["created_at"], reverse=True)
+
+    def _restore_root_snapshot(self, snapshot_id: str) -> dict[str, Any]:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", snapshot_id):
+            raise StoreError("invalid snapshot id")
+        matches = [
+            item
+            for item in self._list_root_snapshots()
+            if item["id"] == snapshot_id
+        ]
+        if not matches:
+            raise StoreError("snapshot not found", status=404, code="not_found")
+        item = matches[0]
+        source = self.config.root_profile / item["path"]
+        relative = Path(item["path"])
+        if item["kind"] == "config":
+            destination = self.config.root_profile / "config.yaml"
+        elif item["kind"] == "memory":
+            destination = self.config.root_profile / "memories" / "MEMORY.md"
+        else:
+            skill_relative = Path(*relative.parts[2:-1])
+            destination = self.config.root_profile / "skills" / skill_relative / "SKILL.md"
+        self.repository.atomic_write(destination, source.read_bytes(), mode=0o640)
+        return item
 
     async def providers(self) -> list[dict[str, Any]]:
         try:

@@ -64,7 +64,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     def client(self):
         return AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test")
 
-    async def test_big_brother_bootstrap_is_idempotent_first_and_scoped(self):
+    async def test_big_brother_bootstrap_aliases_root_profile_and_is_idempotent(self):
         enabled = self.root / "skills" / "enabled-default" / "SKILL.md"
         disabled = self.root / "skills" / "disabled-default" / "SKILL.md"
         enabled.parent.mkdir(parents=True)
@@ -87,7 +87,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         async with self.app.router.lifespan_context(self.app):
             first = self.composition.service.get_agent(BIG_BROTHER_AGENT_ID)
 
-        profile_config_path = self.profiles / BIG_BROTHER_AGENT_ID / "config.yaml"
+        profile_config_path = self.root / "config.yaml"
         migrated_config = yaml.safe_load(
             profile_config_path.read_text(encoding="utf-8")
         )
@@ -132,9 +132,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             skills,
             {
                 "big-brother-control": True,
+                "disabled-default": False,
                 "enabled-default": True,
             },
         )
+        self.assertFalse((self.profiles / BIG_BROTHER_AGENT_ID).exists())
+        self.assertEqual(first["metadata"]["display_name"], "Big Brother")
         profile_config = yaml.safe_load(
             profile_config_path.read_text(encoding="utf-8")
         )
@@ -156,6 +159,78 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         enabled_toolsets = _get_platform_tools(profile_config, "api_server")
         self.assertTrue(set(BIG_BROTHER_NATIVE_TOOLSETS).issubset(enabled_toolsets))
         self.assertNotIn("brain4all-control", enabled_toolsets)
+
+        installed = await self.composition.service.install_skill(
+            BIG_BROTHER_AGENT_ID,
+            {
+                "skill_id": "global-from-big-brother",
+                "content": (
+                    "---\nname: global-from-big-brother\n"
+                    "description: Root skill\n---\n"
+                ),
+            },
+        )
+        self.assertTrue(
+            (self.root / "skills" / "global-from-big-brother" / "SKILL.md").is_file()
+        )
+        self.assertIn(
+            "global-from-big-brother",
+            {item["skill_id"] for item in installed},
+        )
+
+    async def test_big_brother_migrates_legacy_named_profile_data_to_root(self):
+        legacy = self.profiles / BIG_BROTHER_AGENT_ID
+        (legacy / "workspace").mkdir(parents=True)
+        (legacy / "agent.json").write_text(
+            json.dumps({"name": BIG_BROTHER_AGENT_ID}),
+            encoding="utf-8",
+        )
+        legacy_skill = legacy / "skills" / "custom" / "legacy-installed" / "SKILL.md"
+        legacy_skill.parent.mkdir(parents=True)
+        legacy_skill.write_text(
+            "---\nname: legacy-installed\ndescription: Legacy skill\n---\n",
+            encoding="utf-8",
+        )
+        manager = self.composition.service.agents
+        manager._initialize_state_db(legacy)
+        manager._create_session(
+            legacy,
+            "legacy-big-brother-conversation",
+            model="auto",
+            title="Legacy conversation",
+        )
+        with sqlite3.connect(legacy / "state.db") as connection:
+            connection.execute(
+                """
+                INSERT INTO messages (session_id, role, content, timestamp)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    "legacy-big-brother-conversation",
+                    "user",
+                    "Preserved legacy message",
+                    1.0,
+                ),
+            )
+            connection.commit()
+
+        async with self.app.router.lifespan_context(self.app):
+            migrated = self.composition.service.get_conversation(
+                BIG_BROTHER_AGENT_ID,
+                "legacy-big-brother-conversation",
+            )
+
+        self.assertTrue(
+            (self.root / "skills" / "custom" / "legacy-installed" / "SKILL.md").is_file()
+        )
+        self.assertEqual(
+            migrated["messages"][0]["content"],
+            "Preserved legacy message",
+        )
+        self.assertTrue(legacy.is_dir())
+        self.assertTrue(
+            any((self.root / "snapshots" / "migrations").glob("*.db"))
+        )
 
     async def test_health_identifies_fastapi_database_free_runtime(self):
         async with self.client() as client:

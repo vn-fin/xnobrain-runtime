@@ -57,7 +57,8 @@ documents already available in the current session.
 
 Installed skills are profile-owned. Big Brother's custom skills live below
 `$HERMES_HOME/skills/custom/`, which normally resolves to
-`~/.hermes/profiles/big-brother/skills/custom/`. They do not appear in the
+`~/.hermes/skills/`. They are global skills owned by the default Hermes
+profile and are available for custom profiles to inherit when enabled.
 default profile's `~/.hermes/skills/` directory.
 
 ## Agents and Profiles

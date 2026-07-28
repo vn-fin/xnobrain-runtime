@@ -161,6 +161,8 @@ class GlobalConfigManager:
         selected_model = body.get("model") if "model" in body else None
         normalize_nine_router_config(config, selected_model)
         if touched or soul is not _MISSING:
+            if (self.root_profile / "config.yaml").is_file():
+                self._snapshot_config()
             self._write_config(config)
         return self._describe(config)
 
