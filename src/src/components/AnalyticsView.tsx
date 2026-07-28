@@ -291,7 +291,7 @@ function Dashboard({
         />
       </section>
 
-      <section className="analytics-primary-grid">
+      <section className="analytics-trend-grid">
         <article className="analytics-panel analytics-trend-panel">
           <PanelHeader
             eyebrow="Usage trend"
@@ -305,7 +305,9 @@ function Dashboard({
           />
           <TimeChart summary={summary} metric={metric} />
         </article>
+      </section>
 
+      <section className="analytics-breakdown-grid">
         <article className="analytics-panel analytics-composition-panel">
           <PanelHeader eyebrow="Token mix" title="Input vs. output" />
           <div className="analytics-donut-wrap">
@@ -321,9 +323,6 @@ function Dashboard({
             <span>Cache write <strong>{fmtTokens(totals.cache_write_tokens)}</strong></span>
           </div>
         </article>
-      </section>
-
-      <section className="analytics-breakdown-grid">
         <article className="analytics-panel">
           <PanelHeader eyebrow="Models" title="Usage by model" />
           <BreakdownRows rows={summary.by_model} empty="No model usage in this range." />
@@ -442,7 +441,18 @@ function TimeChart({ summary, metric }: { summary: UsageSummary; metric: 'tokens
           const heightValue = values[index] / max * plotHeight;
           const visualHeight = Math.max(1, heightValue);
           return (
-          <g key={row.bucket}>
+          <g
+            key={row.bucket}
+            onMouseEnter={() => setHovered(index)}
+            onMouseLeave={() => setHovered(null)}
+          >
+            <rect
+              x={left + index * slotWidth}
+              y={top}
+              width={slotWidth}
+              height={plotHeight}
+              className="analytics-chart-hit-target"
+            />
             <rect
               x={xFor(index)}
               y={top + plotHeight - visualHeight}
@@ -451,8 +461,6 @@ function TimeChart({ summary, metric }: { summary: UsageSummary; metric: 'tokens
               rx={Math.min(3, barWidth / 3)}
               className={`analytics-chart-bar ${hovered === index ? 'hovered' : ''}`}
               tabIndex={0}
-              onMouseEnter={() => setHovered(index)}
-              onMouseLeave={() => setHovered(null)}
               onFocus={() => setHovered(index)}
               onBlur={() => setHovered(null)}
             >

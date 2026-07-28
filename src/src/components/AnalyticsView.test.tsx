@@ -56,7 +56,7 @@ const summary: UsageSummary = {
 describe('AnalyticsView chart', () => {
   afterEach(cleanup);
 
-  it('shows exact bucket details when a bar is hovered', () => {
+  it('shows exact bucket details when its full-height chart region is hovered', () => {
     const state = {
       controls: { agents: [], days: 1, bucket: 'hour' },
       setControls: vi.fn(),
@@ -70,12 +70,37 @@ describe('AnalyticsView chart', () => {
     } as AnalyticsState;
     const { container } = render(<AnalyticsView state={state} onClose={vi.fn()} />);
 
-    fireEvent.mouseEnter(container.querySelector('.analytics-chart-bar') as SVGRectElement);
+    const hitTarget = container.querySelector('.analytics-chart-hit-target') as SVGRectElement;
+    expect(hitTarget).toHaveAttribute('height', '193');
+    fireEvent.mouseEnter(hitTarget);
 
     expect(screen.getByRole('status')).toHaveTextContent('2026-07-27T10');
     expect(screen.getByRole('status')).toHaveTextContent('1,500');
     expect(screen.getByRole('status')).toHaveTextContent('1,200');
     expect(screen.getByRole('status')).toHaveTextContent('$0.2500');
+  });
+
+  it('puts the trend in its own row and token, model, and provider panels together', () => {
+    const state = {
+      controls: { agents: [], days: 1, bucket: 'hour' },
+      setControls: vi.fn(),
+      available: [],
+      summary,
+      status: 'ready',
+      error: null,
+      generatedAt: summary.generated_at,
+      refresh: vi.fn(),
+      setBudget: vi.fn(),
+    } as AnalyticsState;
+    const { container } = render(<AnalyticsView state={state} onClose={vi.fn()} />);
+
+    const trendGrid = container.querySelector('.analytics-trend-grid');
+    const breakdownGrid = container.querySelector('.analytics-breakdown-grid');
+    expect(trendGrid?.querySelectorAll(':scope > .analytics-panel')).toHaveLength(1);
+    expect(breakdownGrid?.querySelectorAll(':scope > .analytics-panel')).toHaveLength(3);
+    expect(breakdownGrid).toHaveTextContent('Token mix');
+    expect(breakdownGrid).toHaveTextContent('Models');
+    expect(breakdownGrid).toHaveTextContent('Providers');
   });
 
   it('blocks the Analytics surface and shows API progress while loading', () => {
