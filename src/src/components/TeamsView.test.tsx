@@ -67,6 +67,7 @@ const agents: Agent[] = [
     conversations: [],
   },
 ];
+const essentialTools = ['web', 'browser', 'terminal', 'file', 'code_execution', 'skills', 'todo'];
 
 function teamState(overrides: Partial<ReturnType<typeof useTeams>> = {}) {
   return {
@@ -132,9 +133,10 @@ describe('TeamsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Create team/i }));
     fireEvent.change(screen.getByPlaceholderText('Product launch team'), { target: { value: 'Capable team' } });
     fireEvent.click(screen.getByRole('button', { name: /Researcher.*Finds source material/i }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Terminal & processes' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'File operations' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Skills' }));
+    for (const label of ['Web search', 'Browser automation', 'Terminal & processes', 'File operations', 'Code execution', 'Skills', 'Task planning']) {
+      expect(screen.getByRole('checkbox', { name: label })).toBeChecked();
+    }
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Vision' }));
     expect(screen.getByRole('checkbox', { name: 'News research' })).toBeChecked();
 
     fireEvent.click(screen.getByRole('button', { name: /Reviewer.*Checks the findings/i }));
@@ -152,7 +154,7 @@ describe('TeamsView', () => {
     expect(input.workflow).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'researcher',
-        allowed_tools: ['terminal', 'file', 'skills'],
+        allowed_tools: [...essentialTools, 'vision'],
         skills: ['news-research'],
       }),
       expect.objectContaining({ id: 'reviewer', needs: ['researcher'] }),
@@ -187,6 +189,7 @@ describe('TeamsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Editable team options' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Edit workflow' }));
     expect(screen.getByDisplayValue('Editable team')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Configure researcher stage' }));
     expect(screen.getByRole('checkbox', { name: 'Web search' })).toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Terminal & processes' }));
     expect(screen.getByRole('checkbox', { name: 'News research' })).toBeChecked();
@@ -210,12 +213,19 @@ describe('TeamsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Researcher.*Finds source material/i }));
     expect(screen.getByText('researcher-2', { selector: '.team-inspector-head h3' })).toBeVisible();
 
-    fireEvent.change(screen.getByLabelText('Coordinator prompt'), {
+    fireEvent.click(screen.getByRole('button', { name: 'Configure Start stage' }));
+    expect(screen.getByLabelText('Stage instructions')).toHaveValue(
+      'Plan the workflow and give every stage clear, actionable execution guidance.',
+    );
+    fireEvent.change(screen.getByLabelText('Stage instructions'), {
       target: { value: 'Plan the workflow and give each stage precise guidance.' },
     });
-    fireEvent.click(screen.getByText('Execution & communication'));
-    fireEvent.change(screen.getByLabelText('Synthesis agent'), { target: { value: 'researcher' } });
-    fireEvent.change(screen.getByLabelText('Synthesis prompt'), {
+    fireEvent.click(screen.getByRole('button', { name: 'Configure Finish stage' }));
+    expect(screen.getByLabelText('Stage instructions')).toHaveValue(
+      'Synthesize all completed stage outputs into one clear, accurate final answer.',
+    );
+    fireEvent.change(screen.getByLabelText('Stage agent'), { target: { value: 'researcher' } });
+    fireEvent.change(screen.getByLabelText('Stage instructions'), {
       target: { value: 'Combine the stage outputs into one cited answer.' },
     });
     expect(screen.getAllByRole('checkbox', { name: 'News research' }).every((checkbox) =>
@@ -233,8 +243,10 @@ describe('TeamsView', () => {
       ['news-research'],
     ]);
     expect(input.coordinator_prompt).toContain('precise guidance');
+    expect(input.coordinator_allowed_tools).toEqual(essentialTools);
     expect(input.synthesis_agent_id).toBe('researcher');
     expect(input.synthesis_instruction).toContain('cited answer');
+    expect(input.synthesis_allowed_tools).toEqual(essentialTools);
     expect(input.synthesis_skills).toEqual(['news-research']);
   });
 

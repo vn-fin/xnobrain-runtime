@@ -174,12 +174,17 @@ class TeamRunLifecycleTests(_TeamRunBase):
                     "name": "Repeated profile DAG",
                     "orchestrator_id": ids[0],
                     "members": [
+                        {"agent_id": ids[0], "role": "planner", "allowed_tools": ["todo"]},
                         {"agent_id": ids[1], "role": "researcher", "allowed_tools": []},
                     ],
                     "workflow": [
                         {
+                            "id": "plan", "task": "Check the execution plan",
+                            "agent_id": ids[0], "role": "planner",
+                        },
+                        {
                             "id": "research", "task": "Research the subject",
-                            "agent_id": ids[1], "role": "researcher",
+                            "agent_id": ids[1], "role": "researcher", "needs": ["plan"],
                         },
                         {
                             "id": "verify", "task": "Verify the research",
@@ -192,14 +197,23 @@ class TeamRunLifecycleTests(_TeamRunBase):
 
         self.assertEqual(created.status_code, 201, created.text)
         team = created.json()["data"]
+        self.assertEqual(
+            team["coordinator_prompt"],
+            "Plan the workflow and give every stage clear, actionable execution guidance.",
+        )
+        self.assertEqual(
+            team["synthesis_instruction"],
+            "Synthesize all completed stage outputs into one clear, accurate final answer.",
+        )
         self.assertEqual(team["coordinator_skills"], ["team-planning"])
         self.assertEqual(team["synthesis_skills"], ["news-research"])
         self.assertEqual(
             [step["agent_id"] for step in team["workflow"]],
-            [ids[1], ids[1]],
+            [ids[0], ids[1], ids[1]],
         )
-        self.assertEqual(team["workflow"][0]["skills"], ["news-research"])
-        self.assertEqual(team["workflow"][1]["skills"], [])
+        self.assertEqual(team["workflow"][0]["skills"], ["team-planning"])
+        self.assertEqual(team["workflow"][1]["skills"], ["news-research"])
+        self.assertEqual(team["workflow"][2]["skills"], [])
 
     async def test_async_run_lifecycle(self):
         async with self.client() as client:
@@ -254,8 +268,10 @@ class TeamRunLifecycleTests(_TeamRunBase):
                 "communication_level": 3,
                 "shared_workspace": True,
                 "coordinator_prompt": "Guide the workers with a source-first plan.",
+                "coordinator_allowed_tools": ["todo", "web"],
                 "coordinator_skills": ["team-planning"],
                 "synthesis_agent_id": ids[2],
+                "synthesis_allowed_tools": ["file"],
                 "synthesis_skills": ["final-writing"],
                 "synthesis_instruction": "Synthesize these workflow results with citations.",
                 "max_parallel": 2,
@@ -289,6 +305,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
         self.assertEqual(result["orchestrator_summary"], "final synthesis")
         coordinator_call = next(body for agent_id, body in calls if agent_id == ids[0])
         self.assertEqual(coordinator_call["skills"], ["team-planning"])
+        self.assertEqual(coordinator_call["toolsets"], ["todo", "web"])
         research_call = next(body for agent_id, body in calls if agent_id == ids[1] and "Task: Research current news" in body["message"])
         self.assertNotIn("toolsets", research_call)
         self.assertEqual(research_call["skills"], ["news-research"])
@@ -304,6 +321,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
             if agent_id == ids[2] and "Synthesize these workflow results with citations" in body["message"]
         )
         self.assertEqual(synthesis_call["skills"], ["final-writing"])
+        self.assertEqual(synthesis_call["toolsets"], ["file"])
 
     async def test_completed_run_can_be_deleted(self):
         async with self.client() as client:

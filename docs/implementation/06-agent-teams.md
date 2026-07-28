@@ -27,7 +27,11 @@ also preload skills from that profile; every enabled profile skill is selected
 by default, while users can opt out per stage. A profile can back multiple
 distinct workflow nodes, with execution still serialized per profile. The
 coordinator and synthesis roles have independently selectable profiles, skill
-sets, and custom prompts. The communication policy follows the issue #344
+sets, safe toolsets, and custom prompts. In the visual editor they are the
+selectable Start and Finish agent nodes and use the same Stage Settings
+inspector as worker nodes. New stages start with the essential web, browser,
+terminal, file, code-execution, skills, and planning toolsets selected. The
+communication policy follows the issue #344
 levels: L0 schedules isolated stages, L1 passes dependency summaries, L2 adds a
 durable per-run shared scratchpad, and L3 adds a bounded turn-based
 review/revision exchange between directly connected stages. The visual editor

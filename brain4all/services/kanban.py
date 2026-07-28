@@ -17,7 +17,7 @@ from ..integrations import AgentAPIError
 from ..integrations import kanban as kb_adapter
 from ..integrations.kanban import KanbanUnavailable
 from ..repositories import StoreError
-from .platform import ServiceError
+from .platform import DEFAULT_TEAM_COORDINATOR_PROMPT, ServiceError
 
 
 PRODUCT_STATUSES = ("backlog", "todo", "running", "done", "archived")
@@ -735,7 +735,10 @@ class KanbanService:
         nodes: list[dict[str, Any]] = []
         root_parent_id = root_id
         orchestrator = str(team.get("orchestrator_id") or "")
-        coordinator_prompt = str(team.get("coordinator_prompt") or "").strip()
+        coordinator_prompt = (
+            str(team.get("coordinator_prompt") or "").strip()
+            or DEFAULT_TEAM_COORDINATOR_PROMPT
+        )
         if coordinator_prompt:
             if not orchestrator:
                 raise ServiceError("team has no orchestrator", status=409, code="invalid_team")

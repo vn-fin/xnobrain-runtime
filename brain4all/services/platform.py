@@ -34,6 +34,12 @@ SAFE_TOOLSETS = frozenset({
     "image_gen", "session_search", "skills", "terminal", "todo", "tts",
     "video", "video_gen", "vision", "web", "x_search",
 })
+DEFAULT_TEAM_COORDINATOR_PROMPT = (
+    "Plan the workflow and give every stage clear, actionable execution guidance."
+)
+DEFAULT_TEAM_SYNTHESIS_PROMPT = (
+    "Synthesize all completed stage outputs into one clear, accurate final answer."
+)
 _EVERY = re.compile(r"^@every\s+(\d+)([smhd])$")
 
 
@@ -586,11 +592,11 @@ class PlatformService:
             }
             for item in members
         }
-        configured[str(team["orchestrator_id"])] = {
+        configured.setdefault(str(team["orchestrator_id"]), {
             "agent_id": str(team["orchestrator_id"]),
             "role": "coordinator",
             "allowed_tools": ["todo"],
-        }
+        })
         if raw_workflow:
             workflow = self._team_workflow(raw_workflow, configured, members, task)
         else:
@@ -924,7 +930,7 @@ class PlatformService:
         self.agents.describe_agent(orchestrator, include_memory=False)
         synthesis_agent = str(body.get("synthesis_agent_id") or orchestrator).strip()
         self.agents.describe_agent(synthesis_agent, include_memory=False)
-        seen = {orchestrator}
+        seen: set[str] = set()
         members = []
         for raw in body.get("members") or []:
             agent_id = str(raw.get("agent_id") or "").strip()
@@ -946,11 +952,11 @@ class PlatformService:
             }
             for item in members
         }
-        configured[orchestrator] = {
+        configured.setdefault(orchestrator, {
             "agent_id": orchestrator,
             "role": "coordinator",
             "allowed_tools": ["todo"],
-        }
+        })
         workflow = []
         if body.get("workflow"):
             workflow = self._team_workflow(body["workflow"], configured, members, "")
@@ -964,13 +970,18 @@ class PlatformService:
                 or f"A coordinated team of {len(members) + 1} agents for multi-stage work."
             ),
             "orchestrator_id": orchestrator,
-            "coordinator_prompt": str(body.get("coordinator_prompt") or "").strip(),
+            "coordinator_prompt": (
+                str(body.get("coordinator_prompt") or "").strip()
+                or DEFAULT_TEAM_COORDINATOR_PROMPT
+            ),
+            "coordinator_allowed_tools": self._team_toolsets(body.get("coordinator_allowed_tools")),
             "coordinator_skills": (
                 self._enabled_team_skills(orchestrator)
                 if body.get("coordinator_skills") is None
                 else self._team_step_skills(body.get("coordinator_skills"))
             ),
             "synthesis_agent_id": synthesis_agent,
+            "synthesis_allowed_tools": self._team_toolsets(body.get("synthesis_allowed_tools")),
             "synthesis_skills": (
                 self._enabled_team_skills(synthesis_agent)
                 if body.get("synthesis_skills") is None
@@ -982,7 +993,7 @@ class PlatformService:
             "communication_level": max(0, min(3, int(body.get("communication_level", 1)))),
             "synthesis_instruction": (
                 str(body.get("synthesis_instruction") or "").strip()
-                or "Synthesize these workflow results into one final answer."
+                or DEFAULT_TEAM_SYNTHESIS_PROMPT
             ),
             "max_parallel": max(1, int(body.get("max_parallel") or 1)),
             "max_depth": max(1, int(body.get("max_depth") or 1)),
@@ -1013,6 +1024,17 @@ class PlatformService:
             for item in skills
             if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
         })
+
+    @staticmethod
+    def _team_toolsets(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ServiceError("allowed tools must be a list", code="invalid_workflow")
+        tools = sorted({str(item).strip() for item in value if str(item).strip()})
+        if any(tool not in SAFE_TOOLSETS for tool in tools):
+            raise ServiceError("team role contains a privileged toolset", code="invalid_workflow_tools")
+        return tools
 
     @staticmethod
     def _schedule_seconds(schedule: str) -> int:

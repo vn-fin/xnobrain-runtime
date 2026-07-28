@@ -16,7 +16,12 @@ import logging
 from typing import Any, Mapping
 import uuid
 
-from .platform import EXPECTED_ERRORS, ServiceError, iso
+from .platform import (
+    DEFAULT_TEAM_COORDINATOR_PROMPT,
+    EXPECTED_ERRORS,
+    ServiceError,
+    iso,
+)
 
 
 MAX_ACTIVE_TEAM_RUNS = 4
@@ -314,7 +319,10 @@ class TeamRunService:
             )
 
         coordinator_guidance = ""
-        coordinator_prompt = str(team.get("coordinator_prompt") or "").strip()
+        coordinator_prompt = (
+            str(team.get("coordinator_prompt") or "").strip()
+            or DEFAULT_TEAM_COORDINATOR_PROMPT
+        )
         if coordinator_prompt:
             workflow_outline = "\n".join(
                 f"- {step['id']} ({step['role']}): {step['task']}"
@@ -333,6 +341,8 @@ class TeamRunService:
                 coordinator_skills = self._enabled_agent_skills(str(team["orchestrator_id"]))
             if coordinator_skills:
                 coordinator_request["skills"] = list(coordinator_skills)
+            if team.get("coordinator_allowed_tools"):
+                coordinator_request["toolsets"] = list(team["coordinator_allowed_tools"])
             coordinated = await self.agents.chat(
                 str(team["orchestrator_id"]),
                 coordinator_request,
@@ -485,6 +495,8 @@ class TeamRunService:
                 synthesis_skills = self._enabled_agent_skills(synthesis_agent)
             if synthesis_skills:
                 synthesis_request["skills"] = list(synthesis_skills)
+            if team.get("synthesis_allowed_tools"):
+                synthesis_request["toolsets"] = list(team["synthesis_allowed_tools"])
             final = await self.agents.chat(
                 synthesis_agent,
                 synthesis_request,

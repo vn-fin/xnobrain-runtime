@@ -15,8 +15,10 @@ export type Team = {
   description?: string;
   orchestrator_id: string;
   coordinator_prompt?: string;
+  coordinator_allowed_tools?: string[];
   coordinator_skills?: string[];
   synthesis_agent_id?: string;
+  synthesis_allowed_tools?: string[];
   synthesis_skills?: string[];
   members: TeamMember[];
   workflow?: TeamWorkflowStep[];

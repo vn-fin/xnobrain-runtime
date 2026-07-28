@@ -75,6 +75,19 @@ const TEAM_TOOLSETS = [
   ['context_engine', 'Context engine'],
   ['todo', 'Task planning'],
 ] as const;
+const ESSENTIAL_TEAM_TOOLSETS = [
+  'web',
+  'browser',
+  'terminal',
+  'file',
+  'code_execution',
+  'skills',
+  'todo',
+];
+const START_STAGE_ID = '__start__';
+const FINISH_STAGE_ID = '__finish__';
+const DEFAULT_START_PROMPT = 'Plan the workflow and give every stage clear, actionable execution guidance.';
+const DEFAULT_FINISH_PROMPT = 'Synthesize all completed stage outputs into one clear, accurate final answer.';
 const COMMUNICATION_LEVELS = [
   { value: 0, label: 'L0 · Isolated', description: 'Dependencies control order; results are not shared.' },
   { value: 1, label: 'L1 · Result passing', description: 'Downstream stages receive upstream summaries.' },
@@ -857,7 +870,7 @@ function TeamBuilder({
       agent_id: member.agent_id,
       role: member.role,
       needs: [],
-      allowed_tools: member.allowed_tools,
+      allowed_tools: member.allowed_tools.length ? member.allowed_tools : [...ESSENTIAL_TEAM_TOOLSETS],
       skills: enabledSkillIds(member.agent_id),
     })) ?? [];
   const [name, setName] = useState(initialTeam?.name ?? '');
@@ -868,12 +881,12 @@ function TeamBuilder({
     agent_id: step.agent_id ?? '',
     role: step.role ?? step.id,
     needs: step.needs ?? [],
-    allowed_tools: step.allowed_tools ?? [],
+    allowed_tools: step.allowed_tools ?? [...ESSENTIAL_TEAM_TOOLSETS],
     skills: step.skills ?? enabledSkillIds(step.agent_id ?? ''),
     x: 170 + (index % 2) * 260,
     y: 95 + Math.floor(index / 2) * 165,
   })));
-  const [selectedNodeId, setSelectedNodeId] = useState(initialWorkflow[0]?.id ?? '');
+  const [selectedNodeId, setSelectedNodeId] = useState(START_STAGE_ID);
   const [connectFrom, setConnectFrom] = useState('');
   const [message, setMessage] = useState('');
   const [communicationLevel, setCommunicationLevel] = useState<0 | 1 | 2 | 3>(initialTeam?.communication_level ?? 1);
@@ -881,9 +894,14 @@ function TeamBuilder({
   const [maxParallel, setMaxParallel] = useState(initialTeam?.max_parallel ?? 3);
   const [maxDepth, setMaxDepth] = useState(initialTeam?.max_depth ?? 1);
   const [synthesisInstruction, setSynthesisInstruction] = useState(
-    initialTeam?.synthesis_instruction ?? 'Synthesize these workflow results into one final answer.',
+    initialTeam?.synthesis_instruction || DEFAULT_FINISH_PROMPT,
   );
-  const [coordinatorPrompt, setCoordinatorPrompt] = useState(initialTeam?.coordinator_prompt ?? '');
+  const [coordinatorPrompt, setCoordinatorPrompt] = useState(
+    initialTeam?.coordinator_prompt || DEFAULT_START_PROMPT,
+  );
+  const [coordinatorTools, setCoordinatorTools] = useState(
+    initialTeam?.coordinator_allowed_tools ?? [...ESSENTIAL_TEAM_TOOLSETS],
+  );
   const [coordinatorSkills, setCoordinatorSkills] = useState(
     initialTeam?.coordinator_skills ?? enabledSkillIds(initialTeam?.orchestrator_id ?? agents[0]?.id ?? ''),
   );
@@ -894,11 +912,32 @@ function TeamBuilder({
     initialTeam?.synthesis_skills
     ?? enabledSkillIds(initialTeam?.synthesis_agent_id ?? initialTeam?.orchestrator_id ?? agents[0]?.id ?? ''),
   );
+  const [synthesisTools, setSynthesisTools] = useState(
+    initialTeam?.synthesis_allowed_tools ?? [...ESSENTIAL_TEAM_TOOLSETS],
+  );
   const [drag, setDrag] = useState<{ id: string; pointerId: number; dx: number; dy: number }>();
   const canvasRef = useRef<HTMLDivElement>(null);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
-  const selectedAgent = agents.find((agent) => agent.id === selectedNode?.agent_id);
-  const availableAgents = agents.filter((agent) => agent.id !== orchestratorId);
+  const startSelected = selectedNodeId === START_STAGE_ID;
+  const finishSelected = selectedNodeId === FINISH_STAGE_ID;
+  const selectedStageExists = Boolean(selectedNode || startSelected || finishSelected);
+  const selectedStageAgentId = startSelected
+    ? orchestratorId
+    : finishSelected
+      ? synthesisAgentId
+      : selectedNode?.agent_id ?? '';
+  const selectedAgent = agents.find((agent) => agent.id === selectedStageAgentId);
+  const selectedStageTools = startSelected
+    ? coordinatorTools
+    : finishSelected
+      ? synthesisTools
+      : selectedNode?.allowed_tools ?? [];
+  const selectedStageSkills = startSelected
+    ? coordinatorSkills
+    : finishSelected
+      ? synthesisSkills
+      : selectedNode?.skills ?? [];
+  const availableAgents = agents;
 
   useEffect(() => {
     if (!agents.some((agent) => agent.id === orchestratorId)) setOrchestratorId(agents[0]?.id ?? '');
@@ -917,7 +956,7 @@ function TeamBuilder({
       role,
       task: `Complete the ${role.replace(/-/g, ' ')} stage for the team objective.`,
       needs: [],
-      allowed_tools: [],
+      allowed_tools: [...ESSENTIAL_TEAM_TOOLSETS],
       skills: enabledSkillIds(agent.id),
       x: 170 + (index % 2) * 260,
       y: 95 + Math.floor(index / 2) * 165,
@@ -925,6 +964,47 @@ function TeamBuilder({
     setNodes((current) => [...current, next]);
     setSelectedNodeId(id);
     setMessage('');
+  };
+
+  const updateSelectedAgent = (agentId: string) => {
+    const skills = enabledSkillIds(agentId);
+    if (startSelected) {
+      const previousId = orchestratorId;
+      setOrchestratorId(agentId);
+      setCoordinatorSkills(skills);
+      setCoordinatorTools([...ESSENTIAL_TEAM_TOOLSETS]);
+      if (synthesisAgentId === previousId) {
+        setSynthesisAgentId(agentId);
+        setSynthesisSkills(skills);
+        setSynthesisTools([...ESSENTIAL_TEAM_TOOLSETS]);
+      }
+      return;
+    }
+    if (finishSelected) {
+      setSynthesisAgentId(agentId);
+      setSynthesisSkills(skills);
+      setSynthesisTools([...ESSENTIAL_TEAM_TOOLSETS]);
+      return;
+    }
+    if (selectedNode) {
+      updateNode(selectedNode.id, {
+        agent_id: agentId,
+        allowed_tools: [...ESSENTIAL_TEAM_TOOLSETS],
+        skills,
+      });
+    }
+  };
+
+  const updateSelectedTools = (tools: string[]) => {
+    if (startSelected) setCoordinatorTools(tools);
+    else if (finishSelected) setSynthesisTools(tools);
+    else if (selectedNode) updateNode(selectedNode.id, { allowed_tools: tools });
+  };
+
+  const updateSelectedSkills = (skills: string[]) => {
+    if (startSelected) setCoordinatorSkills(skills);
+    else if (finishSelected) setSynthesisSkills(skills);
+    else if (selectedNode) updateNode(selectedNode.id, { skills });
   };
 
   const updateNode = (id: string, patch: Partial<DraftNode>) => {
@@ -1016,8 +1096,10 @@ function TeamBuilder({
       description: description.trim() || undefined,
       orchestrator_id: orchestratorId,
       coordinator_prompt: coordinatorPrompt.trim(),
+      coordinator_allowed_tools: coordinatorTools,
       coordinator_skills: coordinatorSkills,
       synthesis_agent_id: synthesisAgentId || orchestratorId,
+      synthesis_allowed_tools: synthesisTools,
       synthesis_skills: synthesisSkills,
       members: [...memberNodes.entries()].map(([agentId, stages]) => ({
         agent_id: agentId,
@@ -1052,7 +1134,7 @@ function TeamBuilder({
   };
 
   return (
-    <div className={`team-builder-shell ${selectedNode ? 'has-inspector' : ''}`}>
+    <div className={`team-builder-shell ${selectedStageExists ? 'has-inspector' : ''}`}>
       <aside className="team-builder-sidebar">
         <button className="teams-back-button" onClick={onBack}>
           <ArrowLeft size={15} /> Team library
@@ -1072,53 +1154,6 @@ function TeamBuilder({
               maxLength={2000}
             />
           </label>
-          <label>
-            Coordinator
-            <select
-              value={orchestratorId}
-              onChange={(event) => {
-                const nextId = event.target.value;
-                const previousId = orchestratorId;
-                setOrchestratorId(nextId);
-                setCoordinatorSkills(enabledSkillIds(nextId));
-                if (synthesisAgentId === previousId) {
-                  setSynthesisAgentId(nextId);
-                  setSynthesisSkills(enabledSkillIds(nextId));
-                }
-                setNodes((current) => current.filter((node) => node.agent_id !== nextId));
-              }}
-            >
-              {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.title}</option>)}
-            </select>
-          </label>
-          <label>
-            Coordinator prompt
-            <textarea
-              aria-label="Coordinator prompt"
-              value={coordinatorPrompt}
-              onChange={(event) => setCoordinatorPrompt(event.target.value)}
-              placeholder="How should the coordinator guide this team?"
-            />
-          </label>
-          <div className="team-role-skills">
-            <span>Coordinator skills</span>
-            <div>
-              {(agents.find((agent) => agent.id === orchestratorId)?.skills ?? [])
-                .filter((skill) => skill.enabled)
-                .map((skill) => (
-                  <label key={skill.skill_id}>
-                    <input
-                      type="checkbox"
-                      checked={coordinatorSkills.includes(skill.skill_id)}
-                      onChange={(event) => setCoordinatorSkills(event.target.checked
-                        ? [...new Set([...coordinatorSkills, skill.skill_id])]
-                        : coordinatorSkills.filter((id) => id !== skill.skill_id))}
-                    />
-                    {skill.name}
-                  </label>
-                ))}
-            </div>
-          </div>
         </div>
         <details className="team-policy-settings">
           <summary>Execution & communication</summary>
@@ -1157,46 +1192,6 @@ function TeamBuilder({
               onChange={(event) => setMaxDepth(Math.max(1, Math.min(8, Number(event.target.value) || 1)))}
             />
           </label>
-          <label>
-            Synthesis agent
-            <select
-              aria-label="Synthesis agent"
-              value={synthesisAgentId}
-              onChange={(event) => {
-                setSynthesisAgentId(event.target.value);
-                setSynthesisSkills(enabledSkillIds(event.target.value));
-              }}
-            >
-              {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.title}</option>)}
-            </select>
-          </label>
-          <label>
-            Synthesis prompt
-            <textarea
-              aria-label="Synthesis prompt"
-              value={synthesisInstruction}
-              onChange={(event) => setSynthesisInstruction(event.target.value)}
-            />
-          </label>
-          <div className="team-role-skills">
-            <span>Synthesis skills</span>
-            <div>
-              {(agents.find((agent) => agent.id === synthesisAgentId)?.skills ?? [])
-                .filter((skill) => skill.enabled)
-                .map((skill) => (
-                  <label key={skill.skill_id}>
-                    <input
-                      type="checkbox"
-                      checked={synthesisSkills.includes(skill.skill_id)}
-                      onChange={(event) => setSynthesisSkills(event.target.checked
-                        ? [...new Set([...synthesisSkills, skill.skill_id])]
-                        : synthesisSkills.filter((id) => id !== skill.skill_id))}
-                    />
-                    {skill.name}
-                  </label>
-                ))}
-            </div>
-          </div>
           <label className="team-policy-check">
             <input
               type="checkbox"
@@ -1249,18 +1244,32 @@ function TeamBuilder({
           >
             <div className="team-canvas-grid" />
             <WorkflowEdges nodes={nodes} />
-            <div className="team-terminal-node start" style={{ left: 32, top: 270 }}>
-              <span><Play size={14} fill="currentColor" /></span><strong>Start</strong><small>Team objective</small>
-            </div>
+            <button
+              type="button"
+              className={`team-terminal-node start ${startSelected ? 'selected' : ''}`}
+              style={{ left: 32, top: 270 }}
+              onClick={() => setSelectedNodeId(START_STAGE_ID)}
+              aria-label="Configure Start stage"
+            >
+              <span><Play size={14} fill="currentColor" /></span>
+              <strong>Start</strong>
+              <small>{agents.find((agent) => agent.id === orchestratorId)?.title ?? 'Coordinator'}</small>
+            </button>
             {nodes.map((node) => {
               const agent = agents.find((candidate) => candidate.id === node.agent_id);
               return (
                 <div
                   key={node.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Configure ${node.id} stage`}
                   className={`team-workflow-node ${selectedNodeId === node.id ? 'selected' : ''}`}
                   style={{ left: node.x, top: node.y }}
                   onPointerDown={(event) => beginDrag(event, node)}
                   onClick={() => setSelectedNodeId(node.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') setSelectedNodeId(node.id);
+                  }}
                 >
                   <button
                     className="team-node-port input"
@@ -1291,9 +1300,17 @@ function TeamBuilder({
                 </div>
               );
             })}
-            <div className="team-terminal-node finish" style={{ left: 794, top: 270 }}>
-              <span><Check size={15} /></span><strong>Finish</strong><small>Synthesize</small>
-            </div>
+            <button
+              type="button"
+              className={`team-terminal-node finish ${finishSelected ? 'selected' : ''}`}
+              style={{ left: 794, top: 270 }}
+              onClick={() => setSelectedNodeId(FINISH_STAGE_ID)}
+              aria-label="Configure Finish stage"
+            >
+              <span><Check size={15} /></span>
+              <strong>Finish</strong>
+              <small>{agents.find((agent) => agent.id === synthesisAgentId)?.title ?? 'Synthesizer'}</small>
+            </button>
             {nodes.length === 0 && (
               <div className="team-canvas-empty">
                 <div><Plus size={22} /></div>
@@ -1305,55 +1322,74 @@ function TeamBuilder({
         </div>
       </main>
 
-      <aside className={`team-node-inspector ${selectedNode ? 'open' : ''}`}>
-        {selectedNode ? (
+      <aside className={`team-node-inspector ${selectedStageExists ? 'open' : ''}`}>
+        {selectedStageExists ? (
           <>
             <div className="team-inspector-head">
-              <div><span className="teams-kicker">Stage settings</span><h3>{selectedNode.id}</h3></div>
+              <div>
+                <span className="teams-kicker">Stage settings</span>
+                <h3>{startSelected ? 'Start' : finishSelected ? 'Finish' : selectedNode?.id}</h3>
+              </div>
               <button className="icon-button" aria-label="Close stage settings" onClick={() => setSelectedNodeId('')}><X size={16} /></button>
             </div>
-            <label>
-              Role
-              <input value={selectedNode.role} onChange={(event) => updateNode(selectedNode.id, { role: event.target.value })} />
-            </label>
+            {selectedNode && (
+              <label>
+                Role
+                <input value={selectedNode.role} onChange={(event) => updateNode(selectedNode.id, { role: event.target.value })} />
+              </label>
+            )}
             <label>
               Instructions
-              <textarea value={selectedNode.task} onChange={(event) => updateNode(selectedNode.id, { task: event.target.value })} />
+              <textarea
+                aria-label="Stage instructions"
+                value={startSelected ? coordinatorPrompt : finishSelected ? synthesisInstruction : selectedNode?.task ?? ''}
+                onChange={(event) => {
+                  if (startSelected) setCoordinatorPrompt(event.target.value);
+                  else if (finishSelected) setSynthesisInstruction(event.target.value);
+                  else if (selectedNode) updateNode(selectedNode.id, { task: event.target.value });
+                }}
+              />
             </label>
             <label>
               Agent
-              <input value={agents.find((agent) => agent.id === selectedNode.agent_id)?.title ?? selectedNode.agent_id} disabled />
+              <select
+                aria-label="Stage agent"
+                value={selectedStageAgentId}
+                onChange={(event) => updateSelectedAgent(event.target.value)}
+              >
+                {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.title}</option>)}
+              </select>
             </label>
-            <div className="team-inspector-section">
-              <span>Depends on</span>
-              {(selectedNode.needs ?? []).length === 0 && <small>No dependencies — starts immediately</small>}
-              <div className="team-inspector-options">
-                {nodes.filter((node) => node.id !== selectedNode.id).map((node) => (
-                  <label key={node.id}>
-                    <input
-                      type="checkbox"
-                      checked={selectedNode.needs?.includes(node.id) ?? false}
-                      onChange={() => toggleDependency(selectedNode.id, node.id)}
-                    />
-                    {node.id}
-                  </label>
-                ))}
+            {selectedNode && (
+              <div className="team-inspector-section">
+                <span>Depends on</span>
+                {(selectedNode.needs ?? []).length === 0 && <small>No dependencies — starts after Start</small>}
+                <div className="team-inspector-options">
+                  {nodes.filter((node) => node.id !== selectedNode.id).map((node) => (
+                    <label key={node.id}>
+                      <input
+                        type="checkbox"
+                        checked={selectedNode.needs?.includes(node.id) ?? false}
+                        onChange={() => toggleDependency(selectedNode.id, node.id)}
+                      />
+                      {node.id}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             <div className="team-inspector-section">
               <span>Tool access</span>
-              <small>No selection inherits the agent’s normal conversation tool configuration.</small>
+              <small>Essential toolsets are selected by default. Clear all to inherit the agent profile.</small>
               <div className="team-inspector-options">
                 {TEAM_TOOLSETS.map(([id, label]) => (
                   <label key={id}>
                     <input
                       type="checkbox"
-                      checked={selectedNode.allowed_tools?.includes(id) ?? false}
-                      onChange={(event) => updateNode(selectedNode.id, {
-                        allowed_tools: event.target.checked
-                          ? [...new Set([...(selectedNode.allowed_tools ?? []), id])]
-                          : (selectedNode.allowed_tools ?? []).filter((tool) => tool !== id),
-                      })}
+                      checked={selectedStageTools.includes(id)}
+                      onChange={(event) => updateSelectedTools(event.target.checked
+                        ? [...new Set([...selectedStageTools, id])]
+                        : selectedStageTools.filter((tool) => tool !== id))}
                     />
                     {label}
                   </label>
@@ -1368,12 +1404,10 @@ function TeamBuilder({
                   <label key={skill.skill_id}>
                     <input
                       type="checkbox"
-                      checked={selectedNode.skills?.includes(skill.skill_id) ?? false}
-                      onChange={(event) => updateNode(selectedNode.id, {
-                        skills: event.target.checked
-                          ? [...new Set([...(selectedNode.skills ?? []), skill.skill_id])]
-                          : (selectedNode.skills ?? []).filter((id) => id !== skill.skill_id),
-                      })}
+                      checked={selectedStageSkills.includes(skill.skill_id)}
+                      onChange={(event) => updateSelectedSkills(event.target.checked
+                        ? [...new Set([...selectedStageSkills, skill.skill_id])]
+                        : selectedStageSkills.filter((id) => id !== skill.skill_id))}
                     />
                     {skill.name}
                   </label>
