@@ -8,6 +8,7 @@ import type {
   KanbanStatusDef,
   KanbanTask,
   KanbanTaskPatchInput,
+  NewKanbanBoardInput,
   NewKanbanTaskInput,
 } from '../types';
 
@@ -175,6 +176,14 @@ export const kanbanApi = {
   async getBoards(): Promise<KanbanBoard[]> {
     const data = await request<any[]>('/agent-gateway/v1/kanban/boards?include_archived=true');
     return (data ?? []).map(boardFromApi);
+  },
+
+  async createBoard(input: NewKanbanBoardInput): Promise<KanbanBoard> {
+    const data = await request<any>('/agent-gateway/v1/kanban/boards', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    return boardFromApi(data);
   },
 
   async createTask(boardId: string, input: NewKanbanTaskInput): Promise<KanbanTask> {

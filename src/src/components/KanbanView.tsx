@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   Activity,
   AlertTriangle,
   Archive,
   Check,
+  ChevronDown,
   ChevronRight,
   Clock,
   Columns3,
@@ -32,6 +33,7 @@ import type {
   Agent,
   ChatMessage,
   ConversationUsage,
+  KanbanBoard,
   KanbanColumnId,
   KanbanPriority,
   KanbanTask,
@@ -43,6 +45,7 @@ type KanbanState = ReturnType<typeof useKanban>;
 
 const PRIORITY_LABEL: Record<KanbanPriority, string> = { high: 'High', medium: 'Medium', low: 'Low' };
 const ASSIGNEE_COLORS = ['#4f8cff', '#34d399', '#f8d66d', '#c084fc', '#fb923c', '#7dd3fc'];
+const BOARD_COLORS = ['#4f8cff', '#34d399', '#c084fc', '#fb923c', '#f8d66d', '#22d3ee'];
 type ConversationLoad = { messages: ChatMessage[]; usage?: ConversationUsage };
 const conversationLoads = new Map<string, Promise<ConversationLoad>>();
 
@@ -151,6 +154,98 @@ function AssigneeSummary({ ids, agents }: { ids: string[]; agents: Agent[] }) {
       <AssigneeStack ids={ids} agents={agents} />
       <span>{lead.name}{ids.length > 1 ? ` +${ids.length - 1}` : ''}</span>
     </span>
+  );
+}
+
+function BoardPicker({
+  boards,
+  value,
+  onChange,
+  onCreate,
+}: {
+  boards: KanbanBoard[];
+  value: string;
+  onChange: (value: string) => void;
+  onCreate: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const selected = boards.find((board) => board.id === value) ?? boards[0];
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOutside = (event: MouseEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div className="kb-board-picker" ref={root}>
+      <button
+        type="button"
+        className="kb-board-trigger"
+        aria-label="Select task board"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="kb-board-color" style={{ background: selected?.color }} />
+        <span>{selected?.name ?? 'Task board'}</span>
+        <ChevronDown size={15} />
+      </button>
+      {open && (
+        <div className="kb-board-menu">
+          <div className="kb-board-menu-head">
+            <span>Task boards</span>
+            <small>{boards.length}</small>
+          </div>
+          <div className="kb-board-options" role="listbox" aria-label="Task boards">
+            {boards.map((item) => (
+              <button
+                type="button"
+                role="option"
+                aria-selected={item.id === selected?.id}
+                key={item.id}
+                onClick={() => {
+                  onChange(item.id);
+                  setOpen(false);
+                }}
+              >
+                <span className="kb-board-option-icon" style={{ color: item.color }}>
+                  <Columns3 size={15} />
+                </span>
+                <span>
+                  <strong>{item.name}</strong>
+                  <small>{item.description || `board/${item.id}`}</small>
+                </span>
+                <span className="kb-board-task-count">{item.tasks.length}</span>
+                {item.id === selected?.id && <Check size={14} />}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="kb-board-create-action"
+            onClick={() => {
+              setOpen(false);
+              onCreate();
+            }}
+          >
+            <Plus size={15} />
+            <span><strong>Create board</strong><small>Start a separate task workspace</small></span>
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1079,6 +1174,133 @@ function TaskDrawer({
   );
 }
 
+function boardSlug(value: string): string {
+  return value
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
+}
+
+function NewBoardModal({
+  state,
+  onClose,
+}: {
+  state: KanbanState;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [description, setDescription] = useState('');
+  const [color, setColor] = useState(BOARD_COLORS[0]);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  const validSlug = /^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug);
+
+  const submit = async () => {
+    if (!name.trim() || !validSlug || pending) return;
+    if (state.boards.some((board) => board.id === slug)) {
+      setError('That board ID is already in use.');
+      return;
+    }
+    setPending(true);
+    setError('');
+    const created = await state.createBoard({
+      name: name.trim(),
+      slug,
+      description: description.trim(),
+      color,
+    });
+    setPending(false);
+    if (created) onClose();
+    else setError('The board could not be created. Check the board ID and try again.');
+  };
+
+  return (
+    <div className="kb-overlay" onClick={onClose}>
+      <div className="kb-modal kb-board-modal" role="dialog" aria-modal="true" aria-labelledby="new-board-title" onClick={(event) => event.stopPropagation()}>
+        <div className="kb-modal-head">
+          <div>
+            <h2 id="new-board-title">Create task board</h2>
+            <p>Organize a separate stream of work and its task history.</p>
+          </div>
+          <button className="icon-button" aria-label="Close" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="kb-modal-body">
+          <label className="kb-field">
+            Board name
+            <input
+              value={name}
+              autoFocus
+              placeholder="e.g. Product launch"
+              onChange={(event) => {
+                const nextName = event.target.value;
+                setName(nextName);
+                if (!slugTouched) setSlug(boardSlug(nextName));
+              }}
+            />
+          </label>
+          <div className={!slug || validSlug ? 'kb-field' : 'kb-field invalid'}>
+            <label htmlFor="new-board-slug">Board ID</label>
+            <div className="kb-board-slug-input">
+              <span>board/</span>
+              <input
+                id="new-board-slug"
+                value={slug}
+                placeholder="product-launch"
+                maxLength={64}
+                onChange={(event) => {
+                  setSlugTouched(true);
+                  setSlug(boardSlug(event.target.value));
+                }}
+              />
+            </div>
+            <small className="kb-field-help">Lowercase letters, numbers, hyphens, and underscores.</small>
+          </div>
+          <label className="kb-field">
+            Description <span className="kb-optional">Optional</span>
+            <textarea
+              value={description}
+              placeholder="What kind of work belongs on this board?"
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </label>
+          <fieldset className="kb-board-color-field">
+            <legend>Board color</legend>
+            <div>
+              {BOARD_COLORS.map((option) => (
+                <button
+                  type="button"
+                  key={option}
+                  className={color === option ? 'selected' : ''}
+                  style={{ '--board-color': option } as CSSProperties}
+                  aria-label={`Use color ${option}`}
+                  aria-pressed={color === option}
+                  onClick={() => setColor(option)}
+                >
+                  {color === option && <Check size={14} />}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          {error && <div className="kb-board-form-error" role="alert"><AlertTriangle size={14} />{error}</div>}
+        </div>
+        <div className="kb-modal-foot">
+          <button className="conn-btn ghost" disabled={pending} onClick={onClose}>Cancel</button>
+          <button className="primary-button" disabled={!name.trim() || !validSlug || pending} onClick={() => void submit()}>
+            {pending ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
+            {pending ? 'Creating…' : 'Create board'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NewTaskModal({
   agents,
   teams,
@@ -1367,6 +1589,7 @@ export function KanbanView({
 }) {
   const { board, view, setView, search, setSearch, visibleTasks, columnOf, statusLabel } = state;
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [newBoardOpen, setNewBoardOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskStatus, setNewTaskStatus] = useState<string | undefined>(undefined);
   const [taskScope, setTaskScope] = useState<'current' | 'archived'>('current');
@@ -1487,6 +1710,14 @@ export function KanbanView({
     setPriorityFilter('all');
     setColumnFilter('all');
   };
+  const selectBoard = (boardId: string) => {
+    state.setActiveBoardId(boardId);
+    setTaskScope('current');
+    setAgentFilter('all');
+    setPriorityFilter('all');
+    setColumnFilter('all');
+    closeTask();
+  };
 
   const moveTask = (taskId: string, status: KanbanColumnId) => {
     const task = board?.tasks.find((item) => item.id === taskId);
@@ -1515,24 +1746,12 @@ export function KanbanView({
               <Columns3 size={18} />
             </span>
             <div className="kb-board-picker-wrap">
-              <label>
-                <span className="sr-only">Select task board</span>
-                <select
-                  className="kb-board-picker"
-                  value={state.activeBoardId}
-                  onChange={(event) => {
-                    state.setActiveBoardId(event.target.value);
-                    setAgentFilter('all');
-                    setPriorityFilter('all');
-                    setColumnFilter('all');
-                    closeTask();
-                  }}
-                >
-                  {state.boards.map((item) => (
-                    <option key={item.id} value={item.id}>{item.name} · {item.tasks.length} tasks</option>
-                  ))}
-                </select>
-              </label>
+              <BoardPicker
+                boards={state.boards}
+                value={state.activeBoardId}
+                onChange={selectBoard}
+                onCreate={() => setNewBoardOpen(true)}
+              />
               <span className="kb-board-id">board/{board?.id ?? 'default'}</span>
               <span className={`kb-live-status ${state.liveStatus}`}>
                 <span />
@@ -1915,6 +2134,7 @@ export function KanbanView({
           onClose={closeTask}
         />
       )}
+      {newBoardOpen && <NewBoardModal state={state} onClose={() => setNewBoardOpen(false)} />}
       {newTaskOpen && <NewTaskModal teams={teams} agents={agents} state={state} initialStatus={newTaskStatus} onClose={() => setNewTaskOpen(false)} />}
       {archiveTask && (
         <ArchiveConfirm

@@ -408,6 +408,13 @@ export type KanbanBoard = {
 
 export type KanbanViewMode = 'board' | 'table';
 
+export type NewKanbanBoardInput = {
+  name: string;
+  slug: string;
+  description: string;
+  color: string;
+};
+
 export type NewKanbanTaskInput = {
   title: string;
   description: string;

@@ -10,6 +10,7 @@ import type {
   KanbanStatusDef,
   KanbanTaskPatchInput,
   KanbanViewMode,
+  NewKanbanBoardInput,
   NewKanbanTaskInput,
 } from '../types';
 
@@ -120,6 +121,23 @@ export function useKanban(active = true) {
     setSearch('');
     window.localStorage.setItem('brain4all-kanban-board', boardId);
   }, []);
+
+  const createBoard = useCallback(async (input: NewKanbanBoardInput) => {
+    if (boards.some((item) => item.id === input.slug)) {
+      notify('error', `A board with the ID “${input.slug}” already exists.`);
+      return null;
+    }
+    try {
+      const created = await kanbanApi.createBoard(input);
+      setBoards((current) => [...current.filter((item) => item.id !== created.id), created]);
+      setActiveBoardId(created.id);
+      notify('success', `Created “${created.name}”.`);
+      return created;
+    } catch (cause) {
+      notify('error', cause instanceof Error ? cause.message : 'The board could not be created.');
+      return null;
+    }
+  }, [boards, notify, setActiveBoardId]);
 
   /** Product API already returns one of the five fixed columns. */
   const columnOf = useCallback(
@@ -409,6 +427,7 @@ export function useKanban(active = true) {
     addComment,
     refreshTask,
     detailLoading,
+    createBoard,
     createTask,
     cancelTask,
     cancelTeamTask,

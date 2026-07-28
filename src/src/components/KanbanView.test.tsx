@@ -83,6 +83,14 @@ describe('KanbanView', () => {
           updated_at: new Date().toISOString(),
         } }), { status: 201, headers: { 'Content-Type': 'application/json' } });
       }
+      if (path.endsWith('/kanban/boards') && init?.method === 'POST') {
+        const requested = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ success: true, data: {
+          id: requested.slug,
+          ...requested,
+          tasks: [],
+        } }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+      }
       if (path.includes('/kanban/boards/') && path.includes('/tasks/')) {
         const requested = init?.body ? JSON.parse(String(init.body)) as { status?: string } : {};
         if (path.endsWith('/move') && requested.status === 'backlog') {
@@ -138,12 +146,36 @@ describe('KanbanView', () => {
     render(<TestBoard />);
 
     const boardPicker = await screen.findByLabelText('Select task board');
-    await waitFor(() => expect(boardPicker.querySelectorAll('option')).toHaveLength(3));
-
-    await user.selectOptions(boardPicker, 'provider-rollout');
+    await user.click(boardPicker);
+    const options = await screen.findByRole('listbox', { name: 'Task boards' });
+    expect(within(options).getAllByRole('option')).toHaveLength(3);
+    await user.click(within(options).getByRole('option', { name: /Provider rollout/ }));
 
     expect(screen.getByRole('button', { name: 'Open p-201: Verify provider callback' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Open t-1042: Prepare the weekly report' })).toBeNull();
+  });
+
+  it('creates and selects a new task board from the board menu', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    render(<TestBoard />);
+
+    await user.click(await screen.findByLabelText('Select task board'));
+    await user.click(screen.getByRole('button', { name: /Create board/ }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Create task board' });
+    await user.type(within(dialog).getByLabelText('Board name'), 'Launch Planning');
+    expect(within(dialog).getByLabelText('Board ID')).toHaveValue('launch-planning');
+    await user.type(within(dialog).getByLabelText(/Description/), 'Coordinate the product launch.');
+    await user.click(within(dialog).getByRole('button', { name: 'Create board' }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => {
+      if (!String(input).endsWith('/kanban/boards') || init?.method !== 'POST') return false;
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      return body.slug === 'launch-planning' && body.name === 'Launch Planning';
+    })).toBe(true));
+    expect(await screen.findByRole('status')).toHaveTextContent('Created “Launch Planning”.');
+    expect(screen.getByText('board/launch-planning')).toBeVisible();
   });
 
   it('filters tasks and keeps task details available in the board', async () => {
