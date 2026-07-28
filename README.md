@@ -39,21 +39,29 @@ Open <http://localhost:5152>. Swagger is available at
 
 ### Optional account UI
 
-The frontend reads `/config.js` before it starts. The default standalone
-configuration uses `edition: "opensource"` and optional `local-profile`
-mode. Signing in creates browser-local display information and enables the
-Account tab; it does not restrict access to the standalone server, and users
-can continue without signing in.
+The frontend reads `/config.js` before it starts. Its built-in fallback remains
+the offline-compatible optional `local-profile` mode. The checked-in standalone
+trial uses `edition: "opensource"` with optional `xno-firebase` login; users can
+still continue into the local server without signing in.
 
 Optional remote product features use `api.remoteBaseUrl`. The checked-in local
-trial enables the Example tab and loads `/v2/indexoverview` from
-`https://api.xno.vn` without sending browser credentials. Set
-`features.example: false` to remove that tab. Remote feature flags only control
-presentation; the remote API must enforce every protected capability.
+trial points to `https://api.dev.xnoquant.io`, enables the Example tab, and
+renders the authenticated `/auth/v1/me` response separately from the Account
+view. Set `features.example: false` to remove that tab. Remote feature flags
+only control presentation; the remote API must enforce every protected
+capability.
+
+The `xno-firebase` trial provider follows the XNOQuant browser flow: Firebase
+email/password authentication, `GET /auth/v1/auth/token` to exchange the
+Firebase ID token, `POST /auth/v1/auth/refresh`, and `GET /auth/v1/me`.
+Because the current remote API has no logout endpoint, sign-out clears the
+namespaced Brain4All browser tokens. This direct-browser token provider is for
+integration testing; production managed deployment should prefer the
+same-origin gateway provider and HttpOnly session cookies.
 
 Cloud and Enterprise deployments reuse the same frontend build and replace
-`/config.js` with gateway configuration. See
-`src/public/config.cloud.example.js`. Gateway mode uses:
+`/config.js`. The checked-in cloud example demonstrates required XNOQuant
+login. For the recommended production gateway mode, configure:
 
 - `GET /control/v1/bootstrap` to restore the active HttpOnly-cookie session;
 - `POST /control/v1/auth/login` for the login form;

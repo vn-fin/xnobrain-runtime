@@ -21,7 +21,9 @@ export function AccountView({ onClose }: { onClose: () => void }) {
 
       <div className="account-grid">
         <article className="account-card account-identity">
-          <div className="account-large-avatar">{(user.displayName || user.email).charAt(0).toUpperCase()}</div>
+          {user.picture
+            ? <img className="account-large-avatar account-avatar-image" src={user.picture} alt="" referrerPolicy="no-referrer" />
+            : <div className="account-large-avatar">{(user.displayName || user.email).charAt(0).toUpperCase()}</div>}
           <div>
             <span className={`edition-badge ${config.edition}`}>{editionLabels[config.edition]}</span>
             <h2>{user.displayName || user.email}</h2>
@@ -33,6 +35,9 @@ export function AccountView({ onClose }: { onClose: () => void }) {
           <h3><UserRound size={17} /> Active user</h3>
           <dl className="account-details">
             <div><dt>User ID</dt><dd>{user.userId}</dd></div>
+            {user.phone && <div><dt>Phone</dt><dd>{user.phone}</dd></div>}
+            {user.organization && <div><dt>Organization</dt><dd>{user.organization}</dd></div>}
+            {user.country && <div><dt>Country</dt><dd>{user.country}</dd></div>}
             <div><dt>Tenant</dt><dd>{user.tenantId || 'Not assigned'}</dd></div>
             <div><dt>Plan</dt><dd>{user.planId || editionLabels[config.edition]}</dd></div>
             <div><dt>Roles</dt><dd>{user.roles.join(', ') || 'user'}</dd></div>
@@ -45,13 +50,21 @@ export function AccountView({ onClose }: { onClose: () => void }) {
           <p>
             {config.auth.provider === 'local-profile'
               ? 'Local profile mode personalizes this browser. The standalone server remains available without signing in.'
-              : 'Your session is verified by the Brain4All gateway before workspace requests are forwarded.'}
+              : config.auth.provider === 'xno-firebase'
+                ? 'Your Firebase identity was exchanged for an XNOQuant API session.'
+                : 'Your session is verified by the Brain4All gateway before workspace requests are forwarded.'}
           </p>
         </article>
 
         <article className="account-card">
           <h3><ShieldCheck size={17} /> Session</h3>
-          <p>{config.auth.provider === 'gateway' ? 'Protected by a same-origin gateway session.' : 'Browser-local profile; not an access-control boundary.'}</p>
+          <p>
+            {config.auth.provider === 'gateway'
+              ? 'Protected by a same-origin gateway session.'
+              : config.auth.provider === 'xno-firebase'
+                ? 'Direct-browser XNOQuant token session for this integration trial.'
+                : 'Browser-local profile; not an access-control boundary.'}
+          </p>
           <button className="account-signout" onClick={() => void signOut()}><LogOut size={16} /> Sign out</button>
         </article>
       </div>

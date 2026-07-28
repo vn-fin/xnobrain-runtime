@@ -1,11 +1,15 @@
 window.__BRAIN4ALL_CONFIG__ = {
   edition: "opensource",
   api: {
-    remoteBaseUrl: "https://api.xno.vn"
+    remoteBaseUrl: "https://api.dev.xnoquant.io"
   },
   auth: {
     mode: "optional",
-    provider: "local-profile"
+    provider: "xno-firebase",
+    firebaseApiKey: "AIzaSyD8AFSR1vg21WOwLNVhczWfWfi3YSmZ9NA",
+    tokenPath: "/auth/v1/auth/token",
+    refreshPath: "/auth/v1/auth/refresh",
+    mePath: "/auth/v1/me"
   },
   features: {
     account: true,

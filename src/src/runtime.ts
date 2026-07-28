@@ -1,6 +1,6 @@
 export type Brain4AllEdition = 'opensource' | 'pro' | 'cloud' | 'enterprise';
 export type AuthMode = 'disabled' | 'optional' | 'required';
-export type AuthProvider = 'local-profile' | 'gateway';
+export type AuthProvider = 'local-profile' | 'gateway' | 'xno-firebase';
 
 export type RuntimeConfig = {
   edition: Brain4AllEdition;
@@ -13,6 +13,10 @@ export type RuntimeConfig = {
     bootstrapPath: string;
     loginPath: string;
     logoutPath: string;
+    firebaseApiKey: string;
+    tokenPath: string;
+    refreshPath: string;
+    mePath: string;
   };
   features: {
     account: boolean;
@@ -31,6 +35,10 @@ const DEFAULT_CONFIG: RuntimeConfig = {
     bootstrapPath: '/control/v1/bootstrap',
     loginPath: '/control/v1/auth/login',
     logoutPath: '/control/v1/auth/logout',
+    firebaseApiKey: '',
+    tokenPath: '/auth/v1/auth/token',
+    refreshPath: '/auth/v1/auth/refresh',
+    mePath: '/auth/v1/me',
   },
   features: {
     account: true,
@@ -50,7 +58,7 @@ declare global {
 
 const editions = new Set<Brain4AllEdition>(['opensource', 'pro', 'cloud', 'enterprise']);
 const authModes = new Set<AuthMode>(['disabled', 'optional', 'required']);
-const authProviders = new Set<AuthProvider>(['local-profile', 'gateway']);
+const authProviders = new Set<AuthProvider>(['local-profile', 'gateway', 'xno-firebase']);
 
 export function runtimeConfig(source = window.__BRAIN4ALL_CONFIG__): RuntimeConfig {
   const edition = editions.has(source?.edition as Brain4AllEdition)
@@ -74,6 +82,10 @@ export function runtimeConfig(source = window.__BRAIN4ALL_CONFIG__): RuntimeConf
       bootstrapPath: source?.auth?.bootstrapPath || DEFAULT_CONFIG.auth.bootstrapPath,
       loginPath: source?.auth?.loginPath || DEFAULT_CONFIG.auth.loginPath,
       logoutPath: source?.auth?.logoutPath || DEFAULT_CONFIG.auth.logoutPath,
+      firebaseApiKey: source?.auth?.firebaseApiKey || DEFAULT_CONFIG.auth.firebaseApiKey,
+      tokenPath: source?.auth?.tokenPath || DEFAULT_CONFIG.auth.tokenPath,
+      refreshPath: source?.auth?.refreshPath || DEFAULT_CONFIG.auth.refreshPath,
+      mePath: source?.auth?.mePath || DEFAULT_CONFIG.auth.mePath,
     },
     features: {
       account: source?.features?.account ?? DEFAULT_CONFIG.features.account,
