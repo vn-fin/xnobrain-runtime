@@ -15,6 +15,13 @@ import uuid
 
 import yaml
 
+from ..defaults import (
+    BIG_BROTHER_AGENT_ID,
+    BIG_BROTHER_DESCRIPTION,
+    BIG_BROTHER_DISPLAY_NAME,
+    BIG_BROTHER_SKILL_ID,
+    BIG_BROTHER_TOOLSET,
+)
 from ..integrations import (
     AgentAPIError,
     AgentManager,
@@ -150,6 +157,108 @@ class PlatformService:
     def list_agents(self) -> list[dict[str, Any]]:
         return [self._agent_dto(item) for item in self.agents.list_agents()["agents"]]
 
+    async def ensure_default_agent(self) -> dict[str, Any]:
+        """Create and repair the product-owned oversight profile idempotently."""
+        profile = self.repository.profile_path(BIG_BROTHER_AGENT_ID)
+        if not profile.is_dir():
+            self.agents.create_agent({
+                "name": BIG_BROTHER_AGENT_ID,
+                "display_name": BIG_BROTHER_DISPLAY_NAME,
+                "title": BIG_BROTHER_DISPLAY_NAME,
+                "description": BIG_BROTHER_DESCRIPTION,
+                "idempotent": True,
+                "soul": (
+                    "You are Big Brother, Brain4All's platform coordinator. "
+                    "Watch the operational state of agents and Kanban work, "
+                    "surface blockers clearly, and help the user coordinate "
+                    "the platform. Be direct, careful, and privacy-preserving. "
+                    "Big Brother is Watching You!!!!"
+                ),
+                "instructions": (
+                    "Use the big-brother-control skill for platform oversight. "
+                    "Never inspect raw profile databases, credentials, prompts, "
+                    "message bodies, or tool output from another agent."
+                ),
+                "config": {
+                    "config": {
+                        "toolsets": ["kanban"],
+                        "platform_toolsets": {
+                            "api_server": [
+                                BIG_BROTHER_TOOLSET,
+                                "kanban",
+                                "skills",
+                            ],
+                        },
+                    },
+                },
+            })
+
+        self._ensure_big_brother_toolsets(profile)
+        installed = {
+            str(item.get("skill_id") or "")
+            for item in self.list_skills(BIG_BROTHER_AGENT_ID)
+        }
+        if BIG_BROTHER_SKILL_ID not in installed:
+            skill_path = (
+                Path(__file__).resolve().parent.parent
+                / "assets"
+                / "skills"
+                / BIG_BROTHER_SKILL_ID
+                / "SKILL.md"
+            )
+            await self.install_skill(BIG_BROTHER_AGENT_ID, {
+                "skill_id": BIG_BROTHER_SKILL_ID,
+                "content": skill_path.read_text(encoding="utf-8"),
+                "enable": True,
+            })
+        return self.get_agent(BIG_BROTHER_AGENT_ID)
+
+    def _ensure_big_brother_toolsets(self, profile: Path) -> None:
+        """Repair required capabilities without removing user-added toolsets."""
+        path = profile / "config.yaml"
+        try:
+            config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            raise ServiceError(
+                "Big Brother profile config is unreadable",
+                status=500,
+                code="invalid_system_profile",
+            ) from exc
+        if not isinstance(config, dict):
+            config = {}
+
+        changed = False
+        legacy = config.get("toolsets")
+        if not isinstance(legacy, list):
+            legacy = []
+        if "kanban" not in legacy:
+            config["toolsets"] = [*legacy, "kanban"]
+            changed = True
+
+        platforms = config.get("platform_toolsets")
+        if not isinstance(platforms, dict):
+            platforms = {}
+            config["platform_toolsets"] = platforms
+            changed = True
+        api_server = platforms.get("api_server")
+        if not isinstance(api_server, list):
+            api_server = []
+        required = (BIG_BROTHER_TOOLSET, "kanban", "skills")
+        next_api_server = [*api_server]
+        for toolset in required:
+            if toolset not in next_api_server:
+                next_api_server.append(toolset)
+        if next_api_server != api_server:
+            platforms["api_server"] = next_api_server
+            changed = True
+
+        if changed:
+            if path.is_file():
+                self.repository.snapshot(
+                    BIG_BROTHER_AGENT_ID, "config", "config", path.read_bytes()
+                )
+            self.repository.atomic_yaml(path, config)
+
     def create_agent(self, body: Mapping[str, Any]) -> dict[str, Any]:
         display_name = str(body.get("display_name") or body.get("name") or "").strip()
         if not display_name:
@@ -187,6 +296,12 @@ class PlatformService:
         return self.get_agent(agent_id)
 
     def delete_agent(self, agent_id: str) -> dict[str, Any]:
+        if agent_id == BIG_BROTHER_AGENT_ID:
+            raise ServiceError(
+                "Big Brother is a protected system profile",
+                status=409,
+                code="protected_agent",
+            )
         # Validate the profile before mutating Kanban so a missing assistant
         # cannot trigger an unrelated cleanup.
         profile = self.repository.profile_path(agent_id)

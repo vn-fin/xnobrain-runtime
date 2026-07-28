@@ -21,6 +21,7 @@ from typing import Any, Mapping
 
 import yaml
 
+from ..defaults import BIG_BROTHER_AGENT_ID
 from .nine_router import (
     NINE_ROUTER_DEFAULT_MODEL,
     NINE_ROUTER_PROVIDER,
@@ -133,6 +134,12 @@ class AgentManager:
                 if path.name in seen or not path.is_dir() or not (path / ".profile").is_dir():
                     continue
                 agents.append(self.describe_agent(path.name, include_memory=False))
+        agents.sort(
+            key=lambda item: (
+                str(item.get("name") or "") != BIG_BROTHER_AGENT_ID,
+                str(item.get("name") or "").lower(),
+            )
+        )
         return {
             "object": "hermes.agents",
             "root": str(self.profiles_root),

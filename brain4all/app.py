@@ -25,6 +25,8 @@ class Brain4AllApplication:
             from .integrations import LocalRuntimeManager
             runtime = LocalRuntimeManager(data_dir=data_dir)
         self.service = PlatformService(self.repository, agents, config, router, runtime)
+        from .integrations.hermes_tools import bind_platform_service
+        bind_platform_service(self.service)
         self.handlers = APIHandlers(self.service)
 
     def register(self, app) -> None:
@@ -34,6 +36,7 @@ class Brain4AllApplication:
         @asynccontextmanager
         async def lifespan(application):
             async with upstream_lifespan(application):
+                await self.service.ensure_default_agent()
                 dispatcher = None
                 try:
                     from .integrations.kanban import dispatcher_loop

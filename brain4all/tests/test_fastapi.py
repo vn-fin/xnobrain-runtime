@@ -17,7 +17,9 @@ from httpx import ASGITransport, AsyncClient
 import yaml
 
 from brain4all.app import Brain4AllApplication
+from brain4all.defaults import BIG_BROTHER_AGENT_ID
 from brain4all.integrations import AgentManager, GlobalConfigManager
+from brain4all.services import ServiceError
 
 
 class FakeRouter:
@@ -57,6 +59,77 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     def client(self):
         return AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test")
+
+    async def test_big_brother_bootstrap_is_idempotent_first_and_scoped(self):
+        enabled = self.root / "skills" / "enabled-default" / "SKILL.md"
+        disabled = self.root / "skills" / "disabled-default" / "SKILL.md"
+        enabled.parent.mkdir(parents=True)
+        disabled.parent.mkdir(parents=True)
+        enabled.write_text(
+            "---\nname: enabled-default\ndescription: Enabled by default\n---\n",
+            encoding="utf-8",
+        )
+        disabled.write_text(
+            "---\nname: disabled-default\ndescription: Disabled by default\n---\n",
+            encoding="utf-8",
+        )
+        config = yaml.safe_load((self.root / "config.yaml").read_text(encoding="utf-8"))
+        config["skills"] = {"disabled": ["disabled-default"], "write_approval": True}
+        (self.root / "config.yaml").write_text(
+            yaml.safe_dump(config, sort_keys=False),
+            encoding="utf-8",
+        )
+
+        async with self.app.router.lifespan_context(self.app):
+            first = self.composition.service.get_agent(BIG_BROTHER_AGENT_ID)
+        second = await self.composition.service.ensure_default_agent()
+
+        self.assertEqual(first["id"], BIG_BROTHER_AGENT_ID)
+        self.assertEqual(second["display_name"], "Big Brother")
+        agents = self.composition.service.list_agents()
+        self.assertEqual(agents[0]["id"], BIG_BROTHER_AGENT_ID)
+        self.assertEqual(
+            sum(item["id"] == BIG_BROTHER_AGENT_ID for item in agents),
+            1,
+        )
+        skills = {
+            item["skill_id"]: item["enabled"]
+            for item in self.composition.service.list_skills(BIG_BROTHER_AGENT_ID)
+        }
+        self.assertEqual(
+            skills,
+            {
+                "big-brother-control": True,
+                "enabled-default": True,
+            },
+        )
+        profile_config = yaml.safe_load(
+            (self.profiles / BIG_BROTHER_AGENT_ID / "config.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertIn("kanban", profile_config["toolsets"])
+        self.assertEqual(
+            set(profile_config["platform_toolsets"]["api_server"]),
+            {"brain4all-control", "kanban", "skills"},
+        )
+        with self.assertRaises(ServiceError) as protected:
+            self.composition.service.delete_agent(BIG_BROTHER_AGENT_ID)
+        self.assertEqual(protected.exception.code, "protected_agent")
+
+        from gateway.run import _profile_runtime_scope
+        from hermes_cli.tools_config import _get_platform_tools
+        from tools.registry import registry
+
+        handler = registry.get_entry("brain4all_manage_agent").handler
+        denied = json.loads(handler({"action": "list"}))
+        self.assertFalse(denied["success"])
+        with _profile_runtime_scope(self.profiles / BIG_BROTHER_AGENT_ID):
+            enabled_toolsets = _get_platform_tools(profile_config, "api_server")
+            allowed = json.loads(handler({"action": "list"}))
+        self.assertIn("brain4all-control", enabled_toolsets)
+        self.assertTrue(allowed["success"])
+        self.assertEqual(allowed["result"][0]["id"], BIG_BROTHER_AGENT_ID)
 
     async def test_health_identifies_fastapi_database_free_runtime(self):
         async with self.client() as client:
