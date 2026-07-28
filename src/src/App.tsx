@@ -49,8 +49,12 @@ export default function App() {
     router.activeAgentId,
     router.centerView === 'chat' && router.rightView === 'workspace',
   );
-  const teams = useTeams(router.centerView === 'teams' || router.centerView === 'kanban');
-  const kanban = useKanban(router.centerView === 'kanban');
+  const teams = useTeams(
+    router.centerView === 'teams'
+    || router.centerView === 'kanban'
+    || router.centerView === 'analytics',
+  );
+  const kanban = useKanban(router.centerView === 'kanban' || router.centerView === 'analytics');
   const analytics = useAnalytics(router.centerView === 'analytics', assistants.agents);
   const blends = useBlends(router.centerView === 'chat');
 
@@ -367,7 +371,18 @@ export default function App() {
             onClose={() => router.setCenterView('chat')}
           />
         ) : centerView === 'analytics' ? (
-          <AnalyticsView state={analytics} onClose={() => router.setCenterView('chat')} />
+          <AnalyticsView
+            state={analytics}
+            workspace={{
+              agents: assistants.agents,
+              teams: teams.teams,
+              teamStatus: teams.status,
+              boards: kanban.boards,
+              kanbanStatus: kanban.status,
+            }}
+            onNavigate={router.setCenterView}
+            onClose={() => router.setCenterView('chat')}
+          />
         ) : (
           <ChatArea
             agent={activeAgent}

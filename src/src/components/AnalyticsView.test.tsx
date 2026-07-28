@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UsageSummary } from '../api/analytics';
 import type { AnalyticsState } from '../hooks/useAnalytics';
+import type { WorkspaceAnalyticsData } from './AnalyticsView';
 import { AnalyticsView } from './AnalyticsView';
 
 const totals = {
@@ -53,6 +54,75 @@ const summary: UsageSummary = {
   },
 };
 
+const workspace: WorkspaceAnalyticsData = {
+  agents: [
+    {
+      id: 'agent-1',
+      title: 'Builder',
+      name: 'builder',
+      description: '',
+      status: 'ready',
+      provider: 'openai',
+      model: 'gpt-5',
+      reasoningEffort: 'medium',
+      approvalMode: 'auto',
+      skillsWriteApproval: true,
+      memoryWriteApproval: true,
+      workspace: '',
+      skills: [],
+      conversations: [],
+    },
+  ],
+  teams: [
+    {
+      id: 'team-1',
+      name: 'Delivery',
+      orchestrator_id: 'agent-1',
+      members: [{ agent_id: 'agent-1', role: 'builder', allowed_tools: [], enabled: true }],
+      workflow: [{ id: 'build', task: 'Build', agent_id: 'agent-1' }],
+      shared_workspace: true,
+      max_parallel: 1,
+      max_depth: 1,
+      enabled: true,
+    },
+  ],
+  teamStatus: 'ready',
+  boards: [
+    {
+      id: 'default',
+      name: 'Tasks',
+      description: '',
+      color: '#4f8cff',
+      statuses: [],
+      tasks: [
+        {
+          id: 'task-1',
+          title: 'Ship dashboard',
+          description: '',
+          status: 'running',
+          nativeStatus: 'running',
+          allowedStatuses: ['done'],
+          priority: 'high',
+          assignees: ['agent-1'],
+          tags: [],
+          skills: [],
+          deps: [],
+          comments: [],
+          events: [],
+          runs: [],
+          workerActivity: null,
+          conversation: null,
+          progress: 50,
+          updated: 'now',
+          schedule: null,
+          team: null,
+        },
+      ],
+    },
+  ],
+  kanbanStatus: 'ready',
+};
+
 describe('AnalyticsView chart', () => {
   afterEach(cleanup);
 
@@ -101,6 +171,30 @@ describe('AnalyticsView chart', () => {
     expect(breakdownGrid).toHaveTextContent('Token mix');
     expect(breakdownGrid).toHaveTextContent('Models');
     expect(breakdownGrid).toHaveTextContent('Providers');
+  });
+
+  it('summarizes agents, Kanban tasks, and team workflows from their tab data', () => {
+    const state = {
+      controls: { agents: [], days: 1, bucket: 'hour' },
+      setControls: vi.fn(),
+      available: [],
+      summary,
+      status: 'ready',
+      error: null,
+      generatedAt: summary.generated_at,
+      refresh: vi.fn(),
+      setBudget: vi.fn(),
+    } as AnalyticsState;
+    const onNavigate = vi.fn();
+    render(<AnalyticsView state={state} workspace={workspace} onNavigate={onNavigate} onClose={vi.fn()} />);
+
+    expect(screen.getByRole('heading', { name: 'Operations at a glance' })).toBeVisible();
+    expect(screen.getByText('configured profiles')).toBeVisible();
+    expect(screen.getByText('tasks across 1 board')).toBeVisible();
+    expect(screen.getByText('saved workflows')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Kanban' }));
+    expect(onNavigate).toHaveBeenCalledWith('kanban');
   });
 
   it('blocks the Analytics surface and shows API progress while loading', () => {

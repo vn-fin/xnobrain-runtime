@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
+  ArrowRight,
   Bot,
   CheckCircle2,
   CircleDollarSign,
+  Columns3,
   Database,
+  GitBranch,
   RefreshCw,
   Sparkles,
   X,
   Zap,
 } from 'lucide-react';
 import type { AnalyticsState, AnalyticsControls } from '../hooks/useAnalytics';
+import type { Team } from '../api/teams';
 import type {
   Bucket,
   BudgetStatus,
@@ -18,6 +22,7 @@ import type {
   ProviderUsage,
   UsageSummary,
 } from '../api/analytics';
+import type { Agent, CenterView, KanbanBoard } from '../types';
 
 const PRESETS: Array<{ label: string; days: number }> = [
   { label: '24h', days: 1 },
@@ -31,6 +36,14 @@ const STATUS_COLOR: Record<string, string> = {
   warning: '#d09a37',
   exceeded: '#d85d4a',
   unset: '#768078',
+};
+
+export type WorkspaceAnalyticsData = {
+  agents: Agent[];
+  teams: Team[];
+  teamStatus: 'loading' | 'ready' | 'error';
+  boards: KanbanBoard[];
+  kanbanStatus: 'idle' | 'loading' | 'ready' | 'error';
 };
 
 function fmtTokens(value: number): string {
@@ -50,7 +63,17 @@ function pct(value: number, total: number): number {
   return total > 0 ? Math.max(0, Math.min(100, value / total * 100)) : 0;
 }
 
-export function AnalyticsView({ state, onClose }: { state: AnalyticsState; onClose: () => void }) {
+export function AnalyticsView({
+  state,
+  workspace,
+  onNavigate,
+  onClose,
+}: {
+  state: AnalyticsState;
+  workspace?: WorkspaceAnalyticsData;
+  onNavigate?: (view: CenterView) => void;
+  onClose: () => void;
+}) {
   const { controls, setControls, available, summary, status, error, generatedAt } = state;
   const progress = state.progress ?? { completed: 0, total: 3 };
   const loading = status === 'loading';
@@ -90,13 +113,23 @@ export function AnalyticsView({ state, onClose }: { state: AnalyticsState; onClo
         <header className="analytics-header">
         <div>
           <div className="analytics-eyebrow"><Sparkles size={13} /> Usage intelligence</div>
-          <h1>Understand every model request</h1>
-          <p>Durable workspace spend from 9router, with live attribution to your current agents.</p>
+          <h1>Your workspace, in motion</h1>
+          <p>Track agents, delivery, teams, and model usage from one operational dashboard.</p>
         </div>
         <button className="analytics-icon-button" onClick={onClose} title="Close analytics" aria-label="Close analytics">
           <X size={17} />
         </button>
         </header>
+
+        {workspace && <WorkspaceOverview data={workspace} onNavigate={onNavigate} />}
+
+        <div className="analytics-section-heading">
+          <div>
+            <span>Usage analytics</span>
+            <h2>Model activity and spend</h2>
+          </div>
+          <p>Date and agent filters apply to the usage panels below.</p>
+        </div>
 
         <section className="analytics-toolbar" aria-label="Analytics controls">
         <div className="analytics-agent-picker">
@@ -202,6 +235,171 @@ export function AnalyticsView({ state, onClose }: { state: AnalyticsState; onClo
       {loading && <AnalyticsLoadingProgress completed={progress.completed} total={progress.total} />}
     </main>
   );
+}
+
+function WorkspaceOverview({
+  data,
+  onNavigate,
+}: {
+  data: WorkspaceAnalyticsData;
+  onNavigate?: (view: CenterView) => void;
+}) {
+  const currentTasks = data.boards.flatMap((board) =>
+    board.tasks.filter((task) => task.status !== 'archived'));
+  const taskCounts = {
+    backlog: currentTasks.filter((task) => task.status === 'backlog').length,
+    todo: currentTasks.filter((task) => task.status === 'todo').length,
+    running: currentTasks.filter((task) => task.status === 'running').length,
+    done: currentTasks.filter((task) => task.status === 'done' && !task.block).length,
+    blocked: currentTasks.filter((task) => Boolean(task.block)).length,
+  };
+  const completion = currentTasks.length
+    ? Math.round(taskCounts.done / currentTasks.length * 100)
+    : 0;
+  const enabledTeams = data.teams.filter((team) => team.enabled).length;
+  const teamAgentIds = new Set(
+    data.teams.flatMap((team) => [
+      team.orchestrator_id,
+      ...team.members.filter((member) => member.enabled).map((member) => member.agent_id),
+    ]).filter(Boolean),
+  );
+  const workflowStages = data.teams.reduce(
+    (total, team) => total + (team.workflow?.length ?? team.members.length),
+    0,
+  );
+  const providers = new Set(data.agents.map((agent) => agent.provider).filter(Boolean));
+  const models = new Set(data.agents.map((agent) => agent.model).filter(Boolean));
+  const manualApproval = data.agents.filter((agent) => agent.approvalMode === 'manual').length;
+  const kanbanLoading = data.kanbanStatus === 'loading' || data.kanbanStatus === 'idle';
+  const kanbanUnavailable = data.kanbanStatus === 'error';
+  const teamsLoading = data.teamStatus === 'loading';
+  const teamsUnavailable = data.teamStatus === 'error';
+
+  return (
+    <section className="analytics-workspace-overview" aria-labelledby="workspace-overview-title">
+      <div className="analytics-section-heading">
+        <div>
+          <span>Workspace pulse</span>
+          <h2 id="workspace-overview-title">Operations at a glance</h2>
+        </div>
+        <p>Live totals from Agents, Kanban, and Teams.</p>
+      </div>
+
+      <div className="analytics-domain-grid">
+        <WorkspaceCard
+          className="agents"
+          icon={<Bot size={18} />}
+          eyebrow="Agents"
+          value={data.agents.length}
+          label="configured profiles"
+          onOpen={onNavigate ? () => onNavigate('chat') : undefined}
+        >
+          <div className="analytics-domain-stats">
+            <DomainStat value={models.size} label="Models" />
+            <DomainStat value={providers.size} label="Providers" />
+            <DomainStat value={manualApproval} label="Manual approval" />
+          </div>
+          <div className="analytics-domain-foot">
+            <span>{data.agents.length ? `${data.agents.length - manualApproval} use automatic approval` : 'Create an agent to get started'}</span>
+          </div>
+        </WorkspaceCard>
+
+        <WorkspaceCard
+          className="kanban"
+          icon={<Columns3 size={18} />}
+          eyebrow="Kanban"
+          value={kanbanLoading || kanbanUnavailable ? '—' : currentTasks.length}
+          label={kanbanUnavailable
+            ? 'task data unavailable'
+            : kanbanLoading
+              ? 'loading tasks'
+              : `tasks across ${data.boards.length} board${data.boards.length === 1 ? '' : 's'}`}
+          onOpen={onNavigate ? () => onNavigate('kanban') : undefined}
+        >
+          <div className="analytics-flow-row" aria-label="Kanban task distribution">
+            {([
+              ['backlog', taskCounts.backlog],
+              ['todo', taskCounts.todo],
+              ['running', taskCounts.running],
+              ['blocked', taskCounts.blocked],
+              ['done', taskCounts.done],
+            ] as const).map(([status, count]) => (
+              <span
+                key={status}
+                className={`status-${status}`}
+                style={{ flexGrow: currentTasks.length ? Math.max(count, 0.35) : 1 }}
+                title={`${status}: ${count}`}
+              />
+            ))}
+          </div>
+          <div className="analytics-domain-stats">
+            <DomainStat value={taskCounts.running} label="In progress" />
+            <DomainStat value={taskCounts.blocked} label="Blocked" />
+            <DomainStat value={`${completion}%`} label="Completed" />
+          </div>
+          <div className="analytics-domain-foot">
+            <span>{taskCounts.done} delivered · {taskCounts.todo + taskCounts.backlog} queued</span>
+          </div>
+        </WorkspaceCard>
+
+        <WorkspaceCard
+          className="teams"
+          icon={<GitBranch size={18} />}
+          eyebrow="Teams"
+          value={teamsLoading || teamsUnavailable ? '—' : data.teams.length}
+          label={teamsUnavailable ? 'team data unavailable' : teamsLoading ? 'loading teams' : 'saved workflows'}
+          onOpen={onNavigate ? () => onNavigate('teams') : undefined}
+        >
+          <div className="analytics-domain-stats">
+            <DomainStat value={enabledTeams} label="Enabled" />
+            <DomainStat value={teamAgentIds.size} label="Collaborators" />
+            <DomainStat value={workflowStages} label="Workflow stages" />
+          </div>
+          <div className="analytics-domain-foot">
+            <span>{data.teams.length ? `${workflowStages} stages ready for orchestration` : 'Build a team workflow'}</span>
+          </div>
+        </WorkspaceCard>
+      </div>
+    </section>
+  );
+}
+
+function WorkspaceCard({
+  className,
+  icon,
+  eyebrow,
+  value,
+  label,
+  onOpen,
+  children,
+}: {
+  className: string;
+  icon: React.ReactNode;
+  eyebrow: string;
+  value: string | number;
+  label: string;
+  onOpen?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <article className={`analytics-domain-card ${className}`}>
+      <div className="analytics-domain-head">
+        <span className="analytics-domain-icon">{icon}</span>
+        <span>{eyebrow}</span>
+        {onOpen && (
+          <button type="button" onClick={onOpen} aria-label={`Open ${eyebrow}`}>
+            Explore <ArrowRight size={13} />
+          </button>
+        )}
+      </div>
+      <div className="analytics-domain-value"><strong>{value}</strong><span>{label}</span></div>
+      {children}
+    </article>
+  );
+}
+
+function DomainStat({ value, label }: { value: string | number; label: string }) {
+  return <span><strong>{value}</strong><small>{label}</small></span>;
 }
 
 function AnalyticsLoadingProgress({ completed, total }: { completed: number; total: number }) {
