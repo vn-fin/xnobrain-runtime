@@ -20,6 +20,7 @@ export function useConversation(agentId: string, conversationId: string) {
   const [loadSignal, setLoadSignal] = useState<AbortSignal>();
   const loadController = useRef<AbortController>();
   const loadKey = useRef<string | null>(null);
+  const usageRequests = useRef(new Map<string, Promise<void>>());
   const generation = useRef(0);
 
   // Streaming state lives in the shared store so it survives tab switches.
@@ -30,19 +31,30 @@ export function useConversation(agentId: string, conversationId: string) {
 
   const requestUsage = useCallback(async (requestGeneration = generation.current) => {
     if (!agentId || !conversationId) return;
+    const requestKey = `${key}::${requestGeneration}`;
+    const pendingRequest = usageRequests.current.get(requestKey);
+    if (pendingRequest) return pendingRequest;
     setUsageStatus('loading');
     setUsageError('');
-    try {
-      const nextUsage = await conversationsApi.usage(agentId, conversationId);
-      if (generation.current !== requestGeneration) return;
-      setUsage(nextUsage);
-      setUsageStatus('ready');
-    } catch (value) {
-      if (generation.current !== requestGeneration) return;
-      setUsageError(value instanceof Error ? value.message : 'Could not load usage.');
-      setUsageStatus('error');
-    }
-  }, [agentId, conversationId]);
+    const request = (async () => {
+      try {
+        const nextUsage = await conversationsApi.usage(agentId, conversationId);
+        if (generation.current !== requestGeneration) return;
+        setUsage(nextUsage);
+        setUsageStatus('ready');
+      } catch (value) {
+        if (generation.current !== requestGeneration) return;
+        setUsageError(value instanceof Error ? value.message : 'Could not load usage.');
+        setUsageStatus('error');
+      }
+    })().finally(() => {
+      if (usageRequests.current.get(requestKey) === request) {
+        usageRequests.current.delete(requestKey);
+      }
+    });
+    usageRequests.current.set(requestKey, request);
+    return request;
+  }, [agentId, conversationId, key]);
 
   const refresh = useCallback(async () => {
     loadController.current?.abort();
@@ -87,10 +99,20 @@ export function useConversation(agentId: string, conversationId: string) {
       loadKey.current = key;
       generation.current += 1;
       void refresh();
+      void requestUsage(generation.current);
     }
     // No stream teardown here: streams intentionally keep running in the
     // background when switching conversations.
-  }, [refresh, key]);
+  }, [refresh, requestUsage, key]);
+
+  useEffect(() => {
+    const unsubscribe = streamStore.onComplete((event) => {
+      if (event.agentId === agentId && event.conversationId === conversationId) {
+        void requestUsage();
+      }
+    });
+    return () => { unsubscribe(); };
+  }, [agentId, conversationId, requestUsage]);
 
   const sendMessage = async (input: string) => {
     const text = input.trim();

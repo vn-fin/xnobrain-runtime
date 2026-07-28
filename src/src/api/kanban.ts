@@ -58,7 +58,7 @@ function relativeTime(value: string | null | undefined): string {
 }
 
 function taskFromApi(raw: RawTask): KanbanTask {
-  const status = (raw.kanban_status ?? raw.status ?? 'todo') as KanbanColumnId;
+  const kanbanStatus = (raw.kanban_status ?? raw.status ?? 'todo') as KanbanColumnId;
   const nativeStatus = (raw.status ?? raw.hermes_status ?? 'todo') as KanbanNativeStatus;
   const parents = Array.isArray(raw.parents) ? raw.parents : [];
   const deps: KanbanDependency[] = parents.map((dep: any) => ({
@@ -79,7 +79,7 @@ function taskFromApi(raw: RawTask): KanbanTask {
     id: String(raw.id),
     title: String(raw.title ?? ''),
     description: String(raw.description ?? ''),
-    status,
+    status: kanbanStatus,
     nativeStatus,
     allowedStatuses: Array.isArray(raw.allowed_kanban_statuses)
       ? raw.allowed_kanban_statuses.map(String) as KanbanColumnId[]

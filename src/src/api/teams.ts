@@ -110,9 +110,9 @@ function withTeamDescription(team: Team): Team {
 }
 
 export const teamsApi = {
-  list: async () => (await request<Team[]>('/api/v1/teams/')).map(withTeamDescription),
+  list: async () => (await request<Team[]>('/api/v1/teams')).map(withTeamDescription),
   create: async (team: TeamInput) => withTeamDescription(
-    await request<Team>('/api/v1/teams/', { method: 'POST', body: JSON.stringify(team) }),
+    await request<Team>('/api/v1/teams', { method: 'POST', body: JSON.stringify(team) }),
   ),
   update: async (team: Team) => withTeamDescription(
     await request<Team>(`/api/v1/teams/${encodeURIComponent(team.id)}`, { method: 'PUT', body: JSON.stringify(team) }),

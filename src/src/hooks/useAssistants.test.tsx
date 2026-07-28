@@ -86,6 +86,25 @@ describe('useAssistants lazy collections', () => {
     expect(mocks.listSkills).toHaveBeenCalledWith('agent-one');
   });
 
+  it('deduplicates a forced library refresh but allows the next tab entry to reload it', async () => {
+    mocks.listAgents.mockResolvedValue(agents);
+    mocks.listDefaultSkills.mockResolvedValue({ skills: [], pagination: undefined });
+
+    const { result } = renderHook(() => useAssistants());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    await act(async () => {
+      await Promise.all([
+        result.current.loadLibrary(true),
+        result.current.loadLibrary(true),
+      ]);
+    });
+    expect(mocks.listDefaultSkills).toHaveBeenCalledTimes(1);
+
+    await act(() => result.current.loadLibrary(true));
+    expect(mocks.listDefaultSkills).toHaveBeenCalledTimes(2);
+  });
+
   it('opens a conversation committed by an older backend before it returned 409', async () => {
     mocks.listAgents.mockResolvedValue(agents);
     mocks.createConversation.mockRejectedValue(

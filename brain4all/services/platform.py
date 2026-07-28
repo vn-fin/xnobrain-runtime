@@ -336,6 +336,27 @@ class PlatformService:
         tool_steps = sum(1 for message in messages if message.get("role") == "tool")
         actual_cost = session.get("actual_cost_usd")
         cost = number("actual_cost_usd") if actual_cost is not None else number("estimated_cost_usd")
+        model_config = session.get("model_config")
+        context = (
+            model_config.get("brain4all_context")
+            if isinstance(model_config, Mapping)
+            else {}
+        )
+        context = context if isinstance(context, Mapping) else {}
+        try:
+            context_used = max(0, int(context.get("used") or 0))
+        except (TypeError, ValueError):
+            context_used = 0
+        try:
+            context_limit = max(0, int(context.get("limit") or 0))
+        except (TypeError, ValueError):
+            context_limit = 0
+        context_payload: dict[str, Any] = {"used": context_used}
+        if context_limit:
+            context_payload.update({
+                "limit": context_limit,
+                "percent": round(min(100.0, context_used / context_limit * 100), 2),
+            })
 
         return {
             "conversation_id": conversation_id,
@@ -360,6 +381,7 @@ class PlatformService:
                 "status": str(session.get("cost_status") or ""),
                 "total_usd": cost,
             },
+            "context": context_payload,
         }
 
     def rename_conversation(self, agent_id: str, conversation_id: str, body: Mapping[str, Any]) -> dict[str, Any]:

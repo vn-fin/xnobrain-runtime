@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowUp,
@@ -25,7 +25,7 @@ import {
   UploadCloud,
   X,
 } from 'lucide-react';
-import { CircleSpinner, TreeIcon } from './common';
+import { TreeIcon } from './common';
 import { useStreamingConversations } from '../hooks/useConversation';
 import { AsyncState } from './AsyncState';
 import { RunSteps, RunUsage } from './RunSteps';
@@ -39,6 +39,7 @@ import type {
   ChatRun,
   ConnectionProvider,
   Conversation,
+  ConversationUsage,
   RunApprovalChoice,
   WorkspaceEntry,
 } from '../types';
@@ -52,6 +53,36 @@ function TypingIndicator() {
   );
 }
 
+function compactTokens(value: number): string {
+  if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(1))}M`;
+  if (value >= 1_000) return `${Number((value / 1_000).toFixed(1))}K`;
+  return String(value);
+}
+
+export function ContextGauge({ usage, model }: { usage: ConversationUsage | null; model: string }) {
+  const used = Math.max(0, usage?.contextUsed ?? 0);
+  const limit = Math.max(0, usage?.contextLimit ?? 0);
+  const known = used > 0 && limit > 0;
+  const percent = known
+    ? Math.max(0, Math.min(100, usage?.contextPercent ?? used / limit * 100))
+    : 0;
+  const modelLabel = model.toLowerCase() === 'auto' ? 'Auto model' : model || 'Selected model';
+  const title = known
+    ? `${compactTokens(used)} / ${compactTokens(limit)} context (${Number(percent.toFixed(1))}%)`
+    : used > 0
+      ? `${compactTokens(used)} context used; ${modelLabel} context limit is unavailable`
+      : `${modelLabel} context usage is unavailable`;
+  return (
+    <span
+      className={`context-gauge${known ? '' : ' unknown'}`}
+      style={known ? { '--context-percent': `${percent}%` } as CSSProperties : undefined}
+      role="img"
+      aria-label={title}
+      title={title}
+    />
+  );
+}
+
 export function ChatArea({
   agent,
   activeConversation,
@@ -59,6 +90,7 @@ export function ChatArea({
   blends = [],
   runs,
   messages,
+  usage,
   queuedMessages = [],
   onEditQueued,
   onDeleteQueued,
@@ -91,6 +123,7 @@ export function ChatArea({
   blends?: string[];
   runs: ChatRun[];
   messages: ChatMessage[];
+  usage: ConversationUsage | null;
   queuedMessages?: Array<{ id: string; content: string }>;
   onEditQueued?: (id: string, content: string) => void;
   onDeleteQueued?: (id: string) => void;
@@ -694,7 +727,7 @@ export function ChatArea({
               <div className="composer-row-right">
                 <div className="composer-model-control">
                   <button className="composer-model" title="Model and reasoning" onClick={() => setModelOpen((open) => !open)}>
-                    <CircleSpinner />
+                    <ContextGauge usage={usage} model={currentModelLabel} />
                     {currentModelLabel}
                     <ChevronDown size={14} />
                   </button>

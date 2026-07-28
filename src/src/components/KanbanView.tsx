@@ -90,7 +90,7 @@ function colorFor(id: string): string {
 
 function nativeStatusLabel(status: KanbanTask['nativeStatus']): string {
   if (status === 'running') return 'In Progress';
-  if (status === 'blocked') return 'Blocked (Error)';
+  if (status === 'blocked') return 'Blocked';
   return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
@@ -468,7 +468,6 @@ function PriorityTitle({ task }: { task: KanbanTask }) {
 function TaskCard({
   task,
   agents,
-  statusLabel,
   column,
   onOpen,
   onDragStart,
@@ -476,7 +475,6 @@ function TaskCard({
 }: {
   task: KanbanTask;
   agents: Agent[];
-  statusLabel: (status: string) => string;
   column: KanbanColumnId;
   onOpen: () => void;
   onDragStart: () => void;
@@ -501,7 +499,6 @@ function TaskCard({
     >
       <div className="kb-card-top">
         <span className="kb-id">{task.id}</span>
-        <span className={`kb-column-state col-${task.status}`}>{statusLabel(task.status)}</span>
         <span className={`kb-substate native-${task.nativeStatus}`}>{nativeStatusLabel(task.nativeStatus)}</span>
       </div>
       <PriorityTitle task={task} />
@@ -760,7 +757,6 @@ function TaskDrawer({
           <div>
             <div className="kb-drawer-kicker">
               <span className="kb-id">{task.id}</span>
-              <span className={`kb-column-state col-${task.status}`}>{state.statusLabel(task.status)}</span>
               <span className={`kb-substate native-${task.nativeStatus}`}>{nativeStatusLabel(task.nativeStatus)}</span>
             </div>
             <h2>{task.title}</h2>
@@ -1587,7 +1583,7 @@ export function KanbanView({
   onNavigate?: (taskId: string, agentId?: string, conversationId?: string) => void;
   onClose: () => void;
 }) {
-  const { board, view, setView, search, setSearch, visibleTasks, columnOf, statusLabel } = state;
+  const { board, view, setView, search, setSearch, visibleTasks, columnOf } = state;
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
@@ -1872,7 +1868,7 @@ export function KanbanView({
                 value={columnFilter}
                 onChange={(event) => setColumnFilter(event.target.value as 'all' | KanbanColumnId)}
               >
-                <option value="all">All statuses</option>
+                <option value="all">All columns</option>
                 {KANBAN_COLUMNS.map((column) => (
                   <option key={column.id} value={column.id}>{column.label}</option>
                 ))}
@@ -1991,7 +1987,6 @@ export function KanbanView({
                         key={task.id}
                         task={task}
                         agents={agents}
-                        statusLabel={statusLabel}
                         column={column.id}
                         onOpen={() => showTask(task.id)}
                         onDragStart={() => setDraggedTaskId(task.id)}
@@ -2042,7 +2037,6 @@ export function KanbanView({
                   key={task.id}
                   task={task}
                   agents={agents}
-                  statusLabel={statusLabel}
                   column="archived"
                   onOpen={() => showTask(task.id)}
                   onDragStart={() => undefined}
@@ -2058,7 +2052,7 @@ export function KanbanView({
         <div className="kb-table">
           <div className="kb-table-toolbar">
             <span>
-              <strong>{filteredTasks.length}</strong> {filteredTasks.length === 1 ? 'task' : 'tasks'} · grouped by status
+              <strong>{filteredTasks.length}</strong> {filteredTasks.length === 1 ? 'task' : 'tasks'} · grouped by Kanban status
             </span>
             <span className="kb-fixed-status-note">
               {taskScope === 'current' ? 'Four current stages' : 'Archived history'}
@@ -2086,6 +2080,7 @@ export function KanbanView({
                   <div className="kb-rows">
                     <div className="kb-row kb-row-labels" aria-hidden="true">
                       <span>Task</span>
+                      <span>Status</span>
                       <span>Assignee</span>
                       <span>Deps</span>
                       <span>Updated</span>
@@ -2096,6 +2091,9 @@ export function KanbanView({
                         <span className="kb-row-task">
                           <PriorityTitle task={task} />
                           <span className="kb-row-id">{task.id}</span>
+                        </span>
+                        <span className="kb-row-status">
+                          <span className={`kb-substate native-${task.nativeStatus}`}>{nativeStatusLabel(task.nativeStatus)}</span>
                         </span>
                         <span className="kb-row-assignees">
                           <AssigneeSummary ids={task.assignees} agents={agents} />

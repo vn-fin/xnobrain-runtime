@@ -766,7 +766,7 @@ class AgentManager:
         try:
             history = await adapter._conversation_history_for_session(conversation_id)
             session = self._session(profile_dir, conversation_id) or {}
-            return await adapter._run_agent(
+            result, usage = await adapter._run_agent(
                 user_message=str(prepared["message"]),
                 conversation_history=history,
                 session_id=conversation_id,
@@ -777,6 +777,31 @@ class AgentManager:
                 requested_model=str(prepared.get("requested_model") or "") or None,
                 session_model=str(session.get("model") or prepared.get("model") or "") or None,
             )
+            agent = agent_ref[0]
+            compressor = getattr(agent, "context_compressor", None) if agent is not None else None
+            context_used = int(getattr(compressor, "last_prompt_tokens", 0) or 0)
+            context_limit = int(getattr(compressor, "context_length", 0) or 0)
+            actual_model = str(
+                (result.get("model") if isinstance(result, Mapping) else "")
+                or getattr(agent, "model", "")
+                or prepared.get("model")
+                or ""
+            ).strip()
+            # An auto/blend route can choose models with different windows.
+            # Do not report Hermes' generic fallback as a model-specific limit.
+            if actual_model.lower() in {"", "auto", NINE_ROUTER_DEFAULT_MODEL.lower()}:
+                context_limit = 0
+            context = {
+                "used": max(0, context_used),
+                "limit": max(0, context_limit),
+                "model": actual_model,
+            }
+            usage.update({
+                "context_used": context["used"],
+                "context_limit": context["limit"],
+            })
+            self._persist_conversation_context(profile_dir, conversation_id, context)
+            return result, usage
         finally:
             try:
                 unregister_gateway_notify(run_id)
@@ -2280,6 +2305,45 @@ class AgentManager:
             return [self._row_dict(row) for row in rows]
         except sqlite3.Error:
             return []
+        finally:
+            conn.close()
+
+    def _persist_conversation_context(
+        self,
+        profile_dir: Path,
+        session_id: str,
+        context: Mapping[str, Any],
+    ) -> None:
+        """Persist the last real prompt occupancy without changing Hermes' schema."""
+        if not int(context.get("used") or 0) and not int(context.get("limit") or 0):
+            return
+        conn = sqlite3.connect(profile_dir / "state.db", timeout=1.0)
+        try:
+            row = conn.execute(
+                "SELECT model_config FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                return
+            try:
+                model_config = json.loads(row[0]) if row[0] else {}
+            except (TypeError, ValueError, json.JSONDecodeError):
+                model_config = {}
+            if not isinstance(model_config, dict):
+                model_config = {}
+            model_config["brain4all_context"] = {
+                "used": max(0, int(context.get("used") or 0)),
+                "limit": max(0, int(context.get("limit") or 0)),
+                "model": str(context.get("model") or ""),
+            }
+            conn.execute(
+                "UPDATE sessions SET model_config = ? WHERE id = ?",
+                (json.dumps(model_config, separators=(",", ":")), session_id),
+            )
+            conn.commit()
+        except sqlite3.Error:
+            # Context telemetry must never make a successful chat turn fail.
+            pass
         finally:
             conn.close()
 

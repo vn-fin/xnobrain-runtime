@@ -58,11 +58,13 @@ export function useAssistants() {
   const skillRequests = useRef(new Map<string, Promise<AgentSkill[]>>());
   const libraryRequest = useRef<Promise<AgentSkill[]> | null>(null);
   const libraryLoaded = useRef(false);
+  const libraryRef = useRef(library);
   const defaultConfigRequest = useRef<Promise<GlobalRuntimeConfig | null> | null>(null);
   const defaultConfigLoaded = useRef(false);
   const initialLoadStarted = useRef(false);
 
   agentsRef.current = agents;
+  libraryRef.current = library;
   const { enabled: agentSkills, states: skillStates } = useMemo(() => deriveSkills(agents), [agents]);
 
   const refresh = useCallback(async () => {
@@ -121,7 +123,7 @@ export function useAssistants() {
       return agentsRef.current.find((agent) => agent.id === agentId)?.skills ?? [];
     }
     const pendingRequest = skillRequests.current.get(agentId);
-    if (pendingRequest && !force) return pendingRequest;
+    if (pendingRequest) return pendingRequest;
 
     const request = skillsApi.list(agentId)
       .then(({ skills, pagination }) => {
@@ -143,8 +145,8 @@ export function useAssistants() {
   }, []);
 
   const loadLibrary = useCallback(async (force = false) => {
-    if (!force && libraryLoaded.current) return library;
-    if (libraryRequest.current && !force) return libraryRequest.current;
+    if (libraryRequest.current) return libraryRequest.current;
+    if (!force && libraryLoaded.current) return libraryRef.current;
     const request = skillsApi.listDefault()
       .then((page) => {
         libraryLoaded.current = true;
@@ -156,7 +158,7 @@ export function useAssistants() {
       });
     libraryRequest.current = request;
     return request;
-  }, [library]);
+  }, []);
 
   const loadDefaultConfig = useCallback(async (force = false) => {
     if (!force && defaultConfigLoaded.current) return defaultConfig;

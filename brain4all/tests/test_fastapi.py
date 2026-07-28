@@ -673,12 +673,14 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                         tool_call_count = ?, input_tokens = ?, output_tokens = ?,
                         cache_read_tokens = ?, cache_write_tokens = ?,
                         reasoning_tokens = ?, api_call_count = ?,
-                        estimated_cost_usd = ?, cost_status = ?
+                        estimated_cost_usd = ?, cost_status = ?, model_config = ?
                     WHERE id = ?
                     """,
                     (
                         "test/model", 100.0, 103.25, 3, 1, 1_000, 200,
-                        100, 20, 50, 2, 0.25, "estimated", conversation_id,
+                        100, 20, 50, 2, 0.25, "estimated",
+                        json.dumps({"brain4all_context": {"used": 10_000, "limit": 200_000}}),
+                        conversation_id,
                     ),
                 )
                 connection.executemany(
@@ -717,6 +719,11 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage["execution_seconds"], 3.25)
         self.assertEqual(usage["api_calls"], 2)
         self.assertEqual(usage["cost"]["total_usd"], 0.25)
+        self.assertEqual(usage["context"], {
+            "used": 10_000,
+            "limit": 200_000,
+            "percent": 5.0,
+        })
 
 
 if __name__ == "__main__":

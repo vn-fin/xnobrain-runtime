@@ -128,6 +128,7 @@ describe('KanbanView', () => {
           { id: 'default', name: 'Task board', description: 'Real API fixture', color: '#4f8cff', tasks: [
             { id: 't-1042', title: 'Prepare the weekly report', description: 'Prepare the report.', status: 'running', priority: 'high', assignee: 'research-agent', assignees: ['research-agent'], parents: [], tags: ['report'], progress: 50, updated_at: new Date().toISOString() },
             { id: 't-1051', title: 'Draft the report template', description: 'Draft a template.', status: 'todo', priority: 'low', assignee: 'research-agent', assignees: ['research-agent'], parents: [], tags: ['docs'], progress: 0, updated_at: new Date().toISOString() },
+            { id: 't-blocked', title: 'Compute 1 + 1', description: 'Needs user input.', status: 'blocked', kanban_status: 'done', allowed_kanban_statuses: ['todo', 'archived'], state_detail: { kind: 'needs_input', label: 'Needs input', reason: 'Confirm the expected answer.' }, priority: 'medium', assignee: null, assignees: [], parents: [], tags: [], progress: 0, updated_at: new Date().toISOString() },
           ] },
           { id: 'provider-rollout', name: 'Provider rollout', description: 'Provider checks', color: '#34d399', tasks: [
             { id: 'p-201', title: 'Verify provider callback', description: 'Check the callback.', status: 'running', priority: 'high', assignee: 'provider-agent', assignees: ['provider-agent'], parents: [], tags: [], progress: 50, updated_at: new Date().toISOString() },
@@ -199,8 +200,24 @@ describe('KanbanView', () => {
     const drawer = screen.getByRole('dialog');
     expect(within(drawer).getByRole('heading', { name: 'Prepare the weekly report' })).toBeVisible();
     expect(within(drawer).getByText('Only valid next steps are enabled.')).toBeVisible();
-    expect(within(drawer).getByText('In Progress', { selector: '.kb-column-state' })).toBeVisible();
     expect(within(drawer).getByText('In Progress', { selector: '.kb-substate' })).toBeVisible();
+    expect(drawer.querySelector('.kb-column-state')).toBeNull();
+  });
+
+  it('uses kanban_status for placement and native status as the only visible label', async () => {
+    const user = userEvent.setup();
+    render(<TestBoard />);
+
+    const doneColumn = await screen.findByRole('region', { name: 'Done column' });
+    const blockedCard = within(doneColumn).getByRole('button', { name: 'Open t-blocked: Compute 1 + 1' });
+    expect(within(blockedCard).getByText('Blocked', { selector: '.kb-substate' })).toBeVisible();
+    expect(within(blockedCard).queryByText('Done')).toBeNull();
+    expect(screen.queryByText('Blocked (Error)')).toBeNull();
+
+    await user.click(screen.getByRole('tab', { name: /List/ }));
+    const blockedRow = screen.getByRole('button', { name: /Compute 1 \+ 1.*Blocked/ });
+    expect(within(blockedRow).getByText('Blocked', { selector: '.kb-substate' })).toBeVisible();
+    expect(screen.getByText(/grouped by Kanban status/)).toBeVisible();
   });
 
   it('shows four current columns and archives through the matching confirmation dialog', async () => {

@@ -2438,6 +2438,20 @@ body.col-resizing {
   border-radius: 50%;
 }
 
+.context-gauge {
+  --context-percent: 0%;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--context-percent), #686868 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+}
+
+.context-gauge.unknown {
+  background: #686868;
+}
+
 .right-head {
   height: 58px;
   display: flex;
@@ -7389,18 +7403,12 @@ body.col-resizing {
 .kb-card.col-archived { border-left: 3px solid var(--muted-2); opacity: .78; }
 .kb-card-top { display: flex; align-items: center; gap: 8px; }
 .kb-id { color: var(--muted-2); font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
-.kb-column-state,
 .kb-substate {
   height: 20px; padding: 0 8px; display: inline-flex; align-items: center;
   border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
   white-space: nowrap;
 }
-.kb-card-top .kb-column-state { margin-left: auto; }
-.kb-column-state.col-backlog { color: #c084fc; background: color-mix(in srgb, #c084fc 13%, transparent); }
-.kb-column-state.col-todo { color: var(--muted); background: var(--panel-3); }
-.kb-column-state.col-running { color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, transparent); }
-.kb-column-state.col-done { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
-.kb-column-state.col-archived { color: var(--muted-2); background: var(--panel-3); }
+.kb-card-top .kb-substate { margin-left: auto; }
 .kb-substate { color: var(--muted); background: var(--panel-3); }
 .kb-substate.native-triage { color: #c084fc; background: color-mix(in srgb, #c084fc 12%, transparent); }
 .kb-substate.native-ready { color: #22d3ee; background: color-mix(in srgb, #22d3ee 12%, transparent); }
@@ -7478,13 +7486,14 @@ body.col-resizing {
 .kb-group-add:hover { color: var(--text); background: var(--hover); }
 .kb-rows { display: flex; flex-direction: column; }
 .kb-row {
-  display: grid; grid-template-columns: minmax(220px, 2.4fr) minmax(90px, 1fr) 84px 100px 20px;
+  display: grid; grid-template-columns: minmax(220px, 2.4fr) 100px minmax(90px, 1fr) 84px 100px 20px;
   align-items: center; gap: 12px; width: 100%; min-height: 54px; padding: 8px 14px;
   border-bottom: 1px solid var(--border); color: var(--text); text-align: left;
 }
 .kb-row:last-child { border-bottom: 0; }
 .kb-row:hover { background: var(--hover); }
 .kb-row-task { min-width: 0; display: grid; gap: 3px; }
+.kb-row-status { display: flex; align-items: center; }
 .kb-row-id { color: var(--muted-2); font-family: 'IBM Plex Mono', monospace; font-size: 10px; }
 .kb-row-deps { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
 .kb-row-updated { color: var(--muted-2); font-size: 11px; }
@@ -7610,8 +7619,8 @@ body.col-resizing {
 }
 @media (max-width: 720px) {
   .kb-header { flex-direction: column; }
-  .kb-row { grid-template-columns: minmax(0, 1fr) auto; }
-  .kb-row-deps, .kb-row-updated { display: none; }
+  .kb-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .kb-row-assignees, .kb-row-deps, .kb-row-updated { display: none; }
 }
 
 /* Kanban workspace refresh: denser hierarchy, useful filters, and clear state. */

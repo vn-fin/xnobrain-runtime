@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   teamsApi,
   isRunTerminal,
@@ -16,17 +16,26 @@ export function useTeams(active = true) {
   const [runs, setRuns] = useState<TeamRunRecord[]>([]);
   const [activeRun, setActiveRun] = useState<TeamRunRecord>();
   const [runsStatus, setRunsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const teamsRequest = useRef<Promise<void> | null>(null);
+  const runsRequests = useRef(new Map<string, Promise<void>>());
 
-  const refresh = useCallback(async () => {
-    setStatus('loading');
-    try {
-      setTeams(await teamsApi.list());
-      setStatus('ready');
-      setError('');
-    } catch (reason) {
-      setStatus('error');
-      setError(reason instanceof Error ? reason.message : 'Could not load teams');
-    }
+  const refresh = useCallback(() => {
+    if (teamsRequest.current) return teamsRequest.current;
+    const request = (async () => {
+      setStatus('loading');
+      try {
+        setTeams(await teamsApi.list());
+        setStatus('ready');
+        setError('');
+      } catch (reason) {
+        setStatus('error');
+        setError(reason instanceof Error ? reason.message : 'Could not load teams');
+      }
+    })().finally(() => {
+      if (teamsRequest.current === request) teamsRequest.current = null;
+    });
+    teamsRequest.current = request;
+    return request;
   }, []);
 
   useEffect(() => { if (active) void refresh(); }, [active, refresh]);
@@ -82,23 +91,32 @@ export function useTeams(active = true) {
     }
   };
 
-  const loadRuns = useCallback(async (teamId: string) => {
+  const loadRuns = useCallback((teamId: string) => {
     if (!teamId) return;
-    setRunsStatus('loading');
-    try {
-      const rows = await teamsApi.listRuns(teamId);
-      setRuns(rows);
-      const live = rows.find((run) => !isRunTerminal(run.status));
-      if (live) {
-        setActiveRun(await teamsApi.getRun(teamId, live.id));
-      } else {
-        setActiveRun((current) => current?.team_id === teamId ? current : undefined);
+    const pendingRequest = runsRequests.current.get(teamId);
+    if (pendingRequest) return pendingRequest;
+
+    const request = (async () => {
+      setRunsStatus('loading');
+      try {
+        const rows = await teamsApi.listRuns(teamId);
+        setRuns(rows);
+        const live = rows.find((run) => !isRunTerminal(run.status));
+        if (live) {
+          setActiveRun(await teamsApi.getRun(teamId, live.id));
+        } else {
+          setActiveRun((current) => current?.team_id === teamId ? current : undefined);
+        }
+        setRunsStatus('ready');
+      } catch (reason) {
+        setRunsStatus('error');
+        setError(reason instanceof Error ? reason.message : 'Could not load runs');
       }
-      setRunsStatus('ready');
-    } catch (reason) {
-      setRunsStatus('error');
-      setError(reason instanceof Error ? reason.message : 'Could not load runs');
-    }
+    })().finally(() => {
+      if (runsRequests.current.get(teamId) === request) runsRequests.current.delete(teamId);
+    });
+    runsRequests.current.set(teamId, request);
+    return request;
   }, []);
 
   const openRun = useCallback(async (teamId: string, runId: string) => {

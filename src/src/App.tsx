@@ -153,15 +153,13 @@ export default function App() {
       return;
     }
     if (router.centerView === 'skills') {
-      void assistants.loadLibrary();
-      void Promise.all(assistants.agents.map((agent) => assistants.loadAgentSkills(agent.id)));
+      void assistants.loadLibrary(true);
     } else if (router.centerView === 'chat' && router.rightView === 'skills' && activeAgent) {
       void assistants.loadLibrary();
       void assistants.loadAgentSkills(activeAgent.id);
     }
   }, [
     activeAgent,
-    assistants.agents,
     assistants.loadAgentSkills,
     assistants.loadDefaultConfig,
     assistants.loadLibrary,
@@ -375,6 +373,7 @@ export default function App() {
             blends={blends.blends.map((blend) => blend.name)}
             runs={conversation.runs}
             messages={conversation.messages}
+            usage={conversation.usage}
             queuedMessages={conversation.queuedMessages}
             onEditQueued={conversation.editQueuedMessage}
             onDeleteQueued={conversation.removeQueuedMessage}

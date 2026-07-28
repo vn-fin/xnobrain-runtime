@@ -201,6 +201,9 @@ export type ConversationUsage = {
   apiCalls: number;
   model: string;
   totalTokens: number;
+  contextUsed?: number;
+  contextLimit?: number;
+  contextPercent?: number;
   totalCostUsd: number;
   provider: string;
   plan: string;
@@ -367,9 +370,9 @@ export type KanbanTask = {
   id: string;
   title: string;
   description: string;
-  /** Five-column presentation status. */
+  /** API `kanban_status`: placement/grouping in the web board. */
   status: KanbanColumnId;
-  /** Original execution state returned by the task runtime. */
+  /** API `status`: execution state displayed to the user. */
   nativeStatus: KanbanNativeStatus;
   allowedStatuses: KanbanColumnId[];
   priority: KanbanPriority;
