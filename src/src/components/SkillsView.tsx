@@ -61,6 +61,12 @@ export function SkillsView({
   const [visible, setVisible] = useState(INITIAL_VISIBLE);
   const [togglePendingId, setTogglePendingId] = useState('');
   const query = search.trim().toLowerCase();
+  const eligibleAgents = useMemo(
+    () => agents.filter((agent) => selectedSkillIds.some(
+      (skillId) => !agentSkills[agent.id]?.[skillId],
+    )),
+    [agentSkills, agents, selectedSkillIds],
+  );
 
   const filteredLibrary = useMemo(() => library.filter((skill) => {
     if (groupFilter !== 'all' && skill.category !== groupFilter) return false;
@@ -106,6 +112,13 @@ export function SkillsView({
     setSelectedSkillIds([]);
     setApplyAgentIds([]);
   };
+  useEffect(() => {
+    const eligibleIds = new Set(eligibleAgents.map((agent) => agent.id));
+    setApplyAgentIds((current) => {
+      const next = current.filter((agentId) => eligibleIds.has(agentId));
+      return next.length === current.length ? current : next;
+    });
+  }, [eligibleAgents]);
   const setDefaultEnabled = async (skill: AgentSkill) => {
     if (togglePendingId) return;
     setTogglePendingId(skill.skill_id);
@@ -194,7 +207,7 @@ export function SkillsView({
       {selectedSkillIds.length > 0 && (
         <footer className="skv-apply-bar">
           <span className="skv-apply-count">{t('skillsView.selected', { count: selectedSkillIds.length })}</span>
-          <div className="skv-apply-agents">{agents.map((agent) => <label key={agent.id} className={applyAgentIds.includes(agent.id) ? 'skv-agent-chip on' : 'skv-agent-chip'}><input type="checkbox" checked={applyAgentIds.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />{agent.title}</label>)}</div>
+          <div className="skv-apply-agents">{eligibleAgents.map((agent) => <label key={agent.id} className={applyAgentIds.includes(agent.id) ? 'skv-agent-chip on' : 'skv-agent-chip'}><input type="checkbox" checked={applyAgentIds.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />{agent.title}</label>)}</div>
           <button className="skv-apply-btn" disabled={applyAgentIds.length === 0} onClick={apply}><Check size={15} />{t('skillsView.applyToAgents', { count: applyAgentIds.length })}</button>
         </footer>
       )}

@@ -49,6 +49,21 @@ function messageFrom(body: unknown, response: Response): string {
     const record = body as Record<string, unknown>;
     if (typeof record.message === 'string' && record.message) return record.message;
     if (typeof record.error === 'string' && record.error) return record.error;
+    if (typeof record.detail === 'string' && record.detail) return record.detail;
+    if (Array.isArray(record.detail)) {
+      const details = record.detail
+        .map((item) => {
+          if (!item || typeof item !== 'object') return '';
+          const entry = item as Record<string, unknown>;
+          const message = typeof entry.msg === 'string' ? entry.msg : '';
+          const location = Array.isArray(entry.loc)
+            ? entry.loc.filter((part) => typeof part === 'string' || typeof part === 'number').join('.')
+            : '';
+          return message ? (location ? `${location}: ${message}` : message) : '';
+        })
+        .filter(Boolean);
+      if (details.length > 0) return details.join('; ');
+    }
   }
   return response.statusText || `Request failed (${response.status})`;
 }

@@ -85,7 +85,7 @@ def _allowed_moves(raw: str) -> list[str]:
     if raw == "review":
         return ["running", "archived"]
     if raw == "done":
-        return ["archived"]
+        return []
     return []
 
 

@@ -1012,6 +1012,8 @@ class AgentManager:
         timeout_seconds = int(prepared["timeout_seconds"])
         conversation_id = str(prepared.get("conversation_id") or "")
         model = str(prepared.get("model") or "")
+        profile_dir = Path(prepared["profile_dir"])
+        skill_ids_before_run = self._skill_ids_for_profile(profile_dir)
         created = int(time.time())
         chat_id = "chatcmpl-" + (conversation_id or uuid.uuid4().hex)
         run_id = "run_" + uuid.uuid4().hex
@@ -1255,11 +1257,18 @@ class AgentManager:
                     approval_notify_callback=on_approval,
                     agent_ref=agent_ref,
                 )
+                # Skills created or downloaded during chat are opt-in for the
+                # next turn, regardless of which Hermes install path created them.
+                self._disable_new_skills(profile_dir, skill_ids_before_run)
                 # Flush callbacks already scheduled from the worker thread
                 # before placing the terminal event behind them.
                 await asyncio.sleep(0)
                 await queue.put(("completed", (result, usage)))
             except Exception as exc:
+                try:
+                    self._disable_new_skills(profile_dir, skill_ids_before_run)
+                except Exception:
+                    pass
                 await queue.put(("failed", exc))
 
         task = asyncio.create_task(run_agent())
@@ -1914,6 +1923,33 @@ class AgentManager:
             frontmatter = self._read_skill_frontmatter(path)
             changed.add(str(frontmatter.get("name") or path.parent.name).strip())
         return {item for item in changed if item}
+
+    def _skill_ids_for_profile(self, profile_dir: Path) -> set[str]:
+        skills_root = profile_dir / "skills"
+        if not skills_root.is_dir():
+            return set()
+        skill_ids = set()
+        for path in skills_root.rglob("SKILL.md"):
+            if not path.is_file():
+                continue
+            frontmatter = self._read_skill_frontmatter(path)
+            skill_id = str(frontmatter.get("name") or path.parent.name).strip()
+            if skill_id:
+                skill_ids.add(skill_id)
+        return skill_ids
+
+    def _disable_new_skills(
+        self,
+        profile_dir: Path,
+        before: set[str],
+    ) -> set[str]:
+        new_skill_ids = self._skill_ids_for_profile(profile_dir) - before
+        if not new_skill_ids:
+            return set()
+        config = self._read_config(profile_dir)
+        disabled = self._disabled_skills(config)
+        self._write_disabled_skills(profile_dir, config, disabled | new_skill_ids)
+        return new_skill_ids
 
     def _clear_seeded_disabled_skills(self, profile_dir: Path) -> None:
         config = self._read_config(profile_dir)
