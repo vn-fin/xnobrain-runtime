@@ -25,8 +25,6 @@ class Brain4AllApplication:
             from .integrations import LocalRuntimeManager
             runtime = LocalRuntimeManager(data_dir=data_dir)
         self.service = PlatformService(self.repository, agents, config, router, runtime)
-        from .integrations.hermes_tools import bind_platform_service
-        bind_platform_service(self.service)
         self.handlers = APIHandlers(self.service)
 
     def register(self, app) -> None:

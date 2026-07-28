@@ -6,4 +6,12 @@ BIG_BROTHER_DESCRIPTION = (
     "Platform coordinator for agents, skills, usage, and Kanban work."
 )
 BIG_BROTHER_SKILL_ID = "big-brother-control"
-BIG_BROTHER_TOOLSET = "brain4all-control"
+BIG_BROTHER_NATIVE_TOOLSETS = (
+    "terminal",
+    "file",
+    "web",
+    "code_execution",
+    "skills",
+    "kanban",
+)
+LEGACY_BIG_BROTHER_TOOLSET = "brain4all-control"

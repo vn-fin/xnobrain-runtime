@@ -82,6 +82,18 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         async with self.app.router.lifespan_context(self.app):
             first = self.composition.service.get_agent(BIG_BROTHER_AGENT_ID)
+
+        profile_config_path = self.profiles / BIG_BROTHER_AGENT_ID / "config.yaml"
+        migrated_config = yaml.safe_load(
+            profile_config_path.read_text(encoding="utf-8")
+        )
+        migrated_config["platform_toolsets"]["api_server"].append(
+            "brain4all-control"
+        )
+        profile_config_path.write_text(
+            yaml.safe_dump(migrated_config, sort_keys=False),
+            encoding="utf-8",
+        )
         second = await self.composition.service.ensure_default_agent()
 
         self.assertEqual(first["id"], BIG_BROTHER_AGENT_ID)
@@ -104,32 +116,36 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             },
         )
         profile_config = yaml.safe_load(
-            (self.profiles / BIG_BROTHER_AGENT_ID / "config.yaml").read_text(
-                encoding="utf-8"
-            )
+            profile_config_path.read_text(encoding="utf-8")
         )
         self.assertIn("kanban", profile_config["toolsets"])
         self.assertEqual(
             set(profile_config["platform_toolsets"]["api_server"]),
-            {"brain4all-control", "kanban", "skills"},
+            {
+                "code_execution",
+                "file",
+                "kanban",
+                "skills",
+                "terminal",
+                "web",
+            },
         )
         with self.assertRaises(ServiceError) as protected:
             self.composition.service.delete_agent(BIG_BROTHER_AGENT_ID)
         self.assertEqual(protected.exception.code, "protected_agent")
 
-        from gateway.run import _profile_runtime_scope
         from hermes_cli.tools_config import _get_platform_tools
-        from tools.registry import registry
 
-        handler = registry.get_entry("brain4all_manage_agent").handler
-        denied = json.loads(handler({"action": "list"}))
-        self.assertFalse(denied["success"])
-        with _profile_runtime_scope(self.profiles / BIG_BROTHER_AGENT_ID):
-            enabled_toolsets = _get_platform_tools(profile_config, "api_server")
-            allowed = json.loads(handler({"action": "list"}))
-        self.assertIn("brain4all-control", enabled_toolsets)
-        self.assertTrue(allowed["success"])
-        self.assertEqual(allowed["result"][0]["id"], BIG_BROTHER_AGENT_ID)
+        enabled_toolsets = _get_platform_tools(profile_config, "api_server")
+        self.assertTrue({
+            "code_execution",
+            "file",
+            "kanban",
+            "skills",
+            "terminal",
+            "web",
+        }.issubset(enabled_toolsets))
+        self.assertNotIn("brain4all-control", enabled_toolsets)
 
     async def test_health_identifies_fastapi_database_free_runtime(self):
         async with self.client() as client:

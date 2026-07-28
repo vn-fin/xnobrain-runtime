@@ -19,8 +19,9 @@ from ..defaults import (
     BIG_BROTHER_AGENT_ID,
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
+    BIG_BROTHER_NATIVE_TOOLSETS,
     BIG_BROTHER_SKILL_ID,
-    BIG_BROTHER_TOOLSET,
+    LEGACY_BIG_BROTHER_TOOLSET,
 )
 from ..integrations import (
     AgentAPIError,
@@ -183,32 +184,40 @@ class PlatformService:
                     "config": {
                         "toolsets": ["kanban"],
                         "platform_toolsets": {
-                            "api_server": [
-                                BIG_BROTHER_TOOLSET,
-                                "kanban",
-                                "skills",
-                            ],
+                            "api_server": list(BIG_BROTHER_NATIVE_TOOLSETS),
                         },
                     },
                 },
             })
 
         self._ensure_big_brother_toolsets(profile)
-        installed = {
-            str(item.get("skill_id") or "")
-            for item in self.list_skills(BIG_BROTHER_AGENT_ID)
-        }
-        if BIG_BROTHER_SKILL_ID not in installed:
-            skill_path = (
-                Path(__file__).resolve().parent.parent
-                / "assets"
-                / "skills"
-                / BIG_BROTHER_SKILL_ID
-                / "SKILL.md"
-            )
-            await self.install_skill(BIG_BROTHER_AGENT_ID, {
+        bundled_skill_path = (
+            Path(__file__).resolve().parent.parent
+            / "assets"
+            / "skills"
+            / BIG_BROTHER_SKILL_ID
+            / "SKILL.md"
+        )
+        bundled_skill = bundled_skill_path.read_text(encoding="utf-8")
+        installed_skill_path = (
+            profile / "skills" / BIG_BROTHER_SKILL_ID / "SKILL.md"
+        )
+        installed_skill = (
+            installed_skill_path.read_text(encoding="utf-8")
+            if installed_skill_path.is_file()
+            else None
+        )
+        if installed_skill != bundled_skill:
+            if installed_skill is not None:
+                self.repository.snapshot(
+                    BIG_BROTHER_AGENT_ID,
+                    "skills",
+                    BIG_BROTHER_SKILL_ID,
+                    installed_skill.encode("utf-8"),
+                )
+            await self.agents.install_skill(BIG_BROTHER_AGENT_ID, {
                 "skill_id": BIG_BROTHER_SKILL_ID,
-                "content": skill_path.read_text(encoding="utf-8"),
+                "content": bundled_skill,
                 "enable": True,
             })
         return self.get_agent(BIG_BROTHER_AGENT_ID)
@@ -243,9 +252,11 @@ class PlatformService:
         api_server = platforms.get("api_server")
         if not isinstance(api_server, list):
             api_server = []
-        required = (BIG_BROTHER_TOOLSET, "kanban", "skills")
-        next_api_server = [*api_server]
-        for toolset in required:
+        next_api_server = [
+            item for item in api_server
+            if item != LEGACY_BIG_BROTHER_TOOLSET
+        ]
+        for toolset in BIG_BROTHER_NATIVE_TOOLSETS:
             if toolset not in next_api_server:
                 next_api_server.append(toolset)
         if next_api_server != api_server:
