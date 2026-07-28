@@ -107,6 +107,7 @@ class APIHandlers:
             "config_agent_patch": (lambda: s.update_agent_config(p["agent_id"], body), "agent config updated successfully", 200),
             "skills_default_list": (s.list_default_skills, "default profile skills retrieved successfully", 200),
             "skills_default_install": (lambda: s.install_default_skill(body), "skill installed into default profile", 201),
+            "skills_default_patch": (lambda: s.set_default_skill_enabled(p["skill_id"], body), "default profile skill updated successfully", 200),
             "skills_list": (lambda: s.list_skills(p["agent_id"]), "skills retrieved successfully", 200),
             "skills_install": (lambda: s.install_skill(p["agent_id"], body), "skill installed successfully", 201),
             "skills_patch": (lambda: s.set_skill_enabled(p["agent_id"], p["skill_id"], body), "skill updated successfully", 200),

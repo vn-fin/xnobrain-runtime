@@ -158,6 +158,7 @@ class AgentManager:
             if not existed or bool(body.get("refresh_seed", False)):
                 self._copy_seed_profile(profile_dir, copy_credentials=bool(body.get("copy_credentials", True)))
                 self._copy_root_skills(profile_dir, overwrite=True)
+                self._clear_seeded_disabled_skills(profile_dir)
             self._ensure_router_profile(profile_dir, body.get("model"))
             self._write_workspace_cwd(profile_dir, workspace_dir)
             self._ensure_workspace_agents(profile_dir, workspace_dir)
@@ -1631,9 +1632,14 @@ class AgentManager:
         copied = []
         if not skills_root.is_dir():
             return copied
+        disabled = self._disabled_skills(self._read_config(self.root_profile))
         for skill_file in sorted(skills_root.rglob("SKILL.md")):
             source = skill_file.parent
             rel_parent = source.relative_to(skills_root)
+            frontmatter = self._read_skill_frontmatter(skill_file)
+            skill_id = str(frontmatter.get("name") or source.name).strip()
+            if skill_id in disabled:
+                continue
             destination = target_root / rel_parent
             if destination.exists():
                 if not overwrite:
@@ -1643,6 +1649,14 @@ class AgentManager:
             shutil.copytree(source, destination)
             copied.append(str(rel_parent))
         return copied
+
+    def _clear_seeded_disabled_skills(self, profile_dir: Path) -> None:
+        config = self._read_config(profile_dir)
+        skills_config = config.get("skills")
+        if isinstance(skills_config, dict):
+            skills_config["disabled"] = []
+            with (profile_dir / "config.yaml").open("w", encoding="utf-8") as file:
+                yaml.safe_dump(config, file, sort_keys=False, allow_unicode=False)
 
     def _write_workspace_cwd(self, profile_dir: Path, workspace_dir: Path) -> None:
         config = self._read_config(profile_dir)

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../i18n';
 import type { Agent } from '../types';
@@ -62,5 +62,31 @@ describe('Sidebar assistant actions', () => {
 
     fireEvent.click(deleteButton);
     expect(requestDelete).toHaveBeenCalledWith('a1b2c3');
+  });
+
+  it('opens the skills view from the left navigation', () => {
+    const navigate = vi.fn();
+    const { container } = render(
+      <Sidebar
+        agents={[agent]}
+        activeAgent={agent}
+        activeConversation={undefined}
+        centerView="chat"
+        agentSearch=""
+        onAgentSearch={vi.fn()}
+        onNavigate={navigate}
+        onSelectAgent={vi.fn()}
+        onSelectConversation={vi.fn()}
+        onRenameAgent={vi.fn()}
+        onExportAgent={vi.fn()}
+        onRequestDeleteAgent={vi.fn()}
+        onRenameConversation={vi.fn()}
+        onRequestDeleteConversation={vi.fn()}
+        onNewAgent={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(within(container).getByRole('button', { name: 'Skills' }));
+    expect(navigate).toHaveBeenCalledWith('skills');
   });
 });

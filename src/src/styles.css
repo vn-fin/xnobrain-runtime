@@ -5449,6 +5449,10 @@ body.col-resizing {
   background: #0c1712;
 }
 
+.skv-card.disabled {
+  opacity: 0.72;
+}
+
 .skv-card-head {
   display: flex;
   align-items: center;
@@ -5468,6 +5472,16 @@ body.col-resizing {
   text-overflow: ellipsis;
   font-size: 14px;
   font-weight: 600;
+}
+
+.skv-default-toggle {
+  flex: 0 0 38px;
+  margin-left: auto;
+  cursor: pointer;
+}
+
+.skv-default-toggle + .skv-badge {
+  margin-left: 0;
 }
 
 .skv-badge {

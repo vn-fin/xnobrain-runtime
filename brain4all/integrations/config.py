@@ -212,6 +212,31 @@ class GlobalConfigManager:
             "skills": skills,
         }
 
+    def set_skill_enabled(
+        self,
+        raw_skill_id: Any,
+        body: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if not isinstance(body, Mapping):
+            raise ConfigAPIError("request body must be an object", code="invalid_skill_request")
+        if "enabled" not in body:
+            raise ConfigAPIError("enabled is required", code="invalid_skill_request")
+
+        skill_id = self._skill_id(raw_skill_id)
+        config = self._read_config()
+        if self._find_owned_skill_dir(skill_id) is None and self._find_external_skill_dir(skill_id, config) is None:
+            raise ConfigAPIError("skill not found", code="skill_not_found", status=404)
+
+        disabled = self._disabled_skills(config)
+        if self._coerce_bool(body["enabled"], field="enabled"):
+            disabled.discard(skill_id)
+        else:
+            disabled.add(skill_id)
+        self._snapshot_config()
+        self._set_nested(config, ("skills", "disabled"), sorted(disabled))
+        self._write_config(config)
+        return self.list_skills()
+
     def delete_skill(self, raw_skill_id: Any) -> dict[str, Any]:
         skill_id = self._skill_id(raw_skill_id)
         config = self._read_config()
@@ -328,6 +353,13 @@ class GlobalConfigManager:
             target = self.root_profile / "snapshots" / "skills" / Path(relative).parent
             snapshot = target / f"{time.time_ns()}-{digest[:12]}.md"
             self._atomic_write(snapshot, payload, mode=0o440)
+
+    def _snapshot_config(self) -> None:
+        path = self.root_profile / "config.yaml"
+        payload = path.read_bytes() if path.is_file() else b"{}\n"
+        digest = hashlib.sha256(payload).hexdigest()
+        snapshot = self.root_profile / "snapshots" / "config" / f"{time.time_ns()}-{digest[:12]}.yaml"
+        self._atomic_write(snapshot, payload, mode=0o440)
 
     def _scan_skills(self, config: Mapping[str, Any]) -> list[dict[str, Any]]:
         seen: set[str] = set()

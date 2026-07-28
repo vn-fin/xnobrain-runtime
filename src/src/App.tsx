@@ -296,6 +296,7 @@ export default function App() {
             groupFilter={router.skillsGroupFilter}
             onGroupFilter={router.setSkillsGroupFilter}
             onInstall={assistants.installDefaultSkill}
+            onSetDefaultEnabled={assistants.setDefaultSkillEnabled}
             installPending={assistants.skillInstallPending}
             installError={assistants.skillInstallError}
             onInstallExisting={assistants.installExistingSkill}

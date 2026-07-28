@@ -387,6 +387,23 @@ export function useAssistants() {
     }
   };
 
+  const setDefaultSkillEnabled = async (skillId: string, enabled: boolean) => {
+    const previous = library;
+    setSkillInstallError('');
+    setLibrary((current) => current.map((skill) =>
+      skill.skill_id === skillId ? { ...skill, enabled } : skill));
+    try {
+      const skills = await skillsApi.setDefaultEnabled(skillId, enabled);
+      setLibrary(skills);
+      libraryLoaded.current = true;
+      return true;
+    } catch (value) {
+      setLibrary(previous);
+      setSkillInstallError(value instanceof Error ? value.message : 'Could not update default skill.');
+      return false;
+    }
+  };
+
   const installExistingSkill = async (skillId: string, agentIds: string[] = []) => {
     const skill = library.find((item) => item.skill_id === skillId);
     if (!skill) return [];
@@ -414,7 +431,7 @@ export function useAssistants() {
     skillInstallPending, skillInstallError, refresh, loadConversations, loadAgentSkills, loadLibrary, loadDefaultConfig,
     createAgent, updateAgent, renameAgent, deleteAgent, testAgent, setDefaultModel, setWriteApprovals,
     createConversation, deleteConversation, renameConversation,
-    toggleAgentSkill, setSkillEnabled, loadSkillsPage, installDefaultSkill, installExistingSkill, applySkillsToAgents,
+    toggleAgentSkill, setSkillEnabled, loadSkillsPage, installDefaultSkill, setDefaultSkillEnabled, installExistingSkill, applySkillsToAgents,
   };
 }
 

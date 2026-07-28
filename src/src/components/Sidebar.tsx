@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   Pencil,
   Plus,
+  Puzzle,
   Search,
   Settings,
   Share2,
@@ -25,6 +26,7 @@ import { useTheme } from '../theme';
 import type { Agent, CenterView, Conversation } from '../types';
 
 const navItems = [
+  { id: 'skills', label: 'skills', icon: Puzzle },
   { id: 'kanban', label: 'kanban', icon: Columns3 },
   { id: 'teams', label: 'teams', icon: Network },
   { id: 'analytics', label: 'analytics', icon: BarChart3 },

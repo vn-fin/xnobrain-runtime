@@ -31,6 +31,7 @@ export function SkillsView({
   groupFilter,
   onGroupFilter,
   onInstall,
+  onSetDefaultEnabled,
   installPending,
   installError,
   onInstallExisting,
@@ -45,6 +46,7 @@ export function SkillsView({
   groupFilter: string;
   onGroupFilter: (value: string) => void;
   onInstall: (source: string, force?: boolean) => Promise<boolean>;
+  onSetDefaultEnabled: (skillId: string, enabled: boolean) => Promise<boolean>;
   installPending: boolean;
   installError: string;
   onInstallExisting: (id: string, agentIds: string[]) => void;
@@ -57,6 +59,7 @@ export function SkillsView({
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [applyAgentIds, setApplyAgentIds] = useState<string[]>([]);
   const [visible, setVisible] = useState(INITIAL_VISIBLE);
+  const [togglePendingId, setTogglePendingId] = useState('');
   const query = search.trim().toLowerCase();
 
   const filteredLibrary = useMemo(() => library.filter((skill) => {
@@ -103,6 +106,12 @@ export function SkillsView({
     setSelectedSkillIds([]);
     setApplyAgentIds([]);
   };
+  const setDefaultEnabled = async (skill: AgentSkill) => {
+    if (togglePendingId) return;
+    setTogglePendingId(skill.skill_id);
+    await onSetDefaultEnabled(skill.skill_id, !skill.enabled);
+    setTogglePendingId('');
+  };
 
   return (
     <div className="skills-view">
@@ -145,10 +154,27 @@ export function SkillsView({
                 const selected = selectedSkillIds.includes(skill.skill_id);
                 const usedBy = agents.filter((agent) => agentSkills[agent.id]?.[skill.skill_id]).length;
                 return (
-                  <article className={selected ? 'skv-card selected' : 'skv-card'} key={skill.skill_id} onClick={() => skill.installed && toggleSkill(skill.skill_id)}>
+                  <article className={`${selected ? 'skv-card selected' : 'skv-card'}${skill.enabled ? '' : ' disabled'}`} key={skill.skill_id} onClick={() => skill.installed && toggleSkill(skill.skill_id)}>
                     <div className="skv-card-head">
                       {skill.installed && <input type="checkbox" checked={selected} onChange={() => toggleSkill(skill.skill_id)} onClick={(event) => event.stopPropagation()} />}
-                      <strong>{skill.name}</strong><span className={skill.installed ? 'skv-badge installed' : 'skv-badge'}>{skill.installed ? t('skillsView.installed') : t('skillsView.available')}</span>
+                      <strong>{skill.name}</strong>
+                      {skill.installed && (
+                        <label
+                          className="toggle skv-default-toggle"
+                          title={t(skill.enabled ? 'skillsView.disableDefault' : 'skillsView.enableDefault', { name: skill.name })}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={skill.enabled}
+                            disabled={togglePendingId === skill.skill_id}
+                            aria-label={t('skillsView.defaultEnabledLabel', { name: skill.name })}
+                            onChange={() => void setDefaultEnabled(skill)}
+                          />
+                          <span />
+                        </label>
+                      )}
+                      <span className={skill.enabled ? 'skv-badge installed' : 'skv-badge'}>{skill.enabled ? t('skillsView.enabled', { defaultValue: 'enabled' }) : t('skillsView.disabled', { defaultValue: 'disabled' })}</span>
                     </div>
                     <p className="skv-desc">{skill.description}</p>
                     <div className="skv-card-foot">

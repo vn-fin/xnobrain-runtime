@@ -51,6 +51,15 @@ export const skillsApi = {
     );
   },
 
+  async setDefaultEnabled(skillId: string, enabled: boolean): Promise<AgentSkill[]> {
+    return skills(
+      await request<AgentSkillListResponseDTO>(`${ROOT}/${encoded(skillId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      }),
+    );
+  },
+
   async install(agentId: string, input: AgentSkillInstallRequestDTO): Promise<AgentSkill[]> {
     return skills(
       await request<AgentSkillListResponseDTO>(`${ROOT}/${encoded(agentId)}`, {

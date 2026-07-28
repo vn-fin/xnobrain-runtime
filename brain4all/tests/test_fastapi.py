@@ -139,6 +139,37 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         snapshots = list((self.root / "snapshots" / "skills").rglob("*.md"))
         self.assertEqual(len(snapshots), 1)
 
+    async def test_default_skill_toggle_controls_which_skills_new_profiles_copy(self):
+        for skill_id in ("enabled-skill", "disabled-skill"):
+            skill = self.root / "skills" / skill_id / "SKILL.md"
+            skill.parent.mkdir(parents=True, exist_ok=True)
+            skill.write_text(
+                f"---\nname: {skill_id}\ndescription: {skill_id}\n---\n",
+                encoding="utf-8",
+            )
+
+        async with self.client() as client:
+            toggled = await client.patch(
+                "/agent-gateway/v1/agents-skills/disabled-skill",
+                json={"enabled": False},
+            )
+            created = await client.post(
+                "/agent-gateway/v1/agents",
+                json={"display_name": "Enabled Skills Only"},
+            )
+
+        self.assertEqual(toggled.status_code, 200, toggled.text)
+        states = {item["skill_id"]: item["enabled"] for item in toggled.json()["data"]}
+        self.assertEqual(states, {"disabled-skill": False, "enabled-skill": True})
+        self.assertEqual(created.status_code, 201, created.text)
+        agent_id = created.json()["data"]["id"]
+        profile_skills = self.profiles / agent_id / "skills"
+        self.assertTrue((profile_skills / "enabled-skill" / "SKILL.md").is_file())
+        self.assertFalse((profile_skills / "disabled-skill").exists())
+        profile_config = yaml.safe_load((self.profiles / agent_id / "config.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(profile_config["skills"]["disabled"], [])
+        self.assertEqual(len(list((self.root / "snapshots" / "config").glob("*.yaml"))), 1)
+
     async def test_profile_registry_uses_generated_ids_and_display_names(self):
         async with self.client() as client:
             created = await client.post("/agent-gateway/v1/agents", json={

@@ -228,6 +228,10 @@ class PlatformService:
         """Install a URL, hub identifier, or local SKILL.md into the root profile."""
         return (await self.config.install_skill(body))["skills"]
 
+    def set_default_skill_enabled(self, skill_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
+        """Change whether new profiles inherit a default-profile skill."""
+        return self.config.set_skill_enabled(skill_id, body)["skills"]
+
     async def install_skill(self, agent_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         payload = await self.agents.install_skill(agent_id, body)
         skill_id = str(body.get("skill_id") or body.get("name") or "").strip()
