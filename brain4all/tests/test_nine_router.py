@@ -336,7 +336,10 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                     manager.create_agent({"display_name": "News Summary"})
 
             self.assertEqual(list(profiles.iterdir()), [])
-            self.assertEqual(manager.list_agents()["agents"], [])
+            self.assertEqual(
+                [item["name"] for item in manager.list_agents()["agents"]],
+                ["big-brother"],
+            )
 
     def test_conversation_stream_resumes_the_open_session(self) -> None:
         with TemporaryDirectory() as temp_dir:

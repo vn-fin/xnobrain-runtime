@@ -21,7 +21,12 @@ from typing import Any, Mapping
 
 import yaml
 
-from ..defaults import BIG_BROTHER_AGENT_ID
+from ..defaults import (
+    BIG_BROTHER_AGENT_ID,
+    BIG_BROTHER_DESCRIPTION,
+    BIG_BROTHER_DISPLAY_NAME,
+    BIG_BROTHER_SKILL_CATEGORY,
+)
 from .nine_router import (
     NINE_ROUTER_DEFAULT_MODEL,
     NINE_ROUTER_PROVIDER,
@@ -213,6 +218,10 @@ class AgentManager:
         if registry:
             metadata["display_name"] = registry["display_name"]
             metadata["description"] = registry["description"]
+        if name == BIG_BROTHER_AGENT_ID:
+            metadata["display_name"] = BIG_BROTHER_DISPLAY_NAME
+            metadata["title"] = BIG_BROTHER_DISPLAY_NAME
+            metadata["description"] = BIG_BROTHER_DESCRIPTION
         config = self._read_config(profile_dir)
         payload = {
             "object": "hermes.agent",
@@ -249,6 +258,8 @@ class AgentManager:
                 if not skill_id or self._find_agent_skill(self.root_profile, skill_id):
                     continue
                 relative = skill_file.parent.relative_to(legacy_skills)
+                if relative.parts[:1] != (BIG_BROTHER_SKILL_CATEGORY,):
+                    relative = Path(BIG_BROTHER_SKILL_CATEGORY) / relative
                 destination = root_skills / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 temporary = destination.parent / (
@@ -1692,6 +1703,12 @@ class AgentManager:
 
     def _agent_name(self, value: Any) -> str:
         name = str(value or "").strip()
+        if name.casefold() in {
+            BIG_BROTHER_AGENT_ID,
+            "big brother",
+            "default",
+        }:
+            return BIG_BROTHER_AGENT_ID
         if not AGENT_NAME_RE.match(name) or ".." in name:
             raise AgentAPIError("agent name is invalid", code="invalid_agent_name")
         return name

@@ -22,6 +22,7 @@ from ..defaults import (
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
     BIG_BROTHER_NATIVE_TOOLSETS,
+    BIG_BROTHER_SKILL_CATEGORY,
     BIG_BROTHER_SKILL_ID,
     LEGACY_BIG_BROTHER_TOOLSET,
 )
@@ -186,6 +187,7 @@ class PlatformService:
             self.repository.atomic_json(metadata_path, next_metadata)
 
         self.agents.migrate_legacy_big_brother_profile()
+        self._migrate_big_brother_skill_category(profile)
         self._ensure_big_brother_toolsets(profile)
         bundled_skill_path = (
             Path(__file__).resolve().parent.parent
@@ -195,7 +197,13 @@ class PlatformService:
             / "SKILL.md"
         )
         bundled_skill = bundled_skill_path.read_text(encoding="utf-8")
-        installed_skill_path = profile / "skills" / BIG_BROTHER_SKILL_ID / "SKILL.md"
+        installed_skill_path = (
+            profile
+            / "skills"
+            / BIG_BROTHER_SKILL_CATEGORY
+            / BIG_BROTHER_SKILL_ID
+            / "SKILL.md"
+        )
         installed_skill = (
             installed_skill_path.read_text(encoding="utf-8")
             if installed_skill_path.is_file()
@@ -204,6 +212,7 @@ class PlatformService:
         if installed_skill != bundled_skill:
             await self.config.install_skill({
                 "skill_id": BIG_BROTHER_SKILL_ID,
+                "category": BIG_BROTHER_SKILL_CATEGORY,
                 "content": bundled_skill,
             })
         self.agents.update_profile_registry(
@@ -212,6 +221,27 @@ class PlatformService:
             description=BIG_BROTHER_DESCRIPTION,
         )
         return self.get_agent(BIG_BROTHER_AGENT_ID)
+
+    def _migrate_big_brother_skill_category(self, profile: Path) -> None:
+        """Move the former root-level bundled skill out of profile inheritance."""
+        legacy = profile / "skills" / BIG_BROTHER_SKILL_ID
+        if not legacy.is_dir():
+            return
+        destination = (
+            profile / "skills" / BIG_BROTHER_SKILL_CATEGORY / BIG_BROTHER_SKILL_ID
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.exists():
+            os.replace(legacy, destination)
+            return
+        archive = (
+            profile
+            / "snapshots"
+            / "migrations"
+            / f"legacy-{BIG_BROTHER_SKILL_ID}-{time.time_ns()}"
+        )
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(legacy, archive)
 
     def _ensure_big_brother_toolsets(self, profile: Path) -> None:
         """Repair required capabilities without removing user-added toolsets."""
@@ -405,7 +435,12 @@ class PlatformService:
 
     async def install_skill(self, agent_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         if agent_id == BIG_BROTHER_AGENT_ID:
-            return (await self.config.install_skill(body))["skills"]
+            return (
+                await self.config.install_skill({
+                    **dict(body),
+                    "category": BIG_BROTHER_SKILL_CATEGORY,
+                })
+            )["skills"]
         payload = await self.agents.install_skill(agent_id, body)
         skill_id = str(body.get("skill_id") or body.get("name") or "").strip()
         if skill_id and "content" in body:

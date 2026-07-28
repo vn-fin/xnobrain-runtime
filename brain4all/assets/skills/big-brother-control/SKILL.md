@@ -41,7 +41,7 @@ user provides a documentation page:
    configured, use `curl -fsSL URL` through `terminal`.
 2. Find its `hermes skills install ...` identifier.
 3. Run the command through `terminal`, adding `--category custom --yes` unless
-   the user explicitly requests another category.
+   the user explicitly requests another profile.
 4. Verify with `hermes skills list`.
 
 For example, the Finance Stocks documentation identifies this command:
@@ -55,17 +55,17 @@ Use `hermes -p PROFILE skills install ... --yes` to install for another
 profile. Use native `skills_list`, `skill_view`, and `skill_manage` for skill
 documents already available in the current session.
 
-Installed skills are profile-owned. Big Brother's custom skills live below
-`$HERMES_HOME/skills/custom/`, which normally resolves to
-`~/.hermes/skills/`. They are global skills owned by the default Hermes
-profile and are available for custom profiles to inherit when enabled.
-default profile's `~/.hermes/skills/` directory.
+Big Brother's installed skills live below `$HERMES_HOME/skills/custom/`,
+normally `~/.hermes/skills/custom/`. They are global skills owned by the
+default Hermes profile. Enabled skills are copied into newly created custom
+profiles.
 
 ## Agents and Profiles
 
 Use `hermes profile list`, `show`, `create`, `describe`, `rename`, `export`,
 and `import` for profile administration. Check the subcommand's `--help`
-before mutation. Do not delete the `big-brother` profile.
+before mutation. Big Brother is the default Hermes profile, exposed through
+the aliases `big-brother`, `default`, and `Big Brother`; do not delete it.
 
 ## Full Hermes Administration
 

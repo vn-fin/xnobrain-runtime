@@ -213,7 +213,10 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self._insert(b, model="m2", inp=200, out=100, est=0.20)
 
             agents = (await client.get("/agent-gateway/v1/analytics/agents")).json()["data"]["agents"]
-            self.assertEqual({row["agent_id"] for row in agents}, {a, b})
+            self.assertEqual(
+                {row["agent_id"] for row in agents},
+                {"big-brother", a, b},
+            )
 
             data = (await client.get("/agent-gateway/v1/analytics/usage")).json()["data"]
             self.assertEqual(data["totals"]["input_tokens"], 300)
@@ -223,8 +226,8 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertAlmostEqual(data["totals"]["cost_usd"], 0.30, places=6)
             self.assertEqual(data["totals"]["cost_basis"], "estimated")
             self.assertEqual({row["model"] for row in data["by_model"]}, {"m1", "m2"})
-            self.assertEqual(len(data["agents"]), 2)
-            self.assertEqual(data["agents_available"], 2)
+            self.assertEqual(len(data["agents"]), 3)
+            self.assertEqual(data["agents_available"], 3)
 
     async def test_parallel_dashboard_endpoints_share_one_computation(self):
         async with self.client() as client:
@@ -292,7 +295,10 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             )).json()["data"]
             self.assertEqual(after["totals"]["total_tokens"], 580)
             self.assertEqual(after["totals"]["cost_usd"], 0.42)
-            self.assertEqual({row["agent_id"] for row in after["agents"]}, {kept})
+            self.assertEqual(
+                {row["agent_id"] for row in after["agents"]},
+                {"big-brother", kept},
+            )
             self.assertTrue(after["attribution"]["deleted_usage_included"])
 
     async def test_time_range_and_bucket(self):

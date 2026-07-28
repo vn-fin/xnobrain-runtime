@@ -175,7 +175,15 @@ class GlobalConfigManager:
         if "content" in body:
             skill_id = self._skill_id(body.get("skill_id") or body.get("name"))
             content = self._text_value(body["content"], field="content", max_chars=MAX_TEXT_CHARS)
-            skill_dir = self.root_profile / "skills" / skill_id
+            category = (
+                self._safe_category(body["category"])
+                if body.get("category")
+                else ""
+            )
+            skill_dir = self.root_profile / "skills"
+            if category:
+                skill_dir /= category
+            skill_dir /= skill_id
             skill_dir.mkdir(parents=True, exist_ok=True)
             self._write_text(skill_dir / "SKILL.md", content, field="content")
             self._snapshot_skill_changes(before, self._skill_files())

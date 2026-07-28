@@ -138,6 +138,14 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse((self.profiles / BIG_BROTHER_AGENT_ID).exists())
         self.assertEqual(first["metadata"]["display_name"], "Big Brother")
+        self.assertEqual(
+            self.composition.service.agents.describe_agent("default")["name"],
+            BIG_BROTHER_AGENT_ID,
+        )
+        self.assertEqual(
+            self.composition.service.agents.describe_agent("Big Brother")["name"],
+            BIG_BROTHER_AGENT_ID,
+        )
         profile_config = yaml.safe_load(
             profile_config_path.read_text(encoding="utf-8")
         )
@@ -171,11 +179,35 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertTrue(
-            (self.root / "skills" / "global-from-big-brother" / "SKILL.md").is_file()
+            (
+                self.root
+                / "skills"
+                / "custom"
+                / "global-from-big-brother"
+                / "SKILL.md"
+            ).is_file()
         )
         self.assertIn(
             "global-from-big-brother",
             {item["skill_id"] for item in installed},
+        )
+        self.assertIn(
+            "global-from-big-brother",
+            {
+                item["skill_id"]
+                for item in self.composition.service.list_default_skills()
+            },
+        )
+
+        custom = self.composition.service.create_agent({"display_name": "Worker"})
+        custom_skill_ids = {
+            item["skill_id"]
+            for item in self.composition.service.list_skills(custom["id"])
+        }
+        self.assertIn("big-brother-control", custom_skill_ids)
+        self.assertIn("global-from-big-brother", custom_skill_ids)
+        self.assertTrue(
+            (self.profiles / custom["id"] / "skills" / "custom").exists()
         )
 
     async def test_big_brother_migrates_legacy_named_profile_data_to_root(self):
@@ -221,7 +253,13 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertTrue(
-            (self.root / "skills" / "custom" / "legacy-installed" / "SKILL.md").is_file()
+            (
+                self.root
+                / "skills"
+                / "custom"
+                / "legacy-installed"
+                / "SKILL.md"
+            ).is_file()
         )
         self.assertEqual(
             migrated["messages"][0]["content"],
