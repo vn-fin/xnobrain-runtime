@@ -495,22 +495,66 @@ class PlatformService:
         return self.config.set_skill_enabled(skill_id, body)["skills"]
 
     async def install_skill(self, agent_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
+        install_body = dict(body)
+        has_payload = "content" in install_body or bool(
+            str(install_body.get("source") or "").strip()
+        )
+        if not has_payload:
+            skill_id = str(
+                install_body.get("skill_id") or install_body.get("name") or ""
+            ).strip()
+            library_skill = next(
+                (
+                    item
+                    for item in self.list_default_skills()
+                    if str(item.get("skill_id") or "") == skill_id
+                ),
+                None,
+            )
+            if library_skill is None:
+                raise ServiceError(
+                    "default profile skill not found",
+                    status=404,
+                    code="skill_not_found",
+                )
+            if self._is_big_brother(agent_id):
+                return self.config.set_skill_enabled(
+                    skill_id,
+                    {"enabled": False},
+                )["skills"]
+            skill_file = Path(str(library_skill.get("path") or "")) / "SKILL.md"
+            try:
+                install_body["content"] = skill_file.read_text(encoding="utf-8")
+            except OSError as exc:
+                raise ServiceError(
+                    "default profile skill is unreadable",
+                    status=500,
+                    code="invalid_skill",
+                ) from exc
+
         if self._is_big_brother(agent_id):
             return (
                 await self.config.install_skill({
-                    **dict(body),
+                    **install_body,
                     "category": CUSTOM_SKILL_CATEGORY,
                     "enable": False,
                 })
             )["skills"]
         payload = await self.agents.install_skill(agent_id, {
-            **dict(body),
+            **install_body,
             "category": CUSTOM_SKILL_CATEGORY,
             "enable": False,
         })
-        skill_id = str(body.get("skill_id") or body.get("name") or "").strip()
-        if skill_id and "content" in body:
-            self.repository.snapshot(agent_id, "skills", skill_id, str(body["content"]).encode())
+        skill_id = str(
+            install_body.get("skill_id") or install_body.get("name") or ""
+        ).strip()
+        if skill_id and "content" in install_body:
+            self.repository.snapshot(
+                agent_id,
+                "skills",
+                skill_id,
+                str(install_body["content"]).encode(),
+            )
         return payload["skills"]
 
     def set_skill_enabled(self, agent_id: str, skill_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:

@@ -566,6 +566,66 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({item["kind"] for item in snapshots}, {"skills", "memory"})
         self.assertFalse((self.root / "skills" / "notes" / "SKILL.md").exists())
 
+    async def test_agent_can_install_existing_default_skill_by_id(self):
+        default_skill = (
+            self.root / "skills" / "custom" / "shared-notes" / "SKILL.md"
+        )
+        default_skill.parent.mkdir(parents=True)
+        default_skill.write_text(
+            "---\n"
+            "name: shared-notes\n"
+            "description: Shared note-taking guidance\n"
+            "---\n"
+            "# Shared notes\n",
+            encoding="utf-8",
+        )
+        self.composition.service.config.set_skill_enabled(
+            "shared-notes",
+            {"enabled": False},
+        )
+
+        async with self.client() as client:
+            created = await client.post(
+                "/agent-gateway/v1/agents",
+                json={"name": "Skill Consumer"},
+            )
+            agent_id = created.json()["data"]["id"]
+            response = await client.post(
+                f"/agent-gateway/v1/agents-skills/{agent_id}",
+                json={
+                    "skill_id": "shared-notes",
+                    "name": "shared-notes",
+                    "category": "custom",
+                    "enable": False,
+                },
+            )
+
+        self.assertEqual(response.status_code, 201, response.text)
+        installed = next(
+            item
+            for item in response.json()["data"]
+            if item["skill_id"] == "shared-notes"
+        )
+        self.assertFalse(installed["enabled"])
+        copied = (
+            self.profiles
+            / agent_id
+            / "skills"
+            / "custom"
+            / "shared-notes"
+            / "SKILL.md"
+        )
+        self.assertEqual(
+            copied.read_text(encoding="utf-8"),
+            default_skill.read_text(encoding="utf-8"),
+        )
+        snapshots = self.composition.service.repository.list_snapshots(
+            agent_id,
+            "skills",
+        )
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0]["target"], "shared-notes")
+
     async def test_default_and_agent_skill_catalogs_stay_profile_scoped(self):
         default_skill = self.root / "skills" / "office" / "default-notes" / "SKILL.md"
         default_skill.parent.mkdir(parents=True)
