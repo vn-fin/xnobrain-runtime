@@ -55,10 +55,11 @@ per provider, blends, teams, boards, channels, cron jobs, MCP servers — differ
 the two on a self-hosted install.
 
 **Deployment is a separate axis.** This spec describes the self-hosted runtime. The same
-build also runs as **Brain4All Cloud** (Cloud Pro / Cloud Pro Max) on our servers, where
-CPU, RAM, agent count, run-minutes, provider connections, and history retention are sized
-by plan — because we pay for that hardware. Capabilities are identical; only quantities
-differ. Packaging, cloud limits, and enforcement: [`plans.md`](plans.md).
+build also runs as **Brain4All Cloud** (Cloud Free / Cloud Pro / Cloud Pro Max) on our
+servers, where CPU, RAM, agent count, run-minutes, provider connections, and retention are
+sized by plan because Brain4All pays for the hardware. Cloud Free has the Free capability
+set; Cloud Pro and Pro Max have the Pro capability set. Packaging, limits, and
+enforcement: [`plans.md`](plans.md).
 
 ---
 

@@ -13,7 +13,7 @@ decisions. Confusing them is the single biggest source of error in the old spec.
 
 | | **Self-hosted** (your hardware) | **Cloud** (our servers) |
 |---|---|---|
-| **OSS** | Free · Pro | Cloud Pro · Cloud Pro Max |
+| **OSS** | Free · Pro | Cloud Free · Cloud Pro · Cloud Pro Max |
 | **Enterprise** | Enterprise (self-hosted, incl. air-gapped) | Enterprise Cloud (managed) |
 
 - **Edition** decides *capabilities*, and the editions are strictly cumulative:
@@ -197,13 +197,15 @@ Both editions can be hosted:
 
 | Cloud offering | Edition | Tenant | Plans |
 |---|---|---|---|
+| **Cloud Free** | OSS Free | Personal, 1 seat | Free, resource-limited |
 | **Cloud Pro** | OSS Pro | Personal, 1 seat | Pro |
 | **Cloud Pro Max** | OSS Pro | Personal, 1 seat | Pro Max (≈5× Pro) |
 | **Enterprise Cloud** | Enterprise | Organization | Per-seat, contracted resources |
 
-**There is no free cloud tier.** Free means "run it yourself" — that is what keeps Free
-sustainable and honest. A time-boxed Pro trial (recommended: 14 days, Pro sizing) is the
-on-ramp, not a permanent free container.
+Cloud Free is permanent and provides the complete Free capability set with conservative
+resource limits, aggressive idle suspension, and abuse controls. A time-boxed Pro trial
+may temporarily raise its capabilities and resources, but the account returns to Cloud
+Free when the trial ends without deleting data.
 
 ### 7.1 Why cloud has limits at all
 
@@ -214,6 +216,7 @@ Cloud plans therefore size **resources**, never features:
 > A cloud user on Pro can do **everything** an OSS Pro user can do. They can just do less
 > of it at once. If a cloud plan ever hides a *capability*, that is a spec violation —
 > capabilities belong to the edition axis.
+> Cloud Free follows the same rule for the OSS Free capability set.
 
 ### 7.2 What we limit — and the recommended values
 
@@ -221,33 +224,33 @@ Cloud plans therefore size **resources**, never features:
 safety-sensitive settings, where scaling 5× buys nothing and risks runaway cost.
 
 #### Compute (container sizing)
-| Limit | Cloud Pro | Cloud Pro Max | Why |
-|---|---:|---:|---|
-| vCPU (cgroup cap, burstable) | 2 | 8 | Agent turns are bursty; cap sustained use, allow short bursts |
-| RAM | 4 GB | 16 GB | One runtime + gateway + a few concurrent turns |
-| Disk (profile + workspace) | 20 GB | 100 GB | Workspace files dominate |
-| Concurrent agent turns | 3 | 15 | The real CPU governor |
-| **Idle suspend** | after 20 min idle | after 20 min idle | *Same on both* — the single biggest cost lever (§7.4) |
+| Limit | Cloud Free | Cloud Pro | Cloud Pro Max | Why |
+|---|---:|---:|---:|---|
+| vCPU (cgroup cap, burstable) | 1 | 2 | 8 | Agent turns are bursty |
+| RAM | 2 GB | 4 GB | 16 GB | Runtime and concurrent work |
+| Disk (profile + workspace) | 5 GB | 20 GB | 100 GB | Workspace files dominate |
+| Concurrent agent turns | 1 | 3 | 15 | Primary CPU governor |
+| **Idle suspend** | after 10 min | after 20 min | after 20 min | Primary cost control |
 
 #### Countable objects
-| Limit | Cloud Pro | Cloud Pro Max |
-|---|---:|---:|
-| Agents | 20 | 100 |
-| Agent teams / agents per team | 10 / 10 | 50 / 50 |
-| Provider connections per provider (accounts) | 5 | 25 |
-| MCP servers | 25 | 125 |
-| Message channels per agent | 5 | 25 |
-| Installed marketplace skills | 100 | 500 |
-| Kanban boards / active tasks | 5 / 500 | 25 / 2,500 |
+| Limit | Cloud Free | Cloud Pro | Cloud Pro Max |
+|---|---:|---:|---:|
+| Agents | 3 | 20 | 100 |
+| Agent teams / agents per team | 1 / 3 | 10 / 10 | 50 / 50 |
+| Provider connections per provider (accounts) | 1 | 5 | 25 |
+| MCP servers | 3 | 25 | 125 |
+| Message channels per agent | 1 | 5 | 25 |
+| Installed marketplace skills | 0 | 100 | 500 |
+| Kanban boards / active tasks | 1 / 100 | 5 / 500 | 25 / 2,500 |
 
 #### Scheduled execution (the metered dimension)
-| Limit | Cloud Pro | Cloud Pro Max |
-|---|---:|---:|
-| Cron job definitions | 50 | 250 |
-| **Agent run-minutes / month** | 3,000 | 15,000 |
-| Parallel cron runs | 5 | 25 |
-| Max duration of a single run | 15 min | **30 min** *(not 5×)* |
-| Max runs / day | 250 | 1,250 |
+| Limit | Cloud Free | Cloud Pro | Cloud Pro Max |
+|---|---:|---:|---:|
+| Cron job definitions | 5 | 50 | 250 |
+| **Agent run-minutes / month** | 200 | 3,000 | 15,000 |
+| Parallel cron runs | 1 | 5 | 25 |
+| Max duration of a single run | 10 min | 15 min | **30 min** *(not 5×)* |
+| Max runs / day | 20 | 250 | 1,250 |
 
 > **Recommendation — meter run-minutes, not cron runs.** A 30-second cron job and a
 > 12-minute one cost us wildly different amounts. Bill the wall-clock **execution minutes
@@ -256,17 +259,17 @@ safety-sensitive settings, where scaling 5× buys nothing and risks runaway cost
 > number the user can understand, directly proportional to our cost.
 
 #### Storage & retention
-| Limit | Cloud Pro | Cloud Pro Max |
-|---|---:|---:|
-| Chat session history (full content) | 12 months | 24 months |
-| Usage analytics — detailed | 90 days | 180 days |
-| Usage analytics — **daily rollups** | forever | forever |
-| Cron/team run logs | 30 days | 90 days |
-| Workspace files | 5 GB | 25 GB |
-| Portable-bundle backups retained | 3 | 10 |
-| **Skill/memory snapshot versions per agent** | 30 | 150 |
-| **Skill/memory snapshot storage (total)** | 2 GB | 10 GB |
-| Automatic snapshot frequency | daily | daily |
+| Limit | Cloud Free | Cloud Pro | Cloud Pro Max |
+|---|---:|---:|---:|
+| Chat session history (full content) | 30 days | 12 months | 24 months |
+| Usage analytics — detailed | 30 days | 90 days | 180 days |
+| Usage analytics — **daily rollups** | forever | forever | forever |
+| Cron/team run logs | 7 days | 30 days | 90 days |
+| Workspace files | 1 GB | 5 GB | 25 GB |
+| Portable-bundle backups retained | 1 | 3 | 10 |
+| **Skill/memory snapshot versions per agent** | 0 | 30 | 150 |
+| **Skill/memory snapshot storage (total)** | 0 | 2 GB | 10 GB |
+| Automatic hosted snapshot frequency | — | daily | daily |
 
 > **Note — snapshot storage is the one quota that also applies to self-hosted Pro.**
 > Everything else in §7 is cloud-only, because it is our container. Snapshot bytes sit on
@@ -369,7 +372,7 @@ deployment, not edition (self-hosted = unlimited; cloud = §7).
 | Governance policy (models, tools, MCP, skills) | ⛔ | ⛔ | ➕ |
 | Audit log, retention/residency, SIEM | ⛔ | ⛔ | ➕ |
 | Managed backup / DR, license management | ⛔ | ⛔ | ➕ |
-| Managed cloud hosting | ⛔ | ⛔ | ➕ |
+| Enterprise Cloud governance | ⛔ | ⛔ | ➕ |
 
 ### Tenancy & billing
 | | Free | Pro | Enterprise |
@@ -379,7 +382,7 @@ deployment, not edition (self-hosted = unlimited; cloud = §7).
 | Add members | ⛔ | ⛔ | ✅ |
 | Sign-in required | No | Yes | Yes |
 | Self-hosted | ✅ | ✅ | ✅ |
-| Cloud (our servers) | ⛔ *(trial only)* | ✅ Pro / Pro Max | ✅ contracted |
+| Cloud (our servers) | ✅ Cloud Free | ✅ Pro / Pro Max | ✅ contracted |
 | Billing | Free | Per-user subscription (+ cloud tier) | Per-seat contract |
 
 ---
@@ -423,48 +426,19 @@ the org gateway with org-held keys, metered into the central usage database.
 
 ---
 
-## 10. Divergence from current `docs/plans.md` (required revisions)
+## 10. Engineering references
 
-The engineering contract in `docs/plans.md` mostly needs **re-labelling, not deletion**:
-its quota table is a *cloud* table that is currently presented as a *plan* table. Apply:
+The shorter engineering contract is [`../../docs/plans.md`](../../docs/plans.md).
+Implementations must also follow:
 
-1. **Split the table in two.** One table of **capability flags by edition**
-   (free / pro / enterprise) and one table of **resource quotas by cloud plan**
-   (`cloud_pro` / `cloud_pro_max` / `cloud_enterprise`). Today's single table conflates
-   them, which is what makes it read as wrong.
-2. **`promax` survives as a cloud sizing tier, not an edition.** Rename to
-   `cloud_pro_max`. A self-hosted user is never on Pro Max — there is nothing for it to
-   size.
-3. **Every "Managed *" row moves to the cloud table** and resolves `-1` when self-hosted:
-   managed agents, sandboxes, teams, agents per team, MCP servers, cron definitions/runs,
-   parallel runs, provider connections/type. On self-hosted these must be **unlimited for
-   both `free` and `pro`** — the current Free 4 agents / Pro 20 and Free 1 / Pro 5
-   provider-connections split must not apply to a self-hosted install.
-4. **`free` gets no cloud row.** There is no free managed container (§7). Add a
-   `cloud_trial` entry (Pro sizing, 14 days) instead.
-5. **Add four capability flags** as the *only* Free↔Pro difference:
-   `marketplace.install`, `marketplace.publish`, `voice.stt`, `snapshots.versions` —
-   `0` on `free`, `-1`/allowance on `pro` and `enterprise`. Enterprise must **inherit**
-   the Pro set rather than redeclare it, so a Pro capability can never be lost by
-   upgrading.
-6. **Move Voice I/O back into the local product as a Pro capability.** Plan `006_voice_io`
-   was relocated to `plans/enterprise/E04`; speech-to-text must ship in the OSS runtime
-   behind the `voice.stt` entitlement, with E04 remaining the *org-managed gateway*
-   variant for Enterprise.
-7. **Add message channels** (plan `005_messaging_channels`) to the local feature contract
-   as unlimited in all editions, and to the cloud table as channels-per-agent.
-8. **Replace cron-run counters with `run_minutes_per_month`** as the primary metered
-   dimension (§7.2), keeping runs/day only as an abuse guard.
-9. **Add the compute rows** the current table has no concept of: vCPU, RAM, disk,
-   concurrent turns, idle-suspend threshold.
-10. **Add retention-rollup semantics** (§7.2): detailed retention is a window; daily
-    rollups are permanent. Current retention rows (7 / 90 / 365 days) stay, but as
-    *detailed* retention only.
-11. **Add snapshot-storage quotas** (`snapshot_versions_per_agent`,
-    `snapshot_storage_bytes`) with the unusual property that they apply to **Pro on any
-    deployment**, self-hosted included — they are the only numeric limits that are not
-    cloud-only, because the bytes are ours either way.
+- [`../../docs/contracts/entitlements-v1.md`](../../docs/contracts/entitlements-v1.md)
+  for capability and quota decisions;
+- [`../../docs/contracts/device-command-v1.md`](../../docs/contracts/device-command-v1.md)
+  for outbound commands and encrypted cross-runtime collaboration;
+- [`../../docs/contracts/portable-bundle-v1.md`](../../docs/contracts/portable-bundle-v1.md)
+  for agent import, export, and managed backup compatibility.
 
-All other invariants stand: self-hosted local features stay unlimited; telemetry is never
-a billing source of truth; conversation content never centralizes; `401`/`403`/`429`
-semantics unchanged.
+Recommended numeric cloud limits may change after cost testing. The edition boundaries,
+single-user versus organization tenancy, self-hosted unlimited rule, privacy guarantees,
+and no-data-loss downgrade behavior are product contracts and require an explicit spec
+revision to change.

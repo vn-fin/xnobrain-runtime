@@ -1,88 +1,112 @@
 # Product editions and deployment modes
 
-This is the product contract for Brain4All. Deployment mode and subscription
-plan are separate decisions: self-hosting never limits local Hermes features,
-while authenticated Enterprise API features follow the account plan.
+This is the engineering summary of the product contract. The canonical product details
+are:
+
+- [simple comparison](../product/specs/compare-features.md)
+- [OSS specification](../product/specs/oss.md)
+- [Enterprise specification](../product/specs/enterprise.md)
+- [plans and cloud limits](../product/specs/plans.md)
+- [entitlements protocol](contracts/entitlements-v1.md)
+
+## Product rules
+
+- Edition controls capabilities; deployment controls resources.
+- `free` and `pro` are single-user personal editions.
+- `enterprise` includes Pro and adds organizations, collaboration, governance, and
+  administration.
+- Self-hosted local resources resolve to unlimited.
+- Cloud resources are limited because Brain4All supplies the hardware.
+- Downgrade or quota exhaustion pauses or makes resources read-only; it never deletes
+  user data.
 
 ## Runtime ownership
 
-`brain4all` owns the frontend and combined FastAPI/Hermes/9router Docker
-runtime. It supports agents, profiles, skills, memory, MCP, providers, teams,
-conversations, and local cron scheduling without an application database.
+`brain4all` owns the React application and combined Python/FastAPI/Hermes/9router
+runtime. It owns local agents, profiles, skills, memory, MCP, providers, teams,
+conversations, Kanban, and cron without an application database.
 
-`brain4all-enterprise` owns the authenticated Enterprise API, PostgreSQL plan
-metadata, ClickHouse telemetry storage, trace ingestion, aggregate metric APIs,
-future collaboration features, and managed/Incus cloud packaging. It consumes
-the released OSS runtime interface rather than forking the `brain4all`
-application package.
+`brain4all-enterprise` owns the Go control plane, PostgreSQL, authentication, tenants,
+plans, billing-grade quota state, RBAC, audit, fleet management, encrypted collaboration
+relay, hosted services, and managed cloud packaging. It consumes released OSS contracts
+and must not fork the OSS runtime.
+
+## Edition capabilities
+
+| Capability | Free | Pro | Enterprise |
+|---|:--:|:--:|:--:|
+| Complete single-user runtime | ✅ | ✅ | ✅ |
+| Marketplace install and publish | — | ✅ | ✅ |
+| Speech-to-text | — | ✅ | ✅ |
+| Hosted skill/memory versions | — | ✅ | ✅ |
+| Organizations and many users | — | — | ✅ |
+| Custom organization Kanban | — | — | ✅ |
+| Cross-user agent teams | — | — | ✅ |
+| SSO, SCIM, RBAC and administration | — | — | ✅ |
+| Central usage and enforced budgets | — | — | ✅ |
+| Audit, policy and fleet management | — | — | ✅ |
+
+The four entitlement flags that distinguish Free from Pro are
+`marketplace.install`, `marketplace.publish`, `voice.stt`, and
+`snapshots.versions`. Marketplace install and publish are one product service group.
+Enterprise inherits every Pro flag.
 
 ## Deployment behavior
 
-| Deployment | Login | Local Hermes access | Enterprise API features | Enforcement |
-|---|---|---|---|---|
-| Self-hosted, signed out | Optional | Unlimited | None | No local agent, skill, MCP, provider, team, or cron quotas |
-| Self-hosted, signed in | Required only for extensions | Unlimited | Usage, traces, metrics, and plan features | Plan applies only to Enterprise API features |
-| Cloud | Required | Managed Incus runtime | Usage, traces, metrics, and future collaboration | Plan applies to managed resources and Enterprise features |
+| Deployment | Login | Capability set | Resource enforcement |
+|---|---|---|---|
+| Self-hosted Free | Optional | Free | Local resources unlimited |
+| Self-hosted Pro | Required for paid services | Pro | Local resources unlimited |
+| Cloud Free | Required | Free | `cloud_free` limits |
+| Cloud Pro | Required | Pro | `cloud_pro` limits |
+| Cloud Pro Max | Required | Pro | `cloud_pro_max` limits |
+| Enterprise self-hosted | Required; air-gap supported | Enterprise | Contract/customer hardware |
+| Enterprise Cloud | Required | Enterprise | Contracted org limits |
 
-The default Compose mode is self-hosted and signed out. It continues to work
-without Internet or an authentication service. The Enterprise API is external
-to this stack; authenticated routes remain unavailable until
-`ENTERPRISE_API_URL` is configured and a user signs in.
+The default Compose deployment is self-hosted and signed out. It must continue to work
+without Internet, login, or an Enterprise API.
 
-## Plans
+## Cloud quota model
 
-The stable plan IDs are `free`, `pro`, `promax`, and `enterprise`. The `free`
-ID is displayed as **Basic**. Newly authenticated testing accounts default to
-`free` until subscription integration is implemented.
+The recommended values live in
+[the product plan](../product/specs/plans.md#72-what-we-limit--and-the-recommended-values).
+The control plane stores them as versioned plan data rather than hard-coding them into
+the OSS runtime.
 
-| Capability | Basic (`free`) | Pro | Pro Max | Enterprise (Business) |
-|---|---:|---:|---:|---:|
-| Self-hosted local Hermes features | Unlimited | Unlimited | Unlimited | Unlimited |
-| Managed telemetry | ✅ | ✅ | ✅ | ✅ |
-| Trace and dependency explorer | ✅ | ✅ | ✅ | ✅ |
-| Usage and runtime dashboards | ✅ | ✅ | ✅ | ✅ |
-| Telemetry retention | 7 days | 90 days | 180 days | 365 days |
-| Managed agents | 4 | 20 | 100 | Custom/unlimited |
-| Managed sandboxes | 1 | 1 | 5 | Custom/unlimited |
-| Managed teams | 1 | 10 | 50 | Custom/unlimited |
-| Agents per managed team | 2 | 10 | 50 | Custom/unlimited |
-| Managed MCP servers | 5 | 25 | 125 | Custom/unlimited |
-| Provider connections/type | 1 | 5 | 25 | Custom/unlimited |
-| Managed cron definitions | 4 | 50 | 250 | Custom/unlimited |
-| Parallel managed cron runs | 1 | 5 | 25 | Custom/unlimited |
-| Managed cron runs/day | 10 | 250 | 1,250 | Custom/unlimited |
-| Managed cron runs/month | 200 | 5,000 | 25,000 | Custom/unlimited |
-| Managed telemetry events/day | 100,000 | 1,000,000 | 5,000,000 | Custom/unlimited |
-| RBAC/shared workspaces | ❌ | ❌ | Planned | Planned/contract |
-| SSO and audit policy | ❌ | ❌ | ❌ | Planned/contract |
+Initial resource names include:
 
-Pro Max quantitative allowances are five times Pro except for safety-sensitive
-depth and retention settings. Numeric `-1` means unlimited; zero means a feature
-is unavailable.
+- vCPU, RAM, disk, concurrent turns, and idle-suspend threshold;
+- agents, teams, agents per team, provider accounts, MCP servers, channels, skills,
+  boards, and tasks;
+- cron definitions, parallel runs, run-minutes, run duration, and runs per day;
+- workspace bytes, backup count, detailed-history retention, snapshot versions, and
+  snapshot bytes.
 
-## Telemetry boundary
+Numeric `-1` means unlimited and `0` means unavailable. Cloud Free is permanent. A Pro
+trial is a temporary entitlement overlay; expiry returns the tenant to Cloud Free
+without deleting data.
 
-Telemetry is available only to an authenticated account or claimed device:
+## Enforcement
 
-```text
-FastAPI/runtime -> OTel Collector -> Enterprise API -> ingest channel
-               -> fixed workers -> ClickHouse -> aggregate/filter APIs -> UI
-```
+- `Check` is advisory; `Reserve`, `Commit`, and `Release` are authoritative.
+- Cloud count and usage limits are transactional in PostgreSQL.
+- Self-hosted local capabilities remain available when the control plane is offline.
+- Missing authentication returns `401`, unavailable capability returns `403`, exhausted
+  quota returns `429`, and oversized input returns `413`.
+- Telemetry and HTTP headers are never accounting state.
+- No service uses an ORM.
 
-The system stores spans, body-free operational log metadata, safe span events, token/character counts, costs,
-latency, errors, dependency identifiers, and runtime CPU/memory/disk/network
-metrics. It does not duplicate Hermes chat logs, prompts, responses, memories,
-skill contents, tool arguments, credentials, or profile files. Conversation,
-session, and agent references are opaque links back to Hermes-owned history.
+## Privacy boundary
 
-## Enforcement rules
+The control plane stores safe metadata, counts, operational events, and audit records. It
+does not store plaintext prompts, responses, memories, skill content, tool arguments,
+credentials, or profile files.
 
-- Self-hosted OSS services always resolve unlimited local limits, even when the
-  Enterprise API is offline or the signed-in plan is Basic.
-- Cloud services enforce count and usage limits atomically in PostgreSQL.
-- Enterprise telemetry ingestion authenticates before assigning a tenant and
-  derives retention from that tenant's plan.
-- Quota exhaustion returns `429`; unavailable paid features return `403`;
-  missing login returns `401`.
-- Telemetry is never a billing source of truth.
-- No service may use an ORM.
+Cross-user task inputs, attachments, and results may be relayed only as end-to-end
+encrypted payloads under the [device command protocol](contracts/device-command-v1.md).
+Hosted skill/memory snapshots are client-side encrypted. Enterprise escrow use is
+permissioned, justified, and audited.
+
+Before cross-user execution ships, freeze a separate `collaboration-payload-v1` contract
+for the encrypted inner payload. The existing device contract remains the delivery
+envelope.

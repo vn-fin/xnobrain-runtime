@@ -34,9 +34,10 @@ people, oversight of them, and control over what they can do.
 - **Deployments (members' runtimes):** unchanged OSS instances, enrolled to the control
   plane by an outbound-only device identity. They **push** metadata to the center; the
   center never needs an inbound connection (NAT-safe).
-- **Privacy boundary (absolute):** only **metadata and counts** cross the wire — tokens,
-  cost, task/session status, device health. **Conversation content — prompts, responses,
-  tool arguments, titles, files — never leaves the member's machine.**
+- **Privacy boundary:** the control plane stores metadata and counts — tokens, cost,
+  task/session status, device health — but not plaintext conversation content.
+  Cross-account collaboration and hosted snapshots may cross the wire only as
+  client-side ciphertext under the rules in §2.8 and §2.12.
 
 ### Governing invariants
 - **Enterprise never restricts local operation.** A control-plane outage or lost
@@ -113,13 +114,18 @@ local runtime behaves.
 - Voice minutes metered into the same central usage database, chargeable to a cost center.
 
 ### 2.7 Enterprise boards — cross-account Kanban  *(E07 — new)*
-- One **org-owned** Kanban whose tasks can be assigned across **accounts, agents, and
-  agent-teams** (unlike OSS's per-user local board).
+- Org-owned boards whose tasks can be assigned across **accounts, agents, and
+  agent-teams** (unlike OSS's per-user board with fixed stages).
+- An authorized board manager can define stage names, order, colors, allowed
+  transitions, stage-level permissions, approval gates, work-in-progress limits, and
+  automation rules. The product ships a simple default template.
+- Deleting a stage requires an explicit destination for its open tasks. Published stage
+  changes are versioned and audited.
 - Admin creates boards and assigns tasks; the control plane **dispatches** each task to
   the assignee's runtime (`board.task.dispatch` over device-command-v1), which
   materializes it into the target agent's **local** board and runs it locally.
 - Status/progress flow back as idempotent snapshots; the admin watches all assignees
-  move Backlog → In Progress → Done on one board, with "runs on <member>·<device>"
+  move through the board's configured stages with "runs on <member>·<device>"
   provenance.
 - Offline-safe (spooled dispatch + status); RBAC-gated (`boards.assign`); **no
   conversation content is centralized** — task titles/descriptions are admin-authored
@@ -131,10 +137,19 @@ local runtime behaves.
   members' runtimes**.
 - The orchestrator dispatches each step over the same outbound `device-command-v1`
   channel used by enterprise boards; each worker runs locally on its owner's machine.
+- Cross-account task inputs, attachments, and results are end-to-end encrypted for the
+  enrolled sender and recipient runtimes. The control plane may relay ciphertext and
+  store delivery metadata, but cannot read collaboration content.
 - Run history, per-step status, and token/cost roll up to the org dashboards with
   "ran on <member>·<device>" provenance.
 - RBAC-gated: composing a cross-account team requires an explicit permission; a member's
   runtime only accepts steps for teams its owner is enrolled in.
+- Every dispatch has a signed identity, content hash, expiration, replay key,
+  cancellation state, and size limit. Offline delivery is retried idempotently and
+  expired work is never started.
+- Before implementation, freeze a `collaboration-payload-v1` contract for the encrypted
+  inner payload. `device-command-v1` remains the delivery envelope and must not be
+  reinterpreted incompatibly.
 
 ### 2.9 Private skill catalog  *(program)*
 - An **org-internal marketplace** alongside (or instead of) the public one: skills
@@ -194,11 +209,13 @@ every seat has it. Enterprise adds the org's stake in it:
 - **Connectivity:** deployments connect outbound-only (TLS 443, NAT-safe); no inbound to
   member machines.
 - **Availability:** control-plane outage never degrades local runtimes.
-- **Privacy:** metadata/counts only leave a machine; conversation content, prompts,
-  responses, tool args, titles, files, and credentials never do. Skill/memory snapshots
-  (§2.12) are the sole payload that leaves, and they leave **encrypted client-side** —
-  the control plane stores ciphertext and can decrypt only via an explicit, audited
-  org-escrow operation.
+- **Privacy:** the control plane receives metadata/counts and may relay encrypted
+  collaboration payloads. Conversation content, prompts, responses, tool args, titles,
+  files, and credentials are never stored there as plaintext. Skill/memory snapshots
+  (§2.12) and cross-account collaboration payloads (§2.8) leave a runtime only as
+  client-side ciphertext. Snapshot ciphertext can be decrypted only through an explicit,
+  audited org-escrow operation; collaboration ciphertext is readable only by enrolled
+  sender and recipient runtimes.
 - **Security:** Ed25519 device identity; hashed/rotating tokens; credentials in
   vault/9router, never logged or returned.
 - **Accounting integrity:** exactly-once via snapshot upserts; idempotent commands.
