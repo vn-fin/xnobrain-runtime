@@ -298,8 +298,8 @@ npm --prefix "$project_dir/src" ci --no-audit --no-fund
 cleanup_frontend_npmrc
 trap - EXIT
 
-# Install the workspace policy into the default profile and every existing
-# named profile. Existing customized files are snapshotted before replacement.
+# Install an independent seed for future profiles and refresh Big Brother's
+# packaged guidance. Existing named profiles remain untouched.
 bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$hermes_home/profiles"
 
 # Match the Docker runtime's private 9router identity. The API adapter and

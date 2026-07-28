@@ -10,6 +10,8 @@ from tempfile import TemporaryDirectory
 from typing import Any
 from unittest.mock import patch
 
+import yaml
+
 from brain4all.integrations.hermes import AgentAPIError, AgentManager
 from brain4all.integrations.nine_router import (
     NINE_ROUTER_API_BASE_URL,
@@ -263,19 +265,21 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             root_profile = root / "root"
+            profile_template = root / "profile-template"
             (root_profile / "skills" / "office" / "writer").mkdir(parents=True)
             (root_profile / "memories").mkdir()
             (root_profile / "plugins" / "calendar").mkdir(parents=True)
             (root_profile / "cron").mkdir()
             (root_profile / "home").mkdir()
+            profile_template.mkdir()
             (root_profile / "config.yaml").write_text(
-                "model:\n  default: auto\nterminal:\n  home_mode: profile\n",
+                "model:\n  default: big-brother-model\n",
                 encoding="utf-8",
             )
-            (root_profile / "SOUL.md").write_text("Office assistant\n", encoding="utf-8")
-            (root_profile / "AGENTS.md").write_text("Office rules\n", encoding="utf-8")
+            (root_profile / "SOUL.md").write_text("Mutable Big Brother\n", encoding="utf-8")
+            (root_profile / "AGENTS.md").write_text("Mutable Big Brother rules\n", encoding="utf-8")
             (root_profile / "memories" / "MEMORY.md").write_text(
-                "Baseline office conventions\n",
+                "Big Brother private memory\n",
                 encoding="utf-8",
             )
             (root_profile / "plugins" / "calendar" / "config.yaml").write_text(
@@ -294,10 +298,23 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 "# Writer\n",
                 encoding="utf-8",
             )
+            (profile_template / "config.yaml").write_text(
+                "model:\n  default: auto\nterminal:\n  home_mode: profile\n",
+                encoding="utf-8",
+            )
+            (profile_template / "SOUL.md").write_text(
+                "Office assistant\n",
+                encoding="utf-8",
+            )
+            (profile_template / "AGENTS.md").write_text(
+                "Office rules\n",
+                encoding="utf-8",
+            )
             manager = AgentManager(
                 root_profile=root_profile,
                 profiles_root=root / "profiles",
                 legacy_agents_root=root / "legacy",
+                profile_template=profile_template,
             )
 
             payload, status = manager.create_agent({"name": "office1"})
@@ -307,11 +324,18 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue((profile / "state.db").is_file())
             self.assertTrue((profile / "profile.yaml").is_file())
             self.assertTrue((profile / "skills" / "office" / "writer" / "SKILL.md").is_file())
+            self.assertFalse((profile / "memories" / "MEMORY.md").exists())
+            self.assertFalse((profile / "plugins" / "calendar" / "config.yaml").exists())
             self.assertEqual(
-                (profile / "memories" / "MEMORY.md").read_text(encoding="utf-8"),
-                "Baseline office conventions\n",
+                (profile / "SOUL.md").read_text(encoding="utf-8"),
+                "Office assistant\n",
             )
-            self.assertTrue((profile / "plugins" / "calendar" / "config.yaml").is_file())
+            self.assertEqual(
+                yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))[
+                    "model"
+                ]["default"],
+                "auto",
+            )
             self.assertFalse((profile / "cron" / "ticker_heartbeat").exists())
             self.assertFalse((profile / "home" / "runtime-cache").exists())
             for dirname in ("sessions", "logs", "memories", "cron", "plugins", "home"):

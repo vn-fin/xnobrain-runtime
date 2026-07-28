@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import copy
 from datetime import datetime, timedelta, timezone
-import hashlib
 from pathlib import Path
 import time
 from typing import Any, Mapping
@@ -169,18 +168,7 @@ class AnalyticsService:
                 "currency": str(patch.get("currency") or "USD"),
             }
         if path.is_file():
-            payload = path.read_bytes()
-            if path.parent == self.agents.root_profile:
-                digest = hashlib.sha256(payload).hexdigest()
-                snapshot = (
-                    path.parent / "snapshots" / "config" / "config"
-                    / f"{time.time_ns()}-{digest[:12]}.yaml"
-                )
-                self.repository.atomic_write(
-                    snapshot, payload, mode=0o440, replace=False
-                )
-            else:
-                self.repository.snapshot(agent_id, "config", "config", payload)
+            self.repository.snapshot(agent_id, "config", "config", path.read_bytes())
         self.repository.atomic_yaml(path, new_config)
         self._merged.clear()
         return self._budget_status(agent_id, item)
@@ -492,8 +480,7 @@ class AnalyticsService:
         }
 
     def _read_config(self, agent_id: str) -> tuple[dict[str, Any], Path]:
-        item = self.agents.describe_agent(agent_id, include_memory=False)
-        path = Path(str(item["profile_path"])) / "config.yaml"
+        path = self.repository.profile_path(agent_id) / "config.yaml"
         if not path.is_file():
             return {}, path
         try:

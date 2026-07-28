@@ -63,8 +63,8 @@ METADATA_FILE = "agent.json"
 PROFILES_REGISTRY_FILE = "profiles.yaml"
 CREDENTIAL_FILES = (".env", "auth.json")
 AGENT_CREDENTIAL_ENV_KEYS = ("NINE_ROUTER_API_KEY",)
-SEED_FILES = ("config.yaml", "SOUL.md", "AGENTS.md", "mcp.json", *CREDENTIAL_FILES)
-SEED_DIRS = ("memories", "plugins")
+TEMPLATE_FILES = ("config.yaml", "SOUL.md", "AGENTS.md", "mcp.json")
+TEMPLATE_DIRS = ("memories", "plugins")
 PROFILE_STATE_DIRS = (
     "skills",
     "sessions",
@@ -99,6 +99,7 @@ class AgentManager:
         root_profile: str | Path | None = None,
         profiles_root: str | Path | None = None,
         legacy_agents_root: str | Path | None = None,
+        profile_template: str | Path | None = None,
     ):
         self.root_profile = Path(
             root_profile
@@ -116,6 +117,18 @@ class AgentManager:
             or os.environ.get("HERMES_LEGACY_AGENTS_ROOT")
             or os.environ.get("HERMES_AGENTS_ROOT")
             or self.root_profile.parent / "legacy-agents"
+        )
+        configured_template = (
+            profile_template
+            or os.environ.get("BRAIN4ALL_PROFILE_TEMPLATE")
+            or self.root_profile / "profile-template"
+        )
+        configured_template = Path(configured_template)
+        bundled_template = Path(__file__).resolve().parents[2] / "runtime" / "profile-templates"
+        self.profile_template = (
+            configured_template
+            if configured_template.is_dir()
+            else bundled_template
         )
         self.nine_router = NineRouterManager()
         self._active_runs: dict[str, dict[str, Any]] = {}
@@ -1824,19 +1837,22 @@ class AgentManager:
         return path
 
     def _copy_seed_profile(self, profile_dir: Path, *, copy_credentials: bool) -> None:
-        for filename in SEED_FILES:
-            if not copy_credentials and filename in CREDENTIAL_FILES:
-                continue
-            src = self.root_profile / filename
+        for filename in TEMPLATE_FILES:
+            src = self.profile_template / filename
             if src.is_file():
                 shutil.copy2(src, profile_dir / filename)
-        for dirname in SEED_DIRS:
-            src = self.root_profile / dirname
+        for dirname in TEMPLATE_DIRS:
+            src = self.profile_template / dirname
             dst = profile_dir / dirname
             if src.is_dir():
                 if dst.exists():
                     shutil.rmtree(dst)
                 shutil.copytree(src, dst)
+        if copy_credentials:
+            for filename in CREDENTIAL_FILES:
+                src = self.root_profile / filename
+                if src.is_file():
+                    shutil.copy2(src, profile_dir / filename)
 
     def _copy_root_skills(self, profile_dir: Path, *, overwrite: bool) -> list[str]:
         skills_root = self.root_profile / "skills"
@@ -1907,7 +1923,7 @@ class AgentManager:
         target = workspace_dir / "AGENTS.md"
         if target.is_file():
             return
-        for source in (profile_dir / "AGENTS.md", self.root_profile / "AGENTS.md"):
+        for source in (profile_dir / "AGENTS.md", self.profile_template / "AGENTS.md"):
             if source.is_file():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)

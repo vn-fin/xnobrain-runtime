@@ -36,6 +36,11 @@ cron, log, MCP, and snapshot data. Portable bundles exclude `.env`,
 credentials, logs, caches, and provider secrets; imported approvals reset to
 manual and imported cron jobs are paused.
 
+New named profiles are seeded from the installer-managed
+`HERMES_ROOT_PROFILE/profile-template`, whose default model is `auto`. They do
+not copy the mutable default profile's persona, memory, plugins, or workspace.
+Provider credentials and enabled global skills are inherited separately.
+
 ## Local runtime boundary
 
 Chat selects a profile and invokes the original Hermes CLI/core from the one

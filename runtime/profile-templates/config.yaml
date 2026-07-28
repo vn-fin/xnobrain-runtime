@@ -1,0 +1,16 @@
+model:
+  provider: custom:nine-router
+  default: auto
+providers: {}
+agent:
+  reasoning_effort: medium
+terminal:
+  backend: local
+  home_mode: profile
+approvals:
+  mode: manual
+skills:
+  write_approval: true
+  disabled: []
+memory:
+  write_approval: true

@@ -21,9 +21,11 @@ from ..defaults import (
     BIG_BROTHER_AGENT_ID,
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
+    BIG_BROTHER_MODEL_DEFAULT_MARKER,
     BIG_BROTHER_NATIVE_TOOLSETS,
     BIG_BROTHER_SKILL_CATEGORY,
     BIG_BROTHER_SKILL_ID,
+    DEFAULT_PROFILE_MODEL,
     LEGACY_BIG_BROTHER_TOOLSET,
 )
 from ..integrations import (
@@ -248,6 +250,8 @@ class PlatformService:
         path = profile / "config.yaml"
         try:
             config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except FileNotFoundError:
+            config = {}
         except (OSError, yaml.YAMLError) as exc:
             raise ServiceError(
                 "Big Brother profile config is unreadable",
@@ -289,6 +293,14 @@ class PlatformService:
             brain4all_config = {}
             config["brain4all"] = brain4all_config
             changed = True
+        if not bool(brain4all_config.get(BIG_BROTHER_MODEL_DEFAULT_MARKER)):
+            model = config.get("model")
+            if not isinstance(model, dict):
+                model = {}
+                config["model"] = model
+            model["default"] = DEFAULT_PROFILE_MODEL
+            brain4all_config[BIG_BROTHER_MODEL_DEFAULT_MARKER] = True
+            changed = True
         if not bool(brain4all_config.get(BIG_BROTHER_APPROVAL_DEFAULT_MARKER)):
             approvals = config.get("approvals")
             if not isinstance(approvals, dict):
@@ -321,8 +333,16 @@ class PlatformService:
     def get_agent(self, agent_id: str) -> dict[str, Any]:
         return self._agent_dto(self.agents.describe_agent(agent_id))
 
+    @staticmethod
+    def _is_big_brother(agent_id: str) -> bool:
+        return str(agent_id or "").strip().casefold() in {
+            BIG_BROTHER_AGENT_ID,
+            "big brother",
+            "default",
+        }
+
     def _agent_profile_path(self, agent_id: str) -> Path:
-        if agent_id == BIG_BROTHER_AGENT_ID:
+        if self._is_big_brother(agent_id):
             return self.config.root_profile
         return self.repository.profile_path(agent_id)
 
@@ -333,7 +353,7 @@ class PlatformService:
         target: str,
         content: bytes,
     ) -> dict[str, Any]:
-        if agent_id != BIG_BROTHER_AGENT_ID:
+        if not self._is_big_brother(agent_id):
             return self.repository.snapshot(agent_id, kind, target, content)
         digest = hashlib.sha256(content).hexdigest()
         snapshot_id = f"{time.time_ns()}-{digest[:12]}"
@@ -378,7 +398,7 @@ class PlatformService:
         return self.get_agent(agent_id)
 
     def delete_agent(self, agent_id: str) -> dict[str, Any]:
-        if agent_id == BIG_BROTHER_AGENT_ID:
+        if self._is_big_brother(agent_id):
             raise ServiceError(
                 "Big Brother is a protected system profile",
                 status=409,
@@ -408,7 +428,7 @@ class PlatformService:
         translated = dict(body)
         if "reasoning_effort" in translated:
             translated["effort"] = translated.pop("reasoning_effort")
-        if agent_id == BIG_BROTHER_AGENT_ID:
+        if self._is_big_brother(agent_id):
             return self.config.update_config(translated)["config"]
         profile = self.repository.profile_path(agent_id)
         path = profile / "config.yaml"
@@ -417,7 +437,7 @@ class PlatformService:
         return self.agents.update_config(agent_id, translated)["config"]
 
     def list_skills(self, agent_id: str) -> list[dict[str, Any]]:
-        if agent_id == BIG_BROTHER_AGENT_ID:
+        if self._is_big_brother(agent_id):
             return self.config.list_skills()["skills"]
         return self.agents.list_skills(agent_id)["skills"]
 
@@ -434,7 +454,7 @@ class PlatformService:
         return self.config.set_skill_enabled(skill_id, body)["skills"]
 
     async def install_skill(self, agent_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
-        if agent_id == BIG_BROTHER_AGENT_ID:
+        if self._is_big_brother(agent_id):
             return (
                 await self.config.install_skill({
                     **dict(body),
@@ -448,7 +468,7 @@ class PlatformService:
         return payload["skills"]
 
     def set_skill_enabled(self, agent_id: str, skill_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
-        if agent_id == BIG_BROTHER_AGENT_ID:
+        if self._is_big_brother(agent_id):
             return self.config.set_skill_enabled(skill_id, body)["skills"]
         payload = self.agents.set_skill_enabled(agent_id, skill_id, body)
         path = self.repository.profile_path(agent_id) / "skills" / skill_id / "SKILL.md"
@@ -457,7 +477,7 @@ class PlatformService:
         return payload["skills"]
 
     def remove_skill(self, agent_id: str, skill_id: str) -> list[dict[str, Any]]:
-        if agent_id == BIG_BROTHER_AGENT_ID:
+        if self._is_big_brother(agent_id):
             return self.config.delete_skill(skill_id)["skills"]
         path = self.repository.profile_path(agent_id) / "skills" / skill_id / "SKILL.md"
         if path.is_file():
@@ -474,12 +494,12 @@ class PlatformService:
         return result
 
     def list_snapshots(self, agent_id: str, kind: str | None = None) -> list[dict[str, Any]]:
-        if agent_id == BIG_BROTHER_AGENT_ID:
+        if self._is_big_brother(agent_id):
             return self._list_root_snapshots(kind)
         return self.repository.list_snapshots(agent_id, kind)
 
     def restore_snapshot(self, agent_id: str, snapshot_id: str) -> dict[str, Any]:
-        if agent_id == BIG_BROTHER_AGENT_ID:
+        if self._is_big_brother(agent_id):
             return self._restore_root_snapshot(snapshot_id)
         return self.repository.restore_snapshot(agent_id, snapshot_id)
 

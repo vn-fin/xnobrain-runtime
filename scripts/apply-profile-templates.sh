@@ -5,10 +5,10 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_dir="$(cd -- "$script_dir/.." && pwd)"
 templates_dir="${BRAIN4ALL_PROFILE_TEMPLATES_DIR:-$project_dir/runtime/profile-templates}"
 hermes_home="${1:-${HERMES_HOME:-$HOME/.hermes}}"
-profiles_root="${2:-${HERMES_PROFILES_ROOT:-$hermes_home/profiles}}"
 backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+profile_template="$hermes_home/profile-template"
 
-if [[ ! -f "$templates_dir/AGENTS.md" || ! -f "$templates_dir/SOUL.md" ]]; then
+if [[ ! -f "$templates_dir/config.yaml" || ! -f "$templates_dir/AGENTS.md" || ! -f "$templates_dir/SOUL.md" ]]; then
   echo "Brain4All profile templates are missing from $templates_dir" >&2
   exit 1
 fi
@@ -31,20 +31,19 @@ apply_file() {
   install -m 0644 "$source" "$target"
 }
 
-apply_profile() {
-  local profile_dir="$1"
-  [[ -d "$profile_dir" ]] || return
-  mkdir -p "$profile_dir/workspace"
-  apply_file "$profile_dir" "$templates_dir/SOUL.md" "$profile_dir/SOUL.md" "SOUL.md"
-  apply_file "$profile_dir" "$templates_dir/AGENTS.md" "$profile_dir/AGENTS.md" "AGENTS.md"
-  apply_file "$profile_dir" "$templates_dir/AGENTS.md" "$profile_dir/workspace/AGENTS.md" "workspace/AGENTS.md"
-}
-
-mkdir -p "$hermes_home" "$profiles_root"
-apply_profile "$hermes_home"
-for profile_dir in "$profiles_root"/*; do
-  [[ -d "$profile_dir" ]] || continue
-  apply_profile "$profile_dir"
+mkdir -p "$hermes_home" "$profile_template" "$hermes_home/workspace"
+for filename in config.yaml SOUL.md AGENTS.md; do
+  apply_file \
+    "$hermes_home" \
+    "$templates_dir/$filename" \
+    "$profile_template/$filename" \
+    "profile-template/$filename"
 done
 
-echo "Applied Brain4All workspace guidance to the default and named profiles."
+# Big Brother starts from the packaged guidance, while the independent
+# profile-template remains unchanged when Big Brother later edits its files.
+apply_file "$hermes_home" "$templates_dir/SOUL.md" "$hermes_home/SOUL.md" "SOUL.md"
+apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/AGENTS.md" "AGENTS.md"
+apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/workspace/AGENTS.md" "workspace/AGENTS.md"
+
+echo "Installed the independent Brain4All profile template and refreshed Big Brother guidance."
