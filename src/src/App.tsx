@@ -274,7 +274,10 @@ export default function App() {
             router.openChat(agent.id, rows[0]?.id ?? '');
           });
         }}
-        onSelectConversation={(id) => router.openChat(router.activeAgentId, id)}
+        onSelectConversation={(id) => {
+          if (id === router.activeConversationId) void conversation.requestUsage();
+          router.openChat(router.activeAgentId, id);
+        }}
         onRenameAgent={assistants.renameAgent}
         onExportAgent={exportProfile}
         onRequestDeleteAgent={setDeleteAgentId}
@@ -391,7 +394,10 @@ export default function App() {
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenRuntime={() => router.setRightView('runtime')}
             onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}
-            onSelectConversation={router.setActiveConversationId}
+            onSelectConversation={(id) => {
+              if (id === router.activeConversationId) void conversation.requestUsage();
+              router.setActiveConversationId(id);
+            }}
             onCreateConversation={handleCreateConversation}
             onDeleteConversation={(id) => setDeleteConversationId(id)}
             onRenameConversation={handleRenameConversation}

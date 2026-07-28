@@ -2445,6 +2445,7 @@ body.col-resizing {
   flex: 0 0 13px;
   border-radius: 50%;
   background: conic-gradient(var(--accent) var(--context-percent), #686868 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
   mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
 }
 

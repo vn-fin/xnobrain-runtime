@@ -613,6 +613,14 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
                 async def _run_agent(self, **kwargs):
                     observed.update(kwargs)
+                    kwargs["agent_ref"][0] = type("FakeAgent", (), {
+                        "model": "cx/gpt-5.6-luna",
+                        "context_compressor": type("FakeCompressor", (), {
+                            "last_prompt_tokens": 10_000,
+                            "context_length": 200_000,
+                        })(),
+                    })()
+
                     def execute():
                         from gateway.session_context import clear_session_vars
                         from tools.approval import get_current_session_key
@@ -630,7 +638,11 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
                     await asyncio.to_thread(execute)
                     return (
-                        {"final_response": "I remember.", "messages": []},
+                        {
+                            "final_response": "I remember.",
+                            "messages": [],
+                            "model": "cx/gpt-5.6-luna",
+                        },
                         {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
                     )
 
@@ -667,6 +679,17 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(deltas, ["I remember."])
             self.assertEqual(result["final_response"], "I remember.")
             self.assertEqual(usage["total_tokens"], 5)
+            self.assertEqual(usage["context_used"], 10_000)
+            self.assertEqual(usage["context_limit"], 200_000)
+            stored = manager.get_conversation("news", conversation_id)
+            self.assertEqual(
+                stored["conversation"]["model_config"]["brain4all_context"],
+                {
+                    "used": 10_000,
+                    "limit": 200_000,
+                    "model": "cx/gpt-5.6-luna",
+                },
+            )
 
     async def test_run_approval_resolves_run_scope_and_emits_response_event(self) -> None:
         with TemporaryDirectory() as temp_dir:
