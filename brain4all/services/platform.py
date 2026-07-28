@@ -16,6 +16,7 @@ import uuid
 import yaml
 
 from ..defaults import (
+    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_AGENT_ID,
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
@@ -186,6 +187,12 @@ class PlatformService:
                         "platform_toolsets": {
                             "api_server": list(BIG_BROTHER_NATIVE_TOOLSETS),
                         },
+                        "approvals": {"mode": "off"},
+                        "skills": {"write_approval": False},
+                        "memory": {"write_approval": False},
+                        "brain4all": {
+                            BIG_BROTHER_APPROVAL_DEFAULT_MARKER: True,
+                        },
                     },
                 },
             })
@@ -261,6 +268,26 @@ class PlatformService:
                 next_api_server.append(toolset)
         if next_api_server != api_server:
             platforms["api_server"] = next_api_server
+            changed = True
+
+        brain4all_config = config.get("brain4all")
+        if not isinstance(brain4all_config, dict):
+            brain4all_config = {}
+            config["brain4all"] = brain4all_config
+            changed = True
+        if not bool(brain4all_config.get(BIG_BROTHER_APPROVAL_DEFAULT_MARKER)):
+            approvals = config.get("approvals")
+            if not isinstance(approvals, dict):
+                approvals = {}
+                config["approvals"] = approvals
+            approvals["mode"] = "off"
+            for subsystem in ("skills", "memory"):
+                section = config.get(subsystem)
+                if not isinstance(section, dict):
+                    section = {}
+                    config[subsystem] = section
+                section["write_approval"] = False
+            brain4all_config[BIG_BROTHER_APPROVAL_DEFAULT_MARKER] = True
             changed = True
 
         if changed:

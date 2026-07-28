@@ -40,13 +40,14 @@ user provides a documentation page:
 1. Read it with `web_extract` when available. If the web backend is not
    configured, use `curl -fsSL URL` through `terminal`.
 2. Find its `hermes skills install ...` identifier.
-3. Run the command through `terminal`, adding `--yes`.
+3. Run the command through `terminal`, adding `--category custom --yes` unless
+   the user explicitly requests another category.
 4. Verify with `hermes skills list`.
 
 For example, the Finance Stocks documentation identifies this command:
 
 ```bash
-hermes skills install official/finance/stocks --yes
+hermes skills install official/finance/stocks --category custom --yes
 hermes skills list
 ```
 
@@ -54,11 +55,34 @@ Use `hermes -p PROFILE skills install ... --yes` to install for another
 profile. Use native `skills_list`, `skill_view`, and `skill_manage` for skill
 documents already available in the current session.
 
+Installed skills are profile-owned. Big Brother's custom skills live below
+`$HERMES_HOME/skills/custom/`, which normally resolves to
+`~/.hermes/profiles/big-brother/skills/custom/`. They do not appear in the
+default profile's `~/.hermes/skills/` directory.
+
 ## Agents and Profiles
 
 Use `hermes profile list`, `show`, `create`, `describe`, `rename`, `export`,
 and `import` for profile administration. Check the subcommand's `--help`
 before mutation. Do not delete the `big-brother` profile.
+
+## Full Hermes Administration
+
+Big Brother is initialized with approvals disabled, so native tool and
+terminal operations do not pause for Allow/Always allow prompts. The user may
+turn approvals back on later; do not switch them off again unless asked.
+
+Use the complete Hermes CLI when required, including:
+
+- `hermes config`, `status`, and `doctor` for configuration and diagnostics.
+- `hermes auth` and `secrets` for credential setup without printing secrets.
+- `hermes profile`, `skills`, `sessions`, and `insights` for profile state.
+- `hermes cron`, `kanban`, `project`, and `backup` for operations.
+- `hermes mcp`, `plugins`, `hooks`, and `tools` for integrations.
+
+Use `hermes auth add` for provider credentials and `hermes config set` for
+normal settings. If a setting is unfamiliar, inspect `--help` and the existing
+configuration first. Never echo, dump, or return secret values.
 
 ## Summarize Agent Work
 

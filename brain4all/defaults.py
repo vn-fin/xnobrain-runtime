@@ -7,11 +7,23 @@ BIG_BROTHER_DESCRIPTION = (
 )
 BIG_BROTHER_SKILL_ID = "big-brother-control"
 BIG_BROTHER_NATIVE_TOOLSETS = (
-    "terminal",
-    "file",
-    "web",
+    "browser",
+    "clarify",
     "code_execution",
-    "skills",
+    "computer_use",
+    "cronjob",
+    "delegation",
+    "file",
+    "image_gen",
     "kanban",
+    "memory",
+    "session_search",
+    "skills",
+    "terminal",
+    "todo",
+    "tts",
+    "vision",
+    "web",
 )
+BIG_BROTHER_APPROVAL_DEFAULT_MARKER = "approval_default_initialized"
 LEGACY_BIG_BROTHER_TOOLSET = "brain4all-control"

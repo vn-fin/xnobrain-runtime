@@ -17,7 +17,11 @@ from httpx import ASGITransport, AsyncClient
 import yaml
 
 from brain4all.app import Brain4AllApplication
-from brain4all.defaults import BIG_BROTHER_AGENT_ID
+from brain4all.defaults import (
+    BIG_BROTHER_AGENT_ID,
+    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
+    BIG_BROTHER_NATIVE_TOOLSETS,
+)
 from brain4all.integrations import AgentManager, GlobalConfigManager
 from brain4all.services import ServiceError
 
@@ -90,14 +94,30 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         migrated_config["platform_toolsets"]["api_server"].append(
             "brain4all-control"
         )
+        migrated_config["approvals"]["mode"] = "manual"
+        migrated_config["brain4all"].pop(BIG_BROTHER_APPROVAL_DEFAULT_MARKER)
         profile_config_path.write_text(
             yaml.safe_dump(migrated_config, sort_keys=False),
             encoding="utf-8",
         )
         second = await self.composition.service.ensure_default_agent()
+        migrated_config = yaml.safe_load(
+            profile_config_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(migrated_config["approvals"]["mode"], "off")
+        self.assertFalse(migrated_config["skills"]["write_approval"])
+        self.assertFalse(migrated_config["memory"]["write_approval"])
+
+        migrated_config["approvals"]["mode"] = "manual"
+        profile_config_path.write_text(
+            yaml.safe_dump(migrated_config, sort_keys=False),
+            encoding="utf-8",
+        )
+        third = await self.composition.service.ensure_default_agent()
 
         self.assertEqual(first["id"], BIG_BROTHER_AGENT_ID)
         self.assertEqual(second["display_name"], "Big Brother")
+        self.assertEqual(third["config"]["approval_mode"], "on")
         agents = self.composition.service.list_agents()
         self.assertEqual(agents[0]["id"], BIG_BROTHER_AGENT_ID)
         self.assertEqual(
@@ -121,14 +141,11 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("kanban", profile_config["toolsets"])
         self.assertEqual(
             set(profile_config["platform_toolsets"]["api_server"]),
-            {
-                "code_execution",
-                "file",
-                "kanban",
-                "skills",
-                "terminal",
-                "web",
-            },
+            set(BIG_BROTHER_NATIVE_TOOLSETS),
+        )
+        self.assertEqual(profile_config["approvals"]["mode"], "manual")
+        self.assertTrue(
+            profile_config["brain4all"][BIG_BROTHER_APPROVAL_DEFAULT_MARKER]
         )
         with self.assertRaises(ServiceError) as protected:
             self.composition.service.delete_agent(BIG_BROTHER_AGENT_ID)
@@ -137,14 +154,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         from hermes_cli.tools_config import _get_platform_tools
 
         enabled_toolsets = _get_platform_tools(profile_config, "api_server")
-        self.assertTrue({
-            "code_execution",
-            "file",
-            "kanban",
-            "skills",
-            "terminal",
-            "web",
-        }.issubset(enabled_toolsets))
+        self.assertTrue(set(BIG_BROTHER_NATIVE_TOOLSETS).issubset(enabled_toolsets))
         self.assertNotIn("brain4all-control", enabled_toolsets)
 
     async def test_health_identifies_fastapi_database_free_runtime(self):
