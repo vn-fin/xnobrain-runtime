@@ -53,6 +53,14 @@ describe('Account route', () => {
   });
 });
 
+describe('Example route', () => {
+  it('parses and rebuilds the remote feature tab', () => {
+    const route = parseRoute('/example', '');
+    expect(route.centerView).toBe('example');
+    expect(computeUrl({ ...state('profiles'), centerView: 'example' })).toBe('/example');
+  });
+});
+
 describe('Team routes', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '/');

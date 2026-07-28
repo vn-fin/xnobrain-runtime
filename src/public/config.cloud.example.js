@@ -1,5 +1,8 @@
 window.__BRAIN4ALL_CONFIG__ = {
   edition: "cloud",
+  api: {
+    remoteBaseUrl: "https://api.xno.vn"
+  },
   auth: {
     mode: "required",
     provider: "gateway",
@@ -8,6 +11,7 @@ window.__BRAIN4ALL_CONFIG__ = {
     logoutPath: "/control/v1/auth/logout"
   },
   features: {
-    account: true
+    account: true,
+    example: true
   }
 };

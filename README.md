@@ -45,6 +45,12 @@ mode. Signing in creates browser-local display information and enables the
 Account tab; it does not restrict access to the standalone server, and users
 can continue without signing in.
 
+Optional remote product features use `api.remoteBaseUrl`. The checked-in local
+trial enables the Example tab and loads `/v2/indexoverview` from
+`https://api.xno.vn` without sending browser credentials. Set
+`features.example: false` to remove that tab. Remote feature flags only control
+presentation; the remote API must enforce every protected capability.
+
 Cloud and Enterprise deployments reuse the same frontend build and replace
 `/config.js` with gateway configuration. See
 `src/public/config.cloud.example.js`. Gateway mode uses:

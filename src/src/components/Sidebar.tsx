@@ -23,6 +23,7 @@ import {
   Download,
   LogIn,
   LogOut,
+  FlaskConical,
 } from 'lucide-react';
 import type { ActiveUser } from '../auth';
 import type { Brain4AllEdition } from '../runtime';
@@ -60,6 +61,7 @@ export function Sidebar({
   accountEnabled,
   onOpenLogin,
   onSignOut,
+  exampleEnabled,
 }: {
   agents: Agent[];
   activeAgent: Agent;
@@ -82,6 +84,7 @@ export function Sidebar({
   accountEnabled?: boolean;
   onOpenLogin?: () => void;
   onSignOut?: () => Promise<void>;
+  exampleEnabled?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const { preference: themePref, setPreference: setThemePref } = useTheme();
@@ -148,6 +151,15 @@ export function Sidebar({
       </div>
 
       <div className="main-nav">
+        {exampleEnabled && (
+          <button
+            className={centerView === 'example' ? 'nav-row active' : 'nav-row'}
+            onClick={() => onNavigate('example')}
+          >
+            <FlaskConical size={18} />
+            <span>Example</span>
+          </button>
+        )}
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = item.id === centerView;

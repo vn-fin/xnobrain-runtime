@@ -4,6 +4,9 @@ export type AuthProvider = 'local-profile' | 'gateway';
 
 export type RuntimeConfig = {
   edition: Brain4AllEdition;
+  api: {
+    remoteBaseUrl: string;
+  };
   auth: {
     mode: AuthMode;
     provider: AuthProvider;
@@ -13,11 +16,15 @@ export type RuntimeConfig = {
   };
   features: {
     account: boolean;
+    example: boolean;
   };
 };
 
 const DEFAULT_CONFIG: RuntimeConfig = {
   edition: 'opensource',
+  api: {
+    remoteBaseUrl: '',
+  },
   auth: {
     mode: 'optional',
     provider: 'local-profile',
@@ -27,12 +34,14 @@ const DEFAULT_CONFIG: RuntimeConfig = {
   },
   features: {
     account: true,
+    example: false,
   },
 };
 
 declare global {
   interface Window {
     __BRAIN4ALL_CONFIG__?: Partial<RuntimeConfig> & {
+      api?: Partial<RuntimeConfig['api']>;
       auth?: Partial<RuntimeConfig['auth']>;
       features?: Partial<RuntimeConfig['features']>;
     };
@@ -56,6 +65,9 @@ export function runtimeConfig(source = window.__BRAIN4ALL_CONFIG__): RuntimeConf
 
   return {
     edition,
+    api: {
+      remoteBaseUrl: source?.api?.remoteBaseUrl?.trim() || DEFAULT_CONFIG.api.remoteBaseUrl,
+    },
     auth: {
       mode,
       provider,
@@ -65,6 +77,7 @@ export function runtimeConfig(source = window.__BRAIN4ALL_CONFIG__): RuntimeConf
     },
     features: {
       account: source?.features?.account ?? DEFAULT_CONFIG.features.account,
+      example: source?.features?.example ?? DEFAULT_CONFIG.features.example,
     },
   };
 }

@@ -22,6 +22,7 @@ import { KanbanView } from './components/KanbanView';
 import { KanbanNotifications } from './components/KanbanNotifications';
 import { AnalyticsView } from './components/AnalyticsView';
 import { AccountView } from './components/AccountView';
+import { ExampleView } from './components/ExampleView';
 import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
@@ -243,6 +244,13 @@ export default function App() {
       </div>
     );
   }
+  if (!activeAgent && centerView === 'example' && auth.config.features.example) {
+    return (
+      <div className="account-standalone">
+        <ExampleView onClose={() => router.setCenterView('chat')} />
+      </div>
+    );
+  }
   if (!activeAgent) {
     return (
       <div className="empty-app">
@@ -304,11 +312,14 @@ export default function App() {
         accountEnabled={auth.config.features.account}
         onOpenLogin={auth.openLogin}
         onSignOut={auth.signOut}
+        exampleEnabled={auth.config.features.example}
       />
 
       <main className={centerView === 'chat' ? 'chat-area' : 'chat-area sandbox-mode'}>
         {centerView === 'account' && auth.user ? (
           <AccountView onClose={() => router.setCenterView('chat')} />
+        ) : centerView === 'example' && auth.config.features.example ? (
+          <ExampleView onClose={() => router.setCenterView('chat')} />
         ) : centerView === 'skills' ? (
           <SkillsView
             library={assistants.library}
