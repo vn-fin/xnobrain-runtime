@@ -45,6 +45,14 @@ describe('settings routes', () => {
   });
 });
 
+describe('Account route', () => {
+  it('parses and rebuilds the signed-in user tab', () => {
+    const route = parseRoute('/account', '');
+    expect(route.centerView).toBe('account');
+    expect(computeUrl({ ...state('profiles'), centerView: 'account' })).toBe('/account');
+  });
+});
+
 describe('Team routes', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '/');

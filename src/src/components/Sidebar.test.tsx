@@ -89,4 +89,33 @@ describe('Sidebar assistant actions', () => {
     fireEvent.click(within(container).getByRole('button', { name: 'Skills' }));
     expect(navigate).toHaveBeenCalledWith('skills');
   });
+
+  it('shows the Account tab only for an active user', () => {
+    const navigate = vi.fn();
+    const { container } = render(
+      <Sidebar
+        agents={[agent]}
+        activeAgent={agent}
+        activeConversation={undefined}
+        centerView="chat"
+        agentSearch=""
+        onAgentSearch={vi.fn()}
+        onNavigate={navigate}
+        onSelectAgent={vi.fn()}
+        onSelectConversation={vi.fn()}
+        onRenameAgent={vi.fn()}
+        onExportAgent={vi.fn()}
+        onRequestDeleteAgent={vi.fn()}
+        onRenameConversation={vi.fn()}
+        onRequestDeleteConversation={vi.fn()}
+        onNewAgent={vi.fn()}
+        user={{ userId: 'user-1', email: 'kim@example.com', displayName: 'Kim', tenantId: 'tenant-1', planId: 'pro', roles: ['owner'] }}
+        edition="pro"
+        accountEnabled
+      />,
+    );
+
+    fireEvent.click(within(container).getByRole('button', { name: /Accountpro/i }));
+    expect(navigate).toHaveBeenCalledWith('account');
+  });
 });

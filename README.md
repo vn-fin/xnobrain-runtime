@@ -37,6 +37,27 @@ Open <http://localhost:5152>. Swagger is available at
 <http://localhost:5152/docs> and the generated OpenAPI document at
 <http://localhost:5152/openapi.json>.
 
+### Optional account UI
+
+The frontend reads `/config.js` before it starts. The default standalone
+configuration uses `edition: "opensource"` and optional `local-profile`
+mode. Signing in creates browser-local display information and enables the
+Account tab; it does not restrict access to the standalone server, and users
+can continue without signing in.
+
+Cloud and Enterprise deployments reuse the same frontend build and replace
+`/config.js` with gateway configuration. See
+`src/public/config.cloud.example.js`. Gateway mode uses:
+
+- `GET /control/v1/bootstrap` to restore the active HttpOnly-cookie session;
+- `POST /control/v1/auth/login` for the login form;
+- `POST /control/v1/auth/logout` to end the session.
+
+Workspace API calls use same-origin credentials. The Go gateway remains
+responsible for authentication, authorization, and authenticated
+user-to-workspace routing; frontend edition and feature values are
+presentation controls, not security controls.
+
 For a Docker-free Linux development installation, run the project installer. It
 installs the Dockerfile-derived system and office tools, a project-local Hermes
 Python environment under `.tools/python`, Node.js/npm, 9router, and the Codex,

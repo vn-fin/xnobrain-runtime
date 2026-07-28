@@ -60,6 +60,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
     kanbanConversationId = sp.get('conversation') ?? '';
   }
   else if (seg[0] === 'analytics' || seg[0] === 'usage') centerView = 'analytics';
+  else if (seg[0] === 'account') centerView = 'account';
   else if (seg[0] === 'data' || seg[0] === 'settings') {
     centerView = 'data';
     if (seg[1] === 'vm' || seg[1] === 'connectors' || seg[1] === 'profiles' || seg[1] === 'blends') {
@@ -100,6 +101,7 @@ export function reconcileSelection(agentId: string, conversationId: string, agen
 
 export function computeUrl(state: RouteState): string {
   const params = new URLSearchParams();
+  if (state.centerView === 'account') return '/account';
   if (state.centerView === 'data') return `/settings/${state.settingsSection}`;
   if (state.centerView === 'teams') {
     if (state.teamCreate) return '/teams/new';

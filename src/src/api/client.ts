@@ -56,7 +56,7 @@ function messageFrom(body: unknown, response: Response): string {
 export async function requestRaw(path: string, init: RequestInit = {}): Promise<Response> {
   const response = await fetch(buildApiUrl(path), {
     ...init,
-    credentials: 'omit',
+    credentials: 'same-origin',
     headers: authenticatedHeaders(init),
   });
   if (response.ok) return response;

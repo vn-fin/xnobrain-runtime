@@ -21,13 +21,16 @@ import { TeamsView } from './components/TeamsView';
 import { KanbanView } from './components/KanbanView';
 import { KanbanNotifications } from './components/KanbanNotifications';
 import { AnalyticsView } from './components/AnalyticsView';
+import { AccountView } from './components/AccountView';
 import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
+import { useAuth } from './auth';
 import type { Agent } from './types';
 
 export default function App() {
   const { t } = useTranslation();
+  const auth = useAuth();
   const router = useRouter();
   const assistants = useAssistants();
   const assistantsReady = assistants.status === 'ready';
@@ -233,6 +236,13 @@ export default function App() {
 
   if (assistants.status === 'loading') return <AsyncState status="loading" />;
   if (assistants.status === 'error') return <AsyncState status="error" error={assistants.error} onRetry={assistants.refresh} />;
+  if (!activeAgent && centerView === 'account' && auth.user) {
+    return (
+      <div className="account-standalone">
+        <AccountView onClose={() => router.setCenterView('chat')} />
+      </div>
+    );
+  }
   if (!activeAgent) {
     return (
       <div className="empty-app">
@@ -288,10 +298,18 @@ export default function App() {
         onRenameConversation={handleRenameConversation}
         onRequestDeleteConversation={(id) => setDeleteConversationId(id)}
         onNewAgent={() => setCreateAgentOpen(true)}
+        user={auth.user}
+        edition={auth.config.edition}
+        authEnabled={auth.config.auth.mode !== 'disabled'}
+        accountEnabled={auth.config.features.account}
+        onOpenLogin={auth.openLogin}
+        onSignOut={auth.signOut}
       />
 
       <main className={centerView === 'chat' ? 'chat-area' : 'chat-area sandbox-mode'}>
-        {centerView === 'skills' ? (
+        {centerView === 'account' && auth.user ? (
+          <AccountView onClose={() => router.setCenterView('chat')} />
+        ) : centerView === 'skills' ? (
           <SkillsView
             library={assistants.library}
             agents={assistants.agents}

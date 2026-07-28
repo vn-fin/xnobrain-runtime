@@ -2,7 +2,7 @@
 // (agent-gateway, conversations, sandboxes, and Hermes Kanban).
 
 export type RightView = 'workspace' | 'skills' | 'runtime';
-export type CenterView = 'chat' | 'skills' | 'teams' | 'data' | 'kanban' | 'analytics';
+export type CenterView = 'chat' | 'skills' | 'teams' | 'data' | 'kanban' | 'analytics' | 'account';
 
 export type ConnectionMode = 'device-code' | 'cli' | 'api-key';
 export type ProviderBrand = 'openai' | 'claude' | 'anthropic' | 'gemini' | 'openrouter';

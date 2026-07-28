@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   BarChart3,
+  CircleUserRound,
   ChevronDown,
   Columns3,
   History,
@@ -20,7 +21,11 @@ import {
   Sun,
   Trash2,
   Download,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
+import type { ActiveUser } from '../auth';
+import type { Brain4AllEdition } from '../runtime';
 import { SUPPORTED_LANGUAGES } from '../i18n';
 import { useTheme } from '../theme';
 import type { Agent, CenterView, Conversation } from '../types';
@@ -49,6 +54,12 @@ export function Sidebar({
   onRenameConversation,
   onRequestDeleteConversation,
   onNewAgent,
+  user,
+  edition,
+  authEnabled,
+  accountEnabled,
+  onOpenLogin,
+  onSignOut,
 }: {
   agents: Agent[];
   activeAgent: Agent;
@@ -65,6 +76,12 @@ export function Sidebar({
   onRenameConversation: (conversationId: string, title: string) => void | Promise<void>;
   onRequestDeleteConversation: (conversationId: string) => void;
   onNewAgent: () => void;
+  user?: ActiveUser | null;
+  edition?: Brain4AllEdition;
+  authEnabled?: boolean;
+  accountEnabled?: boolean;
+  onOpenLogin?: () => void;
+  onSignOut?: () => Promise<void>;
 }) {
   const { t, i18n } = useTranslation();
   const { preference: themePref, setPreference: setThemePref } = useTheme();
@@ -145,6 +162,16 @@ export function Sidebar({
             </button>
           );
         })}
+        {user && accountEnabled && (
+          <button
+            className={centerView === 'account' ? 'nav-row active' : 'nav-row'}
+            onClick={() => onNavigate('account')}
+          >
+            <CircleUserRound size={18} />
+            <span>Account</span>
+            <small className={`sidebar-edition ${edition ?? 'opensource'}`}>{edition ?? 'opensource'}</small>
+          </button>
+        )}
       </div>
 
       <div className="history-section">
@@ -335,6 +362,20 @@ export function Sidebar({
           <ChevronDown size={14} />
         </div>
 
+        {authEnabled && (user ? (
+          <div className="user-row">
+            <button className="user-login" onClick={() => accountEnabled && onNavigate('account')} title="Open account">
+              <span className="user-avatar">{(user.displayName || user.email).charAt(0).toUpperCase()}</span>
+              <span className="user-name">{user.displayName || user.email}</span>
+            </button>
+            <button className="icon-button" title="Sign out" onClick={() => void onSignOut?.()}><LogOut size={16} /></button>
+          </div>
+        ) : (
+          <button className="user-row user-login" onClick={onOpenLogin}>
+            <span className="user-avatar"><LogIn size={14} /></span>
+            <span className="user-name">Sign in</span>
+          </button>
+        ))}
       </div>
     </aside>
   );
