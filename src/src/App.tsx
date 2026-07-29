@@ -4,6 +4,7 @@ import { useRouter } from './hooks/useRouter';
 import { useAssistants, useActiveAgent } from './hooks/useAssistants';
 import { useConnections } from './hooks/useConnections';
 import { useSandbox } from './hooks/useSandbox';
+import { useCrons } from './hooks/useCrons';
 import { useKanban } from './hooks/useKanban';
 import { useAnalytics } from './hooks/useAnalytics';
 import { useBlends } from './hooks/useBlends';
@@ -21,16 +22,14 @@ import { TeamsView } from './components/TeamsView';
 import { KanbanView } from './components/KanbanView';
 import { KanbanNotifications } from './components/KanbanNotifications';
 import { AnalyticsView } from './components/AnalyticsView';
-import { AccountView } from './components/AccountView';
+import { CronView } from './components/CronView';
 import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
-import { useAuth } from './auth';
 import type { Agent } from './types';
 
 export default function App() {
   const { t } = useTranslation();
-  const auth = useAuth();
   const router = useRouter();
   const assistants = useAssistants();
   const assistantsReady = assistants.status === 'ready';
@@ -52,10 +51,15 @@ export default function App() {
     router.activeAgentId,
     router.centerView === 'chat' && router.rightView === 'workspace',
   );
-  const teams = useTeams(router.centerView === 'teams');
+  // Kanban's new-task modal also needs saved teams, so keep this lightweight
+  // list loaded outside the dedicated Teams screen as well.
+  const teams = useTeams(true);
   const kanban = useKanban(router.centerView === 'kanban' || router.centerView === 'analytics');
   const analytics = useAnalytics(router.centerView === 'analytics', assistants.agents);
   const blends = useBlends(router.centerView === 'chat');
+  const crons = useCrons(
+    assistantsReady && (router.centerView === 'cron' || (router.centerView === 'chat' && router.rightView === 'cron')),
+  );
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
   const RIGHT_MIN = 280;
@@ -64,7 +68,6 @@ export default function App() {
     const stored = Number(localStorage.getItem('rightPanelWidth'));
     return Number.isFinite(stored) && stored >= RIGHT_MIN ? Math.min(stored, RIGHT_MAX) : 330;
   });
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
   useEffect(() => { localStorage.setItem('rightPanelWidth', String(rightWidth)); }, [rightWidth]);
   const clampRightWidth = (width: number) => Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, Math.min(width, Math.round(window.innerWidth * 0.6))));
 
@@ -75,8 +78,6 @@ export default function App() {
   // UI-only modal state
   const [createAgentOpen, setCreateAgentOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
-  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [deleteAgentId, setDeleteAgentId] = useState<string | null>(null);
   const [workspaceOpenRequest, setWorkspaceOpenRequest] = useState<{ path: string; token: number }>();
   const [deleteConversationId, setDeleteConversationId] = useState<string | null>(null);
@@ -111,7 +112,6 @@ export default function App() {
 
   const handleOpenWorkspaceFile = (path: string) => {
     router.setRightView('workspace');
-    setRightPanelOpen(true);
     setWorkspaceOpenRequest({ path, token: Date.now() });
   };
 
@@ -280,8 +280,8 @@ export default function App() {
 
   return (
     <div
-      className={centerView === 'chat' ? `app${rightPanelOpen ? ' inspector-open' : ' inspector-collapsed'}` : 'app no-right'}
-      style={centerView === 'chat' ? ({ '--right': `${rightPanelOpen ? rightWidth : 48}px` } as CSSProperties) : undefined}
+      className={centerView === 'chat' ? 'app' : 'app no-right'}
+      style={centerView === 'chat' ? ({ '--right': `${rightWidth}px` } as CSSProperties) : undefined}
     >
       <Sidebar
         agents={assistants.agents}
@@ -299,13 +299,6 @@ export default function App() {
         onExportAgent={exportProfile}
         onRequestDeleteAgent={setDeleteAgentId}
         onNewAgent={() => setCreateAgentOpen(true)}
-        user={auth.user}
-        edition={auth.config.edition}
-        loginEnabled={auth.config.features.login && auth.config.auth.mode !== 'disabled'}
-        sessionActive={auth.sessionActive}
-        onOpenLogin={auth.openLogin}
-        onOpenAccount={() => setAccountOpen(true)}
-        onSignOut={async () => setLogoutConfirmOpen(true)}
       />
 
       <main className={centerView === 'chat' ? 'chat-area' : 'chat-area sandbox-mode'}>
@@ -402,6 +395,21 @@ export default function App() {
             onNavigate={router.setCenterView}
             onClose={() => router.setCenterView('chat')}
           />
+        ) : centerView === 'cron' ? (
+          <CronView
+            agents={assistants.agents}
+            crons={crons.crons}
+            status={crons.status}
+            error={crons.error}
+            pendingId={crons.pendingId}
+            detail={crons.detail}
+            onCreate={crons.createCron}
+            onToggle={crons.toggleCron}
+            onRun={crons.runCron}
+            onDelete={crons.deleteCron}
+            onLoadDetail={crons.loadDetail}
+            onCloseDetail={crons.closeDetail}
+          />
         ) : (
           <ChatArea
             agent={activeAgent}
@@ -427,10 +435,7 @@ export default function App() {
             onSelectModel={(provider, model) => assistants.updateAgent(activeAgent.id, { provider, model })}
             onTestAgent={() => void assistants.testAgent(activeAgent.id)}
             onOpenSettings={() => setSettingsOpen(true)}
-            onOpenRuntime={() => {
-              router.setRightView('runtime');
-              setRightPanelOpen(true);
-            }}
+            onOpenRuntime={() => router.setRightView('runtime')}
             onSelectAgent={(agent) => {
               void assistants.loadConversations(agent.id).then((rows) => {
                 router.openChat(agent.id, rows[0]?.id ?? '');
@@ -454,9 +459,9 @@ export default function App() {
 
       {centerView === 'chat' && (
         <RightPanel
-          open={rightPanelOpen}
-          onOpen={() => setRightPanelOpen(true)}
-          onClose={() => setRightPanelOpen(false)}
+          open
+          onOpen={() => {}}
+          onClose={() => router.setRightView('workspace')}
           rightView={router.rightView}
           onRightView={router.setRightView}
           agent={activeAgent}
@@ -474,6 +479,14 @@ export default function App() {
           onUpdateWriteApprovals={(updates) => assistants.setWriteApprovals(activeAgent.id, updates)}
           skillsPagination={assistants.agentSkillPages[router.activeAgentId]}
           onLoadSkillsPage={(page) => assistants.loadSkillsPage(router.activeAgentId, page)}
+          crons={crons.crons.filter((job) => job.agentId === activeAgent.id)}
+          cronStatus={crons.status}
+          cronError={crons.error}
+          cronPendingId={crons.pendingId}
+          onCreateCron={(input) => crons.createCron({ agentId: activeAgent.id, ...input })}
+          onToggleCron={crons.toggleCron}
+          onRunCron={crons.runCron}
+          onDeleteCron={crons.deleteCron}
           onCreateAgent={() => setCreateAgentOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
           onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}
@@ -497,37 +510,6 @@ export default function App() {
 
       {settingsOpen && (
         <AgentSettingsModal agent={activeAgent} providers={runtimeProviders} onSave={handleUpdateAgent} onClose={() => setSettingsOpen(false)} />
-      )}
-
-      {accountOpen && auth.sessionActive && (
-        <div className="modal-overlay" onClick={() => setAccountOpen(false)}>
-          <div
-            className="app-modal account-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Account details"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <AccountView
-              onClose={() => setAccountOpen(false)}
-              onRequestSignOut={() => setLogoutConfirmOpen(true)}
-            />
-          </div>
-        </div>
-      )}
-
-      {logoutConfirmOpen && (
-        <ConfirmDialog
-          title="Sign out?"
-          message="Are you sure you want to sign out of this account?"
-          confirmLabel="Sign out"
-          danger
-          onConfirm={() => {
-            setLogoutConfirmOpen(false);
-            void auth.signOut().then(() => setAccountOpen(false));
-          }}
-          onCancel={() => setLogoutConfirmOpen(false)}
-        />
       )}
 
       {deleteConversationId && (

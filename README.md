@@ -77,10 +77,14 @@ For a Docker-free Linux development installation, run the project installer. It
 installs the Dockerfile-derived system and office tools, a project-local Hermes
 Python environment under `.tools/python`, Node.js/npm, 9router, and the Codex,
 Claude, and agent-browser CLIs:
+For a Docker-free Linux or macOS development installation, run the project
+installer. It creates a project-local Hermes Python environment under
+`.tools/python` and installs Node.js/npm, 9router, and the agent CLIs. The
+macOS target skips the optional office-tool and browser-engine downloads to
+keep the development setup fast:
 
 ```bash
-./scripts/install-linux.sh
-# or: make install-local
+make install-local
 ```
 
 Then start local development (Vite 5173, FastAPI 8642, and 9router 20128):

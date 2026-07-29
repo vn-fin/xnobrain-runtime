@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Download, FileArchive, Network, Server, ShieldCheck, Upload, X } from 'lucide-react';
+import { Download, FileArchive, Server, ShieldCheck, Upload, X } from 'lucide-react';
 import { ConnectionsView, type AccountProps } from '../../components/ConnectionsView';
 import { BlendsSection } from './BlendsSection';
+import { McpSection } from './McpSection';
 import { SandboxView } from '../../components/SandboxView';
 import type { Agent, AsyncStatus, ConnectionProvider, SandboxData } from '../../types';
 import type { ProviderTestOutcome } from '../../hooks/useConnections';
@@ -66,6 +67,7 @@ export function SystemView({
     { id: 'profiles', label: 'Profiles' },
     { id: 'vm', label: 'VM' },
     { id: 'connectors', label: 'Connectors' },
+    { id: 'mcp', label: 'MCP' },
     { id: 'blends', label: 'Model Blends' },
   ];
 
@@ -148,16 +150,9 @@ export function SystemView({
           {preview && <div className="system-preview"><ShieldCheck size={17} /><div><strong>{preview.inspection.manifest.agents.length} profile(s), {preview.inspection.files} files</strong><span>{preview.collisions.length} ID collision(s) · {preview.paused_cron_jobs} cron(s) paused · {preview.quarantined_code.length} code file(s) quarantined</span></div><button className="conn-btn primary" disabled={!!busy} onClick={() => void applyImport()}>{busy === 'apply' ? 'Applying…' : 'Apply import'}</button></div>}
           {report && <div className="system-success">Imported {Object.keys(report.agent_id_mappings).length} profile(s). Review providers, approvals, quarantined code, and paused crons before use.</div>}
           </section>
-          <section className="system-card system-advanced-card">
-            <div className="system-card-title"><Network size={18} /><div><strong>MCP servers</strong><small>Advanced integration setup. Skills stay the recommended way to add reusable agent behavior.</small></div></div>
-            <p className="system-advanced-copy">MCP configuration is isolated per assistant in its profile. Add it only when a skill cannot provide the required external tool connection.</p>
-            <div className="system-agent-list">
-              {agents.map((agent) => <div className="system-agent-config" key={agent.id}><span>{agent.title}</span><code>profiles/{agent.id}/mcp.json</code></div>)}
-            </div>
-          </section>
         </>}
-        {section === 'connectors' && <section className="system-card system-integrations-card">
-          <div className="system-card-title"><Network size={18} /><div><strong>Connectors</strong><small>Connect providers and test their current availability from Settings.</small></div></div>
+        {section === 'mcp' && <McpSection agents={agents} />}
+        {section === 'connectors' && <section className="system-integrations-card">
           <ConnectionsView
             providers={providers}
             keyProviderId={keyProviderId}
@@ -172,12 +167,10 @@ export function SystemView({
             {...accounts}
           />
         </section>}
-        {section === 'blends' && <section className="system-card system-integrations-card">
-          <div className="system-card-title"><Network size={18} /><div><strong>Model Blends</strong><small>Group models into one named blend with a routing strategy (fallback, round-robin, or fusion).</small></div></div>
+        {section === 'blends' && <section className="system-integrations-card">
           <BlendsSection />
         </section>}
-        {section === 'vm' && <section className="system-card system-integrations-card">
-          <div className="system-card-title"><Server size={18} /><div><strong>VM runtime</strong><small>View live VM health, resource usage, network activity, and create or refresh the sandbox.</small></div></div>
+        {section === 'vm' && <section className="system-integrations-card">
           <SandboxView
             data={sandbox.data}
             provisioned={sandbox.provisioned}

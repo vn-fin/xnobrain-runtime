@@ -1,41 +1,102 @@
 import { useEffect, useState } from 'react';
-import { cronsApi } from '../api/crons';
-import type { CronJob } from '../types';
-
-function nextRunFrom(intervalMinutes: number): string {
-  return new Date(Date.now() + intervalMinutes * 60_000).toISOString();
-}
+import { cronsApi, type CreateCronInput } from '../api/crons';
+import type { CronDetail, CronJob } from '../types';
 
 /** Manages cron/scheduled jobs (list + create/stop-start/delete). */
-export function useCrons() {
+export function useCrons(enabled = true) {
   const [crons, setCrons] = useState<CronJob[]>([]);
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [error, setError] = useState('');
+  const [pendingId, setPendingId] = useState('');
+  const [detail, setDetail] = useState<CronDetail | null>(null);
 
   useEffect(() => {
-    cronsApi.list().then(setCrons);
-  }, []);
+    if (!enabled) return;
+    let cancelled = false;
+    setStatus('loading');
+    setError('');
+    void cronsApi.list().then((jobs) => {
+      if (cancelled) return;
+      setCrons(jobs);
+      setStatus('ready');
+    }).catch((cause) => {
+      if (cancelled) return;
+      setError(cause instanceof Error ? cause.message : 'Could not load cron jobs.');
+      setStatus('error');
+    });
+    return () => { cancelled = true; };
+  }, [enabled]);
 
-  const createCron = async (input: { agentId: string; name: string; prompt: string; intervalMinutes: number; forever: boolean }) => {
-    const job = await cronsApi.create(input);
-    setCrons((prev) => [job, ...prev]);
+  const createCron = async (input: CreateCronInput) => {
+    setPendingId('create');
+    setError('');
+    try {
+      const job = await cronsApi.create(input);
+      setCrons((prev) => [job, ...prev]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not create cron job.');
+      throw cause;
+    } finally {
+      setPendingId('');
+    }
   };
 
-  const toggleCron = (id: string) => {
-    setCrons((prev) =>
-      prev.map((c) => {
-        if (c.id !== id) return c;
-        const nextState = c.state === 'stopped' ? 'scheduled' : 'stopped';
-        cronsApi.setState(id, nextState);
-        return nextState === 'scheduled'
-          ? { ...c, state: nextState, nextRun: nextRunFrom(c.intervalMinutes) }
-          : { ...c, state: nextState };
-      }),
-    );
+  const toggleCron = async (id: string) => {
+    const current = crons.find((job) => job.id === id);
+    if (!current) return;
+    setPendingId(id);
+    setError('');
+    try {
+      const job = await cronsApi.setState(id, current.state === 'stopped' ? 'scheduled' : 'stopped');
+      setCrons((prev) => prev.map((item) => item.id === id ? job : item));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not update cron job.');
+    } finally {
+      setPendingId('');
+    }
   };
 
-  const deleteCron = (id: string) => {
-    cronsApi.remove(id);
-    setCrons((prev) => prev.filter((c) => c.id !== id));
+  const runCron = async (id: string) => {
+    setPendingId(id);
+    setError('');
+    try {
+      const triggered = await cronsApi.runNow(id);
+      setDetail(triggered);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not start cron job.');
+    } finally {
+      setPendingId('');
+    }
   };
 
-  return { crons, createCron, toggleCron, deleteCron };
+  const deleteCron = async (id: string) => {
+    setPendingId(id);
+    setError('');
+    try {
+      await cronsApi.remove(id);
+      setCrons((prev) => prev.filter((item) => item.id !== id));
+      setDetail((current) => current?.job.id === id ? null : current);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not delete cron job.');
+    } finally {
+      setPendingId('');
+    }
+  };
+
+  const loadDetail = async (id: string) => {
+    try {
+      const loaded = await cronsApi.detail(id);
+      setDetail((current) => (
+        loaded.run === null && current?.job.id === id && current.run?.state === 'running'
+          ? { ...loaded, run: current.run }
+          : loaded
+      ));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not load cron details.');
+    }
+  };
+
+  const closeDetail = () => setDetail(null);
+
+  return { crons, status, error, pendingId, detail, createCron, toggleCron, runCron, deleteCron, loadDetail, closeDetail };
 }

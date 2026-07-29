@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Agent, CenterView, RightView } from '../types';
 
-export type SettingsSection = 'profiles' | 'vm' | 'connectors' | 'blends';
+export type SettingsSection = 'profiles' | 'vm' | 'connectors' | 'mcp' | 'blends';
 
 export type RouteState = {
   centerView: CenterView;
@@ -60,9 +60,10 @@ export function parseRoute(pathname: string, search: string): RouteState {
     kanbanConversationId = sp.get('conversation') ?? '';
   }
   else if (seg[0] === 'analytics' || seg[0] === 'usage') centerView = 'analytics';
+  else if (seg[0] === 'cron' || seg[0] === 'automations') centerView = 'cron';
   else if (seg[0] === 'data' || seg[0] === 'settings') {
     centerView = 'data';
-    if (seg[1] === 'vm' || seg[1] === 'connectors' || seg[1] === 'profiles' || seg[1] === 'blends') {
+    if (seg[1] === 'vm' || seg[1] === 'connectors' || seg[1] === 'profiles' || seg[1] === 'mcp' || seg[1] === 'blends') {
       settingsSection = seg[1];
     }
   }
@@ -70,7 +71,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
     agentId = seg[1] ?? '';
     if (seg[2] === 'conversations') conversationId = seg[3] ?? '';
     const panel = sp.get('panel');
-    if (panel === 'skills' || panel === 'runtime' || panel === 'workspace') rightView = panel;
+    if (panel === 'skills' || panel === 'cron' || panel === 'runtime' || panel === 'workspace') rightView = panel;
   }
 
   return {
@@ -116,6 +117,7 @@ export function computeUrl(state: RouteState): string {
     return `${path}${params.size ? `?${params}` : ''}`;
   }
   if (state.centerView === 'analytics') return '/analytics';
+  if (state.centerView === 'cron') return '/cron';
   if (state.centerView === 'skills') {
     if (state.skillsSearch.trim()) params.set('q', state.skillsSearch.trim());
     if (state.skillsGroupFilter !== 'all') params.set('group', state.skillsGroupFilter);
