@@ -4,6 +4,7 @@ import { useRouter } from './hooks/useRouter';
 import { useAssistants, useActiveAgent } from './hooks/useAssistants';
 import { useConnections } from './hooks/useConnections';
 import { useSandbox } from './hooks/useSandbox';
+import { useCrons } from './hooks/useCrons';
 import { useKanban } from './hooks/useKanban';
 import { useAnalytics } from './hooks/useAnalytics';
 import { useBlends } from './hooks/useBlends';
@@ -22,6 +23,7 @@ import { KanbanView } from './components/KanbanView';
 import { KanbanNotifications } from './components/KanbanNotifications';
 import { AnalyticsView } from './components/AnalyticsView';
 import { AccountView } from './components/AccountView';
+import { CronView } from './components/CronView';
 import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
@@ -52,10 +54,15 @@ export default function App() {
     router.activeAgentId,
     router.centerView === 'chat' && router.rightView === 'workspace',
   );
-  const teams = useTeams(router.centerView === 'teams');
+  // Kanban's new-task modal also needs saved teams, so keep this lightweight
+  // list loaded outside the dedicated Teams screen as well.
+  const teams = useTeams(true);
   const kanban = useKanban(router.centerView === 'kanban' || router.centerView === 'analytics');
   const analytics = useAnalytics(router.centerView === 'analytics', assistants.agents);
   const blends = useBlends(router.centerView === 'chat');
+  const crons = useCrons(
+    assistantsReady && (router.centerView === 'cron' || (router.centerView === 'chat' && router.rightView === 'cron')),
+  );
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
   const RIGHT_MIN = 280;
@@ -402,6 +409,21 @@ export default function App() {
             onNavigate={router.setCenterView}
             onClose={() => router.setCenterView('chat')}
           />
+        ) : centerView === 'cron' ? (
+          <CronView
+            agents={assistants.agents}
+            crons={crons.crons}
+            status={crons.status}
+            error={crons.error}
+            pendingId={crons.pendingId}
+            detail={crons.detail}
+            onCreate={crons.createCron}
+            onToggle={crons.toggleCron}
+            onRun={crons.runCron}
+            onDelete={crons.deleteCron}
+            onLoadDetail={crons.loadDetail}
+            onCloseDetail={crons.closeDetail}
+          />
         ) : (
           <ChatArea
             agent={activeAgent}
@@ -474,6 +496,14 @@ export default function App() {
           onUpdateWriteApprovals={(updates) => assistants.setWriteApprovals(activeAgent.id, updates)}
           skillsPagination={assistants.agentSkillPages[router.activeAgentId]}
           onLoadSkillsPage={(page) => assistants.loadSkillsPage(router.activeAgentId, page)}
+          crons={crons.crons.filter((job) => job.agentId === activeAgent.id)}
+          cronStatus={crons.status}
+          cronError={crons.error}
+          cronPendingId={crons.pendingId}
+          onCreateCron={(input) => crons.createCron({ agentId: activeAgent.id, ...input })}
+          onToggleCron={crons.toggleCron}
+          onRunCron={crons.runCron}
+          onDeleteCron={crons.deleteCron}
           onCreateAgent={() => setCreateAgentOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
           onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}

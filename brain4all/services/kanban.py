@@ -50,13 +50,17 @@ def _status(raw: str) -> str:
     raise ServiceError("The task has an unsupported status", status=503, code="kanban_contract_incompatible")
 
 
-def _detail(task: Any) -> dict[str, Any]:
+def _detail(task: Any, *, has_schedule: bool = False) -> dict[str, Any]:
     raw = str(task.status)
     labels = {
         "triage": ("triage", "Needs clarification"),
         "todo": ("todo", "Todo"),
         "ready": ("ready", "Ready"),
-        "scheduled": ("scheduled", "Scheduled"),
+        "scheduled": (
+            ("scheduled", "Scheduled")
+            if has_schedule
+            else ("todo", "Todo")
+        ),
         "running": ("running", "Running"),
         "review": ("review_required", "Review required"),
         "blocked": (str(getattr(task, "block_kind", None) or "needs_input"), "Needs input"),
@@ -70,7 +74,12 @@ def _detail(task: Any) -> dict[str, Any]:
     return {"kind": kind, "label": label, "reason": reason}
 
 
-def _allowed_moves(raw: str) -> list[str]:
+def _allowed_moves(
+    raw: str,
+    *,
+    failed: bool = False,
+    has_schedule: bool = False,
+) -> list[str]:
     """Return product columns reachable without hidden reclaim/reopen work."""
     if raw == "triage":
         return ["todo", "running", "archived"]
@@ -79,9 +88,13 @@ def _allowed_moves(raw: str) -> list[str]:
     if raw in {"ready", "running"}:
         return ["done", "archived"]
     if raw == "scheduled":
-        return ["archived"]
+        return ["archived"] if has_schedule else ["running", "done", "archived"]
     if raw == "blocked":
-        return ["todo", "archived"]
+        return (
+            ["backlog", "todo", "archived"]
+            if failed
+            else ["todo", "archived"]
+        )
     if raw == "review":
         return ["running", "archived"]
     if raw == "done":
@@ -381,8 +394,12 @@ class KanbanService:
             "description": str(task.body or ""),
             "status": raw_status,
             "kanban_status": _status(raw_status),
-            "allowed_kanban_statuses": _allowed_moves(raw_status),
-            "state_detail": _detail(task),
+            "allowed_kanban_statuses": _allowed_moves(
+                raw_status,
+                failed=bool(getattr(task, "last_failure_error", None)),
+                has_schedule=schedule is not None,
+            ),
+            "state_detail": _detail(task, has_schedule=schedule is not None),
             "priority": INT_TO_PRIORITY.get(int(getattr(task, "priority", 0) or 0), "medium"),
             "assignee": getattr(task, "assignee", None),
             "assignees": [task.assignee] if getattr(task, "assignee", None) else [],
@@ -465,11 +482,19 @@ class KanbanService:
             if raw_status == "archived":
                 team["status"] = "archived"
                 team["kanban_status"] = "archived"
+            elif raw_status == "triage":
+                team["status"] = "backlog"
+                team["kanban_status"] = "backlog"
             result["team"] = team
             result["kanban_status"] = team["kanban_status"]
-            result["allowed_kanban_statuses"] = (
-                ["archived"] if team["status"] in {"done", "blocked", "cancelled"} else []
-            )
+            if team["status"] == "backlog":
+                result["allowed_kanban_statuses"] = ["todo", "archived"]
+            elif team["status"] == "todo":
+                result["allowed_kanban_statuses"] = ["running", "archived"]
+            elif team["status"] in {"done", "blocked", "cancelled"}:
+                result["allowed_kanban_statuses"] = ["archived"]
+            else:
+                result["allowed_kanban_statuses"] = []
             result["state_detail"] = {
                 "kind": team["status"],
                 "label": team["status"].replace("_", " ").title(),
@@ -605,8 +630,6 @@ class KanbanService:
         team_id = str(body.get("team_id") or "").strip()
         if team_id and body.get("assignee"):
             raise ServiceError("choose either an agent or a team", code="invalid_request")
-        if team_id and status != "todo":
-            raise ServiceError("team tasks must start in Todo", code="invalid_request")
         try:
             workspace_kind, workspace_path = self._workspace_for_assignee(
                 body.get("assignee"),
@@ -625,6 +648,7 @@ class KanbanService:
                     description=description,
                     priority=PRIORITY_TO_INT.get(str(body.get("priority") or "medium"), 1),
                     created_by=created_by,
+                    status=status,
                     idempotency_key=body.get("idempotency_key"),
                 )
             task_id = kb_adapter.create_task(
@@ -651,9 +675,19 @@ class KanbanService:
             if task is None:
                 raise ServiceError("The created task could not be loaded", status=503, code="kanban_contract_incompatible")
             if schedule_values is not None:
+                if not kb.schedule_task(
+                    conn,
+                    task_id,
+                    reason="Scheduled from Brain4All",
+                ):
+                    raise ServiceError(
+                        "task could not be scheduled",
+                        status=409,
+                        code="invalid_schedule",
+                    )
+                task = kb.get_task(conn, task_id)
+            if schedule_values is not None:
                 recurrence, scheduled_at, interval_seconds, timezone_name = schedule_values
-                if not kb.schedule_task(conn, task_id, reason="Scheduled from Brain4All"):
-                    raise ServiceError("task could not be scheduled", status=409, code="invalid_schedule")
                 kb_adapter.put_task_schedule(
                     conn,
                     task_id,
@@ -675,6 +709,7 @@ class KanbanService:
         description: str,
         priority: int,
         created_by: str,
+        status: str,
         idempotency_key: Any,
     ) -> dict[str, Any]:
         if self.repository is None:
@@ -739,12 +774,21 @@ class KanbanService:
             parents=(),
             idempotency_key=idempotency_key,
             workspace_kind="scratch",
+            triage=status == "backlog",
             initial_status="running",
             board=board,
         )
         kb = self._ready()
-        if not kb.complete_task(conn, root_id, summary="Team workflow created"):
-            raise ServiceError("team workflow could not be started", status=409, code="invalid_transition")
+        if status == "todo" and not kb.schedule_task(
+            conn,
+            root_id,
+            reason="Parked team workflow in Todo from Brain4All",
+        ):
+            raise ServiceError(
+                "team workflow could not be parked",
+                status=409,
+                code="invalid_transition",
+            )
         task_ids: dict[str, str] = {}
         nodes: list[dict[str, Any]] = []
         root_parent_id = root_id
@@ -1028,7 +1072,11 @@ class KanbanService:
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             raw = str(task.status)
-            if raw == "scheduled" and target != "archived":
+            team_metadata, team_cancelled = self._team_metadata(
+                kb_adapter.task_comments(conn, task_id)
+            )
+            has_schedule = kb_adapter.task_schedule(conn, task_id) is not None
+            if raw == "scheduled" and has_schedule and target != "archived":
                 raise ServiceError(
                     "Scheduled tasks are controlled by their schedule",
                     status=409,
@@ -1038,7 +1086,7 @@ class KanbanService:
                 if target == "archived":
                     ok = kb.archive_task(conn, task_id)
                 elif target == "done":
-                    if raw == "blocked":
+                    if raw in {"blocked", "scheduled"}:
                         ok = kb.unblock_task(conn, task_id)
                         if ok:
                             ok = kb.complete_task(conn, task_id, summary=reason or "Completed from Brain4All")
@@ -1047,12 +1095,50 @@ class KanbanService:
                 elif target == "todo":
                     if raw == "triage":
                         ok = kb.specify_triage_task(conn, task_id, author="user")
+                        if ok:
+                            ok = kb.schedule_task(
+                                conn,
+                                task_id,
+                                reason="Parked in Todo from Brain4All",
+                            )
                     elif raw == "blocked":
                         ok = kb.unblock_task(conn, task_id)
+                        if ok:
+                            ok = kb.schedule_task(
+                                conn,
+                                task_id,
+                                reason="Parked in Todo from Brain4All",
+                            )
+                    elif raw in {"todo", "ready"}:
+                        ok = kb.schedule_task(
+                            conn,
+                            task_id,
+                            reason="Parked in Todo from Brain4All",
+                        )
                     else:
-                        ok = raw in {"todo", "ready"}
+                        ok = raw == "scheduled" and not has_schedule
                 elif target == "running":
-                    if raw == "review":
+                    if team_metadata is not None:
+                        projection = self._team_projection(
+                            conn,
+                            team_metadata,
+                            cancelled=team_cancelled,
+                        )
+                        if projection["status"] != "todo":
+                            ok = projection["status"] == "running"
+                        else:
+                            ok = (
+                                kb.unblock_task(conn, task_id)
+                                if raw in {"blocked", "scheduled"}
+                                else False
+                            )
+                            if ok:
+                                ok = kb.complete_task(
+                                    conn,
+                                    task_id,
+                                    summary=reason or "Team workflow started",
+                                )
+                    elif raw == "review":
                         ok = kb.claim_review_task(conn, task_id, claimer="brain4all") is not None
                     elif raw == "blocked":
                         ok = kb.unblock_task(conn, task_id)
@@ -1090,12 +1176,21 @@ class KanbanService:
                                 code="invalid_transition",
                             )
                         ok = promoted
+                    elif raw == "scheduled" and not has_schedule:
+                        ok = kb.unblock_task(conn, task_id)
                     elif raw in {"ready", "running"}:
                         ok = True
                     else:
                         ok = False
                 elif target == "backlog":
-                    raise ServiceError("active tasks cannot be returned to Backlog", status=409, code="invalid_transition")
+                    if raw == "blocked" and getattr(task, "last_failure_error", None):
+                        ok = kb_adapter.return_failed_task_to_triage(conn, task_id)
+                    else:
+                        raise ServiceError(
+                            "active tasks cannot be returned to Backlog",
+                            status=409,
+                            code="invalid_transition",
+                        )
                 else:
                     raise ServiceError("invalid Kanban status", code="invalid_request")
             except ServiceError:

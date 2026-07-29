@@ -565,7 +565,10 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(installed_notes["enabled"])
         self.assertTrue((profile / "mcp.json").is_file())
         snapshots = snapshot_response.json()["data"]
-        self.assertEqual({item["kind"] for item in snapshots}, {"skills", "memory"})
+        self.assertEqual(
+            {item["kind"] for item in snapshots},
+            {"skills", "memory", "config"},
+        )
         self.assertFalse((self.root / "skills" / "notes" / "SKILL.md").exists())
 
     async def test_agent_can_install_existing_default_skill_by_id(self):
