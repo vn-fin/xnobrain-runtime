@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from 'react';
 import { Layers, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useBlends } from '../../hooks/useBlends';
 import type { Blend } from '../../api/blends';
+import { ConfirmDialog } from '../../components/modals';
 import { BlendEditorDialog } from './BlendEditorDialog';
 
 const S = {
@@ -20,6 +21,7 @@ export function BlendsSection() {
   const state = useBlends();
   const [editing, setEditing] = useState<Blend | null>(null);
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<Blend | null>(null);
 
   return (
     <div>
@@ -56,9 +58,7 @@ export function BlendsSection() {
             <Pencil size={13} />
           </button>
           <button style={S.iconbtn} disabled={blend.read_only} title="Delete"
-            onClick={() => {
-              if (window.confirm(`Delete the blend "${blend.name}"?`)) void state.deleteBlend(blend.id);
-            }}>
+            onClick={() => setDeleting(blend)}>
             <Trash2 size={13} />
           </button>
         </div>
@@ -73,6 +73,20 @@ export function BlendsSection() {
             else await state.createBlend(input);
           }}
           onClose={() => { setCreating(false); setEditing(null); }}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title="Delete model blend?"
+          message={`Delete the blend "${deleting.name}"? This action cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={() => {
+            void state.deleteBlend(deleting.id);
+            setDeleting(null);
+          }}
+          onCancel={() => setDeleting(null)}
         />
       )}
     </div>

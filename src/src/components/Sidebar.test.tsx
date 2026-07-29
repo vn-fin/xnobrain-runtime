@@ -92,6 +92,7 @@ describe('Sidebar assistant actions', () => {
 
   it('opens account details from the left navigation for an active session', () => {
     const openAccount = vi.fn();
+    const requestSignOut = vi.fn();
     const { container } = render(
       <Sidebar
         agents={[agent]}
@@ -114,10 +115,14 @@ describe('Sidebar assistant actions', () => {
         loginEnabled
         sessionActive
         onOpenAccount={openAccount}
+        onSignOut={requestSignOut}
       />,
     );
 
     fireEvent.click(within(container).getByRole('button', { name: /Accountpro/i }));
     expect(openAccount).toHaveBeenCalledOnce();
+
+    fireEvent.click(within(container).getByRole('button', { name: 'Sign out' }));
+    expect(requestSignOut).toHaveBeenCalledOnce();
   });
 });

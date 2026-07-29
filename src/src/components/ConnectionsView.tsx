@@ -4,6 +4,7 @@ import {
   Activity, ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Plus, Trash2, X,
 } from 'lucide-react';
 import { ProviderBrandIcon } from './common';
+import { ConfirmDialog } from './modals';
 import type { ConnectionProvider } from '../types';
 import type { ProviderTestOutcome } from '../hooks/useConnections';
 import type { ProviderConnection, ConnectionUsage } from '../api/providers';
@@ -33,13 +34,14 @@ function statusDotClass(testStatus: string): string {
 }
 
 function AccountRow({
-  providerId, row, usage, pending, actions,
+  providerId, row, usage, pending, actions, onRequestRemove,
 }: {
   providerId: string;
   row: ProviderConnection;
   usage: ConnectionUsage | undefined;
   pending: boolean;
   actions: AccountProps;
+  onRequestRemove: (providerId: string, connectionId: string, label: string) => void;
 }) {
   const { t } = useTranslation();
   const percent = usagePercent(usage);
@@ -76,11 +78,7 @@ function AccountRow({
           : <span className="conn-usage-fill" style={{ width: `${percent}%` }} />}
       </span>
       <button className="conn-iconbtn danger" disabled={pending} title={t('connections.removeAccount', { defaultValue: 'Remove account' })}
-        onClick={() => {
-          if (window.confirm(t('connections.removeAccountConfirm', { defaultValue: 'Remove this account?' }))) {
-            actions.onRemoveAccount(providerId, row.id);
-          }
-        }}>
+        onClick={() => onRequestRemove(providerId, row.id, label)}>
         <X size={13} />
       </button>
     </div>
@@ -140,6 +138,12 @@ export function ConnectionsView({
   const [apiKey, setApiKey] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [testResults, setTestResults] = useState<Record<string, ProviderTestOutcome>>({});
+  const [confirmation, setConfirmation] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    action: () => void;
+  } | null>(null);
   const apiKeyProviders = providers.filter((p) => p.connection_mode === 'api-key');
   const selectedKeyProvider = providers.find((p) => p.id === keyProviderId);
 
@@ -212,6 +216,15 @@ export function ConnectionsView({
                           usage={accounts.usageByConnection[row.id]}
                           pending={accounts.rowPendingId === row.id}
                           actions={accounts}
+                          onRequestRemove={(providerId, connectionId, label) => setConfirmation({
+                            title: t('connections.removeAccount', { defaultValue: 'Remove account?' }),
+                            message: t('connections.removeAccountConfirm', {
+                              defaultValue: 'Remove the account {{label}}?',
+                              label,
+                            }),
+                            confirmLabel: t('common.delete', { defaultValue: 'Remove' }),
+                            action: () => accounts.onRemoveAccount(providerId, connectionId),
+                          })}
                         />
                       ))}
                       <AddAccount provider={p} actions={accounts} />
@@ -241,11 +254,16 @@ export function ConnectionsView({
                     <button
                       className="conn-btn danger"
                       disabled={pendingId === p.id}
-                      onClick={() => {
-                        if (window.confirm(t('connections.removeAllConfirm', { defaultValue: 'Remove all {{count}} account(s) for {{name}}?', count, name: p.display_name }))) {
-                          onDisconnect(p.id);
-                        }
-                      }}
+                      onClick={() => setConfirmation({
+                        title: t('connections.removeAllAccounts', { defaultValue: 'Remove all accounts?' }),
+                        message: t('connections.removeAllConfirm', {
+                          defaultValue: 'Remove all {{count}} account(s) for {{name}}?',
+                          count,
+                          name: p.display_name,
+                        }),
+                        confirmLabel: t('common.delete', { defaultValue: 'Remove' }),
+                        action: () => onDisconnect(p.id),
+                      })}
                     >
                       <Trash2 size={14} />
                       {t('connections.removeAllAccounts', { defaultValue: 'Remove all accounts' })}
@@ -312,6 +330,19 @@ export function ConnectionsView({
           </div>
         </section>
       </div>
+      {confirmation && (
+        <ConfirmDialog
+          title={confirmation.title}
+          message={confirmation.message}
+          confirmLabel={confirmation.confirmLabel}
+          danger
+          onConfirm={() => {
+            confirmation.action();
+            setConfirmation(null);
+          }}
+          onCancel={() => setConfirmation(null)}
+        />
+      )}
     </div>
   );
 }

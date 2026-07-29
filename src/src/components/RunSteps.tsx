@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { formatRunDuration, formatStepDuration, previewCode, stepLabel, toolGroupSummary, toolKind } from '../chat/runEvents';
 import type { ChatRun, ChatRunStep, RunApprovalChoice } from '../types';
+import { ConfirmDialog } from './modals';
 import { Markdown } from './Markdown';
 
 const APPROVAL_ORDER: RunApprovalChoice[] = ['once', 'always', 'deny'];
@@ -122,15 +123,14 @@ function RunApprovalPrompt({
   onResolveApproval?: (runId: string, choice: RunApprovalChoice) => void | Promise<void>;
 }) {
   const [submitting, setSubmitting] = useState<RunApprovalChoice | null>(null);
+  const [alwaysConfirmOpen, setAlwaysConfirmOpen] = useState(false);
   const approval = run.approval;
   if (!approval) return null;
   const choices = APPROVAL_ORDER.filter((choice) =>
     approval.choices.includes(choice) && (choice !== 'always' || approval.allowPermanent));
 
-  const respond = async (choice: RunApprovalChoice) => {
+  const submit = async (choice: RunApprovalChoice) => {
     if (!onResolveApproval || submitting) return;
-    const target = approval.subsystem ? `${approval.subsystem} writes` : 'matching requests';
-    if (choice === 'always' && !window.confirm(`Always allow ${target} for this agent profile?`)) return;
     setSubmitting(choice);
     try {
       await onResolveApproval(run.id, choice);
@@ -139,30 +139,54 @@ function RunApprovalPrompt({
     }
   };
 
+  const respond = (choice: RunApprovalChoice) => {
+    if (choice === 'always') {
+      setAlwaysConfirmOpen(true);
+      return;
+    }
+    void submit(choice);
+  };
+
+  const target = approval.subsystem ? `${approval.subsystem} writes` : 'matching requests';
+
   return (
-    <div className="run-approval" role="group" aria-label="Run approval request">
-      <div className="run-approval-main">
-        <span className="run-approval-icon"><ShieldAlert size={16} /></span>
-        <div className="run-approval-copy">
-          <strong>{approval.description || 'Approval required'}</strong>
-          {approval.command && <code className="run-approval-command">{approval.command}</code>}
+    <>
+      <div className="run-approval" role="group" aria-label="Run approval request">
+        <div className="run-approval-main">
+          <span className="run-approval-icon"><ShieldAlert size={16} /></span>
+          <div className="run-approval-copy">
+            <strong>{approval.description || 'Approval required'}</strong>
+            {approval.command && <code className="run-approval-command">{approval.command}</code>}
+          </div>
+        </div>
+        <div className="run-approval-actions">
+          {choices.map((choice) => (
+            <button
+              type="button"
+              key={choice}
+              className={choice === 'deny' ? 'run-approval-button danger' : 'run-approval-button'}
+              disabled={!onResolveApproval || submitting !== null}
+              onClick={() => respond(choice)}
+            >
+              {submitting === choice && <LoaderCircle className="run-step-spin" size={13} />}
+              {APPROVAL_LABELS[choice]}
+            </button>
+          ))}
         </div>
       </div>
-      <div className="run-approval-actions">
-        {choices.map((choice) => (
-          <button
-            type="button"
-            key={choice}
-            className={choice === 'deny' ? 'run-approval-button danger' : 'run-approval-button'}
-            disabled={!onResolveApproval || submitting !== null}
-            onClick={() => void respond(choice)}
-          >
-            {submitting === choice && <LoaderCircle className="run-step-spin" size={13} />}
-            {APPROVAL_LABELS[choice]}
-          </button>
-        ))}
-      </div>
-    </div>
+      {alwaysConfirmOpen && (
+        <ConfirmDialog
+          title="Always allow this action?"
+          message={`Always allow ${target} for this agent profile? Future matching requests will not ask again.`}
+          confirmLabel="Always allow"
+          onConfirm={() => {
+            setAlwaysConfirmOpen(false);
+            void submit('always');
+          }}
+          onCancel={() => setAlwaysConfirmOpen(false)}
+        />
+      )}
+    </>
   );
 }
 

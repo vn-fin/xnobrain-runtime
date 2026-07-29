@@ -3,6 +3,7 @@ import { ArrowUp, ChevronDown, ChevronUp, Download, FilePlus2, FileText, FolderP
 import { useWorkspace } from '../hooks/useWorkspace';
 import { TreeIcon } from './common';
 import { AsyncState } from './AsyncState';
+import { ConfirmDialog, PromptDialog } from './modals';
 import type { WorkspaceEntry } from '../types';
 
 type ViewMode = 'list' | 'grid';
@@ -117,6 +118,8 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [activePath, setActivePath] = useState('');
+  const [createType, setCreateType] = useState<'file' | 'directory' | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<WorkspaceEntry | null>(null);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -132,12 +135,11 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
   }, [openRequest?.token]);
 
   const create = (type: 'file' | 'directory') => {
-    const name = window.prompt(type === 'file' ? 'File name' : 'Folder name')?.trim();
-    if (name) void workspace.create(name, type);
+    setCreateType(type);
   };
 
   const confirmRemove = (entry: WorkspaceEntry) => {
-    if (window.confirm(`Delete ${entry.path}?`)) void workspace.remove(entry);
+    setPendingDelete(entry);
   };
 
   const toggleSort = (key: SortKey) => {
@@ -389,6 +391,35 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
             )}
           </div>
         </div>
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete workspace item?"
+          message={`Delete ${pendingDelete.path}? This action cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={() => {
+            void workspace.remove(pendingDelete);
+            setPendingDelete(null);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
+      )}
+
+      {createType && (
+        <PromptDialog
+          title={createType === 'file' ? 'Create file' : 'Create folder'}
+          message={`Create a new ${createType === 'file' ? 'file' : 'folder'} in the current workspace directory.`}
+          label={createType === 'file' ? 'File name' : 'Folder name'}
+          placeholder={createType === 'file' ? 'notes.md' : 'new-folder'}
+          confirmLabel="Create"
+          onConfirm={(name) => {
+            void workspace.create(name, createType);
+            setCreateType(null);
+          }}
+          onCancel={() => setCreateType(null)}
+        />
       )}
     </section>
   );

@@ -75,6 +75,7 @@ export default function App() {
   const [createAgentOpen, setCreateAgentOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [deleteAgentId, setDeleteAgentId] = useState<string | null>(null);
   const [workspaceOpenRequest, setWorkspaceOpenRequest] = useState<{ path: string; token: number }>();
   const [deleteConversationId, setDeleteConversationId] = useState<string | null>(null);
@@ -309,10 +310,7 @@ export default function App() {
         sessionActive={auth.sessionActive}
         onOpenLogin={auth.openLogin}
         onOpenAccount={() => setAccountOpen(true)}
-        onSignOut={async () => {
-          await auth.signOut();
-          setAccountOpen(false);
-        }}
+        onSignOut={async () => setLogoutConfirmOpen(true)}
       />
 
       <main className={centerView === 'chat' ? 'chat-area' : 'chat-area sandbox-mode'}>
@@ -503,9 +501,26 @@ export default function App() {
             aria-label="Account details"
             onClick={(event) => event.stopPropagation()}
           >
-            <AccountView onClose={() => setAccountOpen(false)} />
+            <AccountView
+              onClose={() => setAccountOpen(false)}
+              onRequestSignOut={() => setLogoutConfirmOpen(true)}
+            />
           </div>
         </div>
+      )}
+
+      {logoutConfirmOpen && (
+        <ConfirmDialog
+          title="Sign out?"
+          message="Are you sure you want to sign out of this account?"
+          confirmLabel="Sign out"
+          danger
+          onConfirm={() => {
+            setLogoutConfirmOpen(false);
+            void auth.signOut().then(() => setAccountOpen(false));
+          }}
+          onCancel={() => setLogoutConfirmOpen(false)}
+        />
       )}
 
       {deleteConversationId && (

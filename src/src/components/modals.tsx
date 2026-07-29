@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ClipboardPaste, FileArchive, Plus, Upload, X } from 'lucide-react';
 import { ExternalLinkIcon, ProviderBrandIcon } from './common';
@@ -365,16 +365,25 @@ export function ConfirmDialog({
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
+  const titleId = useId();
+  const messageId = useId();
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="app-modal confirm-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay alert-overlay" onClick={onCancel}>
+      <div
+        className={`app-modal confirm-modal${danger ? ' danger' : ''}`}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={messageId}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="app-modal-head">
-          <strong>{title}</strong>
+          <strong id={titleId}>{title}</strong>
           <button className="icon-button" onClick={onCancel} title={t('common.close')}>
             <X size={17} />
           </button>
         </div>
-        <p className="confirm-message">{message}</p>
+        <p className="confirm-message" id={messageId}>{message}</p>
         <div className="modal-actions">
           <button className="conn-btn ghost" onClick={onCancel}>{t('common.cancel')}</button>
           <button className={danger ? 'conn-btn danger-solid' : 'conn-btn primary'} onClick={onConfirm}>
@@ -382,6 +391,66 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+export function PromptDialog({
+  title,
+  message,
+  label,
+  placeholder,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  message?: string;
+  label: string;
+  placeholder?: string;
+  confirmLabel: string;
+  onConfirm: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+  const titleId = useId();
+  const descriptionId = useId();
+  const [value, setValue] = useState('');
+  const submit = () => {
+    const next = value.trim();
+    if (next) onConfirm(next);
+  };
+
+  return (
+    <div className="modal-overlay alert-overlay" onClick={onCancel}>
+      <form
+        className="app-modal prompt-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={message ? descriptionId : undefined}
+        onClick={(event) => event.stopPropagation()}
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <div className="app-modal-head">
+          <strong id={titleId}>{title}</strong>
+          <button type="button" className="icon-button" onClick={onCancel} title={t('common.close')}>
+            <X size={17} />
+          </button>
+        </div>
+        {message && <p className="app-modal-message" id={descriptionId}>{message}</p>}
+        <label className="prompt-field">
+          <span>{label}</span>
+          <input value={value} onChange={(event) => setValue(event.target.value)} placeholder={placeholder} autoFocus />
+        </label>
+        <div className="modal-actions">
+          <button type="button" className="conn-btn ghost" onClick={onCancel}>{t('common.cancel')}</button>
+          <button type="submit" className="conn-btn primary" disabled={!value.trim()}>{confirmLabel}</button>
+        </div>
+      </form>
     </div>
   );
 }

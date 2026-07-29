@@ -9,8 +9,14 @@ const editionLabels = {
   enterprise: 'Enterprise',
 } as const;
 
-export function AccountView({ onClose }: { onClose: () => void }) {
-  const { config, user, signOut, loadCurrentUser } = useAuth();
+export function AccountView({
+  onClose,
+  onRequestSignOut,
+}: {
+  onClose: () => void;
+  onRequestSignOut: () => void;
+}) {
+  const { config, user, loadCurrentUser } = useAuth();
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState('');
 
@@ -91,10 +97,7 @@ export function AccountView({ onClose }: { onClose: () => void }) {
           </p>
           <button
             className="account-signout"
-            onClick={() => {
-              if (!window.confirm('Are you sure you want to sign out?')) return;
-              void signOut().then(onClose);
-            }}
+            onClick={onRequestSignOut}
           >
             <LogOut size={16} /> Sign out
           </button>

@@ -373,9 +373,7 @@ export function Sidebar({
             <button
               className="icon-button"
               title="Sign out"
-              onClick={() => {
-                if (window.confirm('Are you sure you want to sign out?')) void onSignOut?.();
-              }}
+              onClick={() => void onSignOut?.()}
             >
               <LogOut size={16} />
             </button>

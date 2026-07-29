@@ -28,7 +28,9 @@ vi.mock('./runtime', () => ({
 function Trial() {
   const { sessionActive, loading } = useAuth();
   if (loading) return <span>Loading</span>;
-  return sessionActive ? <AccountView onClose={() => undefined} /> : <LoginScreen optional />;
+  return sessionActive
+    ? <AccountView onClose={() => undefined} onRequestSignOut={() => undefined} />
+    : <LoginScreen optional />;
 }
 
 function LazyAccount() {
@@ -36,7 +38,7 @@ function LazyAccount() {
   const [open, setOpen] = useState(false);
   if (!sessionActive) return <span>Signed out</span>;
   return open
-    ? <AccountView onClose={() => setOpen(false)} />
+    ? <AccountView onClose={() => setOpen(false)} onRequestSignOut={() => undefined} />
     : <button onClick={() => setOpen(true)}>Account</button>;
 }
 

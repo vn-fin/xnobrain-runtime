@@ -4756,7 +4756,18 @@ body.col-resizing {
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgb(0 0 0 / 62%);
+  backdrop-filter: blur(4px);
+  animation: modal-overlay-in 120ms ease-out;
+}
+
+.modal-overlay.alert-overlay {
+  z-index: 70;
+}
+
+@keyframes modal-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .auth-modal {
@@ -4940,6 +4951,78 @@ body.col-resizing {
 
 .app-modal.confirm-modal {
   width: min(420px, 100%);
+  padding: 0;
+  overflow: hidden;
+  animation: confirm-modal-in 150ms ease-out;
+}
+
+.app-modal.prompt-modal {
+  width: min(440px, 100%);
+}
+
+.app-modal-message {
+  margin: 10px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.prompt-field {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.prompt-field input {
+  width: 100%;
+  height: 40px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.app-modal.confirm-modal.danger {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border-2));
+}
+
+.confirm-modal .app-modal-head {
+  margin: 0;
+  padding: 17px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.confirm-modal.danger .app-modal-head strong {
+  color: var(--danger);
+}
+
+.confirm-modal .confirm-message {
+  margin: 0;
+  padding: 18px 20px;
+}
+
+.confirm-modal .modal-actions {
+  margin: 0;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-2);
+}
+
+.confirm-modal .modal-actions .conn-btn {
+  min-width: 88px;
+  justify-content: center;
+}
+
+@keyframes confirm-modal-in {
+  from { opacity: 0; transform: translateY(6px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay,
+  .app-modal.confirm-modal {
+    animation: none;
+  }
 }
 
 .create-agent-tabs {

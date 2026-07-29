@@ -7,7 +7,7 @@ import { AccountView } from './components/AccountView';
 
 function LocalAuthTrial() {
   const { user } = useAuth();
-  return user ? <AccountView onClose={() => undefined} /> : <LoginScreen optional />;
+  return user ? <AccountView onClose={() => undefined} onRequestSignOut={() => undefined} /> : <LoginScreen optional />;
 }
 
 describe('optional local profile', () => {
