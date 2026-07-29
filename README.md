@@ -94,6 +94,29 @@ The existing `setup-linux.sh` remains the Docker/Compose installer. For
 API-only work after the local install, use
 `BRAIN4ALL_DEV_SKIP_ROUTER=1 make dev`.
 
+### Native VM services
+
+Cloud VM images can run the backend without Docker or a per-workspace
+frontend. Install the native runtime at `/opt/brain4all` with
+`scripts/install-linux.sh`, then install the systemd units:
+
+```bash
+cd /opt/brain4all
+sudo ./scripts/install-systemd-services.sh --start
+```
+
+`brain4all.target` owns the two long-running processes:
+
+- `brain4all-api.service` runs FastAPI and the integrated Hermes runtime on
+  port `8642`;
+- `brain4all-9router.service` runs 9router on loopback port `20128`.
+
+Hermes agent executions are children of the API service. Persistent state is
+stored below `/srv/brain4all-data`, and runtime configuration is read from
+`/etc/brain4all/brain4all.env`. The VM firewall must allow port `8642` only
+from the authenticated workspace gateway; port `20128` must remain private to
+the VM.
+
 Validation:
 
 ```bash

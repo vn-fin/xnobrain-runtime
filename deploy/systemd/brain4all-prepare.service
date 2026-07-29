@@ -1,0 +1,14 @@
+[Unit]
+Description=Prepare Brain4All persistent data volume
+Before=brain4all-9router.service brain4all-api.service
+PartOf=brain4all.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/install -d -o brain4all -g brain4all -m 0700 /srv/brain4all-data /srv/brain4all-data/home /srv/brain4all-data/brain4all /srv/brain4all-data/hermes /srv/brain4all-data/9router
+RemainAfterExit=yes
+
+[Install]
+WantedBy=brain4all.target
