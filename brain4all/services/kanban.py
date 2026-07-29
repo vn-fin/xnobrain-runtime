@@ -70,7 +70,7 @@ def _detail(task: Any) -> dict[str, Any]:
     return {"kind": kind, "label": label, "reason": reason}
 
 
-def _allowed_moves(raw: str) -> list[str]:
+def _allowed_moves(raw: str, *, failed: bool = False) -> list[str]:
     """Return product columns reachable without hidden reclaim/reopen work."""
     if raw == "triage":
         return ["todo", "running", "archived"]
@@ -81,7 +81,11 @@ def _allowed_moves(raw: str) -> list[str]:
     if raw == "scheduled":
         return ["archived"]
     if raw == "blocked":
-        return ["todo", "archived"]
+        return (
+            ["backlog", "todo", "archived"]
+            if failed
+            else ["todo", "archived"]
+        )
     if raw == "review":
         return ["running", "archived"]
     if raw == "done":
@@ -381,7 +385,10 @@ class KanbanService:
             "description": str(task.body or ""),
             "status": raw_status,
             "kanban_status": _status(raw_status),
-            "allowed_kanban_statuses": _allowed_moves(raw_status),
+            "allowed_kanban_statuses": _allowed_moves(
+                raw_status,
+                failed=bool(getattr(task, "last_failure_error", None)),
+            ),
             "state_detail": _detail(task),
             "priority": INT_TO_PRIORITY.get(int(getattr(task, "priority", 0) or 0), "medium"),
             "assignee": getattr(task, "assignee", None),
@@ -1095,7 +1102,14 @@ class KanbanService:
                     else:
                         ok = False
                 elif target == "backlog":
-                    raise ServiceError("active tasks cannot be returned to Backlog", status=409, code="invalid_transition")
+                    if raw == "blocked" and getattr(task, "last_failure_error", None):
+                        ok = kb_adapter.return_failed_task_to_triage(conn, task_id)
+                    else:
+                        raise ServiceError(
+                            "active tasks cannot be returned to Backlog",
+                            status=409,
+                            code="invalid_transition",
+                        )
                 else:
                     raise ServiceError("invalid Kanban status", code="invalid_request")
             except ServiceError:

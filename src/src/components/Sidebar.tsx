@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleUserRound,
+  Clock3,
   Columns3,
   Download,
   Languages,
@@ -40,6 +41,7 @@ const PINNED_KEY = 'brain4all.pinnedAssistants';
 const navItems = [
   { id: 'skills', label: 'skills', icon: Puzzle },
   { id: 'kanban', label: 'kanban', icon: Columns3 },
+  { id: 'cron', label: 'cron', icon: Clock3 },
   { id: 'teams', label: 'teams', icon: Network },
   { id: 'analytics', label: 'analytics', icon: BarChart3 },
   { id: 'data', label: 'settings', icon: Settings },

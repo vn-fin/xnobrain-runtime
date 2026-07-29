@@ -1,8 +1,8 @@
 // Shared domain types for the app. These mirror the backend API models
 // (agent-gateway, conversations, sandboxes, and Hermes Kanban).
 
-export type RightView = 'workspace' | 'skills' | 'runtime';
-export type CenterView = 'chat' | 'skills' | 'teams' | 'data' | 'kanban' | 'analytics';
+export type RightView = 'workspace' | 'skills' | 'cron' | 'runtime';
+export type CenterView = 'chat' | 'skills' | 'teams' | 'data' | 'kanban' | 'analytics' | 'cron';
 
 export type ConnectionMode = 'device-code' | 'cli' | 'api-key';
 export type ProviderBrand = 'openai' | 'claude' | 'anthropic' | 'gemini' | 'openrouter';
@@ -268,13 +268,27 @@ export type CronState = 'scheduled' | 'stopped' | 'running';
 
 export type CronJob = {
   id: string;
+  agentId: string;
   name: string;
   state: CronState;
+  schedule: string;
   intervalMinutes: number;
-  forever: boolean;
-  repeatCount?: number;
-  nextRun: string; // ISO timestamp
+  nextRun: string;
   prompt: string;
+};
+
+export type CronRun = {
+  id: string;
+  state: 'running' | 'success' | 'failed';
+  triggeredAt: string;
+  completedAt: string;
+  output: string;
+  error: string;
+};
+
+export type CronDetail = {
+  job: CronJob;
+  run: CronRun | null;
 };
 
 // Per-agent skill enablement map: agentId -> { skillId -> enabled }

@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from 'react';
-import { Layers, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useBlends } from '../../hooks/useBlends';
 import type { Blend } from '../../api/blends';
 import { ConfirmDialog } from '../../components/modals';
@@ -25,11 +25,7 @@ export function BlendsSection() {
 
   return (
     <div>
-      <div style={S.bar}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Layers size={16} />
-          <strong style={{ fontSize: 14 }}>Model Blends</strong>
-        </div>
+      <div style={{ ...S.bar, justifyContent: 'flex-end' }}>
         <button style={{ ...S.btn, ...S.primary }} disabled={state.unavailable} onClick={() => setCreating(true)}>
           <Plus size={14} /> New blend
         </button>

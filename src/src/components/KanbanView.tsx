@@ -409,6 +409,13 @@ function SkillPicker({
   onChange: (skills: string[]) => void;
   loading?: boolean;
 }) {
+  const [search, setSearch] = useState('');
+  const filteredSkills = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    if (!query) return skills;
+    return skills.filter((skill) => (skill.name || skill.skill_id).toLocaleLowerCase().includes(query));
+  }, [search, skills]);
+
   return (
     <div className="kb-skill-picker">
       {!assignee ? (
@@ -430,8 +437,18 @@ function SkillPicker({
               {selected.length === skills.length ? 'Disable all' : 'Enable all'}
             </button>
           </div>
+          <label className="kb-skill-search">
+            <Search size={14} aria-hidden="true" />
+            <input
+              type="search"
+              value={search}
+              placeholder="Search skills by name"
+              aria-label="Search skills by name"
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
           <div className="kb-skill-options" role="group" aria-label="Skills used for this task">
-            {skills.map((skill) => {
+            {filteredSkills.map((skill) => {
               const checked = selected.includes(skill.skill_id);
               return (
                 <label className={checked ? 'selected' : ''} key={skill.skill_id}>
@@ -452,6 +469,9 @@ function SkillPicker({
                 </label>
               );
             })}
+            {filteredSkills.length === 0 && (
+              <span className="kb-skill-empty">No skills match “{search.trim()}”.</span>
+            )}
           </div>
         </>
       )}

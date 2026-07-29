@@ -130,6 +130,53 @@ def task_runs(conn: Any, task_id: str) -> list[Any]:
     return list(_module().list_runs(conn, task_id))
 
 
+def return_failed_task_to_triage(
+    conn: Any,
+    task_id: str,
+    *,
+    actor: str = "brain4all",
+) -> bool:
+    """Return a failed (circuit-breaker blocked) task to native triage.
+
+    Hermes exposes unblock operations for retrying a task, but no operation
+    for deliberately putting a failed task back into triage. Keep the guarded
+    transition here at the integration boundary so task invariants and the
+    native event stream remain explicit.
+    """
+    kb = _module()
+    with kb.write_txn(conn):
+        row = conn.execute(
+            "SELECT status, last_failure_error, current_run_id, claim_lock "
+            "FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        if (
+            row["status"] != "blocked"
+            or not row["last_failure_error"]
+            or row["current_run_id"] is not None
+            or row["claim_lock"] is not None
+        ):
+            return False
+        changed = conn.execute(
+            "UPDATE tasks SET status = 'triage', claim_lock = NULL, "
+            "claim_expires = NULL, worker_pid = NULL, current_run_id = NULL, "
+            "consecutive_failures = 0, last_failure_error = NULL "
+            "WHERE id = ? AND status = 'blocked' AND last_failure_error IS NOT NULL",
+            (task_id,),
+        )
+        if changed.rowcount != 1:
+            return False
+        kb._append_event(
+            conn,
+            task_id,
+            "returned_to_triage",
+            {"actor": actor},
+        )
+    return True
+
+
 def task_attachments(conn: Any, task_id: str) -> list[Any]:
     return list(_module().list_attachments(conn, task_id))
 

@@ -37,8 +37,9 @@ from ..integrations import (
     NineRouterAPIError,
     NineRouterManager,
 )
-from ..repositories import FileRepository, StoreError
+from ..repositories import FileRepository, PostgresCronRepository, StoreError
 from .portability import PortabilityService
+from .cron import CronService, CronServiceError
 
 
 SUPPORTED_PROVIDERS = ("claude", "codex", "antigravity", "openai", "anthropic", "gemini")
@@ -54,7 +55,6 @@ DEFAULT_TEAM_COORDINATOR_PROMPT = (
 DEFAULT_TEAM_SYNTHESIS_PROMPT = (
     "Synthesize all completed stage outputs into one clear, accurate final answer."
 )
-_EVERY = re.compile(r"^@every\s+(\d+)([smhd])$")
 
 
 class ServiceError(ValueError):
@@ -91,6 +91,8 @@ class PlatformService:
         self.router = router
         self.runtime = runtime
         self.portability = PortabilityService(repository, config.root_profile)
+        cron_jobs = PostgresCronRepository.from_environment()
+        self.cron = CronService(repository, agents, cron_jobs)
         from .kanban import KanbanService
         self.kanban = KanbanService(agents, repository)
         from .analytics import AnalyticsService
@@ -785,109 +787,22 @@ class PlatformService:
         return self.portability.delete_transfer(kind, transfer_id)
 
     def list_crons(self) -> list[dict[str, Any]]:
-        tasks: list[dict[str, Any]] = []
-        offset = 0
-        while True:
-            page = self.kanban.list_tasks(
-                "default",
-                {"include_archived": "true", "limit": 200, "offset": offset},
-            )
-            tasks.extend(page["tasks"])
-            offset += len(page["tasks"])
-            if offset >= int(page["total"]) or not page["tasks"]:
-                break
-        return [
-            self._schedule_job(task)
-            for task in tasks
-            if task.get("schedule") is not None and not task.get("archived")
-        ]
+        return self.cron.list_jobs()
+
+    def get_job_detail(self, cron_id: str) -> dict[str, Any]:
+        return self.cron.get_job_detail(cron_id)
 
     def create_cron(self, body: Mapping[str, Any]) -> dict[str, Any]:
-        agent_id = str(body.get("agent_id") or "").strip()
-        self.agents.describe_agent(agent_id, include_memory=False)
-        prompt = str(body.get("prompt") or "").strip()
-        if not prompt:
-            raise ServiceError("prompt is required")
-        interval = int(body.get("interval_minutes") or 0)
-        raw_schedule = str(body.get("schedule") or "").strip()
-        timezone_name = str(body.get("timezone") or "Etc/UTC")
-        if str(body.get("mode") or "local") != "local":
-            raise ServiceError("only local cron jobs are supported")
-        recurrence = "interval"
-        if interval <= 0 and raw_schedule:
-            try:
-                parsed = datetime.fromisoformat(raw_schedule.replace("Z", "+00:00"))
-            except ValueError:
-                seconds = self._schedule_seconds(raw_schedule)
-                interval = max(1, seconds // 60)
-            else:
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=timezone.utc)
-                recurrence = "once"
-                scheduled_at = parsed.astimezone(timezone.utc).isoformat()
-        if recurrence == "interval":
-            if interval <= 0:
-                raise ServiceError("interval_minutes or an ISO scheduled time is required")
-            scheduled_at = (
-                datetime.now(timezone.utc) + timedelta(minutes=interval)
-            ).isoformat()
-        template = self.kanban.create_task(
-            "default",
-            {
-                "title": str(body.get("name") or "Scheduled task").strip(),
-                "description": prompt,
-                "status": "scheduled",
-                "priority": "medium",
-                "assignee": agent_id,
-                "schedule": {
-                    "recurrence": recurrence,
-                    "scheduled_at": scheduled_at,
-                    "timezone": timezone_name,
-                    "interval_minutes": interval if recurrence == "interval" else None,
-                },
-            },
-            created_by=agent_id,
-        )
-        return self._schedule_job(template)
+        return self.cron.create_job(body)
 
     def set_cron_enabled(self, cron_id: str, enabled: bool) -> dict[str, Any]:
-        task = self.kanban.schedule_action(
-            "default",
-            cron_id,
-            "resume" if enabled else "pause",
-        )
-        return self._schedule_job(task)
+        return self.cron.set_enabled(cron_id, enabled)
 
     def delete_cron(self, cron_id: str) -> dict[str, Any]:
-        self.kanban.archive_task("default", cron_id)
-        return {"deleted": True}
+        return self.cron.delete_job(cron_id)
 
     async def run_cron(self, cron_id: str) -> dict[str, Any]:
-        task = self.kanban.schedule_action("default", cron_id, "run_now")
-        return {"job": self._schedule_job(task), "task": task}
-
-    @staticmethod
-    def _schedule_job(task: Mapping[str, Any]) -> dict[str, Any]:
-        schedule = dict(task.get("schedule") or {})
-        interval = schedule.get("interval_minutes")
-        return {
-            "id": str(task["id"]),
-            "agent_id": task.get("assignee"),
-            "name": str(task.get("title") or "Scheduled task"),
-            "prompt": str(task.get("description") or ""),
-            "schedule": (
-                f"@every {interval}m"
-                if schedule.get("recurrence") == "interval"
-                else schedule.get("next_run_at")
-            ),
-            "timezone": str(schedule.get("timezone") or "Etc/UTC"),
-            "enabled": bool(schedule.get("enabled")),
-            "next_run_at": schedule.get("next_run_at"),
-            "last_run_at": schedule.get("last_run_at"),
-            "mode": "local",
-            "kanban_board": "default",
-            "kanban_task_id": str(task["id"]),
-        }
+        return self.cron.request_run(cron_id)
 
     @staticmethod
     def _team_with_description(team: Mapping[str, Any]) -> dict[str, Any]:
@@ -1442,14 +1357,6 @@ class PlatformService:
         return tools
 
     @staticmethod
-    def _schedule_seconds(schedule: str) -> int:
-        match = _EVERY.fullmatch(schedule.strip())
-        if not match:
-            raise ServiceError("schedule must use @every <number>s|m|h|d")
-        value = int(match.group(1))
-        return value * {"s": 1, "m": 60, "h": 3600, "d": 86400}[match.group(2)]
-
-    @staticmethod
     def _conversation_dto(agent_id: str, item: Mapping[str, Any]) -> dict[str, Any]:
         return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Conversation"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tool_call_count") or item.get("tools") or 0), "created_at": item.get("created_at"), "updated_at": item.get("updated_at")}
 
@@ -1483,4 +1390,4 @@ class PlatformService:
         }
 
 
-EXPECTED_ERRORS = (ServiceError, StoreError, AgentAPIError, ConfigAPIError, NineRouterAPIError)
+EXPECTED_ERRORS = (ServiceError, CronServiceError, StoreError, AgentAPIError, ConfigAPIError, NineRouterAPIError)

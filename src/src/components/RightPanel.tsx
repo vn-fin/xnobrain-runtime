@@ -2,6 +2,7 @@ import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Check,
+  Clock3,
   Code2,
   Plus,
   Search,
@@ -12,8 +13,9 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 import { WorkspacePanel, type WorkspaceController } from './WorkspacePanel';
+import { CronPanel } from './CronPanel';
 import type { ResponsePagination } from '../api/client';
-import type { Agent, AgentSkill, AgentSkillMap, GlobalRuntimeConfig, ProviderConnector, RightView } from '../types';
+import type { Agent, AgentSkill, AgentSkillMap, CronJob, GlobalRuntimeConfig, ProviderConnector, RightView } from '../types';
 
 const AGENT_ACTIONS = ['Create', 'Metadata', 'Runtime', 'Memory', 'Test', 'Delete'];
 type WriteApprovalPatch = Partial<Pick<GlobalRuntimeConfig, 'skillsWriteApproval' | 'memoryWriteApproval'>>;
@@ -34,6 +36,14 @@ export function RightPanel({
   onUpdateWriteApprovals,
   skillsPagination,
   onLoadSkillsPage,
+  crons,
+  cronStatus,
+  cronError,
+  cronPendingId,
+  onCreateCron,
+  onToggleCron,
+  onRunCron,
+  onDeleteCron,
   onCreateAgent,
   onOpenSettings,
   onDeleteAgent,
@@ -57,6 +67,14 @@ export function RightPanel({
   onUpdateWriteApprovals: (updates: WriteApprovalPatch) => Promise<void>;
   skillsPagination?: ResponsePagination;
   onLoadSkillsPage: (page: number) => void;
+  crons: CronJob[];
+  cronStatus: 'idle' | 'loading' | 'ready' | 'error';
+  cronError: string;
+  cronPendingId: string;
+  onCreateCron: (input: { name: string; prompt: string; intervalMinutes: number }) => Promise<void>;
+  onToggleCron: (id: string) => Promise<void>;
+  onRunCron: (id: string) => Promise<void>;
+  onDeleteCron: (id: string) => Promise<void>;
   onCreateAgent: () => void;
   onOpenSettings: () => void;
   onDeleteAgent: () => void;
@@ -134,7 +152,7 @@ export function RightPanel({
       </div>
 
       <div className="right-tabs">
-        {(['workspace', 'skills', 'runtime'] as const).map((tab) => (
+        {(['workspace', 'skills', 'cron', 'runtime'] as const).map((tab) => (
           <button
             key={tab}
             className={rightView === tab ? 'active' : ''}
@@ -145,7 +163,7 @@ export function RightPanel({
               onOpen();
             }}
           >
-            {tab === 'workspace' ? <Code2 size={17} /> : tab === 'skills' ? <Sparkles size={17} /> : <Wrench size={17} />}
+            {tab === 'workspace' ? <Code2 size={17} /> : tab === 'skills' ? <Sparkles size={17} /> : tab === 'cron' ? <Clock3 size={17} /> : <Wrench size={17} />}
             <span>{t(`controls.${tab}`)}</span>
           </button>
         ))}
@@ -317,6 +335,19 @@ export function RightPanel({
             );
           })()}
         </section>
+      )}
+
+      {rightView === 'cron' && (
+        <CronPanel
+          crons={crons}
+          status={cronStatus}
+          error={cronError}
+          pendingId={cronPendingId}
+          onCreate={onCreateCron}
+          onToggle={onToggleCron}
+          onRun={onRunCron}
+          onDelete={onDeleteCron}
+        />
       )}
 
       {rightView === 'runtime' && (

@@ -156,8 +156,7 @@ export function SystemView({
             </div>
           </section>
         </>}
-        {section === 'connectors' && <section className="system-card system-integrations-card">
-          <div className="system-card-title"><Network size={18} /><div><strong>Connectors</strong><small>Connect providers and test their current availability from Settings.</small></div></div>
+        {section === 'connectors' && <section className="system-integrations-card">
           <ConnectionsView
             providers={providers}
             keyProviderId={keyProviderId}
@@ -172,12 +171,10 @@ export function SystemView({
             {...accounts}
           />
         </section>}
-        {section === 'blends' && <section className="system-card system-integrations-card">
-          <div className="system-card-title"><Network size={18} /><div><strong>Model Blends</strong><small>Group models into one named blend with a routing strategy (fallback, round-robin, or fusion).</small></div></div>
+        {section === 'blends' && <section className="system-integrations-card">
           <BlendsSection />
         </section>}
-        {section === 'vm' && <section className="system-card system-integrations-card">
-          <div className="system-card-title"><Server size={18} /><div><strong>VM runtime</strong><small>View live VM health, resource usage, network activity, and create or refresh the sandbox.</small></div></div>
+        {section === 'vm' && <section className="system-integrations-card">
           <SandboxView
             data={sandbox.data}
             provisioned={sandbox.provisioned}
