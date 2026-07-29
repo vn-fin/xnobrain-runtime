@@ -40,7 +40,7 @@ function defaultAllowedStatuses(nativeStatus: KanbanNativeStatus): KanbanColumnI
   if (nativeStatus === 'scheduled') return ['archived'];
   if (nativeStatus === 'blocked') return ['todo', 'archived'];
   if (nativeStatus === 'review') return ['running', 'archived'];
-  if (nativeStatus === 'done') return ['archived'];
+  if (nativeStatus === 'done') return [];
   return [];
 }
 

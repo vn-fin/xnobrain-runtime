@@ -31,6 +31,7 @@ import type { Team } from '../api/teams';
 import type { useKanban } from '../hooks/useKanban';
 import type {
   Agent,
+  AgentSkill,
   ChatMessage,
   ConversationUsage,
   KanbanBoard,
@@ -396,22 +397,24 @@ function enabledSkillsFor(agents: Agent[], assignee: string) {
 }
 
 function SkillPicker({
-  agents,
+  skills,
   assignee,
   selected,
   onChange,
+  loading = false,
 }: {
-  agents: Agent[];
+  skills: AgentSkill[];
   assignee: string;
   selected: string[];
   onChange: (skills: string[]) => void;
+  loading?: boolean;
 }) {
-  const skills = useMemo(() => enabledSkillsFor(agents, assignee), [agents, assignee]);
-
   return (
     <div className="kb-skill-picker">
       {!assignee ? (
         <span className="kb-skill-empty">Choose an agent to select its enabled skills.</span>
+      ) : loading ? (
+        <span className="kb-skill-empty">Loading enabled skills…</span>
       ) : skills.length === 0 ? (
         <span className="kb-skill-empty">This agent has no enabled skills.</span>
       ) : (
@@ -818,7 +821,7 @@ function TaskDrawer({
                 <div className="kb-field">
                   Skills used for this task
                   <SkillPicker
-                    agents={agents}
+                    skills={enabledSkillsFor(agents, task.assignees[0] ?? '')}
                     assignee={task.assignees[0] ?? ''}
                     selected={skills}
                     onChange={setSkills}
@@ -1302,12 +1305,14 @@ function NewTaskModal({
   teams,
   state,
   initialStatus,
+  onLoadAgentSkills,
   onClose,
 }: {
   agents: Agent[];
   teams: Team[];
   state: KanbanState;
   initialStatus?: string;
+  onLoadAgentSkills?: (agentId: string, force?: boolean) => Promise<AgentSkill[]>;
   onClose: () => void;
 }) {
   const board = state.board;
@@ -1321,6 +1326,8 @@ function NewTaskModal({
   const [assignmentType, setAssignmentType] = useState<'agent' | 'team'>('agent');
   const [teamId, setTeamId] = useState('');
   const [skills, setSkills] = useState<string[]>([]);
+  const [availableSkills, setAvailableSkills] = useState<AgentSkill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
   const [recurrence, setRecurrence] = useState<'once' | 'interval'>('once');
   const [scheduledAt, setScheduledAt] = useState(defaultScheduledAt);
   const [intervalMinutes, setIntervalMinutes] = useState(60);
@@ -1328,10 +1335,43 @@ function NewTaskModal({
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Etc/UTC',
   );
   const [invalid, setInvalid] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [pending, setPending] = useState(false);
+
+  const formatCreateError = (cause: unknown) => {
+    const message = cause instanceof Error ? cause.message : '';
+    const limitMatch = message.match(/at most (\d+) items[^0-9]*not (\d+)/i);
+    if (limitMatch) {
+      const limit = Number(limitMatch[1]);
+      const received = Number(limitMatch[2]);
+      const excess = received - limit;
+      if (excess > 0) {
+        return `A task can use up to ${limit} skills. Disable ${excess} skills and try again.`;
+      }
+    }
+    return message || 'The task could not be created.';
+  };
 
   useEffect(() => {
-    setSkills(enabledSkillsFor(agents, assignee).map((skill) => skill.skill_id));
-  }, [assignee]);
+    const cached = enabledSkillsFor(agents, assignee);
+    setAvailableSkills(cached);
+    setSkills(cached.map((skill) => skill.skill_id));
+    if (!assignee || !onLoadAgentSkills) {
+      setSkillsLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setSkillsLoading(true);
+    void onLoadAgentSkills(assignee).then((loaded) => {
+      if (cancelled) return;
+      const enabled = loaded.filter((skill) => skill.installed && skill.enabled);
+      setAvailableSkills(enabled);
+      setSkills(enabled.map((skill) => skill.skill_id));
+    }).catch(() => undefined).finally(() => {
+      if (!cancelled) setSkillsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [assignee, onLoadAgentSkills]);
 
   if (!board) return null;
 
@@ -1340,22 +1380,31 @@ function NewTaskModal({
       setInvalid(true);
       return;
     }
-    await state.createTask({
-      title: title.trim(),
-      description: description.trim(),
-      status: status as KanbanColumnId,
-      priority,
-      assignee: assignmentType === 'agent' ? assignee || null : null,
-      teamId: assignmentType === 'team' ? teamId : null,
-      skills: assignmentType === 'agent' ? skills : [],
-      schedule: status === 'scheduled' ? {
-        recurrence,
-        scheduled_at: scheduledAt,
-        timezone: scheduleTimezone,
-        ...(recurrence === 'interval' ? { interval_minutes: intervalMinutes } : {}),
-      } : undefined,
-    });
-    onClose();
+    setInvalid(false);
+    setCreateError('');
+    setPending(true);
+    try {
+      await state.createTask({
+        title: title.trim(),
+        description: description.trim(),
+        status: status as KanbanColumnId,
+        priority,
+        assignee: assignmentType === 'agent' ? assignee || null : null,
+        teamId: assignmentType === 'team' ? teamId : null,
+        skills: assignmentType === 'agent' ? skills : [],
+        schedule: status === 'scheduled' ? {
+          recurrence,
+          scheduled_at: scheduledAt,
+          timezone: scheduleTimezone,
+          ...(recurrence === 'interval' ? { interval_minutes: intervalMinutes } : {}),
+        } : undefined,
+      });
+      onClose();
+    } catch (cause) {
+      setCreateError(formatCreateError(cause));
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
@@ -1508,18 +1557,20 @@ function NewTaskModal({
           )}
           {assignmentType === 'agent' && <div className="kb-field">
             Skills used for this task
-            <SkillPicker agents={agents} assignee={assignee} selected={skills} onChange={setSkills} />
+          <SkillPicker skills={availableSkills} assignee={assignee} selected={skills} loading={skillsLoading} onChange={setSkills} />
             <small className="kb-field-help">Skills are loaded for this task only.</small>
           </div>}
         </div>
         <div className="kb-modal-foot">
-          <button className="conn-btn ghost" onClick={onClose}>Cancel</button>
+          {createError && <div className="kb-board-form-error" role="alert"><AlertTriangle size={14} />{createError}</div>}
+          <button className="conn-btn ghost" disabled={pending} onClick={onClose}>Cancel</button>
           <button
             className="primary-button"
-            disabled={!title.trim() || !description.trim() || (assignmentType === 'team' && !teamId) || (status === 'scheduled' && !scheduledAt)}
+            disabled={pending || !title.trim() || !description.trim() || (assignmentType === 'team' && !teamId) || (status === 'scheduled' && !scheduledAt)}
             onClick={() => void submit()}
           >
-            <Plus size={16} /> Create task
+            {pending ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
+            {pending ? 'Creating…' : 'Create task'}
           </button>
         </div>
       </div>
@@ -1568,6 +1619,7 @@ export function KanbanView({
   teams,
   agents,
   state,
+  onLoadAgentSkills,
   routeTaskId,
   routeAgentId,
   routeConversationId,
@@ -1577,6 +1629,7 @@ export function KanbanView({
   teams: Team[];
   agents: Agent[];
   state: KanbanState;
+  onLoadAgentSkills?: (agentId: string, force?: boolean) => Promise<AgentSkill[]>;
   routeTaskId?: string;
   routeAgentId?: string;
   routeConversationId?: string;
@@ -2133,7 +2186,7 @@ export function KanbanView({
         />
       )}
       {newBoardOpen && <NewBoardModal state={state} onClose={() => setNewBoardOpen(false)} />}
-      {newTaskOpen && <NewTaskModal teams={teams} agents={agents} state={state} initialStatus={newTaskStatus} onClose={() => setNewTaskOpen(false)} />}
+      {newTaskOpen && <NewTaskModal teams={teams} agents={agents} state={state} initialStatus={newTaskStatus} onLoadAgentSkills={onLoadAgentSkills} onClose={() => setNewTaskOpen(false)} />}
       {archiveTask && (
         <ArchiveConfirm
           task={archiveTask}

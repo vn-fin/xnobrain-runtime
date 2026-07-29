@@ -52,11 +52,7 @@ export default function App() {
     router.activeAgentId,
     router.centerView === 'chat' && router.rightView === 'workspace',
   );
-  const teams = useTeams(
-    router.centerView === 'teams'
-    || router.centerView === 'kanban'
-    || router.centerView === 'analytics',
-  );
+  const teams = useTeams(router.centerView === 'teams');
   const kanban = useKanban(router.centerView === 'kanban' || router.centerView === 'analytics');
   const analytics = useAnalytics(router.centerView === 'analytics', assistants.agents);
   const blends = useBlends(router.centerView === 'chat');
@@ -175,6 +171,21 @@ export default function App() {
     onboarding,
     router.centerView,
     router.rightView,
+  ]);
+
+  // The agent list endpoint only returns summaries, so hydrate each agent's
+  // skills before rendering the library's per-agent usage indicators.
+  useEffect(() => {
+    if (!assistantsReady || onboarding || router.centerView !== 'skills') return;
+    void Promise.all(
+      assistants.agents.map((agent) => assistants.loadAgentSkills(agent.id)),
+    );
+  }, [
+    assistants.agents,
+    assistants.loadAgentSkills,
+    assistantsReady,
+    onboarding,
+    router.centerView,
   ]);
 
   const { centerView } = router;
@@ -378,6 +389,7 @@ export default function App() {
             teams={teams.teams}
             agents={assistants.agents}
             state={kanban}
+            onLoadAgentSkills={assistants.loadAgentSkills}
             routeTaskId={router.kanbanTaskId}
             routeAgentId={router.kanbanAgentId}
             routeConversationId={router.kanbanConversationId}
