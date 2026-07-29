@@ -10,6 +10,7 @@
     "zh": "中文"
   },
   "nav": {
+    "workspace": "Workspace",
     "sandbox": "Runtime",
     "runtime": "Runtime",
     "connections": "Connections",
@@ -72,6 +73,16 @@
   "agents": {
     "title": "Assistants",
     "recent": "Recent",
+    "pinned": "Pinned",
+    "pin": "Pin assistant",
+    "unpin": "Unpin assistant",
+    "switch": "Switch assistant",
+    "searchResults": "Search results",
+    "noMatch": "No assistants match your search.",
+    "openLibrary": "Open in Library",
+    "libraryTitle": "Assistant Library",
+    "libraryCount_one": "{{count}} assistant",
+    "libraryCount_other": "{{count}} assistants",
     "searchPlaceholder": "Search assistants…",
     "new": "New assistant",
     "settings": "Assistant settings",
@@ -91,6 +102,7 @@
     "ide": "IDE context",
     "fullAccess": "Full access",
     "createConversation": "Create conversation",
+    "showAllConversations": "Show all conversations",
     "closeConversation": "Close conversation",
     "emptyTitle": "No conversations yet",
     "emptyDesc": "Start a new conversation to begin chatting with {{name}}.",

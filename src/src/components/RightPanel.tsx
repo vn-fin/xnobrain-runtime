@@ -19,6 +19,9 @@ const AGENT_ACTIONS = ['Create', 'Metadata', 'Runtime', 'Memory', 'Test', 'Delet
 type WriteApprovalPatch = Partial<Pick<GlobalRuntimeConfig, 'skillsWriteApproval' | 'memoryWriteApproval'>>;
 
 export function RightPanel({
+  open,
+  onOpen,
+  onClose,
   rightView,
   onRightView,
   agent,
@@ -39,6 +42,9 @@ export function RightPanel({
   width,
   onResize,
 }: {
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
   rightView: RightView;
   onRightView: (v: RightView) => void;
   agent: Agent;
@@ -110,7 +116,7 @@ export function RightPanel({
   };
 
   return (
-    <aside className="right-panel">
+    <aside className={open ? 'right-panel open' : 'right-panel collapsed'}>
       <div
         className="right-resizer"
         role="separator"
@@ -122,15 +128,25 @@ export function RightPanel({
       />
       <div className="right-head">
         <strong>{t('controls.title')}</strong>
-        <button className="icon-button" title={t('common.close')}>
+        <button className="icon-button" title={t('common.close')} onClick={onClose}>
           <X size={17} />
         </button>
       </div>
 
       <div className="right-tabs">
         {(['workspace', 'skills', 'runtime'] as const).map((tab) => (
-          <button key={tab} className={rightView === tab ? 'active' : ''} onClick={() => onRightView(tab)}>
-            {t(`controls.${tab}`)}
+          <button
+            key={tab}
+            className={rightView === tab ? 'active' : ''}
+            title={t(`controls.${tab}`)}
+            aria-label={t(`controls.${tab}`)}
+            onClick={() => {
+              onRightView(tab);
+              onOpen();
+            }}
+          >
+            {tab === 'workspace' ? <Code2 size={17} /> : tab === 'skills' ? <Sparkles size={17} /> : <Wrench size={17} />}
+            <span>{t(`controls.${tab}`)}</span>
           </button>
         ))}
       </div>

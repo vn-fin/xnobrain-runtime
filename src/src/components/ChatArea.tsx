@@ -16,6 +16,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Settings2,
   ShieldAlert,
   Square,
@@ -85,6 +86,7 @@ export function ContextGauge({ usage, model }: { usage: ConversationUsage | null
 
 export function ChatArea({
   agent,
+  agents,
   activeConversation,
   providers,
   blends = [],
@@ -106,6 +108,7 @@ export function ChatArea({
   onSelectModel,
   onOpenSettings,
   onOpenRuntime,
+  onSelectAgent,
   onTestAgent,
   onDeleteAgent,
   onSelectConversation,
@@ -118,6 +121,7 @@ export function ChatArea({
   workspaceCwd,
 }: {
   agent: Agent;
+  agents: Agent[];
   activeConversation: Conversation | undefined;
   providers: ConnectionProvider[];
   blends?: string[];
@@ -139,6 +143,7 @@ export function ChatArea({
   onSelectModel: (providerId: string, model: string) => void | Promise<void>;
   onOpenSettings: () => void;
   onOpenRuntime: () => void;
+  onSelectAgent: (agent: Agent) => void;
   onTestAgent: () => void;
   onDeleteAgent: () => void;
   onSelectConversation: (id: string) => void;
@@ -153,6 +158,9 @@ export function ChatArea({
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [modelOpen, setModelOpen] = useState(false);
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [agentPickerSearch, setAgentPickerSearch] = useState('');
+  const [conversationsExpanded, setConversationsExpanded] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [fileDragOver, setFileDragOver] = useState(false);
@@ -179,6 +187,23 @@ export function ChatArea({
     || provider.default_model === agent.model,
   );
   const currentModelLabel = agent.model || currentProvider?.default_model || 'Select model';
+  const agentPickerQuery = agentPickerSearch.trim().toLowerCase();
+  const filteredAgents = agents.filter((item) => !agentPickerQuery
+    || item.title.toLowerCase().includes(agentPickerQuery)
+    || item.model.toLowerCase().includes(agentPickerQuery));
+  const compactConversations = (() => {
+    const initial = agent.conversations.slice(0, 3);
+    if (!activeConversation || initial.some((item) => item.id === activeConversation.id)) return initial;
+    return [...initial.slice(0, 2), activeConversation];
+  })();
+  const shownConversations = conversationsExpanded ? agent.conversations : compactConversations;
+  const hiddenConversationCount = Math.max(0, agent.conversations.length - shownConversations.length);
+
+  useEffect(() => {
+    setAgentPickerOpen(false);
+    setAgentPickerSearch('');
+    setConversationsExpanded(false);
+  }, [agent.id]);
   // Only the final answer of a turn is shown as a chat bubble. Intermediate
   // tool-call messages (finish_reason "tool_calls") are hidden here and instead
   // folded into the turn's collapsible "thinking" run. Live streaming messages
@@ -461,12 +486,50 @@ export function ChatArea({
     <>
       <header className="top-bar">
         <div className="agent-switch">
-          <button>
+          <button
+            aria-haspopup="listbox"
+            aria-expanded={agentPickerOpen}
+            onClick={() => setAgentPickerOpen((open) => !open)}
+          >
             <Bot size={18} />
             {agent.title}
             <ChevronDown size={16} />
           </button>
           <span>{agent.model}</span>
+          {agentPickerOpen && (
+            <>
+              <div className="agent-switch-catcher" onClick={() => setAgentPickerOpen(false)} />
+              <div className="agent-switch-popover">
+                <div className="agent-switch-search">
+                  <Search size={14} />
+                  <input
+                    value={agentPickerSearch}
+                    onChange={(event) => setAgentPickerSearch(event.target.value)}
+                    placeholder={t('agents.searchPlaceholder')}
+                    autoFocus
+                  />
+                </div>
+                <div className="agent-switch-list" role="listbox" aria-label={t('agents.switch')}>
+                  {filteredAgents.map((item) => (
+                    <button
+                      key={item.id}
+                      className={item.id === agent.id ? 'active' : ''}
+                      role="option"
+                      aria-selected={item.id === agent.id}
+                      onClick={() => {
+                        setAgentPickerOpen(false);
+                        onSelectAgent(item);
+                      }}
+                    >
+                      <span className="status-dot" />
+                      <span><strong>{item.title}</strong><small>{item.model}</small></span>
+                      {item.id === agent.id && <Check size={14} />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="top-actions">
@@ -485,8 +548,8 @@ export function ChatArea({
         </div>
       </header>
 
-      <div className="conversation-tabs">
-        {agent.conversations.map((conversation) => {
+      <div className={conversationsExpanded ? 'conversation-tabs expanded' : 'conversation-tabs'}>
+        {shownConversations.map((conversation) => {
           const tabStreaming = streamingKeys.includes(`${agent.id}::${conversation.id}`);
           return (
           <div
@@ -530,6 +593,20 @@ export function ChatArea({
           </div>
           );
         })}
+        {!conversationsExpanded && hiddenConversationCount > 0 && (
+          <button
+            className="chat-tab conversation-overflow"
+            title={t('chat.showAllConversations')}
+            onClick={() => setConversationsExpanded(true)}
+          >
+            +{hiddenConversationCount}
+          </button>
+        )}
+        {conversationsExpanded && agent.conversations.length > 3 && (
+          <button className="chat-tab conversation-overflow" onClick={() => setConversationsExpanded(false)}>
+            {t('common.showLess')}
+          </button>
+        )}
         <button className="chat-tab add" title={t('chat.createConversation')} onClick={onCreateConversation}>
           <Plus size={16} />
         </button>

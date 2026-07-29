@@ -64,6 +64,7 @@ export default function App() {
     const stored = Number(localStorage.getItem('rightPanelWidth'));
     return Number.isFinite(stored) && stored >= RIGHT_MIN ? Math.min(stored, RIGHT_MAX) : 330;
   });
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
   useEffect(() => { localStorage.setItem('rightPanelWidth', String(rightWidth)); }, [rightWidth]);
   const clampRightWidth = (width: number) => Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, Math.min(width, Math.round(window.innerWidth * 0.6))));
 
@@ -110,6 +111,7 @@ export default function App() {
 
   const handleOpenWorkspaceFile = (path: string) => {
     router.setRightView('workspace');
+    setRightPanelOpen(true);
     setWorkspaceOpenRequest({ path, token: Date.now() });
   };
 
@@ -278,13 +280,12 @@ export default function App() {
 
   return (
     <div
-      className={centerView === 'chat' ? 'app' : 'app no-right'}
-      style={centerView === 'chat' ? ({ '--right': `${rightWidth}px` } as CSSProperties) : undefined}
+      className={centerView === 'chat' ? `app${rightPanelOpen ? ' inspector-open' : ' inspector-collapsed'}` : 'app no-right'}
+      style={centerView === 'chat' ? ({ '--right': `${rightPanelOpen ? rightWidth : 48}px` } as CSSProperties) : undefined}
     >
       <Sidebar
         agents={assistants.agents}
         activeAgent={activeAgent}
-        activeConversation={activeConversation}
         centerView={centerView}
         agentSearch={router.agentSearch}
         onAgentSearch={router.setAgentSearch}
@@ -294,15 +295,9 @@ export default function App() {
             router.openChat(agent.id, rows[0]?.id ?? '');
           });
         }}
-        onSelectConversation={(id) => {
-          if (id === router.activeConversationId) void conversation.requestUsage();
-          router.openChat(router.activeAgentId, id);
-        }}
         onRenameAgent={assistants.renameAgent}
         onExportAgent={exportProfile}
         onRequestDeleteAgent={setDeleteAgentId}
-        onRenameConversation={handleRenameConversation}
-        onRequestDeleteConversation={(id) => setDeleteConversationId(id)}
         onNewAgent={() => setCreateAgentOpen(true)}
         user={auth.user}
         edition={auth.config.edition}
@@ -410,6 +405,7 @@ export default function App() {
         ) : (
           <ChatArea
             agent={activeAgent}
+            agents={assistants.agents}
             activeConversation={activeConversation}
             providers={connections.connections}
             blends={blends.blends.map((blend) => blend.name)}
@@ -431,7 +427,15 @@ export default function App() {
             onSelectModel={(provider, model) => assistants.updateAgent(activeAgent.id, { provider, model })}
             onTestAgent={() => void assistants.testAgent(activeAgent.id)}
             onOpenSettings={() => setSettingsOpen(true)}
-            onOpenRuntime={() => router.setRightView('runtime')}
+            onOpenRuntime={() => {
+              router.setRightView('runtime');
+              setRightPanelOpen(true);
+            }}
+            onSelectAgent={(agent) => {
+              void assistants.loadConversations(agent.id).then((rows) => {
+                router.openChat(agent.id, rows[0]?.id ?? '');
+              });
+            }}
             onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}
             onSelectConversation={(id) => {
               if (id === router.activeConversationId) void conversation.requestUsage();
@@ -450,6 +454,9 @@ export default function App() {
 
       {centerView === 'chat' && (
         <RightPanel
+          open={rightPanelOpen}
+          onOpen={() => setRightPanelOpen(true)}
+          onClose={() => setRightPanelOpen(false)}
           rightView={router.rightView}
           onRightView={router.setRightView}
           agent={activeAgent}

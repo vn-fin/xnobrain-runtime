@@ -27,6 +27,7 @@ const agent: Agent = {
 
 describe('Sidebar assistant actions', () => {
   beforeEach(async () => {
+    localStorage.clear();
     await i18n.changeLanguage('en');
   });
 
@@ -36,18 +37,14 @@ describe('Sidebar assistant actions', () => {
       <Sidebar
         agents={[agent]}
         activeAgent={agent}
-        activeConversation={undefined}
         centerView="chat"
         agentSearch=""
         onAgentSearch={vi.fn()}
         onNavigate={vi.fn()}
         onSelectAgent={vi.fn()}
-        onSelectConversation={vi.fn()}
         onRenameAgent={vi.fn()}
         onExportAgent={vi.fn()}
         onRequestDeleteAgent={requestDelete}
-        onRenameConversation={vi.fn()}
-        onRequestDeleteConversation={vi.fn()}
         onNewAgent={vi.fn()}
       />,
     );
@@ -70,22 +67,19 @@ describe('Sidebar assistant actions', () => {
       <Sidebar
         agents={[agent]}
         activeAgent={agent}
-        activeConversation={undefined}
         centerView="chat"
         agentSearch=""
         onAgentSearch={vi.fn()}
         onNavigate={navigate}
         onSelectAgent={vi.fn()}
-        onSelectConversation={vi.fn()}
         onRenameAgent={vi.fn()}
         onExportAgent={vi.fn()}
         onRequestDeleteAgent={vi.fn()}
-        onRenameConversation={vi.fn()}
-        onRequestDeleteConversation={vi.fn()}
         onNewAgent={vi.fn()}
       />,
     );
 
+    fireEvent.click(within(container).getByRole('button', { name: 'Workspace' }));
     fireEvent.click(within(container).getByRole('button', { name: 'Skills' }));
     expect(navigate).toHaveBeenCalledWith('skills');
   });
@@ -97,18 +91,14 @@ describe('Sidebar assistant actions', () => {
       <Sidebar
         agents={[agent]}
         activeAgent={agent}
-        activeConversation={undefined}
         centerView="chat"
         agentSearch=""
         onAgentSearch={vi.fn()}
         onNavigate={vi.fn()}
         onSelectAgent={vi.fn()}
-        onSelectConversation={vi.fn()}
         onRenameAgent={vi.fn()}
         onExportAgent={vi.fn()}
         onRequestDeleteAgent={vi.fn()}
-        onRenameConversation={vi.fn()}
-        onRequestDeleteConversation={vi.fn()}
         onNewAgent={vi.fn()}
         user={{ userId: 'user-1', email: 'kim@example.com', displayName: 'Kim', tenantId: 'tenant-1', planId: 'pro', roles: ['owner'] }}
         edition="pro"
@@ -119,10 +109,42 @@ describe('Sidebar assistant actions', () => {
       />,
     );
 
+    fireEvent.click(within(container).getByRole('button', { name: 'Workspace' }));
     fireEvent.click(within(container).getByRole('button', { name: /Accountpro/i }));
     expect(openAccount).toHaveBeenCalledOnce();
 
     fireEvent.click(within(container).getByRole('button', { name: 'Sign out' }));
     expect(requestSignOut).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the sidebar focused on recent assistants and opens the full library', () => {
+    const agents = Array.from({ length: 6 }, (_, index) => ({
+      ...agent,
+      id: `agent-${index}`,
+      name: `agent-${index}`,
+      title: `Assistant ${index + 1}`,
+    }));
+    const { container } = render(
+      <Sidebar
+        agents={agents}
+        activeAgent={agents[0]}
+        centerView="chat"
+        agentSearch=""
+        onAgentSearch={vi.fn()}
+        onNavigate={vi.fn()}
+        onSelectAgent={vi.fn()}
+        onRenameAgent={vi.fn()}
+        onExportAgent={vi.fn()}
+        onRequestDeleteAgent={vi.fn()}
+        onNewAgent={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Assistant 1')).toBeVisible();
+    expect(screen.queryByText('Assistant 6')).not.toBeInTheDocument();
+
+    fireEvent.click(within(container).getByRole('button', { name: 'Open in Library' }));
+    expect(screen.getByRole('dialog', { name: 'Assistant Library' })).toBeVisible();
+    expect(screen.getByText('Assistant 6')).toBeVisible();
   });
 });
