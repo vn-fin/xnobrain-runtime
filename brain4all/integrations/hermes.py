@@ -963,6 +963,12 @@ class AgentManager:
         try:
             history = await adapter._conversation_history_for_session(conversation_id)
             session = self._session(profile_dir, conversation_id) or {}
+            selected_model = str(
+                prepared.get("requested_model")
+                or session.get("model")
+                or prepared.get("model")
+                or ""
+            ).strip()
             result, usage = await adapter._run_agent(
                 user_message=str(prepared["message"]),
                 conversation_history=history,
@@ -971,8 +977,7 @@ class AgentManager:
                 tool_progress_callback=tool_progress_callback,
                 agent_ref=agent_ref,
                 gateway_session_key=conversation_id,
-                requested_model=str(prepared.get("requested_model") or "") or None,
-                session_model=str(session.get("model") or prepared.get("model") or "") or None,
+                route={"model": selected_model} if selected_model else None,
             )
             agent = agent_ref[0]
             compressor = getattr(agent, "context_compressor", None) if agent is not None else None
