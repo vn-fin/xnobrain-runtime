@@ -3,6 +3,7 @@ import type { WorkspaceFileDTO, WorkspaceListDTO } from './contracts/agentGatewa
 import { mapWorkspaceEntry } from './mappers/workspace';
 
 const root = (agentId: string) => `/agent-gateway/v1/agents-workspaces/${encodeURIComponent(agentId)}`;
+const UPLOAD_CHUNK_BYTES = 768 * 1024;
 
 const MIME_BY_EXT: Record<string, string> = {
   pdf: 'application/pdf',
@@ -12,6 +13,7 @@ const MIME_BY_EXT: Record<string, string> = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xls: 'application/vnd.ms-excel',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
   ppt: 'application/vnd.ms-powerpoint',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   zip: 'application/zip', csv: 'text/csv', txt: 'text/plain',
@@ -39,19 +41,6 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
-function base64ToText(base64: string): string {
-  return new TextDecoder('utf-8').decode(base64ToBytes(base64));
-}
-
-function contentOf(value: WorkspaceFileDTO | string): string {
-  if (typeof value === 'string') return value;
-  if (typeof value.content === 'string') return value.content;
-  if (typeof value.content_base64 === 'string') {
-    try { return base64ToText(value.content_base64); } catch { return ''; }
-  }
-  return '';
-}
-
 function blobOf(value: WorkspaceFileDTO | string, path: string): Blob {
   if (typeof value === 'string') return new Blob([value], { type: mimeFor(path, 'text/plain') });
   const mime = preferMime(value.mime_type, path);
@@ -62,17 +51,54 @@ function blobOf(value: WorkspaceFileDTO | string, path: string): Blob {
   return new Blob([], { type: mime });
 }
 
+function newUploadId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function uploadProgress(loaded: number, total: number): UploadProgress {
+  if (total <= 0) return { loaded, total, percent: 100 };
+  const bounded = Math.min(total, loaded);
+  return {
+    loaded: bounded,
+    total,
+    percent: Math.min(100, Math.round((bounded / total) * 100)),
+  };
+}
+
 async function uploadFileInChunks(
   agentId: string,
   path: string,
   file: File,
   onProgress?: (progress: UploadProgress) => void,
 ) {
-  const form = new FormData();
-  form.set('path', path);
-  form.set('type', 'file');
-  form.set('file', file, file.name);
-  return requestMultipartWithProgress(`${root(agentId)}/upload`, form, onProgress);
+  const uploadId = newUploadId();
+  const totalChunks = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_BYTES));
+  let result: unknown;
+  let confirmedBytes = 0;
+
+  onProgress?.(uploadProgress(0, file.size));
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+    const start = chunkIndex * UPLOAD_CHUNK_BYTES;
+    const end = Math.min(file.size, start + UPLOAD_CHUNK_BYTES);
+    const chunk = file.slice(start, end || start, file.type || 'application/octet-stream');
+    const form = new FormData();
+    form.set('path', path);
+    form.set('upload_id', uploadId);
+    form.set('file_name', file.name);
+    form.set('chunk_index', String(chunkIndex));
+    form.set('total_chunks', String(totalChunks));
+    form.set('total_size', String(file.size));
+    form.set('chunk', chunk, file.name);
+
+    result = await requestMultipartWithProgress(`${root(agentId)}/upload/chunk`, form, (progress) => {
+      const inFlightBytes = Math.min(chunk.size, progress.loaded);
+      onProgress?.(uploadProgress(confirmedBytes + inFlightBytes, file.size));
+    });
+    confirmedBytes = end;
+    onProgress?.(uploadProgress(confirmedBytes, file.size));
+  }
+  return result;
 }
 
 export const workspaceApi = {
@@ -108,6 +134,24 @@ export const workspaceApi = {
     }
     return blob;
   },
+  async size(agentId: string, path: string, signal?: AbortSignal) {
+    const response = await requestRaw(`${root(agentId)}/file?path=${encodeURIComponent(path)}`, {
+      signal,
+      headers: { Accept: '*/*', Range: 'bytes=0-0' },
+    });
+    const contentRange = response.headers.get('content-range');
+    const rangeTotal = contentRange?.match(/\/(\d+)$/)?.[1];
+    const value = Number(rangeTotal ?? response.headers.get('content-length'));
+    await response.body?.cancel();
+    return Number.isFinite(value) && value >= 0 ? value : undefined;
+  },
+  async download(agentId: string, path: string, signal?: AbortSignal) {
+    const response = await requestRaw(`${root(agentId)}/file?path=${encodeURIComponent(path)}`, {
+      signal,
+      headers: { Accept: 'application/octet-stream, */*' },
+    });
+    return response.blob();
+  },
   async preview(agentId: string, path: string, signal?: AbortSignal) {
     const response = await requestRaw(`${root(agentId)}/preview?path=${encodeURIComponent(path)}`, {
       signal,
@@ -128,10 +172,20 @@ export const workspaceApi = {
     return blob.type === xlsxMime ? blob : blob.slice(0, blob.size, xlsxMime);
   },
   async read(agentId: string, path: string, signal?: AbortSignal) {
-    const value = await request<WorkspaceFileDTO | string>(`${root(agentId)}/read`, {
-      method: 'POST', body: JSON.stringify({ path }), signal,
+    const response = await requestRaw(`${root(agentId)}/file?path=${encodeURIComponent(path)}`, {
+      signal,
+      headers: { Accept: 'text/plain, text/*;q=0.9, */*;q=0.1' },
     });
-    return contentOf(value);
+    if (!response.body) return response.text();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let content = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      content += decoder.decode(value, { stream: true });
+    }
+    return content + decoder.decode();
   },
   create: (agentId: string, input: { path: string; type: 'file' | 'directory'; content?: string }) =>
     request(`${root(agentId)}/create`, { method: 'POST', body: JSON.stringify(input) }),

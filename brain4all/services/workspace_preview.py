@@ -16,13 +16,14 @@ from zipfile import BadZipFile, ZipFile
 
 OFFICE_EXTENSIONS = frozenset({
     ".doc", ".docx", ".odt", ".rtf",
-    ".xls", ".xlsx", ".ods",
+    ".xls", ".xlsx", ".xlsm", ".ods",
     ".ppt", ".pptx", ".odp",
 })
-SPREADSHEET_EXTENSIONS = frozenset({".xls", ".xlsx", ".ods"})
+SPREADSHEET_EXTENSIONS = frozenset({".xls", ".xlsx", ".xlsm", ".ods"})
 MAX_PREVIEW_SOURCE_BYTES = 25 * 1024 * 1024
 MAX_PREVIEW_BYTES = 50 * 1024 * 1024
 MAX_CACHE_FILES = 256
+DEFAULT_CONVERSION_TIMEOUT_SECONDS = 300
 
 
 class WorkspacePreviewError(ValueError):
@@ -48,6 +49,16 @@ class WorkspacePreviewService:
         self.cache_root = Path(cache_root).resolve()
         self.cache_root.mkdir(parents=True, exist_ok=True, mode=0o750)
         self._lock = threading.Lock()
+        try:
+            configured_timeout = int(
+                os.environ.get(
+                    "WORKSPACE_PREVIEW_TIMEOUT_SECONDS",
+                    str(DEFAULT_CONVERSION_TIMEOUT_SECONDS),
+                )
+            )
+        except ValueError as exc:
+            raise RuntimeError("WORKSPACE_PREVIEW_TIMEOUT_SECONDS must be an integer") from exc
+        self.conversion_timeout_seconds = max(30, min(configured_timeout, 900))
 
     def preview(self, source: str | Path) -> WorkspacePreview:
         source = Path(source)
@@ -176,7 +187,7 @@ class WorkspacePreviewService:
                     check=False,
                     capture_output=True,
                     text=True,
-                    timeout=60,
+                    timeout=self.conversion_timeout_seconds,
                 )
             except subprocess.TimeoutExpired as error:
                 raise WorkspacePreviewError(

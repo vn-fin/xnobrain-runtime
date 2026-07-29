@@ -26,6 +26,7 @@ from brain4all.defaults import (
 from brain4all.integrations import AgentManager, GlobalConfigManager
 from brain4all.services import ServiceError
 from brain4all.services.workspace_preview import WorkspacePreview
+from brain4all.services.workspace_upload import WORKSPACE_UPLOAD_CHUNK_BYTES
 
 
 class FakeRouter:
@@ -842,6 +843,105 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
         self.assertIn("inline", response.headers["content-disposition"])
+
+    async def test_workspace_large_file_upload_is_assembled_from_bounded_chunks(self):
+        payload = (
+            b"a" * (WORKSPACE_UPLOAD_CHUNK_BYTES * 7)
+            + b"last-chunk"
+        )
+        total_chunks = 8
+        async with self.client() as client:
+            created = await client.post(
+                "/agent-gateway/v1/agents",
+                json={"display_name": "Upload worker"},
+            )
+            agent_id = created.json()["data"]["id"]
+            responses = []
+            for index in range(total_chunks):
+                start = index * WORKSPACE_UPLOAD_CHUNK_BYTES
+                part = payload[start:start + WORKSPACE_UPLOAD_CHUNK_BYTES]
+                response = await client.post(
+                    f"/agent-gateway/v1/agents-workspaces/{agent_id}/upload/chunk",
+                    data={
+                        "path": "reports",
+                        "upload_id": "large-upload-1",
+                        "file_name": "large.bin",
+                        "chunk_index": str(index),
+                        "total_chunks": str(total_chunks),
+                        "total_size": str(len(payload)),
+                    },
+                    files={
+                        "chunk": (
+                            "large.bin",
+                            BytesIO(part),
+                            "application/octet-stream",
+                        ),
+                    },
+                )
+                responses.append(response)
+
+        self.assertTrue(all(response.status_code == 200 for response in responses[:-1]))
+        self.assertEqual(responses[-1].status_code, 201, responses[-1].text)
+        self.assertFalse(responses[0].json()["data"]["complete"])
+        self.assertTrue(responses[-1].json()["data"]["complete"])
+        self.assertEqual(
+            (self.profiles / agent_id / "workspace" / "reports" / "large.bin").read_bytes(),
+            payload,
+        )
+        self.assertFalse(
+            (Path(self.temporary.name) / "workspace-uploads" / "large-upload-1").exists()
+        )
+
+    async def test_workspace_chunk_upload_rejects_path_traversal(self):
+        async with self.client() as client:
+            created = await client.post(
+                "/agent-gateway/v1/agents",
+                json={"display_name": "Safe upload worker"},
+            )
+            agent_id = created.json()["data"]["id"]
+            response = await client.post(
+                f"/agent-gateway/v1/agents-workspaces/{agent_id}/upload/chunk",
+                data={
+                    "path": "../outside",
+                    "upload_id": "unsafe-upload",
+                    "file_name": "escape.txt",
+                    "chunk_index": "0",
+                    "total_chunks": "1",
+                    "total_size": "4",
+                },
+                files={"chunk": ("escape.txt", BytesIO(b"nope"), "text/plain")},
+            )
+
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertFalse((Path(self.temporary.name) / "outside" / "escape.txt").exists())
+
+    async def test_workspace_file_streams_content_beyond_legacy_read_limit(self):
+        payload = b"streamed-workspace-content\n" * 250_000
+        self.assertGreater(len(payload), 5 * 1024 * 1024)
+        async with self.client() as client:
+            created = await client.post(
+                "/agent-gateway/v1/agents",
+                json={"display_name": "Stream worker"},
+            )
+            agent_id = created.json()["data"]["id"]
+            workspace = self.profiles / agent_id / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            (workspace / "large.txt").write_bytes(payload)
+
+            legacy = await client.post(
+                f"/agent-gateway/v1/agents-workspaces/{agent_id}/read",
+                json={"path": "large.txt"},
+            )
+            streamed = await client.get(
+                f"/agent-gateway/v1/agents-workspaces/{agent_id}/file",
+                params={"path": "large.txt"},
+            )
+
+        self.assertEqual(legacy.status_code, 413, legacy.text)
+        self.assertEqual(streamed.status_code, 200, streamed.text[:200])
+        self.assertEqual(streamed.content, payload)
+        self.assertEqual(streamed.headers["content-length"], str(len(payload)))
+        self.assertIn("inline", streamed.headers["content-disposition"])
 
     async def test_bundle_round_trip_is_checked_and_excludes_credentials(self):
         async with self.client() as client:

@@ -9,7 +9,7 @@ import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github-dark.css';
 
 const IMAGE_REF = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/i;
-const FILE_REF = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|pdf|md|mdx|txt|log|csv|tsv|json|ya?ml|toml|xml|html?|css|scss|py|ipynb|jsx?|tsx?|sh|sql|doc|docx|xls|xlsx|ppt|pptx|zip|tar|gz)$/i;
+const FILE_REF = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|pdf|md|mdx|txt|log|csv|tsv|json|ya?ml|toml|xml|html?|css|scss|py|ipynb|jsx?|tsx?|sh|sql|doc|docx|xls|xlsx|xlsm|ppt|pptx|zip|tar|gz)$/i;
 
 /** A code span is a previewable file reference when it's a whitespace-free path ending in a known extension. */
 function isFileRef(text: string): boolean {

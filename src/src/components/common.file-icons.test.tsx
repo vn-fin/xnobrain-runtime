@@ -17,10 +17,18 @@ describe('TreeIcon file types', () => {
   it.each([
     ['report.docx', 'document', 'document', 'W'],
     ['budget.xlsx', 'spreadsheet', 'spreadsheet', 'X'],
+    ['forecast.xlsm', 'spreadsheet', 'spreadsheet', 'X'],
     ['locations.csv', 'spreadsheet', 'spreadsheet', 'csv'],
     ['slides.pptx', 'presentation', 'presentation', 'P'],
     ['page.html', 'html', 'html', '<>'],
     ['report.pdf', 'pdf', 'pdf', 'pdf'],
+    ['app.ts', 'typescript', 'typescript', 'TS'],
+    ['component.tsx', 'typescript', 'typescript', 'tsx'],
+    ['deploy.sh', 'shell', 'shell', '$_'],
+    ['app.js', 'javascript', 'javascript', 'JS'],
+    ['service.go', 'go', 'go', 'GO'],
+    ['query.sql', 'sql', 'sql', 'SQL'],
+    ['settings.toml', 'toml', 'config', 'cfg'],
   ] as const)('renders a distinct icon for %s', (name, language, className, label) => {
     const { container } = render(<TreeIcon entry={entry(name, language)} />);
     const badge = container.querySelector(`.file-badge.${className}`);

@@ -40,6 +40,7 @@ from ..integrations import (
 from ..repositories import FileRepository, StoreError
 from .portability import PortabilityService
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError, WorkspacePreviewService
+from .workspace_upload import WorkspaceUploadError, WorkspaceUploadService
 
 
 SUPPORTED_PROVIDERS = ("claude", "codex", "antigravity", "openai", "anthropic", "gemini")
@@ -93,6 +94,7 @@ class PlatformService:
         self.runtime = runtime
         self.portability = PortabilityService(repository, config.root_profile)
         self.workspace_previews = WorkspacePreviewService(repository.data_dir / "workspace-previews")
+        self.workspace_uploads = WorkspaceUploadService(repository.data_dir / "workspace-uploads")
         from .kanban import KanbanService
         self.kanban = KanbanService(agents, repository)
         from .analytics import AnalyticsService
@@ -601,18 +603,61 @@ class PlatformService:
     def read_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.agents.read_workspace_file(agent_id, body)
 
-    def preview_workspace(self, agent_id: str, path: Any) -> WorkspacePreview:
+    def workspace_file(self, agent_id: str, path: Any) -> Path:
         self.agents._require_profile(self.agents._agent_name(agent_id))
         source = self.agents._workspace_path(agent_id, path, require_file=True)
-        return self.workspace_previews.preview(source)
+        if not source.is_file():
+            raise AgentAPIError(
+                "path is not a file",
+                code="invalid_workspace_path",
+                status=404,
+            )
+        return source
+
+    def preview_workspace(self, agent_id: str, path: Any) -> WorkspacePreview:
+        return self.workspace_previews.preview(self.workspace_file(agent_id, path))
 
     def workbook_workspace(self, agent_id: str, path: Any) -> WorkspacePreview:
-        self.agents._require_profile(self.agents._agent_name(agent_id))
-        source = self.agents._workspace_path(agent_id, path, require_file=True)
-        return self.workspace_previews.workbook(source)
+        return self.workspace_previews.workbook(self.workspace_file(agent_id, path))
 
     def write_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.agents.write_workspace_file(agent_id, body)
+
+    def upload_workspace_chunk(
+        self,
+        agent_id: str,
+        *,
+        path: Any,
+        file_name: Any,
+        upload_id: Any,
+        chunk_index: int,
+        total_chunks: int,
+        total_size: int,
+        payload: bytes,
+    ) -> dict[str, Any]:
+        name = str(file_name or "").strip()
+        if (
+            not name
+            or name in {".", ".."}
+            or len(name) > 255
+            or any(character in name for character in ("/", "\\", "\x00", "\r", "\n"))
+        ):
+            raise WorkspaceUploadError("file_name is invalid")
+        directory = str(path or "").strip()
+        relative = f"{directory.rstrip('/')}/{name}" if directory else name
+        self.agents._require_profile(self.agents._agent_name(agent_id))
+        workspace_root = self.agents.workspace_dir(agent_id)
+        target = self.agents._workspace_path(agent_id, relative, require_file=True)
+        return self.workspace_uploads.put_chunk(
+            agent_id=agent_id,
+            upload_id=str(upload_id or ""),
+            target=target,
+            workspace_root=workspace_root,
+            chunk_index=chunk_index,
+            total_chunks=total_chunks,
+            total_size=total_size,
+            payload=payload,
+        )
 
     def create_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         if str(body.get("type") or "file") == "directory":
@@ -1502,4 +1547,5 @@ EXPECTED_ERRORS = (
     ConfigAPIError,
     NineRouterAPIError,
     WorkspacePreviewError,
+    WorkspaceUploadError,
 )

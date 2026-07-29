@@ -12,6 +12,8 @@ export type WorkspaceUploadProgress = {
   totalFiles: number;
 };
 
+export const WORKSPACE_PREVIEW_MAX_BYTES = 3 * 1024 * 1024;
+
 const parentPath = (path: string) => path.split('/').filter(Boolean).slice(0, -1).join('/');
 
 function sorted(entries: WorkspaceEntry[]) {
@@ -31,6 +33,10 @@ export function useWorkspace(agentId: string, active = true) {
   const [editing, setEditing] = useState(false);
   const [status, setStatus] = useState<AsyncStatus>('loading');
   const [pending, setPending] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [previewBlocked, setPreviewBlocked] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
   const [error, setError] = useState('');
   const [uploadProgress, setUploadProgress] = useState<WorkspaceUploadProgress | null>(null);
 
@@ -38,6 +44,7 @@ export function useWorkspace(agentId: string, active = true) {
   // (navigation, refresh, agent switch) — not on React effect cleanup, so it
   // doesn't fight React StrictMode's dev remount.
   const listController = useRef<AbortController>();
+  const openController = useRef<AbortController>();
   // Guards the initial load so it runs once per agent even when StrictMode
   // invokes the mount effect twice in development.
   const loadedAgent = useRef<string | null>(null);
@@ -94,12 +101,15 @@ export function useWorkspace(agentId: string, active = true) {
     });
   }, [cwd]);
 
-  const TEXT_LANGUAGES = ['python', 'notebook', 'markdown', 'json', 'text', 'html'];
+  const NON_TEXT_LANGUAGES = ['image', 'pdf', 'document', 'spreadsheet', 'presentation', 'binary'];
   const OFFICE_LANGUAGES = ['document', 'spreadsheet', 'presentation'];
-  const isText = (entry: WorkspaceEntry) => entry.type === 'file' && TEXT_LANGUAGES.includes(entry.language ?? 'text');
+  const isText = (entry: WorkspaceEntry) => (
+    entry.type === 'file' && !NON_TEXT_LANGUAGES.includes(entry.language ?? 'text')
+  );
   const interactiveSpreadsheetExtension = (entry: WorkspaceEntry) => {
     const name = entry.name.toLowerCase();
     if (entry.language !== 'spreadsheet') return '';
+    if (name.endsWith('.xlsm')) return 'xlsm';
     if (name.endsWith('.xlsx')) return 'xlsx';
     if (name.endsWith('.csv')) return 'csv';
     return '';
@@ -107,26 +117,76 @@ export function useWorkspace(agentId: string, active = true) {
 
   const open = async (entry: WorkspaceEntry) => {
     if (entry.type === 'directory') { navigate(entry.path); return; }
-    setPending(true); setError('');
+    openController.current?.abort();
+    const controller = new AbortController();
+    openController.current = controller;
+    setSelected(entry);
+    setEditing(false);
+    setPreviewBlocked(false);
+    setDownloadError('');
+    setError('');
     try {
       if (previewUrl) { URL.revokeObjectURL(previewUrl); setPreviewUrl(''); }
       setContent('');
-      if (isText(entry)) {
-        setContent(await workspaceApi.read(agentId, entry.path));
-      } else if (interactiveSpreadsheetExtension(entry) === 'xlsx') {
-        setPreviewUrl(URL.createObjectURL(await workspaceApi.workbook(agentId, entry.path)));
-      } else if (interactiveSpreadsheetExtension(entry) === 'csv') {
-        setPreviewUrl(URL.createObjectURL(await workspaceApi.view(agentId, entry.path)));
-      } else if (OFFICE_LANGUAGES.includes(entry.language ?? '')) {
-        setPreviewUrl(URL.createObjectURL(await workspaceApi.preview(agentId, entry.path)));
-      } else {
-        setPreviewUrl(URL.createObjectURL(await workspaceApi.view(agentId, entry.path)));
+      let fileSize = Number(entry.size);
+      if (!entry.size || !Number.isFinite(fileSize)) {
+        setOpening(true);
+        fileSize = await workspaceApi.size(agentId, entry.path, controller.signal) ?? 0;
+        if (fileSize > 0) {
+          setSelected((current) => current?.path === entry.path
+            ? { ...current, size: String(fileSize) }
+            : current);
+        }
       }
-      setEditing(false);
-      setSelected(entry);
+      if (fileSize > WORKSPACE_PREVIEW_MAX_BYTES) {
+        setPreviewBlocked(true);
+        return;
+      }
+      setOpening(true);
+      if (isText(entry)) {
+        setContent(await workspaceApi.read(agentId, entry.path, controller.signal));
+      } else if (interactiveSpreadsheetExtension(entry) === 'xlsm') {
+        setPreviewUrl(URL.createObjectURL(await workspaceApi.view(agentId, entry.path, controller.signal)));
+      } else if (interactiveSpreadsheetExtension(entry) === 'xlsx') {
+        setPreviewUrl(URL.createObjectURL(await workspaceApi.workbook(agentId, entry.path, controller.signal)));
+      } else if (interactiveSpreadsheetExtension(entry) === 'csv') {
+        setPreviewUrl(URL.createObjectURL(await workspaceApi.view(agentId, entry.path, controller.signal)));
+      } else if (OFFICE_LANGUAGES.includes(entry.language ?? '')) {
+        setPreviewUrl(URL.createObjectURL(await workspaceApi.preview(agentId, entry.path, controller.signal)));
+      } else {
+        setPreviewUrl(URL.createObjectURL(await workspaceApi.view(agentId, entry.path, controller.signal)));
+      }
     } catch (cause) {
+      if (controller.signal.aborted) return;
       setError(cause instanceof Error ? cause.message : 'Unable to read file');
-    } finally { setPending(false); }
+    } finally {
+      if (openController.current === controller) {
+        openController.current = undefined;
+        setOpening(false);
+      }
+    }
+  };
+
+  const downloadSelected = async () => {
+    if (!selected || downloading) return;
+    setDownloading(true);
+    setDownloadError('');
+    try {
+      const blob = await workspaceApi.download(agentId, selected.path);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = selected.name;
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (cause) {
+      setDownloadError(cause instanceof Error ? cause.message : 'Unable to download file');
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const openByPath = async (path: string) => {
@@ -189,7 +249,8 @@ export function useWorkspace(agentId: string, active = true) {
     currentEntries,
     breadcrumb,
     loading,
-    selected, content, previewUrl, setContent, status, pending, error, uploadProgress,
+    selected, content, previewUrl, setContent, status, pending, opening, previewBlocked,
+    downloading, downloadError, error, uploadProgress,
     editing,
     canEdit: selected ? isText(selected) : false,
     startEdit: () => setEditing(true),
@@ -199,7 +260,25 @@ export function useWorkspace(agentId: string, active = true) {
     open,
     openByPath,
     up: () => navigate(parentPath(cwd)),
-    close: () => { if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(''); setEditing(false); setSelected(null); },
+    cancelOpen: () => {
+      openController.current?.abort();
+      openController.current = undefined;
+      setOpening(false);
+      setSelected(null);
+    },
+    retryOpen: () => selected ? open(selected) : Promise.resolve(),
+    downloadSelected,
+    close: () => {
+      openController.current?.abort();
+      openController.current = undefined;
+      setOpening(false);
+      setPreviewBlocked(false);
+      setDownloadError('');
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl('');
+      setEditing(false);
+      setSelected(null);
+    },
     create: (name: string, type: 'file' | 'directory') => mutate(() => workspaceApi.create(agentId, {
       path: [cwd, name].filter(Boolean).join('/'), type, ...(type === 'file' ? { content: '' } : {}),
     })),

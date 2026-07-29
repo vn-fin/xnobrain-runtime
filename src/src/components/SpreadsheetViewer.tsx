@@ -6,7 +6,7 @@ import Papa from 'papaparse';
 import '@fortune-sheet/react/dist/index.css';
 
 const MAX_WORKBOOK_BYTES = 25 * 1024 * 1024;
-const IMPORT_TIMEOUT_MS = 30_000;
+const IMPORT_TIMEOUT_MS = 120_000;
 
 export function importXlsx(file: File): Promise<Sheet[]> {
   if (file.size > MAX_WORKBOOK_BYTES) {
@@ -80,12 +80,14 @@ export async function importCsv(file: File): Promise<Sheet[]> {
 export default function SpreadsheetViewer({ sourceUrl, title }: { sourceUrl: string; title: string }) {
   const [sheets, setSheets] = useState<Sheet[]>();
   const [error, setError] = useState('');
+  const [elapsed, setElapsed] = useState(0);
   const viewerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     setSheets(undefined);
     setError('');
+    setElapsed(0);
 
     void fetch(sourceUrl, { signal: controller.signal })
       .then(async (response) => {
@@ -105,6 +107,16 @@ export default function SpreadsheetViewer({ sourceUrl, title }: { sourceUrl: str
 
     return () => controller.abort();
   }, [sourceUrl, title]);
+
+  useEffect(() => {
+    if (sheets || error) return undefined;
+    const started = Date.now();
+    const timer = window.setInterval(
+      () => setElapsed(Math.floor((Date.now() - started) / 1000)),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [sheets, error, sourceUrl]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -134,7 +146,9 @@ export default function SpreadsheetViewer({ sourceUrl, title }: { sourceUrl: str
     return (
       <div className="gd-sheet-state" aria-live="polite">
         <span className="gd-sheet-spinner" />
-        <span>Opening workbook…</span>
+        <strong>Opening workbook…</strong>
+        <span>{elapsed < 10 ? 'Reading worksheets…' : 'Building the spreadsheet view…'}</span>
+        <span className="gd-opening-elapsed">{elapsed}s elapsed</span>
       </div>
     );
   }

@@ -3415,6 +3415,7 @@ body.col-resizing {
 .gd-viewer > .gd-html,
 .gd-viewer > .gd-spreadsheet,
 .gd-viewer > .gd-sheet-state,
+.gd-viewer > .gd-code-editor,
 .gd-viewer > .gd-code {
   flex: 1 1 auto;
   min-width: 0;
@@ -3460,6 +3461,56 @@ body.col-resizing {
   animation: spin 0.8s linear infinite;
 }
 
+.gd-file-opening {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 24px;
+  color: var(--muted);
+  background: var(--surface);
+  text-align: center;
+}
+
+.gd-file-opening strong {
+  max-width: min(560px, 90%);
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gd-opening-elapsed {
+  color: var(--muted);
+  font: 11px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.gd-opening-track {
+  width: min(360px, 80%);
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.gd-opening-track span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: gd-opening-slide 1.3s ease-in-out infinite;
+}
+
+@keyframes gd-opening-slide {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(350%); }
+}
+
 .gd-readonly-badge {
   padding: 3px 8px;
   border: 1px solid var(--border);
@@ -3472,13 +3523,74 @@ body.col-resizing {
 
 .gd-code {
   margin: 0;
-  padding: 14px;
-  overflow: auto;
+  padding: 14px 18px;
   color: var(--text);
   background: var(--surface-code);
   font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.gd-code-editor {
+  display: flex;
+  align-items: flex-start;
+  overflow: auto;
+  background: var(--surface-code);
+}
+
+.gd-code-editor .gd-code {
+  flex: 1 0 auto;
+  min-width: max-content;
+  overflow: visible;
+}
+
+.gd-code-editor .gd-code code.hljs {
+  display: block;
+  padding: 0;
+  overflow: visible;
+  color: #c9d1d9;
+  background: transparent;
+  font: inherit;
+}
+
+.gd-code-lines {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex: 0 0 auto;
+  min-width: 48px;
+  margin: 0;
+  padding: 14px 10px 14px 8px;
+  border-right: 1px solid var(--border);
+  color: color-mix(in srgb, var(--muted) 68%, transparent);
+  background: var(--surface-code);
+  text-align: right;
+  user-select: none;
+  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+}
+
+.gd-mode-switch {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-code);
+}
+
+.gd-mode-switch button {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.gd-mode-switch button.active {
+  color: var(--text);
+  background: var(--surface-hover);
 }
 
 /* Notebook (.ipynb) rendering */
@@ -3559,6 +3671,9 @@ body.col-resizing {
 
 .gd-noview p { margin: 4px 0 0; color: var(--text); font-weight: 600; }
 .gd-noview .conn-btn { margin-top: 12px; display: inline-flex; align-items: center; gap: 6px; }
+.gd-large-file { max-width: 620px; }
+.gd-large-file > span { max-width: 520px; line-height: 1.5; }
+.gd-large-file-error { color: var(--danger); }
 
 .gd-editor-actions { display: inline-flex; align-items: center; gap: 8px; }
 .gd-editor-actions .conn-btn { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
@@ -3638,6 +3753,93 @@ body.col-resizing {
 .file-badge.python {
   color: #0b0b0b;
   background: #f5d76e;
+}
+
+.file-badge.javascript {
+  color: #161616;
+  background: #f0db4f;
+}
+
+.file-badge.typescript {
+  background: #3178c6;
+}
+
+.file-badge.shell {
+  background: #3f8f4f;
+}
+
+.file-badge.css {
+  background: #264de4;
+}
+
+.file-badge.sql {
+  background: #336791;
+}
+
+.file-badge.graphql {
+  background: #e10098;
+}
+
+.file-badge.yaml,
+.file-badge.xml {
+  background: #cb5a2a;
+}
+
+.file-badge.config {
+  color: #17202a;
+  background: #aab7b8;
+}
+
+.file-badge.diff {
+  background: #4b5563;
+}
+
+.file-badge.go {
+  color: #082f3b;
+  background: #62d4e5;
+}
+
+.file-badge.rust {
+  background: #9b4f2d;
+}
+
+.file-badge.java,
+.file-badge.compiled {
+  background: #596fb3;
+}
+
+.file-badge.docker {
+  background: #2496ed;
+}
+
+.file-badge.makefile {
+  background: #6d597a;
+}
+
+.file-badge.ruby {
+  background: #cc342d;
+}
+
+.file-badge.php {
+  background: #777bb4;
+}
+
+.file-badge.swift {
+  background: #f05138;
+}
+
+.file-badge.kotlin {
+  background: #7f52ff;
+}
+
+.file-badge.dart {
+  background: #0175c2;
+}
+
+.file-badge.lua,
+.file-badge.perl,
+.file-badge.r {
+  background: #4169a1;
 }
 
 .file-badge.notebook {

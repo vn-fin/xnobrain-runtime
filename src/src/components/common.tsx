@@ -81,6 +81,27 @@ export function TreeIcon({ entry, size = 15 }: { entry: WorkspaceEntry; size?: n
   );
   const extension = entry.name.split('.').pop()?.toLowerCase() ?? '';
   if (entry.language === 'python') return badge('file-badge python', 'py');
+  if (entry.language === 'javascript') return badge('file-badge javascript', extension === 'jsx' ? 'jsx' : 'JS', extension === 'jsx' ? 0.3 : 0.48);
+  if (entry.language === 'typescript') return badge('file-badge typescript', extension === 'tsx' ? 'tsx' : 'TS', extension === 'tsx' ? 0.3 : 0.48);
+  if (entry.language === 'shell') return badge('file-badge shell', extension === 'ps1' ? 'PS' : '$_', 0.46);
+  if (entry.language === 'css') return badge('file-badge css', extension === 'scss' ? 'scss' : '#', extension === 'scss' ? 0.28 : 0.58);
+  if (entry.language === 'sql') return badge('file-badge sql', 'SQL', 0.3);
+  if (entry.language === 'graphql') return badge('file-badge graphql', 'GQL', 0.28);
+  if (entry.language === 'yaml') return badge('file-badge yaml', 'Y', 0.58);
+  if (entry.language === 'xml') return badge('file-badge xml', '<>', 0.4);
+  if (['toml', 'ini'].includes(entry.language ?? '')) return badge('file-badge config', 'cfg', 0.28);
+  if (entry.language === 'diff') return badge('file-badge diff', '±', 0.58);
+  if (entry.language === 'go') return badge('file-badge go', 'GO', 0.42);
+  if (entry.language === 'rust') return badge('file-badge rust', 'RS', 0.42);
+  if (entry.language === 'java') return badge('file-badge java', 'J', 0.58);
+  if (['c', 'cpp', 'csharp'].includes(entry.language ?? '')) return badge('file-badge compiled', entry.language === 'csharp' ? 'C#' : entry.language === 'cpp' ? 'C++' : 'C', entry.language === 'cpp' ? 0.3 : 0.43);
+  if (entry.language === 'dockerfile') return badge('file-badge docker', 'D', 0.58);
+  if (entry.language === 'makefile') return badge('file-badge makefile', 'MK', 0.4);
+  if (['ruby', 'php', 'swift', 'kotlin', 'dart', 'lua', 'perl', 'r'].includes(entry.language ?? '')) {
+    const labels: Record<string, string> = { ruby: 'rb', php: 'php', swift: 'S', kotlin: 'kt', dart: 'D', lua: 'lua', perl: 'pl', r: 'R' };
+    const label = labels[entry.language ?? ''] ?? extension;
+    return badge(`file-badge ${entry.language}`, label, label.length > 2 ? 0.28 : 0.44);
+  }
   if (entry.language === 'notebook') return badge('file-badge notebook', 'nb');
   if (entry.language === 'markdown') return badge('file-badge markdown', 'M', 0.6);
   if (entry.language === 'image') return badge('file-badge image', 'img', 0.38);

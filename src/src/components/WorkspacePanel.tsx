@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import DOMPurify from 'dompurify';
 import { ArrowUp, ChevronDown, ChevronUp, Download, FilePlus2, FileText, FolderPlus, HardDrive, LayoutGrid, List, LoaderCircle, Pencil, RefreshCw, Trash2, UploadCloud, X } from 'lucide-react';
-import { useWorkspace } from '../hooks/useWorkspace';
+import { useWorkspace, WORKSPACE_PREVIEW_MAX_BYTES } from '../hooks/useWorkspace';
 import { TreeIcon } from './common';
 import { AsyncState } from './AsyncState';
 import { ConfirmDialog, PromptDialog } from './modals';
@@ -13,9 +13,14 @@ type SortDir = 'asc' | 'desc';
 
 export const WORKSPACE_FILE_MIME = 'application/x-workspace-file';
 const SpreadsheetViewer = lazy(() => import('./SpreadsheetViewer'));
+const CodeViewer = lazy(() => import('./CodeViewer'));
 const isInteractiveSpreadsheet = (entry: WorkspaceEntry) => (
   entry.language === 'spreadsheet'
-  && (entry.name.toLowerCase().endsWith('.xlsx') || entry.name.toLowerCase().endsWith('.csv'))
+  && (
+    entry.name.toLowerCase().endsWith('.xlsx')
+    || entry.name.toLowerCase().endsWith('.xlsm')
+    || entry.name.toLowerCase().endsWith('.csv')
+  )
 );
 
 /** Shared workspace controller shape (from useWorkspace), so it can be lifted
@@ -141,6 +146,71 @@ function HtmlView({ content, title }: { content: string; title: string }) {
   return <iframe className="gd-html" sandbox="" srcDoc={source} title={title} />;
 }
 
+export function OpeningFile({
+  name,
+  onCancel,
+}: {
+  name: string;
+  onCancel: () => void;
+}) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = window.setInterval(
+      () => setElapsed(Math.floor((Date.now() - started) / 1000)),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [name]);
+  const detail = elapsed < 10
+    ? 'Loading file…'
+    : elapsed < 30
+      ? 'Preparing preview…'
+      : 'Large workbooks can take a few minutes.';
+  return (
+    <div className="gd-file-opening" aria-live="polite">
+      <span className="gd-sheet-spinner" />
+      <strong>Opening {name}</strong>
+      <span>{detail}</span>
+      <span className="gd-opening-elapsed">{elapsed}s elapsed</span>
+      <div className="gd-opening-track"><span /></div>
+      <button className="conn-btn ghost" onClick={onCancel}>Cancel</button>
+    </div>
+  );
+}
+
+export function LargeFileNotice({
+  name,
+  size,
+  downloading,
+  error,
+  onDownload,
+}: {
+  name: string;
+  size: string;
+  downloading: boolean;
+  error: string;
+  onDownload: () => void;
+}) {
+  return (
+    <div className="gd-noview gd-large-file" role="status">
+      <HardDrive size={42} />
+      <p>This file is too large to preview</p>
+      <span>
+        {name} is {formatSize(size)}. Preview is limited to {formatSize(String(WORKSPACE_PREVIEW_MAX_BYTES))}
+        {' '}to keep the app responsive.
+      </span>
+      <span>Download the file and open it with an application on your computer.</span>
+      <button className="conn-btn primary" disabled={downloading} onClick={onDownload}>
+        {downloading
+          ? <><LoaderCircle className="run-step-spin" size={14} /> Downloading…</>
+          : <><Download size={14} /> Download file</>}
+      </button>
+      {error && <span className="gd-large-file-error" role="alert">{error}</span>}
+    </div>
+  );
+}
+
 export function WorkspacePanel({ workspace, openRequest }: { workspace: WorkspaceController; openRequest?: { path: string; token: number } }) {
   const [view, setView] = useState<ViewMode>('list');
   const [sortKey, setSortKey] = useState<SortKey>('name');
@@ -149,6 +219,7 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
   const [createType, setCreateType] = useState<'file' | 'directory' | null>(null);
   const [pendingDelete, setPendingDelete] = useState<WorkspaceEntry | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [htmlMode, setHtmlMode] = useState<'preview' | 'source'>('preview');
   const dragDepth = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
   const openByPath = workspace.openByPath;
@@ -201,6 +272,10 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
 
   const activate = (entry: WorkspaceEntry) => setActivePath(entry.path);
   const openEntry = (entry: WorkspaceEntry) => { setActivePath(entry.path); void workspace.open(entry); };
+
+  useEffect(() => {
+    setHtmlMode('preview');
+  }, [workspace.selected?.path]);
 
   const onEntryDragStart = (event: DragEvent, entry: WorkspaceEntry) => {
     if (entry.type !== 'file') { event.preventDefault(); return; }
@@ -265,6 +340,30 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
   const renderViewerBody = () => {
     const selected = workspace.selected;
     if (!selected) return null;
+    if (workspace.opening) {
+      return <OpeningFile name={selected.name} onCancel={workspace.cancelOpen} />;
+    }
+    if (workspace.previewBlocked) {
+      return (
+        <LargeFileNotice
+          name={selected.name}
+          size={selected.size}
+          downloading={workspace.downloading}
+          error={workspace.downloadError}
+          onDownload={() => void workspace.downloadSelected()}
+        />
+      );
+    }
+    if (workspace.error) {
+      return (
+        <div className="gd-file-opening" role="alert">
+          <FileText size={36} />
+          <strong>Unable to open {selected.name}</strong>
+          <span>{workspace.error}</span>
+          <button className="conn-btn primary" onClick={() => void workspace.retryOpen()}>Try again</button>
+        </div>
+      );
+    }
     if (selected.language === 'image') return <img src={workspace.previewUrl} alt={selected.name} />;
     if (selected.language === 'pdf') return <iframe className="gd-pdf" src={workspace.previewUrl} title={selected.name} />;
     if (isInteractiveSpreadsheet(selected)) {
@@ -277,7 +376,9 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
     if (['document', 'spreadsheet', 'presentation'].includes(selected.language ?? '')) {
       return <iframe className="gd-office" src={workspace.previewUrl} title={selected.name} />;
     }
-    if (selected.language === 'html') return <HtmlView content={workspace.content} title={selected.name} />;
+    if (selected.language === 'html' && htmlMode === 'preview') {
+      return <HtmlView content={workspace.content} title={selected.name} />;
+    }
     if (selected.language === 'binary') {
       return (
         <div className="gd-noview">
@@ -290,7 +391,11 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
     }
     if (workspace.editing) return <textarea autoFocus value={workspace.content} onChange={(event) => workspace.setContent(event.target.value)} />;
     if (selected.language === 'notebook') return <NotebookView content={workspace.content} />;
-    return <pre className="gd-code">{workspace.content || '(empty file)'}</pre>;
+    return (
+      <Suspense fallback={<div className="gd-sheet-state">Loading code viewer…</div>}>
+        <CodeViewer content={workspace.content} path={selected.path} />
+      </Suspense>
+    );
   };
 
   return (
@@ -409,6 +514,12 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
             <header>
               <span className="gd-editor-title"><TreeIcon entry={workspace.selected} size={18} /><strong>{workspace.selected.name}</strong></span>
               <div className="gd-editor-actions">
+                {workspace.selected.language === 'html' && !workspace.editing && (
+                  <span className="gd-mode-switch" aria-label="HTML view mode">
+                    <button className={htmlMode === 'preview' ? 'active' : ''} onClick={() => setHtmlMode('preview')}>Preview</button>
+                    <button className={htmlMode === 'source' ? 'active' : ''} onClick={() => setHtmlMode('source')}>Source</button>
+                  </span>
+                )}
                 {isInteractiveSpreadsheet(workspace.selected) && (
                   <span className="gd-readonly-badge">Read only</span>
                 )}

@@ -258,7 +258,12 @@ export type WorkspaceEntry = {
   level: number;
   open?: boolean;
   selected?: boolean;
-  language?: 'python' | 'notebook' | 'markdown' | 'image' | 'json' | 'text' | 'html' | 'pdf' | 'document' | 'spreadsheet' | 'presentation' | 'binary';
+  language?: 'python' | 'notebook' | 'markdown' | 'image' | 'json' | 'text' | 'html'
+    | 'javascript' | 'typescript' | 'shell' | 'css' | 'sql' | 'yaml' | 'xml'
+    | 'toml' | 'ini' | 'go' | 'rust' | 'java' | 'c' | 'cpp' | 'csharp'
+    | 'ruby' | 'php' | 'swift' | 'kotlin' | 'dart' | 'lua' | 'perl' | 'r'
+    | 'graphql' | 'dockerfile' | 'makefile' | 'diff'
+    | 'pdf' | 'document' | 'spreadsheet' | 'presentation' | 'binary';
   size: string;
   modified: string;
 };
