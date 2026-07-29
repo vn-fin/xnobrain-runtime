@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import DOMPurify from 'dompurify';
 import { ArrowUp, ChevronDown, ChevronUp, Download, FilePlus2, FileText, FolderPlus, HardDrive, LayoutGrid, List, LoaderCircle, Pencil, RefreshCw, Trash2, UploadCloud, X } from 'lucide-react';
 import { useWorkspace } from '../hooks/useWorkspace';
 import { TreeIcon } from './common';
@@ -111,6 +112,28 @@ function NotebookView({ content }: { content: string }) {
       })}
     </div>
   );
+}
+
+export function htmlPreviewDocument(content: string) {
+  const sanitized = DOMPurify.sanitize(content, {
+    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'base'],
+    FORBID_ATTR: ['srcset'],
+  });
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src data:">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>html,body{margin:0;min-height:100%;background:#fff;color:#111}body{padding:16px;box-sizing:border-box}</style>
+</head>
+<body>${sanitized}</body>
+</html>`;
+}
+
+function HtmlView({ content, title }: { content: string; title: string }) {
+  const source = useMemo(() => htmlPreviewDocument(content), [content]);
+  return <iframe className="gd-html" sandbox="" srcDoc={source} title={title} />;
 }
 
 export function WorkspacePanel({ workspace, openRequest }: { workspace: WorkspaceController; openRequest?: { path: string; token: number } }) {
@@ -239,6 +262,10 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
     if (!selected) return null;
     if (selected.language === 'image') return <img src={workspace.previewUrl} alt={selected.name} />;
     if (selected.language === 'pdf') return <iframe className="gd-pdf" src={workspace.previewUrl} title={selected.name} />;
+    if (['document', 'spreadsheet', 'presentation'].includes(selected.language ?? '')) {
+      return <iframe className="gd-office" src={workspace.previewUrl} title={selected.name} />;
+    }
+    if (selected.language === 'html') return <HtmlView content={workspace.content} title={selected.name} />;
     if (selected.language === 'binary') {
       return (
         <div className="gd-noview">

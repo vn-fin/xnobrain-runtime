@@ -94,7 +94,8 @@ export function useWorkspace(agentId: string, active = true) {
     });
   }, [cwd]);
 
-  const TEXT_LANGUAGES = ['python', 'notebook', 'markdown', 'json', 'text'];
+  const TEXT_LANGUAGES = ['python', 'notebook', 'markdown', 'json', 'text', 'html'];
+  const OFFICE_LANGUAGES = ['document', 'spreadsheet', 'presentation'];
   const isText = (entry: WorkspaceEntry) => entry.type === 'file' && TEXT_LANGUAGES.includes(entry.language ?? 'text');
 
   const open = async (entry: WorkspaceEntry) => {
@@ -105,6 +106,8 @@ export function useWorkspace(agentId: string, active = true) {
       setContent('');
       if (isText(entry)) {
         setContent(await workspaceApi.read(agentId, entry.path));
+      } else if (OFFICE_LANGUAGES.includes(entry.language ?? '')) {
+        setPreviewUrl(URL.createObjectURL(await workspaceApi.preview(agentId, entry.path)));
       } else {
         setPreviewUrl(URL.createObjectURL(await workspaceApi.view(agentId, entry.path)));
       }

@@ -25,6 +25,7 @@ from brain4all.defaults import (
 )
 from brain4all.integrations import AgentManager, GlobalConfigManager
 from brain4all.services import ServiceError
+from brain4all.services.workspace_preview import WorkspacePreview
 
 
 class FakeRouter:
@@ -780,6 +781,35 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             schema["paths"]["/conversations/v1/conversations/{conversation_id}/chat/stream"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ChatRequest",
         )
+
+    async def test_workspace_office_preview_returns_inline_pdf(self):
+        async with self.client() as client:
+            created = await client.post(
+                "/agent-gateway/v1/agents",
+                json={"display_name": "Preview worker"},
+            )
+            agent_id = created.json()["data"]["id"]
+            workspace = self.profiles / agent_id / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            (workspace / "report.xlsx").write_bytes(b"workbook")
+            with patch.object(
+                self.composition.service.workspace_previews,
+                "preview",
+                return_value=WorkspacePreview(
+                    content=b"%PDF-1.7\npreview",
+                    media_type="application/pdf",
+                    filename="report.pdf",
+                ),
+            ):
+                response = await client.get(
+                    f"/agent-gateway/v1/agents-workspaces/{agent_id}/preview",
+                    params={"path": "report.xlsx"},
+                )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.content, b"%PDF-1.7\npreview")
+        self.assertEqual(response.headers["content-type"], "application/pdf")
+        self.assertIn("inline", response.headers["content-disposition"])
 
     async def test_bundle_round_trip_is_checked_and_excludes_credentials(self):
         async with self.client() as client:

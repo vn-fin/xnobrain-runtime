@@ -62,3 +62,21 @@ describe('workspaceApi.view', () => {
     expect(blob.type).toBe('image/png');
   });
 });
+
+describe('workspaceApi.preview', () => {
+  it('loads the rendered Office preview from the dedicated PDF endpoint', async () => {
+    const fetchMock = mockFetch(new Response(PDF_BYTES, {
+      status: 200,
+      headers: { 'content-type': 'application/pdf' },
+    }));
+
+    const blob = await workspaceApi.preview('agent-1', 'reports/report.xlsx');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/agent-gateway/v1/agents-workspaces/agent-1/preview?path=reports%2Freport.xlsx'),
+      expect.anything(),
+    );
+    expect(blob.type).toBe('application/pdf');
+    expect(blob.size).toBe(PDF_BYTES.length);
+  });
+});

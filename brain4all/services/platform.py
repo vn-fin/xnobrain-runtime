@@ -39,6 +39,7 @@ from ..integrations import (
 )
 from ..repositories import FileRepository, StoreError
 from .portability import PortabilityService
+from .workspace_preview import WorkspacePreview, WorkspacePreviewError, WorkspacePreviewService
 
 
 SUPPORTED_PROVIDERS = ("claude", "codex", "antigravity", "openai", "anthropic", "gemini")
@@ -91,6 +92,7 @@ class PlatformService:
         self.router = router
         self.runtime = runtime
         self.portability = PortabilityService(repository, config.root_profile)
+        self.workspace_previews = WorkspacePreviewService(repository.data_dir / "workspace-previews")
         from .kanban import KanbanService
         self.kanban = KanbanService(agents, repository)
         from .analytics import AnalyticsService
@@ -598,6 +600,11 @@ class PlatformService:
 
     def read_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.agents.read_workspace_file(agent_id, body)
+
+    def preview_workspace(self, agent_id: str, path: Any) -> WorkspacePreview:
+        self.agents._require_profile(self.agents._agent_name(agent_id))
+        source = self.agents._workspace_path(agent_id, path, require_file=True)
+        return self.workspace_previews.preview(source)
 
     def write_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.agents.write_workspace_file(agent_id, body)
@@ -1483,4 +1490,11 @@ class PlatformService:
         }
 
 
-EXPECTED_ERRORS = (ServiceError, StoreError, AgentAPIError, ConfigAPIError, NineRouterAPIError)
+EXPECTED_ERRORS = (
+    ServiceError,
+    StoreError,
+    AgentAPIError,
+    ConfigAPIError,
+    NineRouterAPIError,
+    WorkspacePreviewError,
+)

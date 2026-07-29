@@ -65,6 +65,7 @@ ROUTES = (
 
     Route("GET", "/agent-gateway/v1/agents-workspaces/{agent_id}", "workspace_list", tags=("Workspace",)),
     Route("GET", "/agent-gateway/v1/agents-workspaces/{agent_id}/file", "workspace_view", tags=("Workspace",)),
+    Route("GET", "/agent-gateway/v1/agents-workspaces/{agent_id}/preview", "workspace_preview", special="workspace_preview", tags=("Workspace",)),
     Route("POST", "/agent-gateway/v1/agents-workspaces/{agent_id}/read", "workspace_read", WorkspacePath, tags=("Workspace",)),
     Route("POST", "/agent-gateway/v1/agents-workspaces/{agent_id}/write", "workspace_write", WorkspaceWrite, tags=("Workspace",)),
     Route("POST", "/agent-gateway/v1/agents-workspaces/{agent_id}/create", "workspace_create", WorkspaceCreate, tags=("Workspace",)),
@@ -191,6 +192,9 @@ def _endpoint(handlers: Any, route: Route):
     elif route.special == "workspace_upload":
         async def endpoint(request: Request) -> Response:
             return await handlers.workspace_upload(request)
+    elif route.special == "workspace_preview":
+        async def endpoint(request: Request) -> Response:
+            return await handlers.workspace_preview(request)
     elif route.special == "bundle_export":
         async def endpoint(request: Request, body=Body(...)) -> Response:
             return await handlers.bundle_export(request, body.model_dump(exclude_unset=True))
@@ -227,7 +231,7 @@ def _endpoint(handlers: Any, route: Route):
 
 def setup_routes(app: Any, handlers: Any) -> None:
     for route in ROUTES:
-        raw_response = route.special in {"stream", "workspace_upload", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "kanban_stream", "team_run_stream"}
+        raw_response = route.special in {"stream", "workspace_upload", "workspace_preview", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "kanban_stream", "team_run_stream"}
         app.add_api_route(
             route.path,
             _endpoint(handlers, route),

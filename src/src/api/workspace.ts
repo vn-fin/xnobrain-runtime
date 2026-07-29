@@ -108,6 +108,16 @@ export const workspaceApi = {
     }
     return blob;
   },
+  async preview(agentId: string, path: string, signal?: AbortSignal) {
+    const response = await requestRaw(`${root(agentId)}/preview?path=${encodeURIComponent(path)}`, {
+      signal,
+      headers: { Accept: 'application/pdf' },
+    });
+    const blob = await response.blob();
+    return blob.type === 'application/pdf'
+      ? blob
+      : blob.slice(0, blob.size, 'application/pdf');
+  },
   async read(agentId: string, path: string, signal?: AbortSignal) {
     const value = await request<WorkspaceFileDTO | string>(`${root(agentId)}/read`, {
       method: 'POST', body: JSON.stringify({ path }), signal,

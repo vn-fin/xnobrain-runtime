@@ -8,6 +8,7 @@ import inspect
 import json
 import time
 from typing import Any, Callable
+from urllib.parse import quote
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -242,6 +243,25 @@ class APIHandlers:
             return self.failure(error)
         except ValueError as error:
             error.status, error.code = 400, "invalid_request"
+            return self.failure(error)
+
+    async def workspace_preview(self, request: Request) -> Response:
+        try:
+            preview = await asyncio.to_thread(
+                self.service.preview_workspace,
+                request.path_params["agent_id"],
+                request.query_params.get("path"),
+            )
+            return Response(
+                preview.content,
+                media_type=preview.media_type,
+                headers={
+                    "Cache-Control": "private, max-age=300",
+                    "Content-Disposition": f"inline; filename*=UTF-8''{quote(preview.filename, safe='')}",
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
+        except EXPECTED_ERRORS as error:
             return self.failure(error)
 
     async def bundle_export(self, _request: Request, body: dict[str, Any]) -> Response:

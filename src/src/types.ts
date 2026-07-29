@@ -258,7 +258,7 @@ export type WorkspaceEntry = {
   level: number;
   open?: boolean;
   selected?: boolean;
-  language?: 'python' | 'notebook' | 'markdown' | 'image' | 'json' | 'text' | 'pdf' | 'binary';
+  language?: 'python' | 'notebook' | 'markdown' | 'image' | 'json' | 'text' | 'html' | 'pdf' | 'document' | 'spreadsheet' | 'presentation' | 'binary';
   size: string;
   modified: string;
 };
