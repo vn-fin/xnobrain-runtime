@@ -9,14 +9,17 @@ import { AccountView } from './components/AccountView';
 vi.mock('./runtime', () => ({
   brain4AllRuntime: {
     edition: 'cloud',
-    api: { remoteBaseUrl: 'https://api.dev.xnoquant.io' },
+    api: {
+      remoteBaseUrl: 'https://runtime.example.com',
+      controlBaseUrl: 'https://control.example.com',
+    },
     auth: {
       mode: 'optional',
       provider: 'xno-firebase',
       firebaseApiKey: 'public-firebase-key',
-      tokenPath: '/auth/v1/auth/token',
-      refreshPath: '/auth/v1/auth/refresh',
-      mePath: '/auth/v1/me',
+      tokenPath: '/control/v1/auth/token',
+      refreshPath: '/control/v1/auth/refresh',
+      mePath: '/control/v1/auth/me',
       bootstrapPath: '/control/v1/bootstrap',
       loginPath: '/control/v1/auth/login',
       logoutPath: '/control/v1/auth/logout',
@@ -50,7 +53,7 @@ describe('XNOQuant Firebase authentication adapter', () => {
     vi.restoreAllMocks();
   });
 
-  it('exchanges the Firebase token and resolves /auth/v1/me', async () => {
+  it('uses the control API for Firebase exchange and identity lookup', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: true,
@@ -87,14 +90,14 @@ describe('XNOQuant Firebase authentication adapter', () => {
     expect(await screen.findByText('Nguyen Tan Kim')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      'https://api.dev.xnoquant.io/auth/v1/auth/token',
+      'https://control.example.com/control/v1/auth/token',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer firebase-token' }),
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      'https://api.dev.xnoquant.io/auth/v1/me',
+      'https://control.example.com/control/v1/auth/me',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer access-token' }),
       }),
@@ -127,7 +130,7 @@ describe('XNOQuant Firebase authentication adapter', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://api.dev.xnoquant.io/auth/v1/me',
+      'https://control.example.com/control/v1/auth/me',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer saved-access-token' }),
       }),

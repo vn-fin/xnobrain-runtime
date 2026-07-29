@@ -6,7 +6,7 @@ describe('runtimeConfig', () => {
     expect(runtimeConfig(undefined)).toMatchObject({
       edition: 'opensource',
       auth: { mode: 'optional', provider: 'local-profile' },
-      api: { remoteBaseUrl: '' },
+      api: { remoteBaseUrl: '', controlBaseUrl: '' },
       features: { login: true },
     });
   });
@@ -14,7 +14,10 @@ describe('runtimeConfig', () => {
   it('accepts the cloud gateway contract without changing the frontend build', () => {
     expect(runtimeConfig({
       edition: 'enterprise',
-      api: { remoteBaseUrl: 'https://api.xno.vn' },
+      api: {
+        remoteBaseUrl: 'https://runtime.xno.vn',
+        controlBaseUrl: 'https://control.xno.vn',
+      },
       auth: {
         mode: 'required',
         provider: 'gateway',
@@ -23,7 +26,8 @@ describe('runtimeConfig', () => {
     })).toMatchObject({
       edition: 'enterprise',
       api: {
-        remoteBaseUrl: 'https://api.xno.vn',
+        remoteBaseUrl: 'https://runtime.xno.vn',
+        controlBaseUrl: 'https://control.xno.vn',
       },
       auth: {
         mode: 'required',

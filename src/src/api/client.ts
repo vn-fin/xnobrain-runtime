@@ -1,7 +1,11 @@
 import { storedAccessToken } from '../authStorage';
 import { brain4AllRuntime } from '../runtime';
 
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? window.location.origin).replace(/\/+$/, '');
+export const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL?.trim()
+  || brain4AllRuntime.api?.remoteBaseUrl
+  || window.location.origin
+).replace(/\/+$/, '');
 
 type ApiEnvelope<T> = {
   success?: boolean;

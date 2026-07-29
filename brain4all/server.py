@@ -7,6 +7,7 @@ import os
 import time
 
 import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
 
 from .logging_config import configure_logging
 
@@ -18,6 +19,20 @@ def create_app():
     from .integrations import AgentManager, GlobalConfigManager, NineRouterManager
 
     if not getattr(app.state, "brain4all_registered", False):
+        cors_origins = [
+            origin.strip()
+            for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+            if origin.strip()
+        ]
+        if cors_origins:
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=cors_origins,
+                allow_credentials=False,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
+
         composition = Brain4AllApplication(AgentManager(), GlobalConfigManager(), NineRouterManager())
         composition.register(app)
         app.state.brain4all = composition

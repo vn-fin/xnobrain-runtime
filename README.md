@@ -46,23 +46,26 @@ and confirmed sign-out. The checked-in standalone trial uses
 `edition: "opensource"` with optional `xno-firebase` login; users can still
 continue into the local server without signing in.
 
-The Account popup loads the authenticated `/auth/v1/me` response only when it
+The Account popup loads the configured authenticated identity response only when it
 is opened. A page refresh restores the saved token locally without calling
 `/me`. While login is enabled, normal Brain4All API requests include the saved
 access token as an `Authorization: Bearer <token>` header. Presentation flags
 do not replace server-side authentication or authorization.
 
-The `xno-firebase` trial provider follows the XNOQuant browser flow: Firebase
-email/password authentication, `GET /auth/v1/auth/token` to exchange the
-Firebase ID token, `POST /auth/v1/auth/refresh`, and `GET /auth/v1/me`.
+The `xno-firebase` provider follows the XNO browser flow: Firebase
+email/password authentication, token exchange, token refresh, and identity
+lookup through the configured control API.
 Because the current remote API has no logout endpoint, sign-out clears the
 namespaced Brain4All browser tokens. This direct-browser token provider is for
 integration testing; production managed deployment should prefer the
 same-origin gateway provider and HttpOnly session cookies.
 
 Cloud and Enterprise deployments reuse the same frontend build and replace
-`/config.js`. The checked-in cloud example demonstrates required XNOQuant
-login. For the recommended production gateway mode, configure:
+`/config.js`. Set `api.remoteBaseUrl` to the Brain4All runtime API and
+`api.controlBaseUrl` to the XNOBrain control API. The same values can be
+provided at build time as `VITE_API_BASE_URL` and
+`VITE_CONTROL_API_BASE_URL`. The checked-in cloud example demonstrates
+required XNO login. For the recommended production gateway mode, configure:
 
 - `GET /control/v1/bootstrap` to restore the active HttpOnly-cookie session;
 - `POST /control/v1/auth/login` for the login form;

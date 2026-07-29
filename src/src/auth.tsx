@@ -98,6 +98,12 @@ async function jsonResponse(response: Response): Promise<Record<string, unknown>
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const config = brain4AllRuntime;
+  const controlBaseUrl = (
+    import.meta.env.VITE_CONTROL_API_BASE_URL?.trim()
+    || import.meta.env.VITE_AUTH_API_URL?.trim()
+    || config.api.controlBaseUrl
+    || config.api.remoteBaseUrl
+  ).replace(/\/+$/, '');
   const [user, setUser] = useState<ActiveUser | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(() => (
     config.features.login && config.auth.provider === 'xno-firebase' ? storedAccessToken() : null
@@ -109,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const currentUserRequest = useRef<Promise<ActiveUser | null> | null>(null);
 
   const loadGatewaySession = useCallback(async () => {
-    const response = await fetch(config.auth.bootstrapPath, {
+    const response = await fetch(remoteURL(controlBaseUrl, config.auth.bootstrapPath), {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
     });
@@ -121,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const next = normalizeUser(data.user ?? data);
     setUser(next);
     return next;
-  }, [config.auth.bootstrapPath]);
+  }, [config.auth.bootstrapPath, controlBaseUrl]);
 
   const clearXnoTokens = useCallback(() => {
     localStorage.removeItem(XNO_ACCESS_TOKEN_KEY);
@@ -130,7 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadXnoUser = useCallback(async (token: string) => {
-    const response = await fetch(remoteURL(config.api.remoteBaseUrl, config.auth.mePath), {
+    const response = await fetch(remoteURL(controlBaseUrl, config.auth.mePath), {
       credentials: 'omit',
       headers: {
         Accept: 'application/json',
@@ -143,12 +149,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(token);
     setUser(next);
     return next;
-  }, [config.api.remoteBaseUrl, config.auth.mePath]);
+  }, [config.auth.mePath, controlBaseUrl]);
 
   const refreshXnoSession = useCallback(async () => {
     const refreshToken = localStorage.getItem(XNO_REFRESH_TOKEN_KEY);
     if (!refreshToken) throw new Error('No saved session.');
-    const response = await fetch(remoteURL(config.api.remoteBaseUrl, config.auth.refreshPath), {
+    const response = await fetch(remoteURL(controlBaseUrl, config.auth.refreshPath), {
       method: 'POST',
       credentials: 'omit',
       headers: {
@@ -165,7 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(XNO_REFRESH_TOKEN_KEY, nextRefreshToken);
     setAccessToken(nextAccessToken);
     return nextAccessToken;
-  }, [config.api.remoteBaseUrl, config.auth.refreshPath]);
+  }, [config.auth.refreshPath, controlBaseUrl]);
 
   const loadCurrentUser = useCallback((): Promise<ActiveUser | null> => {
     if (!config.features.login || config.auth.mode === 'disabled') return Promise.resolve(null);
@@ -266,7 +272,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const firebaseToken = String(firebaseData.idToken ?? '').trim();
       if (!firebaseToken) throw new Error('Firebase returned no identity token.');
 
-      const tokenResponse = await fetch(remoteURL(config.api.remoteBaseUrl, config.auth.tokenPath), {
+      const tokenResponse = await fetch(remoteURL(controlBaseUrl, config.auth.tokenPath), {
         credentials: 'omit',
         headers: {
           Accept: 'application/json',
@@ -299,7 +305,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (next) setUser(next);
     else await loadGatewaySession();
     setLoginOpen(false);
-  }, [config, loadGatewaySession]);
+  }, [config, controlBaseUrl, loadGatewaySession]);
 
   const signOut = useCallback(async () => {
     if (config.auth.provider === 'local-profile') {

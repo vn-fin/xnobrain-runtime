@@ -1,15 +1,16 @@
 window.__BRAIN4ALL_CONFIG__ = {
   edition: "cloud",
   api: {
-    remoteBaseUrl: "https://api.dev.xnoquant.io"
+    remoteBaseUrl: "https://runtime.example.com",
+    controlBaseUrl: "https://control.example.com"
   },
   auth: {
     mode: "required",
     provider: "xno-firebase",
     firebaseApiKey: "AIzaSyD8AFSR1vg21WOwLNVhczWfWfi3YSmZ9NA",
-    tokenPath: "/auth/v1/auth/token",
-    refreshPath: "/auth/v1/auth/refresh",
-    mePath: "/auth/v1/me"
+    tokenPath: "/control/v1/auth/token",
+    refreshPath: "/control/v1/auth/refresh",
+    mePath: "/control/v1/auth/me"
   },
   features: {
     login: true

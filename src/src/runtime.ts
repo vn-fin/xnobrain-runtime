@@ -6,6 +6,7 @@ export type RuntimeConfig = {
   edition: Brain4AllEdition;
   api: {
     remoteBaseUrl: string;
+    controlBaseUrl: string;
   };
   auth: {
     mode: AuthMode;
@@ -27,6 +28,7 @@ const DEFAULT_CONFIG: RuntimeConfig = {
   edition: 'opensource',
   api: {
     remoteBaseUrl: '',
+    controlBaseUrl: '',
   },
   auth: {
     mode: 'optional',
@@ -35,9 +37,9 @@ const DEFAULT_CONFIG: RuntimeConfig = {
     loginPath: '/control/v1/auth/login',
     logoutPath: '/control/v1/auth/logout',
     firebaseApiKey: '',
-    tokenPath: '/auth/v1/auth/token',
-    refreshPath: '/auth/v1/auth/refresh',
-    mePath: '/auth/v1/me',
+    tokenPath: '/control/v1/auth/token',
+    refreshPath: '/control/v1/auth/refresh',
+    mePath: '/control/v1/auth/me',
   },
   features: {
     login: true,
@@ -73,6 +75,7 @@ export function runtimeConfig(source = window.__BRAIN4ALL_CONFIG__): RuntimeConf
     edition,
     api: {
       remoteBaseUrl: source?.api?.remoteBaseUrl?.trim() || DEFAULT_CONFIG.api.remoteBaseUrl,
+      controlBaseUrl: source?.api?.controlBaseUrl?.trim() || DEFAULT_CONFIG.api.controlBaseUrl,
     },
     auth: {
       mode,
