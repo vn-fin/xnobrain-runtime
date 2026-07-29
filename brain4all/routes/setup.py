@@ -85,6 +85,7 @@ ROUTES = (
     Route("POST", "/conversations/v1/conversations/{conversation_id}/runs/{run_id}/approval", "run_approval", RunApproval, tags=("Runs",)),
 
     Route("GET", "/agent-gateway/v1/cron/jobs", "cron_list", tags=("Cron",)),
+    Route("GET", "/agent-gateway/v1/cron/jobs/{job_id}", "cron_get", tags=("Cron",)),
     Route("POST", "/agent-gateway/v1/cron/jobs", "cron_create", CronCreate, tags=("Cron",)),
     Route("POST", "/agent-gateway/v1/cron/jobs/{job_id}/pause", "cron_pause", tags=("Cron",)),
     Route("POST", "/agent-gateway/v1/cron/jobs/{job_id}/resume", "cron_resume", tags=("Cron",)),
