@@ -3413,6 +3413,8 @@ body.col-resizing {
 .gd-viewer > .gd-pdf,
 .gd-viewer > .gd-office,
 .gd-viewer > .gd-html,
+.gd-viewer > .gd-spreadsheet,
+.gd-viewer > .gd-sheet-state,
 .gd-viewer > .gd-code {
   flex: 1 1 auto;
   min-width: 0;
@@ -3422,6 +3424,51 @@ body.col-resizing {
 .gd-pdf,
 .gd-office,
 .gd-html { width: 100%; height: 100%; border: 0; }
+
+.gd-spreadsheet {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #fff;
+  color: #111;
+}
+
+.gd-spreadsheet > .fortune-container {
+  width: 100%;
+  height: 100%;
+}
+
+.gd-sheet-state {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.gd-sheet-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.gd-readonly-badge {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 
 .gd-code {
   margin: 0;

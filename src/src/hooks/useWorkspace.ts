@@ -97,6 +97,8 @@ export function useWorkspace(agentId: string, active = true) {
   const TEXT_LANGUAGES = ['python', 'notebook', 'markdown', 'json', 'text', 'html'];
   const OFFICE_LANGUAGES = ['document', 'spreadsheet', 'presentation'];
   const isText = (entry: WorkspaceEntry) => entry.type === 'file' && TEXT_LANGUAGES.includes(entry.language ?? 'text');
+  const isInteractiveWorkbook = (entry: WorkspaceEntry) =>
+    entry.language === 'spreadsheet' && entry.name.toLowerCase().endsWith('.xlsx');
 
   const open = async (entry: WorkspaceEntry) => {
     if (entry.type === 'directory') { navigate(entry.path); return; }
@@ -106,6 +108,8 @@ export function useWorkspace(agentId: string, active = true) {
       setContent('');
       if (isText(entry)) {
         setContent(await workspaceApi.read(agentId, entry.path));
+      } else if (isInteractiveWorkbook(entry)) {
+        setPreviewUrl(URL.createObjectURL(await workspaceApi.view(agentId, entry.path)));
       } else if (OFFICE_LANGUAGES.includes(entry.language ?? '')) {
         setPreviewUrl(URL.createObjectURL(await workspaceApi.preview(agentId, entry.path)));
       } else {

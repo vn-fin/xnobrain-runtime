@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import DOMPurify from 'dompurify';
 import { ArrowUp, ChevronDown, ChevronUp, Download, FilePlus2, FileText, FolderPlus, HardDrive, LayoutGrid, List, LoaderCircle, Pencil, RefreshCw, Trash2, UploadCloud, X } from 'lucide-react';
 import { useWorkspace } from '../hooks/useWorkspace';
@@ -12,6 +12,7 @@ type SortKey = 'name' | 'modified' | 'size';
 type SortDir = 'asc' | 'desc';
 
 export const WORKSPACE_FILE_MIME = 'application/x-workspace-file';
+const SpreadsheetViewer = lazy(() => import('./SpreadsheetViewer'));
 
 /** Shared workspace controller shape (from useWorkspace), so it can be lifted
  * to App and passed to both the workspace panel and the chat drop target. */
@@ -262,6 +263,13 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
     if (!selected) return null;
     if (selected.language === 'image') return <img src={workspace.previewUrl} alt={selected.name} />;
     if (selected.language === 'pdf') return <iframe className="gd-pdf" src={workspace.previewUrl} title={selected.name} />;
+    if (selected.language === 'spreadsheet' && selected.name.toLowerCase().endsWith('.xlsx')) {
+      return (
+        <Suspense fallback={<div className="gd-sheet-state">Loading spreadsheet viewer…</div>}>
+          <SpreadsheetViewer sourceUrl={workspace.previewUrl} title={selected.name} />
+        </Suspense>
+      );
+    }
     if (['document', 'spreadsheet', 'presentation'].includes(selected.language ?? '')) {
       return <iframe className="gd-office" src={workspace.previewUrl} title={selected.name} />;
     }
@@ -397,6 +405,9 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
             <header>
               <span className="gd-editor-title"><TreeIcon entry={workspace.selected} size={18} /><strong>{workspace.selected.name}</strong></span>
               <div className="gd-editor-actions">
+                {workspace.selected.language === 'spreadsheet' && workspace.selected.name.toLowerCase().endsWith('.xlsx') && (
+                  <span className="gd-readonly-badge">Read only</span>
+                )}
                 {workspace.canEdit && !workspace.editing && (
                   <button className="conn-btn ghost" onClick={workspace.startEdit}><Pencil size={14} /> Edit</button>
                 )}
