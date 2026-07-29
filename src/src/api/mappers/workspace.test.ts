@@ -5,6 +5,7 @@ describe('detectLanguage', () => {
   it.each([
     ['report.docx', 'document'],
     ['budget.xlsx', 'spreadsheet'],
+    ['locations.csv', 'spreadsheet'],
     ['slides.pptx', 'presentation'],
     ['dashboard.html', 'html'],
     ['manual.pdf', 'pdf'],

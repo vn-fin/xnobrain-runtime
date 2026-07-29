@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import tempfile
 import threading
+from typing import Callable
+from zipfile import BadZipFile, ZipFile
 
 
 OFFICE_EXTENSIONS = frozenset({
@@ -17,6 +19,7 @@ OFFICE_EXTENSIONS = frozenset({
     ".xls", ".xlsx", ".ods",
     ".ppt", ".pptx", ".odp",
 })
+SPREADSHEET_EXTENSIONS = frozenset({".xls", ".xlsx", ".ods"})
 MAX_PREVIEW_SOURCE_BYTES = 25 * 1024 * 1024
 MAX_PREVIEW_BYTES = 50 * 1024 * 1024
 MAX_CACHE_FILES = 256
@@ -81,6 +84,48 @@ class WorkspacePreviewService:
             filename=f"{source.stem}.pdf",
         )
 
+    def workbook(self, source: str | Path) -> WorkspacePreview:
+        """Normalize a spreadsheet to browser-importable OOXML."""
+        source = Path(source)
+        suffix = source.suffix.lower()
+        if suffix not in SPREADSHEET_EXTENSIONS:
+            raise WorkspacePreviewError(
+                f"workbook preview is not supported for {suffix or 'this file type'}",
+                status=415,
+                code="workspace_preview_unsupported",
+            )
+        if not source.is_file():
+            raise WorkspacePreviewError(
+                "workspace file was not found",
+                status=404,
+                code="workspace_path_not_found",
+            )
+        if source.stat().st_size > MAX_PREVIEW_SOURCE_BYTES:
+            raise WorkspacePreviewError(
+                f"file is too large to preview (max {MAX_PREVIEW_SOURCE_BYTES} bytes)",
+                status=413,
+                code="workspace_preview_too_large",
+            )
+
+        digest = self._digest(source)
+        cached = self.cache_root / f"{digest}.xlsx"
+        with self._lock:
+            if not self._valid_xlsx(cached):
+                self._convert(
+                    source,
+                    cached,
+                    output_format="xlsx",
+                    validator=self._valid_xlsx,
+                    label="workbook preview",
+                )
+                self._prune()
+            content = cached.read_bytes()
+        return WorkspacePreview(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=f"{source.stem}.xlsx",
+        )
+
     @staticmethod
     def _digest(source: Path) -> str:
         digest = hashlib.sha256()
@@ -91,7 +136,16 @@ class WorkspacePreviewService:
                 digest.update(chunk)
         return digest.hexdigest()
 
-    def _convert(self, source: Path, cached: Path) -> None:
+    def _convert(
+        self,
+        source: Path,
+        cached: Path,
+        *,
+        output_format: str = "pdf",
+        validator: Callable[[Path], bool] | None = None,
+        label: str = "document preview",
+    ) -> None:
+        validator = validator or self._valid_pdf
         executable = shutil.which("soffice") or shutil.which("libreoffice")
         if not executable:
             raise WorkspacePreviewError(
@@ -114,7 +168,7 @@ class WorkspacePreviewService:
                         "--headless",
                         f"-env:UserInstallation={profile_root.as_uri()}",
                         "--convert-to",
-                        "pdf",
+                        output_format,
                         "--outdir",
                         str(output_root),
                         str(input_path),
@@ -126,14 +180,14 @@ class WorkspacePreviewService:
                 )
             except subprocess.TimeoutExpired as error:
                 raise WorkspacePreviewError(
-                    "document preview conversion timed out",
+                    f"{label} conversion timed out",
                     status=504,
                 ) from error
-            output_path = output_root / "document.pdf"
-            if completed.returncode != 0 or not self._valid_pdf(output_path):
+            output_path = output_root / f"document.{output_format}"
+            if completed.returncode != 0 or not validator(output_path):
                 detail = (completed.stderr or completed.stdout or "conversion failed").strip()
                 raise WorkspacePreviewError(
-                    f"document preview conversion failed: {detail[:240]}",
+                    f"{label} conversion failed: {detail[:240]}",
                     status=422,
                 )
             if output_path.stat().st_size > MAX_PREVIEW_BYTES:
@@ -157,9 +211,28 @@ class WorkspacePreviewService:
         except OSError:
             return False
 
+    @staticmethod
+    def _valid_xlsx(path: Path) -> bool:
+        try:
+            if not path.is_file() or path.stat().st_size < 4:
+                return False
+            with ZipFile(path) as archive:
+                names = set(archive.namelist())
+                return (
+                    archive.testzip() is None
+                    and "[Content_Types].xml" in names
+                    and "xl/workbook.xml" in names
+                )
+        except (BadZipFile, OSError):
+            return False
+
     def _prune(self) -> None:
         files = sorted(
-            (item for item in self.cache_root.glob("*.pdf") if item.is_file()),
+            (
+                item
+                for item in self.cache_root.iterdir()
+                if item.is_file() and item.suffix in {".pdf", ".xlsx"}
+            ),
             key=lambda item: item.stat().st_mtime,
             reverse=True,
         )

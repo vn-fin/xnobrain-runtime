@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import SpreadsheetViewer, { importXlsx } from './SpreadsheetViewer';
+import SpreadsheetViewer, { importCsv, importXlsx } from './SpreadsheetViewer';
 
 const mocks = vi.hoisted(() => ({
   workbook: vi.fn(),
@@ -73,5 +73,17 @@ describe('SpreadsheetViewer', () => {
 
     await expect(importXlsx(oversized)).rejects.toThrow('maximum 25 MiB');
     expect(mocks.transform).not.toHaveBeenCalled();
+  });
+
+  it('converts quoted CSV rows into a selectable workbook sheet', async () => {
+    const [sheet] = await importCsv(new File([
+      'Name,Address,Status\nHQ,\"601 S Magnolia Ave, Tampa\",Active\n',
+    ], 'locations.csv', { type: 'text/csv' }));
+
+    expect(sheet.name).toBe('locations');
+    expect(sheet.celldata).toEqual(expect.arrayContaining([
+      expect.objectContaining({ r: 1, c: 1, v: expect.objectContaining({ v: '601 S Magnolia Ave, Tampa' }) }),
+    ]));
+    expect(sheet.config?.columnlen?.['1']).toBeGreaterThan(72);
   });
 });

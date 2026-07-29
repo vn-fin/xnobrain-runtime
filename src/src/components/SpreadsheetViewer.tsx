@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
 import { Workbook } from '@fortune-sheet/react';
 import type { Sheet } from '@fortune-sheet/core';
 import LuckyExcel from 'luckyexcel';
+import Papa from 'papaparse';
 import '@fortune-sheet/react/dist/index.css';
 
 const MAX_WORKBOOK_BYTES = 25 * 1024 * 1024;
@@ -34,6 +35,48 @@ export function importXlsx(file: File): Promise<Sheet[]> {
   });
 }
 
+export async function importCsv(file: File): Promise<Sheet[]> {
+  if (file.size > MAX_WORKBOOK_BYTES) {
+    throw new Error('This CSV file is too large to preview (maximum 25 MiB).');
+  }
+  const parsed = Papa.parse<string[]>(await file.text(), {
+    skipEmptyLines: 'greedy',
+  });
+  if (parsed.errors.length > 0 && parsed.data.length === 0) {
+    throw new Error(parsed.errors[0].message || 'Unable to parse this CSV file.');
+  }
+
+  const rows = parsed.data;
+  const columnCount = rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
+  if (rows.length === 0 || columnCount === 0) {
+    throw new Error('The CSV file does not contain any rows.');
+  }
+
+  const columnlen: Record<string, number> = {};
+  for (let column = 0; column < columnCount; column += 1) {
+    const longest = rows.reduce(
+      (maximum, row) => Math.max(maximum, String(row[column] ?? '').length),
+      0,
+    );
+    columnlen[String(column)] = Math.min(360, Math.max(72, longest * 7 + 18));
+  }
+
+  return [{
+    id: 'csv-sheet',
+    name: file.name.replace(/\.csv$/i, '') || 'CSV',
+    order: 0,
+    status: 1,
+    row: Math.max(50, rows.length),
+    column: Math.max(20, columnCount),
+    config: { columnlen },
+    celldata: rows.flatMap((row, r) => row.map((value, c) => ({
+      r,
+      c,
+      v: { v: value, m: value, ct: { fa: '@', t: 's' } },
+    }))),
+  }];
+}
+
 export default function SpreadsheetViewer({ sourceUrl, title }: { sourceUrl: string; title: string }) {
   const [sheets, setSheets] = useState<Sheet[]>();
   const [error, setError] = useState('');
@@ -48,7 +91,8 @@ export default function SpreadsheetViewer({ sourceUrl, title }: { sourceUrl: str
       .then(async (response) => {
         if (!response.ok) throw new Error(`Unable to load workbook (${response.status}).`);
         const blob = await response.blob();
-        return importXlsx(new File([blob], title, { type: blob.type }));
+        const file = new File([blob], title, { type: blob.type });
+        return title.toLowerCase().endsWith('.csv') ? importCsv(file) : importXlsx(file);
       })
       .then((workbookSheets) => {
         if (!controller.signal.aborted) setSheets(workbookSheets);

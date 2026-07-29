@@ -606,6 +606,11 @@ class PlatformService:
         source = self.agents._workspace_path(agent_id, path, require_file=True)
         return self.workspace_previews.preview(source)
 
+    def workbook_workspace(self, agent_id: str, path: Any) -> WorkspacePreview:
+        self.agents._require_profile(self.agents._agent_name(agent_id))
+        source = self.agents._workspace_path(agent_id, path, require_file=True)
+        return self.workspace_previews.workbook(source)
+
     def write_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.agents.write_workspace_file(agent_id, body)
 

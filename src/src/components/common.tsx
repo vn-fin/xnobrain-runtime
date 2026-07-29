@@ -79,12 +79,24 @@ export function TreeIcon({ entry, size = 15 }: { entry: WorkspaceEntry; size?: n
       {label}
     </span>
   );
+  const extension = entry.name.split('.').pop()?.toLowerCase() ?? '';
   if (entry.language === 'python') return badge('file-badge python', 'py');
   if (entry.language === 'notebook') return badge('file-badge notebook', 'nb');
   if (entry.language === 'markdown') return badge('file-badge markdown', 'M', 0.6);
   if (entry.language === 'image') return badge('file-badge image', 'img', 0.38);
   if (entry.language === 'pdf') return badge('file-badge pdf', 'pdf', 0.34);
+  if (entry.language === 'document') return badge('file-badge document', extension === 'odt' ? 'odt' : 'W', extension === 'odt' ? 0.3 : 0.6);
+  if (entry.language === 'spreadsheet') return badge(
+    'file-badge spreadsheet',
+    extension === 'csv' ? 'csv' : extension === 'ods' ? 'ods' : 'X',
+    extension === 'csv' || extension === 'ods' ? 0.3 : 0.6,
+  );
+  if (entry.language === 'presentation') return badge('file-badge presentation', extension === 'odp' ? 'odp' : 'P', extension === 'odp' ? 0.3 : 0.6);
+  if (entry.language === 'html') return badge('file-badge html', '<>', 0.42);
   if (entry.language === 'json') return badge('file-badge json', '{}');
+  if (['zip', 'tar', 'gz', 'tgz', 'rar', '7z'].includes(extension)) return badge('file-badge archive', 'zip', 0.32);
+  if (['mp3', 'wav', 'ogg', 'flac'].includes(extension)) return badge('file-badge audio', '♪', 0.62);
+  if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(extension)) return badge('file-badge video', '▶', 0.52);
   if (entry.language === 'binary') return <FileText className="tree-icon binary" size={Math.round(size * 0.93)} />;
   return <File className="tree-icon text" size={Math.round(size * 0.93)} />;
 }

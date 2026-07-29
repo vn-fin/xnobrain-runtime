@@ -16,7 +16,7 @@ export function detectLanguage(path: string): WorkspaceEntry['language'] {
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'].includes(ext ?? '')) return 'image';
   if (ext === 'pdf') return 'pdf';
   if (['doc', 'docx', 'odt', 'rtf'].includes(ext ?? '')) return 'document';
-  if (['xls', 'xlsx', 'ods'].includes(ext ?? '')) return 'spreadsheet';
+  if (['csv', 'xls', 'xlsx', 'ods'].includes(ext ?? '')) return 'spreadsheet';
   if (['ppt', 'pptx', 'odp'].includes(ext ?? '')) return 'presentation';
   if (ext === 'json') return 'json';
   if (BINARY_EXTS.includes(ext ?? '')) return 'binary';

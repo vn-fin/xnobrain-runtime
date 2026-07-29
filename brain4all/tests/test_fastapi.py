@@ -811,6 +811,38 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["content-type"], "application/pdf")
         self.assertIn("inline", response.headers["content-disposition"])
 
+    async def test_workspace_workbook_returns_normalized_xlsx(self):
+        async with self.client() as client:
+            created = await client.post(
+                "/agent-gateway/v1/agents",
+                json={"display_name": "Workbook worker"},
+            )
+            agent_id = created.json()["data"]["id"]
+            workspace = self.profiles / agent_id / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            (workspace / "report.xlsx").write_bytes(b"workbook")
+            with patch.object(
+                self.composition.service.workspace_previews,
+                "workbook",
+                return_value=WorkspacePreview(
+                    content=b"PK-normalized-workbook",
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    filename="report.xlsx",
+                ),
+            ):
+                response = await client.get(
+                    f"/agent-gateway/v1/agents-workspaces/{agent_id}/workbook",
+                    params={"path": "report.xlsx"},
+                )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.content, b"PK-normalized-workbook")
+        self.assertEqual(
+            response.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("inline", response.headers["content-disposition"])
+
     async def test_bundle_round_trip_is_checked_and_excludes_credentials(self):
         async with self.client() as client:
             created = await client.post("/agent-gateway/v1/agents", json={"name": "Portable"})

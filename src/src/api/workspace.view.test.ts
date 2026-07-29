@@ -80,3 +80,24 @@ describe('workspaceApi.preview', () => {
     expect(blob.size).toBe(PDF_BYTES.length);
   });
 });
+
+describe('workspaceApi.workbook', () => {
+  it('loads a normalized workbook from the dedicated XLSX endpoint', async () => {
+    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+    const fetchMock = mockFetch(new Response(bytes, {
+      status: 200,
+      headers: {
+        'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+    }));
+
+    const blob = await workspaceApi.workbook('agent-1', 'reports/report.xlsx');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/agent-gateway/v1/agents-workspaces/agent-1/workbook?path=reports%2Freport.xlsx'),
+      expect.anything(),
+    );
+    expect(blob.type).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(blob.size).toBe(bytes.length);
+  });
+});

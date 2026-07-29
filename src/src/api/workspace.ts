@@ -118,6 +118,15 @@ export const workspaceApi = {
       ? blob
       : blob.slice(0, blob.size, 'application/pdf');
   },
+  async workbook(agentId: string, path: string, signal?: AbortSignal) {
+    const response = await requestRaw(`${root(agentId)}/workbook?path=${encodeURIComponent(path)}`, {
+      signal,
+      headers: { Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    });
+    const blob = await response.blob();
+    const xlsxMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    return blob.type === xlsxMime ? blob : blob.slice(0, blob.size, xlsxMime);
+  },
   async read(agentId: string, path: string, signal?: AbortSignal) {
     const value = await request<WorkspaceFileDTO | string>(`${root(agentId)}/read`, {
       method: 'POST', body: JSON.stringify({ path }), signal,

@@ -3663,6 +3663,35 @@ body.col-resizing {
   background: #e2453c;
 }
 
+.file-badge.document {
+  background: #2b579a;
+}
+
+.file-badge.spreadsheet {
+  background: #217346;
+}
+
+.file-badge.presentation {
+  background: #d24726;
+}
+
+.file-badge.html {
+  background: #e44d26;
+}
+
+.file-badge.archive {
+  color: #2b2110;
+  background: #e9b949;
+}
+
+.file-badge.audio {
+  background: #7c3aed;
+}
+
+.file-badge.video {
+  background: #db2777;
+}
+
 .tree-icon.binary {
   color: #7f9cf5;
 }
