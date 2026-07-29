@@ -1473,7 +1473,7 @@ function NewTaskModal({
               <button type="button" className={assignmentType === 'agent' ? 'active' : ''} onClick={() => setAssignmentType('agent')}>
                 One agent
               </button>
-              <button type="button" className={assignmentType === 'team' ? 'active' : ''} onClick={() => { setAssignmentType('team'); setStatus('todo'); }}>
+              <button type="button" className={assignmentType === 'team' ? 'active' : ''} onClick={() => setAssignmentType('team')}>
                 Agent team
               </button>
             </div>

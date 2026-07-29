@@ -51,7 +51,9 @@ export default function App() {
     router.activeAgentId,
     router.centerView === 'chat' && router.rightView === 'workspace',
   );
-  const teams = useTeams(router.centerView === 'teams');
+  // Kanban's new-task modal also needs saved teams, so keep this lightweight
+  // list loaded outside the dedicated Teams screen as well.
+  const teams = useTeams(true);
   const kanban = useKanban(router.centerView === 'kanban' || router.centerView === 'analytics');
   const analytics = useAnalytics(router.centerView === 'analytics', assistants.agents);
   const blends = useBlends(router.centerView === 'chat');

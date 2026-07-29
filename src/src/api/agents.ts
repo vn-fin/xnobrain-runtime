@@ -10,6 +10,8 @@ import type {
 import { mapAgent } from './mappers/agents';
 import type { Agent } from '../types';
 
+export type MCPConfig = { servers: Record<string, Record<string, unknown>> };
+
 const ROOT = '/agent-gateway/v1';
 const HERMES_PROVIDER = 'nine-router';
 const encoded = (value: string) => encodeURIComponent(value);
@@ -50,6 +52,17 @@ export const agentsApi = {
     await request<unknown>(`${ROOT}/agents-configs/${encoded(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(routedConfig(input)),
+    });
+  },
+
+  getMcp(id: string): Promise<MCPConfig> {
+    return request<MCPConfig>(`${ROOT}/agents-mcp/${encoded(id)}`);
+  },
+
+  updateMcp(id: string, config: MCPConfig): Promise<MCPConfig> {
+    return request<MCPConfig>(`${ROOT}/agents-mcp/${encoded(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(config),
     });
   },
 

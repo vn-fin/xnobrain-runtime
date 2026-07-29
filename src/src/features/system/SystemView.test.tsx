@@ -15,6 +15,7 @@ vi.mock('./api', () => ({
 vi.mock('../../components/ConnectionsView', () => ({ ConnectionsView: () => null }));
 vi.mock('../../components/SandboxView', () => ({ SandboxView: () => null }));
 vi.mock('./BlendsSection', () => ({ BlendsSection: () => null }));
+vi.mock('./McpSection', () => ({ McpSection: () => null }));
 
 const noop = () => undefined;
 const accounts = {

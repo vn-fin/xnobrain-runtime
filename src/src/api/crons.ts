@@ -10,12 +10,6 @@ type CronDTO = {
   schedule: string;
   prompt: string;
   next_run_at?: string;
-  last_run_id?: string;
-  last_run_status?: 'running' | 'success' | 'failed';
-  last_run_at?: string;
-  last_run_completed_at?: string;
-  last_output?: string;
-  last_error?: string;
 };
 type CronRunDTO = {
   id: string;
@@ -34,9 +28,7 @@ export type CreateCronInput = {
 };
 
 function intervalMinutes(schedule: string): number {
-  const match = schedule.match(/(?:@every\s+)?(\d+)m$/);
-  if (!match) return 0;
-  return Number(match[1]);
+  return Number(schedule.match(/(?:@?every\s+)?(\d+)m$/i)?.[1] ?? 0);
 }
 
 function mapCron(value: CronDTO): CronJob {
@@ -82,6 +74,12 @@ export const cronsApi = {
     })),
   setState: async (id: string, state: 'scheduled' | 'stopped') =>
     mapCron(await request<CronDTO>(`${ROOT}/${encodeURIComponent(id)}/${state === 'scheduled' ? 'resume' : 'pause'}`, { method: 'POST' })),
-  runNow: (id: string) => request(`${ROOT}/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+  runNow: async (id: string): Promise<CronDetail> => {
+    const value = await request<{ job: CronDTO; run: CronRunDTO | null }>(
+      `${ROOT}/${encodeURIComponent(id)}/run`,
+      { method: 'POST' },
+    );
+    return { job: mapCron(value.job), run: mapRun(value.run) };
+  },
   remove: (id: string) => request(`${ROOT}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };

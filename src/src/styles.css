@@ -7052,8 +7052,9 @@ body.col-resizing {
 
 /* Portable data and optional outbound cloud connection */
 .system-view { height: 100%; display: flex; flex-direction: column; background: var(--bg); }
-.settings-tabs { display: flex; align-items: center; gap: 6px; padding: 0 24px; border-bottom: 1px solid var(--border); background: var(--bg); }
-.settings-tab { min-height: 42px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 13px; font-weight: 650; cursor: pointer; }
+.settings-tabs { display: flex; align-items: center; gap: 6px; padding: 0 24px; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--bg); scrollbar-width: none; }
+.settings-tabs::-webkit-scrollbar { display: none; }
+.settings-tab { min-height: 42px; padding: 0 12px; flex: 0 0 auto; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 13px; font-weight: 650; cursor: pointer; }
 .settings-tab:hover { color: var(--text); background: var(--hover); }
 .settings-tab.active { color: var(--text); border-bottom-color: var(--accent); }
 @media (max-width: 720px) { .settings-tabs { padding: 0 14px; } }
@@ -8056,6 +8057,24 @@ body.col-resizing {
 .system-deployment small, .system-advanced-copy { color: var(--muted); font-size: 12px; }
 .system-advanced-card { margin-top: 8px; }
 .system-advanced-copy { margin: 0; line-height: 1.55; }
+.mcp-settings-card { align-content: start; }
+.mcp-agent-picker { display: grid; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 650; }
+.mcp-agent-picker select { min-height: 40px; padding: 0 11px; border: 1px solid var(--border-2); color: var(--text); background: var(--input-bg); }
+.mcp-editor-head, .mcp-settings-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.mcp-editor-head > div { display: grid; gap: 3px; }
+.mcp-editor-head small, .mcp-settings-foot p { color: var(--muted); font-size: 11px; }
+.mcp-help { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--muted); font-size: 11px; }
+.mcp-help summary { padding: 10px 12px; color: var(--text); font-weight: 650; cursor: pointer; }
+.mcp-help-body { display: grid; gap: 7px; padding: 0 12px 12px; line-height: 1.5; }
+.mcp-help-body p { margin: 0; }
+.mcp-help-body code { color: var(--text); }
+.mcp-example-actions { display: flex; flex-wrap: wrap; gap: 7px; padding-top: 3px; }
+.mcp-json-editor { width: 100%; min-height: 360px; box-sizing: border-box; padding: 15px; border: 1px solid var(--border-2); border-radius: 11px; outline: 0; color: var(--text); background: color-mix(in srgb, var(--input-bg) 92%, #08110d); font: 12px/1.65 "IBM Plex Mono", monospace; resize: vertical; tab-size: 2; }
+.mcp-json-editor:focus { border-color: color-mix(in srgb, var(--accent) 68%, var(--border-2)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.mcp-settings-foot p { max-width: 680px; margin: 0; line-height: 1.5; }
+.mcp-settings-foot code { color: var(--text); }
+.system-note, .system-empty { padding: 14px; border: 1px dashed var(--border-2); border-radius: 10px; color: var(--muted); font-size: 12px; text-align: center; }
+@media (max-width: 720px) { .mcp-editor-head, .mcp-settings-foot { align-items: stretch; flex-direction: column; } .mcp-editor-head .conn-btn, .mcp-settings-foot .conn-btn { justify-content: center; } .mcp-json-editor { min-height: 300px; } }
 .system-agent-config { display: grid; grid-template-columns: minmax(120px, 1fr) auto; gap: 10px; align-items: center; padding: 9px 11px; border: 1px solid var(--border-2); border-radius: 9px; }
 .system-agent-config code { color: var(--muted); font-size: 11px; }
 .system-recovery { display: grid; gap: 6px; padding: 12px; border-radius: 9px; background: var(--hover); }

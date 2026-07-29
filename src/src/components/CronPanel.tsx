@@ -101,7 +101,7 @@ export function CronPanel({
                   <ChevronDown size={14} className={expanded ? 'cron-caret open' : 'cron-caret'} />
                   <div className="cron-head-main">
                     <strong>{scheduleLabel(job)}</strong>
-                    <small>{job.id}</small>
+                    <small>{job.prompt || job.schedule}</small>
                   </div>
                   <span className={`cron-badge ${job.state}`}>{t(`cron.${job.state}`, { defaultValue: job.state })}</span>
                 </button>
@@ -114,7 +114,6 @@ export function CronPanel({
                 {expanded && (
                   <div className="cron-detail">
                     <dl>
-                      <div><dt>{t('cron.id')}</dt><dd>{job.id}</dd></div>
                       <div><dt>{t('cron.agent', { defaultValue: 'Agent' })}</dt><dd>{job.agentId}</dd></div>
                       <div><dt>{t('cron.state')}</dt><dd>{t(`cron.${job.state}`, { defaultValue: job.state })}</dd></div>
                       <div><dt>{t('cron.schedule')}</dt><dd>{job.schedule}</dd></div>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Agent, CenterView, RightView } from '../types';
 
-export type SettingsSection = 'profiles' | 'vm' | 'connectors' | 'blends';
+export type SettingsSection = 'profiles' | 'vm' | 'connectors' | 'mcp' | 'blends';
 
 export type RouteState = {
   centerView: CenterView;
@@ -63,7 +63,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
   else if (seg[0] === 'cron' || seg[0] === 'automations') centerView = 'cron';
   else if (seg[0] === 'data' || seg[0] === 'settings') {
     centerView = 'data';
-    if (seg[1] === 'vm' || seg[1] === 'connectors' || seg[1] === 'profiles' || seg[1] === 'blends') {
+    if (seg[1] === 'vm' || seg[1] === 'connectors' || seg[1] === 'profiles' || seg[1] === 'mcp' || seg[1] === 'blends') {
       settingsSection = seg[1];
     }
   }

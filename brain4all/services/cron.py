@@ -1,224 +1,166 @@
-"""Standalone cron control-plane backed by Hermes native execution."""
+"""Profile-scoped facade over Hermes' native Cron store and scheduler."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-import time
 from typing import Any, Mapping
-import uuid
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..repositories import FileRepository
-from ..integrations import HermesCronRunner
 
 
 class CronServiceError(ValueError):
-    """Expected cron validation or lifecycle error."""
-
     def __init__(self, message: str, *, status: int = 400, code: str = "invalid_cron"):
         super().__init__(message)
         self.status = status
         self.code = code
 
 
-def _iso(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _parse_iso(value: str) -> datetime:
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as error:
-        raise CronServiceError("schedule must be an ISO timestamp") from error
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+def _iso(value: Any) -> str:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return str(value or "")
 
 
 class CronService:
-    """Own standalone cron definitions and expose their latest native run."""
+    """Translate the stable Brain4All contract to Hermes native Cron calls."""
 
-    def __init__(
-        self,
-        repository: FileRepository,
-        agents: Any,
-        jobs: Any | None = None,
-        runner: Any | None = None,
-    ):
+    def __init__(self, repository: FileRepository, agents: Any):
         self.repository = repository
         self.agents = agents
-        self.jobs = jobs or repository
-        self.runner = runner or HermesCronRunner(repository.profiles_root)
 
     def list_jobs(self) -> list[dict[str, Any]]:
-        return self.jobs.list_crons()
+        jobs: list[dict[str, Any]] = []
+        for profile in self._profiles():
+            jobs.extend(self._dto(profile, job) for job in self._native(profile, "list_jobs", True))
+        return jobs
 
     def get_job_detail(self, job_id: str) -> dict[str, Any]:
-        job = self._job(job_id)
-        run = None
-        if job.get("last_run_id"):
-            run = {
-                "id": str(job.get("last_run_id")),
-                "state": str(job.get("last_run_status") or "running"),
-                "triggered_at": job.get("last_run_at"),
-                "completed_at": job.get("last_run_completed_at"),
-                "output": job.get("last_output") or "",
-                "error": job.get("last_error") or "",
-            }
-        return {"job": job, "run": run}
+        profile, job = self._find(job_id)
+        run = self._latest_run(profile, job)
+        return {"job": self._dto(profile, job), "run": run}
 
     def create_job(self, body: Mapping[str, Any]) -> dict[str, Any]:
         agent_id = str(body.get("agent_id") or "").strip()
         if not agent_id:
             raise CronServiceError("agent_id is required")
         self.agents.describe_agent(agent_id, include_memory=False)
-
         name = str(body.get("name") or "").strip()
         prompt = str(body.get("prompt") or "").strip()
-        if not name:
-            raise CronServiceError("name is required")
-        if not prompt:
-            raise CronServiceError("prompt is required")
-
-        timezone_name = str(body.get("timezone") or "Etc/UTC").strip()
-        try:
-            ZoneInfo(timezone_name)
-        except ZoneInfoNotFoundError as error:
-            raise CronServiceError("timezone is invalid") from error
-
+        if not name or not prompt:
+            raise CronServiceError("name and prompt are required")
         interval = int(body.get("interval_minutes") or 0)
-        raw_schedule = str(body.get("schedule") or "").strip()
-        now = datetime.now(timezone.utc)
+        schedule = str(body.get("schedule") or "").strip()
         if interval > 0:
-            schedule = f"@every {interval}m"
-            next_run_at = now + timedelta(minutes=interval)
-        elif raw_schedule:
-            schedule = raw_schedule
-            next_run_at = _parse_iso(raw_schedule)
-            if next_run_at <= now:
-                raise CronServiceError("scheduled time must be in the future")
-        else:
+            schedule = f"every {interval}m"
+        if not schedule:
             raise CronServiceError("interval_minutes or schedule is required")
-
-        timestamp = _iso(now)
-        job = {
-            "id": uuid.uuid4().hex,
-            "agent_id": agent_id,
-            "name": name,
-            "prompt": prompt,
-            "schedule": schedule,
-            "timezone": timezone_name,
-            "enabled": True,
-            "next_run_at": _iso(next_run_at),
-            "created_at": timestamp,
-            "updated_at": timestamp,
-            "version": 1,
-        }
-        self._snapshot(job, "created")
-        return self.jobs.put_cron(job)
+        created = self._native(
+            agent_id,
+            "create_job",
+            prompt=prompt,
+            schedule=schedule,
+            name=name,
+            deliver="local",
+        )
+        return self._dto(agent_id, created)
 
     def set_enabled(self, job_id: str, enabled: bool) -> dict[str, Any]:
-        current = self._job(job_id)
-        self._snapshot(current, "before-resume" if enabled else "before-pause")
-        updated = {
-            **current,
-            "enabled": bool(enabled),
-            "updated_at": _iso(datetime.now(timezone.utc)),
-            "version": int(current.get("version") or 1) + 1,
-        }
-        return self.jobs.put_cron(updated)
+        profile, job = self._find(job_id)
+        action = "resume_job" if enabled else "pause_job"
+        return self._dto(profile, self._native(profile, action, job["id"]))
 
     def delete_job(self, job_id: str) -> dict[str, Any]:
-        current = self._job(job_id)
-        self._snapshot(current, "before-delete")
-        if not self.jobs.delete_cron(job_id):
+        profile, job = self._find(job_id)
+        if not self._native(profile, "remove_job", job["id"]):
             raise CronServiceError("cron job not found", status=404, code="cron_not_found")
         return {"deleted": True}
 
-    def due_jobs(self, now: datetime | None = None) -> list[dict[str, Any]]:
-        current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-        result = []
-        for job in self.list_jobs():
-            if not bool(job.get("enabled")):
-                continue
-            raw = str(job.get("next_run_at") or "").strip()
-            if raw and _parse_iso(raw) <= current:
-                result.append(job)
-        return result
-
     def request_run(self, job_id: str) -> dict[str, Any]:
-        job = self._job(job_id)
-        def started(run: Mapping[str, Any]) -> None:
-            current = self._job(job_id)
-            self.jobs.put_cron({
-                **current,
-                "last_run_id": str(run.get("id") or ""),
-                "last_run_status": "running",
-                "last_run_at": run.get("triggered_at") or _iso(datetime.now(timezone.utc)),
-                "last_run_completed_at": None,
-                "last_output": "",
-                "last_error": "",
-                "updated_at": _iso(datetime.now(timezone.utc)),
-                "version": int(current.get("version") or 1) + 1,
-            })
-        def completed(run: Mapping[str, Any]) -> None:
-            current = self._job(job_id)
-            if str(current.get("last_run_id") or "") != str(run.get("id") or ""):
-                return
-            self.jobs.put_cron({
-                **current,
-                "last_run_status": str(run.get("state") or "failed"),
-                "last_run_completed_at": run.get("completed_at") or _iso(datetime.now(timezone.utc)),
-                "last_output": str(run.get("output") or "")[:200_000],
-                "last_error": str(run.get("error") or "")[:4_000],
-                "updated_at": _iso(datetime.now(timezone.utc)),
-                "version": int(current.get("version") or 1) + 1,
-            })
-        try:
-            run = self.runner.trigger_once(job, on_started=started, on_complete=completed)
-        except Exception as error:
-            raise CronServiceError(
-                "Hermes could not start the cron job",
-                status=503,
-                code="cron_runtime_unavailable",
-            ) from error
-        return {"job": self._job(job_id), "run": run}
+        profile, job = self._find(job_id)
+        triggered = self._native(profile, "trigger_job", job["id"])
+        if not triggered:
+            raise CronServiceError("cron job not found", status=404, code="cron_not_found")
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        return {
+            "job": self._dto(profile, triggered),
+            "run": {"id": f"pending-{job['id']}", "state": "running", "triggered_at": now},
+        }
 
-    def _job(self, job_id: str) -> dict[str, Any]:
-        normalized = str(job_id or "").strip()
-        for job in self.list_jobs():
-            if str(job.get("id") or "") == normalized:
-                return job
+    def _profiles(self) -> list[str]:
+        return [
+            str(item["name"])
+            for item in self.agents.list_agents()["agents"]
+        ]
+
+    def _find(self, job_id: str) -> tuple[str, dict[str, Any]]:
+        wanted = str(job_id or "").strip()
+        for profile in self._profiles():
+            for job in self._native(profile, "list_jobs", True):
+                if str(job.get("id") or "") == wanted or str(job.get("name") or "") == wanted:
+                    return profile, job
         raise CronServiceError("cron job not found", status=404, code="cron_not_found")
 
-    def _snapshot(self, job: Mapping[str, Any], reason: str) -> None:
-        agent_id = str(job.get("agent_id") or "")
-        job_id = str(job.get("id") or "")
-        snapshot = {
-            "reason": reason,
-            "captured_at": _iso(datetime.now(timezone.utc)),
-            "job": dict(job),
-        }
-        path: Path = (
-            self.repository.profile_path(agent_id)
-            / "cron"
-            / "snapshots"
-            / job_id
-            / f"{time.time_ns()}.yaml"
-        )
-        self.repository.atomic_write(
-            path,
-            self._yaml_bytes(snapshot),
-            mode=0o440,
-            replace=False,
-        )
+    def _native(self, profile: str, function: str, *args, **kwargs):
+        from cron import jobs as native
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+        home = self._profile_home(profile)
+        token = set_hermes_home_override(str(home))
+        try:
+            with native.use_cron_store(home):
+                return getattr(native, function)(*args, **kwargs)
+        finally:
+            reset_hermes_home_override(token)
+
+    def _profile_home(self, agent_id: str) -> Path:
+        detail = self.agents.describe_agent(agent_id, include_memory=False)
+        home = Path(detail["profile_path"]).resolve()
+        if not home.is_dir():
+            raise CronServiceError(
+                "cron agent profile is unavailable",
+                status=404,
+                code="agent_not_found",
+            )
+        return home
 
     @staticmethod
-    def _yaml_bytes(value: Mapping[str, Any]) -> bytes:
-        import yaml
+    def _dto(profile: str, job: Mapping[str, Any]) -> dict[str, Any]:
+        schedule = job.get("schedule")
+        display = job.get("schedule_display")
+        if not display and isinstance(schedule, Mapping):
+            display = schedule.get("display") or schedule.get("expr")
+        result = dict(job)
+        result["agent_id"] = profile
+        result["schedule"] = str(display or schedule or "")
+        result["next_run_at"] = _iso(job.get("next_run_at"))
+        result["enabled"] = bool(job.get("enabled", True))
+        return result
 
-        return yaml.safe_dump(dict(value), sort_keys=False, allow_unicode=True).encode()
+    def _latest_run(self, profile: str, job: Mapping[str, Any]) -> dict[str, Any] | None:
+        last_at = str(job.get("last_run_at") or "")
+        if not last_at:
+            return None
+        output_dir = self._profile_home(profile) / "cron" / "output" / str(job["id"])
+        files = sorted(output_dir.glob("*.md"), key=lambda path: path.name, reverse=True)
+        output = files[0].read_text(encoding="utf-8") if files else ""
+        if "\n## Error\n" in output:
+            error = output.split("\n## Error\n", 1)[1].strip()
+            state, output = "failed", ""
+        elif "\n## Response\n" in output:
+            output, error, state = output.split("\n## Response\n", 1)[1].strip(), "", "success"
+        else:
+            error, state = "", "success"
+        return {
+            "id": f"{job['id']}-{last_at}",
+            "state": state if str(job.get("last_status") or "ok") == "ok" else "failed",
+            "triggered_at": last_at,
+            "completed_at": last_at,
+            "output": output[:200_000],
+            "error": error[:4_000],
+        }
 
 
 __all__ = ["CronService", "CronServiceError"]

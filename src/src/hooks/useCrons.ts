@@ -60,7 +60,8 @@ export function useCrons(enabled = true) {
     setPendingId(id);
     setError('');
     try {
-      await cronsApi.runNow(id);
+      const triggered = await cronsApi.runNow(id);
+      setDetail(triggered);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not start cron job.');
     } finally {
@@ -85,7 +86,11 @@ export function useCrons(enabled = true) {
   const loadDetail = async (id: string) => {
     try {
       const loaded = await cronsApi.detail(id);
-      setDetail(loaded);
+      setDetail((current) => (
+        loaded.run === null && current?.job.id === id && current.run?.state === 'running'
+          ? { ...loaded, run: current.run }
+          : loaded
+      ));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not load cron details.');
     }

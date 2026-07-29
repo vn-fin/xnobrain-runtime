@@ -1,10 +1,10 @@
 # Development and verification
 
-On Linux, install the complete local toolchain with
-`./scripts/install-linux.sh`. It creates `.tools/python` for the project,
-installs Hermes and the Python requirements, provisions Node.js/npm, 9router,
-the office/document helpers, and the agent CLIs. Copy `.env.example` to `.env`
-when local overrides are needed.
+On Linux or macOS, install the local toolchain with `make install-local`. It
+creates `.tools/python` for the project, installs Hermes and the Python
+requirements, and provisions Node.js/npm, 9router, and the agent CLIs. The
+macOS target skips the optional office-tool and browser-engine downloads to
+keep setup fast. Copy `.env.example` to `.env` when local overrides are needed.
 
 ```bash
 npm run dev               # Vite 5173 + reload FastAPI 8642 + 9router 20128

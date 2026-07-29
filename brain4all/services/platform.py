@@ -37,7 +37,7 @@ from ..integrations import (
     NineRouterAPIError,
     NineRouterManager,
 )
-from ..repositories import FileRepository, PostgresCronRepository, StoreError
+from ..repositories import FileRepository, StoreError
 from .portability import PortabilityService
 from .cron import CronService, CronServiceError
 
@@ -91,8 +91,7 @@ class PlatformService:
         self.router = router
         self.runtime = runtime
         self.portability = PortabilityService(repository, config.root_profile)
-        cron_jobs = PostgresCronRepository.from_environment()
-        self.cron = CronService(repository, agents, cron_jobs)
+        self.cron = CronService(repository, agents)
         from .kanban import KanbanService
         self.kanban = KanbanService(agents, repository)
         from .analytics import AnalyticsService
@@ -801,7 +800,7 @@ class PlatformService:
     def delete_cron(self, cron_id: str) -> dict[str, Any]:
         return self.cron.delete_job(cron_id)
 
-    async def run_cron(self, cron_id: str) -> dict[str, Any]:
+    def run_cron(self, cron_id: str) -> dict[str, Any]:
         return self.cron.request_run(cron_id)
 
     @staticmethod
@@ -909,19 +908,19 @@ class PlatformService:
         return base
 
     def get_mcp(self, agent_id: str) -> dict[str, Any]:
-        path = self._agent_profile_path(agent_id) / "mcp.json"
-        if not path.is_file():
-            return {"servers": {}}
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload if isinstance(payload, dict) else {"servers": {}}
+        return self.agents.get_mcp(agent_id)
 
     def update_mcp(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        payload = copy.deepcopy(dict(body))
-        if not isinstance(payload.get("servers", {}), dict):
+        servers = body.get("servers", {})
+        if not isinstance(servers, Mapping):
             raise ServiceError("servers must be an object")
-        path = self._agent_profile_path(agent_id) / "mcp.json"
-        self.repository.atomic_json(path, payload)
-        return payload
+        path = self._agent_profile_path(agent_id) / "config.yaml"
+        if path.is_file():
+            self.repository.snapshot(agent_id, "config", "config", path.read_bytes())
+        try:
+            return self.agents.update_mcp(agent_id, servers)
+        except AgentAPIError as exc:
+            raise ServiceError(str(exc), status=exc.status, code=exc.code) from exc
 
     def _list_root_snapshots(self, kind: str | None = None) -> list[dict[str, Any]]:
         root = self.config.root_profile / "snapshots"

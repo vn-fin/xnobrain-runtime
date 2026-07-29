@@ -40,9 +40,19 @@ const launchTeam: Team = {
   enabled: true,
 };
 
-function TestBoard({ agents = [], teams = [] }: { agents?: Agent[]; teams?: Team[] }) {
+let createTaskValidationError = false;
+
+function TestBoard({
+  agents = [],
+  teams = [],
+  onLoadAgentSkills,
+}: {
+  agents?: Agent[];
+  teams?: Team[];
+  onLoadAgentSkills?: (agentId: string) => Promise<Agent['skills']>;
+}) {
   const state = useKanban();
-  return <KanbanView teams={teams} agents={agents} state={state} onClose={vi.fn()} />;
+  return <KanbanView teams={teams} agents={agents} state={state} onLoadAgentSkills={onLoadAgentSkills} onClose={vi.fn()} />;
 }
 
 describe('KanbanView', () => {
@@ -50,6 +60,7 @@ describe('KanbanView', () => {
 
   beforeEach(() => {
     window.localStorage.clear();
+    createTaskValidationError = false;
     let archivedTask = false;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
@@ -60,6 +71,15 @@ describe('KanbanView', () => {
         });
       }
       if (path.endsWith('/kanban/boards/default/tasks') && init?.method === 'POST') {
+        if (createTaskValidationError) {
+          return new Response(JSON.stringify({
+            detail: [{
+              type: 'too_long',
+              loc: ['body', 'skills'],
+              msg: 'List should have at most 64 items after validation, not 77',
+            }],
+          }), { status: 422, statusText: 'Unprocessable Entity', headers: { 'Content-Type': 'application/json' } });
+        }
         const requested = JSON.parse(String(init.body)) as Record<string, unknown>;
         const requestedSchedule = requested.schedule as Record<string, unknown> | undefined;
         return new Response(JSON.stringify({ success: true, data: {
@@ -336,6 +356,61 @@ describe('KanbanView', () => {
     });
   });
 
+  it('filters task skills by name without changing their selected state', async () => {
+    const user = userEvent.setup();
+    render(<TestBoard agents={[researchAgent]} />);
+
+    await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
+    await user.click(screen.getByRole('button', { name: /New task/ }));
+    const modal = screen.getByRole('dialog');
+    await user.click(within(modal).getByRole('button', { name: /Unassigned/ }));
+    await user.click(within(modal).getByRole('option', { name: /Research Agent/ }));
+
+    const search = within(modal).getByRole('searchbox', { name: 'Search skills by name' });
+    await user.type(search, 'web');
+    expect(within(modal).getByRole('checkbox', { name: /Web research/ })).toBeChecked();
+    expect(within(modal).queryByRole('checkbox', { name: /Writing/ })).toBeNull();
+
+    await user.clear(search);
+    expect(within(modal).getByRole('checkbox', { name: /Writing/ })).toBeChecked();
+  });
+
+  it('hydrates skills when the agent list was loaded without skill details', async () => {
+    const user = userEvent.setup();
+    const loadAgentSkills = vi.fn().mockResolvedValue(researchAgent.skills);
+    const agentWithoutSkills = { ...researchAgent, skills: [] };
+    render(<TestBoard agents={[agentWithoutSkills]} onLoadAgentSkills={loadAgentSkills} />);
+
+    await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
+    await user.click(screen.getByRole('button', { name: /New task/ }));
+    const modal = screen.getByRole('dialog');
+    await user.click(within(modal).getByRole('button', { name: /Unassigned/ }));
+    await user.click(within(modal).getByRole('option', { name: /Research Agent/ }));
+
+    await waitFor(() => {
+      expect(loadAgentSkills).toHaveBeenCalledWith('research-agent');
+      expect(within(modal).getByRole('checkbox', { name: /Writing/ })).toBeChecked();
+    });
+  });
+
+  it('keeps the create modal open and shows the API validation reason', async () => {
+    createTaskValidationError = true;
+    const user = userEvent.setup();
+    render(<TestBoard />);
+
+    await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
+    await user.click(screen.getByRole('button', { name: /New task/ }));
+    const modal = screen.getByRole('dialog', { name: 'New task' });
+    await user.type(within(modal).getByLabelText('Title'), 'Task over the skill limit');
+    await user.type(within(modal).getByLabelText(/Description/), 'Show the backend validation reason.');
+    await user.click(within(modal).getByRole('button', { name: /Create task/ }));
+
+    expect(await within(modal).findByRole('alert')).toHaveTextContent(
+      'A task can use up to 64 skills. Disable 13 skills and try again.',
+    );
+    expect(screen.getByRole('dialog', { name: 'New task' })).toBeVisible();
+  });
+
   it('selects a saved team, previews its DAG, and creates a grouped team task', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.mocked(fetch);
@@ -344,7 +419,9 @@ describe('KanbanView', () => {
     await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
     await user.click(screen.getByRole('button', { name: /New task/ }));
     const modal = screen.getByRole('dialog');
+    await user.selectOptions(within(modal).getByLabelText('Status'), 'backlog');
     await user.click(within(modal).getByRole('button', { name: 'Agent team' }));
+    expect(within(modal).getByLabelText('Status')).toHaveValue('backlog');
     await user.click(within(modal).getByRole('button', { name: /Choose a saved team/ }));
     const teamOption = within(modal).getByRole('option', { name: /Launch Team.*Researches evidence and reviews launch plans/i });
     expect(teamOption).toBeVisible();
@@ -366,6 +443,7 @@ describe('KanbanView', () => {
       );
       const body = JSON.parse(String(request?.[1]?.body));
       expect(body.team_id).toBe('launch-team');
+      expect(body.status).toBe('backlog');
       expect(body.assignee).toBeNull();
       expect(body.skills).toEqual([]);
     });
