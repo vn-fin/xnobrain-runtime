@@ -23,7 +23,6 @@ import {
   Download,
   LogIn,
   LogOut,
-  FlaskConical,
 } from 'lucide-react';
 import type { ActiveUser } from '../auth';
 import type { Brain4AllEdition } from '../runtime';
@@ -57,11 +56,11 @@ export function Sidebar({
   onNewAgent,
   user,
   edition,
-  authEnabled,
-  accountEnabled,
+  loginEnabled,
+  sessionActive,
   onOpenLogin,
+  onOpenAccount,
   onSignOut,
-  exampleEnabled,
 }: {
   agents: Agent[];
   activeAgent: Agent;
@@ -80,11 +79,11 @@ export function Sidebar({
   onNewAgent: () => void;
   user?: ActiveUser | null;
   edition?: Brain4AllEdition;
-  authEnabled?: boolean;
-  accountEnabled?: boolean;
+  loginEnabled?: boolean;
+  sessionActive?: boolean;
   onOpenLogin?: () => void;
+  onOpenAccount?: () => void;
   onSignOut?: () => Promise<void>;
-  exampleEnabled?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const { preference: themePref, setPreference: setThemePref } = useTheme();
@@ -151,13 +150,14 @@ export function Sidebar({
       </div>
 
       <div className="main-nav">
-        {exampleEnabled && (
+        {loginEnabled && (
           <button
-            className={centerView === 'example' ? 'nav-row active' : 'nav-row'}
-            onClick={() => onNavigate('example')}
+            className="nav-row"
+            onClick={sessionActive ? onOpenAccount : onOpenLogin}
           >
-            <FlaskConical size={18} />
-            <span>Example</span>
+            <CircleUserRound size={18} />
+            <span>Account</span>
+            {sessionActive && <small className={`sidebar-edition ${edition ?? 'opensource'}`}>{edition ?? 'opensource'}</small>}
           </button>
         )}
         {navItems.map((item) => {
@@ -174,16 +174,6 @@ export function Sidebar({
             </button>
           );
         })}
-        {user && accountEnabled && (
-          <button
-            className={centerView === 'account' ? 'nav-row active' : 'nav-row'}
-            onClick={() => onNavigate('account')}
-          >
-            <CircleUserRound size={18} />
-            <span>Account</span>
-            <small className={`sidebar-edition ${edition ?? 'opensource'}`}>{edition ?? 'opensource'}</small>
-          </button>
-        )}
       </div>
 
       <div className="history-section">
@@ -374,13 +364,21 @@ export function Sidebar({
           <ChevronDown size={14} />
         </div>
 
-        {authEnabled && (user ? (
+        {loginEnabled && (sessionActive ? (
           <div className="user-row">
-            <button className="user-login" onClick={() => accountEnabled && onNavigate('account')} title="Open account">
-              <span className="user-avatar">{(user.displayName || user.email).charAt(0).toUpperCase()}</span>
-              <span className="user-name">{user.displayName || user.email}</span>
+            <button className="user-login" onClick={onOpenAccount} title="Open account">
+              <span className="user-avatar">{user ? (user.displayName || user.email).charAt(0).toUpperCase() : <CircleUserRound size={14} />}</span>
+              <span className="user-name">{user ? user.displayName || user.email : 'Account'}</span>
             </button>
-            <button className="icon-button" title="Sign out" onClick={() => void onSignOut?.()}><LogOut size={16} /></button>
+            <button
+              className="icon-button"
+              title="Sign out"
+              onClick={() => {
+                if (window.confirm('Are you sure you want to sign out?')) void onSignOut?.();
+              }}
+            >
+              <LogOut size={16} />
+            </button>
           </div>
         ) : (
           <button className="user-row user-login" onClick={onOpenLogin}>

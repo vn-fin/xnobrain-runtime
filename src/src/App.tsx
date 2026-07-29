@@ -22,7 +22,6 @@ import { KanbanView } from './components/KanbanView';
 import { KanbanNotifications } from './components/KanbanNotifications';
 import { AnalyticsView } from './components/AnalyticsView';
 import { AccountView } from './components/AccountView';
-import { ExampleView } from './components/ExampleView';
 import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
@@ -79,6 +78,7 @@ export default function App() {
   // UI-only modal state
   const [createAgentOpen, setCreateAgentOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [deleteAgentId, setDeleteAgentId] = useState<string | null>(null);
   const [workspaceOpenRequest, setWorkspaceOpenRequest] = useState<{ path: string; token: number }>();
   const [deleteConversationId, setDeleteConversationId] = useState<string | null>(null);
@@ -237,20 +237,6 @@ export default function App() {
 
   if (assistants.status === 'loading') return <AsyncState status="loading" />;
   if (assistants.status === 'error') return <AsyncState status="error" error={assistants.error} onRetry={assistants.refresh} />;
-  if (!activeAgent && centerView === 'account' && auth.user) {
-    return (
-      <div className="account-standalone">
-        <AccountView onClose={() => router.setCenterView('chat')} />
-      </div>
-    );
-  }
-  if (!activeAgent && centerView === 'example' && auth.config.features.example) {
-    return (
-      <div className="account-standalone">
-        <ExampleView onClose={() => router.setCenterView('chat')} />
-      </div>
-    );
-  }
   if (!activeAgent) {
     return (
       <div className="empty-app">
@@ -308,19 +294,18 @@ export default function App() {
         onNewAgent={() => setCreateAgentOpen(true)}
         user={auth.user}
         edition={auth.config.edition}
-        authEnabled={auth.config.auth.mode !== 'disabled'}
-        accountEnabled={auth.config.features.account}
+        loginEnabled={auth.config.features.login && auth.config.auth.mode !== 'disabled'}
+        sessionActive={auth.sessionActive}
         onOpenLogin={auth.openLogin}
-        onSignOut={auth.signOut}
-        exampleEnabled={auth.config.features.example}
+        onOpenAccount={() => setAccountOpen(true)}
+        onSignOut={async () => {
+          await auth.signOut();
+          setAccountOpen(false);
+        }}
       />
 
       <main className={centerView === 'chat' ? 'chat-area' : 'chat-area sandbox-mode'}>
-        {centerView === 'account' && auth.user ? (
-          <AccountView onClose={() => router.setCenterView('chat')} />
-        ) : centerView === 'example' && auth.config.features.example ? (
-          <ExampleView onClose={() => router.setCenterView('chat')} />
-        ) : centerView === 'skills' ? (
+        {centerView === 'skills' ? (
           <SkillsView
             library={assistants.library}
             agents={assistants.agents}
@@ -495,6 +480,20 @@ export default function App() {
 
       {settingsOpen && (
         <AgentSettingsModal agent={activeAgent} providers={runtimeProviders} onSave={handleUpdateAgent} onClose={() => setSettingsOpen(false)} />
+      )}
+
+      {accountOpen && auth.sessionActive && (
+        <div className="modal-overlay" onClick={() => setAccountOpen(false)}>
+          <div
+            className="app-modal account-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Account details"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <AccountView onClose={() => setAccountOpen(false)} />
+          </div>
+        </div>
       )}
 
       {deleteConversationId && (

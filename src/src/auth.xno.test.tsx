@@ -1,8 +1,10 @@
+import { StrictMode, useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './i18n';
 import LoginScreen from './LoginScreen';
 import { AuthProvider, useAuth } from './auth';
+import { AccountView } from './components/AccountView';
 
 vi.mock('./runtime', () => ({
   brain4AllRuntime: {
@@ -19,14 +21,23 @@ vi.mock('./runtime', () => ({
       loginPath: '/control/v1/auth/login',
       logoutPath: '/control/v1/auth/logout',
     },
-    features: { account: true, example: true },
+    features: { login: true },
   },
 }));
 
 function Trial() {
-  const { user, loading } = useAuth();
+  const { sessionActive, loading } = useAuth();
   if (loading) return <span>Loading</span>;
-  return user ? <span>{user.fullName}</span> : <LoginScreen optional />;
+  return sessionActive ? <AccountView onClose={() => undefined} /> : <LoginScreen optional />;
+}
+
+function LazyAccount() {
+  const { sessionActive } = useAuth();
+  const [open, setOpen] = useState(false);
+  if (!sessionActive) return <span>Signed out</span>;
+  return open
+    ? <AccountView onClose={() => setOpen(false)} />
+    : <button onClick={() => setOpen(true)}>Account</button>;
 }
 
 describe('XNOQuant Firebase authentication adapter', () => {
@@ -87,5 +98,38 @@ describe('XNOQuant Firebase authentication adapter', () => {
       }),
     );
     expect(localStorage.getItem('brain4all.xno.refresh-token')).toBe('refresh-token');
+  });
+
+  it('does not request /me on refresh and loads it once when Account is opened', async () => {
+    localStorage.setItem('brain4all.xno.access-token', 'saved-access-token');
+    localStorage.setItem('brain4all.xno.refresh-token', 'saved-refresh-token');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          user_id: 'user-01',
+          email: 'kim@example.com',
+          fullname: 'Nguyen Tan Kim',
+          roles: ['admin'],
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<StrictMode><AuthProvider><LazyAccount /></AuthProvider></StrictMode>);
+    expect(await screen.findByRole('button', { name: 'Account' })).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.dev.xnoquant.io/auth/v1/me',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer saved-access-token' }),
+      }),
+    );
+    expect(await screen.findByText('Nguyen Tan Kim')).toBeInTheDocument();
   });
 });

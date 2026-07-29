@@ -4,9 +4,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
+import { storedAccessToken, XNO_ACCESS_TOKEN_KEY, XNO_REFRESH_TOKEN_KEY } from './authStorage';
 import { brain4AllRuntime, type RuntimeConfig } from './runtime';
 
 export type ActiveUser = {
@@ -41,16 +43,16 @@ type AuthContextValue = {
   loading: boolean;
   loginOpen: boolean;
   accessToken: string | null;
+  sessionActive: boolean;
   signIn: (input: LoginInput) => Promise<void>;
   signOut: () => Promise<void>;
+  loadCurrentUser: () => Promise<ActiveUser | null>;
   openLogin: () => void;
   closeLogin: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const LOCAL_PROFILE_KEY = 'brain4all.local-profile';
-const XNO_ACCESS_TOKEN_KEY = 'brain4all.xno.access-token';
-const XNO_REFRESH_TOKEN_KEY = 'brain4all.xno.refresh-token';
 
 function normalizeUser(value: unknown): ActiveUser | null {
   if (!value || typeof value !== 'object') return null;
@@ -97,9 +99,14 @@ async function jsonResponse(response: Response): Promise<Record<string, unknown>
 export function AuthProvider({ children }: { children: ReactNode }) {
   const config = brain4AllRuntime;
   const [user, setUser] = useState<ActiveUser | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [loading, setLoading] = useState(config.auth.provider !== 'local-profile');
+  const [accessToken, setAccessToken] = useState<string | null>(() => (
+    config.features.login && config.auth.provider === 'xno-firebase' ? storedAccessToken() : null
+  ));
+  const [loading, setLoading] = useState(
+    config.features.login && config.auth.provider === 'gateway',
+  );
   const [loginOpen, setLoginOpen] = useState(false);
+  const currentUserRequest = useRef<Promise<ActiveUser | null> | null>(null);
 
   const loadGatewaySession = useCallback(async () => {
     const response = await fetch(config.auth.bootstrapPath, {
@@ -108,10 +115,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     if (response.status === 401) {
       setUser(null);
-      return;
+      return null;
     }
     const data = await jsonResponse(response);
-    setUser(normalizeUser(data.user ?? data));
+    const next = normalizeUser(data.user ?? data);
+    setUser(next);
+    return next;
   }, [config.auth.bootstrapPath]);
 
   const clearXnoTokens = useCallback(() => {
@@ -154,25 +163,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!nextAccessToken) throw new Error('The account API returned an empty access token.');
     localStorage.setItem(XNO_ACCESS_TOKEN_KEY, nextAccessToken);
     localStorage.setItem(XNO_REFRESH_TOKEN_KEY, nextRefreshToken);
-    await loadXnoUser(nextAccessToken);
-  }, [config.api.remoteBaseUrl, config.auth.refreshPath, loadXnoUser]);
+    setAccessToken(nextAccessToken);
+    return nextAccessToken;
+  }, [config.api.remoteBaseUrl, config.auth.refreshPath]);
 
-  const loadXnoSession = useCallback(async () => {
-    const savedAccessToken = localStorage.getItem(XNO_ACCESS_TOKEN_KEY);
-    if (savedAccessToken) {
+  const loadCurrentUser = useCallback((): Promise<ActiveUser | null> => {
+    if (!config.features.login || config.auth.mode === 'disabled') return Promise.resolve(null);
+    if (config.auth.provider === 'local-profile') {
       try {
-        await loadXnoUser(savedAccessToken);
-        return;
+        return Promise.resolve(normalizeUser(JSON.parse(localStorage.getItem(LOCAL_PROFILE_KEY) ?? 'null')));
       } catch {
-        // A stale access token may still have a valid refresh token.
+        return Promise.resolve(null);
       }
     }
-    await refreshXnoSession();
-  }, [loadXnoUser, refreshXnoSession]);
+    if (config.auth.provider === 'gateway') return loadGatewaySession();
+    if (currentUserRequest.current) return currentUserRequest.current;
+
+    const request = (async () => {
+      const savedAccessToken = storedAccessToken();
+      if (!savedAccessToken) return null;
+      try {
+        return await loadXnoUser(savedAccessToken);
+      } catch {
+        const refreshedToken = await refreshXnoSession();
+        return loadXnoUser(refreshedToken);
+      }
+    })();
+    currentUserRequest.current = request;
+    void request.finally(() => {
+      if (currentUserRequest.current === request) currentUserRequest.current = null;
+    }).catch(() => undefined);
+    return request;
+  }, [config.auth.mode, config.auth.provider, config.features.login, loadGatewaySession, loadXnoUser, refreshXnoSession]);
 
   useEffect(() => {
     let active = true;
-    if (config.auth.mode === 'disabled') {
+    if (!config.features.login || config.auth.mode === 'disabled') {
       setLoading(false);
       return undefined;
     }
@@ -187,17 +213,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return undefined;
     }
     if (config.auth.provider === 'xno-firebase') {
-      void loadXnoSession()
-        .catch(() => {
-          if (active) {
-            clearXnoTokens();
-            setUser(null);
-          }
-        })
-        .finally(() => {
-          if (active) setLoading(false);
-        });
-      return () => { active = false; };
+      setLoading(false);
+      return undefined;
     }
     void loadGatewaySession()
       .catch(() => {
@@ -207,10 +224,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [clearXnoTokens, config.auth.mode, config.auth.provider, loadGatewaySession, loadXnoSession]);
+  }, [config.auth.mode, config.auth.provider, config.features.login, loadGatewaySession]);
 
   const signIn = useCallback(async (input: LoginInput) => {
-    if (config.auth.mode === 'disabled') throw new Error('Authentication is disabled.');
+    if (!config.features.login || config.auth.mode === 'disabled') throw new Error('Authentication is disabled.');
     if (config.auth.provider === 'local-profile') {
       const email = input.email.trim();
       const next: ActiveUser = {
@@ -262,7 +279,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!nextAccessToken || !nextRefreshToken) throw new Error('The account API returned an incomplete session.');
       localStorage.setItem(XNO_ACCESS_TOKEN_KEY, nextAccessToken);
       localStorage.setItem(XNO_REFRESH_TOKEN_KEY, nextRefreshToken);
-      await loadXnoUser(nextAccessToken);
+      setAccessToken(nextAccessToken);
+      setUser(null);
       setLoginOpen(false);
       return;
     }
@@ -281,7 +299,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (next) setUser(next);
     else await loadGatewaySession();
     setLoginOpen(false);
-  }, [config, loadGatewaySession, loadXnoUser]);
+  }, [config, loadGatewaySession]);
 
   const signOut = useCallback(async () => {
     if (config.auth.provider === 'local-profile') {
@@ -299,17 +317,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, [clearXnoTokens, config.auth.logoutPath, config.auth.provider]);
 
+  const sessionActive = config.auth.provider === 'xno-firebase' ? !!accessToken : !!user;
   const value = useMemo<AuthContextValue>(() => ({
     config,
     user,
     loading,
     loginOpen,
     accessToken,
+    sessionActive,
     signIn,
     signOut,
+    loadCurrentUser,
     openLogin: () => setLoginOpen(true),
     closeLogin: () => setLoginOpen(false),
-  }), [config, user, loading, loginOpen, accessToken, signIn, signOut]);
+  }), [config, user, loading, loginOpen, accessToken, sessionActive, signIn, signOut, loadCurrentUser]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -90,8 +90,8 @@ describe('Sidebar assistant actions', () => {
     expect(navigate).toHaveBeenCalledWith('skills');
   });
 
-  it('shows the Account tab only for an active user', () => {
-    const navigate = vi.fn();
+  it('opens account details from the left navigation for an active session', () => {
+    const openAccount = vi.fn();
     const { container } = render(
       <Sidebar
         agents={[agent]}
@@ -100,7 +100,7 @@ describe('Sidebar assistant actions', () => {
         centerView="chat"
         agentSearch=""
         onAgentSearch={vi.fn()}
-        onNavigate={navigate}
+        onNavigate={vi.fn()}
         onSelectAgent={vi.fn()}
         onSelectConversation={vi.fn()}
         onRenameAgent={vi.fn()}
@@ -111,11 +111,13 @@ describe('Sidebar assistant actions', () => {
         onNewAgent={vi.fn()}
         user={{ userId: 'user-1', email: 'kim@example.com', displayName: 'Kim', tenantId: 'tenant-1', planId: 'pro', roles: ['owner'] }}
         edition="pro"
-        accountEnabled
+        loginEnabled
+        sessionActive
+        onOpenAccount={openAccount}
       />,
     );
 
     fireEvent.click(within(container).getByRole('button', { name: /Accountpro/i }));
-    expect(navigate).toHaveBeenCalledWith('account');
+    expect(openAccount).toHaveBeenCalledOnce();
   });
 });

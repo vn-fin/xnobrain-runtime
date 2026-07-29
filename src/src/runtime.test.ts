@@ -7,7 +7,7 @@ describe('runtimeConfig', () => {
       edition: 'opensource',
       auth: { mode: 'optional', provider: 'local-profile' },
       api: { remoteBaseUrl: '' },
-      features: { account: true, example: false },
+      features: { login: true },
     });
   });
 

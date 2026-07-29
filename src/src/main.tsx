@@ -12,16 +12,17 @@ import './styles.css';
 initTheme();
 
 function AuthGate() {
-  const { config, user, loading, loginOpen, openLogin } = useAuth();
+  const { config, loading, loginOpen, openLogin, sessionActive } = useAuth();
+  const loginEnabled = config.features.login && config.auth.mode !== 'disabled';
   if (loading) return <div className="app-loading" aria-busy="true"><span className="login-logo">B</span><span>Loading Brain4All…</span></div>;
-  if (config.auth.mode === 'required' && !user) return <LoginScreen />;
+  if (loginEnabled && config.auth.mode === 'required' && !sessionActive) return <LoginScreen />;
   return (
     <>
       <App />
-      {config.auth.mode === 'optional' && !user && !loginOpen && (
+      {loginEnabled && config.auth.mode === 'optional' && !sessionActive && !loginOpen && (
         <button className="optional-login-launcher" onClick={openLogin}>Sign in</button>
       )}
-      {config.auth.mode === 'optional' && loginOpen && !user && <LoginScreen optional />}
+      {loginEnabled && config.auth.mode === 'optional' && loginOpen && !sessionActive && <LoginScreen optional />}
     </>
   );
 }

@@ -19,8 +19,6 @@ export default function LoginScreen({ optional = false }: { optional?: boolean }
     setBusy(true);
     try {
       await signIn({ email, password, displayName });
-      window.history.pushState(null, '', '/account');
-      window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('login.error'));
     } finally {

@@ -1,4 +1,5 @@
-import { Building2, CheckCircle2, Cloud, LogOut, ShieldCheck, UserRound, X } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Building2, CheckCircle2, Cloud, LogOut, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react';
 import { useAuth } from '../auth';
 
 const editionLabels = {
@@ -9,8 +10,24 @@ const editionLabels = {
 } as const;
 
 export function AccountView({ onClose }: { onClose: () => void }) {
-  const { config, user, signOut } = useAuth();
-  if (!user) return null;
+  const { config, user, signOut, loadCurrentUser } = useAuth();
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setStatus('loading');
+    setError('');
+    try {
+      const next = await loadCurrentUser();
+      setStatus(next ? 'ready' : 'error');
+      if (!next) setError('No active account was returned.');
+    } catch (cause) {
+      setStatus('error');
+      setError(cause instanceof Error ? cause.message : 'Could not load the account.');
+    }
+  }, [loadCurrentUser]);
+
+  useEffect(() => { void load(); }, [load]);
 
   return (
     <section className="account-view">
@@ -19,7 +36,14 @@ export function AccountView({ onClose }: { onClose: () => void }) {
         <button className="icon-button" onClick={onClose} title="Close"><X size={18} /></button>
       </header>
 
-      <div className="account-grid">
+      {status === 'loading' && !user && <div className="account-state">Loading account…</div>}
+      {status === 'error' && !user && (
+        <div className="account-state error" role="alert">
+          <span>{error}</span>
+          <button className="conn-btn ghost" onClick={() => void load()}><RefreshCw size={15} /> Retry</button>
+        </div>
+      )}
+      {user && <div className="account-grid">
         <article className="account-card account-identity">
           {user.picture
             ? <img className="account-large-avatar account-avatar-image" src={user.picture} alt="" referrerPolicy="no-referrer" />
@@ -65,9 +89,17 @@ export function AccountView({ onClose }: { onClose: () => void }) {
                 ? 'Direct-browser XNOQuant token session for this integration trial.'
                 : 'Browser-local profile; not an access-control boundary.'}
           </p>
-          <button className="account-signout" onClick={() => void signOut()}><LogOut size={16} /> Sign out</button>
+          <button
+            className="account-signout"
+            onClick={() => {
+              if (!window.confirm('Are you sure you want to sign out?')) return;
+              void signOut().then(onClose);
+            }}
+          >
+            <LogOut size={16} /> Sign out
+          </button>
         </article>
-      </div>
+      </div>}
     </section>
   );
 }

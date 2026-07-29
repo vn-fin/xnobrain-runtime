@@ -19,8 +19,7 @@ export type RuntimeConfig = {
     mePath: string;
   };
   features: {
-    account: boolean;
-    example: boolean;
+    login: boolean;
   };
 };
 
@@ -41,8 +40,7 @@ const DEFAULT_CONFIG: RuntimeConfig = {
     mePath: '/auth/v1/me',
   },
   features: {
-    account: true,
-    example: false,
+    login: true,
   },
 };
 
@@ -88,8 +86,7 @@ export function runtimeConfig(source = window.__BRAIN4ALL_CONFIG__): RuntimeConf
       mePath: source?.auth?.mePath || DEFAULT_CONFIG.auth.mePath,
     },
     features: {
-      account: source?.features?.account ?? DEFAULT_CONFIG.features.account,
-      example: source?.features?.example ?? DEFAULT_CONFIG.features.example,
+      login: source?.features?.login ?? DEFAULT_CONFIG.features.login,
     },
   };
 }

@@ -1,3 +1,6 @@
+import { storedAccessToken } from '../authStorage';
+import { brain4AllRuntime } from '../runtime';
+
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? window.location.origin).replace(/\/+$/, '');
 
 type ApiEnvelope<T> = {
@@ -30,6 +33,10 @@ function authenticatedHeaders(init?: RequestInit, includeJson = true): Headers {
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
   if (includeJson && init?.body != null && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
+  }
+  if (brain4AllRuntime.features.login && !headers.has('Authorization')) {
+    const token = storedAccessToken();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
   }
   return headers;
 }

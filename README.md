@@ -40,16 +40,17 @@ Open <http://localhost:5152>. Swagger is available at
 ### Optional account UI
 
 The frontend reads `/config.js` before it starts. Its built-in fallback remains
-the offline-compatible optional `local-profile` mode. The checked-in standalone
-trial uses `edition: "opensource"` with optional `xno-firebase` login; users can
-still continue into the local server without signing in.
+the offline-compatible optional `local-profile` mode. Set
+`features.login: true` to show sign-in, the Account item in the left sidebar,
+and confirmed sign-out. The checked-in standalone trial uses
+`edition: "opensource"` with optional `xno-firebase` login; users can still
+continue into the local server without signing in.
 
-Optional remote product features use `api.remoteBaseUrl`. The checked-in local
-trial points to `https://api.dev.xnoquant.io`, enables the Example tab, and
-renders the authenticated `/auth/v1/me` response separately from the Account
-view. Set `features.example: false` to remove that tab. Remote feature flags
-only control presentation; the remote API must enforce every protected
-capability.
+The Account popup loads the authenticated `/auth/v1/me` response only when it
+is opened. A page refresh restores the saved token locally without calling
+`/me`. While login is enabled, normal Brain4All API requests include the saved
+access token as an `Authorization: Bearer <token>` header. Presentation flags
+do not replace server-side authentication or authorization.
 
 The `xno-firebase` trial provider follows the XNOQuant browser flow: Firebase
 email/password authentication, `GET /auth/v1/auth/token` to exchange the

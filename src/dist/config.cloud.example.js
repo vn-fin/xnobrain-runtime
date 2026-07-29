@@ -12,7 +12,6 @@ window.__BRAIN4ALL_CONFIG__ = {
     mePath: "/auth/v1/me"
   },
   features: {
-    account: true,
-    example: true
+    login: true
   }
 };
