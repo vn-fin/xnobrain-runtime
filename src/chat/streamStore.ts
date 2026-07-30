@@ -2,6 +2,7 @@ import { conversationsApi } from '../api/conversations';
 import type { SSEEvent } from '../api/stream';
 import { reduceRunEvent } from './runEvents';
 import type { ChatMessage, ChatRun, RunApprovalChoice } from '../types';
+import { randomId } from '../utils/id';
 
 // A background-capable chat stream store. Streaming sessions are keyed by
 // conversation and live outside any React component, so a run keeps going when
@@ -128,8 +129,8 @@ async function execute(key: string, text: string) {
   const controller = new AbortController();
   runtime.controller = controller;
 
-  const userId = `local-user-${crypto.randomUUID()}`;
-  const assistantId = `local-assistant-${crypto.randomUUID()}`;
+  const userId = `local-user-${randomId()}`;
+  const assistantId = `local-assistant-${randomId()}`;
   const base = getSnapshot(key);
   patch(key, {
     status: 'streaming',
@@ -287,7 +288,7 @@ export const streamStore = {
     const key = keyOf(agentId, conversationId);
     runtimeFor(key, agentId, conversationId);
     const snap = getSnapshot(key);
-    patch(key, { queue: [...snap.queue, { id: `queued-${crypto.randomUUID()}`, content: clean }] });
+    patch(key, { queue: [...snap.queue, { id: `queued-${randomId()}`, content: clean }] });
     void drain(key);
   },
 

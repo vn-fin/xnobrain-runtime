@@ -1,6 +1,7 @@
 import { request, requestMultipartWithProgress, requestRaw, type UploadProgress } from './client';
 import type { WorkspaceFileDTO, WorkspaceListDTO } from './contracts/agentGateway';
 import { mapWorkspaceEntry } from './mappers/workspace';
+import { randomId } from '../utils/id';
 
 const root = (agentId: string) => `/api/brain/v1/agents-workspaces/${encodeURIComponent(agentId)}`;
 const UPLOAD_CHUNK_BYTES = 768 * 1024;
@@ -52,8 +53,7 @@ function blobOf(value: WorkspaceFileDTO | string, path: string): Blob {
 }
 
 function newUploadId() {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return randomId();
 }
 
 function uploadProgress(loaded: number, total: number): UploadProgress {

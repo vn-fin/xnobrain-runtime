@@ -1126,6 +1126,20 @@ class PlatformService:
         current = next(item for item in items if item["id"] == provider)
         return {"provider_id": provider, "connection_mode": current["connection_mode"], "connected": current["connected"], "status": current["status"], "default_model": current["default_model"], "available_models": current["available_models"]}
 
+    async def nine_router_health(self) -> dict[str, Any]:
+        status = await self.router.status()
+        if not status.get("available"):
+            raise ServiceError(
+                "9Router is unavailable",
+                status=503,
+                code="nine_router_unavailable",
+            )
+        return {
+            "status": "ok",
+            "available": True,
+            "provider_count": int(status.get("provider_count") or 0),
+        }
+
     async def start_provider_connect(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
         if provider in API_KEY_PROVIDERS:

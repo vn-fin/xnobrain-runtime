@@ -39,10 +39,12 @@ if [[ "$project_dir" != "$install_root" ]]; then
 fi
 for path in \
   "$install_root/.tools/python/bin/python" \
-  "$install_root/.tools/npm-global/bin/9router" \
+  "$install_root/.tools/node/bin/node" \
+  "$install_root/.tools/npm-global/lib/node_modules/9router/app/custom-server.js" \
+  "$install_root/.tools/npm-global/lib/node_modules/9router/app/node_modules/next/dist/server/dev/browser-logs/file-logger.js" \
   "$install_root/.tools/hermes-agent/venv/bin/hermes"; do
-  if [[ ! -x "$path" ]]; then
-    echo "Required runtime executable not found: $path" >&2
+  if [[ ! -e "$path" ]]; then
+    echo "Required runtime path not found: $path" >&2
     echo "Run scripts/install-linux.sh before installing the services." >&2
     exit 1
   fi

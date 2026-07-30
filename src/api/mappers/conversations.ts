@@ -1,5 +1,6 @@
 import type { ConversationMessageDTO, ConversationSummaryDTO } from '../contracts/conversations';
 import type { ChatMessage, Conversation } from '../../types';
+import { randomId } from '../../utils/id';
 
 function formatTimestamp(epoch?: number): string {
   if (!epoch) return '';
@@ -22,7 +23,7 @@ export function mapConversation(dto: ConversationSummaryDTO): Conversation {
 export function mapMessage(dto: ConversationMessageDTO): ChatMessage {
   const reasoning = dto.reasoning ?? dto.reasoning_content ?? '';
   return {
-    id: dto.id ?? crypto.randomUUID(),
+    id: dto.id ?? randomId(),
     role: dto.role ?? 'assistant',
     content: dto.content ?? '',
     ...(dto.tool_name ? { toolName: dto.tool_name } : {}),

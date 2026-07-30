@@ -6,7 +6,7 @@ describe('runtimeConfig', () => {
     expect(runtimeConfig(undefined)).toMatchObject({
       edition: 'opensource',
       auth: { mode: 'optional', provider: 'local-profile' },
-      api: { remoteBaseUrl: '', controlBaseUrl: '' },
+      api: { remoteBaseUrl: '', authBaseUrl: '', controlBaseUrl: '' },
       features: { login: true },
     });
   });
@@ -16,6 +16,7 @@ describe('runtimeConfig', () => {
       edition: 'enterprise',
       api: {
         remoteBaseUrl: 'https://runtime.xno.vn',
+        authBaseUrl: 'https://auth.xno.vn',
         controlBaseUrl: 'https://control.xno.vn',
       },
       auth: {
@@ -27,6 +28,7 @@ describe('runtimeConfig', () => {
       edition: 'enterprise',
       api: {
         remoteBaseUrl: 'https://runtime.xno.vn',
+        authBaseUrl: 'https://auth.xno.vn',
         controlBaseUrl: 'https://control.xno.vn',
       },
       auth: {

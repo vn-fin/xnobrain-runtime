@@ -12,6 +12,7 @@ import { useConversation } from './hooks/useConversation';
 import { useWorkspace } from './hooks/useWorkspace';
 import { useTeams } from './hooks/useTeams';
 import { streamStore, type CompletionEvent } from './chat/streamStore';
+import { randomId } from './utils/id';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { RightPanel } from './components/RightPanel';
@@ -107,7 +108,7 @@ export default function App() {
       if (event.active) return;
       const agent = assistants.agents.find((a) => a.id === event.agentId);
       const convo = agent?.conversations.find((c) => c.id === event.conversationId);
-      const id = crypto.randomUUID();
+      const id = randomId();
       setToasts((list) => [...list, { id, agentId: event.agentId, conversationId: event.conversationId, title: convo?.title || 'Conversation', status: event.status }]);
       window.setTimeout(() => setToasts((list) => list.filter((item) => item.id !== id)), 8000);
     });

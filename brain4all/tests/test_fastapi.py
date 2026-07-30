@@ -32,6 +32,7 @@ from brain4all.services.workspace_upload import WORKSPACE_UPLOAD_CHUNK_BYTES
 class FakeRouter:
     async def list_connections(self): return {"connections": []}
     async def list_models(self): return {"data": []}
+    async def status(self): return {"available": True, "provider_count": 0}
 
 
 class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
@@ -304,11 +305,26 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_health_identifies_fastapi_database_free_runtime(self):
         async with self.client() as client:
             response = await client.get("/api/brain/v1/health")
+            router_response = await client.get("/api/brain/v1/health/9router")
             deployment_response = await client.get("/api/brain/v1/system/deployment")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["data"]["api"], "fastapi")
+        self.assertEqual(router_response.status_code, 200)
+        self.assertTrue(router_response.json()["data"]["available"])
         deployment = deployment_response.json()["data"]
         self.assertFalse(deployment["database"])
+
+    async def test_nine_router_health_reports_dependency_failure(self):
+        self.composition.service.router.status = AsyncMock(
+            return_value={"available": False, "error": "connection refused"}
+        )
+        async with self.client() as client:
+            response = await client.get("/api/brain/v1/health/9router")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["error"]["code"],
+            "nine_router_unavailable",
+        )
 
     def test_existing_profile_model_is_migrated_to_auto_once(self):
         profile = self.profiles / "legacy-model"

@@ -1,7 +1,9 @@
 window.__BRAIN4ALL_CONFIG__ = {
   edition: "opensource",
   api: {
-    remoteBaseUrl: "https://api.dev.xnoquant.io"
+    remoteBaseUrl: "https://api.dev.xnoquant.io",
+    authBaseUrl: "https://api.dev.xnoquant.io",
+    controlBaseUrl: "https://api.dev.xnoquant.io"
   },
   auth: {
     mode: "optional",

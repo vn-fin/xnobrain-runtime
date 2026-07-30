@@ -62,8 +62,11 @@ same-origin gateway provider and HttpOnly session cookies.
 
 Cloud and Enterprise deployments reuse the same frontend build and replace
 `/config.js`. Set `api.remoteBaseUrl` to the Brain4All runtime API and
-`api.controlBaseUrl` to the XNOBrain control API. The same values can be
-provided at build time as `VITE_API_BASE_URL` and
+`api.authBaseUrl` to the browser authentication API, and
+`api.controlBaseUrl` to the XNOBrain control API. The frontend Docker build
+accepts the corresponding `API_BASE_URL`, `AUTH_BASE_URL`, and
+`API_CONTROL_BASE_URL` arguments. They are exposed to Vite as
+`VITE_API_BASE_URL`, `VITE_AUTH_API_URL`, and
 `VITE_CONTROL_API_BASE_URL`. The checked-in cloud example demonstrates
 required XNO login. For the recommended production gateway mode, configure:
 

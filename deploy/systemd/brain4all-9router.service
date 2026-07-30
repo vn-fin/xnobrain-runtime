@@ -11,7 +11,7 @@ PartOf=brain4all.target
 Type=simple
 User=brain4all
 Group=brain4all
-WorkingDirectory=/opt/brain4all
+WorkingDirectory=/opt/brain4all/.tools/npm-global/lib/node_modules/9router/app
 EnvironmentFile=/etc/brain4all/brain4all.env
 Environment=PATH=/opt/brain4all/.tools/node/bin:/opt/brain4all/.tools/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 Environment=PORT=20128
@@ -21,7 +21,7 @@ Environment=NEXT_PUBLIC_BASE_URL=http://127.0.0.1:20128
 Environment=REQUIRE_API_KEY=false
 Environment=NODE_ENV=production
 ExecStartPre=/opt/brain4all/scripts/prepare-service-data.sh
-ExecStart=/usr/bin/env DATA_DIR=/srv/brain4all-data/9router PORT=20128 HOSTNAME=127.0.0.1 BASE_URL=http://127.0.0.1:20128 NEXT_PUBLIC_BASE_URL=http://127.0.0.1:20128 REQUIRE_API_KEY=false NODE_ENV=production /opt/brain4all/.tools/npm-global/bin/9router --host 127.0.0.1 --port 20128 --no-browser --skip-update
+ExecStart=/usr/bin/env DATA_DIR=/srv/brain4all-data/9router PORT=20128 HOSTNAME=127.0.0.1 BASE_URL=http://127.0.0.1:20128 NEXT_PUBLIC_BASE_URL=http://127.0.0.1:20128 REQUIRE_API_KEY=false NODE_ENV=production /opt/brain4all/.tools/node/bin/node --dns-result-order=ipv4first --max-old-space-size=6144 /opt/brain4all/.tools/npm-global/lib/node_modules/9router/app/custom-server.js
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=30

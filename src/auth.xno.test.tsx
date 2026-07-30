@@ -11,6 +11,7 @@ vi.mock('./runtime', () => ({
     edition: 'cloud',
     api: {
       remoteBaseUrl: 'https://runtime.example.com',
+      authBaseUrl: 'https://auth.example.com',
       controlBaseUrl: 'https://control.example.com',
     },
     auth: {
@@ -53,7 +54,7 @@ describe('XNOQuant Firebase authentication adapter', () => {
     vi.restoreAllMocks();
   });
 
-  it('uses the control API for Firebase exchange and identity lookup', async () => {
+  it('uses the auth API for Firebase exchange and identity lookup', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: true,
@@ -90,14 +91,14 @@ describe('XNOQuant Firebase authentication adapter', () => {
     expect(await screen.findByText('Nguyen Tan Kim')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      'https://control.example.com/api/brain-control/v1/auth/token',
+      'https://auth.example.com/api/brain-control/v1/auth/token',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer firebase-token' }),
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      'https://control.example.com/api/brain-control/v1/auth/me',
+      'https://auth.example.com/api/brain-control/v1/auth/me',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer access-token' }),
       }),
@@ -130,7 +131,7 @@ describe('XNOQuant Firebase authentication adapter', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://control.example.com/api/brain-control/v1/auth/me',
+      'https://auth.example.com/api/brain-control/v1/auth/me',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer saved-access-token' }),
       }),

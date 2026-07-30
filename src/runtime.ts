@@ -6,6 +6,7 @@ export type RuntimeConfig = {
   edition: Brain4AllEdition;
   api: {
     remoteBaseUrl: string;
+    authBaseUrl: string;
     controlBaseUrl: string;
   };
   auth: {
@@ -28,6 +29,7 @@ const DEFAULT_CONFIG: RuntimeConfig = {
   edition: 'opensource',
   api: {
     remoteBaseUrl: '',
+    authBaseUrl: '',
     controlBaseUrl: '',
   },
   auth: {
@@ -75,6 +77,7 @@ export function runtimeConfig(source = window.__BRAIN4ALL_CONFIG__): RuntimeConf
     edition,
     api: {
       remoteBaseUrl: source?.api?.remoteBaseUrl?.trim() || DEFAULT_CONFIG.api.remoteBaseUrl,
+      authBaseUrl: source?.api?.authBaseUrl?.trim() || DEFAULT_CONFIG.api.authBaseUrl,
       controlBaseUrl: source?.api?.controlBaseUrl?.trim() || DEFAULT_CONFIG.api.controlBaseUrl,
     },
     auth: {

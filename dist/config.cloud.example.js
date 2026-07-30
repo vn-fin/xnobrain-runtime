@@ -2,6 +2,7 @@ window.__BRAIN4ALL_CONFIG__ = {
   edition: "cloud",
   api: {
     remoteBaseUrl: "https://runtime.example.com",
+    authBaseUrl: "https://auth.example.com",
     controlBaseUrl: "https://control.example.com"
   },
   auth: {

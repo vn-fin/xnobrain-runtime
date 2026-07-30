@@ -275,6 +275,16 @@ npm install --global --prefix "$npm_prefix" --no-audit --no-fund --include=optio
   "agent-browser@${agent_browser_version}" \
   pnpm
 
+nine_router_app="$npm_prefix/lib/node_modules/9router/app"
+for required_path in \
+  "$nine_router_app/custom-server.js" \
+  "$nine_router_app/node_modules/next/dist/server/dev/browser-logs/file-logger.js"; do
+  if [[ ! -f "$required_path" ]]; then
+    echo "Installed 9router runtime is incomplete: $required_path" >&2
+    exit 1
+  fi
+done
+
 if [[ "$skip_browser" == false ]]; then
   "$npm_prefix/bin/agent-browser" install --with-deps
 fi
