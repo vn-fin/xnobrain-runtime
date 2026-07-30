@@ -226,13 +226,7 @@ export default function App() {
   };
 
   const exportProfile = async (agentId: string) => {
-    const download = await systemApi.export([agentId]);
-    const url = URL.createObjectURL(download.blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = download.filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    await systemApi.download([agentId]);
   };
 
   const handleDeleteAgent = async (id: string) => {

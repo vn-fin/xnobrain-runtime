@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, FileArchive, Server, ShieldCheck, Upload, X } from 'lucide-react';
 import { ConnectionsView, type AccountProps } from '../../components/ConnectionsView';
 import { BlendsSection } from './BlendsSection';
@@ -8,6 +8,7 @@ import type { Agent, AsyncStatus, ConnectionProvider, SandboxData } from '../../
 import type { ProviderTestOutcome } from '../../hooks/useConnections';
 import type { SettingsSection } from '../../hooks/useRouter';
 import { systemApi, type BundleDryRun, type BundleTransfer, type DeploymentStatus, type ImportReport, type TransferProgress } from './api';
+import { sortPortableAgents } from './portableProfiles';
 
 type SystemViewProps = {
   agents: Agent[];
@@ -64,6 +65,7 @@ export function SystemView({
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const deploymentLoadStarted = useRef(false);
+  const portableAgents = useMemo(() => sortPortableAgents(agents), [agents]);
   const tabs: Array<{ id: SettingsSection; label: string }> = [
     { id: 'profiles', label: 'Profiles' },
     { id: 'vm', label: 'VM' },
@@ -137,7 +139,7 @@ export function SystemView({
           <section className="system-card">
           <div className="system-card-title"><FileArchive size={18} /><div><strong>Portable profiles</strong><small>Credentials, logs, host paths, and device identity are excluded.</small></div></div>
           <div className="system-agent-list">
-            {agents.map((agent) => <label key={agent.id}><input type="checkbox" checked={selected.has(agent.id)} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(agent.id)) next.delete(agent.id); else next.add(agent.id); return next; })} /><span>{agent.title}</span><code>{agent.id}</code></label>)}
+            {portableAgents.map((agent) => <label key={agent.id}><input type="checkbox" checked={selected.has(agent.id)} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(agent.id)) next.delete(agent.id); else next.add(agent.id); return next; })} /><span>{agent.title}</span><code>{agent.id}</code></label>)}
           </div>
           <button className="conn-btn primary" disabled={selected.size === 0 || !!busy} onClick={() => void exportProfiles()}><Download size={15} />{busy === 'export' ? `Exporting${progress ? ` ${progress.percent}%` : '…'}` : 'Export selected'}</button>
           <div className="system-import">

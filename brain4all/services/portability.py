@@ -33,6 +33,9 @@ MAX_FILES = 20_000
 MAX_PATH_DEPTH = 32
 TRANSFER_TTL_SECONDS = 24 * 60 * 60
 EXCLUDED_PARTS = {"credentials", "logs", "cache", "__pycache__", ".git", "node_modules", "tmp", "temp"}
+ROOT_EXCLUDED_PARTS = {"profiles"}
+ROOT_PROFILE_PARTS = {"workspace", "skills", "memories", "snapshots", "cron", "state.db"}
+ROOT_PROFILE_FILES = {"agent.json", "config.yaml", "agents.md", "soul.md"}
 SECRET_FILES = {".env", "auth.json", "credentials.env", "secrets.json", "tokens.json", "oauth.json"}
 CODE_SUFFIXES = {".py", ".sh", ".js", ".ts", ".so", ".dll", ".dylib"}
 SENSITIVE_KEY = re.compile(r"(?:api[_-]?key|secret|token|password|credential|authorization|cookie|oauth)", re.I)
@@ -204,7 +207,15 @@ class PortabilityService:
     def dry_run_file(self, path: Path) -> dict[str, Any]:
         inspection = self.inspect_file(path)
         manifest = inspection["manifest"]
-        collisions = [item["id"] for item in manifest.get("agents", []) if self.repository.profile_path(item["id"]).exists()]
+        collisions = [
+            item["id"]
+            for item in manifest.get("agents", [])
+            if (
+                self.root_profile.exists()
+                if item["id"] == BIG_BROTHER_AGENT_ID
+                else self.repository.profile_path(item["id"]).exists()
+            )
+        ]
         team_collisions = []
         for item in manifest.get("teams", []):
             try:
@@ -259,6 +270,11 @@ class PortabilityService:
                         with archive.open(info) as input_file, destination.open("wb") as output_file:
                             shutil.copyfileobj(input_file, output_file, length=1024 * 1024)
                     self._reset_imported_profile(target_stage, supplied)
+                    self._reset_imported_identity(
+                        target_stage,
+                        source_id=source_id,
+                        target_id=target_id,
+                    )
                     final = self.repository.profile_path(target_id)
                     final.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
                     os.replace(target_stage, final)
@@ -357,11 +373,17 @@ class PortabilityService:
             if config_path.is_file():
                 required_environment.update(self._required_environment(config_path))
             secrets.update(self._credential_values(profile))
+            managed_subtrees = self._managed_subtrees(profile)
             for item in profile.rglob("*"):
                 if not item.is_file() or item.is_symlink():
                     continue
                 relative = item.relative_to(profile)
-                if self._portable(relative, include_conversations):
+                if self._portable(
+                    relative,
+                    include_conversations,
+                    root_profile=agent_id == BIG_BROTHER_AGENT_ID,
+                    managed_subtrees=managed_subtrees,
+                ):
                     entries.append((f"profiles/{agent_id}/{relative.as_posix()}", item))
 
         selected = set(agent_ids)
@@ -488,13 +510,40 @@ class PortabilityService:
             raise
 
     @staticmethod
-    def _portable(relative: Path, include_conversations: bool) -> bool:
+    def _portable(
+        relative: Path,
+        include_conversations: bool,
+        *,
+        root_profile: bool = False,
+        managed_subtrees: tuple[Path, ...] = (),
+    ) -> bool:
         lowered = {part.lower() for part in relative.parts}
-        if lowered & EXCLUDED_PARTS or relative.name.lower() in SECRET_FILES or relative.name.endswith((".sock", ".pid", ".log")):
+        if lowered & EXCLUDED_PARTS or relative.name.lower() in SECRET_FILES or relative.name.endswith((".sock", ".pid", ".log", ".db-shm", ".db-wal")):
+            return False
+        if root_profile and relative.parts and relative.parts[0].lower() in ROOT_EXCLUDED_PARTS:
+            return False
+        if root_profile:
+            top_level = relative.parts[0].lower()
+            if top_level not in ROOT_PROFILE_PARTS and top_level not in ROOT_PROFILE_FILES:
+                return False
+            if top_level == "state.db" and not include_conversations:
+                return False
+        if any(relative == subtree or subtree in relative.parents for subtree in managed_subtrees):
             return False
         if relative.name == "state.db" and not include_conversations:
             return False
         return True
+
+    def _managed_subtrees(self, profile: Path) -> tuple[Path, ...]:
+        subtrees: list[Path] = []
+        for managed in (self.repository.profiles_root, self.repository.data_dir):
+            try:
+                relative = managed.relative_to(profile)
+            except ValueError:
+                continue
+            if relative.parts:
+                subtrees.append(relative)
+        return tuple(subtrees)
 
     @staticmethod
     def _metadata(profile: Path, agent_id: str) -> dict[str, Any]:
@@ -558,6 +607,30 @@ class PortabilityService:
                 job["enabled"] = False
                 job["state"] = "stopped"
                 job_path.write_text(yaml.safe_dump(job, sort_keys=False), encoding="utf-8")
+
+    def _reset_imported_identity(
+        self,
+        profile: Path,
+        *,
+        source_id: str,
+        target_id: str,
+    ) -> None:
+        metadata_path = profile / "agent.json"
+        metadata: dict[str, Any] = {}
+        if metadata_path.is_file():
+            try:
+                loaded = json.loads(metadata_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    metadata = loaded
+            except (OSError, json.JSONDecodeError):
+                metadata = {}
+        metadata["name"] = target_id
+        metadata["profile_name"] = target_id
+        if source_id == BIG_BROTHER_AGENT_ID:
+            metadata["display_name"] = "Big Brother (Imported)"
+            metadata["title"] = metadata["display_name"]
+        metadata["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self.repository.atomic_json(metadata_path, metadata)
 
     def _sanitized_config(self, path: Path) -> bytes:
         try:
@@ -767,6 +840,12 @@ class PortabilityService:
         return digest.hexdigest()
 
     def _available_profile_id(self, source: str) -> str:
+        if source == BIG_BROTHER_AGENT_ID:
+            for _ in range(100):
+                candidate = f"big-brother-import-{uuid.uuid4().hex[:8]}"
+                if not self.repository.profile_path(candidate).exists():
+                    return candidate
+            raise StoreError("could not allocate an imported Big Brother profile id", status=409, code="collision")
         if not self.repository.profile_path(source).exists():
             return source
         for _ in range(100):
