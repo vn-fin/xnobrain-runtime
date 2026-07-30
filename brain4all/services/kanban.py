@@ -674,6 +674,16 @@ class KanbanService:
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("The created task could not be loaded", status=503, code="kanban_contract_incompatible")
+            # Hermes promotes parent-free tasks to ready on creation. Preserve
+            # an explicit Todo choice; ready remains part of In Progress.
+            if status == "todo" and not kb_adapter.park_task_in_todo(conn, task_id):
+                raise ServiceError(
+                    "task could not be parked in Todo",
+                    status=409,
+                    code="invalid_transition",
+                )
+            if status == "todo":
+                task = kb.get_task(conn, task_id)
             if schedule_values is not None:
                 if not kb.schedule_task(
                     conn,
