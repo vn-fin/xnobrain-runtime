@@ -52,6 +52,18 @@ export type BundleTransfer = {
 };
 
 export type TransferProgress = { loaded: number; total: number; percent: number };
+export type BundleDownloadResult = { filename: string; size: number; cancelled?: boolean };
+
+type FileWriter = {
+  write(data: BufferSource): Promise<void>;
+  close(): Promise<void>;
+  abort?: () => Promise<void>;
+};
+
+type SaveFilePicker = (options: {
+  suggestedName: string;
+  types: Array<{ description: string; accept: Record<string, string[]> }>;
+}) => Promise<{ createWritable(): Promise<FileWriter> }>;
 
 function bundleForm(file: File) {
   const form = new FormData();
@@ -128,6 +140,65 @@ export const systemApi = {
       };
     } finally {
       if (transfer.export_id) void request(`/api/brain/v1/bundles/exports/${transfer.export_id}`, { method: 'DELETE' }).catch(() => undefined);
+    }
+  },
+
+  download: async (
+    agentIds: string[],
+    onProgress?: (progress: TransferProgress) => void,
+    teamIds: string[] = [],
+  ): Promise<BundleDownloadResult> => {
+    const picker = (window as Window & { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker;
+    let writer: FileWriter | undefined;
+    if (picker) {
+      try {
+        const handle = await picker.call(window, {
+          suggestedName: teamIds.length === 1 ? 'brain4all-team.zip' : 'brain4all-profile.zip',
+          types: [{ description: 'Brain4All snapshot', accept: { 'application/zip': ['.zip'] } }],
+        });
+        writer = await handle.createWritable();
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return { filename: '', size: 0, cancelled: true };
+        }
+        throw error;
+      }
+    }
+
+    let exportId = '';
+    try {
+      const transfer = await request<BundleTransfer>('/api/brain/v1/bundles/exports', {
+        method: 'POST', body: JSON.stringify({ agent_ids: agentIds, team_ids: teamIds }),
+      });
+      exportId = transfer.export_id ?? '';
+      const parts: ArrayBuffer[] = [];
+      for (let part = 0; part < transfer.total_parts; part += 1) {
+        const response = await requestRaw(`/api/brain/v1/bundles/exports/${transfer.export_id}/parts/${part}`);
+        const buffer = await response.arrayBuffer();
+        const expected = response.headers.get('X-Part-SHA256');
+        if (expected && await sha256(buffer) !== expected) throw new Error(`Downloaded profile part ${part} failed checksum verification.`);
+        if (writer) await writer.write(buffer);
+        else parts.push(buffer);
+        const loaded = Math.min(transfer.size, (part + 1) * transfer.chunk_size);
+        onProgress?.({ loaded, total: transfer.size, percent: Math.round((loaded / transfer.size) * 100) });
+      }
+      if (writer) {
+        await writer.close();
+        writer = undefined;
+      } else {
+        const url = URL.createObjectURL(new Blob(parts, { type: 'application/zip' }));
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = transfer.filename;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      }
+      return { filename: transfer.filename, size: transfer.size };
+    } catch (error) {
+      if (writer?.abort) await writer.abort().catch(() => undefined);
+      throw error;
+    } finally {
+      if (exportId) void request(`/api/brain/v1/bundles/exports/${exportId}`, { method: 'DELETE' }).catch(() => undefined);
     }
   },
 };

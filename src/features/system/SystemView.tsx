@@ -85,11 +85,7 @@ export function SystemView({
 
   const exportProfiles = () => run('export', async () => {
     setProgress(undefined);
-    const download = await systemApi.export([...selected], setProgress);
-    const url = URL.createObjectURL(download.blob);
-    const anchor = document.createElement('a');
-    anchor.href = url; anchor.download = download.filename; anchor.click();
-    URL.revokeObjectURL(url);
+    await systemApi.download([...selected], setProgress);
     setProgress(undefined);
   });
 
