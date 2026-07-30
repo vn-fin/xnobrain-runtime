@@ -1639,13 +1639,7 @@ function TeamLibrary({
     setExportingTeamId(team.id);
     setActionError('');
     try {
-      const download = await systemApi.export([], undefined, [team.id]);
-      const url = URL.createObjectURL(download.blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = download.filename;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      await systemApi.download([], undefined, [team.id]);
       setMenuTeamId('');
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : 'Could not export the Team snapshot.');

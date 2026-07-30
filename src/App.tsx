@@ -226,13 +226,7 @@ export default function App() {
   };
 
   const exportProfile = async (agentId: string) => {
-    const download = await systemApi.export([agentId]);
-    const url = URL.createObjectURL(download.blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = download.filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    await systemApi.download([agentId]);
   };
 
   const handleDeleteAgent = async (id: string) => {
@@ -419,7 +413,13 @@ export default function App() {
             error={crons.error}
             pendingId={crons.pendingId}
             detail={crons.detail}
+            blueprints={crons.blueprints}
+            deliveryOptions={crons.deliveryOptions}
             onCreate={crons.createCron}
+            onInstantiateBlueprint={crons.instantiateBlueprint}
+            onAddTarget={crons.addJobTarget}
+            onRemoveTarget={crons.removeJobTarget}
+            onLoadRuns={crons.loadRuns}
             onToggle={crons.toggleCron}
             onRun={crons.runCron}
             onDelete={crons.deleteCron}

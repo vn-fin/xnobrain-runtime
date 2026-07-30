@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
+import logging
 import os
 from pathlib import Path
 
@@ -38,12 +39,46 @@ class Brain4AllApplication:
                 dispatcher = None
                 try:
                     from .integrations.kanban import dispatcher_loop
-                    dispatcher = asyncio.create_task(dispatcher_loop(), name="brain4all-kanban-dispatcher")
+                    dispatcher = asyncio.create_task(
+                        dispatcher_loop(on_tick=self.service.cron.reconcile_deliveries),
+                        name="brain4all-kanban-dispatcher",
+                    )
                 except Exception:
                     dispatcher = None
+                cron_tasks: dict[tuple[str, str], asyncio.Task] = {}
+
+                def finish_cron_task(key: tuple[str, str], task: asyncio.Task) -> None:
+                    cron_tasks.pop(key, None)
+                    if not task.cancelled():
+                        try:
+                            task.result()
+                        except Exception:
+                            logging.getLogger(__name__).exception("Profile cron execution failed")
+
+                async def profile_cron_loop() -> None:
+                    while True:
+                        due = await asyncio.to_thread(self.service.cron.due_jobs)
+                        for profile, job_id in due:
+                            key = (profile, job_id)
+                            if key in cron_tasks:
+                                continue
+                            task = asyncio.create_task(
+                                asyncio.to_thread(self.service.cron.fire_due, profile, job_id),
+                                name=f"brain4all-cron-{job_id}",
+                            )
+                            task.add_done_callback(lambda completed, key=key: finish_cron_task(key, completed))
+                            cron_tasks[key] = task
+                        await asyncio.sleep(1)
+
+                cron_dispatcher = asyncio.create_task(profile_cron_loop(), name="brain4all-profile-cron-dispatcher")
                 try:
                     yield
                 finally:
+                    cron_dispatcher.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await cron_dispatcher
+                    for task in tuple(cron_tasks.values()):
+                        task.cancel()
                     with suppress(Exception):
                         await self.service.team_runs.shutdown()
                     if dispatcher is not None:

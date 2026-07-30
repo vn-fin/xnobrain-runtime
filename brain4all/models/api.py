@@ -46,6 +46,21 @@ class CronCreate(BaseModel):
     mode: Literal["local"] = "local"
 
 
+CronDeliveryTargetType = Literal["channel", "email", "kanban", "file"]
+
+
+class CronDeliveryTargetCreate(BaseModel):
+    target_type: CronDeliveryTargetType
+    destination: str = Field(default="", max_length=512)
+
+
+class CronBlueprintInstantiate(BaseModel):
+    blueprint: str = Field(min_length=1, max_length=128)
+    agent_id: str = Field(min_length=1, max_length=128)
+    values: dict[str, Any] = Field(default_factory=dict)
+    deliver_targets: list[CronDeliveryTargetCreate] = Field(default_factory=list, max_length=32)
+
+
 class KanbanBoardCreate(BaseModel):
     slug: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]*$")
     name: str | None = Field(default=None, max_length=200)

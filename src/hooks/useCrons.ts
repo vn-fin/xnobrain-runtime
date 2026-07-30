@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { cronsApi, type CreateCronInput } from '../api/crons';
-import type { CronDetail, CronJob } from '../types';
+import type { CronBlueprint, CronDeliveryOption, CronDetail, CronJob, CronJobRun } from '../types';
 
 /** Manages cron/scheduled jobs (list + create/stop-start/delete). */
 export function useCrons(enabled = true) {
@@ -9,15 +9,23 @@ export function useCrons(enabled = true) {
   const [error, setError] = useState('');
   const [pendingId, setPendingId] = useState('');
   const [detail, setDetail] = useState<CronDetail | null>(null);
+  const [blueprints, setBlueprints] = useState<CronBlueprint[]>([]);
+  const [deliveryOptions, setDeliveryOptions] = useState<CronDeliveryOption[]>([]);
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     setStatus('loading');
     setError('');
-    void cronsApi.list().then((jobs) => {
+    void Promise.all([
+      cronsApi.list(),
+      cronsApi.listBlueprints().catch(() => []),
+      cronsApi.listDeliveryTargetOptions().catch(() => []),
+    ]).then(([jobs, templates, options]) => {
       if (cancelled) return;
       setCrons(jobs);
+      setBlueprints(templates);
+      setDeliveryOptions(options);
       setStatus('ready');
     }).catch((cause) => {
       if (cancelled) return;
@@ -26,6 +34,29 @@ export function useCrons(enabled = true) {
     });
     return () => { cancelled = true; };
   }, [enabled]);
+
+  const instantiateBlueprint = async (input: { blueprint: string; agentId: string; values: Record<string, unknown>; deliverTargets?: Array<{ targetType: string; destination: string }> }) => {
+    const job = await cronsApi.instantiateBlueprint(input);
+    setCrons((prev) => [job, ...prev]);
+    return job;
+  };
+
+  const addJobTarget = async (id: string, target: { targetType: string; destination: string }) => {
+    const added = await cronsApi.addJobTarget(id, target);
+    setDetail((current) => current?.job.id === id ? { ...current, targets: [...(current.targets ?? []), added] } : current);
+    return added;
+  };
+
+  const removeJobTarget = async (id: string, targetId: string) => {
+    await cronsApi.removeJobTarget(id, targetId);
+    setDetail((current) => current?.job.id === id ? { ...current, targets: (current.targets ?? []).filter((item) => item.id !== targetId) } : current);
+  };
+
+  const loadRuns = async (id: string): Promise<CronJobRun[]> => {
+    const runs = await cronsApi.listRuns(id);
+    setDetail((current) => current?.job.id === id ? { ...current, runs } : current);
+    return runs;
+  };
 
   const createCron = async (input: CreateCronInput) => {
     setPendingId('create');
@@ -98,5 +129,5 @@ export function useCrons(enabled = true) {
 
   const closeDetail = () => setDetail(null);
 
-  return { crons, status, error, pendingId, detail, createCron, toggleCron, runCron, deleteCron, loadDetail, closeDetail };
+  return { crons, status, error, pendingId, detail, blueprints, deliveryOptions, createCron, instantiateBlueprint, addJobTarget, removeJobTarget, loadRuns, toggleCron, runCron, deleteCron, loadDetail, closeDetail };
 }

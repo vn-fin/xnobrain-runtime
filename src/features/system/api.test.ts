@@ -51,6 +51,54 @@ describe('systemApi', () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/parts/0'))).toBe(true);
   });
 
+  it('streams a large snapshot part-by-part to the browser file writer', async () => {
+    const write = vi.fn(async () => undefined);
+    const close = vi.fn(async () => undefined);
+    const abort = vi.fn(async () => undefined);
+    vi.stubGlobal('showSaveFilePicker', vi.fn(async () => ({
+      createWritable: async () => ({ write, close, abort }),
+    })));
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/brain/v1/bundles/exports')) {
+        return new Response(JSON.stringify({ success: true, data: {
+          export_id: 'large-export', filename: 'large-profile.zip', size: 5,
+          sha256: '0'.repeat(64), chunk_size: 3, total_parts: 2,
+        } }), { status: 201, headers: { 'content-type': 'application/json' } });
+      }
+      if (url.endsWith('/parts/0')) return new Response(new Uint8Array([1, 2, 3]));
+      if (url.endsWith('/parts/1')) return new Response(new Uint8Array([4, 5]));
+      return new Response(JSON.stringify({ success: true, data: { deleted: true } }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const progress: number[] = [];
+    const result = await systemApi.download(['a12345'], (item) => progress.push(item.percent));
+
+    expect(write).toHaveBeenCalledTimes(2);
+    expect((write.mock.calls[0][0] as ArrayBuffer).byteLength).toBe(3);
+    expect((write.mock.calls[1][0] as ArrayBuffer).byteLength).toBe(2);
+    expect(close).toHaveBeenCalledOnce();
+    expect(abort).not.toHaveBeenCalled();
+    expect(progress).toEqual([60, 100]);
+    expect(result).toEqual({ filename: 'large-profile.zip', size: 5 });
+  });
+
+  it('treats cancelling the save picker as a normal no-op', async () => {
+    vi.stubGlobal('showSaveFilePicker', vi.fn(async () => {
+      throw new DOMException('The user aborted a request.', 'AbortError');
+    }));
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(systemApi.download(['a12345'])).resolves.toEqual({
+      filename: '', size: 0, cancelled: true,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('requests an explicit Team snapshot without relying on coordinator matching', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
