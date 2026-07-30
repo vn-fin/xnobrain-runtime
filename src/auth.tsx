@@ -283,10 +283,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const nextAccessToken = String(tokenData.access_token ?? '').trim();
       const nextRefreshToken = String(tokenData.refresh_token ?? '').trim();
       if (!nextAccessToken || !nextRefreshToken) throw new Error('The account API returned an incomplete session.');
+      try {
+        await loadXnoUser(nextAccessToken);
+      } catch (error) {
+        clearXnoTokens();
+        setUser(null);
+        throw error;
+      }
       localStorage.setItem(XNO_ACCESS_TOKEN_KEY, nextAccessToken);
       localStorage.setItem(XNO_REFRESH_TOKEN_KEY, nextRefreshToken);
-      setAccessToken(nextAccessToken);
-      setUser(null);
       setLoginOpen(false);
       return;
     }
@@ -305,7 +310,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (next) setUser(next);
     else await loadGatewaySession();
     setLoginOpen(false);
-  }, [config, controlBaseUrl, loadGatewaySession]);
+  }, [clearXnoTokens, config, controlBaseUrl, loadGatewaySession, loadXnoUser]);
 
   const signOut = useCallback(async () => {
     if (config.auth.provider === 'local-profile') {
