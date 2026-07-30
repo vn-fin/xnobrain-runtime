@@ -69,7 +69,7 @@ services:
       - "host.docker.internal:host-gateway"
     labels:
       - traefik.enable=true
-      - traefik.http.routers.brain4all-api.rule=Host(`${BRAIN4ALL_DOMAIN:-localhost}`) && (PathPrefix(`/api`) || PathPrefix(`/agent-gateway`) || PathPrefix(`/conversations`) || PathPrefix(`/sandboxes`) || PathPrefix(`/internal`) || PathPrefix(`/docs`) || Path(`/openapi.json`) || Path(`/redoc`))
+      - traefik.http.routers.brain4all-api.rule=Host(`${BRAIN4ALL_DOMAIN:-localhost}`) && (PathPrefix(`/api`) || PathPrefix(`/internal`))
       - traefik.http.routers.brain4all-api.entrypoints=web
       - traefik.http.routers.brain4all-api.priority=100
       - traefik.http.services.brain4all-api.loadbalancer.server.port=8642

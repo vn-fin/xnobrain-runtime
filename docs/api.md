@@ -1,9 +1,10 @@
 # HTTP API
 
-FastAPI generates the authoritative interactive contract at `/docs` and JSON
-schema at `/openapi.json`. Hermes CLI native routes remain available under
-`/api`; Brain4All's application API is exclusively namespaced beneath
-`/api/brain/v1` and is grouped by feature:
+FastAPI generates the authoritative interactive contract at
+`/api/brain/swagger_docs` and JSON schema at `/api/brain/openapi.json`.
+Hermes CLI native routes remain available under `/api`; Brain4All's
+application API is exclusively namespaced beneath `/api/brain/v1` and is
+grouped by feature:
 
 - `/api/brain/v1/agents`, `/profiles`, config, skills, memory, workspaces,
   MCP, providers, and cron

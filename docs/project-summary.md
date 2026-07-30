@@ -43,4 +43,5 @@ make run
 
 The two application images are `brain4all-frontend` and
 `brain4all-hermes-runtime`. Open <http://localhost:5152> and use
-<http://localhost:5152/docs> for the unified OpenAPI documentation.
+<http://localhost:5152/api/brain/swagger_docs> for the unified OpenAPI
+documentation.

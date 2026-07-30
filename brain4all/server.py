@@ -35,6 +35,8 @@ def create_app():
 
         composition = Brain4AllApplication(AgentManager(), GlobalConfigManager(), NineRouterManager())
         composition.register(app)
+        from .openapi_docs import configure_openapi_docs
+        configure_openapi_docs(app)
         app.state.brain4all = composition
         app.state.brain4all_registered = True
 
@@ -46,7 +48,7 @@ def create_app():
             # session token; mark only our versioned platform routes as already
             # authenticated so they remain usable through Traefik without
             # exposing that internal token to the React application.
-            if request.url.path.startswith("/api/brain/v1/"):
+            if request.url.path.startswith("/api/brain/"):
                 request.state.token_authenticated = True
             response = await call_next(request)
             traceparent = request.headers.get("traceparent", "")

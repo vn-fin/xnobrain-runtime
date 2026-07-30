@@ -34,8 +34,8 @@ docker compose up -d --build
 ```
 
 Open <http://localhost:5152>. Swagger is available at
-<http://localhost:5152/docs> and the generated OpenAPI document at
-<http://localhost:5152/openapi.json>.
+<http://localhost:5152/api/brain/swagger_docs> and the generated OpenAPI
+document at <http://localhost:5152/api/brain/openapi.json>.
 
 ### Optional account UI
 

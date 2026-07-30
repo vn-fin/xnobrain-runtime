@@ -50,7 +50,7 @@ Key facts pulled from `docs/architecture.md`:
 | `services/` | `kanban.py`, `platform.py` | Business rules |
 | `repositories/` | `files.py` | Atomic file persistence |
 | `integrations/` | `hermes.py`, `nine_router.py`, `runtime.py`, `kanban.py`, `config.py` | Adapters for Hermes CLI + 9router |
-| `models/` | `api.py` | Pydantic contracts (drive `/docs`, `/openapi.json`) |
+| `models/` | `api.py` | Pydantic contracts (drive `/api/brain/swagger_docs`, `/api/brain/openapi.json`) |
 | `routes/` | `setup.py` | Single route-assembly point |
 
 ## 3. What the product does today (feature boundary)

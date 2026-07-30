@@ -16,7 +16,8 @@ Traefik -> React
 Brain4All route assembly is centralized in `brain4all/routes/setup.py`.
 Handlers translate HTTP and SSE, services coordinate business rules,
 repositories persist atomic files, and integrations isolate upstream APIs.
-Pydantic models are bound to routes and generate `/docs` and `/openapi.json`.
+Pydantic models are bound to routes and generate
+`/api/brain/swagger_docs` and `/api/brain/openapi.json`.
 
 Hermes remains authoritative for its native sessions, cron, MCP, config,
 skills, tools, provider, webhook, and gateway APIs. Brain4All adds stable UI

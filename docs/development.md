@@ -19,7 +19,7 @@ make check                # Python tests/compile + frontend tests/build
 ```
 
 Vite proxies the canonical `/api/brain/v1` namespace to port 8642. Swagger is
-at `http://127.0.0.1:8642/docs`.
+at `http://127.0.0.1:8642/api/brain/swagger_docs`.
 
 The development script supervises Vite, FastAPI, and 9router and stops all
 three on Ctrl-C. The backend watches Python files and reloads automatically;

@@ -49,7 +49,7 @@ Những sự thật chính rút ra từ `docs/architecture.md`:
 | `services/` | `kanban.py`, `platform.py` | Quy tắc nghiệp vụ |
 | `repositories/` | `files.py` | Lưu trữ file nguyên tử (atomic) |
 | `integrations/` | `hermes.py`, `nine_router.py`, `runtime.py`, `kanban.py`, `config.py` | Adapter cho Hermes CLI + 9router |
-| `models/` | `api.py` | Hợp đồng Pydantic (điều khiển `/docs`, `/openapi.json`) |
+| `models/` | `api.py` | Hợp đồng Pydantic (điều khiển `/api/brain/swagger_docs`, `/api/brain/openapi.json`) |
 | `routes/` | `setup.py` | Điểm lắp ráp route duy nhất |
 
 ## 3. Sản phẩm làm được gì hôm nay (ranh giới tính năng)
