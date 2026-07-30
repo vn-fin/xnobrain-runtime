@@ -99,6 +99,7 @@ class PlatformService:
         self.workspace_uploads = WorkspaceUploadService(repository.data_dir / "workspace-uploads")
         from .kanban import KanbanService
         self.kanban = KanbanService(agents, repository)
+        self.cron.kanban = self.kanban
         from .analytics import AnalyticsService
         self.analytics = AnalyticsService(agents, router, repository)
         from .blends import BlendService
@@ -844,99 +845,22 @@ class PlatformService:
         return self.portability.delete_transfer(kind, transfer_id)
 
     def list_crons(self) -> list[dict[str, Any]]:
-        tasks: list[dict[str, Any]] = []
-        offset = 0
-        while True:
-            page = self.kanban.list_tasks(
-                "default",
-                {"include_archived": "true", "limit": 200, "offset": offset},
-            )
-            tasks.extend(page["tasks"])
-            offset += len(page["tasks"])
-            if offset >= int(page["total"]) or not page["tasks"]:
-                break
-        return [
-            self._schedule_job(task)
-            for task in tasks
-            if task.get("schedule") is not None and not task.get("archived")
-        ]
+        return self.cron.list_jobs()
 
     def get_job_detail(self, cron_id: str) -> dict[str, Any]:
-        task = self.kanban.get_task("default", cron_id)
-        if task.get("schedule") is None or task.get("archived"):
-            raise ServiceError("cron job not found", status=404, code="cron_not_found")
-        return {"job": self._schedule_job(task), "run": None}
+        return self.cron.get_job_detail(cron_id)
 
     def create_cron(self, body: Mapping[str, Any]) -> dict[str, Any]:
-        agent_id = str(body.get("agent_id") or "").strip()
-        self.agents.describe_agent(agent_id, include_memory=False)
-        prompt = str(body.get("prompt") or "").strip()
-        if not prompt:
-            raise ServiceError("prompt is required")
-        interval = int(body.get("interval_minutes") or 0)
-        raw_schedule = str(body.get("schedule") or "").strip()
-        timezone_name = str(body.get("timezone") or "Etc/UTC")
-        if str(body.get("mode") or "local") != "local":
-            raise ServiceError("only local cron jobs are supported")
-        recurrence = "interval"
-        if interval <= 0 and raw_schedule:
-            try:
-                parsed = datetime.fromisoformat(raw_schedule.replace("Z", "+00:00"))
-            except ValueError:
-                seconds = self._schedule_seconds(raw_schedule)
-                interval = max(1, seconds // 60)
-            else:
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=timezone.utc)
-                recurrence = "once"
-                scheduled_at = parsed.astimezone(timezone.utc).isoformat()
-        if recurrence == "interval":
-            if interval <= 0:
-                raise ServiceError("interval_minutes or an ISO scheduled time is required")
-            scheduled_at = (
-                datetime.now(timezone.utc) + timedelta(minutes=interval)
-            ).isoformat()
-        template = self.kanban.create_task(
-            "default",
-            {
-                "title": str(body.get("name") or "Scheduled task").strip(),
-                "description": prompt,
-                "status": "scheduled",
-                "priority": "medium",
-                "assignee": agent_id,
-                "schedule": {
-                    "recurrence": recurrence,
-                    "scheduled_at": scheduled_at,
-                    "timezone": timezone_name,
-                    "interval_minutes": interval if recurrence == "interval" else None,
-                },
-            },
-            created_by=agent_id,
-        )
-        return self._schedule_job(template)
+        return self.cron.create_job(body)
 
     def set_cron_enabled(self, cron_id: str, enabled: bool) -> dict[str, Any]:
-        task = self.kanban.schedule_action(
-            "default",
-            cron_id,
-            "resume" if enabled else "pause",
-        )
-        return self._schedule_job(task)
+        return self.cron.set_enabled(cron_id, enabled)
 
     def delete_cron(self, cron_id: str) -> dict[str, Any]:
-        self.kanban.archive_task("default", cron_id)
-        return {"deleted": True}
+        return self.cron.delete_job(cron_id)
 
     def run_cron(self, cron_id: str) -> dict[str, Any]:
-        task = self.kanban.schedule_action("default", cron_id, "run_now")
-        return {
-            "job": self._schedule_job(task),
-            "run": {
-                "id": f"pending-{cron_id}",
-                "state": "running",
-                "triggered_at": iso(),
-            },
-        }
+        return self.cron.request_run(cron_id)
 
     @staticmethod
     def _schedule_job(task: Mapping[str, Any]) -> dict[str, Any]:
@@ -968,6 +892,27 @@ class PlatformService:
             raise ServiceError("schedule must use @every <number>s|m|h|d")
         value = int(match.group(1))
         return value * {"s": 1, "m": 60, "h": 3600, "d": 86400}[match.group(2)]
+
+    def list_cron_blueprints(self) -> dict[str, Any]:
+        return self.cron.list_blueprints()
+
+    def instantiate_cron_blueprint(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        return self.cron.instantiate_blueprint(body)
+
+    def list_cron_delivery_targets(self, agent_id: str | None = None) -> dict[str, Any]:
+        return self.cron.list_delivery_target_options(agent_id)
+
+    def list_cron_job_targets(self, cron_id: str) -> dict[str, Any]:
+        return self.cron.list_job_targets(cron_id)
+
+    def add_cron_job_target(self, cron_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        return self.cron.add_delivery_target(cron_id, body)
+
+    def remove_cron_job_target(self, cron_id: str, target_id: str) -> dict[str, Any]:
+        return self.cron.remove_delivery_target(cron_id, target_id)
+
+    def list_cron_runs(self, cron_id: str, limit: int = 20) -> dict[str, Any]:
+        return self.cron.list_job_runs(cron_id, limit)
 
     @staticmethod
     def _team_with_description(team: Mapping[str, Any]) -> dict[str, Any]:

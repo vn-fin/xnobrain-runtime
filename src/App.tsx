@@ -419,7 +419,13 @@ export default function App() {
             error={crons.error}
             pendingId={crons.pendingId}
             detail={crons.detail}
+            blueprints={crons.blueprints}
+            deliveryOptions={crons.deliveryOptions}
             onCreate={crons.createCron}
+            onInstantiateBlueprint={crons.instantiateBlueprint}
+            onAddTarget={crons.addJobTarget}
+            onRemoveTarget={crons.removeJobTarget}
+            onLoadRuns={crons.loadRuns}
             onToggle={crons.toggleCron}
             onRun={crons.runCron}
             onDelete={crons.deleteCron}

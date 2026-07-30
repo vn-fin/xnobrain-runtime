@@ -626,7 +626,7 @@ def attachment_path(attachment: Any) -> Path:
     return Path(str(attachment.stored_path)).resolve()
 
 
-async def dispatcher_loop(*, interval_seconds: float = 15.0) -> None:
+async def dispatcher_loop(*, interval_seconds: float = 15.0, on_tick=None) -> None:
     """Run Hermes' supported dispatcher tick inside the host FastAPI process.
 
     The worker spawning, claiming, recovery, and board lock all remain in
@@ -641,6 +641,10 @@ async def dispatcher_loop(*, interval_seconds: float = 15.0) -> None:
                 with connection(slug) as conn:
                     release_due_schedules(conn, board=slug)
                     kb.dispatch_once(conn, board=slug)
+            if on_tick is not None:
+                result = on_tick()
+                if inspect.isawaitable(result):
+                    await result
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # keep local manual Kanban usable if worker runtime is degraded

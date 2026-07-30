@@ -289,11 +289,52 @@ export type CronRun = {
   completedAt: string;
   output: string;
   error: string;
+  occurrenceId?: string;
+  deliveries?: CronDeliveryRecord[];
 };
+
+export type CronDeliveryTargetType = 'channel' | 'email' | 'kanban' | 'file';
+export type CronDeliveryTarget = {
+  id: string;
+  targetType: CronDeliveryTargetType;
+  destination: string;
+  available: boolean;
+  degradedReason?: string | null;
+};
+export type CronDeliveryOption = CronDeliveryTarget & { name: string };
+export type CronDeliveryRecord = {
+  targetId: string;
+  targetType: CronDeliveryTargetType;
+  status: 'delivered' | 'failed' | 'degraded';
+  at: string;
+  reason?: string | null;
+};
+export type CronBlueprintField = {
+  name: string;
+  type: string;
+  label: string;
+  default?: unknown;
+  options?: unknown[];
+  optional?: boolean;
+  help?: string;
+};
+export type CronBlueprint = {
+  key: string;
+  title: string;
+  description: string;
+  category: string;
+  tags: string[];
+  fields: CronBlueprintField[];
+  schedule: string;
+  scheduleHuman: string;
+};
+export type CronJobRun = CronRun & { deliveries: CronDeliveryRecord[] };
 
 export type CronDetail = {
   job: CronJob;
   run: CronRun | null;
+  targets?: CronDeliveryTarget[];
+  runs?: CronJobRun[];
 };
 
 // Per-agent skill enablement map: agentId -> { skillId -> enabled }
