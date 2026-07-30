@@ -25,62 +25,62 @@ request() {
   printf '%s' "$output"
 }
 
-request GET /api/v1/health >/dev/null
-request GET /api/v1/limits >/dev/null
-request GET /api/v1/system/deployment >/dev/null
-notifications="$(request GET /api/v1/notifications)"
-teams="$(request GET /api/v1/teams/)"
-request GET /agent-gateway/v1/ping >/dev/null
-agents="$(request GET /agent-gateway/v1/agents)"
-request GET /agent-gateway/v1/agents-configs/global >/dev/null
-default_skills="$(request GET /agent-gateway/v1/agents-skills)"
-crons="$(request GET /agent-gateway/v1/cron/jobs)"
-request GET /sandboxes/v1/me/sandboxes/info >/dev/null
-request GET /sandboxes/v1/me/sandboxes/metrics >/dev/null
-request GET /sandboxes/v1/me/sandboxes/stats >/dev/null
-request GET /sandboxes/v1/me/sandboxes/health >/dev/null
+request GET /api/brain/v1/health >/dev/null
+request GET /api/brain/v1/limits >/dev/null
+request GET /api/brain/v1/system/deployment >/dev/null
+notifications="$(request GET /api/brain/v1/notifications)"
+teams="$(request GET /api/brain/v1/teams/)"
+request GET /api/brain/v1/ping >/dev/null
+agents="$(request GET /api/brain/v1/agents)"
+request GET /api/brain/v1/agents-configs/global >/dev/null
+default_skills="$(request GET /api/brain/v1/agents-skills)"
+crons="$(request GET /api/brain/v1/cron/jobs)"
+request GET /api/brain/v1/sandboxes/info >/dev/null
+request GET /api/brain/v1/sandboxes/metrics >/dev/null
+request GET /api/brain/v1/sandboxes/stats >/dev/null
+request GET /api/brain/v1/sandboxes/health >/dev/null
 
-providers="$(request GET /agent-gateway/v1/providers)"
+providers="$(request GET /api/brain/v1/providers)"
 for provider in claude codex antigravity openai anthropic gemini; do
-  request GET "/agent-gateway/v1/providers/$provider/connect" >/dev/null
-  request GET "/agent-gateway/v1/providers/$provider/models" >/dev/null
-  request GET "/agent-gateway/v1/providers/$provider/models/auto/reasoning" >/dev/null
-  request POST "/agent-gateway/v1/providers/$provider/test" >/dev/null
+  request GET "/api/brain/v1/providers/$provider/connect" >/dev/null
+  request GET "/api/brain/v1/providers/$provider/models" >/dev/null
+  request GET "/api/brain/v1/providers/$provider/models/auto/reasoning" >/dev/null
+  request POST "/api/brain/v1/providers/$provider/test" >/dev/null
 done
 for provider in claude codex antigravity; do
-  started="$(request POST "/agent-gateway/v1/providers/$provider/connect")"
+  started="$(request POST "/api/brain/v1/providers/$provider/connect")"
   jq -e '.data.login_url | type == "string" and length > 0' <<<"$started" >/dev/null
 done
 for provider in openai anthropic gemini; do
-  started="$(request POST "/agent-gateway/v1/providers/$provider/connect")"
+  started="$(request POST "/api/brain/v1/providers/$provider/connect")"
   jq -e '.data.required_client_action == "submit_text"' <<<"$started" >/dev/null
 done
 
 agent_id="$(jq -r '.data[0].id // empty' <<<"$agents")"
 if [[ -n "$agent_id" ]]; then
-  request GET "/agent-gateway/v1/agents/$agent_id/detail" >/dev/null
-  request POST "/agent-gateway/v1/agents/$agent_id/test" >/dev/null
-  request GET "/agent-gateway/v1/agents/$agent_id/runtime" >/dev/null
-  request GET "/agent-gateway/v1/agents/$agent_id/memory" >/dev/null
-  request GET "/agent-gateway/v1/agents/$agent_id/snapshots" >/dev/null
-  request GET "/agent-gateway/v1/agents-skills/$agent_id" >/dev/null
-  workspace="$(request GET "/agent-gateway/v1/agents-workspaces/$agent_id")"
+  request GET "/api/brain/v1/agents/$agent_id/detail" >/dev/null
+  request POST "/api/brain/v1/agents/$agent_id/test" >/dev/null
+  request GET "/api/brain/v1/agents/$agent_id/runtime" >/dev/null
+  request GET "/api/brain/v1/agents/$agent_id/memory" >/dev/null
+  request GET "/api/brain/v1/agents/$agent_id/snapshots" >/dev/null
+  request GET "/api/brain/v1/agents-skills/$agent_id" >/dev/null
+  workspace="$(request GET "/api/brain/v1/agents-workspaces/$agent_id")"
   workspace_file="$(jq -r '.data.entries[]? | select(.type == "file") | .path' <<<"$workspace" | head -1)"
   if [[ -n "$workspace_file" ]]; then
-    request POST "/agent-gateway/v1/agents-workspaces/$agent_id/read" "$(jq -cn --arg path "$workspace_file" '{path:$path}')" >/dev/null
+    request POST "/api/brain/v1/agents-workspaces/$agent_id/read" "$(jq -cn --arg path "$workspace_file" '{path:$path}')" >/dev/null
   fi
-  conversations="$(request GET "/conversations/v1/conversations?agent=$agent_id")"
+  conversations="$(request GET "/api/brain/v1/conversations?agent=$agent_id")"
   conversation_id="$(jq -r '.data.conversations[0].id // empty' <<<"$conversations")"
   if [[ -n "$conversation_id" ]]; then
-    request GET "/conversations/v1/conversations/$conversation_id/detail?agent=$agent_id" >/dev/null
-    request GET "/conversations/v1/conversations/$conversation_id/messages?agent=$agent_id" >/dev/null
-    request GET "/conversations/v1/conversations/$conversation_id/usage?agent=$agent_id" >/dev/null
+    request GET "/api/brain/v1/conversations/$conversation_id/detail?agent=$agent_id" >/dev/null
+    request GET "/api/brain/v1/conversations/$conversation_id/messages?agent=$agent_id" >/dev/null
+    request GET "/api/brain/v1/conversations/$conversation_id/usage?agent=$agent_id" >/dev/null
   fi
 fi
 
 team_id="$(jq -r '.data[0].id // empty' <<<"$teams")"
 if [[ -n "$team_id" ]]; then
-  request GET "/api/v1/teams/$team_id" >/dev/null
+  request GET "/api/brain/v1/teams/$team_id" >/dev/null
 fi
 
 # Mutation/status companions are covered by focused tests. These collections

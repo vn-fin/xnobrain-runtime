@@ -23,7 +23,7 @@ describe('systemApi', () => {
   it('downloads a standard ZIP archive in parts', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/api/v1/bundles/exports')) {
+      if (url.endsWith('/api/brain/v1/bundles/exports')) {
         return new Response(JSON.stringify({ success: true, data: {
           export_id: 'export-1', filename: 'profile.zip', size: 4,
           sha256: '0'.repeat(64), chunk_size: 4, total_parts: 1,
@@ -54,7 +54,7 @@ describe('systemApi', () => {
   it('requests an explicit Team snapshot without relying on coordinator matching', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/api/v1/bundles/exports')) {
+      if (url.endsWith('/api/brain/v1/bundles/exports')) {
         return new Response(JSON.stringify({ success: true, data: {
           export_id: 'export-team', filename: 'team.zip', size: 1,
           sha256: '0'.repeat(64), chunk_size: 4, total_parts: 1,
@@ -92,7 +92,7 @@ describe('systemApi', () => {
   it('uploads profile archives as parts before server-side merge', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/api/v1/bundles/uploads')) {
+      if (url.endsWith('/api/brain/v1/bundles/uploads')) {
         return new Response(JSON.stringify({ success: true, data: {
           upload_id: 'upload-1', filename: 'profile.zip', size: 5,
           sha256: '', chunk_size: 3, total_parts: 2,

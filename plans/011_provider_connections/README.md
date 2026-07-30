@@ -110,7 +110,7 @@ keys or OAuth tokens.
   (ownership guard, "connected = ≥1 active", priority normalization) and the
   `ConnectionCreate`/`ConnectionPatch` Pydantic models.
 - **Phase 3 — Handlers + routes.** Six new operations and six new
-  `Route(...)` lines under `/agent-gateway/v1/providers/{provider_id}/connections`,
+  `Route(...)` lines under `/api/brain/v1/providers/{provider_id}/connections`,
   tag `Providers`.
 - **Phase 4 — Frontend.** Accounts list per provider card in the Connectors
   section: [`src/src/api/providers.ts`](../../src/src/api/providers.ts),
@@ -129,7 +129,7 @@ keys or OAuth tokens.
 ## Definition of done
 
 - With two real accounts connected to one provider (e.g. two Codex logins),
-  `GET /agent-gateway/v1/providers/codex/connections` lists both with
+  `GET /api/brain/v1/providers/codex/connections` lists both with
   distinct ids, names/emails, priorities, and test statuses.
 - Adding a second OpenAI API key through the UI creates a second connection
   and the first one keeps working; the provider card still reads "connected".

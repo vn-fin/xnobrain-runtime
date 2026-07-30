@@ -5,7 +5,7 @@ dashboard API. During implementation, use the repository’s existing success
 envelope, error model, authentication, pagination, and naming conventions.
 Record any necessary route-shape adjustment here before merging code.
 
-Base path: `/agent-gateway/v1/kanban`
+Base path: `/api/brain/v1/kanban`
 
 ## Resources
 

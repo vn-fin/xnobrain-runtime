@@ -221,33 +221,33 @@ Append these `Route(...)` rows to `ROUTES` (before the trailing `)`), tag
 `("Channels",)`:
 
 ```python
-    Route("GET", "/agent-gateway/v1/agents/{agent_id}/channels", "channels_list", tags=("Channels",)),
-    Route("GET", "/agent-gateway/v1/agents/{agent_id}/channels/{platform_id}", "channel_get", tags=("Channels",)),
-    Route("PUT", "/agent-gateway/v1/agents/{agent_id}/channels/{platform_id}", "channel_update", ChannelUpdate, tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/channels/{platform_id}/credentials", "channel_credentials", ChannelCredentialSet, tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/channels/{platform_id}/rotate", "channel_rotate", ChannelCredentialSet, tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/channels/{platform_id}/test", "channel_test", tags=("Channels",)),
+    Route("GET", "/api/brain/v1/agents/{agent_id}/channels", "channels_list", tags=("Channels",)),
+    Route("GET", "/api/brain/v1/agents/{agent_id}/channels/{platform_id}", "channel_get", tags=("Channels",)),
+    Route("PUT", "/api/brain/v1/agents/{agent_id}/channels/{platform_id}", "channel_update", ChannelUpdate, tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/channels/{platform_id}/credentials", "channel_credentials", ChannelCredentialSet, tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/channels/{platform_id}/rotate", "channel_rotate", ChannelCredentialSet, tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/channels/{platform_id}/test", "channel_test", tags=("Channels",)),
 
-    Route("GET", "/agent-gateway/v1/agents/{agent_id}/gateway/status", "gateway_status", tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/gateway/start", "gateway_start", tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/gateway/stop", "gateway_stop", tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/gateway/restart", "gateway_restart", tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/gateway/drain", "gateway_drain", GatewayDrain, tags=("Channels",)),
+    Route("GET", "/api/brain/v1/agents/{agent_id}/gateway/status", "gateway_status", tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/gateway/start", "gateway_start", tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/gateway/stop", "gateway_stop", tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/gateway/restart", "gateway_restart", tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/gateway/drain", "gateway_drain", GatewayDrain, tags=("Channels",)),
 
-    Route("GET", "/agent-gateway/v1/agents/{agent_id}/pairings", "pairings_list", tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/pairings/approve", "pairing_approve", PairingApprove, tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/pairings/revoke", "pairing_revoke", PairingRevoke, tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/pairings/clear", "pairing_clear", tags=("Channels",)),
+    Route("GET", "/api/brain/v1/agents/{agent_id}/pairings", "pairings_list", tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/pairings/approve", "pairing_approve", PairingApprove, tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/pairings/revoke", "pairing_revoke", PairingRevoke, tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/pairings/clear", "pairing_clear", tags=("Channels",)),
 
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/channels/telegram/onboarding", "telegram_onboard_start", TelegramOnboardStart, tags=("Channels",)),
-    Route("GET", "/agent-gateway/v1/agents/{agent_id}/channels/telegram/onboarding/{pairing_id}", "telegram_onboard_status", tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/channels/telegram/onboarding/{pairing_id}/apply", "telegram_onboard_apply", TelegramOnboardApply, tags=("Channels",)),
-    Route("DELETE", "/agent-gateway/v1/agents/{agent_id}/channels/telegram/onboarding/{pairing_id}", "telegram_onboard_cancel", tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/channels/telegram/onboarding", "telegram_onboard_start", TelegramOnboardStart, tags=("Channels",)),
+    Route("GET", "/api/brain/v1/agents/{agent_id}/channels/telegram/onboarding/{pairing_id}", "telegram_onboard_status", tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/channels/telegram/onboarding/{pairing_id}/apply", "telegram_onboard_apply", TelegramOnboardApply, tags=("Channels",)),
+    Route("DELETE", "/api/brain/v1/agents/{agent_id}/channels/telegram/onboarding/{pairing_id}", "telegram_onboard_cancel", tags=("Channels",)),
 
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/channels/whatsapp/onboarding", "whatsapp_onboard_start", WhatsAppOnboardStart, tags=("Channels",)),
-    Route("GET", "/agent-gateway/v1/agents/{agent_id}/channels/whatsapp/onboarding/{pairing_id}", "whatsapp_onboard_status", tags=("Channels",)),
-    Route("POST", "/agent-gateway/v1/agents/{agent_id}/channels/whatsapp/onboarding/{pairing_id}/apply", "whatsapp_onboard_apply", WhatsAppOnboardApply, tags=("Channels",)),
-    Route("DELETE", "/agent-gateway/v1/agents/{agent_id}/channels/whatsapp/onboarding/{pairing_id}", "whatsapp_onboard_cancel", tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/channels/whatsapp/onboarding", "whatsapp_onboard_start", WhatsAppOnboardStart, tags=("Channels",)),
+    Route("GET", "/api/brain/v1/agents/{agent_id}/channels/whatsapp/onboarding/{pairing_id}", "whatsapp_onboard_status", tags=("Channels",)),
+    Route("POST", "/api/brain/v1/agents/{agent_id}/channels/whatsapp/onboarding/{pairing_id}/apply", "whatsapp_onboard_apply", WhatsAppOnboardApply, tags=("Channels",)),
+    Route("DELETE", "/api/brain/v1/agents/{agent_id}/channels/whatsapp/onboarding/{pairing_id}", "whatsapp_onboard_cancel", tags=("Channels",)),
 ```
 
 Notes:

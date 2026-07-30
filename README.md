@@ -67,9 +67,9 @@ provided at build time as `VITE_API_BASE_URL` and
 `VITE_CONTROL_API_BASE_URL`. The checked-in cloud example demonstrates
 required XNO login. For the recommended production gateway mode, configure:
 
-- `GET /control/v1/bootstrap` to restore the active HttpOnly-cookie session;
-- `POST /control/v1/auth/login` for the login form;
-- `POST /control/v1/auth/logout` to end the session.
+- `GET /api/brain-control/v1/bootstrap` to restore the active HttpOnly-cookie session;
+- `POST /api/brain-control/v1/auth/login` for the login form;
+- `POST /api/brain-control/v1/auth/logout` to end the session.
 
 Workspace API calls use same-origin credentials. The Go gateway remains
 responsible for authentication, authorization, and authenticated

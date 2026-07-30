@@ -110,26 +110,26 @@ function withTeamDescription(team: Team): Team {
 }
 
 export const teamsApi = {
-  list: async () => (await request<Team[]>('/api/v1/teams')).map(withTeamDescription),
+  list: async () => (await request<Team[]>('/api/brain/v1/teams')).map(withTeamDescription),
   create: async (team: TeamInput) => withTeamDescription(
-    await request<Team>('/api/v1/teams', { method: 'POST', body: JSON.stringify(team) }),
+    await request<Team>('/api/brain/v1/teams', { method: 'POST', body: JSON.stringify(team) }),
   ),
   update: async (team: Team) => withTeamDescription(
-    await request<Team>(`/api/v1/teams/${encodeURIComponent(team.id)}`, { method: 'PUT', body: JSON.stringify(team) }),
+    await request<Team>(`/api/brain/v1/teams/${encodeURIComponent(team.id)}`, { method: 'PUT', body: JSON.stringify(team) }),
   ),
-  remove: (teamId: string) => request<{ deleted: boolean }>(`/api/v1/teams/${encodeURIComponent(teamId)}`, { method: 'DELETE' }),
-  run: (teamId: string, task: string, workflow: TeamWorkflowStep[] = [], synthesis?: string) => request<TeamRun>(`/api/v1/teams/${encodeURIComponent(teamId)}/run`, { method: 'POST', body: JSON.stringify({ task, workflow, synthesis }) }),
+  remove: (teamId: string) => request<{ deleted: boolean }>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}`, { method: 'DELETE' }),
+  run: (teamId: string, task: string, workflow: TeamWorkflowStep[] = [], synthesis?: string) => request<TeamRun>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/run`, { method: 'POST', body: JSON.stringify({ task, workflow, synthesis }) }),
   startRun: (teamId: string, task: string, workflow: TeamWorkflowStep[] = [], synthesis?: string) =>
-    request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs`, { method: 'POST', body: JSON.stringify({ task, workflow, synthesis }) }),
-  listRuns: (teamId: string) => request<TeamRunRecord[]>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs`),
-  getRun: (teamId: string, runId: string) => request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}`),
+    request<TeamRunRecord>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs`, { method: 'POST', body: JSON.stringify({ task, workflow, synthesis }) }),
+  listRuns: (teamId: string) => request<TeamRunRecord[]>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs`),
+  getRun: (teamId: string, runId: string) => request<TeamRunRecord>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}`),
   deleteRun: (teamId: string, runId: string) =>
     request<{ id: string; team_id: string; deleted: boolean }>(
-      `/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}`,
+      `/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}`,
       { method: 'DELETE' },
     ),
   cancelRun: (teamId: string, runId: string) =>
-    request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
+    request<TeamRunRecord>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
   async watchRun(
     teamId: string,
     runId: string,
@@ -139,7 +139,7 @@ export const teamsApi = {
   ): Promise<void> {
     const query = afterRevision != null ? `?after=${encodeURIComponent(String(afterRevision))}` : '';
     const response = await requestRaw(
-      `/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}/events${query}`,
+      `/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}/events${query}`,
       { headers: { Accept: 'text/event-stream' }, signal },
     );
     await readSSE(response, onEvent, signal);

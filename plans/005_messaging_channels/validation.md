@@ -113,7 +113,7 @@ the card transitioning disabled → pending_restart → connected.
 - [ ] **Error bodies:** force failures (invalid key, 409 multiplex, 429 pairing
   lockout); assert no secret leaks into `message`/`error`.
 - [ ] **Bundles:** export a bundle for an agent with channels configured
-  (`/api/v1/bundles/export`, `services/portability.py`); assert the profile
+  (`/api/brain/v1/bundles/export`, `services/portability.py`); assert the profile
   `.env` channel keys (`TELEGRAM_BOT_TOKEN`, etc.) are excluded or redacted in
   the archive. Add a regression test.
 - [ ] **Traces/telemetry:** confirm no token/allowed-user/code is attached to

@@ -48,7 +48,7 @@ describe('agentsApi profile display names', () => {
 
     const profile = await agentsApi.rename('a1b2c3', 'Operations Lead');
 
-    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:3000/agent-gateway/v1/agents/a1b2c3/metadata');
+    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:3000/api/brain/v1/agents/a1b2c3/metadata');
     expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
       display_name: 'Operations Lead',
     });
@@ -95,7 +95,7 @@ describe('agentsApi profile display names', () => {
     await agentsApi.remove('a1b2c3');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:3000/agent-gateway/v1/agents/a1b2c3/delete',
+      'http://localhost:3000/api/brain/v1/agents/a1b2c3/delete',
       expect.objectContaining({ method: 'DELETE' }),
     );
   });

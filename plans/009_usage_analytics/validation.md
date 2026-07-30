@@ -60,15 +60,15 @@ Evidence: mtime/size unchanged; write-attempt raises.
 Use `httpx.ASGITransport`/`AsyncClient` against the assembled app (as
 `test_kanban.py`/`test_fastapi.py` do):
 
-- `GET /agent-gateway/v1/analytics/usage?days=30&bucket=day` -> 200 envelope
+- `GET /api/brain/v1/analytics/usage?days=30&bucket=day` -> 200 envelope
   with `totals, agents, by_model, series, quota`.
 - `bucket=week` returns weekly buckets.
-- `GET /agent-gateway/v1/analytics/agents/{agent_id}/usage` -> 200; unknown
+- `GET /api/brain/v1/analytics/agents/{agent_id}/usage` -> 200; unknown
   agent -> 404 failure envelope.
-- `GET /agent-gateway/v1/analytics/models` and `.../timeseries` -> 200.
+- `GET /api/brain/v1/analytics/models` and `.../timeseries` -> 200.
 - Invalid `days` (e.g. `-1`, `abc`) is clamped or -> 400; documented behavior
   covered by a test.
-- `PUT /agent-gateway/v1/analytics/agents/{agent_id}/budget` with a valid body
+- `PUT /api/brain/v1/analytics/agents/{agent_id}/budget` with a valid body
   -> 200 and the returned `BudgetStatus`; invalid body (negative amount,
   `warn_threshold_percent > 100`) -> 400.
 - 9router unavailable: monkeypatch `router.usage` to raise

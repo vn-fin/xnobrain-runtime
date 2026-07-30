@@ -15,7 +15,7 @@ models are Pydantic, and `routes/setup.py` is the only route-assembly point.
 
 ```
 React (Settings > Automations: blueprint gallery + "Deliver to" selector)
-   │  HTTP  /agent-gateway/v1/cron/...
+   │  HTTP  /api/brain/v1/cron/...
    ▼
 handlers/api.py        operation map: cron_blueprints, cron_blueprint_instantiate,
                        cron_delivery_targets, cron_job_targets_list/add/remove,
@@ -88,20 +88,20 @@ invokes; it must not be a second loop.
 
 ## New Brain4All API contract (versioned)
 
-All under the existing `Cron` tag / `/agent-gateway/v1/cron` prefix. Request and
+All under the existing `Cron` tag / `/api/brain/v1/cron` prefix. Request and
 response bodies are strict Pydantic models in `brain4all/models/api.py`. Envelope
 matches the existing handler response envelope.
 
 | Method & path | Operation | Request model | Response |
 | --- | --- | --- | --- |
-| `GET /agent-gateway/v1/cron/blueprints` | `cron_blueprints` | — | `CronBlueprintList` |
-| `POST /agent-gateway/v1/cron/blueprints/instantiate` | `cron_blueprint_instantiate` | `CronBlueprintInstantiate` | `CronJobSummary` |
-| `GET /agent-gateway/v1/cron/delivery-targets` | `cron_delivery_targets` | — | `CronDeliveryTargetOptions` |
-| `GET /agent-gateway/v1/cron/jobs/{job_id}/delivery-targets` | `cron_job_targets_list` | — | `CronDeliveryTargetList` |
-| `POST /agent-gateway/v1/cron/jobs/{job_id}/delivery-targets` | `cron_job_target_add` | `CronDeliveryTargetCreate` | `CronDeliveryTarget` |
-| `DELETE /agent-gateway/v1/cron/jobs/{job_id}/delivery-targets/{target_id}` | `cron_job_target_remove` | — | `{deleted: true}` |
-| `POST /agent-gateway/v1/cron/jobs/{job_id}/trigger` | `cron_trigger` | — | `CronJobRunSummary` |
-| `GET /agent-gateway/v1/cron/jobs/{job_id}/runs` | `cron_runs` | — | `CronJobRunList` |
+| `GET /api/brain/v1/cron/blueprints` | `cron_blueprints` | — | `CronBlueprintList` |
+| `POST /api/brain/v1/cron/blueprints/instantiate` | `cron_blueprint_instantiate` | `CronBlueprintInstantiate` | `CronJobSummary` |
+| `GET /api/brain/v1/cron/delivery-targets` | `cron_delivery_targets` | — | `CronDeliveryTargetOptions` |
+| `GET /api/brain/v1/cron/jobs/{job_id}/delivery-targets` | `cron_job_targets_list` | — | `CronDeliveryTargetList` |
+| `POST /api/brain/v1/cron/jobs/{job_id}/delivery-targets` | `cron_job_target_add` | `CronDeliveryTargetCreate` | `CronDeliveryTarget` |
+| `DELETE /api/brain/v1/cron/jobs/{job_id}/delivery-targets/{target_id}` | `cron_job_target_remove` | — | `{deleted: true}` |
+| `POST /api/brain/v1/cron/jobs/{job_id}/trigger` | `cron_trigger` | — | `CronJobRunSummary` |
+| `GET /api/brain/v1/cron/jobs/{job_id}/runs` | `cron_runs` | — | `CronJobRunList` |
 
 Pydantic model names (proposed):
 

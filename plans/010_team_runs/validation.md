@@ -65,7 +65,7 @@ agents created in the UI.
    panel; confirm the HTTP response returned within ~1 s (202) while the run
    continues.
 4. Watch the SSE stream (UI chips, and raw:
-   `curl -N http://localhost:8642/api/v1/teams/<id>/runs/<run_id>/events`):
+   `curl -N http://localhost:8642/api/brain/v1/teams/<id>/runs/<run_id>/events`):
    `connected`, then `run` events as `research` goes running→completed and
    `review` starts.
 5. While `review` is `running`: `pgrep -af hermes` shows its child process;
@@ -84,7 +84,7 @@ agents created in the UI.
    observe; the staleness rule covers the record, not a hard-killed parent's
    already-orphaned children. A graceful restart — SIGTERM — must leave
    `cancelled` records and no orphans).
-9. `POST /api/v1/teams/<id>/run` (legacy sync) with a small task still
+9. `POST /api/brain/v1/teams/<id>/run` (legacy sync) with a small task still
    returns the full result dict, and the run appears in history with
    `mode: "sync"`.
 10. Inspect a run file:
@@ -95,7 +95,7 @@ agents created in the UI.
 
 - [ ] Phase 0 compatibility test passes against the pinned Hermes.
       (evidence: test run output line)
-- [ ] `POST /api/v1/teams/{id}/runs` returns 202 with a `pending|running`
+- [ ] `POST /api/brain/v1/teams/{id}/runs` returns 202 with a `pending|running`
       record in under 2 s for a multi-minute run.
       (evidence: curl timing + response body)
 - [ ] Run records persist across a graceful restart and list correctly via

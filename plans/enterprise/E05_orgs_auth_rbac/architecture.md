@@ -528,7 +528,7 @@ New surfaces (all JSON, E01 error envelope):
 | POST | `/auth/v1/saml/acs` | none | SAML assertion consumer, mint session |
 | POST | `/auth/v1/refresh` | refresh token | rotate session pair |
 | POST | `/auth/v1/logout` | access token | revoke session |
-| GET | `/auth/v1/session` | access token | introspection: user, org, roles, effective permissions, capability flags (feeds OSS `/api/v1/limits`) |
+| GET | `/auth/v1/session` | access token | introspection: user, org, roles, effective permissions, capability flags (feeds OSS `/api/brain/v1/limits`) |
 | POST | `/auth/v1/invitations/accept` | invite token | invited → active; local: set password; SSO: link identity |
 | POST | `/orgs/v1` | authed user; cloud: plan gate `rbac` capability; self-hosted: first-boot bootstrap | create org (creator gets org_admin+org_manager) |
 | GET | `/orgs/v1/current` | `org.read` | org profile + own membership/roles |

@@ -7,7 +7,7 @@ Options considered for each decision, then the chosen path. Cross-links:
 
 ## Decision A — New async routes vs converting the existing sync route
 
-### A1. Convert `POST /api/v1/teams/{team_id}/run` to async (202 + record)
+### A1. Convert `POST /api/brain/v1/teams/{team_id}/run` to async (202 + record)
 
 - Pros: one run endpoint; no duplicate surface.
 - Cons (decisive): breaks the existing contract. `src/src/api/teams.ts`

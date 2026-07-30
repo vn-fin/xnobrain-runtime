@@ -153,7 +153,7 @@
     "noSandboxDesc": "当前没有运行中的 Hermes 运行时。启动本地容器，为助手提供工作区、终端和算力。",
     "create": "创建沙盒",
     "provisioningTitle": "正在配置沙盒…",
-    "specs": "通过 POST /sandboxes/v1/me/sandboxes/setup 配置 · 6 vCPU · 24 GiB · 80 GiB 磁盘",
+    "specs": "通过 POST /api/brain/v1/sandboxes/setup 配置 · 6 vCPU · 24 GiB · 80 GiB 磁盘",
     "refresh": "刷新"
   },
   "onboarding": {
@@ -193,7 +193,7 @@
   },
   "modals": {
     "createAgent": "创建助手",
-    "createAgentApi": "对应 POST /agent-gateway/v1/agents",
+    "createAgentApi": "对应 POST /api/brain/v1/agents",
     "name": "名称",
     "namePlaceholder": "例如：数据分析师",
     "description": "描述",

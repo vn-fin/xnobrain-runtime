@@ -54,7 +54,7 @@ Route manifest
 - `/api/combos/route` — GET (list), POST (create)
 - `/api/combos/[id]/route` — GET, PUT, DELETE by id
 - `/api/settings/route` — GET, PATCH
-- `/api/v1/models/route` — the OpenAI-compatible model list
+- `/api/brain/v1/models/route` — the OpenAI-compatible model list
 
 Verified behavior of the compiled handlers:
 
@@ -252,7 +252,7 @@ live in Phase 0 (§10).
 `brain4all/integrations/hermes.py`:
 
 - `update_config()` (lines 354–439) handles
-  `PATCH /agent-gateway/v1/agents-configs/{agent_id}` (route →
+  `PATCH /api/brain/v1/agents-configs/{agent_id}` (route →
   `config_agent_patch` → `PlatformService.update_agent_config`, which
   snapshots `config.yaml` first — `brain4all/services/platform.py` lines
   190–198). The `model` field is validated only by `_nonempty_string`

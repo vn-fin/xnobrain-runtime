@@ -12,7 +12,7 @@ import type { Agent } from '../types';
 
 export type MCPConfig = { servers: Record<string, Record<string, unknown>> };
 
-const ROOT = '/agent-gateway/v1';
+const ROOT = '/api/brain/v1';
 const HERMES_PROVIDER = 'nine-router';
 const encoded = (value: string) => encodeURIComponent(value);
 

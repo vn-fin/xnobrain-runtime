@@ -50,16 +50,16 @@ integration adapter:
 Same harness as `test_kanban.py` (`Brain4AllApplication`, `httpx.AsyncClient`,
 `ASGITransport`), skip-guarded on the runtime:
 
-- [ ] `POST /agent-gateway/v1/voice/speak?agent=<id>` with `{text}` returns
+- [ ] `POST /api/brain/v1/voice/speak?agent=<id>` with `{text}` returns
       `data.data_url` starting `data:audio/`, plus `mime_type`, `provider`; the
       temp synth file is gone afterward (no leak).
-- [ ] `POST /agent-gateway/v1/voice/transcribe?agent=<id>` with a small base64
+- [ ] `POST /api/brain/v1/voice/transcribe?agent=<id>` with a small base64
       WAV returns a `data.transcript` string; temp file cleaned up.
-- [ ] `GET /agent-gateway/v1/voice/providers` returns `{tts:[...], stt:[...]}`
+- [ ] `GET /api/brain/v1/voice/providers` returns `{tts:[...], stt:[...]}`
       with builtins present.
-- [ ] `GET /agent-gateway/v1/voice/voices` returns `{available:false,voices:[]}`
+- [ ] `GET /api/brain/v1/voice/voices` returns `{available:false,voices:[]}`
       with no `ELEVENLABS_API_KEY` set (and never a key when one is set).
-- [ ] `GET` then `PUT` `/agent-gateway/v1/agents/{id}/voice` round-trips config;
+- [ ] `GET` then `PUT` `/api/brain/v1/agents/{id}/voice` round-trips config;
       the written `profiles/<id>/config.yaml` gains `tts:`/`stt:` keys and a
       snapshot exists (persistence-before-success).
 - [ ] Under B2: two agents with different providers yield different `provider`

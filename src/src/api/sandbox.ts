@@ -5,7 +5,7 @@ import { mapSandboxData } from './mappers/sandbox';
 import type { SandboxData } from '../types';
 
 export type SandboxResult = { provisioned: boolean; data: SandboxData | null };
-const SANDBOX_BASE = '/sandboxes/v1/me/sandboxes';
+const SANDBOX_BASE = '/api/brain/v1/sandboxes';
 
 export const sandboxApi = {
   async get(): Promise<SandboxResult> {

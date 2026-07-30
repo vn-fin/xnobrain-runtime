@@ -169,12 +169,12 @@ async def _owned_connection(self, provider: str, connection_id: str) -> dict:
 
 | Method | Path | Operation | Body model |
 |---|---|---|---|
-| GET | `/agent-gateway/v1/providers/{provider_id}/connections` | `provider_connections_list` | — |
-| POST | `/agent-gateway/v1/providers/{provider_id}/connections` | `provider_connection_create` | `ConnectionCreate` |
-| PATCH | `/agent-gateway/v1/providers/{provider_id}/connections/{connection_id}` | `provider_connection_patch` | `ConnectionPatch` |
-| POST | `/agent-gateway/v1/providers/{provider_id}/connections/{connection_id}/test` | `provider_connection_test` | — |
-| DELETE | `/agent-gateway/v1/providers/{provider_id}/connections/{connection_id}` | `provider_connection_delete` | — |
-| GET | `/agent-gateway/v1/providers/{provider_id}/connections/{connection_id}/usage` | `provider_connection_usage` | — |
+| GET | `/api/brain/v1/providers/{provider_id}/connections` | `provider_connections_list` | — |
+| POST | `/api/brain/v1/providers/{provider_id}/connections` | `provider_connection_create` | `ConnectionCreate` |
+| PATCH | `/api/brain/v1/providers/{provider_id}/connections/{connection_id}` | `provider_connection_patch` | `ConnectionPatch` |
+| POST | `/api/brain/v1/providers/{provider_id}/connections/{connection_id}/test` | `provider_connection_test` | — |
+| DELETE | `/api/brain/v1/providers/{provider_id}/connections/{connection_id}` | `provider_connection_delete` | — |
+| GET | `/api/brain/v1/providers/{provider_id}/connections/{connection_id}/usage` | `provider_connection_usage` | — |
 
 All `tags=("Providers",)`. Exact `Route(...)` lines are in
 [implementation.md](implementation.md) Phase 3. Every existing provider-level
@@ -207,7 +207,7 @@ Responses use the standard envelope from `APIHandlers.success()`
 
 ```
 UI "Add account" form (key, optional name)
-  → POST /agent-gateway/v1/providers/openai/connections   {api_key, name?}
+  → POST /api/brain/v1/providers/openai/connections   {api_key, name?}
     handlers: provider_connection_create
     service:  add_provider_connection("openai", body)     (allowlist + mode check)
     adapter:  create_api_key_connection → POST :20128/api/providers
@@ -224,11 +224,11 @@ Reuses the existing connect flow end-to-end — no new backend path:
 ```
 UI "Add account" on an already-connected provider
   → openProviderAuthPopup()                    (src/src/utils/providerAuth.ts)
-  → POST /agent-gateway/v1/providers/codex/connect
+  → POST /api/brain/v1/providers/codex/connect
     service.start_provider_connect → router.oauth("codex","authorize",GET)
     ← login_url; popup navigates to it
   → user authorizes with the SECOND account; pastes callback URL
-  → PUT /agent-gateway/v1/providers/codex/connect          {text: <callback>}
+  → PUT /api/brain/v1/providers/codex/connect          {text: <callback>}
     service.submit_provider_connect → router.oauth("codex","exchange",POST)
     9router creates a NEW providerConnections row           (Phase 0 item 7)
   → UI refreshes GET .../codex/connections → two rows

@@ -87,9 +87,9 @@ Decisions referenced: [approaches.md](approaches.md); shapes:
    connected, queued command count, endpoint; plus `unpair()` passthrough.
 9. **Routes/handlers** — small additions in the existing single
    route-assembly point (`brain4all/routes/setup.py`) + `brain4all/handlers/`:
-   `GET  /api/v1/enterprise/device` (status), `POST
-   /api/v1/enterprise/device/enroll` (manual pairing token), `POST
-   /api/v1/enterprise/device/unpair`. All local-only; they never proxy to the
+   `GET  /api/brain/v1/enterprise/device` (status), `POST
+   /api/brain/v1/enterprise/device/enroll` (manual pairing token), `POST
+   /api/brain/v1/enterprise/device/unpair`. All local-only; they never proxy to the
    enterprise server beyond the connector's own calls.
 
 ### Phase 3 — Settings UI + tests

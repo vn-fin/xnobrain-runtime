@@ -74,7 +74,7 @@ describe('workspaceApi.read', () => {
 
     expect(content).toBe('first chunk\nsecond chunk\n');
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/agent-gateway/v1/agents-workspaces/agent-1/file?path=logs%2Flarge.log'),
+      expect.stringContaining('/api/brain/v1/agents-workspaces/agent-1/file?path=logs%2Flarge.log'),
       expect.objectContaining({ signal: undefined }),
     );
     expect(fetchMock.mock.calls[0][0]).not.toContain('/read');
@@ -125,7 +125,7 @@ describe('workspaceApi.preview', () => {
     const blob = await workspaceApi.preview('agent-1', 'reports/report.xlsx');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/agent-gateway/v1/agents-workspaces/agent-1/preview?path=reports%2Freport.xlsx'),
+      expect.stringContaining('/api/brain/v1/agents-workspaces/agent-1/preview?path=reports%2Freport.xlsx'),
       expect.anything(),
     );
     expect(blob.type).toBe('application/pdf');
@@ -146,7 +146,7 @@ describe('workspaceApi.workbook', () => {
     const blob = await workspaceApi.workbook('agent-1', 'reports/report.xlsx');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/agent-gateway/v1/agents-workspaces/agent-1/workbook?path=reports%2Freport.xlsx'),
+      expect.stringContaining('/api/brain/v1/agents-workspaces/agent-1/workbook?path=reports%2Freport.xlsx'),
       expect.anything(),
     );
     expect(blob.type).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

@@ -47,7 +47,7 @@ export type ProviderConnector = {
   status: string;
 };
 
-// Sandbox (/sandboxes/v1/me/sandboxes/*)
+// Sandbox (/api/brain/v1/sandboxes/*)
 export type SandboxResources = { cpus: string; memory: string; rootSize: string };
 
 export type SandboxInfo = {

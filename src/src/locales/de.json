@@ -153,7 +153,7 @@
     "noSandboxDesc": "Es läuft keine Hermes-Runtime. Starte den lokalen Container für Arbeitsbereich, Terminal und Rechenleistung.",
     "create": "Sandbox erstellen",
     "provisioningTitle": "Sandbox wird bereitgestellt…",
-    "specs": "Bereitstellung über POST /sandboxes/v1/me/sandboxes/setup · 6 vCPU · 24 GiB · 80 GiB Speicher",
+    "specs": "Bereitstellung über POST /api/brain/v1/sandboxes/setup · 6 vCPU · 24 GiB · 80 GiB Speicher",
     "refresh": "Aktualisieren"
   },
   "onboarding": {
@@ -193,7 +193,7 @@
   },
   "modals": {
     "createAgent": "Assistent erstellen",
-    "createAgentApi": "Entspricht POST /agent-gateway/v1/agents",
+    "createAgentApi": "Entspricht POST /api/brain/v1/agents",
     "name": "Name",
     "namePlaceholder": "z. B. Datenanalyst",
     "description": "Beschreibung",

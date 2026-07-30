@@ -147,12 +147,12 @@ built-in roles plus one custom role.
       for the self-hosted run and the cloud-mode run are identical; only
       `auth.yaml` and env differ. Evidence: digest comparison.
 - [ ] **OSS dormancy.** With `ENTERPRISE_API_URL` unset: no enterprise
-      auth routes do network work, `/api/v1/limits` returns the original
+      auth routes do network work, `/api/brain/v1/limits` returns the original
       static payload, no new background tasks. With it set but the server
       down: local features and latency unchanged (`AGENTS.md`), limits
       falls back to the static payload, login fails gracefully. Evidence:
       `brain4all/tests/test_enterprise_auth.py` + latency comparison.
-- [ ] **OSS limits payload.** Signed in, `/api/v1/limits` carries
+- [ ] **OSS limits payload.** Signed in, `/api/brain/v1/limits` carries
       `org` + `capabilities` per `docs/contracts/enterprise-auth-v1.md`
       and still `local_features_unlimited: true`; the Enterprise settings
       tab shows the signed-in card. Evidence: API transcript + UI

@@ -39,7 +39,7 @@ Runtime logs use standard human-readable Python logging. Each record includes
 the timestamp, level, logger name, and message, for example:
 
 ```text
-2026-07-24 09:00:00 INFO brain4all.http: HTTP GET /api/v1/health -> 200 (1.234 ms, trace_id=-)
+2026-07-24 09:00:00 INFO brain4all.http: HTTP GET /api/brain/v1/health -> 200 (1.234 ms, trace_id=-)
 ```
 
 Set `LOG_LEVEL` in `.env` to change the minimum level.

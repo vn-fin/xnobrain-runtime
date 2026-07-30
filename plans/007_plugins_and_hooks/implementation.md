@@ -200,22 +200,22 @@ Gate: this test and `make check` pass before Phase 1.
 10. **Routes** — `brain4all/routes/setup.py`, add to `ROUTES` (one tag group
     `("Plugins",)`; hooks/tools may share it or use `("Hooks",)`/`("Tools",)`):
     ```python
-    Route("GET",    "/agent-gateway/v1/plugins",                 "plugins_list", tags=("Plugins",)),
-    Route("GET",    "/agent-gateway/v1/plugins/hub",             "plugins_hub", tags=("Plugins",)),
-    Route("POST",   "/agent-gateway/v1/plugins/rescan",          "plugins_rescan", tags=("Plugins",)),
-    Route("POST",   "/agent-gateway/v1/plugins/install",         "plugins_install", PluginInstall, tags=("Plugins",)),
-    Route("POST",   "/agent-gateway/v1/plugins/{name}/scan",     "plugin_scan", tags=("Plugins",)),
-    Route("POST",   "/agent-gateway/v1/plugins/{name}/approve",  "plugin_approve", PluginApproval, tags=("Plugins",)),
-    Route("POST",   "/agent-gateway/v1/plugins/{name}/enable",   "plugin_enable", tags=("Plugins",)),
-    Route("POST",   "/agent-gateway/v1/plugins/{name}/disable",  "plugin_disable", tags=("Plugins",)),
-    Route("POST",   "/agent-gateway/v1/plugins/{name}/update",   "plugin_update", tags=("Plugins",)),
-    Route("DELETE", "/agent-gateway/v1/plugins/{name}",          "plugin_remove", tags=("Plugins",)),
-    Route("POST",   "/agent-gateway/v1/plugins/{name}/visibility","plugin_visibility", PluginVisibility, tags=("Plugins",)),
-    Route("GET",    "/agent-gateway/v1/agents-tools/{agent_id}",  "tools_list", tags=("Tools",)),
-    Route("PATCH",  "/agent-gateway/v1/agents-tools/{agent_id}/{toolset}", "tools_patch", EnabledPatch, tags=("Tools",)),
-    Route("GET",    "/agent-gateway/v1/hooks",                    "hooks_list", tags=("Hooks",)),
-    Route("POST",   "/agent-gateway/v1/hooks",                    "hook_create", HookCreate, tags=("Hooks",)),
-    Route("DELETE", "/agent-gateway/v1/hooks",                    "hook_delete", HookDelete, tags=("Hooks",)),
+    Route("GET",    "/api/brain/v1/plugins",                 "plugins_list", tags=("Plugins",)),
+    Route("GET",    "/api/brain/v1/plugins/hub",             "plugins_hub", tags=("Plugins",)),
+    Route("POST",   "/api/brain/v1/plugins/rescan",          "plugins_rescan", tags=("Plugins",)),
+    Route("POST",   "/api/brain/v1/plugins/install",         "plugins_install", PluginInstall, tags=("Plugins",)),
+    Route("POST",   "/api/brain/v1/plugins/{name}/scan",     "plugin_scan", tags=("Plugins",)),
+    Route("POST",   "/api/brain/v1/plugins/{name}/approve",  "plugin_approve", PluginApproval, tags=("Plugins",)),
+    Route("POST",   "/api/brain/v1/plugins/{name}/enable",   "plugin_enable", tags=("Plugins",)),
+    Route("POST",   "/api/brain/v1/plugins/{name}/disable",  "plugin_disable", tags=("Plugins",)),
+    Route("POST",   "/api/brain/v1/plugins/{name}/update",   "plugin_update", tags=("Plugins",)),
+    Route("DELETE", "/api/brain/v1/plugins/{name}",          "plugin_remove", tags=("Plugins",)),
+    Route("POST",   "/api/brain/v1/plugins/{name}/visibility","plugin_visibility", PluginVisibility, tags=("Plugins",)),
+    Route("GET",    "/api/brain/v1/agents-tools/{agent_id}",  "tools_list", tags=("Tools",)),
+    Route("PATCH",  "/api/brain/v1/agents-tools/{agent_id}/{toolset}", "tools_patch", EnabledPatch, tags=("Tools",)),
+    Route("GET",    "/api/brain/v1/hooks",                    "hooks_list", tags=("Hooks",)),
+    Route("POST",   "/api/brain/v1/hooks",                    "hook_create", HookCreate, tags=("Hooks",)),
+    Route("DELETE", "/api/brain/v1/hooks",                    "hook_delete", HookDelete, tags=("Hooks",)),
     ```
     Keep these ahead of the SPA catch-all (the existing reorder at the bottom of
     `setup_routes` already handles that).
@@ -233,9 +233,9 @@ Gate: this test and `make check` pass before Phase 1.
 ## Phase 5 — Frontend {#phase-5}
 
 12. **API clients** — new `src/src/api/plugins.ts` (clone `src/src/api/skills.ts`;
-    `ROOT='/agent-gateway/v1/plugins'`; methods `list, hub, rescan, install,
+    `ROOT='/api/brain/v1/plugins'`; methods `list, hub, rescan, install,
     scan, approve, enable, disable, update, remove, setVisibility`) and new
-    `src/src/api/tools.ts` (`ROOT='/agent-gateway/v1/agents-tools'`; `list`,
+    `src/src/api/tools.ts` (`ROOT='/api/brain/v1/agents-tools'`; `list`,
     `setEnabled`), plus `src/src/api/hooks.ts`. Add DTOs to
     `src/src/api/contracts/agentGateway.ts`.
 13. **Hooks/state** — new `src/src/hooks/usePlugins.ts` and

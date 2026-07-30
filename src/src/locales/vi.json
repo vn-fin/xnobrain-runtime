@@ -153,7 +153,7 @@
     "noSandboxDesc": "Bạn chưa có runtime Hermes nào đang chạy. Khởi động container cục bộ để cấp không gian làm việc, terminal và tài nguyên tính toán cho trợ lý.",
     "create": "Tạo sandbox",
     "provisioningTitle": "Đang cấp phát sandbox…",
-    "specs": "Cấp phát qua POST /sandboxes/v1/me/sandboxes/setup · 6 vCPU · 24 GiB · đĩa 80 GiB",
+    "specs": "Cấp phát qua POST /api/brain/v1/sandboxes/setup · 6 vCPU · 24 GiB · đĩa 80 GiB",
     "refresh": "Làm mới"
   },
   "onboarding": {
@@ -193,7 +193,7 @@
   },
   "modals": {
     "createAgent": "Tạo trợ lý",
-    "createAgentApi": "Ánh xạ tới POST /agent-gateway/v1/agents",
+    "createAgentApi": "Ánh xạ tới POST /api/brain/v1/agents",
     "name": "Tên",
     "namePlaceholder": "vd: Chuyên viên phân tích dữ liệu",
     "description": "Mô tả",

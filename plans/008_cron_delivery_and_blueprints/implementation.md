@@ -221,14 +221,14 @@ File: `brain4all/routes/setup.py` — import the new models and add to the
 **existing `Cron` group** (after ≈ line 89), keeping `tags=("Cron",)`:
 
 ```python
-Route("GET",    "/agent-gateway/v1/cron/blueprints", "cron_blueprints", tags=("Cron",)),
-Route("POST",   "/agent-gateway/v1/cron/blueprints/instantiate", "cron_blueprint_instantiate", CronBlueprintInstantiate, tags=("Cron",)),
-Route("GET",    "/agent-gateway/v1/cron/delivery-targets", "cron_delivery_targets", tags=("Cron",)),
-Route("GET",    "/agent-gateway/v1/cron/jobs/{job_id}/delivery-targets", "cron_job_targets_list", tags=("Cron",)),
-Route("POST",   "/agent-gateway/v1/cron/jobs/{job_id}/delivery-targets", "cron_job_target_add", CronDeliveryTargetCreate, tags=("Cron",)),
-Route("DELETE", "/agent-gateway/v1/cron/jobs/{job_id}/delivery-targets/{target_id}", "cron_job_target_remove", tags=("Cron",)),
-Route("POST",   "/agent-gateway/v1/cron/jobs/{job_id}/trigger", "cron_trigger", tags=("Cron",)),
-Route("GET",    "/agent-gateway/v1/cron/jobs/{job_id}/runs", "cron_runs", tags=("Cron",)),
+Route("GET",    "/api/brain/v1/cron/blueprints", "cron_blueprints", tags=("Cron",)),
+Route("POST",   "/api/brain/v1/cron/blueprints/instantiate", "cron_blueprint_instantiate", CronBlueprintInstantiate, tags=("Cron",)),
+Route("GET",    "/api/brain/v1/cron/delivery-targets", "cron_delivery_targets", tags=("Cron",)),
+Route("GET",    "/api/brain/v1/cron/jobs/{job_id}/delivery-targets", "cron_job_targets_list", tags=("Cron",)),
+Route("POST",   "/api/brain/v1/cron/jobs/{job_id}/delivery-targets", "cron_job_target_add", CronDeliveryTargetCreate, tags=("Cron",)),
+Route("DELETE", "/api/brain/v1/cron/jobs/{job_id}/delivery-targets/{target_id}", "cron_job_target_remove", tags=("Cron",)),
+Route("POST",   "/api/brain/v1/cron/jobs/{job_id}/trigger", "cron_trigger", tags=("Cron",)),
+Route("GET",    "/api/brain/v1/cron/jobs/{job_id}/runs", "cron_runs", tags=("Cron",)),
 ```
 
 Update `from ..models import (...)` (≈ line 14–24) to include the new model

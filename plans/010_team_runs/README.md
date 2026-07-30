@@ -52,9 +52,9 @@ it does **not** have is any run lifecycle around that engine. This plan adds:
    JSON record to `DATA_DIR/teams/runs/<team_id>/<run_id>.json`: status,
    timestamps, per-step status/summary/error, and the orchestrator synthesis.
    Run history survives process restarts and dropped connections.
-2. **Asynchronous execution** — `POST /api/v1/teams/{team_id}/runs` starts the
+2. **Asynchronous execution** — `POST /api/brain/v1/teams/{team_id}/runs` starts the
    run in a background `asyncio.Task` and returns `202` with the run record
-   immediately. The existing synchronous `POST /api/v1/teams/{team_id}/run`
+   immediately. The existing synchronous `POST /api/brain/v1/teams/{team_id}/run`
    keeps its exact contract for backward compatibility.
 3. **Live progress** — `GET .../runs/{run_id}/events` streams step transitions
    over SSE, following the established `kanban_event_stream` pattern
@@ -126,7 +126,7 @@ File-by-file steps are in [implementation.md](implementation.md).
 - Cancelling a mid-flight run terminates the in-flight child `hermes`
   subprocesses (verified with `pgrep` before/after), marks running and pending
   steps `cancelled`, and persists the final `cancelled` record.
-- The legacy `POST /api/v1/teams/{team_id}/run` response shape is byte-for-byte
+- The legacy `POST /api/brain/v1/teams/{team_id}/run` response shape is byte-for-byte
   compatible with today's, and sync runs also leave a persisted run record.
 - A run record never contains composed prompts, injected upstream text beyond
   the stored step summaries themselves, stderr, credentials, or reasoning.

@@ -153,7 +153,7 @@
     "noSandboxDesc": "実行中の Hermes ランタイムがありません。ローカルコンテナを起動してワークスペース・ターミナル・計算資源を提供します。",
     "create": "サンドボックスを作成",
     "provisioningTitle": "サンドボックスをプロビジョニング中…",
-    "specs": "POST /sandboxes/v1/me/sandboxes/setup で作成 · 6 vCPU · 24 GiB · ディスク 80 GiB",
+    "specs": "POST /api/brain/v1/sandboxes/setup で作成 · 6 vCPU · 24 GiB · ディスク 80 GiB",
     "refresh": "更新"
   },
   "onboarding": {
@@ -193,7 +193,7 @@
   },
   "modals": {
     "createAgent": "アシスタントを作成",
-    "createAgentApi": "POST /agent-gateway/v1/agents に対応",
+    "createAgentApi": "POST /api/brain/v1/agents に対応",
     "name": "名前",
     "namePlaceholder": "例: データアナリスト",
     "description": "説明",

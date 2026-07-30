@@ -174,12 +174,12 @@ function boardFromApi(raw: any): KanbanBoard {
 
 export const kanbanApi = {
   async getBoards(): Promise<KanbanBoard[]> {
-    const data = await request<any[]>('/agent-gateway/v1/kanban/boards?include_archived=true');
+    const data = await request<any[]>('/api/brain/v1/kanban/boards?include_archived=true');
     return (data ?? []).map(boardFromApi);
   },
 
   async createBoard(input: NewKanbanBoardInput): Promise<KanbanBoard> {
-    const data = await request<any>('/agent-gateway/v1/kanban/boards', {
+    const data = await request<any>('/api/brain/v1/kanban/boards', {
       method: 'POST',
       body: JSON.stringify(input),
     });
@@ -190,7 +190,7 @@ export const kanbanApi = {
     if (input.status !== 'backlog' && input.status !== 'todo' && input.status !== 'scheduled') {
       throw new Error('New tasks can start in Backlog, Todo, or Scheduled.');
     }
-    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks`, {
+    const data = await request<RawTask>(`/api/brain/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks`, {
       method: 'POST',
       body: JSON.stringify({
         title: input.title,
@@ -207,12 +207,12 @@ export const kanbanApi = {
   },
 
   async getTask(boardId: string, taskId: string): Promise<KanbanTask> {
-    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}`);
+    const data = await request<RawTask>(`/api/brain/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}`);
     return taskFromApi(data);
   },
 
   async updateTask(boardId: string, taskId: string, input: KanbanTaskPatchInput): Promise<KanbanTask> {
-    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}`, {
+    const data = await request<RawTask>(`/api/brain/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}`, {
       method: 'PATCH',
       body: JSON.stringify(input),
     });
@@ -223,7 +223,7 @@ export const kanbanApi = {
     if (status === 'archived') {
       return this.archiveTask(boardId, taskId);
     }
-    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/move`, {
+    const data = await request<RawTask>(`/api/brain/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/move`, {
       method: 'POST',
       body: JSON.stringify({ status }),
     });
@@ -231,13 +231,13 @@ export const kanbanApi = {
   },
 
   async archiveTask(boardId: string, taskId: string): Promise<KanbanTask> {
-    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/archive`, { method: 'POST' });
+    const data = await request<RawTask>(`/api/brain/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/archive`, { method: 'POST' });
     return taskFromApi(data);
   },
 
   async cancelTeamTask(boardId: string, taskId: string): Promise<KanbanTask> {
     const data = await request<RawTask>(
-      `/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/team/cancel`,
+      `/api/brain/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/team/cancel`,
       { method: 'POST' },
     );
     return taskFromApi(data);
@@ -245,14 +245,14 @@ export const kanbanApi = {
 
   async cancelTask(boardId: string, taskId: string): Promise<KanbanTask> {
     const data = await request<RawTask>(
-      `/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/cancel`,
+      `/api/brain/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/cancel`,
       { method: 'POST' },
     );
     return taskFromApi(data);
   },
 
   async assignTask(boardId: string, taskId: string, assignee: string | null): Promise<KanbanTask> {
-    const data = await request<RawTask>(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/assign`, {
+    const data = await request<RawTask>(`/api/brain/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/assign`, {
       method: 'POST',
       body: JSON.stringify({ assignee }),
     });
@@ -265,7 +265,7 @@ export const kanbanApi = {
     action: 'pause' | 'resume' | 'run_now',
   ): Promise<KanbanTask> {
     const data = await request<RawTask>(
-      `/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/schedule`,
+      `/api/brain/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/schedule`,
       { method: 'POST', body: JSON.stringify({ action }) },
     );
     return taskFromApi(data);
@@ -278,7 +278,7 @@ export const kanbanApi = {
     afterId?: number,
   ): Promise<void> {
     const query = afterId != null ? `?after=${encodeURIComponent(String(afterId))}` : '';
-    const response = await requestRaw(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/events/stream${query}`, {
+    const response = await requestRaw(`/api/brain/v1/kanban/boards/${encodeURIComponent(boardId)}/events/stream${query}`, {
       headers: { Accept: 'text/event-stream' },
       signal,
     });
@@ -286,7 +286,7 @@ export const kanbanApi = {
   },
 
   async addComment(boardId: string, taskId: string, body: string): Promise<void> {
-    await request(`/agent-gateway/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/comments`, {
+    await request(`/api/brain/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}/comments`, {
       method: 'POST',
       body: JSON.stringify({ body, author: 'user' }),
     });

@@ -21,6 +21,6 @@ describe('sandboxApi', () => {
     await sandboxApi.stream((result) => updates.push(result.data?.metrics.cpuPercent ?? -1));
 
     expect(updates).toEqual([7.5]);
-    expect(String(fetchMock.mock.calls[0][0])).toContain('/sandboxes/v1/me/sandboxes/detail/stream');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/brain/v1/sandboxes/detail/stream');
   });
 });

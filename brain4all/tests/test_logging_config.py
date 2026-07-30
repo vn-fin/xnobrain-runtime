@@ -19,10 +19,10 @@ class LoggingConfigTests(unittest.TestCase):
             "name": "brain4all.http",
             "levelno": logging.INFO,
             "levelname": "INFO",
-            "msg": "HTTP GET /api/v1/health -> 200",
+            "msg": "HTTP GET /api/brain/v1/health -> 200",
         })
         rendered = handler.format(record)
 
         self.assertEqual(handler.formatter._fmt, LOG_FORMAT)
-        self.assertIn("INFO brain4all.http: HTTP GET /api/v1/health -> 200", rendered)
+        self.assertIn("INFO brain4all.http: HTTP GET /api/brain/v1/health -> 200", rendered)
         self.assertFalse(rendered.startswith("{"))

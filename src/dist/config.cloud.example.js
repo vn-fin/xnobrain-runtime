@@ -8,9 +8,9 @@ window.__BRAIN4ALL_CONFIG__ = {
     mode: "required",
     provider: "xno-firebase",
     firebaseApiKey: "AIzaSyD8AFSR1vg21WOwLNVhczWfWfi3YSmZ9NA",
-    tokenPath: "/control/v1/auth/token",
-    refreshPath: "/control/v1/auth/refresh",
-    mePath: "/control/v1/auth/me"
+    tokenPath: "/api/brain-control/v1/auth/token",
+    refreshPath: "/api/brain-control/v1/auth/refresh",
+    mePath: "/api/brain-control/v1/auth/me"
   },
   features: {
     login: true

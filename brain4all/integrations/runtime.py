@@ -72,7 +72,7 @@ class LocalRuntimeManager:
             "health": {
                 "healthy": True,
                 "status_code": 200,
-                "endpoint": "/api/v1/health",
+                "endpoint": "/api/brain/v1/health",
             },
             "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }

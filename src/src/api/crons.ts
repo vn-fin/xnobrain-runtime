@@ -1,7 +1,7 @@
 import { request } from './client';
 import type { CronDetail, CronJob } from '../types';
 
-const ROOT = '/agent-gateway/v1/cron/jobs';
+const ROOT = '/api/brain/v1/cron/jobs';
 type CronDTO = {
   id: string;
   agent_id: string;

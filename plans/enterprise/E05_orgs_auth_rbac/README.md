@@ -80,7 +80,7 @@ Concretely:
    reads the audit trail.
 7. **Thin OSS surface** — the "self-hosted, signed in" row of
    `docs/plans.md`: a login stub, session storage, and an extended
-   `/api/v1/limits` payload with org context + capability flags. Dormant
+   `/api/brain/v1/limits` payload with org context + capability flags. Dormant
    without `ENTERPRISE_API_URL`.
 
 ## The five fixed requirements (owner decisions, 2026-07-25)

@@ -51,7 +51,7 @@ Using the stateful multi-connection `FakeRouter`
   create on an OAuth provider returns 400 `oauth_connect_required`.
 - PATCH toggles `active`, reorders `priority`, and rejects an empty body.
 - DELETE removes exactly one; provider-level disconnect still removes all.
-- `GET /agent-gateway/v1/providers` is backward compatible (all previous
+- `GET /api/brain/v1/providers` is backward compatible (all previous
   fields identical; only `connection_count` added).
 - **Response-scan allowlist test**: every new route's `data` payload contains
   only the allowlisted connection keys `{id, provider, auth_type, name,
@@ -94,7 +94,7 @@ the Connectors section (Settings → Connectors,
    flow). Card shows `connected · 1 account`. Click "Add account" → popup →
    authorize with account B → paste callback. Card shows
    `connected · 2 accounts`; expanding lists both rows with distinct
-   emails. (`GET /agent-gateway/v1/providers/codex/connections` returns two
+   emails. (`GET /api/brain/v1/providers/codex/connections` returns two
    ids.)
 2. **Reorder.** Move account B up; reload the page; order persists (B first).
    Verify in 9router's own dashboard that priorities changed.

@@ -106,13 +106,13 @@ Out of scope: everything under Non-goals.
       `transcribe_audio`, both registries' `list_providers`, and the
       `/api/audio/*` HTTP shapes) and fails startup readiness with one clear
       message if incompatible.
-- [ ] `POST /agent-gateway/v1/voice/speak` returns synthesized audio for a text
+- [ ] `POST /api/brain/v1/voice/speak` returns synthesized audio for a text
       input using the configured provider.
-- [ ] `POST /agent-gateway/v1/voice/transcribe` returns a transcript for a
+- [ ] `POST /api/brain/v1/voice/transcribe` returns a transcript for a
       base64 audio recording.
-- [ ] `GET /agent-gateway/v1/voice/providers` and
-      `GET /agent-gateway/v1/voice/voices` return safe, non-secret data.
-- [ ] `GET`/`PUT` `/agent-gateway/v1/agents/{agent_id}/voice` read and write
+- [ ] `GET /api/brain/v1/voice/providers` and
+      `GET /api/brain/v1/voice/voices` return safe, non-secret data.
+- [ ] `GET`/`PUT` `/api/brain/v1/agents/{agent_id}/voice` read and write
       per-agent voice config atomically with a snapshot, exposing no secrets.
 - [ ] In the browser: a play button speaks an assistant reply and it is
       audible; recording a voice note yields a transcript that becomes a chat

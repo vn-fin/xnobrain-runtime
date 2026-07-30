@@ -15,7 +15,7 @@ provider, with entitlement checks, metering, and failure modes. Cross-links:
 │    │ gated by `voice` capability    │             │  POST /voice/v1/transcribe    │      │ (Phase 0)    │
 │    ▼                                │  HTTPS 443  │  GET  /voice/v1/voices        │      └──────▲───────┘
 │ FastAPI thin proxy                  │  outbound   │   ├ entitlement check (voice) │  keys only  │
-│  /agent-gateway/v1/voice/*          ├────────────►│   ├ caps (size/duration/text) │  here ──────┘
+│  /api/brain/v1/voice/*          ├────────────►│   ├ caps (size/duration/text) │  here ──────┘
 │  integrations/enterprise_voice.py   │  device/user│   ├ key vault (encrypted)     │
 │  NO provider keys anywhere          │  token      │   ├ provider adapters         │
 │                                     │             │   ├ transient buffers only    │
@@ -35,7 +35,7 @@ transient at every hop; only metering metadata persists (§5).
 ```
  Browser(ChatArea)      OSS proxy (:8642)              enterprise gateway               provider
     | click Play             |                                |                            |
-    |-- POST /agent-gateway/v1/voice/speak {text, voice_id} ->|                            |
+    |-- POST /api/brain/v1/voice/speak {text, voice_id} ->|                            |
     |                        | capability flag cached? no ────┼─ 403 capability_unavailable|
     |                        | yes: attach device/user token  |                            |
     |                        |-- POST /voice/v1/speak -------->                            |
@@ -59,7 +59,7 @@ transient at every hop; only metering metadata persists (§5).
 ```
  Browser(mic)           OSS proxy (:8642)              enterprise gateway               provider
     | MediaRecorder stop     |                                |                            |
-    |-- POST /agent-gateway/v1/voice/transcribe  ------------>|                            |
+    |-- POST /api/brain/v1/voice/transcribe  ------------>|                            |
     |   multipart: audio blob + mime (webm/mp4)               |                            |
     |                        | size <= 25 MiB else 413        |                            |
     |                        |-- POST /voice/v1/transcribe -->|                            |
@@ -79,7 +79,7 @@ fills the composer for review, never auto-sends.
 ### 2.3 Voices list
 
 ```
- Browser(settings) → OSS proxy GET /agent-gateway/v1/voice/voices
+ Browser(settings) → OSS proxy GET /api/brain/v1/voice/voices
                    → gateway GET /voice/v1/voices (auth + entitlement)
                    → provider voices catalog (e.g. ElevenLabs /v1/voices, xi-api-key server-side)
                    ← {voices:[{voice_id, name, label}]}   — never a key, mirrors 006's rule
@@ -216,9 +216,9 @@ rules beyond gating and size checks — policy lives in the gateway.
 
 | Method | Path | Operation | Body | Returns |
 | --- | --- | --- | --- | --- |
-| POST | `/agent-gateway/v1/voice/speak` | `voice_speak` | JSON `{text, voice_id?}` | raw `audio/mpeg` bytes (`special` raw-response route, `response_model=None`, like `workspace_upload`) |
-| POST | `/agent-gateway/v1/voice/transcribe` | `voice_transcribe` | multipart `audio` file + `mime_type` | envelope `{transcript, seconds}` |
-| GET | `/agent-gateway/v1/voice/voices` | `voice_voices` | — | envelope `{voices: [{voice_id, name, label}]}` |
+| POST | `/api/brain/v1/voice/speak` | `voice_speak` | JSON `{text, voice_id?}` | raw `audio/mpeg` bytes (`special` raw-response route, `response_model=None`, like `workspace_upload`) |
+| POST | `/api/brain/v1/voice/transcribe` | `voice_transcribe` | multipart `audio` file + `mime_type` | envelope `{transcript, seconds}` |
+| GET | `/api/brain/v1/voice/voices` | `voice_voices` | — | envelope `{voices: [{voice_id, name, label}]}` |
 
 Error translation at the proxy (stable codes, entitlements-v1 aligned):
 
@@ -234,7 +234,7 @@ Error translation at the proxy (stable codes, entitlements-v1 aligned):
 
 Chosen ([approaches](approaches.md) Decision C): extend the existing limits
 payload. `brain4all/handlers/api.py` line 97 (`"limits"` op, route
-`GET /api/v1/limits` at `brain4all/routes/setup.py` line 40) currently
+`GET /api/brain/v1/limits` at `brain4all/routes/setup.py` line 40) currently
 returns a static dict; it gains a `capabilities` object populated from the
 cached entitlement document when signed in, `{}` otherwise:
 

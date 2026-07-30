@@ -154,8 +154,8 @@ lists live in `CONFIG_SCHEMA` in `web_server.py`:
 
 Hermes can already synthesize and transcribe in the same process, but:
 
-1. No Brain4All **contract**: nothing under `/agent-gateway/v1/voice/*` or
-   `/agent-gateway/v1/agents/{id}/voice`.
+1. No Brain4All **contract**: nothing under `/api/brain/v1/voice/*` or
+   `/api/brain/v1/agents/{id}/voice`.
 2. No Brain4All **adapter**: no `integrations/voice.py` calling the Hermes
    tools/registries, no service, no models.
 3. No **per-agent voice**: Hermes TTS/STT read the root profile `config.yaml`

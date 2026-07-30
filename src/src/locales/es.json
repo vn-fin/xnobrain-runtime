@@ -153,7 +153,7 @@
     "noSandboxDesc": "No tienes un runtime de Hermes en ejecución. Inicia el contenedor local para dar a tus asistentes espacio de trabajo, terminal y cómputo.",
     "create": "Crear sandbox",
     "provisioningTitle": "Aprovisionando sandbox…",
-    "specs": "Aprovisiona vía POST /sandboxes/v1/me/sandboxes/setup · 6 vCPU · 24 GiB · disco 80 GiB",
+    "specs": "Aprovisiona vía POST /api/brain/v1/sandboxes/setup · 6 vCPU · 24 GiB · disco 80 GiB",
     "refresh": "Actualizar"
   },
   "onboarding": {
@@ -193,7 +193,7 @@
   },
   "modals": {
     "createAgent": "Crear asistente",
-    "createAgentApi": "Corresponde a POST /agent-gateway/v1/agents",
+    "createAgentApi": "Corresponde a POST /api/brain/v1/agents",
     "name": "Nombre",
     "namePlaceholder": "ej. Analista de datos",
     "description": "Descripción",

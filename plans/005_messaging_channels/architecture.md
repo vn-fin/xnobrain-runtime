@@ -11,7 +11,7 @@ Brain4All boundaries (`AGENTS.md`, `plans/001_kanban_foundation/README.md`):
 
 ```
 React "Channels" page (src/src/components/ChannelsView.tsx, hooks/useChannels.ts, api/channels.ts)
-        │  HTTP  /agent-gateway/v1/agents/{agent_id}/channels...  (APIEnvelope)
+        │  HTTP  /api/brain/v1/agents/{agent_id}/channels...  (APIEnvelope)
         ▼
 routes/setup.py            ← ONLY route-assembly point; adds Route(...) rows
         ▼
@@ -58,7 +58,7 @@ arg / `_profile_scope`). A missing/invalid agent → 404 before any Hermes call.
 
 ## 3. New Brain4All API contract
 
-Base: `/agent-gateway/v1` (matches the existing agent-scoped surface in
+Base: `/api/brain/v1` (matches the existing agent-scoped surface in
 `routes/setup.py`). All responses use the standard `APIEnvelope`
 (`{success, data, message, status_code}`). All paths are per-agent so channel
 config is unambiguously scoped to one profile.
@@ -222,7 +222,7 @@ the root install's.
 React ChannelsView            Brain4All (routes→handler→service→integration)         Hermes (same process)
   │ toggle Telegram on              │                                                     │
   │ + paste bot token               │                                                     │
-  ├── PUT /agent-gateway/v1/agents/A/channels/telegram ──▶                                │
+  ├── PUT /api/brain/v1/agents/A/channels/telegram ──▶                                │
   │      {enabled:true, env:{TELEGRAM_BOT_TOKEN:…, TELEGRAM_ALLOWED_USERS:…}}             │
   │                                 │ resolve A→profile (404 if missing)                  │
   │                                 │ multiplex guard: telegram not port-binding → OK     │

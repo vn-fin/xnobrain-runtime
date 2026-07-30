@@ -249,7 +249,7 @@ export function useAssistants() {
   const testAgent = (id: string) => agentsApi.test(id);
 
   // Set the global (default) provider + model used as the template for new
-  // agents, via PATCH /agent-gateway/v1/agents-configs/global.
+  // agents, via PATCH /api/brain/v1/agents-configs/global.
   const setDefaultModel = async (provider: string, model: string) => {
     const updated = await agentsApi.updateGlobalConfig({ provider, model });
     setDefaultConfig(mapGlobalConfig(updated) ?? {
@@ -321,7 +321,7 @@ export function useAssistants() {
   };
 
   // Explicitly enable/disable an installed skill for an agent via
-  // PATCH /agent-gateway/v1/agents-skills/{agent_id}/{skill_id}. Optimistically
+  // PATCH /api/brain/v1/agents-skills/{agent_id}/{skill_id}. Optimistically
   // reflects the new state so the toggle feels instant, then reconciles.
   const setSkillEnabled = async (agentId: string, skillId: string, enabled: boolean) => {
     const previous = agentsRef.current;

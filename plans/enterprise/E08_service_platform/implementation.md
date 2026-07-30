@@ -106,7 +106,7 @@ rollup gains a `voice.stt` capability filter (feeds the E04 admin Voice page and
 Per E04's OSS slice — unchanged in spirit:
 - `brain4all/integrations/enterprise_voice.py`: forward multipart to
   `ENTERPRISE_API_URL /voice/v1/transcribe` with the member session; map errors.
-- Route `/agent-gateway/v1/voice/transcribe` registered only when `ENTERPRISE_API_URL`
+- Route `/api/brain/v1/voice/transcribe` registered only when `ENTERPRISE_API_URL`
   is set — absent env ⇒ 404, zero behavior change for OSS users.
 - UI: the composer mic button (already designed in E04 + mockups) records →
   posts → inserts transcript into the input. Hidden without the `voice` capability

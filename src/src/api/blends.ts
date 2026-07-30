@@ -35,7 +35,7 @@ export type BlendPatchInput = {
   sticky_limit?: number | null;
 };
 
-const ROOT = '/agent-gateway/v1/blends';
+const ROOT = '/api/brain/v1/blends';
 const enc = (value: string) => encodeURIComponent(value);
 
 export const blendsApi = {

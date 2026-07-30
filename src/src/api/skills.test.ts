@@ -25,7 +25,7 @@ describe('skillsApi', () => {
     const result = await skillsApi.listDefault();
 
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0][0]).toBe(`${window.location.origin}/agent-gateway/v1/agents-skills`);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${window.location.origin}/api/brain/v1/agents-skills`);
     expect(result.skills.map((skill) => skill.skill_id)).toEqual(['default-notes']);
   });
 
@@ -38,7 +38,7 @@ describe('skillsApi', () => {
 
     const result = await skillsApi.installDefault({ source: 'skills-sh/anthropics/skills/pdf', enable: false });
 
-    expect(fetchMock.mock.calls[0][0]).toBe(`${window.location.origin}/agent-gateway/v1/agents-skills`);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${window.location.origin}/api/brain/v1/agents-skills`);
     expect(fetchMock.mock.calls[0][1].method).toBe('POST');
     expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
       source: 'skills-sh/anthropics/skills/pdf',

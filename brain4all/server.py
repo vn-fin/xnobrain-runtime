@@ -41,12 +41,12 @@ def create_app():
         @app.middleware("http")
         async def request_log(request, call_next):
             started = time.monotonic()
-            # Brain4All owns the /api/v1 management surface. Hermes' dashboard
+            # Brain4All owns the /api/brain/v1 management surface. Hermes' dashboard
             # middleware protects its own /api routes with a private browser
             # session token; mark only our versioned platform routes as already
             # authenticated so they remain usable through Traefik without
             # exposing that internal token to the React application.
-            if request.url.path.startswith("/api/v1/"):
+            if request.url.path.startswith("/api/brain/v1/"):
                 request.state.token_authenticated = True
             response = await call_next(request)
             traceparent = request.headers.get("traceparent", "")

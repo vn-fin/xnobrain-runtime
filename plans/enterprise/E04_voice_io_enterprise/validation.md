@@ -11,7 +11,7 @@ Cross-links: [README](README.md) · [findings](findings.md) ·
 - [ ] **TTS:** on a claimed device whose account has the `voice` capability,
       click Play on an assistant reply; audio plays audibly. Evidence:
       manual note + the OSS integration test asserting
-      `POST /agent-gateway/v1/voice/speak` returns `Content-Type:
+      `POST /api/brain/v1/voice/speak` returns `Content-Type:
       audio/mpeg` with non-empty bytes, and the gateway test asserting the
       full middleware chain ran.
 - [ ] **STT:** record a voice note via the mic; the transcript appears in
@@ -31,7 +31,7 @@ Cross-links: [README](README.md) · [findings](findings.md) ·
 - [ ] Direct gateway calls without the capability (bypassing the OSS proxy)
       also return 403 `capability_unavailable` — the gateway check is
       authoritative. Evidence: Go handler test.
-- [ ] Signed-out / no `ENTERPRISE_API_URL`: `GET /api/v1/limits` returns
+- [ ] Signed-out / no `ENTERPRISE_API_URL`: `GET /api/brain/v1/limits` returns
       `"capabilities": {}`; OSS behaves exactly as before this plan (route
       snapshot diff shows only gated additions). Evidence: test comparing
       limits payloads in both states.

@@ -2,7 +2,7 @@ import { request, requestWithMeta, type ResponsePagination } from './client';
 import type { AgentSkillDTO, AgentSkillInstallRequestDTO, AgentSkillListResponseDTO } from './contracts/agentGateway';
 import type { AgentSkill } from '../types';
 
-const ROOT = '/agent-gateway/v1/agents-skills';
+const ROOT = '/api/brain/v1/agents-skills';
 const encoded = (value: string) => encodeURIComponent(value);
 
 export type SkillsPage = { skills: AgentSkill[]; pagination?: ResponsePagination };

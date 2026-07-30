@@ -273,8 +273,8 @@ dormancy rule). Exact files:
    `local_features_unlimited` stays `True` unconditionally — local limits
    never change (`docs/plans.md` enforcement rule 1).
 3. **`brain4all/routes/setup.py`** — local-only routes
-   `POST /api/v1/enterprise/auth/login`, `POST
-   /api/v1/enterprise/auth/logout`, `GET /api/v1/enterprise/auth/session`
+   `POST /api/brain/v1/enterprise/auth/login`, `POST
+   /api/brain/v1/enterprise/auth/logout`, `GET /api/brain/v1/enterprise/auth/session`
    (tag `System`), thin passthroughs to `enterprise_auth.py` so the
    browser never talks to the enterprise host directly (token stays
    server-side in `DATA_DIR`).

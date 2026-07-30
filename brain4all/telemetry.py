@@ -51,7 +51,7 @@ def configure(app) -> None:
     trace.set_tracer_provider(provider)
     FastAPIInstrumentor.instrument_app(
         app,
-        excluded_urls="/api/v1/health",
+        excluded_urls="/api/brain/v1/health",
         http_capture_headers_server_request="",
         http_capture_headers_server_response="",
     )

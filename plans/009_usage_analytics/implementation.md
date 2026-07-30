@@ -255,13 +255,13 @@ File: `brain4all/routes/setup.py`. Add an Analytics group to the `ROUTES` tuple
 (place near the Cron/Kanban blocks):
 
 ```python
-Route("GET", "/agent-gateway/v1/analytics/agents", "analytics_agents", tags=("Analytics",)),
-Route("GET", "/agent-gateway/v1/analytics/usage", "analytics_usage", tags=("Analytics",)),
-Route("GET", "/agent-gateway/v1/analytics/models", "analytics_models", tags=("Analytics",)),
-Route("GET", "/agent-gateway/v1/analytics/timeseries", "analytics_timeseries", tags=("Analytics",)),
-Route("GET", "/agent-gateway/v1/analytics/agents/{agent_id}/usage", "analytics_agent_usage", tags=("Analytics",)),
-Route("GET", "/agent-gateway/v1/analytics/agents/{agent_id}/budget", "analytics_budget_get", tags=("Analytics",)),
-Route("PUT", "/agent-gateway/v1/analytics/agents/{agent_id}/budget", "analytics_budget_set", AgentBudgetPatch, tags=("Analytics",)),
+Route("GET", "/api/brain/v1/analytics/agents", "analytics_agents", tags=("Analytics",)),
+Route("GET", "/api/brain/v1/analytics/usage", "analytics_usage", tags=("Analytics",)),
+Route("GET", "/api/brain/v1/analytics/models", "analytics_models", tags=("Analytics",)),
+Route("GET", "/api/brain/v1/analytics/timeseries", "analytics_timeseries", tags=("Analytics",)),
+Route("GET", "/api/brain/v1/analytics/agents/{agent_id}/usage", "analytics_agent_usage", tags=("Analytics",)),
+Route("GET", "/api/brain/v1/analytics/agents/{agent_id}/budget", "analytics_budget_get", tags=("Analytics",)),
+Route("PUT", "/api/brain/v1/analytics/agents/{agent_id}/budget", "analytics_budget_set", AgentBudgetPatch, tags=("Analytics",)),
 ```
 
 Import `AgentBudgetPatch` in the `from ..models import (...)` block at the top of

@@ -147,6 +147,6 @@ ENV PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr
 
 VOLUME ["/opt/data"]
 EXPOSE 8642 20128
-HEALTHCHECK --interval=15s --timeout=3s --retries=10 CMD /usr/local/lib/hermes-agent/venv/bin/python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/api/v1/health',timeout=2)" || exit 1
+HEALTHCHECK --interval=15s --timeout=3s --retries=10 CMD /usr/local/lib/hermes-agent/venv/bin/python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/api/brain/v1/health',timeout=2)" || exit 1
 USER root
 ENTRYPOINT ["/usr/local/bin/brain4all-runtime"]

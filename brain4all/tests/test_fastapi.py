@@ -303,8 +303,8 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_health_identifies_fastapi_database_free_runtime(self):
         async with self.client() as client:
-            response = await client.get("/api/v1/health")
-            deployment_response = await client.get("/api/v1/system/deployment")
+            response = await client.get("/api/brain/v1/health")
+            deployment_response = await client.get("/api/brain/v1/system/deployment")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["data"]["api"], "fastapi")
         deployment = deployment_response.json()["data"]
@@ -343,10 +343,10 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_local_only_deployment_has_no_enterprise_proxy_routes(self):
         with patch.dict(os.environ, {"ENTERPRISE_API_URL": "https://control.example.test"}):
             async with self.client() as client:
-                deployment = await client.get("/api/v1/system/deployment")
-                dashboard = await client.get("/api/v1/dashboard/overview")
-                skills = await client.get("/api/v1/skills")
-                device = await client.get("/api/v1/device")
+                deployment = await client.get("/api/brain/v1/system/deployment")
+                dashboard = await client.get("/api/brain/v1/dashboard/overview")
+                skills = await client.get("/api/brain/v1/skills")
+                device = await client.get("/api/brain/v1/device")
 
         self.assertEqual(deployment.status_code, 200, deployment.text)
         self.assertEqual(deployment.json()["data"], {
@@ -356,7 +356,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_sandbox_detail_reports_only_important_runtime_usage(self):
         async with self.client() as client:
-            response = await client.get("/sandboxes/v1/me/sandboxes/detail")
+            response = await client.get("/api/brain/v1/sandboxes/detail")
         self.assertEqual(response.status_code, 200, response.text)
         detail = response.json()["data"]
         self.assertEqual(detail["info"]["type"], "container")
@@ -402,7 +402,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         self.composition.service.config._run_command = AsyncMock(side_effect=install_from_url)
         async with self.client() as client:
-            response = await client.post("/agent-gateway/v1/agents-skills", json={"source": source})
+            response = await client.post("/api/brain/v1/agents-skills", json={"source": source})
         self.assertEqual(response.status_code, 201, response.text)
         data = response.json()["data"]
         self.assertEqual([item["skill_id"] for item in data], ["office-helper"])
@@ -428,11 +428,11 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         async with self.client() as client:
             toggled = await client.patch(
-                "/agent-gateway/v1/agents-skills/disabled-skill",
+                "/api/brain/v1/agents-skills/disabled-skill",
                 json={"enabled": False},
             )
             created = await client.post(
-                "/agent-gateway/v1/agents",
+                "/api/brain/v1/agents",
                 json={"display_name": "Enabled Skills Only"},
             )
 
@@ -450,7 +450,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_profile_registry_uses_generated_ids_and_display_names(self):
         async with self.client() as client:
-            created = await client.post("/agent-gateway/v1/agents", json={
+            created = await client.post("/api/brain/v1/agents", json={
                 "display_name": "Research Lead",
                 "description": "Coordinates research workflows.",
             })
@@ -477,7 +477,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         async with self.client() as client:
             updated = await client.patch(
-                f"/agent-gateway/v1/agents/{profile['id']}/metadata",
+                f"/api/brain/v1/agents/{profile['id']}/metadata",
                 json={"display_name": "Research Director"},
             )
         self.assertEqual(updated.json()["data"]["display_name"], "Research Director")
@@ -491,13 +491,13 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             encoding="utf-8",
         )
         async with self.client() as client:
-            listed = await client.get("/agent-gateway/v1/agents")
+            listed = await client.get("/api/brain/v1/agents")
         listed_profile = next(item for item in listed.json()["data"] if item["id"] == profile["id"])
         self.assertEqual(listed_profile["display_name"], "Registry Name")
 
     async def test_write_approvals_default_on_and_allow_always_disables_the_selected_gate(self):
         async with self.client() as client:
-            created = await client.post("/agent-gateway/v1/agents", json={"display_name": "Safe Writer"})
+            created = await client.post("/api/brain/v1/agents", json={"display_name": "Safe Writer"})
         self.assertEqual(created.status_code, 201, created.text)
         agent = created.json()["data"]
         agent_id = agent["id"]
@@ -511,7 +511,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         async with self.client() as client:
             toggled = await client.patch(
-                f"/agent-gateway/v1/agents-configs/{agent_id}",
+                f"/api/brain/v1/agents-configs/{agent_id}",
                 json={"skills_write_approval": False},
             )
         self.assertEqual(toggled.status_code, 200, toggled.text)
@@ -525,7 +525,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         )
         async with self.client() as client:
             allowed = await client.post(
-                "/conversations/v1/conversations/conversation/runs/run_test/approval",
+                "/api/brain/v1/conversations/conversation/runs/run_test/approval",
                 params={"agent": agent_id},
                 json={"choice": "always", "subsystem": "memory"},
             )
@@ -540,18 +540,18 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_agent_skill_memory_mcp_and_snapshots_are_profile_local(self):
         async with self.client() as client:
-            created = await client.post("/agent-gateway/v1/agents", json={"name": "Researcher", "description": "test"})
+            created = await client.post("/api/brain/v1/agents", json={"name": "Researcher", "description": "test"})
         self.assertEqual(created.status_code, 201, created.text)
         agent_id = created.json()["data"]["id"]
         profile = self.profiles / agent_id
 
         async with self.client() as client:
-            skill = await client.post(f"/agent-gateway/v1/agents-skills/{agent_id}", json={
+            skill = await client.post(f"/api/brain/v1/agents-skills/{agent_id}", json={
                 "skill_id": "notes", "content": "---\nname: notes\n---\n# Notes\n",
             })
-            memory = await client.patch(f"/agent-gateway/v1/agents/{agent_id}/memory", json={"memory": "remember this"})
-            mcp = await client.put(f"/agent-gateway/v1/agents-mcp/{agent_id}", json={"servers": {"docs": {"command": "docs-mcp"}}})
-            snapshot_response = await client.get(f"/agent-gateway/v1/agents/{agent_id}/snapshots")
+            memory = await client.patch(f"/api/brain/v1/agents/{agent_id}/memory", json={"memory": "remember this"})
+            mcp = await client.put(f"/api/brain/v1/agents-mcp/{agent_id}", json={"servers": {"docs": {"command": "docs-mcp"}}})
+            snapshot_response = await client.get(f"/api/brain/v1/agents/{agent_id}/snapshots")
         self.assertEqual(skill.status_code, 201, skill.text)
         self.assertEqual(memory.status_code, 200, memory.text)
         self.assertEqual(mcp.status_code, 200, mcp.text)
@@ -591,12 +591,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         async with self.client() as client:
             created = await client.post(
-                "/agent-gateway/v1/agents",
+                "/api/brain/v1/agents",
                 json={"name": "Skill Consumer"},
             )
             agent_id = created.json()["data"]["id"]
             response = await client.post(
-                f"/agent-gateway/v1/agents-skills/{agent_id}",
+                f"/api/brain/v1/agents-skills/{agent_id}",
                 json={
                     "skill_id": "shared-notes",
                     "name": "shared-notes",
@@ -639,7 +639,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             encoding="utf-8",
         )
         async with self.client() as client:
-            created = await client.post("/agent-gateway/v1/agents", json={"name": "Scoped"})
+            created = await client.post("/api/brain/v1/agents", json={"name": "Scoped"})
         agent_id = created.json()["data"]["id"]
         agent_skill = self.profiles / agent_id / "skills" / "custom" / "agent-only" / "SKILL.md"
         agent_skill.parent.mkdir(parents=True)
@@ -649,8 +649,8 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         )
 
         async with self.client() as client:
-            default_response = await client.get("/agent-gateway/v1/agents-skills")
-            agent_response = await client.get(f"/agent-gateway/v1/agents-skills/{agent_id}")
+            default_response = await client.get("/api/brain/v1/agents-skills")
+            agent_response = await client.get(f"/api/brain/v1/agents-skills/{agent_id}")
 
         self.assertEqual(default_response.status_code, 200, default_response.text)
         self.assertEqual(agent_response.status_code, 200, agent_response.text)
@@ -671,17 +671,17 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         ids = []
         async with self.client() as client:
             for title in ("Lead", "Worker"):
-                result = await client.post("/agent-gateway/v1/agents", json={"name": title})
+                result = await client.post("/api/brain/v1/agents", json={"name": title})
                 ids.append(result.json()["data"]["id"])
-            team = await client.post("/api/v1/teams", json={
+            team = await client.post("/api/brain/v1/teams", json={
                 "name": "Research", "orchestrator_id": ids[0],
                 "members": [{"agent_id": ids[1], "role": "researcher", "allowed_tools": ["web"]}],
             })
-            cron = await client.post("/agent-gateway/v1/cron/jobs", json={
+            cron = await client.post("/api/brain/v1/cron/jobs", json={
                 "agent_id": ids[0], "name": "Digest", "prompt": "Summarize", "interval_minutes": 60,
             })
-            teams = await client.get("/api/v1/teams")
-            crons = await client.get("/agent-gateway/v1/cron/jobs")
+            teams = await client.get("/api/brain/v1/teams")
+            crons = await client.get("/api/brain/v1/cron/jobs")
         self.assertEqual(team.status_code, 201, team.text)
         self.assertEqual(cron.status_code, 201, cron.text)
         self.assertEqual(len(teams.json()["data"]), 1)
@@ -691,9 +691,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         ids = []
         async with self.client() as client:
             for display_name in ("Coordinator", "Researcher", "Reviewer"):
-                response = await client.post("/agent-gateway/v1/agents", json={"display_name": display_name})
+                response = await client.post("/api/brain/v1/agents", json={"display_name": display_name})
                 ids.append(response.json()["data"]["id"])
-            team_response = await client.post("/api/v1/teams", json={
+            team_response = await client.post("/api/brain/v1/teams", json={
                 "name": "DAG team",
                 "orchestrator_id": ids[0],
                 "members": [
@@ -723,7 +723,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         self.composition.service.agents.chat = AsyncMock(side_effect=fake_chat)
         async with self.client() as client:
-            response = await client.post(f"/api/v1/teams/{team_id}/run", json={
+            response = await client.post(f"/api/brain/v1/teams/{team_id}/run", json={
                 "synthesis": "Produce the final answer.",
             })
         self.assertEqual(response.status_code, 200, response.text)
@@ -735,7 +735,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prompts[-1][0], ids[0])
 
         async with self.client() as client:
-            cycle = await client.post(f"/api/v1/teams/{team_id}/run", json={
+            cycle = await client.post(f"/api/brain/v1/teams/{team_id}/run", json={
                 "workflow": [
                     {"id": "a", "task": "A", "needs": ["b"]},
                     {"id": "b", "task": "B", "needs": ["a"]},
@@ -749,9 +749,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         from hermes_cli import kanban_db
 
         async with self.client() as client:
-            created = await client.post("/agent-gateway/v1/agents", json={"name": "Scheduler"})
+            created = await client.post("/api/brain/v1/agents", json={"name": "Scheduler"})
             agent_id = created.json()["data"]["id"]
-            response = await client.post("/agent-gateway/v1/cron/jobs", json={
+            response = await client.post("/api/brain/v1/cron/jobs", json={
                 "agent_id": agent_id, "name": "Due", "prompt": "Run", "interval_minutes": 60,
             })
         job = response.json()["data"]
@@ -778,18 +778,18 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_swagger_documents_typed_management_and_stream_requests(self):
         schema = self.app.openapi()
         self.assertEqual(
-            schema["paths"]["/agent-gateway/v1/agents"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            schema["paths"]["/api/brain/v1/agents"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/AgentCreate",
         )
         self.assertEqual(
-            schema["paths"]["/conversations/v1/conversations/{conversation_id}/chat/stream"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            schema["paths"]["/api/brain/v1/conversations/{conversation_id}/chat/stream"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ChatRequest",
         )
 
     async def test_workspace_office_preview_returns_inline_pdf(self):
         async with self.client() as client:
             created = await client.post(
-                "/agent-gateway/v1/agents",
+                "/api/brain/v1/agents",
                 json={"display_name": "Preview worker"},
             )
             agent_id = created.json()["data"]["id"]
@@ -806,7 +806,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 ),
             ):
                 response = await client.get(
-                    f"/agent-gateway/v1/agents-workspaces/{agent_id}/preview",
+                    f"/api/brain/v1/agents-workspaces/{agent_id}/preview",
                     params={"path": "report.xlsx"},
                 )
 
@@ -818,7 +818,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_workspace_workbook_returns_normalized_xlsx(self):
         async with self.client() as client:
             created = await client.post(
-                "/agent-gateway/v1/agents",
+                "/api/brain/v1/agents",
                 json={"display_name": "Workbook worker"},
             )
             agent_id = created.json()["data"]["id"]
@@ -835,7 +835,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 ),
             ):
                 response = await client.get(
-                    f"/agent-gateway/v1/agents-workspaces/{agent_id}/workbook",
+                    f"/api/brain/v1/agents-workspaces/{agent_id}/workbook",
                     params={"path": "report.xlsx"},
                 )
 
@@ -855,7 +855,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         total_chunks = 8
         async with self.client() as client:
             created = await client.post(
-                "/agent-gateway/v1/agents",
+                "/api/brain/v1/agents",
                 json={"display_name": "Upload worker"},
             )
             agent_id = created.json()["data"]["id"]
@@ -864,7 +864,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 start = index * WORKSPACE_UPLOAD_CHUNK_BYTES
                 part = payload[start:start + WORKSPACE_UPLOAD_CHUNK_BYTES]
                 response = await client.post(
-                    f"/agent-gateway/v1/agents-workspaces/{agent_id}/upload/chunk",
+                    f"/api/brain/v1/agents-workspaces/{agent_id}/upload/chunk",
                     data={
                         "path": "reports",
                         "upload_id": "large-upload-1",
@@ -898,12 +898,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_workspace_chunk_upload_rejects_path_traversal(self):
         async with self.client() as client:
             created = await client.post(
-                "/agent-gateway/v1/agents",
+                "/api/brain/v1/agents",
                 json={"display_name": "Safe upload worker"},
             )
             agent_id = created.json()["data"]["id"]
             response = await client.post(
-                f"/agent-gateway/v1/agents-workspaces/{agent_id}/upload/chunk",
+                f"/api/brain/v1/agents-workspaces/{agent_id}/upload/chunk",
                 data={
                     "path": "../outside",
                     "upload_id": "unsafe-upload",
@@ -923,7 +923,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(len(payload), 5 * 1024 * 1024)
         async with self.client() as client:
             created = await client.post(
-                "/agent-gateway/v1/agents",
+                "/api/brain/v1/agents",
                 json={"display_name": "Stream worker"},
             )
             agent_id = created.json()["data"]["id"]
@@ -932,11 +932,11 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             (workspace / "large.txt").write_bytes(payload)
 
             legacy = await client.post(
-                f"/agent-gateway/v1/agents-workspaces/{agent_id}/read",
+                f"/api/brain/v1/agents-workspaces/{agent_id}/read",
                 json={"path": "large.txt"},
             )
             streamed = await client.get(
-                f"/agent-gateway/v1/agents-workspaces/{agent_id}/file",
+                f"/api/brain/v1/agents-workspaces/{agent_id}/file",
                 params={"path": "large.txt"},
             )
 
@@ -948,10 +948,10 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bundle_round_trip_is_checked_and_excludes_credentials(self):
         async with self.client() as client:
-            created = await client.post("/agent-gateway/v1/agents", json={"name": "Portable"})
+            created = await client.post("/api/brain/v1/agents", json={"name": "Portable"})
             agent_id = created.json()["data"]["id"]
             (self.profiles / agent_id / ".env").write_text("SECRET=never-export\n", encoding="utf-8")
-            exported = await client.post("/api/v1/bundles/export", json={"agent_ids": [agent_id]})
+            exported = await client.post("/api/brain/v1/bundles/export", json={"agent_ids": [agent_id]})
         self.assertEqual(exported.status_code, 200, exported.text)
         with ZipFile(BytesIO(exported.content)) as archive:
             self.assertNotIn(f"profiles/{agent_id}/.env", archive.namelist())
@@ -960,9 +960,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('.zip"', exported.headers["content-disposition"])
         upload = {"file": ("profile.zip", exported.content, "application/zip")}
         async with self.client() as client:
-            inspected = await client.post("/api/v1/bundles/inspect", files=upload)
-            preview = await client.post("/api/v1/bundles/dry-run", files=upload)
-            applied = await client.post("/api/v1/bundles/apply", files=upload)
+            inspected = await client.post("/api/brain/v1/bundles/inspect", files=upload)
+            preview = await client.post("/api/brain/v1/bundles/dry-run", files=upload)
+            applied = await client.post("/api/brain/v1/bundles/apply", files=upload)
         self.assertEqual(inspected.status_code, 200, inspected.text)
         self.assertEqual(preview.status_code, 200, preview.text)
         self.assertEqual(preview.json()["data"]["collisions"], [agent_id])
@@ -980,7 +980,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             agent_ids = []
             for name in ("Snapshot coordinator", "Snapshot researcher", "Snapshot reviewer"):
                 created = await client.post(
-                    "/agent-gateway/v1/agents",
+                    "/api/brain/v1/agents",
                     json={"display_name": name},
                 )
                 agent_ids.append(created.json()["data"]["id"])
@@ -988,7 +988,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 "team-snapshot-secret\n",
                 encoding="utf-8",
             )
-            created_team = await client.post("/api/v1/teams", json={
+            created_team = await client.post("/api/brain/v1/teams", json={
                 "name": "Portable Team",
                 "description": "A complete portable workflow.",
                 "orchestrator_id": agent_ids[0],
@@ -1003,7 +1003,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             })
             team_id = created_team.json()["data"]["id"]
             exported = await client.post(
-                "/api/v1/bundles/export",
+                "/api/brain/v1/bundles/export",
                 json={"team_ids": [team_id]},
             )
         self.assertEqual(exported.status_code, 200, exported.text)
@@ -1021,11 +1021,11 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         upload = {"file": ("team.zip", exported.content, "application/zip")}
         async with self.client() as client:
-            applied = await client.post("/api/v1/bundles/apply", files=upload)
+            applied = await client.post("/api/brain/v1/bundles/apply", files=upload)
             self.assertEqual(applied.status_code, 201, applied.text)
             report = applied.json()["data"]
             imported_team_id = report["team_id_mappings"][team_id]
-            imported = await client.get(f"/api/v1/teams/{imported_team_id}")
+            imported = await client.get(f"/api/brain/v1/teams/{imported_team_id}")
         self.assertEqual(imported.status_code, 200, imported.text)
         team = imported.json()["data"]
         mappings = report["agent_id_mappings"]
@@ -1043,7 +1043,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         (self.root / ".env").write_text("DEFAULT_SECRET=from-default\n", encoding="utf-8")
         (self.root / "auth.json").write_text('{"session":"default-auth"}\n', encoding="utf-8")
         async with self.client() as client:
-            created = await client.post("/agent-gateway/v1/agents", json={"display_name": "Chunked profile"})
+            created = await client.post("/api/brain/v1/agents", json={"display_name": "Chunked profile"})
         agent_id = created.json()["data"]["id"]
         profile = self.profiles / agent_id
         (profile / ".env").write_text("SOURCE_TOKEN=never-export-this\n", encoding="utf-8")
@@ -1054,12 +1054,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         (profile / "config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
 
         async with self.client() as client:
-            started = await client.post("/api/v1/bundles/exports", json={"agent_ids": [agent_id]})
+            started = await client.post("/api/brain/v1/bundles/exports", json={"agent_ids": [agent_id]})
             transfer = started.json()["data"]
             self.assertTrue(transfer["filename"].endswith(".zip"))
             parts = []
             for number in range(transfer["total_parts"]):
-                response = await client.get(f"/api/v1/bundles/exports/{transfer['export_id']}/parts/{number}")
+                response = await client.get(f"/api/brain/v1/bundles/exports/{transfer['export_id']}/parts/{number}")
                 self.assertEqual(response.status_code, 200, response.text)
                 parts.append(response.content)
         self.assertGreater(transfer["total_parts"], 1)
@@ -1074,21 +1074,21 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("api_key", exported_config.get("providers", {}).get("private", {}))
 
         async with self.client() as client:
-            upload_started = await client.post("/api/v1/bundles/uploads", json={"filename": "profile.zip", "size": len(bundle)})
+            upload_started = await client.post("/api/brain/v1/bundles/uploads", json={"filename": "profile.zip", "size": len(bundle)})
             upload = upload_started.json()["data"]
             for number in range(upload["total_parts"]):
                 chunk = bundle[number * upload["chunk_size"]:(number + 1) * upload["chunk_size"]]
                 response = await client.put(
-                    f"/api/v1/bundles/uploads/{upload['upload_id']}/parts/{number}",
+                    f"/api/brain/v1/bundles/uploads/{upload['upload_id']}/parts/{number}",
                     content=chunk,
                     headers={"Content-Type": "application/octet-stream"},
                 )
                 self.assertEqual(response.status_code, 201, response.text)
-            completed = await client.post(f"/api/v1/bundles/uploads/{upload['upload_id']}/complete", json={})
+            completed = await client.post(f"/api/brain/v1/bundles/uploads/{upload['upload_id']}/complete", json={})
             self.assertEqual(completed.status_code, 200, completed.text)
             self.assertIn("MISSING_API_KEY", completed.json()["data"]["preview"]["missing_environment"])
             applied = await client.post(
-                f"/api/v1/bundles/uploads/{upload['upload_id']}/apply",
+                f"/api/brain/v1/bundles/uploads/{upload['upload_id']}/apply",
                 json={"environment": {"MISSING_API_KEY": "server-specific-value"}},
             )
         self.assertEqual(applied.status_code, 201, applied.text)
@@ -1102,7 +1102,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_run_control_has_a_stable_response(self):
         async with self.client() as client:
-            stopped = await client.post("/conversations/v1/conversations/c/runs/run_00000000000000000000000000000000/stop?agent=a")
+            stopped = await client.post("/api/brain/v1/conversations/c/runs/run_00000000000000000000000000000000/stop?agent=a")
         self.assertEqual(stopped.status_code, 404)
         self.assertEqual(stopped.json()["error"]["code"], "run_not_found")
 
@@ -1110,16 +1110,16 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         missing_id = "20260727_092138_26112b"
         async with self.client() as client:
             created = await client.post(
-                "/agent-gateway/v1/agents",
+                "/api/brain/v1/agents",
                 json={"display_name": "Session worker"},
             )
             agent_id = created.json()["data"]["id"]
             streamed = await client.post(
-                f"/conversations/v1/conversations/{missing_id}/chat/stream?agent={agent_id}",
+                f"/api/brain/v1/conversations/{missing_id}/chat/stream?agent={agent_id}",
                 json={"input": "Do not create a conversation for this message."},
             )
             conversations = await client.get(
-                f"/conversations/v1/conversations?agent={agent_id}",
+                f"/api/brain/v1/conversations?agent={agent_id}",
             )
 
         self.assertEqual(streamed.status_code, 200)
@@ -1133,20 +1133,20 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_default_conversation_names_are_numbered_by_the_backend(self):
         async with self.client() as client:
             created = await client.post(
-                "/agent-gateway/v1/agents",
+                "/api/brain/v1/agents",
                 json={"display_name": "Conversation numbering"},
             )
             agent_id = created.json()["data"]["id"]
             first = await client.post(
-                f"/conversations/v1/conversations?agent={agent_id}",
+                f"/api/brain/v1/conversations?agent={agent_id}",
                 json={},
             )
             second = await client.post(
-                f"/conversations/v1/conversations?agent={agent_id}",
+                f"/api/brain/v1/conversations?agent={agent_id}",
                 json={},
             )
             third = await client.post(
-                f"/conversations/v1/conversations?agent={agent_id}",
+                f"/api/brain/v1/conversations?agent={agent_id}",
                 json={"title": "New Conversation"},
             )
 
@@ -1160,12 +1160,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_conversation_usage_is_aggregated_from_the_hermes_session(self):
         async with self.client() as client:
             created = await client.post(
-                "/agent-gateway/v1/agents",
+                "/api/brain/v1/agents",
                 json={"display_name": "Usage worker"},
             )
             agent_id = created.json()["data"]["id"]
             conversation = await client.post(
-                f"/conversations/v1/conversations?agent={agent_id}",
+                f"/api/brain/v1/conversations?agent={agent_id}",
                 json={"title": "Usage test"},
             )
             conversation_id = conversation.json()["data"]["id"]
@@ -1207,7 +1207,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 connection.close()
 
             response = await client.get(
-                f"/conversations/v1/conversations/{conversation_id}/usage?agent={agent_id}",
+                f"/api/brain/v1/conversations/{conversation_id}/usage?agent={agent_id}",
             )
 
         self.assertEqual(response.status_code, 200, response.text)

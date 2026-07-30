@@ -86,7 +86,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
 
     async def _create_agent(self, client, display_name):
         response = await client.post(
-            "/agent-gateway/v1/agents", json={"display_name": display_name})
+            "/api/brain/v1/agents", json={"display_name": display_name})
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["data"]["id"]
 
@@ -212,13 +212,13 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self._insert(a, model="m1", inp=100, out=50, est=0.10)
             self._insert(b, model="m2", inp=200, out=100, est=0.20)
 
-            agents = (await client.get("/agent-gateway/v1/analytics/agents")).json()["data"]["agents"]
+            agents = (await client.get("/api/brain/v1/analytics/agents")).json()["data"]["agents"]
             self.assertEqual(
                 {row["agent_id"] for row in agents},
                 {"big-brother", a, b},
             )
 
-            data = (await client.get("/agent-gateway/v1/analytics/usage")).json()["data"]
+            data = (await client.get("/api/brain/v1/analytics/usage")).json()["data"]
             self.assertEqual(data["totals"]["input_tokens"], 300)
             self.assertEqual(data["totals"]["output_tokens"], 150)
             self.assertEqual(data["totals"]["total_tokens"], 450)
@@ -239,9 +239,9 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
                 wraps=aggregate_router_usage,
             ) as aggregate:
                 overview_response, models_response, series_response = await asyncio.gather(
-                    client.get(f"/agent-gateway/v1/analytics/overview{query}"),
-                    client.get(f"/agent-gateway/v1/analytics/models{query}"),
-                    client.get(f"/agent-gateway/v1/analytics/timeseries{query}"),
+                    client.get(f"/api/brain/v1/analytics/overview{query}"),
+                    client.get(f"/api/brain/v1/analytics/models{query}"),
+                    client.get(f"/api/brain/v1/analytics/timeseries{query}"),
                 )
 
             self.assertEqual(overview_response.status_code, 200)
@@ -264,7 +264,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self._insert(a, model="m1", inp=100, out=50, est=0.10)
             self._insert(b, model="m2", inp=200, out=100, est=0.20)
 
-            data = (await client.get(f"/agent-gateway/v1/analytics/usage?agents={a}")).json()["data"]
+            data = (await client.get(f"/api/brain/v1/analytics/usage?agents={a}")).json()["data"]
             self.assertEqual(data["totals"]["input_tokens"], 100)
             self.assertEqual(data["totals"]["sessions"], 1)
             self.assertEqual(data["agents_selected"], [a])
@@ -281,17 +281,17 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self._insert_router(model="gpt-5", inp=500, out=80, cost=0.42)
 
             before = (await client.get(
-                "/agent-gateway/v1/analytics/usage?days=30"
+                "/api/brain/v1/analytics/usage?days=30"
             )).json()["data"]
             self.assertEqual(before["totals"]["total_tokens"], 580)
             self.assertEqual(before["source"]["kind"], "nine_router")
             self.assertTrue(before["source"]["durable"])
 
-            removed = await client.delete(f"/agent-gateway/v1/agents/{deleted}/delete")
+            removed = await client.delete(f"/api/brain/v1/agents/{deleted}/delete")
             self.assertEqual(removed.status_code, 200, removed.text)
 
             after = (await client.get(
-                "/agent-gateway/v1/analytics/usage?days=30"
+                "/api/brain/v1/analytics/usage?days=30"
             )).json()["data"]
             self.assertEqual(after["totals"]["total_tokens"], 580)
             self.assertEqual(after["totals"]["cost_usd"], 0.42)
@@ -308,14 +308,14 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self._insert(a, model="m1", inp=100, out=0, est=0.1, started_at=now - 3600)
             self._insert(a, model="m1", inp=999, out=0, est=0.9, started_at=now - 60 * 86400)
 
-            recent = (await client.get("/agent-gateway/v1/analytics/usage?days=30")).json()["data"]
+            recent = (await client.get("/api/brain/v1/analytics/usage?days=30")).json()["data"]
             self.assertEqual(recent["totals"]["input_tokens"], 100)  # 60-day row excluded
 
-            wide = (await client.get("/agent-gateway/v1/analytics/usage?days=90&bucket=week")).json()["data"]
+            wide = (await client.get("/api/brain/v1/analytics/usage?days=90&bucket=week")).json()["data"]
             self.assertEqual(wide["totals"]["input_tokens"], 1099)
             self.assertTrue(all("-W" in row["bucket"] for row in wide["series"]))
 
-            bad = await client.get("/agent-gateway/v1/analytics/usage?from=2099-01-01&to=2000-01-01")
+            bad = await client.get("/api/brain/v1/analytics/usage?from=2099-01-01&to=2000-01-01")
             self.assertEqual(bad.status_code, 400)
 
     async def test_budget_advisory_set_get_and_clear(self):
@@ -324,14 +324,14 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self._insert(a, model="m1", inp=100, out=50, est=0.30)
 
             ok = (await client.put(
-                f"/agent-gateway/v1/analytics/agents/{a}/budget",
+                f"/api/brain/v1/analytics/agents/{a}/budget",
                 json={"monthly_usd": 1000})).json()["data"]
             self.assertEqual(ok["status"], "ok")
             self.assertTrue(ok["advisory"])
             self.assertAlmostEqual(ok["spend_usd"], 0.30, places=6)
 
             over = (await client.put(
-                f"/agent-gateway/v1/analytics/agents/{a}/budget",
+                f"/api/brain/v1/analytics/agents/{a}/budget",
                 json={"monthly_usd": 0.01})).json()["data"]
             self.assertEqual(over["status"], "exceeded")
 
@@ -340,7 +340,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("brain4all_budget", config)
 
             cleared = (await client.put(
-                f"/agent-gateway/v1/analytics/agents/{a}/budget",
+                f"/api/brain/v1/analytics/agents/{a}/budget",
                 json={"monthly_usd": None})).json()["data"]
             self.assertEqual(cleared["status"], "unset")
             config = yaml.safe_load((self.profiles / a / "config.yaml").read_text("utf-8"))
@@ -352,13 +352,13 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self._insert(a, model="m1", inp=100, out=50, est=0.10)
             db = self.profiles / a / "state.db"
             before = db.stat().st_mtime_ns
-            await client.get("/agent-gateway/v1/analytics/usage")
-            await client.get(f"/agent-gateway/v1/analytics/agents/{a}/usage")
+            await client.get("/api/brain/v1/analytics/usage")
+            await client.get(f"/api/brain/v1/analytics/agents/{a}/usage")
             self.assertEqual(db.stat().st_mtime_ns, before)
 
     async def test_unknown_agent_is_404(self):
         async with self.client() as client:
-            response = await client.get("/agent-gateway/v1/analytics/agents/ghost/usage")
+            response = await client.get("/api/brain/v1/analytics/agents/ghost/usage")
             self.assertEqual(response.status_code, 404)
 
 

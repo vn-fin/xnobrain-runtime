@@ -327,12 +327,12 @@ Import `ConnectionCreate, ConnectionPatch` in the existing `..models` import
 block (line 14), then append inside the Providers group:
 
 ```python
-Route("GET", "/agent-gateway/v1/providers/{provider_id}/connections", "provider_connections_list", tags=("Providers",)),
-Route("POST", "/agent-gateway/v1/providers/{provider_id}/connections", "provider_connection_create", ConnectionCreate, tags=("Providers",)),
-Route("PATCH", "/agent-gateway/v1/providers/{provider_id}/connections/{connection_id}", "provider_connection_patch", ConnectionPatch, tags=("Providers",)),
-Route("POST", "/agent-gateway/v1/providers/{provider_id}/connections/{connection_id}/test", "provider_connection_test", tags=("Providers",)),
-Route("DELETE", "/agent-gateway/v1/providers/{provider_id}/connections/{connection_id}", "provider_connection_delete", tags=("Providers",)),
-Route("GET", "/agent-gateway/v1/providers/{provider_id}/connections/{connection_id}/usage", "provider_connection_usage", tags=("Providers",)),
+Route("GET", "/api/brain/v1/providers/{provider_id}/connections", "provider_connections_list", tags=("Providers",)),
+Route("POST", "/api/brain/v1/providers/{provider_id}/connections", "provider_connection_create", ConnectionCreate, tags=("Providers",)),
+Route("PATCH", "/api/brain/v1/providers/{provider_id}/connections/{connection_id}", "provider_connection_patch", ConnectionPatch, tags=("Providers",)),
+Route("POST", "/api/brain/v1/providers/{provider_id}/connections/{connection_id}/test", "provider_connection_test", tags=("Providers",)),
+Route("DELETE", "/api/brain/v1/providers/{provider_id}/connections/{connection_id}", "provider_connection_delete", tags=("Providers",)),
+Route("GET", "/api/brain/v1/providers/{provider_id}/connections/{connection_id}/usage", "provider_connection_usage", tags=("Providers",)),
 ```
 
 ## Phase 4 — Frontend (file by file)
@@ -506,9 +506,9 @@ plants it to prove the service doesn't widen the shape. Keep both variants.)
 
 New tests (ASGI client, envelope assertions like the existing ones):
 
-- list: `GET /agent-gateway/v1/providers/codex/connections` → 200, two rows
+- list: `GET /api/brain/v1/providers/codex/connections` → 200, two rows
   sorted by priority, `connected` true.
-- ownership guard: `GET /agent-gateway/v1/providers/openai/connections/…`
+- ownership guard: `GET /api/brain/v1/providers/openai/connections/…`
   with `codex-1` in PATCH/test/delete/usage paths → 404.
 - create: `POST …/openai/connections {"api_key": "sk-x"}` → 201 and the
   response JSON does not contain `sk-x`; `POST …/codex/connections` → 400
@@ -517,7 +517,7 @@ New tests (ASGI client, envelope assertions like the existing ones):
   `{"priority": 0}` reorders; `{}` → 400.
 - delete one: only `codex-2` removed; `connected` still true; provider-level
   `POST …/codex/disconnect` still deletes all (backward-compat check).
-- providers list backward-compat: `GET /agent-gateway/v1/providers` — shape
+- providers list backward-compat: `GET /api/brain/v1/providers` — shape
   unchanged plus `connection_count`, `connected` true with one active of two.
 - usage: `GET …/connections/codex-1/usage` → normalized quota list.
 - **response-scan (security)**: exercise every route above and assert the

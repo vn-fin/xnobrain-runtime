@@ -21,7 +21,7 @@ describe('runtimeConfig', () => {
       auth: {
         mode: 'required',
         provider: 'gateway',
-        bootstrapPath: '/control/v1/bootstrap',
+        bootstrapPath: '/api/brain-control/v1/bootstrap',
       },
     })).toMatchObject({
       edition: 'enterprise',
@@ -32,7 +32,7 @@ describe('runtimeConfig', () => {
       auth: {
         mode: 'required',
         provider: 'gateway',
-        bootstrapPath: '/control/v1/bootstrap',
+        bootstrapPath: '/api/brain-control/v1/bootstrap',
       },
     });
   });

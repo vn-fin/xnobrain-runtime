@@ -132,7 +132,7 @@ plan format and the program principles above.
 - [ ] Phase 0: compatibility test pins the Hermes/team symbols the engine uses (`AgentManager.chat`, subprocess helpers) and locks the `_run_hermes_command` CancelledError behavior.
 - [ ] **Subprocess-kill fix:** `_run_hermes_command` gains an `except asyncio.CancelledError` branch that kills the child `hermes` process (mirroring `_chat_stream_events`) — without it, cancelling a team run orphans subprocesses.
 - [ ] Run records persisted as atomic files under `DATA_DIR/teams/runs/<team_id>/<run_id>.json` (status machine: pending → running → completed/failed/cancelled); stale `running` records marked `interrupted_by_restart` on first read.
-- [ ] Async run API: `POST /api/v1/teams/{id}/runs` (202), list/detail/cancel routes, and an SSE events route following the `kanban_event_stream` handler pattern; existing synchronous `POST /run` stays backward-compatible.
+- [ ] Async run API: `POST /api/brain/v1/teams/{id}/runs` (202), list/detail/cancel routes, and an SSE events route following the `kanban_event_stream` handler pattern; existing synchronous `POST /run` stays backward-compatible.
 - [ ] Shared `_execute_workflow` engine used by both sync and async paths; in-process run registry; cancellation terminates child subprocesses (pgrep-verified in validation).
 - [ ] Frontend: TeamsView Runs panel (history, live per-step status via SSE, cancel).
 - [ ] Cross-profile teams keep chat-per-step (per the approaches analysis — Hermes `delegate_tool` cannot span profiles); no delegate_tool migration in this plan.
@@ -144,7 +144,7 @@ Implemented and verified 2026-07-25 (`make check` green; 18 new tests; live prob
 
 - [x] Phase 0: live-probe test (`brain4all/tests/test_nine_router_probe.py`) verified `PUT /api/providers/{id}` partial `{isActive}`/`{priority}` (200, returns `{connection}`), field names, and pins-agree. **Finding:** 9router re-normalizes `priority` (sent 5 → stored 1) → service reads-after-write.
 - [x] Adapter: `list_connections` returns `email`+`priority`; new `update_connection`, `usage_for_connection`, `_quota_list` refactor; credentials never cross the boundary (adapter test + live check).
-- [x] Connection-level API under `/agent-gateway/v1/providers/{id}/connections*` (list/add/patch/test/delete/usage); provider "connected" = ≥1 active; provider-level disconnect kept as explicit remove-all (UI confirm names the count).
+- [x] Connection-level API under `/api/brain/v1/providers/{id}/connections*` (list/add/patch/test/delete/usage); provider "connected" = ≥1 active; provider-level disconnect kept as explicit remove-all (UI confirm names the count).
 - [x] Curated 6-provider allowlist kept (Decision A); widening deferred.
 - [x] Frontend: expandable accounts list per provider card (label, active toggle, ↑/↓ reorder, test dot, usage bar, remove) + per-provider "Add account" (api-key inline form / OAuth popup reuse); `tsc -b` + `vite build` clean.
 - [x] Security: no api-key/token/`providerSpecificData` in any Brain4All response (response-scan test + live add returns no key).
@@ -157,7 +157,7 @@ Implemented and verified 2026-07-25 (`make check` green; 20 new tests; live prob
 
 - [x] Phase 0: live probe (`brain4all/tests/test_blends_probe.py`) confirmed combos CRUD, name charset (400), combo→`/v1/models` as `owned_by:"combo"`, and **PATCH `/api/settings` replaces the whole `comboStrategies` map** (→ read-modify-write). **Refinement:** `POST /api/combos` returns the combo object directly (top-level `id`).
 - [x] Adapter: public `list_combos`/`create_combo`/`update_combo`/`delete_combo` + `combo_settings`/`set_combo_strategy`/`clear_combo_strategy`/`set_combo_sticky_limit` (settings whitelisted to the 3 combo keys); **`list_models` now surfaces user combos as `{provider:"blend"}`** (previously hidden), ordered auto → blends → real models; auto-combo sweep skips blends.
-- [x] `BlendService` + `BlendCreate`/`BlendPatch`; routes `GET/POST /agent-gateway/v1/blends`, `GET .../available-models`, `PATCH/DELETE .../{id}`; naming layer = "blend" (upstream stays "combos").
+- [x] `BlendService` + `BlendCreate`/`BlendPatch`; routes `GET/POST /api/brain/v1/blends`, `GET .../available-models`, `PATCH/DELETE .../{id}`; naming layer = "blend" (upstream stays "combos").
 - [x] Guards: name regex + reserved `auto` (403), collision vs blends/real-model-ids (409), models 1–24/no-dupe/known, fusion needs ≥2 models + judge, judge only with fusion, sticky only with round-robin; strategy write is compensated by combo delete on failure; rename moves the strategy entry.
 - [x] "auto" is a read-only system blend (403 on modify/delete; no upstream mutation) — verified by test.
 - [x] Frontend: Settings → **Model Blends** panel (`BlendsSection` + `BlendEditorDialog` with ordered model multi-select, strategy radio, sticky-limit, fusion judge + cost caveat) and a **Blends group** at the top of the chat model picker; a blend name flows into agent config unchanged (`routedConfig` forces provider). `tsc -b` + `vite build` clean.

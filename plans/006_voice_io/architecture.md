@@ -68,7 +68,7 @@ DATA_DIR/profiles/<agent-id>/config.yaml
 ```
 User clicks "Play" on an assistant message
   -> src/api/voice.ts speak(agentId, text)
-     POST /agent-gateway/v1/voice/speak?agent=<id>  { text }
+     POST /api/brain/v1/voice/speak?agent=<id>  { text }
        -> handlers.dispatch -> operation "voice_speak"
          -> services/voice.py speak(agent_id, text)
               validate: non-empty, <= MAX_TTS_CHARS
@@ -92,7 +92,7 @@ loop via `asyncio.to_thread`.
 User presses mic, MediaRecorder records, user stops
   -> blob -> FileReader.readAsDataURL -> "data:audio/webm;base64,..."
   -> src/api/voice.ts transcribe(agentId, dataUrl, mimeType)
-     POST /agent-gateway/v1/voice/transcribe?agent=<id>  { data_url, mime_type }
+     POST /api/brain/v1/voice/transcribe?agent=<id>  { data_url, mime_type }
        -> handlers.dispatch -> operation "voice_transcribe"
          -> services/voice.py transcribe(agent_id, data_url, mime_type)
               validate: data: prefix, ;base64, audio/* (or video/webm),
@@ -118,12 +118,12 @@ All under the existing `agent-gateway/v1` prefix, registered only in
 
 | Method | Path | Operation | Body model | Returns (in `data`) |
 | --- | --- | --- | --- | --- |
-| GET | `/agent-gateway/v1/voice/providers` | `voice_providers` | — | `{ tts: [{name,label,builtin}], stt: [...] }` |
-| GET | `/agent-gateway/v1/voice/voices` | `voice_voices` | — | `{ available: bool, voices: [{voice_id,name,label}], error? }` |
-| POST | `/agent-gateway/v1/voice/speak` | `voice_speak` | `VoiceSpeakRequest` | `{ data_url, mime_type, provider }` |
-| POST | `/agent-gateway/v1/voice/transcribe` | `voice_transcribe` | `VoiceTranscribeRequest` | `{ transcript, provider }` |
-| GET | `/agent-gateway/v1/agents/{agent_id}/voice` | `agent_voice_get` | — | `VoiceConfig` (safe) |
-| PUT | `/agent-gateway/v1/agents/{agent_id}/voice` | `agent_voice_put` | `VoiceConfigUpdate` | `VoiceConfig` (safe) |
+| GET | `/api/brain/v1/voice/providers` | `voice_providers` | — | `{ tts: [{name,label,builtin}], stt: [...] }` |
+| GET | `/api/brain/v1/voice/voices` | `voice_voices` | — | `{ available: bool, voices: [{voice_id,name,label}], error? }` |
+| POST | `/api/brain/v1/voice/speak` | `voice_speak` | `VoiceSpeakRequest` | `{ data_url, mime_type, provider }` |
+| POST | `/api/brain/v1/voice/transcribe` | `voice_transcribe` | `VoiceTranscribeRequest` | `{ transcript, provider }` |
+| GET | `/api/brain/v1/agents/{agent_id}/voice` | `agent_voice_get` | — | `VoiceConfig` (safe) |
+| PUT | `/api/brain/v1/agents/{agent_id}/voice` | `agent_voice_put` | `VoiceConfigUpdate` | `VoiceConfig` (safe) |
 
 - `speak`/`transcribe` take the agent via the existing `?agent=<id>` query
   convention (same as conversations). `voices` may take `?provider=elevenlabs`

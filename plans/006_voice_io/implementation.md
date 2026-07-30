@@ -156,12 +156,12 @@ Add these to the `ROUTES` tuple (place a `("Voice",)` tag group; import the new
 body models at the top with the others). These are **standard JSON envelope
 routes** — no `special`, because base64 audio rides inside `APIEnvelope`:
 ```python
-    Route("GET",  "/agent-gateway/v1/voice/providers", "voice_providers", tags=("Voice",)),
-    Route("GET",  "/agent-gateway/v1/voice/voices", "voice_voices", tags=("Voice",)),
-    Route("POST", "/agent-gateway/v1/voice/speak", "voice_speak", VoiceSpeakRequest, tags=("Voice",)),
-    Route("POST", "/agent-gateway/v1/voice/transcribe", "voice_transcribe", VoiceTranscribeRequest, tags=("Voice",)),
-    Route("GET",  "/agent-gateway/v1/agents/{agent_id}/voice", "agent_voice_get", tags=("Voice",)),
-    Route("PUT",  "/agent-gateway/v1/agents/{agent_id}/voice", "agent_voice_put", VoiceConfigUpdate, tags=("Voice",)),
+    Route("GET",  "/api/brain/v1/voice/providers", "voice_providers", tags=("Voice",)),
+    Route("GET",  "/api/brain/v1/voice/voices", "voice_voices", tags=("Voice",)),
+    Route("POST", "/api/brain/v1/voice/speak", "voice_speak", VoiceSpeakRequest, tags=("Voice",)),
+    Route("POST", "/api/brain/v1/voice/transcribe", "voice_transcribe", VoiceTranscribeRequest, tags=("Voice",)),
+    Route("GET",  "/api/brain/v1/agents/{agent_id}/voice", "agent_voice_get", tags=("Voice",)),
+    Route("PUT",  "/api/brain/v1/agents/{agent_id}/voice", "agent_voice_put", VoiceConfigUpdate, tags=("Voice",)),
 ```
 Update the model import block:
 ```python

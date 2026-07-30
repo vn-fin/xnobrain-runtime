@@ -122,7 +122,7 @@ setting an *agent's model* to a blend continues to go through the existing
   `brain4all/models/api.py`.
 - **Phase 3 — Handlers + routes.** `blends_*` operations in
   `brain4all/handlers/api.py` and the `Route(...)` lines in
-  `brain4all/routes/setup.py` (tag `Blends`, versioned `/agent-gateway/v1`).
+  `brain4all/routes/setup.py` (tag `Blends`, versioned `/api/brain/v1`).
 - **Phase 4 — Frontend.** `src/src/api/blends.ts`, `src/src/hooks/useBlends.ts`,
   a Blends section in `src/src/features/system/SystemView.tsx`, and the
   "Blends" group in the `src/src/components/ChatArea.tsx` model picker.
@@ -134,17 +134,17 @@ File-by-file steps are in [implementation.md](implementation.md).
 
 ## Definition of done
 
-- Creating a blend of two real models via `POST /agent-gateway/v1/blends`
+- Creating a blend of two real models via `POST /api/brain/v1/blends`
   creates the combo in 9router (visible in `GET /api/combos` and as a model in
-  `/v1/models`), and the blend appears in `GET /agent-gateway/v1/blends` and
+  `/v1/models`), and the blend appears in `GET /api/brain/v1/blends` and
   in every Brain4All model list with `provider: "blend"`.
 - Setting an agent's model to the blend name through the existing
-  `PATCH /agent-gateway/v1/agents-configs/{agent_id}` writes
+  `PATCH /api/brain/v1/agents-configs/{agent_id}` writes
   `model.default: <blend>` into the profile `config.yaml`, and a chat on that
   agent routes through the blend (9router log line
   `Combo "<name>" with N models (strategy: ...)`).
 - Switching the blend's strategy to `round-robin` and to `fusion` round-trips
-  through `GET /agent-gateway/v1/blends` and changes the logged strategy.
+  through `GET /api/brain/v1/blends` and changes the logged strategy.
 - `auto` is listed as a system blend and every mutation of it through the
   blends API is rejected (403), while `ensure_auto_combo()` keeps managing it.
 - With 9router stopped, every blends endpoint returns the standard failure

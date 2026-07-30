@@ -297,11 +297,11 @@ engine persists `cancelled` records during teardown (findings.md §7).
 1. After line 124 (`teams_run`), add exactly:
 
 ```python
-Route("POST", "/api/v1/teams/{team_id}/runs", "team_runs_start", TeamRun, tags=("Teams",)),
-Route("GET", "/api/v1/teams/{team_id}/runs", "team_runs_list", tags=("Teams",)),
-Route("GET", "/api/v1/teams/{team_id}/runs/{run_id}", "team_runs_get", tags=("Teams",)),
-Route("POST", "/api/v1/teams/{team_id}/runs/{run_id}/cancel", "team_runs_cancel", tags=("Teams",)),
-Route("GET", "/api/v1/teams/{team_id}/runs/{run_id}/events", "team_run_event_stream", special="team_run_stream", tags=("Teams",)),
+Route("POST", "/api/brain/v1/teams/{team_id}/runs", "team_runs_start", TeamRun, tags=("Teams",)),
+Route("GET", "/api/brain/v1/teams/{team_id}/runs", "team_runs_list", tags=("Teams",)),
+Route("GET", "/api/brain/v1/teams/{team_id}/runs/{run_id}", "team_runs_get", tags=("Teams",)),
+Route("POST", "/api/brain/v1/teams/{team_id}/runs/{run_id}/cancel", "team_runs_cancel", tags=("Teams",)),
+Route("GET", "/api/brain/v1/teams/{team_id}/runs/{run_id}/events", "team_run_event_stream", special="team_run_stream", tags=("Teams",)),
 ```
 
 2. In `_endpoint` (163–199), add the branch:
@@ -318,7 +318,7 @@ elif route.special == "team_run_stream":
 Note: FastAPI route ordering — `/runs/{run_id}` vs the literal `/run` and
 `/runs` paths do not conflict (distinct segments), but keep the new lines
 grouped after `teams_run` for readability. Starlette matches in registration
-order; `/api/v1/teams/{team_id}/runs` (POST/GET) must be registered — as
+order; `/api/brain/v1/teams/{team_id}/runs` (POST/GET) must be registered — as
 written — before nothing in particular; no shadowing exists. Verify with the
 Swagger page during Phase 4.
 
@@ -332,10 +332,10 @@ Swagger page during Phase 4.
 
 ```ts
 startRun: (teamId, task, workflow = [], synthesis?) =>
-  request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs`, { method: 'POST', body: JSON.stringify({ task, workflow, synthesis }) }),
-listRuns: (teamId) => request<TeamRunRecord[]>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs`),
-getRun: (teamId, runId) => request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}`),
-cancelRun: (teamId, runId) => request<TeamRunRecord>(`/api/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
+  request<TeamRunRecord>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs`, { method: 'POST', body: JSON.stringify({ task, workflow, synthesis }) }),
+listRuns: (teamId) => request<TeamRunRecord[]>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs`),
+getRun: (teamId, runId) => request<TeamRunRecord>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}`),
+cancelRun: (teamId, runId) => request<TeamRunRecord>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
 watchRun: async (teamId, runId, onEvent, signal) => { /* requestRaw + readSSE, mirroring src/src/api/kanban.ts lines 235–239 */ },
 ```
 

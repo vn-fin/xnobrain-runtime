@@ -66,7 +66,7 @@ endpoints do) so it never stalls the event loop.
 ### ASCII data-flow diagram
 
 ```
-                         GET /agent-gateway/v1/analytics/usage?days=30&bucket=day
+                         GET /api/brain/v1/analytics/usage?days=30&bucket=day
                                             |
                                      handlers/api.py
                                             |  service.analytics.usage_summary()
@@ -132,7 +132,7 @@ Rules:
 
 ## New Brain4All API contract
 
-Versioned under the existing `/agent-gateway/v1` prefix, tag `Analytics`. All
+Versioned under the existing `/api/brain/v1` prefix, tag `Analytics`. All
 reads; only the budget PUT mutates (config.yaml). Responses ride the standard
 `APIEnvelope`.
 
@@ -152,13 +152,13 @@ All read endpoints share a **Grafana-style control set** as query parameters:
 
 | Method | Path | Operation | Body | Purpose |
 |--------|------|-----------|------|---------|
-| GET | `/agent-gateway/v1/analytics/agents` | `analytics_agents` | — | Lightweight `[{agent_id, display_name}]` list to populate the multi-select — no `state.db` reads (reuses `AgentManager.list_agents()` names only). |
-| GET | `/agent-gateway/v1/analytics/usage` | `analytics_usage` | — | Summary for the **selected agents + range**: totals, per-agent, per-model, time-series. Query: `agents`, `days`\|`from`/`to`, `bucket`. |
-| GET | `/agent-gateway/v1/analytics/agents/{agent_id}/usage` | `analytics_agent_usage` | — | One agent's totals, per-model, time-series. Query: `days`\|`from`/`to`, `bucket`. |
-| GET | `/agent-gateway/v1/analytics/models` | `analytics_models` | — | Per-model breakdown summed across the **selected** agents. Query: `agents`, `days`\|`from`/`to`. |
-| GET | `/agent-gateway/v1/analytics/timeseries` | `analytics_timeseries` | — | Dense token+cost series across the **selected** agents. Query: `agents`, `days`\|`from`/`to`, `bucket`. |
-| GET | `/agent-gateway/v1/analytics/agents/{agent_id}/budget` | `analytics_budget_get` | — | Current budget config + computed spend/status. |
-| PUT | `/agent-gateway/v1/analytics/agents/{agent_id}/budget` | `analytics_budget_set` | `AgentBudgetPatch` | Set/clear advisory budget (snapshot + atomic write). |
+| GET | `/api/brain/v1/analytics/agents` | `analytics_agents` | — | Lightweight `[{agent_id, display_name}]` list to populate the multi-select — no `state.db` reads (reuses `AgentManager.list_agents()` names only). |
+| GET | `/api/brain/v1/analytics/usage` | `analytics_usage` | — | Summary for the **selected agents + range**: totals, per-agent, per-model, time-series. Query: `agents`, `days`\|`from`/`to`, `bucket`. |
+| GET | `/api/brain/v1/analytics/agents/{agent_id}/usage` | `analytics_agent_usage` | — | One agent's totals, per-model, time-series. Query: `days`\|`from`/`to`, `bucket`. |
+| GET | `/api/brain/v1/analytics/models` | `analytics_models` | — | Per-model breakdown summed across the **selected** agents. Query: `agents`, `days`\|`from`/`to`. |
+| GET | `/api/brain/v1/analytics/timeseries` | `analytics_timeseries` | — | Dense token+cost series across the **selected** agents. Query: `agents`, `days`\|`from`/`to`, `bucket`. |
+| GET | `/api/brain/v1/analytics/agents/{agent_id}/budget` | `analytics_budget_get` | — | Current budget config + computed spend/status. |
+| PUT | `/api/brain/v1/analytics/agents/{agent_id}/budget` | `analytics_budget_set` | `AgentBudgetPatch` | Set/clear advisory budget (snapshot + atomic write). |
 
 `analytics/agents` exists so the dashboard can fill its agent dropdown cheaply
 (the Grafana "variable" pattern) without triggering a full usage sweep.

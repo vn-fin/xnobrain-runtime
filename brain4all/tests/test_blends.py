@@ -281,31 +281,31 @@ class BlendRouteTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_crud_and_guards(self):
         async with self.client() as client:
-            created = await client.post("/agent-gateway/v1/blends", json={"name": "duo", "models": ["cx/a", "cx/b"]})
+            created = await client.post("/api/brain/v1/blends", json={"name": "duo", "models": ["cx/a", "cx/b"]})
             self.assertEqual(created.status_code, 201)
             blend_id = created.json()["data"]["id"]
 
-            blends = (await client.get("/agent-gateway/v1/blends")).json()["data"]["blends"]
+            blends = (await client.get("/api/brain/v1/blends")).json()["data"]["blends"]
             self.assertEqual(blends[0]["name"], "auto")
             self.assertTrue(blends[0]["system"])
 
-            models = (await client.get("/agent-gateway/v1/blends/available-models")).json()["data"]["data"]
+            models = (await client.get("/api/brain/v1/blends/available-models")).json()["data"]["data"]
             ids = {m["id"] for m in models}
             self.assertNotIn("auto", ids)
             self.assertNotIn("duo", ids)
 
             auto_id = next(b["id"] for b in blends if b["name"] == "auto")
-            self.assertEqual((await client.delete(f"/agent-gateway/v1/blends/{auto_id}")).status_code, 403)
+            self.assertEqual((await client.delete(f"/api/brain/v1/blends/{auto_id}")).status_code, 403)
             self.assertEqual(
-                (await client.post("/agent-gateway/v1/blends", json={"name": "duo", "models": ["cx/a"]})).status_code, 409)
-            self.assertEqual((await client.delete(f"/agent-gateway/v1/blends/{blend_id}")).status_code, 200)
+                (await client.post("/api/brain/v1/blends", json={"name": "duo", "models": ["cx/a"]})).status_code, 409)
+            self.assertEqual((await client.delete(f"/api/brain/v1/blends/{blend_id}")).status_code, 200)
 
     async def test_unavailable_router_returns_503(self):
         async def boom():
             raise NineRouterAPIError("9Router is unavailable", code="nine_router_unavailable", status=503)
         self.router.list_combos = lambda: boom()
         async with self.client() as client:
-            self.assertEqual((await client.get("/agent-gateway/v1/blends")).status_code, 503)
+            self.assertEqual((await client.get("/api/brain/v1/blends")).status_code, 503)
 
 
 if __name__ == "__main__":

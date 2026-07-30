@@ -64,7 +64,7 @@ analytics integration follows the same shape but issues aggregate SQL
 Present: `conversations_usage`
 ([`brain4all/handlers/api.py`](../../brain4all/handlers/api.py) ~line 86) is a
 **stub** wired at
-`GET /conversations/v1/conversations/{conversation_id}/usage`
+`GET /api/brain/v1/conversations/{conversation_id}/usage`
 ([`routes/setup.py`](../../brain4all/routes/setup.py) ~line 77). It returns a
 hard-coded zero payload:
 

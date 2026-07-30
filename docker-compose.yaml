@@ -77,7 +77,7 @@ services:
       - edge
       - control
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/api/v1/health',timeout=2)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/api/brain/v1/health',timeout=2)"]
       interval: 15s
       timeout: 3s
       retries: 20

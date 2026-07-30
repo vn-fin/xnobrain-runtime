@@ -113,7 +113,7 @@ cards through `services/kanban.py`.
 Current operations (all present):
 
 - Routes (`brain4all/routes/setup.py` ≈ 84–89): `GET/POST
-  /agent-gateway/v1/cron/jobs`, `POST .../{job_id}/pause|resume|run`,
+  /api/brain/v1/cron/jobs`, `POST .../{job_id}/pause|resume|run`,
   `DELETE .../{job_id}`.
 - Handler map (`brain4all/handlers/api.py` ≈ 97–99):
   `cron_list, cron_create, cron_pause, cron_resume, cron_run, cron_delete`.

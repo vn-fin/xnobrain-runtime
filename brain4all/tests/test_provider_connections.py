@@ -124,7 +124,7 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_connections_sorted_and_connected(self):
         async with self.client() as client:
-            data = (await client.get("/agent-gateway/v1/providers/codex/connections")).json()["data"]
+            data = (await client.get("/api/brain/v1/providers/codex/connections")).json()["data"]
         self.assertTrue(data["connected"])
         self.assertEqual([c["id"] for c in data["connections"]], ["codex-1", "codex-2"])
         for connection in data["connections"]:
@@ -134,8 +134,8 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         async with self.client() as client:
             # codex-1 belongs to codex, not openai
             for path in (
-                "/agent-gateway/v1/providers/openai/connections/codex-1/usage",
-                "/agent-gateway/v1/providers/openai/connections/codex-1/test",
+                "/api/brain/v1/providers/openai/connections/codex-1/usage",
+                "/api/brain/v1/providers/openai/connections/codex-1/test",
             ):
                 method = client.post if path.endswith("/test") else client.get
                 self.assertEqual((await method(path)).status_code, 404)
@@ -143,7 +143,7 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_add_api_key_account_never_leaks_key(self):
         async with self.client() as client:
             response = await client.post(
-                "/agent-gateway/v1/providers/openai/connections",
+                "/api/brain/v1/providers/openai/connections",
                 json={"api_key": "sk-secret123", "name": "second"})
         self.assertEqual(response.status_code, 201)
         self.assertNotIn("sk-secret123", response.text)
@@ -154,38 +154,38 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_oauth_provider_rejects_api_key_add(self):
         async with self.client() as client:
             response = await client.post(
-                "/agent-gateway/v1/providers/codex/connections", json={"api_key": "x"})
+                "/api/brain/v1/providers/codex/connections", json={"api_key": "x"})
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"]["code"], "oauth_connect_required")
 
     async def test_patch_activates_reorders_and_requires_a_field(self):
         async with self.client() as client:
             activated = await client.patch(
-                "/agent-gateway/v1/providers/codex/connections/codex-2", json={"active": True})
+                "/api/brain/v1/providers/codex/connections/codex-2", json={"active": True})
             self.assertTrue(activated.json()["data"]["connection"]["active"])
             self.assertEqual(
                 (await client.patch(
-                    "/agent-gateway/v1/providers/codex/connections/codex-2",
+                    "/api/brain/v1/providers/codex/connections/codex-2",
                     json={"priority": 0})).status_code, 200)
             self.assertEqual(
                 (await client.patch(
-                    "/agent-gateway/v1/providers/codex/connections/codex-2",
+                    "/api/brain/v1/providers/codex/connections/codex-2",
                     json={})).status_code, 400)
 
     async def test_delete_one_keeps_provider_connected(self):
         async with self.client() as client:
             deleted = await client.delete(
-                "/agent-gateway/v1/providers/codex/connections/codex-2")
+                "/api/brain/v1/providers/codex/connections/codex-2")
             self.assertEqual(deleted.status_code, 200)
             self.assertTrue(deleted.json()["data"]["deleted"])
             self.assertTrue(deleted.json()["data"]["connected"])  # codex-1 still active
             remaining = (await client.get(
-                "/agent-gateway/v1/providers/codex/connections")).json()["data"]
+                "/api/brain/v1/providers/codex/connections")).json()["data"]
             self.assertEqual([c["id"] for c in remaining["connections"]], ["codex-1"])
 
     async def test_providers_backward_compat_reports_connection_count(self):
         async with self.client() as client:
-            providers = (await client.get("/agent-gateway/v1/providers")).json()["data"]
+            providers = (await client.get("/api/brain/v1/providers")).json()["data"]
         codex = next(item for item in providers if item["id"] == "codex")
         self.assertTrue(codex["connected"])          # one active of two
         self.assertEqual(codex["connection_count"], 2)
@@ -193,18 +193,18 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_connection_usage(self):
         async with self.client() as client:
             usage = (await client.get(
-                "/agent-gateway/v1/providers/codex/connections/codex-1/usage")).json()["data"]
+                "/api/brain/v1/providers/codex/connections/codex-1/usage")).json()["data"]
         self.assertTrue(usage["available"])
         self.assertEqual(usage["quotas"][0]["remaining_percent"], 80)
 
     async def test_no_forbidden_material_in_any_response(self):
         async with self.client() as client:
-            await client.post("/agent-gateway/v1/providers/openai/connections",
+            await client.post("/api/brain/v1/providers/openai/connections",
                               json={"api_key": "sk-secretXYZ"})
             texts = [
-                (await client.get("/agent-gateway/v1/providers/codex/connections")).text,
-                (await client.get("/agent-gateway/v1/providers")).text,
-                (await client.get("/agent-gateway/v1/providers/codex/connections/codex-1/usage")).text,
+                (await client.get("/api/brain/v1/providers/codex/connections")).text,
+                (await client.get("/api/brain/v1/providers")).text,
+                (await client.get("/api/brain/v1/providers/codex/connections/codex-1/usage")).text,
             ]
         for text in texts:
             for forbidden in _FORBIDDEN:

@@ -35,16 +35,16 @@ overwritten through the import API.
 
 Large and small archives use the same fixed-size part protocol:
 
-1. `POST /api/v1/bundles/exports` prepares a file-backed export and returns an
+1. `POST /api/brain/v1/bundles/exports` prepares a file-backed export and returns an
    export ID, filename, SHA-256, byte size, chunk size, and part count.
-2. `GET /api/v1/bundles/exports/{id}/parts/{part}` downloads one part.
-3. `DELETE /api/v1/bundles/exports/{id}` removes the transfer.
-4. `POST /api/v1/bundles/uploads` starts an upload with filename and byte size.
-5. `PUT /api/v1/bundles/uploads/{id}/parts/{part}` uploads one exact-size
+2. `GET /api/brain/v1/bundles/exports/{id}/parts/{part}` downloads one part.
+3. `DELETE /api/brain/v1/bundles/exports/{id}` removes the transfer.
+4. `POST /api/brain/v1/bundles/uploads` starts an upload with filename and byte size.
+5. `PUT /api/brain/v1/bundles/uploads/{id}/parts/{part}` uploads one exact-size
    binary part. Parts are idempotently replaceable and may arrive out of order.
-6. `POST /api/v1/bundles/uploads/{id}/complete` verifies and merges all parts,
+6. `POST /api/brain/v1/bundles/uploads/{id}/complete` verifies and merges all parts,
    validates the archive, and returns its dry-run report.
-7. `POST /api/v1/bundles/uploads/{id}/apply` atomically publishes the import;
+7. `POST /api/brain/v1/bundles/uploads/{id}/apply` atomically publishes the import;
    its optional `environment` object may fill only names reported missing.
 
 The older whole-body endpoints remain v1 compatibility surfaces. Interactive

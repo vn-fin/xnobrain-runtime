@@ -200,7 +200,7 @@ logic.
   never log them. Hermes locks out platforms after repeated failed approvals
   (429) — surface that, don't retry-loop.
 - The portability bundle export (`services/portability.py`,
-  `/api/v1/bundles/export`) must **not** include a profile's channel tokens.
+  `/api/brain/v1/bundles/export`) must **not** include a profile's channel tokens.
   Verify the `.env` channel keys are excluded or redacted in exports
   (`validation.md` §security check).
 

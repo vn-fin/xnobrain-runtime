@@ -33,7 +33,7 @@ Options:
 
 - Pros: enterprise-familiar.
 - Cons: "profile" is already a loaded word in this codebase (Hermes
-  *profiles* are agents — `/agent-gateway/v1/profiles` exists); guaranteed
+  *profiles* are agents — `/api/brain/v1/profiles` exists); guaranteed
   confusion. Rejected outright for the collision alone.
 
 ### A4. "Model Group"
@@ -45,7 +45,7 @@ Options:
 **Chosen: A1 — "Model Blend", short form "Blend".** Consistency rules
 (applied throughout [architecture.md](architecture.md)):
 
-- API paths `/agent-gateway/v1/blends*`, tag `Blends`, models
+- API paths `/api/brain/v1/blends*`, tag `Blends`, models
   `BlendCreate`/`BlendPatch`, service `BlendService`, ops `blends_*`,
   frontend `blends.ts`/`useBlends.ts`/`BlendsSection.tsx`, picker group
   "Blends", `provider: "blend"` in model lists.

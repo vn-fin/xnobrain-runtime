@@ -81,9 +81,9 @@ python -m unittest brain4all.tests.test_fastapi -v
 - Envelope shape and status for all five routes (`200/201` happy paths;
   `400/403/404/409` guard paths; `503` with
   `error.code == "nine_router_unavailable"` when the fake raises).
-- `GET /agent-gateway/v1/blends/available-models` contains no
+- `GET /api/brain/v1/blends/available-models` contains no
   `provider == "blend"` entry and no `auto`.
-- Pass-through: `PATCH /agent-gateway/v1/agents-configs/{agent_id}` with
+- Pass-through: `PATCH /api/brain/v1/agents-configs/{agent_id}` with
   `{"model": "<blend name>"}` returns success and the temp profile's
   `config.yaml` contains `model: {default: <blend name>}` (and a config
   snapshot was created — existing snapshot path).
@@ -95,7 +95,7 @@ python -m unittest brain4all.tests.test_fastapi -v
 - Grep-level review + test assertion: no blends response or log line contains
   the raw 9router settings payload, API keys, tokens, or `x-9r-cli-token`
   material. The unit test in §2 (whitelist) is the executable proof.
-- `GET /agent-gateway/v1/blends` responses contain only the DTO fields listed
+- `GET /api/brain/v1/blends` responses contain only the DTO fields listed
   in [architecture.md](architecture.md) § Blend DTO.
 
 ## 6. Suite and smoke
@@ -139,10 +139,10 @@ Prereq: at least two provider models connected (e.g. one `cc/...` and one
 6. **Analytics tie-in.** Open the Analytics dashboard (plan 009): the
    by-model table lists `duo` as a model with the sessions just run.
 7. **Auto protection.** In the Blends panel, `Auto` shows a System badge with
-   edit/delete disabled; `curl -X DELETE .../agent-gateway/v1/blends/<auto id>`
+   edit/delete disabled; `curl -X DELETE .../api/brain/v1/blends/<auto id>`
    returns the 403 envelope.
 8. **Down behavior.** Stop 9router; the Blends panel shows the unavailable
-   banner and `GET /agent-gateway/v1/blends` returns the 503 envelope; start
+   banner and `GET /api/brain/v1/blends` returns the 503 envelope; start
    it again and refresh recovers.
 9. **Delete.** Delete `duo` (confirm dialog). Evidence: gone from
    `GET /api/combos`, from the picker, and its `comboStrategies` entry gone
@@ -161,7 +161,7 @@ Prereq: at least two provider models connected (e.g. one `cc/...` and one
       `{id, provider: "blend", name}` while per-provider lists and the auto
       combo remain unpolluted (evidence: unit test names + output).
 - [ ] Blends CRUD works end-to-end through
-      `/agent-gateway/v1/blends*` with the standard envelope (evidence: ASGI
+      `/api/brain/v1/blends*` with the standard envelope (evidence: ASGI
       integration test output + manual step 1).
 - [ ] Strategy round-trips: create/read/update across
       `fallback` → `round-robin` → `fusion` with judge, written via 9router

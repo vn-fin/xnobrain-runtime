@@ -2,7 +2,7 @@ import { request, requestMultipartWithProgress, requestRaw, type UploadProgress 
 import type { WorkspaceFileDTO, WorkspaceListDTO } from './contracts/agentGateway';
 import { mapWorkspaceEntry } from './mappers/workspace';
 
-const root = (agentId: string) => `/agent-gateway/v1/agents-workspaces/${encodeURIComponent(agentId)}`;
+const root = (agentId: string) => `/api/brain/v1/agents-workspaces/${encodeURIComponent(agentId)}`;
 const UPLOAD_CHUNK_BYTES = 768 * 1024;
 
 const MIME_BY_EXT: Record<string, string> = {

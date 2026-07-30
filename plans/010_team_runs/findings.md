@@ -29,12 +29,12 @@ editing (they will drift).
   `TeamCreate` (233–239).
 - `brain4all/routes/setup.py` — teams routes at lines 117–124 under tag
   `Teams`; the run route is
-  `Route("POST", "/api/v1/teams/{team_id}/run", "teams_run", TeamRun, tags=("Teams",))`
+  `Route("POST", "/api/brain/v1/teams/{team_id}/run", "teams_run", TeamRun, tags=("Teams",))`
   (line 124). Operations are mapped in `brain4all/handlers/api.py` lines
   167–169; `teams_run` calls `s.run_team(p["team_id"], body)` and returns the
   result in the standard envelope with status 200.
 - Frontend: `src/src/api/teams.ts` (48 lines, `teamsApi.run` posts to
-  `/api/v1/teams/{id}/run` and awaits the full result),
+  `/api/brain/v1/teams/{id}/run` and awaits the full result),
   `src/src/hooks/useTeams.ts` (65 lines, holds `lastRun` in memory only),
   `src/src/components/TeamsView.tsx` (94 lines, renders `state.lastRun` —
   the "Final orchestrator summary" card).

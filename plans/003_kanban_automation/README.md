@@ -162,7 +162,7 @@ After successful migration:
 - remove `self.service.scheduler_loop()` from the Brain4All lifespan;
 - remove file-repository cron scheduling behavior;
 - remove the separate right-panel Cron UI;
-- either retire `/agent-gateway/v1/cron/jobs` with a versioned migration path or
+- either retire `/api/brain/v1/cron/jobs` with a versioned migration path or
   retain a temporary compatibility facade backed by the native automation
   service—never the YAML scheduler;
 - update/supersede `docs/implementation/02-local-cron.md`.
@@ -171,8 +171,8 @@ After successful migration:
 
 Extend the stable API with:
 
-- `GET|POST /agent-gateway/v1/kanban/automations`
-- `GET|PATCH /agent-gateway/v1/kanban/automations/{automation_id}`
+- `GET|POST /api/brain/v1/kanban/automations`
+- `GET|PATCH /api/brain/v1/kanban/automations/{automation_id}`
 - `POST /.../{automation_id}/pause`
 - `POST /.../{automation_id}/resume`
 - `POST /.../{automation_id}/run`

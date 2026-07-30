@@ -110,9 +110,9 @@ class _TeamRunBase(unittest.IsolatedAsyncioTestCase):
     async def _make_team(self, client) -> tuple[str, list[str]]:
         ids = []
         for display_name in ("Coordinator", "Researcher", "Reviewer"):
-            response = await client.post("/agent-gateway/v1/agents", json={"display_name": display_name})
+            response = await client.post("/api/brain/v1/agents", json={"display_name": display_name})
             ids.append(response.json()["data"]["id"])
-        team = await client.post("/api/v1/teams", json={
+        team = await client.post("/api/brain/v1/teams", json={
             "name": "DAG team",
             "orchestrator_id": ids[0],
             "members": [
@@ -146,7 +146,7 @@ class _TeamRunBase(unittest.IsolatedAsyncioTestCase):
 
     async def _poll_until_terminal(self, client, team_id, run_id, tries=100):
         for _ in range(tries):
-            response = await client.get(f"/api/v1/teams/{team_id}/runs/{run_id}")
+            response = await client.get(f"/api/brain/v1/teams/{team_id}/runs/{run_id}")
             record = response.json()["data"]
             if record["status"] in {"completed", "failed", "cancelled"}:
                 return record
@@ -159,7 +159,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
         async with self.client() as client:
             ids = []
             for display_name in ("Coordinator", "Researcher"):
-                response = await client.post("/agent-gateway/v1/agents", json={"display_name": display_name})
+                response = await client.post("/api/brain/v1/agents", json={"display_name": display_name})
                 ids.append(response.json()["data"]["id"])
 
             def listed_skills(agent_id):
@@ -170,7 +170,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
                 ]}
 
             with patch.object(self.composition.service.agents, "list_skills", side_effect=listed_skills):
-                created = await client.post("/api/v1/teams", json={
+                created = await client.post("/api/brain/v1/teams", json={
                     "name": "Repeated profile DAG",
                     "orchestrator_id": ids[0],
                     "members": [
@@ -219,7 +219,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
             self._mock_completing_chat(ids)
-            start = await client.post(f"/api/v1/teams/{team_id}/runs", json=self._dag_body())
+            start = await client.post(f"/api/brain/v1/teams/{team_id}/runs", json=self._dag_body())
             self.assertEqual(start.status_code, 202, start.text)
             record = start.json()["data"]
             run_id = record["id"]
@@ -246,7 +246,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
     async def test_team_inherits_agent_tools_and_supports_skills_scratchpad_and_dialogue(self):
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
-            updated = await client.put(f"/api/v1/teams/{team_id}", json={
+            updated = await client.put(f"/api/brain/v1/teams/{team_id}", json={
                 "name": "Capable DAG team",
                 "orchestrator_id": ids[0],
                 "members": [
@@ -297,7 +297,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
                 return {"response": "review draft", "conversation_id": "c-review"}
 
             self.composition.service.agents.chat = AsyncMock(side_effect=capable_chat)
-            response = await client.post(f"/api/v1/teams/{team_id}/run", json={})
+            response = await client.post(f"/api/brain/v1/teams/{team_id}/run", json={})
 
         self.assertEqual(response.status_code, 200, response.text)
         result = response.json()["data"]
@@ -327,13 +327,13 @@ class TeamRunLifecycleTests(_TeamRunBase):
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
             self._mock_completing_chat(ids)
-            started = await client.post(f"/api/v1/teams/{team_id}/runs", json=self._dag_body())
+            started = await client.post(f"/api/brain/v1/teams/{team_id}/runs", json=self._dag_body())
             run_id = started.json()["data"]["id"]
             await self._poll_until_terminal(client, team_id, run_id)
 
-            deleted = await client.delete(f"/api/v1/teams/{team_id}/runs/{run_id}")
-            missing = await client.get(f"/api/v1/teams/{team_id}/runs/{run_id}")
-            history = await client.get(f"/api/v1/teams/{team_id}/runs")
+            deleted = await client.delete(f"/api/brain/v1/teams/{team_id}/runs/{run_id}")
+            missing = await client.get(f"/api/brain/v1/teams/{team_id}/runs/{run_id}")
+            history = await client.get(f"/api/brain/v1/teams/{team_id}/runs")
 
         self.assertEqual(deleted.status_code, 200, deleted.text)
         self.assertEqual(deleted.json()["data"], {
@@ -349,7 +349,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
             self._mock_completing_chat(ids)
-            response = await client.post(f"/api/v1/teams/{team_id}/run", json=self._dag_body())
+            response = await client.post(f"/api/brain/v1/teams/{team_id}/run", json=self._dag_body())
         self.assertEqual(response.status_code, 200, response.text)
         result = response.json()["data"]
         self.assertEqual(set(result), {
@@ -377,15 +377,15 @@ class TeamRunLifecycleTests(_TeamRunBase):
         self.composition.service.agents.chat = AsyncMock(side_effect=gated)
         async with self.client() as client:
             team_id, _ = await self._make_team(client)
-            first = await client.post(f"/api/v1/teams/{team_id}/runs", json=self._dag_body())
+            first = await client.post(f"/api/brain/v1/teams/{team_id}/runs", json=self._dag_body())
             self.assertEqual(first.status_code, 202, first.text)
-            second = await client.post(f"/api/v1/teams/{team_id}/runs", json=self._dag_body())
+            second = await client.post(f"/api/brain/v1/teams/{team_id}/runs", json=self._dag_body())
             self.assertEqual(second.status_code, 409, second.text)
             self.assertEqual(second.json()["error"]["code"], "team_run_active")
-            deleting = await client.delete(f"/api/v1/teams/{team_id}/runs/{first.json()['data']['id']}")
+            deleting = await client.delete(f"/api/brain/v1/teams/{team_id}/runs/{first.json()['data']['id']}")
             self.assertEqual(deleting.status_code, 409, deleting.text)
             self.assertEqual(deleting.json()["error"]["code"], "team_run_active")
-            await client.post(f"/api/v1/teams/{team_id}/runs/{first.json()['data']['id']}/cancel")
+            await client.post(f"/api/brain/v1/teams/{team_id}/runs/{first.json()['data']['id']}/cancel")
 
     async def test_cancel_marks_steps_and_record(self):
         gate = asyncio.Event()  # never set
@@ -397,14 +397,14 @@ class TeamRunLifecycleTests(_TeamRunBase):
         self.composition.service.agents.chat = AsyncMock(side_effect=blocking)
         async with self.client() as client:
             team_id, _ = await self._make_team(client)
-            start = await client.post(f"/api/v1/teams/{team_id}/runs", json=self._dag_body())
+            start = await client.post(f"/api/brain/v1/teams/{team_id}/runs", json=self._dag_body())
             run_id = start.json()["data"]["id"]
             for _ in range(100):
-                current = (await client.get(f"/api/v1/teams/{team_id}/runs/{run_id}")).json()["data"]
+                current = (await client.get(f"/api/brain/v1/teams/{team_id}/runs/{run_id}")).json()["data"]
                 if any(step["status"] == "running" for step in current["steps"]):
                     break
                 await asyncio.sleep(0.02)
-            cancel = await client.post(f"/api/v1/teams/{team_id}/runs/{run_id}/cancel")
+            cancel = await client.post(f"/api/brain/v1/teams/{team_id}/runs/{run_id}/cancel")
 
         self.assertEqual(cancel.status_code, 200, cancel.text)
         record = cancel.json()["data"]
@@ -459,7 +459,7 @@ class TeamRunStreamAndStoreTests(_TeamRunBase):
         self.composition.service.agents.chat = AsyncMock(side_effect=gated)
         async with self.client() as client:
             team_id, _ = await self._make_team(client)
-            start = await client.post(f"/api/v1/teams/{team_id}/runs", json=self._dag_body())
+            start = await client.post(f"/api/brain/v1/teams/{team_id}/runs", json=self._dag_body())
             run_id = start.json()["data"]["id"]
 
         class FakeRequest:
@@ -507,7 +507,7 @@ class TeamRunStreamAndStoreTests(_TeamRunBase):
         }
         repository.put_team_run(stale)
         async with self.client() as client:
-            response = await client.get(f"/api/v1/teams/{team_id}/runs/{run_id}")
+            response = await client.get(f"/api/brain/v1/teams/{team_id}/runs/{run_id}")
         record = response.json()["data"]
         self.assertEqual(record["status"], "failed")
         self.assertEqual(record["error"], "interrupted_by_restart")
@@ -526,7 +526,7 @@ class TeamRunStreamAndStoreTests(_TeamRunBase):
         self.composition.service.agents.chat = AsyncMock(side_effect=recording_chat)
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
-            start = await client.post(f"/api/v1/teams/{team_id}/runs", json=self._dag_body())
+            start = await client.post(f"/api/brain/v1/teams/{team_id}/runs", json=self._dag_body())
             run_id = start.json()["data"]["id"]
             await self._poll_until_terminal(client, team_id, run_id)
 

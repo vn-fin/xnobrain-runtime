@@ -46,9 +46,9 @@ remediation message — verify by running with an intentionally wrong pin locall
 Same harness as `brain4all/tests/test_kanban.py` (real `Brain4AllApplication`,
 `ASGITransport`, real Kanban SQLite). Cover:
 
-- `GET /agent-gateway/v1/cron/blueprints` returns real catalog entries with
+- `GET /api/brain/v1/cron/blueprints` returns real catalog entries with
   fields and human schedule.
-- `POST /agent-gateway/v1/cron/blueprints/instantiate` with a valid agent +
+- `POST /api/brain/v1/cron/blueprints/instantiate` with a valid agent +
   values creates exactly one `scheduled` template on the `default` board,
   visible via `GET /cron/jobs`; invalid slot values → 422; unknown blueprint →
   404; missing/unknown agent → same error as `create_cron`.

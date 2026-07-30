@@ -87,7 +87,7 @@ the updated plugin can be re-enabled.
 
 ## New Brain4All API contract
 
-Base: `/agent-gateway/v1`. Envelope: existing `APIEnvelope`
+Base: `/api/brain/v1`. Envelope: existing `APIEnvelope`
 (`{success, data, message, status_code}`). Errors: existing `failure()` with
 stable `code`s. All new routes registered only in `brain4all/routes/setup.py`;
 each maps to one `operations` entry in `handlers/api.py`.
@@ -250,7 +250,7 @@ is the hand-rolled `hooks/useRouter.ts`.
   `useRouter.ts` `parseRoute`/`computeUrl` (`/plugins`), a nav row in
   `components/Sidebar.tsx` `navItems`, and a branch in `App.tsx`'s center-view
   ternary. New client `src/src/api/plugins.ts` (clone `api/skills.ts`,
-  `ROOT = '/agent-gateway/v1/plugins'`), hook `src/src/hooks/usePlugins.ts`
+  `ROOT = '/api/brain/v1/plugins'`), hook `src/src/hooks/usePlugins.ts`
   (clone the skills logic in `useAssistants.ts`, optimistic-then-reconcile).
 - **Per-agent Tools/Capabilities panel** — new `'tools'` tab in
   `components/RightPanel.tsx`, cloned from its `rightView === 'skills'` block:

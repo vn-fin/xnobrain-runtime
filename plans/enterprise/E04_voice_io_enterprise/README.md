@@ -100,7 +100,7 @@ E03 (fleet management) is independent of this plan.
   enforcement, caps, metering writes into `voice_usage`.
 - **Phase 2 — OSS thin proxy** (this repo, Python):
   `brain4all/integrations/enterprise_voice.py`, three proxied routes under
-  `/agent-gateway/v1/voice/*`, 403 `capability_unavailable` without
+  `/api/brain/v1/voice/*`, 403 `capability_unavailable` without
   entitlement, capability flags exposed via the `limits` payload.
 - **Phase 3 — Gated frontend.** Reuse plan 006's UI design (play button in
   `ChatArea.tsx`, mic recorder in the composer, voice settings) rendered only

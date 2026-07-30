@@ -8,7 +8,7 @@ import type {
 import { mapConnectionProvider } from './mappers/providers';
 import type { ConnectionMode, ConnectionProvider, ProviderConnectInfo } from '../types';
 
-const ROOT = '/agent-gateway/v1/providers';
+const ROOT = '/api/brain/v1/providers';
 const encoded = (value: string) => encodeURIComponent(value);
 
 function mode(value?: string): ConnectionMode {

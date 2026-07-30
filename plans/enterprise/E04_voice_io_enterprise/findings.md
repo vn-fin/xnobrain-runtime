@@ -168,7 +168,7 @@ roster can grow without contract changes.
 
 ## 7. What this repo has today (verified by direct read)
 
-- `brain4all/routes/setup.py` line 40: `Route("GET", "/api/v1/limits",
+- `brain4all/routes/setup.py` line 40: `Route("GET", "/api/brain/v1/limits",
   "limits", tags=("System",))` — the limits route exists.
 - `brain4all/handlers/api.py` line 97: the `"limits"` operation returns a
   static dict `{"plan_id": "self-hosted", "local_features_unlimited": True,

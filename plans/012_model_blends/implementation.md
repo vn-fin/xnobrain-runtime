@@ -155,11 +155,11 @@ block, and add to `ROUTES` (after the Providers block; **`available-models`
 before `{blend_id}`** — Starlette matches in registration order):
 
 ```python
-Route("GET", "/agent-gateway/v1/blends", "blends_list", tags=("Blends",)),
-Route("POST", "/agent-gateway/v1/blends", "blends_create", BlendCreate, tags=("Blends",)),
-Route("GET", "/agent-gateway/v1/blends/available-models", "blends_available_models", tags=("Blends",)),
-Route("PATCH", "/agent-gateway/v1/blends/{blend_id}", "blends_patch", BlendPatch, tags=("Blends",)),
-Route("DELETE", "/agent-gateway/v1/blends/{blend_id}", "blends_delete", tags=("Blends",)),
+Route("GET", "/api/brain/v1/blends", "blends_list", tags=("Blends",)),
+Route("POST", "/api/brain/v1/blends", "blends_create", BlendCreate, tags=("Blends",)),
+Route("GET", "/api/brain/v1/blends/available-models", "blends_available_models", tags=("Blends",)),
+Route("PATCH", "/api/brain/v1/blends/{blend_id}", "blends_patch", BlendPatch, tags=("Blends",)),
+Route("DELETE", "/api/brain/v1/blends/{blend_id}", "blends_delete", tags=("Blends",)),
 ```
 
 No other file registers routes (`routes/setup.py` is the only assembly
@@ -175,7 +175,7 @@ matching current UI tone.
    'fusion'`, `BlendCreateInput`, `BlendPatchInput`, `BlendModel`) and a
    `blendsApi` object with `list()`, `create(input)`, `update(id, input)`,
    `remove(id)`, `availableModels()` calling
-   `/agent-gateway/v1/blends*` through `request()` from
+   `/api/brain/v1/blends*` through `request()` from
    `src/src/api/client.ts`.
 2. **`src/src/hooks/useBlends.ts`** (new) — mirror
    `src/src/hooks/useConnections.ts`: state `{blends, status, error}`,
@@ -242,11 +242,11 @@ matching current UI tone.
      request was recorded.
 2. **Integration (ASGI)** — extend `brain4all/tests/test_fastapi.py` (it
    already has a `FakeRouter`, line 22): add combo/settings responses; assert
-   `GET/POST/PATCH/DELETE /agent-gateway/v1/blends*` envelope shapes and
+   `GET/POST/PATCH/DELETE /api/brain/v1/blends*` envelope shapes and
    status codes (incl. 201 create, 403 auto, 409 collision, 503 when the fake
    raises `NineRouterAPIError(status=503)`); assert
-   `GET /agent-gateway/v1/blends/available-models` excludes blends and
-   `auto`; assert `PATCH /agent-gateway/v1/agents-configs/{id}` with
+   `GET /api/brain/v1/blends/available-models` excludes blends and
+   `auto`; assert `PATCH /api/brain/v1/agents-configs/{id}` with
    `{"model": "duo"}` succeeds and the profile `config.yaml` gets
    `model.default: duo` (proves the pass-through, findings.md §8).
 3. **Strategy round-trip** — service-level test: create with

@@ -143,13 +143,13 @@ raw SSE route.
 
 | Method | Path | operation | Body model | Response `data` | Status |
 |---|---|---|---|---|---|
-| POST | `/api/v1/teams/{team_id}/runs` | `team_runs_start` | `TeamRun` (existing) | `TeamRunRecord` | 202 |
-| GET | `/api/v1/teams/{team_id}/runs` | `team_runs_list` | — | `list[TeamRunRecord]` (summaries omitted; see below) | 200 |
-| GET | `/api/v1/teams/{team_id}/runs/{run_id}` | `team_runs_get` | — | `TeamRunRecord` | 200 |
-| POST | `/api/v1/teams/{team_id}/runs/{run_id}/cancel` | `team_runs_cancel` | — | `TeamRunRecord` (status `cancelled`, or current if already terminal → 409) | 200 |
-| GET | `/api/v1/teams/{team_id}/runs/{run_id}/events` | `team_run_event_stream` | — | SSE (`special="team_run_stream"`) | 200 |
+| POST | `/api/brain/v1/teams/{team_id}/runs` | `team_runs_start` | `TeamRun` (existing) | `TeamRunRecord` | 202 |
+| GET | `/api/brain/v1/teams/{team_id}/runs` | `team_runs_list` | — | `list[TeamRunRecord]` (summaries omitted; see below) | 200 |
+| GET | `/api/brain/v1/teams/{team_id}/runs/{run_id}` | `team_runs_get` | — | `TeamRunRecord` | 200 |
+| POST | `/api/brain/v1/teams/{team_id}/runs/{run_id}/cancel` | `team_runs_cancel` | — | `TeamRunRecord` (status `cancelled`, or current if already terminal → 409) | 200 |
+| GET | `/api/brain/v1/teams/{team_id}/runs/{run_id}/events` | `team_run_event_stream` | — | SSE (`special="team_run_stream"`) | 200 |
 
-The existing `POST /api/v1/teams/{team_id}/run` (sync) is unchanged in path,
+The existing `POST /api/brain/v1/teams/{team_id}/run` (sync) is unchanged in path,
 body, and response shape.
 
 List behavior: `team_runs_list` returns records with `steps[].summary` and

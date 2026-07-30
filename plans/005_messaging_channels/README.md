@@ -11,7 +11,7 @@ Read the five companion files in order:
    lacks, the profile ↔ channel ↔ multiplex question, APIs to pin, credential
    and security notes, risks, open questions.
 2. `architecture.md` — Brain4All layering fit, state ownership, the new
-   `/agent-gateway/v1/...` route contract with Pydantic model names, adapter
+   `/api/brain/v1/...` route contract with Pydantic model names, adapter
    methods, React surface, and sequence diagrams.
 3. `approaches.md` — options and trade-offs (multiplexed vs per-agent gateway;
    native-config vs Brain4All credential file; loopback-HTTP vs in-process

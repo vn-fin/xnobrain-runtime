@@ -172,7 +172,7 @@ function queryString(query: AnalyticsQuery): string {
   return params.toString();
 }
 
-const ROOT = '/agent-gateway/v1/analytics';
+const ROOT = '/api/brain/v1/analytics';
 
 export const analyticsApi = {
   usage: (query: AnalyticsQuery): Promise<UsageSummary> =>

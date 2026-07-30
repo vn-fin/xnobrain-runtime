@@ -137,9 +137,9 @@ a staging tenant (evidence for [validation](validation.md)).
 3. **Routes** — `brain4all/routes/setup.py`, a `("Voice",)` tag group:
 
    ```python
-   Route("POST", "/agent-gateway/v1/voice/speak", "voice_speak", VoiceSpeakRequest, special="voice_speak", tags=("Voice",)),
-   Route("POST", "/agent-gateway/v1/voice/transcribe", "voice_transcribe", special="voice_transcribe", tags=("Voice",)),
-   Route("GET",  "/agent-gateway/v1/voice/voices", "voice_voices", tags=("Voice",)),
+   Route("POST", "/api/brain/v1/voice/speak", "voice_speak", VoiceSpeakRequest, special="voice_speak", tags=("Voice",)),
+   Route("POST", "/api/brain/v1/voice/transcribe", "voice_transcribe", special="voice_transcribe", tags=("Voice",)),
+   Route("GET",  "/api/brain/v1/voice/voices", "voice_voices", tags=("Voice",)),
    ```
 
    (`special` markers per the established raw/multipart registration
@@ -152,7 +152,7 @@ a staging tenant (evidence for [validation](validation.md)).
 5. **Per-agent preference** (Decision D note): store `tts.enabled`,
    `stt.enabled`, `voice_id` in the agent profile `config.yaml` via the
    existing `PlatformService.update_agent_config` snapshot+atomic path;
-   reuse 006's GET/PUT `/agent-gateway/v1/agents/{agent_id}/voice` route
+   reuse 006's GET/PUT `/api/brain/v1/agents/{agent_id}/voice` route
    design with a model that accepts **only** those fields (never provider
    keys — 006's secret-stripping rule).
 6. **Python tests** — `brain4all/tests/test_enterprise_voice.py` with a

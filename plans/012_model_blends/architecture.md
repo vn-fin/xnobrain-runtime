@@ -211,18 +211,18 @@ mirroring `self.kanban` / `self.analytics`.
 
 ## Route table and Pydantic models
 
-Versioned under `/agent-gateway/v1`, new tag `Blends`, added to
+Versioned under `/api/brain/v1`, new tag `Blends`, added to
 `brain4all/routes/setup.py` (the only assembly point). **Order matters**:
 `available-models` must be declared before `{blend_id}` because Starlette
 matches routes in registration order.
 
 | Method | Path | Operation | Body | Purpose |
 |--------|------|-----------|------|---------|
-| GET | `/agent-gateway/v1/blends` | `blends_list` | — | All blends (incl. `auto` as system), hydrated with strategy. |
-| POST | `/agent-gateway/v1/blends` | `blends_create` | `BlendCreate` | Create a blend (+ strategy when not default). 201. |
-| GET | `/agent-gateway/v1/blends/available-models` | `blends_available_models` | — | Real models eligible for inclusion (no blends, no `auto`). |
-| PATCH | `/agent-gateway/v1/blends/{blend_id}` | `blends_patch` | `BlendPatch` | Rename / edit models+order / change strategy+judge / sticky limit. |
-| DELETE | `/agent-gateway/v1/blends/{blend_id}` | `blends_delete` | — | Delete blend + its strategy entry. 403 for `auto`. |
+| GET | `/api/brain/v1/blends` | `blends_list` | — | All blends (incl. `auto` as system), hydrated with strategy. |
+| POST | `/api/brain/v1/blends` | `blends_create` | `BlendCreate` | Create a blend (+ strategy when not default). 201. |
+| GET | `/api/brain/v1/blends/available-models` | `blends_available_models` | — | Real models eligible for inclusion (no blends, no `auto`). |
+| PATCH | `/api/brain/v1/blends/{blend_id}` | `blends_patch` | `BlendPatch` | Rename / edit models+order / change strategy+judge / sticky limit. |
+| DELETE | `/api/brain/v1/blends/{blend_id}` | `blends_delete` | — | Delete blend + its strategy entry. 403 for `auto`. |
 
 `blend_id` is the 9router combo **id** (stable across rename); responses carry
 both `id` and `name`.
@@ -267,7 +267,7 @@ reason the feature needs zero Hermes work:
 ```
 UI model picker ──> agentsApi.update(id, {provider, model: "<blend name>"})
   └─ src/src/api/agents.ts routedConfig(): provider forced to "nine-router"
-PATCH /agent-gateway/v1/agents-configs/{agent_id}   (ConfigPatch)
+PATCH /api/brain/v1/agents-configs/{agent_id}   (ConfigPatch)
   └─ handlers/api.py "config_agent_patch"
   └─ PlatformService.update_agent_config: snapshot config.yaml, then
   └─ AgentManager.update_config: _nonempty_string(model) ->

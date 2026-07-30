@@ -44,7 +44,7 @@ class SessionSchemaCompatibilityTests(unittest.IsolatedAsyncioTestCase):
                                  "billing_base_url", "user_id"}
 
     async def test_sessions_schema_pins(self):
-        # create agent via POST /agent-gateway/v1/agents (test_analytics.py idiom)
+        # create agent via POST /api/brain/v1/agents (test_analytics.py idiom)
         cols = {row[1] for row in sqlite3.connect(db).execute(
             "PRAGMA table_info(sessions)")}
         self.assertLessEqual(self.REQUIRED_SESSION_COLUMNS, cols)

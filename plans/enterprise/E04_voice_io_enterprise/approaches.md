@@ -86,7 +86,7 @@ as the consumption record; the schema already supports it.
 
 ### C1. Extend the existing `limits` payload  ✅ CHOSEN
 
-`GET /api/v1/limits` (`brain4all/routes/setup.py` line 40; op at
+`GET /api/brain/v1/limits` (`brain4all/routes/setup.py` line 40; op at
 `brain4all/handlers/api.py` line 97 — verified) gains a `capabilities` object
 from the cached entitlement document when signed in, `{}` when signed out.
 
@@ -96,7 +96,7 @@ from the cached entitlement document when signed in, `{}` when signed out.
 - Cons: mildly widens the "limits" concept to "limits + capabilities" — the
   payload is additive, so existing consumers are unaffected.
 
-### C2. New `/agent-gateway/v1/entitlements` passthrough route
+### C2. New `/api/brain/v1/entitlements` passthrough route
 
 A dedicated route returning the (safe subset of the) entitlement document.
 
@@ -198,7 +198,7 @@ state).
    metering. A2 revisit only if v2 streaming demands it.
 2. **B1** — dedicated `voice_usage` table with per-request idempotency,
    folded into E02's `usage_rollups_daily`; metering-only in v1.
-3. **C1** — capability flags ride the existing `/api/v1/limits` payload;
+3. **C1** — capability flags ride the existing `/api/brain/v1/limits` payload;
    one frontend hook isolates the source.
 4. **D2** — multipart uploads, raw `audio/mpeg` speak responses; per-agent
    voice preference stored OSS-side, secret-free.
