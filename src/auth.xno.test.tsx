@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './i18n';
 import LoginScreen from './LoginScreen';
 import { AuthProvider, useAuth } from './auth';
+import { setAccessToken } from './authStorage';
 import { AccountView } from './components/AccountView';
 
 vi.mock('./runtime', () => ({
@@ -38,8 +39,9 @@ function Trial() {
 }
 
 function LazyAccount() {
-  const { sessionActive } = useAuth();
+  const { loading, sessionActive } = useAuth();
   const [open, setOpen] = useState(false);
+  if (loading) return <span>Loading</span>;
   if (!sessionActive) return <span>Signed out</span>;
   return open
     ? <AccountView onClose={() => setOpen(false)} onRequestSignOut={() => undefined} />
@@ -51,6 +53,7 @@ describe('XNOQuant Firebase authentication adapter', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    setAccessToken(null);
     vi.restoreAllMocks();
   });
 
@@ -58,13 +61,16 @@ describe('XNOQuant Firebase authentication adapter', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ idToken: 'firebase-token' }),
+        json: async () => ({
+          idToken: 'firebase-token',
+          refreshToken: 'firebase-refresh-token',
+        }),
       })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           success: true,
-          data: { access_token: 'access-token', refresh_token: 'refresh-token' },
+          data: { access_token: 'access-token', refresh_token: 'xno-refresh-token' },
         }),
       })
       .mockResolvedValueOnce({
@@ -103,39 +109,76 @@ describe('XNOQuant Firebase authentication adapter', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer access-token' }),
       }),
     );
-    expect(localStorage.getItem('brain4all.xno.refresh-token')).toBe('refresh-token');
+    expect(localStorage.getItem('brain4all.firebase.refresh-token')).toBe('firebase-refresh-token');
+    expect(localStorage.getItem('brain4all.xno.access-token')).toBeNull();
+    expect(localStorage.getItem('brain4all.xno.refresh-token')).toBeNull();
   });
 
-  it('does not request /me on refresh and loads it once when Account is opened', async () => {
-    localStorage.setItem('brain4all.xno.access-token', 'saved-access-token');
-    localStorage.setItem('brain4all.xno.refresh-token', 'saved-refresh-token');
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        success: true,
-        data: {
-          user_id: 'user-01',
-          email: 'kim@example.com',
-          fullname: 'Nguyen Tan Kim',
-          roles: ['admin'],
-        },
-      }),
-    });
+  it('refreshes Firebase and calls /token then /me on every app start', async () => {
+    localStorage.setItem('brain4all.firebase.refresh-token', 'saved-firebase-refresh-token');
+    localStorage.setItem('brain4all.xno.access-token', 'legacy-access-token');
+    localStorage.setItem('brain4all.xno.refresh-token', 'legacy-refresh-token');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id_token: 'refreshed-firebase-token',
+          refresh_token: 'rotated-firebase-refresh-token',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: { access_token: 'fresh-xno-access-token', refresh_token: 'unused-xno-refresh-token' },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: {
+            user_id: 'user-01',
+            email: 'kim@example.com',
+            fullname: 'Nguyen Tan Kim',
+            roles: ['admin'],
+          },
+        }),
+      });
     vi.stubGlobal('fetch', fetchMock);
 
     render(<StrictMode><AuthProvider><LazyAccount /></AuthProvider></StrictMode>);
     expect(await screen.findByRole('button', { name: 'Account' })).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://securetoken.googleapis.com/v1/token?key=public-firebase-key',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('refresh_token=saved-firebase-refresh-token'),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://auth.example.com/api/brain-control/v1/auth/token',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer refreshed-firebase-token' }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      'https://auth.example.com/api/brain-control/v1/auth/me',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer fresh-xno-access-token' }),
+      }),
+    );
+    expect(localStorage.getItem('brain4all.firebase.refresh-token')).toBe('rotated-firebase-refresh-token');
+    expect(localStorage.getItem('brain4all.xno.access-token')).toBeNull();
+    expect(localStorage.getItem('brain4all.xno.refresh-token')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Account' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://auth.example.com/api/brain-control/v1/auth/me',
-      expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: 'Bearer saved-access-token' }),
-      }),
-    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(await screen.findByText('Nguyen Tan Kim')).toBeInTheDocument();
   });
 });

@@ -46,19 +46,22 @@ and confirmed sign-out. The checked-in standalone trial uses
 `edition: "opensource"` with optional `xno-firebase` login; users can still
 continue into the local server without signing in.
 
-The Account popup loads the configured authenticated identity response only when it
-is opened. A page refresh restores the saved token locally without calling
-`/me`. While login is enabled, normal Brain4All API requests include the saved
-access token as an `Authorization: Bearer <token>` header. Presentation flags
-do not replace server-side authentication or authorization.
+Firebase is the only persistent browser login session. On every initial page
+load or revisit, the frontend refreshes the Firebase identity token and calls
+the configured XNOQuant `/token` and `/me` endpoints before mounting the
+application. The returned XNOQuant access token exists only in memory and is
+never written to local or session storage. Normal Brain4All API requests
+include that in-memory token as an `Authorization: Bearer <token>` header.
+Presentation flags do not replace server-side authentication or authorization.
 
 The `xno-firebase` provider follows the XNO browser flow: Firebase
-email/password authentication, token exchange, token refresh, and identity
-lookup through the configured control API.
-Because the current remote API has no logout endpoint, sign-out clears the
-namespaced Brain4All browser tokens. This direct-browser token provider is for
-integration testing; production managed deployment should prefer the
-same-origin gateway provider and HttpOnly session cookies.
+email/password authentication, persistent Firebase refresh, fresh XNOQuant
+token exchange, and identity lookup through the configured authentication
+API. Because the current remote API has no logout endpoint, sign-out clears
+the persisted Firebase session and the in-memory XNOQuant token. This
+direct-browser token provider is for integration testing; production managed
+deployment should prefer the same-origin gateway provider and HttpOnly
+session cookies.
 
 Cloud and Enterprise deployments reuse the same frontend build and replace
 `/config.js`. Set `api.remoteBaseUrl` to the Brain4All runtime API and

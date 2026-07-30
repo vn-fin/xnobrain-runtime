@@ -8,7 +8,12 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { storedAccessToken, XNO_ACCESS_TOKEN_KEY, XNO_REFRESH_TOKEN_KEY } from './authStorage';
+import {
+  clearLegacyXnoTokens,
+  FIREBASE_REFRESH_TOKEN_KEY,
+  setAccessToken as setStoredAccessToken,
+  storedAccessToken,
+} from './authStorage';
 import { brain4AllRuntime, type RuntimeConfig } from './runtime';
 
 export type ActiveUser = {
@@ -110,7 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     config.features.login && config.auth.provider === 'xno-firebase' ? storedAccessToken() : null
   ));
   const [loading, setLoading] = useState(
-    config.features.login && config.auth.provider === 'gateway',
+    config.features.login
+      && ['gateway', 'xno-firebase'].includes(config.auth.provider),
   );
   const [loginOpen, setLoginOpen] = useState(false);
   const currentUserRequest = useRef<Promise<ActiveUser | null> | null>(null);
@@ -131,9 +137,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [config.auth.bootstrapPath, authBaseUrl]);
 
   const clearXnoTokens = useCallback(() => {
-    localStorage.removeItem(XNO_ACCESS_TOKEN_KEY);
-    localStorage.removeItem(XNO_REFRESH_TOKEN_KEY);
+    clearLegacyXnoTokens();
+    setStoredAccessToken(null);
     setAccessToken(null);
+  }, []);
+
+  const saveXnoAccessToken = useCallback((token: string) => {
+    setStoredAccessToken(token);
+    setAccessToken(token);
   }, []);
 
   const loadXnoUser = useCallback(async (token: string) => {
@@ -147,32 +158,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await jsonResponse(response);
     const next = normalizeUser(data);
     if (!next) throw new Error('The account API returned no active user.');
-    setAccessToken(token);
+    saveXnoAccessToken(token);
     setUser(next);
     return next;
-  }, [config.auth.mePath, authBaseUrl]);
+  }, [config.auth.mePath, authBaseUrl, saveXnoAccessToken]);
 
-  const refreshXnoSession = useCallback(async () => {
-    const refreshToken = localStorage.getItem(XNO_REFRESH_TOKEN_KEY);
-    if (!refreshToken) throw new Error('No saved session.');
-    const response = await fetch(remoteURL(authBaseUrl, config.auth.refreshPath), {
+  const exchangeFirebaseToken = useCallback(async (firebaseToken: string) => {
+    const response = await fetch(remoteURL(authBaseUrl, config.auth.tokenPath), {
+      credentials: 'omit',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${firebaseToken}`,
+      },
+    });
+    const data = await jsonResponse(response);
+    const nextAccessToken = String(data.access_token ?? '').trim();
+    if (!nextAccessToken) throw new Error('The account API returned an empty access token.');
+    return loadXnoUser(nextAccessToken);
+  }, [authBaseUrl, config.auth.tokenPath, loadXnoUser]);
+
+  const refreshFirebaseToken = useCallback(async () => {
+    const refreshToken = localStorage.getItem(FIREBASE_REFRESH_TOKEN_KEY)?.trim();
+    if (!refreshToken) throw new Error('No saved Firebase session.');
+    if (!config.auth.firebaseApiKey) throw new Error('Firebase API key is not configured.');
+    const response = await fetch(
+      `https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(config.auth.firebaseApiKey)}`,
+      {
       method: 'POST',
       credentials: 'omit',
       headers: {
         Accept: 'application/json',
-        'Content-Type': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    const data = await jsonResponse(response);
-    const nextAccessToken = String(data.access_token ?? '').trim();
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+        }).toString(),
+      },
+    );
+    const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) {
+      localStorage.removeItem(FIREBASE_REFRESH_TOKEN_KEY);
+      throw new Error(String(
+        (data.error as Record<string, unknown> | undefined)?.message
+        ?? 'Firebase session refresh failed.',
+      ));
+    }
+    const firebaseToken = String(data.id_token ?? '').trim();
     const nextRefreshToken = String(data.refresh_token ?? refreshToken).trim();
-    if (!nextAccessToken) throw new Error('The account API returned an empty access token.');
-    localStorage.setItem(XNO_ACCESS_TOKEN_KEY, nextAccessToken);
-    localStorage.setItem(XNO_REFRESH_TOKEN_KEY, nextRefreshToken);
-    setAccessToken(nextAccessToken);
-    return nextAccessToken;
-  }, [config.auth.refreshPath, authBaseUrl]);
+    if (!firebaseToken) throw new Error('Firebase returned no refreshed identity token.');
+    localStorage.setItem(FIREBASE_REFRESH_TOKEN_KEY, nextRefreshToken);
+    return firebaseToken;
+  }, [config.auth.firebaseApiKey]);
+
+  const restoreXnoSession = useCallback((): Promise<ActiveUser | null> => {
+    if (currentUserRequest.current) return currentUserRequest.current;
+    const request = (async () => {
+      clearXnoTokens();
+      setUser(null);
+      const firebaseToken = await refreshFirebaseToken();
+      return exchangeFirebaseToken(firebaseToken);
+    })();
+    currentUserRequest.current = request;
+    void request.finally(() => {
+      if (currentUserRequest.current === request) currentUserRequest.current = null;
+    }).catch(() => undefined);
+    return request;
+  }, [clearXnoTokens, exchangeFirebaseToken, refreshFirebaseToken]);
 
   const loadCurrentUser = useCallback((): Promise<ActiveUser | null> => {
     if (!config.features.login || config.auth.mode === 'disabled') return Promise.resolve(null);
@@ -184,24 +236,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     if (config.auth.provider === 'gateway') return loadGatewaySession();
-    if (currentUserRequest.current) return currentUserRequest.current;
-
-    const request = (async () => {
-      const savedAccessToken = storedAccessToken();
-      if (!savedAccessToken) return null;
-      try {
-        return await loadXnoUser(savedAccessToken);
-      } catch {
-        const refreshedToken = await refreshXnoSession();
-        return loadXnoUser(refreshedToken);
-      }
-    })();
-    currentUserRequest.current = request;
-    void request.finally(() => {
-      if (currentUserRequest.current === request) currentUserRequest.current = null;
-    }).catch(() => undefined);
-    return request;
-  }, [config.auth.mode, config.auth.provider, config.features.login, loadGatewaySession, loadXnoUser, refreshXnoSession]);
+    if (user && storedAccessToken()) return Promise.resolve(user);
+    if (!localStorage.getItem(FIREBASE_REFRESH_TOKEN_KEY)) return Promise.resolve(null);
+    return restoreXnoSession();
+  }, [
+    config.auth.mode,
+    config.auth.provider,
+    config.features.login,
+    loadGatewaySession,
+    restoreXnoSession,
+    user,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -220,8 +265,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return undefined;
     }
     if (config.auth.provider === 'xno-firebase') {
-      setLoading(false);
-      return undefined;
+      clearLegacyXnoTokens();
+      if (!localStorage.getItem(FIREBASE_REFRESH_TOKEN_KEY)) {
+        setLoading(false);
+        return undefined;
+      }
+      void restoreXnoSession()
+        .catch(() => {
+          if (active) {
+            clearXnoTokens();
+            setUser(null);
+          }
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+      return () => { active = false; };
     }
     void loadGatewaySession()
       .catch(() => {
@@ -231,7 +290,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [config.auth.mode, config.auth.provider, config.features.login, loadGatewaySession]);
+  }, [
+    clearXnoTokens,
+    config.auth.mode,
+    config.auth.provider,
+    config.features.login,
+    loadGatewaySession,
+    restoreXnoSession,
+  ]);
 
   const signIn = useCallback(async (input: LoginInput) => {
     if (!config.features.login || config.auth.mode === 'disabled') throw new Error('Authentication is disabled.');
@@ -271,28 +337,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(String(firebaseError?.message ?? 'Firebase sign in failed.'));
       }
       const firebaseToken = String(firebaseData.idToken ?? '').trim();
-      if (!firebaseToken) throw new Error('Firebase returned no identity token.');
-
-      const tokenResponse = await fetch(remoteURL(authBaseUrl, config.auth.tokenPath), {
-        credentials: 'omit',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${firebaseToken}`,
-        },
-      });
-      const tokenData = await jsonResponse(tokenResponse);
-      const nextAccessToken = String(tokenData.access_token ?? '').trim();
-      const nextRefreshToken = String(tokenData.refresh_token ?? '').trim();
-      if (!nextAccessToken || !nextRefreshToken) throw new Error('The account API returned an incomplete session.');
+      const firebaseRefreshToken = String(firebaseData.refreshToken ?? '').trim();
+      if (!firebaseToken || !firebaseRefreshToken) {
+        throw new Error('Firebase returned an incomplete login session.');
+      }
+      localStorage.setItem(FIREBASE_REFRESH_TOKEN_KEY, firebaseRefreshToken);
       try {
-        await loadXnoUser(nextAccessToken);
+        await exchangeFirebaseToken(firebaseToken);
       } catch (error) {
         clearXnoTokens();
         setUser(null);
         throw error;
       }
-      localStorage.setItem(XNO_ACCESS_TOKEN_KEY, nextAccessToken);
-      localStorage.setItem(XNO_REFRESH_TOKEN_KEY, nextRefreshToken);
       setLoginOpen(false);
       return;
     }
@@ -311,12 +367,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (next) setUser(next);
     else await loadGatewaySession();
     setLoginOpen(false);
-  }, [clearXnoTokens, config, authBaseUrl, loadGatewaySession, loadXnoUser]);
+  }, [clearXnoTokens, config, exchangeFirebaseToken, loadGatewaySession]);
 
   const signOut = useCallback(async () => {
     if (config.auth.provider === 'local-profile') {
       localStorage.removeItem(LOCAL_PROFILE_KEY);
     } else if (config.auth.provider === 'xno-firebase') {
+      localStorage.removeItem(FIREBASE_REFRESH_TOKEN_KEY);
       clearXnoTokens();
     } else {
       const response = await fetch(config.auth.logoutPath, {
