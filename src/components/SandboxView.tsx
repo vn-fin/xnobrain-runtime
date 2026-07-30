@@ -4,12 +4,14 @@ import { StatCard, UsageBar, formatBytes, formatUptime } from './common';
 import type { SandboxData } from '../types';
 import type { AsyncStatus } from '../types';
 import { AsyncState } from './AsyncState';
+import { brain4AllRuntime } from '../runtime';
 
 export function SandboxView({
   data,
   provisioned,
   setupRunning,
   setupProgress,
+  setupMessage,
   status,
   error,
   onCreate,
@@ -23,12 +25,14 @@ export function SandboxView({
   error: string;
   setupRunning: boolean;
   setupProgress: number;
+  setupMessage: string;
   onCreate: () => void;
   onRefresh: () => void;
   onClose: () => void;
   embedded?: boolean;
 }) {
   const { t } = useTranslation();
+  const managedVM = brain4AllRuntime.edition === 'cloud';
   const viewClass = embedded ? 'sandbox-view embedded' : 'sandbox-view';
   if (status === 'loading' && !setupRunning) return <AsyncState status="loading" />;
   if (status === 'error' && !setupRunning) return <AsyncState status="error" error={error} onRetry={onRefresh} />;
@@ -53,23 +57,24 @@ export function SandboxView({
           {setupRunning ? (
             <div className="sbx-create-card sbx-setup-card">
               <h2>{t('sandbox.provisioningTitle')}</h2>
-              <div className="sbx-progress-track">
+              <div className="sbx-progress-track" role="progressbar" aria-label="VM provisioning progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={setupProgress}>
                 <div className="sbx-progress-fill" style={{ width: `${setupProgress}%` }} />
               </div>
               <span className="sbx-progress-pct">{setupProgress}%</span>
+              <span className="sbx-progress-message" aria-live="polite">{setupMessage}</span>
             </div>
           ) : (
             <div className="sbx-create-card">
               <span className="sbx-create-icon">
                 <Server size={30} />
               </span>
-              <h2>{t('sandbox.noSandbox')}</h2>
-              <p>{t('sandbox.noSandboxDesc')}</p>
+              <h2>{managedVM ? 'No VM yet' : t('sandbox.noSandbox')}</h2>
+              <p>{managedVM ? 'Create your private Incus VM for the Brain4All runtime.' : t('sandbox.noSandboxDesc')}</p>
               <button className="sbx-create-btn" onClick={onCreate}>
                 <Plus size={16} />
-                {t('sandbox.create')}
+                {managedVM ? 'Create VM' : t('sandbox.create')}
               </button>
-              <small>{t('sandbox.specs')}</small>
+              <small>{managedVM ? '4 vCPU · 8 GiB RAM · 20 GiB disk' : t('sandbox.specs')}</small>
             </div>
           )}
         </div>
@@ -77,7 +82,19 @@ export function SandboxView({
     );
   }
 
-  if (!data) return <AsyncState status="error" error={error || 'Sandbox data is unavailable'} onRetry={onRefresh} />;
+  if (!data) {
+    return (
+      <div className={`${viewClass} sandbox-empty-view`}>
+        <div className="sbx-create">
+          <div className="sbx-create-card">
+            <span className="sbx-create-icon"><Server size={30} /></span>
+            <h2>VM is ready</h2>
+            <p>The managed Incus VM has been created. Runtime metrics will appear when the workspace gateway is connected.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const { info, metrics, system, health } = data;
 
   return (

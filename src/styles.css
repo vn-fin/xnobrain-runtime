@@ -5795,6 +5795,12 @@ body.col-resizing {
   font-size: 12px;
 }
 
+.sbx-progress-message {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .sbx-setup-log {
   margin-top: 6px;
   max-height: 180px;

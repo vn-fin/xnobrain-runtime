@@ -9,6 +9,7 @@ export function useSandbox(active: boolean) {
   const [error, setError] = useState('');
   const [setupRunning, setSetupRunning] = useState(false);
   const [setupProgress, setSetupProgress] = useState(0);
+  const [setupMessage, setSetupMessage] = useState('');
   const refreshing = useRef(false);
   const checked = useRef(false);
 
@@ -33,6 +34,10 @@ export function useSandbox(active: boolean) {
 
   useEffect(() => {
     if (!active) return undefined;
+    if (sandboxApi.managed) {
+      void refresh();
+      return undefined;
+    }
     const controller = new AbortController();
     let reconnectTimer: number | undefined;
     let received = false;
@@ -63,14 +68,18 @@ export function useSandbox(active: boolean) {
       controller.abort();
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
     };
-  }, [active]);
+  }, [active, refresh]);
 
   const createSandbox = async () => {
     setSetupRunning(true);
     setSetupProgress(0);
+    setSetupMessage('Initializing VM provisioning');
     setError('');
     try {
-      await sandboxApi.setupStream((percent) => setSetupProgress(percent));
+      await sandboxApi.setupStream((progress) => {
+        setSetupProgress(progress.percent);
+        setSetupMessage(progress.message);
+      });
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to create sandbox');
@@ -80,5 +89,15 @@ export function useSandbox(active: boolean) {
     }
   };
 
-  return { data, provisioned, status, error, setupRunning, setupProgress, createSandbox, refresh: () => refresh(false) };
+  return {
+    data,
+    provisioned,
+    status,
+    error,
+    setupRunning,
+    setupProgress,
+    setupMessage,
+    createSandbox,
+    refresh: () => refresh(false),
+  };
 }

@@ -7,6 +7,7 @@ import { providerConnectNeedsText } from '../utils/providers';
 import { useProviderAuthPopup } from '../hooks/useProviderAuthPopup';
 import { closeProviderAuthPopup } from '../utils/providerAuth';
 import { SUPPORTED_LANGUAGES } from '../i18n';
+import { brain4AllRuntime } from '../runtime';
 
 const STEP_ICONS = [Server, Plug, Cpu, Bot, MessageSquare];
 const TOTAL = 5;
@@ -16,6 +17,7 @@ export function Onboarding({
   sandboxProvisioned,
   setupRunning,
   setupProgress,
+  setupMessage,
   sandboxError,
   onCreateSandbox,
   providers,
@@ -35,6 +37,7 @@ export function Onboarding({
   sandboxProvisioned: boolean;
   setupRunning: boolean;
   setupProgress: number;
+  setupMessage: string;
   sandboxError?: string;
   onCreateSandbox: () => void;
   providers: ConnectionProvider[];
@@ -51,6 +54,7 @@ export function Onboarding({
   creatingAgent: boolean;
 }) {
   const { t, i18n } = useTranslation();
+  const managedVM = brain4AllRuntime.edition === 'cloud';
   const [step, setStep] = useState(0);
 
   const connected = providers.filter((p) => p.connected);
@@ -210,14 +214,15 @@ export function Onboarding({
         <div className="ob-panel">
           {step === 0 && (
             <div className="ob-step-body">
-              <strong>{t('onboarding.vm.title')}</strong>
-              <span className="ob-step-desc">{t('onboarding.vm.desc')}</span>
+              <strong>{managedVM ? 'Create your VM' : t('onboarding.vm.title')}</strong>
+              <span className="ob-step-desc">{managedVM ? 'Provision your private Incus VM before configuring the Brain4All runtime.' : t('onboarding.vm.desc')}</span>
               {setupRunning ? (
                 <div className="ob-progress">
-                  <div className="sbx-progress-track">
+                  <div className="sbx-progress-track" role="progressbar" aria-label="VM provisioning progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={setupProgress}>
                     <div className="sbx-progress-fill" style={{ width: `${setupProgress}%` }} />
                   </div>
                   <span className="sbx-progress-pct">{t('onboarding.vm.provisioning', { percent: setupProgress })}</span>
+                  <span className="sbx-progress-message" aria-live="polite">{setupMessage}</span>
                 </div>
               ) : sandboxProvisioned ? (
                 <span className="ob-done-note">{t('onboarding.vm.ready')}</span>
@@ -225,7 +230,7 @@ export function Onboarding({
                 <>
                   <button className="ob-step-btn primary" disabled={sandboxStatus === 'loading'} onClick={onCreateSandbox}>
                     <Plus size={15} />
-                    {sandboxStatus === 'loading' ? t('onboarding.checking') : t('onboarding.vm.action')}
+                    {sandboxStatus === 'loading' ? t('onboarding.checking') : managedVM ? 'Create VM' : t('onboarding.vm.action')}
                   </button>
                   {sandboxError && <span className="ob-error">{sandboxError}</span>}
                 </>

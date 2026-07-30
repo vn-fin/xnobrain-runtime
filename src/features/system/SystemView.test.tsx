@@ -37,6 +37,7 @@ const sandbox = {
   error: '',
   setupRunning: false,
   setupProgress: 0,
+  setupMessage: '',
   onCreate: noop,
   onRefresh: noop,
 };

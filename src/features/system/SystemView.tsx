@@ -27,6 +27,7 @@ type SystemViewProps = {
     error: string;
     setupRunning: boolean;
     setupProgress: number;
+    setupMessage: string;
     onCreate: () => void;
     onRefresh: () => void;
   };
@@ -178,6 +179,7 @@ export function SystemView({
             error={sandbox.error}
             setupRunning={sandbox.setupRunning}
             setupProgress={sandbox.setupProgress}
+            setupMessage={sandbox.setupMessage}
             onCreate={sandbox.onCreate}
             onRefresh={sandbox.onRefresh}
             onClose={() => undefined}

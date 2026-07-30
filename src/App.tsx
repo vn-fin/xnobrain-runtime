@@ -266,6 +266,7 @@ export default function App() {
           sandboxProvisioned={sandbox.provisioned}
           setupRunning={sandbox.setupRunning}
           setupProgress={sandbox.setupProgress}
+          setupMessage={sandbox.setupMessage}
           sandboxError={sandbox.error}
           onCreateSandbox={sandbox.createSandbox}
           providers={connections.connections}
@@ -363,6 +364,7 @@ export default function App() {
               error: sandbox.error,
               setupRunning: sandbox.setupRunning,
               setupProgress: sandbox.setupProgress,
+              setupMessage: sandbox.setupMessage,
               onCreate: sandbox.createSandbox,
               onRefresh: sandbox.refresh,
             }}
