@@ -263,7 +263,7 @@ live in Phase 0 (§10).
   model-list validation exists, so a blend name is accepted as-is.**
 - The `provider` field, if present, must be one of
   `{"9router", "nine-router", "auto", "custom:nine-router"}` (line 383). The
-  frontend already normalizes this: `routedConfig()` in `src/src/api/agents.ts`
+  frontend already normalizes this: `routedConfig()` in `src/api/agents.ts`
   rewrites any provider to `nine-router` before PATCHing, so the picker can
   pass a "blend" pseudo-provider without backend changes.
 - Per-conversation override: `ChatRequest.model`

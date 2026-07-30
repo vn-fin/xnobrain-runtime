@@ -33,10 +33,10 @@ editing (they will drift).
   (line 124). Operations are mapped in `brain4all/handlers/api.py` lines
   167–169; `teams_run` calls `s.run_team(p["team_id"], body)` and returns the
   result in the standard envelope with status 200.
-- Frontend: `src/src/api/teams.ts` (48 lines, `teamsApi.run` posts to
+- Frontend: `src/api/teams.ts` (48 lines, `teamsApi.run` posts to
   `/api/brain/v1/teams/{id}/run` and awaits the full result),
-  `src/src/hooks/useTeams.ts` (65 lines, holds `lastRun` in memory only),
-  `src/src/components/TeamsView.tsx` (94 lines, renders `state.lastRun` —
+  `src/hooks/useTeams.ts` (65 lines, holds `lastRun` in memory only),
+  `src/components/TeamsView.tsx` (94 lines, renders `state.lastRun` —
   the "Final orchestrator summary" card).
 
 ### What `run_team` actually does, end to end
@@ -222,9 +222,9 @@ Full trade-off analysis: [approaches.md](approaches.md) Decision B.
   tasks on shutdown.
 - **Atomic JSON:** `FileRepository.atomic_json` (files.py 241–242) and the
   notifications store (211–239) as the JSON-per-file listing pattern.
-- **Frontend SSE consumption:** `src/src/api/stream.ts` (`readSSE`) consumed
-  as in `src/src/api/kanban.ts` lines 235–239 (`requestRaw` + `readSSE`) and
-  the reconnect/abort loop in `src/src/hooks/useKanban.ts` lines 228–300.
+- **Frontend SSE consumption:** `src/api/stream.ts` (`readSSE`) consumed
+  as in `src/api/kanban.ts` lines 235–239 (`requestRaw` + `readSSE`) and
+  the reconnect/abort loop in `src/hooks/useKanban.ts` lines 228–300.
 - **Tests:** `brain4all/tests/test_fastapi.py` setUp (temp `HERMES_HOME`,
   `HERMES_PROFILES_ROOT`, `DATA_DIR`, `Brain4AllApplication` + `FakeRouter`,
   `AsyncClient(ASGITransport)`), and `brain4all/tests/test_analytics.py` for

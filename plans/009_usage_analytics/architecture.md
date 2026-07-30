@@ -236,8 +236,8 @@ standard failure envelope.
 
 ## React UI — Analytics dashboard
 
-New feature under `src/src/features/analytics/` with an API client
-`src/src/api/analytics.ts` and a hook `src/src/hooks/useAnalytics.ts` (mirroring
+New feature under `src/features/analytics/` with an API client
+`src/api/analytics.ts` and a hook `src/hooks/useAnalytics.ts` (mirroring
 `useKanban.ts`/`kanban.ts`). A route/nav entry lands under Settings or a
 top-level Analytics destination (follow the current nav rules in
 `plans/CHECKLIST.md` 002). Components:
@@ -270,9 +270,9 @@ top-level Analytics destination (follow the current nav rules in
   the `status` color (ok/warning/exceeded) and an edit control that PUTs
   `AgentBudgetPatch`. A clear "advisory — not enforced" label.
 
-**Charts**: no chart library is installed (`src/package.json` has none), and the
+**Charts**: no chart library is installed (`package.json` has none), and the
 app must stay self-contained. Implement a **lightweight inline SVG** bar/line
-chart component (`src/src/features/analytics/Chart.tsx`) rather than adding a
+chart component (`src/features/analytics/Chart.tsx`) rather than adding a
 dependency. Keep it accessible (title/desc, keyboard focus, `aria-label` per
 series) and theme-aware, matching existing component styling. States: loading,
 empty ("no usage yet"), partial-failure (one agent's DB unreadable), and

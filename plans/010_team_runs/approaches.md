@@ -10,8 +10,8 @@ Options considered for each decision, then the chosen path. Cross-links:
 ### A1. Convert `POST /api/brain/v1/teams/{team_id}/run` to async (202 + record)
 
 - Pros: one run endpoint; no duplicate surface.
-- Cons (decisive): breaks the existing contract. `src/src/api/teams.ts`
-  (`teamsApi.run`) and `src/src/hooks/useTeams.ts` (`lastRun`) — and any
+- Cons (decisive): breaks the existing contract. `src/api/teams.ts`
+  (`teamsApi.run`) and `src/hooks/useTeams.ts` (`lastRun`) — and any
   external client — expect the full result synchronously. The program rule is
   a stable compatibility surface (`routes/setup.py` docstring: "the stable
   Brain4All compatibility surface"). A silent semantic change from

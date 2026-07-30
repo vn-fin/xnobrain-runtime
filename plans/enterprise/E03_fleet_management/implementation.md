@@ -94,18 +94,18 @@ Decisions referenced: [approaches.md](approaches.md); shapes:
 
 ### Phase 3 — Settings UI + tests
 
-10. **`src/src/features/system/EnterpriseSection.tsx`** (new) — follow the
+10. **`src/features/system/EnterpriseSection.tsx`** (new) — follow the
     `SystemView` tab pattern used by plan 012's `BlendsSection.tsx`: add
     `{ id: 'enterprise', label: 'Enterprise' }` to the `tabs` array in
-    `src/src/features/system/SystemView.tsx`, a
+    `src/features/system/SystemView.tsx`, a
     `{section === 'enterprise' && <EnterpriseSection ... />}` card, and the
-    `'enterprise'` member on `SettingsSection` in `src/src/hooks/useRouter.ts`.
+    `'enterprise'` member on `SettingsSection` in `src/hooks/useRouter.ts`.
     Content is minimal per `03-device-connector.md` UX: enrollment status,
     cloud endpoint, last connected time, queued commands, an enroll-with-token
     form (PC path, decision D), and **Unpair** with a confirm explaining that
     only cloud credentials are erased. Anonymous-mode recovery-code display
     ships only if E01 exposes it (Phase-0 item).
-11. **`src/src/features/system/api.ts`** — add the three device endpoints to
+11. **`src/features/system/api.ts`** — add the three device endpoints to
     the existing `systemApi`.
 12. **`brain4all/tests/test_device_connector.py`** (new) — a **fake control
     plane** (in-process ASGI app or `httpx.MockTransport`) driving the full

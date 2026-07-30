@@ -30,8 +30,8 @@ documented extension edges. It must not revive or modify a legacy CLI.
 
 ### Frontend
 
-`src/src/api/kanban.ts` is an in-memory adapter with seeded sample boards and
-tasks. `src/src/hooks/useKanban.ts` and `src/src/components/KanbanView.tsx`
+`src/api/kanban.ts` is an in-memory adapter with seeded sample boards and
+tasks. `src/hooks/useKanban.ts` and `src/components/KanbanView.tsx`
 provide a substantial visual prototype, but production behavior is not
 persistent and the model allows user-defined statuses. The existing tests
 exercise this mock rather than a backend contract.

@@ -278,17 +278,17 @@ dormancy rule). Exact files:
    (tag `System`), thin passthroughs to `enterprise_auth.py` so the
    browser never talks to the enterprise host directly (token stays
    server-side in `DATA_DIR`).
-4. **`src/src/features/system/EnterpriseSection.tsx`** (new — created
+4. **`src/features/system/EnterpriseSection.tsx`** (new — created
    HERE, extended later by E03; [findings.md](findings.md) risk 6) —
    login form (backend list from `GET /auth/v1/backends` via the local
    passthrough; local/LDAP credentials; OIDC/SAML shown as "open control
    plane to sign in" link in v1), signed-in card (user, org, roles,
    capability badges), sign-out. Follow the `SystemView` tab pattern: add
    `{ id: 'enterprise', label: 'Enterprise' }` to the tabs array in
-   `src/src/features/system/SystemView.tsx` and the `'enterprise'` member
-   on `SettingsSection` in `src/src/hooks/useRouter.ts` (identical wiring
+   `src/features/system/SystemView.tsx` and the `'enterprise'` member
+   on `SettingsSection` in `src/hooks/useRouter.ts` (identical wiring
    to E03 implementation.md step 10 — whichever merges first does it).
-5. **`src/src/features/system/api.ts`** — the three auth passthrough
+5. **`src/features/system/api.ts`** — the three auth passthrough
    calls + extended limits type.
 6. **Env/docs** — `.env`/compose examples gain nothing new
    (`ENTERPRISE_API_URL` already specified by E02/E03 plans); README
@@ -305,7 +305,7 @@ OSS tests: `brain4all/tests/test_enterprise_auth.py` — dormancy (unset
 env ⇒ no routes active work, no calls); session file atomicity; token
 never in logs (capture + grep); limits merge shape; enterprise-down ⇒
 limits fall back to the current static payload unchanged. Frontend:
-`src/src/features/system/api.test.ts` extension + `cd src && npm run
+`src/features/system/api.test.ts` extension + `npm run
 build`.
 
 ## Joint validation

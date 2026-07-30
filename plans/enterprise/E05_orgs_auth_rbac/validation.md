@@ -156,7 +156,7 @@ built-in roles plus one custom role.
       `org` + `capabilities` per `docs/contracts/enterprise-auth-v1.md`
       and still `local_features_unlimited: true`; the Enterprise settings
       tab shows the signed-in card. Evidence: API transcript + UI
-      screenshot; `cd src && npm run build` clean.
+      screenshot; `npm run build` clean.
 - [ ] **HA drift visibility.** Two replicas with mismatched `auth.yaml`
       hashes are detectable from `/readyz` and from consecutive
       `authcfg.reloaded` audit rows ([findings.md](findings.md) risk 1).

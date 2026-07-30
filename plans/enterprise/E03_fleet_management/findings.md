@@ -160,7 +160,7 @@ service layer, not by constructing its own.
   cancelling it on shutdown with `suppress(asyncio.CancelledError)`. The
   connector copies this pattern exactly (decision B in
   [approaches.md](approaches.md)).
-- **Settings tab pattern.** `src/src/features/system/SystemView.tsx` renders a
+- **Settings tab pattern.** `src/features/system/SystemView.tsx` renders a
   `tabs` array (`profiles`, `vm`, `connectors`, `blends`) keyed by
   `SettingsSection` and conditionally renders section components; plan 012
   added `BlendsSection.tsx` this way. The Enterprise panel adds one more tab

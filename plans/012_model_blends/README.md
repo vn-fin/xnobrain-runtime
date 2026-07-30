@@ -123,9 +123,9 @@ setting an *agent's model* to a blend continues to go through the existing
 - **Phase 3 — Handlers + routes.** `blends_*` operations in
   `brain4all/handlers/api.py` and the `Route(...)` lines in
   `brain4all/routes/setup.py` (tag `Blends`, versioned `/api/brain/v1`).
-- **Phase 4 — Frontend.** `src/src/api/blends.ts`, `src/src/hooks/useBlends.ts`,
-  a Blends section in `src/src/features/system/SystemView.tsx`, and the
-  "Blends" group in the `src/src/components/ChatArea.tsx` model picker.
+- **Phase 4 — Frontend.** `src/api/blends.ts`, `src/hooks/useBlends.ts`,
+  a Blends section in `src/features/system/SystemView.tsx`, and the
+  "Blends" group in the `src/components/ChatArea.tsx` model picker.
 - **Phase 5 — Tests.** Fake-router unit tests (combo + settings fixtures),
   service guard tests (name collision, `auto` immutability), ASGI integration
   tests, frontend build.
@@ -153,6 +153,6 @@ File-by-file steps are in [implementation.md](implementation.md).
 - Analytics by-model view attributes sessions run under a blend to the blend
   name (verified with a real chat; no analytics code change).
 - No route or log exposes credentials or the raw 9router settings payload.
-- Probe test, unit/integration tests, `cd src && npm run build`, and
+- Probe test, unit/integration tests, `npm run build`, and
   `make check` pass with evidence recorded in
   [validation.md](validation.md).

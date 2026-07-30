@@ -145,20 +145,20 @@ lines 524–534). New endpoints reuse `_request()` and inherit this.
 
 ### 3d. Frontend — one card, one state
 
-- [`src/src/components/ConnectionsView.tsx`](../../src/src/components/ConnectionsView.tsx)
+- [`src/components/ConnectionsView.tsx`](../../src/components/ConnectionsView.tsx)
   renders one card per provider; once `p.connected` is true it shows only
   Test/Disconnect (lines 71–102) — the connect action disappears, so a second
   account can never be added. The shared API-key panel (lines 129–155) saves
   via `onSaveKey` → `providersApi.update` which, per 3a, already *adds* a
   connection under the hood.
-- [`src/src/features/system/SystemView.tsx`](../../src/src/features/system/SystemView.tsx)
+- [`src/features/system/SystemView.tsx`](../../src/features/system/SystemView.tsx)
   renders `ConnectionsView` inside the `connectors` section (lines 152–161).
-- [`src/src/hooks/useConnections.ts`](../../src/src/hooks/useConnections.ts)
+- [`src/hooks/useConnections.ts`](../../src/hooks/useConnections.ts)
   holds provider-level state only (`ConnectionProvider[]`) and the OAuth
   popup/poll flow (lines 44–107) via
-  [`src/src/utils/providerAuth.ts`](../../src/src/utils/providerAuth.ts).
-- [`src/src/api/providers.ts`](../../src/src/api/providers.ts) has no
-  connection-level methods; [`src/src/types.ts`](../../src/src/types.ts)
+  [`src/utils/providerAuth.ts`](../../src/utils/providerAuth.ts).
+- [`src/api/providers.ts`](../../src/api/providers.ts) has no
+  connection-level methods; [`src/types.ts`](../../src/types.ts)
   `ConnectionProvider` (line 11) has no accounts array.
 
 ## 4. Hermes profile side is unaffected

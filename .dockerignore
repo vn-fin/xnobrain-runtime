@@ -1,11 +1,11 @@
 .git
 .tools
 data
-src/node_modules
-src/dist
-src/*.tsbuildinfo
-src/vite.config.js
-src/vite.config.d.ts
+node_modules
+dist
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
 bin
 brain4all/**/__pycache__
 brain4all/**/*.pyc

@@ -45,8 +45,8 @@ Asserts (implementation.md Phase 0):
 | `test_retention_prunes` | per-team retention keeps newest `TEAM_RUN_RETENTION` files |
 | `test_compat_*` | Phase 0 assertions |
 
-Frontend: `cd src && npm test` (existing suites stay green) and
-`cd src && npm run build` (type check of the new API/hook/component code).
+Frontend: `npm test` (existing suites stay green) and
+`npm run build` (type check of the new API/hook/component code).
 
 ## 3. Repository checks
 

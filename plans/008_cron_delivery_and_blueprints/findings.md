@@ -127,8 +127,8 @@ Current operations (all present):
 - Legacy file repo (`brain4all/repositories/files.py` ≈ 141–174):
   `list_crons/put_cron/delete_cron` over per-profile YAML — retained for
   migration/back-compat, not the live path.
-- Frontend (`src/src/api/crons.ts`, `src/src/hooks/useCrons.ts`,
-  `src/src/features/system/SystemView.tsx`): list/create/setState/remove only.
+- Frontend (`src/api/crons.ts`, `src/hooks/useCrons.ts`,
+  `src/features/system/SystemView.tsx`): list/create/setState/remove only.
 
 ## What Brain4All lacks (the exact gap)
 

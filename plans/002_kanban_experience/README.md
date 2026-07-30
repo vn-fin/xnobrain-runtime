@@ -226,7 +226,7 @@ a failed API request to in-memory sample data.
 
 ## Frontend implementation sequence
 
-1. Add typed API models/client and replace `src/src/api/kanban.ts` memory state.
+1. Add typed API models/client and replace `src/api/kanban.ts` memory state.
 2. Refactor `useKanban` into query/mutation/event concerns with rollback and
    cache invalidation.
 3. Establish the fixed status types and shared state-detail labels.
@@ -257,7 +257,7 @@ acceptance:
 - empty/loading/error/reconnect states;
 - responsive widths, reduced motion, and accessibility scan;
 - every locale builds without missing keys;
-- `cd src && npm test` and `cd src && npm run build`;
+- `npm test` and `npm run build`;
 - the relevant journeys in `plans/VERIFICATION.md`.
 
 The plan is complete when a non-technical user can create, assign, follow,

@@ -11,24 +11,19 @@
 coverage.html
 coverage.txt
 
-# ─── React / Node (src/) ───────────────────────────────────────────────────────
-src/node_modules/
-src/.vite/
-src/*.tsbuildinfo
-src/vite.config.js
-src/vite.config.d.ts
-
-# Storybook
-src/storybook-static/
-
-# ─── Node (root workspace) ────────────────────────────────────────────────────
+# ─── React / Node ─────────────────────────────────────────────────────────────
 node_modules/
-dist/
+.vite/
 .npm/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+storybook-static/
 
-# The production UI is copied into the frontend image and is committed.
-!src/dist/
-!src/dist/**
+# The production UI is copied into the frontend image and remains committed.
+/dist/
+!/dist/
+!/dist/**
 
 # ─── Environment & secrets ────────────────────────────────────────────────────
 .env
@@ -51,6 +46,16 @@ __pycache__/
 *.pyc
 *.pyo
 .Python
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+*.egg-info/
 
 # ─── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store

@@ -170,48 +170,48 @@ point).
 Follow the existing per-feature file layout; all copy in plain English
 matching current UI tone.
 
-1. **`src/src/api/blends.ts`** (new) — mirror `src/src/api/analytics.ts`:
+1. **`src/api/blends.ts`** (new) — mirror `src/api/analytics.ts`:
    typed DTOs (`Blend`, `BlendStrategy = 'fallback' | 'round-robin' |
    'fusion'`, `BlendCreateInput`, `BlendPatchInput`, `BlendModel`) and a
    `blendsApi` object with `list()`, `create(input)`, `update(id, input)`,
    `remove(id)`, `availableModels()` calling
    `/api/brain/v1/blends*` through `request()` from
-   `src/src/api/client.ts`.
-2. **`src/src/hooks/useBlends.ts`** (new) — mirror
-   `src/src/hooks/useConnections.ts`: state `{blends, status, error}`,
+   `src/api/client.ts`.
+2. **`src/hooks/useBlends.ts`** (new) — mirror
+   `src/hooks/useConnections.ts`: state `{blends, status, error}`,
    `refresh()` on mount, `createBlend`, `updateBlend`, `deleteBlend`,
    `loadAvailableModels`; surface a distinct `unavailable` flag when the API
    error status is 503 so the UI can show the 9router-down banner.
-3. **Settings tab** — `src/src/hooks/useRouter.ts`: extend the
+3. **Settings tab** — `src/hooks/useRouter.ts`: extend the
    `SettingsSection` union (line 4) with `'blends'` (and the boot-route
-   parser). `src/src/features/system/SystemView.tsx`: add
+   parser). `src/features/system/SystemView.tsx`: add
    `{ id: 'blends', label: 'Model Blends' }` to the `tabs` array (line 61)
    and a `{section === 'blends' && <BlendsSection ... />}` card.
-4. **`src/src/features/system/BlendsSection.tsx`** (new) — list + delete
+4. **`src/features/system/BlendsSection.tsx`** (new) — list + delete
    confirm + "New blend"; per-row: name, strategy chip, model count, `auto`
    shown with a "System" badge and disabled actions. Unavailable banner on
    503.
-5. **`src/src/features/system/BlendEditorDialog.tsx`** (new) — create/edit
+5. **`src/features/system/BlendEditorDialog.tsx`** (new) — create/edit
    dialog per the sketch in [architecture.md](architecture.md) § React UI:
    validated name input; ordered multi-select with up/down reorder over
    `availableModels`; strategy radio; sticky-limit input (round-robin, with
    the "applies to all round-robin blends" note); judge-model select
    (fusion) and the fusion caveat copy: *"Fusion runs every model in the
    blend on each request (higher cost); tools are disabled for fusion."*
-6. **Composer picker** — `src/src/components/ChatArea.tsx`: add a
+6. **Composer picker** — `src/components/ChatArea.tsx`: add a
    `blends: string[]` prop; render a "Blends" group at the top of the
    `model-picker` menu (before the `providers.map(...)` block at lines
    734–756), each entry calling `onSelectModel('blend', name)`; keep the
-   active-check logic (`agent.model === name`). `src/src/App.tsx`: obtain
+   active-check logic (`agent.model === name`). `src/App.tsx`: obtain
    names from `useBlends` and pass them where `ChatArea` is rendered
    (`onSelectModel` at line 282 already routes through
    `assistants.updateAgent` → `routedConfig`, which forces provider
    `nine-router` — no backend change).
-7. **Agent settings dialog** — `src/src/components/modals.tsx` (model input
+7. **Agent settings dialog** — `src/components/modals.tsx` (model input
    at lines 307–308): attach a `<datalist>` (or small select) fed with blend
    names + real model ids so blends are selectable without retyping.
 8. **Contracts** — add the blend DTO types to
-   `src/src/api/contracts/agentGateway.ts` alongside
+   `src/api/contracts/agentGateway.ts` alongside
    `ProviderModelsResponseDTO`.
 
 ## Phase 5 — Tests
@@ -253,8 +253,8 @@ matching current UI tone.
    `strategy: "round-robin", sticky_limit: 2` then `list_blends` reflects
    both; patch to `fusion` with a judge; patch back to `fallback` clears the
    entry.
-4. **Frontend** — `cd src && npm run build` for type safety; add
-   `src/src/api/blends.test.ts` mirroring `agents.test.ts` if the suite
+4. **Frontend** — `npm run build` for type safety; add
+   `src/api/blends.test.ts` mirroring `agents.test.ts` if the suite
    pattern applies (request paths + payload mapping).
 5. Full gate: `make test`, then `make check` (see
    [validation.md](validation.md)).

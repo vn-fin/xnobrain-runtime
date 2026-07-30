@@ -78,7 +78,7 @@ Same harness as `brain4all/tests/test_kanban.py` (real `Brain4AllApplication`,
 
 - `make check` — full backend + repo checks pass.
 - `make test` — focused backend suite including the new file.
-- `cd src && npm run build` and `cd src && npm test -- crons` — frontend
+- `npm run build` and `npm test -- crons` — frontend
   type/build + component/hook tests.
 - `make smoke-api` — the API smoke path still passes with the new routes
   registered (no route-assembly or import regressions).

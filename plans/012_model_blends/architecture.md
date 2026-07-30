@@ -266,7 +266,7 @@ reason the feature needs zero Hermes work:
 
 ```
 UI model picker ──> agentsApi.update(id, {provider, model: "<blend name>"})
-  └─ src/src/api/agents.ts routedConfig(): provider forced to "nine-router"
+  └─ src/api/agents.ts routedConfig(): provider forced to "nine-router"
 PATCH /api/brain/v1/agents-configs/{agent_id}   (ConfigPatch)
   └─ handlers/api.py "config_agent_patch"
   └─ PlatformService.update_agent_config: snapshot config.yaml, then
@@ -315,17 +315,17 @@ User            Brain4All API              9router (:20128)            Hermes
 ## React UI
 
 Two touch points, following the existing feature layout
-(`src/src/features/system/`, `src/src/api/*.ts`, `src/src/hooks/*.ts`):
+(`src/features/system/`, `src/api/*.ts`, `src/hooks/*.ts`):
 
 ### 1. "Model Blends" management panel (Settings)
 
-- `src/src/hooks/useRouter.ts`: extend
+- `src/hooks/useRouter.ts`: extend
   `SettingsSection = 'profiles' | 'vm' | 'connectors' | 'blends'`.
-- `src/src/features/system/SystemView.tsx`: add tab
+- `src/features/system/SystemView.tsx`: add tab
   `{ id: 'blends', label: 'Model Blends' }` and a
   `{section === 'blends' && <BlendsSection .../>}` card, mirroring how the
   `connectors` tab embeds `ConnectionsView`.
-- New components under `src/src/features/system/`:
+- New components under `src/features/system/`:
   - **`BlendsSection.tsx`** — list: one row per blend with name, strategy
     chip (`fallback` / `round-robin` / `fusion`), model count, and for `auto`
     a "System" badge with edit/delete disabled. "New blend" button. Delete
@@ -343,22 +343,22 @@ Two touch points, following the existing feature layout
     **"Fusion runs every model in the blend on each request (higher cost);
     tools are disabled for fusion."** (verified tools-stripping —
     findings.md §4).
-- API client `src/src/api/blends.ts` (mirrors `src/src/api/analytics.ts`
-  style: typed DTOs + `request()` from `src/src/api/client.ts`).
-- Hook `src/src/hooks/useBlends.ts` (mirrors `useConnections.ts`: `blends`,
+- API client `src/api/blends.ts` (mirrors `src/api/analytics.ts`
+  style: typed DTOs + `request()` from `src/api/client.ts`).
+- Hook `src/hooks/useBlends.ts` (mirrors `useConnections.ts`: `blends`,
   `status`, `error`, `refresh`, `createBlend`, `updateBlend`, `deleteBlend`,
   `availableModels`).
 
 ### 2. Model pickers show blends
 
-- **Composer picker** (`src/src/components/ChatArea.tsx`, the
+- **Composer picker** (`src/components/ChatArea.tsx`, the
   `model-picker` menu around lines 726–761): prepend a **"Blends"** group —
   rendered from a new `blends: string[]` prop (names, `auto` first labeled
   "Auto") — above the per-provider groups. Selecting one calls the existing
   `onSelectModel('blend', name)`; `routedConfig()` already normalizes the
   provider (findings.md §8). `App.tsx` passes the blends list from
   `useBlends`.
-- **Agent settings dialog** (`src/src/components/modals.tsx`, model field at
+- **Agent settings dialog** (`src/components/modals.tsx`, model field at
   lines 307–308): keep the free-text input but add a datalist/select of
   blends + real models so a blend is one click. (Minimal change; the input
   already accepts any string.)

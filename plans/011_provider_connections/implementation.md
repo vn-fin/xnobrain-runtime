@@ -337,7 +337,7 @@ Route("GET", "/api/brain/v1/providers/{provider_id}/connections/{connection_id}/
 
 ## Phase 4 — Frontend (file by file)
 
-### 4a. `src/src/api/providers.ts` — types + methods
+### 4a. `src/api/providers.ts` — types + methods
 
 ```ts
 export type ProviderConnection = {
@@ -376,12 +376,12 @@ connectionUsage(id, connectionId): GET …/connections/${encoded(connectionId)}/
 ```
 
 Add the matching DTO fields in
-`src/src/api/contracts/agentGateway.ts` (`connection_count?` on
+`src/api/contracts/agentGateway.ts` (`connection_count?` on
 `ProviderConnectorDTO`) and surface `connection_count` through
-`mapConnectionProvider` in `src/src/api/mappers/providers.ts` /
-`ConnectionProvider` in `src/src/types.ts` (optional field).
+`mapConnectionProvider` in `src/api/mappers/providers.ts` /
+`ConnectionProvider` in `src/types.ts` (optional field).
 
-### 4b. `src/src/hooks/useConnections.ts` — state + actions
+### 4b. `src/hooks/useConnections.ts` — state + actions
 
 Add:
 
@@ -403,11 +403,11 @@ Add:
   loop to also snapshot `connectionsByProvider[authProviderId]?.length` at
   start and finish when the count grows (call `loadConnections` inside the
   poll). Keep the popup helpers from
-  `src/src/utils/providerAuth.ts` untouched.
+  `src/utils/providerAuth.ts` untouched.
 - Allow `connect(id)` to run when `provider.connected === true` (remove no
   code — the guard is only in the view, 4c).
 
-### 4c. `src/src/components/ConnectionsView.tsx` — accounts UI
+### 4c. `src/components/ConnectionsView.tsx` — accounts UI
 
 Per the sketch in [architecture.md](architecture.md):
 
@@ -433,14 +433,14 @@ Per the sketch in [architecture.md](architecture.md):
   `onReorderAccount`, `onTestAccount`, `onRemoveAccount`,
   `onLoadAccountUsage`.
 
-### 4d. `src/src/features/system/SystemView.tsx`
+### 4d. `src/features/system/SystemView.tsx`
 
 Extend `SystemViewProps` (lines 10–34) with the new callbacks/state and pass
 them through to `ConnectionsView` (lines 152–161). The composition root that
 instantiates `useConnections` (follow current wiring of
 `providers`/`onConnect`/`onDisconnect`) supplies them.
 
-### 4e. i18n — `src/src/locales/*.json`
+### 4e. i18n — `src/locales/*.json`
 
 Add under `connections.`: `accounts`, `accountsHint`, `addAccount`,
 `removeAccount`, `removeAllAccounts`, `removeAllConfirm` (with `{{count}}`),
@@ -531,7 +531,7 @@ New tests (ASGI client, envelope assertions like the existing ones):
 
 ### 5c. Frontend
 
-`cd src && npm run build` for type verification; if the repo has component
+`npm run build` for type verification; if the repo has component
 tests (`npm test -- ConnectionsView`), add: renders N account rows from
 props, reorder computes normalized priorities, remove-all confirm shows the
 count, and no property named `api_key` is ever rendered.

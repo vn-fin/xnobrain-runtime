@@ -113,12 +113,12 @@ keys or OAuth tokens.
   `Route(...)` lines under `/api/brain/v1/providers/{provider_id}/connections`,
   tag `Providers`.
 - **Phase 4 — Frontend.** Accounts list per provider card in the Connectors
-  section: [`src/src/api/providers.ts`](../../src/src/api/providers.ts),
-  [`src/src/hooks/useConnections.ts`](../../src/src/hooks/useConnections.ts),
-  [`src/src/components/ConnectionsView.tsx`](../../src/src/components/ConnectionsView.tsx)
+  section: [`src/api/providers.ts`](../../src/api/providers.ts),
+  [`src/hooks/useConnections.ts`](../../src/hooks/useConnections.ts),
+  [`src/components/ConnectionsView.tsx`](../../src/components/ConnectionsView.tsx)
   (rendered by
-  [`src/src/features/system/SystemView.tsx`](../../src/src/features/system/SystemView.tsx)),
-  reusing [`src/src/utils/providerAuth.ts`](../../src/src/utils/providerAuth.ts)
+  [`src/features/system/SystemView.tsx`](../../src/features/system/SystemView.tsx)),
+  reusing [`src/utils/providerAuth.ts`](../../src/utils/providerAuth.ts)
   popup flows.
 - **Phase 5 — Tests.** Multi-connection `FakeRouter` fixtures in the
   [`brain4all/tests/test_fastapi.py`](../../brain4all/tests/test_fastapi.py)

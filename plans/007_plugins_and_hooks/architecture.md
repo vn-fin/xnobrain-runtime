@@ -237,10 +237,10 @@ next enable re-runs the gate. `disable()`/`remove()` are unconditional.
 
 ## React UI
 
-Frontend lives under `src/src/` (note doubled `src`). No react-router; routing
-is the hand-rolled `hooks/useRouter.ts`.
+Frontend source lives under the root `src/` directory. No react-router;
+routing is the hand-rolled `hooks/useRouter.ts`.
 
-- **Plugins page** — new `src/src/components/PluginsView.tsx`, cloned from
+- **Plugins page** — new `src/components/PluginsView.tsx`, cloned from
   `SkillsView.tsx`: a hub/catalog card grid (installed + status badges), an
   "Install from URL" panel, and per-card actions (scan report, approve, enable,
   disable, update, remove, hide). The **approval dialog** shows the sanitized
@@ -249,20 +249,20 @@ is the hand-rolled `hooks/useRouter.ts`.
   Wire-in: add `'plugins'` to `CenterView` (`types.ts`), branches in
   `useRouter.ts` `parseRoute`/`computeUrl` (`/plugins`), a nav row in
   `components/Sidebar.tsx` `navItems`, and a branch in `App.tsx`'s center-view
-  ternary. New client `src/src/api/plugins.ts` (clone `api/skills.ts`,
-  `ROOT = '/api/brain/v1/plugins'`), hook `src/src/hooks/usePlugins.ts`
+  ternary. New client `src/api/plugins.ts` (clone `api/skills.ts`,
+  `ROOT = '/api/brain/v1/plugins'`), hook `src/hooks/usePlugins.ts`
   (clone the skills logic in `useAssistants.ts`, optimistic-then-reconcile).
 - **Per-agent Tools/Capabilities panel** — new `'tools'` tab in
   `components/RightPanel.tsx`, cloned from its `rightView === 'skills'` block:
   a toggle list of toolsets with `enabled`/`available`/`ready` badges (a
   not-ready tool shows why, e.g. "needs FAL_KEY"). Add `'tools'` to `RightView`
   and to the `panel` whitelist in `useRouter.ts`. New client
-  `src/src/api/tools.ts` and hook `src/src/hooks/useAgentTools.ts`.
+  `src/api/tools.ts` and hook `src/hooks/useAgentTools.ts`.
 - **Hooks visibility** — a read-mostly section (in the Plugins page or a
   Settings subsection) listing shell/plugin/gateway hooks; shell hooks get
   create-with-approval and delete controls.
 - **i18n** — add `pluginsView`, `agentTools`, and `hooks` key namespaces to all
-  7 locale JSONs under `src/src/locales/` (`en, vi, es, fr, de, ja, zh`),
+  7 locale JSONs under `src/locales/` (`en, vi, es, fr, de, ja, zh`),
   mirroring the `skillsView`/`agentSkills` structure.
 
 ## Safe-install sequence diagram

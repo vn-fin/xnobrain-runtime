@@ -96,7 +96,7 @@ in the **same fleet list**, managed through the same command channel.
   lifespan wiring in `brain4all/app.py` following the kanban-dispatcher
   pattern.
 - **Phase 3 — OSS UI + tests.** "Enterprise" section in
-  `src/src/features/system/` (SystemView tab pattern, as plan 012's
+  `src/features/system/` (SystemView tab pattern, as plan 012's
   `BlendsSection`); fake-control-plane tests in
   `brain4all/tests/test_device_connector.py`.
 - **Phase 4 — Enterprise fleet core.** `internal/fleet`: command dispatch,

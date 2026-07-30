@@ -295,19 +295,19 @@ read-only and never blocks execution.
 
 ## Phase 5 — Frontend
 
-- `src/src/api/analytics.ts` (new): typed client for the **seven** routes
+- `src/api/analytics.ts` (new): typed client for the **seven** routes
   (including `GET /analytics/agents` and the `agents`/`from`/`to`/`days`/`bucket`
-  query params), mirroring `src/src/api/kanban.ts` and using
-  `src/src/api/client.ts`.
-- `src/src/hooks/useAnalyticsControls.ts` (new): the single source of the query —
+  query params), mirroring `src/api/kanban.ts` and using
+  `src/api/client.ts`.
+- `src/hooks/useAnalyticsControls.ts` (new): the single source of the query —
   `selectedAgents: string[]` (empty = All), `range` (preset days **or** custom
   from/to), and `bucket`. **Persist it** to the URL query string + `localStorage`
   so a reload restores the view. Auto-suggest `bucket` from the range width.
-- `src/src/hooks/useAnalytics.ts` (new): given the controls object, fetch summary
+- `src/hooks/useAnalytics.ts` (new): given the controls object, fetch summary
   + timeseries + budgets and expose a `setBudget` mutation; refetch whenever the
   controls change; mirror `useKanban.ts` states (loading/empty/partial-failure/
   offline).
-- `src/src/features/analytics/` (new):
+- `src/features/analytics/` (new):
   - `AnalyticsDashboard.tsx` — layout: the control bar on top, then tiles / bars /
     chart / budgets; owns `useAnalyticsControls` + `useAnalytics`.
   - `ControlBar.tsx` — the Grafana-style bar containing:
@@ -328,8 +328,8 @@ read-only and never blocks execution.
     dialog PUTting `AgentBudgetPatch`; label it "advisory — not enforced".
 - Navigation: add an Analytics destination consistent with the current nav rules
   (Settings section or top-level), per `plans/CHECKLIST.md` 002. Translate new
-  strings in every shipped locale (`src/src/locales`).
-- Type/build check with `cd src && npm run build`.
+  strings in every shipped locale (`src/locales`).
+- Type/build check with `npm run build`.
 
 ## Phase 6 — Tests and docs
 

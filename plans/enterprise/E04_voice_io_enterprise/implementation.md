@@ -169,19 +169,19 @@ exactly as today (routes 403, `capabilities: {}`, zero UI change).
 ## Phase 3 — OSS track: gated frontend (reuse 006's component design)
 
 File list from `plans/006_voice_io/implementation.md` (paths normalized to
-the actual `src/src/` tree root), plus the gating changes:
+the actual `src/` tree root), plus the gating changes:
 
-1. **`src/src/api/voice.ts`** (NEW, from 006) — `speak(text, voiceId?)`
+1. **`src/api/voice.ts`** (NEW, from 006) — `speak(text, voiceId?)`
    (via `requestRaw`, returns a Blob), `transcribe(blob, mime)` (via
    `requestMultipart`), `voices()`; `getVoiceConfig(agentId)` /
    `setVoiceConfig(agentId, cfg)` for the per-agent preference.
-2. **`src/src/hooks/useVoice.ts`** (NEW, from 006) — recorder state machine
+2. **`src/hooks/useVoice.ts`** (NEW, from 006) — recorder state machine
    (idle → recording → transcribing → done/error), `speak` playback helper
    (`URL.createObjectURL` instead of 006's data-URL, per Decision D2).
    **New vs 006:** `useCapabilities()` (or extend the existing
    limits-consuming hook found in Phase 3 recon) exposing
    `capabilities.voice` and an `enterpriseReachable` flag.
-3. **`src/src/components/ChatArea.tsx`** (EDIT, from 006) — Play/Stop in
+3. **`src/components/ChatArea.tsx`** (EDIT, from 006) — Play/Stop in
    the assistant action row (~line 574) and mic button in the composer.
    **Gating change:** both render only when `capabilities.voice === true`;
    when the last voice call failed with `enterprise_unreachable`, render
@@ -193,12 +193,12 @@ the actual `src/src/` tree root), plus the gating changes:
 5. **Degradation banner** — a small shared banner/toast for
    `enterprise_unreachable` ("Voice is temporarily unavailable...").
 6. **i18n** — all new strings added to every locale:
-   `src/src/locales/{en,de,es,fr,ja,vi,zh}.json` (7 files, per 006).
-7. **Frontend tests** — `src/src/api/voice.test.ts` (multipart/raw shaping,
+   `src/locales/{en,de,es,fr,ja,vi,zh}.json` (7 files, per 006).
+7. **Frontend tests** — `src/api/voice.test.ts` (multipart/raw shaping,
    error mapping) and a component test: with `capabilities: {}` no voice
    control mounts; with `{voice: true}` they do; mock
    `getUserMedia`/`MediaRecorder` per 006's validation §4.
-   `cd src && npm run build` for type/build verification.
+   `npm run build` for type/build verification.
 
 Exit: manual browser pass per [validation](validation.md) §6.
 
@@ -232,9 +232,9 @@ rollup job, usage dashboard.
 
 **`brain4all` (this repo, Python/TS):** new
 `brain4all/integrations/enterprise_voice.py`,
-`brain4all/tests/test_enterprise_voice.py`, `src/src/api/voice.ts`,
-`src/src/hooks/useVoice.ts`, `src/src/api/voice.test.ts`; edits to
+`brain4all/tests/test_enterprise_voice.py`, `src/api/voice.ts`,
+`src/hooks/useVoice.ts`, `src/api/voice.test.ts`; edits to
 `brain4all/models/api.py` + `brain4all/models/__init__.py`,
 `brain4all/handlers/api.py` (3 voice ops + limits `capabilities`),
 `brain4all/routes/setup.py` (voice routes), agent settings surface,
-`src/src/components/ChatArea.tsx`, all 7 `src/src/locales/*.json`, docs.
+`src/components/ChatArea.tsx`, all 7 `src/locales/*.json`, docs.

@@ -6,13 +6,12 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': 'http://127.0.0.1:8642',
-      '/agent-gateway': 'http://127.0.0.1:8642',
-      '/conversations': 'http://127.0.0.1:8642',
-      '/sandboxes': 'http://127.0.0.1:8642',
     },
   },
   test: {
     environment: 'jsdom',
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    exclude: ['node_modules/**', 'dist/**', '.tools/**'],
     setupFiles: ['./src/test/setup.ts'],
   },
 });

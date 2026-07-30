@@ -232,28 +232,28 @@ Gate: this test and `make check` pass before Phase 1.
 
 ## Phase 5 — Frontend {#phase-5}
 
-12. **API clients** — new `src/src/api/plugins.ts` (clone `src/src/api/skills.ts`;
+12. **API clients** — new `src/api/plugins.ts` (clone `src/api/skills.ts`;
     `ROOT='/api/brain/v1/plugins'`; methods `list, hub, rescan, install,
     scan, approve, enable, disable, update, remove, setVisibility`) and new
-    `src/src/api/tools.ts` (`ROOT='/api/brain/v1/agents-tools'`; `list`,
-    `setEnabled`), plus `src/src/api/hooks.ts`. Add DTOs to
-    `src/src/api/contracts/agentGateway.ts`.
-13. **Hooks/state** — new `src/src/hooks/usePlugins.ts` and
-    `src/src/hooks/useAgentTools.ts`, cloning the optimistic-then-reconcile
+    `src/api/tools.ts` (`ROOT='/api/brain/v1/agents-tools'`; `list`,
+    `setEnabled`), plus `src/api/hooks.ts`. Add DTOs to
+    `src/api/contracts/agentGateway.ts`.
+13. **Hooks/state** — new `src/hooks/usePlugins.ts` and
+    `src/hooks/useAgentTools.ts`, cloning the optimistic-then-reconcile
     pattern from `useAssistants.ts` (`setSkillEnabled`).
-14. **Plugins page** — new `src/src/components/PluginsView.tsx` (clone
+14. **Plugins page** — new `src/components/PluginsView.tsx` (clone
     `SkillsView.tsx`): catalog grid + install panel + scan-report/approval
     dialog + per-card lifecycle actions. Add `'plugins'` to `CenterView`
-    (`src/src/types.ts`); branches in `src/src/hooks/useRouter.ts`
-    `parseRoute`/`computeUrl`; a nav row in `src/src/components/Sidebar.tsx`
-    `navItems`; a branch in `src/src/App.tsx`'s center-view ternary.
+    (`src/types.ts`); branches in `src/hooks/useRouter.ts`
+    `parseRoute`/`computeUrl`; a nav row in `src/components/Sidebar.tsx`
+    `navItems`; a branch in `src/App.tsx`'s center-view ternary.
 15. **Per-agent Tools panel** — add a `'tools'` tab to
-    `src/src/components/RightPanel.tsx` (clone the `rightView === 'skills'`
+    `src/components/RightPanel.tsx` (clone the `rightView === 'skills'`
     block); add `'tools'` to `RightView` and the `panel` whitelist in
     `useRouter.ts`. Render toolset toggles with `enabled/available/ready` badges
     and a reason when not ready.
 16. **i18n** — add `pluginsView`, `agentTools`, and `hooks` namespaces to all 7
-    locale files under `src/src/locales/` (`en, vi, es, fr, de, ja, zh`).
+    locale files under `src/locales/` (`en, vi, es, fr, de, ja, zh`).
 
 ## Phase 6 — Tests + docs {#phase-6}
 

@@ -132,7 +132,7 @@ in-process Hermes tools — is gone: the counterparty is now our own gateway.
 
 - Transcribe: browser sends the recorded blob as `multipart/form-data`
   (field `audio`, plus `mime_type`); the OSS proxy streams it through;
-  `src/src/api/client.ts` already has `requestMultipart` (verified,
+  `src/api/client.ts` already has `requestMultipart` (verified,
   findings §7). Response is small JSON (transcript) in the normal envelope.
 - Speak: request is small JSON (`{text, voice_id?}`); response is raw
   `audio/mpeg` bytes via a `special` raw-response route

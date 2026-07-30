@@ -7,9 +7,9 @@ Phase 0 probe list.
 ## Layering fit
 
 ```
-React Connectors UI (src/src/components/ConnectionsView.tsx via
-                     src/src/features/system/SystemView.tsx)
-        │  src/src/api/providers.ts + src/src/hooks/useConnections.ts
+React Connectors UI (src/components/ConnectionsView.tsx via
+                     src/features/system/SystemView.tsx)
+        │  src/api/providers.ts + src/hooks/useConnections.ts
         ▼
 routes/setup.py ── the only route-assembly point (new Route lines, tag Providers)
         ▼
@@ -155,7 +155,7 @@ async def _owned_connection(self, provider: str, connection_id: str) -> dict:
     active** connection (sorted `(priority, name)`), replacing "whichever was
     first".
   - New additive field `connection_count: int` (ignored by the existing
-    mapper `src/src/api/mappers/providers.ts`, used by the new UI badge).
+    mapper `src/api/mappers/providers.ts`, used by the new UI badge).
 - `disconnect_provider()` (lines 662–669): behavior unchanged — explicit
   **remove-all-accounts** (approaches.md Decision D). The UI adds a confirm
   naming the count ("Remove all N accounts for Codex?"). Individual removal
@@ -223,7 +223,7 @@ Reuses the existing connect flow end-to-end — no new backend path:
 
 ```
 UI "Add account" on an already-connected provider
-  → openProviderAuthPopup()                    (src/src/utils/providerAuth.ts)
+  → openProviderAuthPopup()                    (src/utils/providerAuth.ts)
   → POST /api/brain/v1/providers/codex/connect
     service.start_provider_connect → router.oauth("codex","authorize",GET)
     ← login_url; popup navigates to it
@@ -274,7 +274,7 @@ signal for this path to "connection count increased" (see
 State lives in `useConnections.ts`: `connectionsByProvider:
 Record<string, ProviderConnection[]>`, `usageByConnection:
 Record<string, ConnectionUsage>`, plus per-row pending flags. API methods in
-`src/src/api/providers.ts` (typed, no `any`). Details per file in
+`src/api/providers.ts` (typed, no `any`). Details per file in
 [implementation.md](implementation.md) Phase 4.
 
 ## Backward compatibility

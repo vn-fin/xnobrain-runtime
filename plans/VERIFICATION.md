@@ -10,7 +10,7 @@ During implementation, run focused tests first:
 
 ```bash
 python -m unittest <focused-backend-test-module>
-cd src && npm test -- <focused-frontend-test>
+npm test -- <focused-frontend-test>
 ```
 
 Before each plan is handed off:
@@ -19,7 +19,7 @@ Before each plan is handed off:
 make check
 ```
 
-The final frontend verification must include `cd src && npm run build`, whether
+The final frontend verification must include `npm run build`, whether
 directly or through `make check`.
 
 ## Start the real application

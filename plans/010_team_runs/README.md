@@ -65,7 +65,7 @@ it does **not** have is any run lifecycle around that engine. This plan adds:
    scoped fix in `brain4all/integrations/hermes.py::_run_hermes_command`,
    which today leaks a running subprocess when the awaiting task is cancelled
    (see [findings.md](findings.md) — this is a verified bug, not a guess).
-5. **Frontend** — a Runs panel in `src/src/components/TeamsView.tsx`: run
+5. **Frontend** — a Runs panel in `src/components/TeamsView.tsx`: run
    history, a live run view with per-step status chips updated via SSE, and a
    cancel button.
 
@@ -105,9 +105,9 @@ it does **not** have is any run lifecycle around that engine. This plan adds:
 - **Phase 4 — Handlers + routes.** New operations in
   `brain4all/handlers/api.py` and the exact `Route(...)` lines (including the
   SSE special route) in `brain4all/routes/setup.py`.
-- **Phase 5 — Frontend.** `src/src/api/teams.ts` run endpoints + SSE watcher,
-  `src/src/hooks/useTeams.ts` run state, `TeamRunsPanel` in
-  `src/src/components/TeamsView.tsx`.
+- **Phase 5 — Frontend.** `src/api/teams.ts` run endpoints + SSE watcher,
+  `src/hooks/useTeams.ts` run state, `TeamRunsPanel` in
+  `src/components/TeamsView.tsx`.
 - **Phase 6 — Tests.** `brain4all/tests/test_team_runs.py` mirroring the
   `test_fastapi.py` / `test_analytics.py` patterns: async lifecycle,
   cancellation kills the subprocess, SSE event shape, restart staleness, run

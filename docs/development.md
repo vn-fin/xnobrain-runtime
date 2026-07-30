@@ -1,5 +1,10 @@
 # Development and verification
 
+The repository root is the Vite project root: application code is in `src/`,
+static assets are in `public/`, and the committed production build is emitted
+to `dist/`. Node dependencies are installed into the root `node_modules/`.
+The Python application remains in the separate `brain4all/` package.
+
 On Linux or macOS, install the local toolchain with `make install-local`. It
 creates `.tools/python` for the project, installs Hermes and the Python
 requirements, and provisions Node.js/npm, 9router, and the agent CLIs. The
@@ -13,8 +18,8 @@ make backend              # API only, using the selected environment
 make check                # Python tests/compile + frontend tests/build
 ```
 
-Vite proxies `/api`, `/agent-gateway`, `/conversations`, and `/sandboxes` to
-port 8642. Swagger is at `http://127.0.0.1:8642/docs`.
+Vite proxies the canonical `/api/brain/v1` namespace to port 8642. Swagger is
+at `http://127.0.0.1:8642/docs`.
 
 The development script supervises Vite, FastAPI, and 9router and stops all
 three on Ctrl-C. The backend watches Python files and reloads automatically;

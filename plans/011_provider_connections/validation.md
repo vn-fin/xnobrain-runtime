@@ -68,7 +68,7 @@ Using the stateful multi-connection `FakeRouter`
 ## 5. Frontend build
 
 ```
-cd src && npm run build
+npm run build
 ```
 
 Type-checks the new `ProviderConnection`/`ConnectionUsage` types, hook state,
@@ -88,7 +88,7 @@ changed shape).
 
 Environment: `make run` (or `make backend` + local 9router `0.5.40`), UI on
 the Connectors section (Settings → Connectors,
-[`src/src/features/system/SystemView.tsx`](../../src/src/features/system/SystemView.tsx)).
+[`src/features/system/SystemView.tsx`](../../src/features/system/SystemView.tsx)).
 
 1. **Connect two Codex accounts via OAuth.** Connect account A (existing
    flow). Card shows `connected · 1 account`. Click "Add account" → popup →
@@ -144,5 +144,5 @@ the Connectors section (Settings → Connectors,
       (evidence: response-scan test)
 - [ ] Nothing stored in Brain4All — `DATA_DIR` unchanged by all new routes
       (evidence: section 4 test)
-- [ ] `make check` and `cd src && npm run build` pass (evidence: command
+- [ ] `make check` and `npm run build` pass (evidence: command
       output)

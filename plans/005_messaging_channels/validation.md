@@ -80,7 +80,7 @@ File: `brain4all/tests/test_channels.py` (integration section, mirror
 
 - [ ] `make check` passes (backend + frontend + lint/type).
 - [ ] `make test` (backend) green including the new files.
-- [ ] `cd src && npm test -- ChannelsView` and `cd src && npm run build` pass.
+- [ ] `npm test -- ChannelsView` and `npm run build` pass.
 - [ ] `make smoke-api`: the new routes respond (no 404) with the success
   envelope; smoke creates/reads **real** state, no synthetic channel records.
 - [ ] `make run` boots the combined image; readiness passes with the pinned

@@ -10,7 +10,7 @@ file-by-file steps.
 Brain4All boundaries (`AGENTS.md`, `plans/001_kanban_foundation/README.md`):
 
 ```
-React "Channels" page (src/src/components/ChannelsView.tsx, hooks/useChannels.ts, api/channels.ts)
+React "Channels" page (src/components/ChannelsView.tsx, hooks/useChannels.ts, api/channels.ts)
         │  HTTP  /api/brain/v1/agents/{agent_id}/channels...  (APIEnvelope)
         ▼
 routes/setup.py            ← ONLY route-assembly point; adds Route(...) rows
@@ -195,7 +195,7 @@ the root install's.
 8. Convert Hermes 404/409/429 into the Brain4All error envelope with stable
    codes; log structured names only.
 
-## 6. React UI surface (`src/src`)
+## 6. React UI surface (`src`)
 
 - `api/channels.ts` — typed client over the routes in §3, following
   `api/kanban.ts` / `api/client.ts` (`request<T>`, `requestRaw`).

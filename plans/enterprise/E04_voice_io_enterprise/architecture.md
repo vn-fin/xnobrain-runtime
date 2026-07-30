@@ -10,7 +10,7 @@ provider, with entitlement checks, metering, and failure modes. Cross-links:
 ```
  user device (OSS runtime, this repo)                 brain4all-enterprise (Go)              voice provider
 ┌─────────────────────────────────────┐             ┌───────────────────────────────┐      ┌──────────────┐
-│ Browser (src/src/)                  │             │ voice gateway (internal/voice)│      │ ElevenLabs / │
+│ Browser (src/)                  │             │ voice gateway (internal/voice)│      │ ElevenLabs / │
 │  Play btn · mic · settings          │             │  POST /voice/v1/speak         │      │ STT provider │
 │    │ gated by `voice` capability    │             │  POST /voice/v1/transcribe    │      │ (Phase 0)    │
 │    ▼                                │  HTTPS 443  │  GET  /voice/v1/voices        │      └──────▲───────┘
@@ -244,7 +244,7 @@ cached entitlement document when signed in, `{}` otherwise:
   "capabilities": { "voice": true } }
 ```
 
-Flow: `src/src/api/client.ts` → a `useCapabilities()` hook (or an extension
+Flow: `src/api/client.ts` → a `useCapabilities()` hook (or an extension
 of whatever hook already consumes limits — Phase 3 checks) → `ChatArea.tsx`
 mounts Play/mic only when `capabilities.voice`. A capability present but the
 enterprise API currently unreachable → controls render disabled with the

@@ -13,8 +13,8 @@ Real paths (all under repo root `/home/kim/Documents/xno/brain4all-dev/brain4all
 - Integration (new): `brain4all/integrations/gateway.py`
 - Models: `brain4all/models/api.py` (+ export in `brain4all/models/__init__.py`)
 - Tests (new): `brain4all/tests/test_channels.py`
-- Frontend: `src/src/api/channels.ts`, `src/src/hooks/useChannels.ts`,
-  `src/src/components/ChannelsView.tsx`, `src/src/App.tsx`
+- Frontend: `src/api/channels.ts`, `src/hooks/useChannels.ts`,
+  `src/components/ChannelsView.tsx`, `src/App.tsx`
 - Pinned Hermes (reference only): `.tools/hermes-agent/`
 
 ---
@@ -263,12 +263,12 @@ Notes:
 
 ---
 
-## Phase 6 — Frontend (`src/src`)
+## Phase 6 — Frontend (`src`)
 
 1. `api/channels.ts` — typed functions over the Phase 5 routes, using
    `request`/`requestRaw` from `api/client.ts` (see `api/kanban.ts`). Types:
    `Channel`, `ChannelEnvVar` (`{key, required, is_set, redacted_value}` — no
-   raw value type), `GatewayStatus`, `Pairing`. Add to `src/src/types.ts`.
+   raw value type), `GatewayStatus`, `Pairing`. Add to `src/types.ts`.
 2. `hooks/useChannels.ts` — per-agent state; load channels + gateway status;
    mutations (enable/disable, save/rotate credentials, test, start/stop/restart/
    drain, approve/revoke pairing, onboarding). Follow `hooks/useKanban.ts` /
@@ -282,7 +282,7 @@ Notes:
    `kanban`/`teams` branches (l.252), and a nav entry (or a Settings section per
    the 002 navigation model in `plans/CHECKLIST.md`). Keep provider
    "Connections" separate.
-5. Translate all new strings in every shipped locale (`src/src/locales`).
+5. Translate all new strings in every shipped locale (`src/locales`).
 
 ---
 

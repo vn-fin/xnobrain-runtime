@@ -236,7 +236,7 @@ names. Do not register routes anywhere else.
 
 ## Phase 5 — Frontend
 
-Files under `src/src/`:
+Files under `src/`:
 
 - `api/crons.ts`: add `listBlueprints()`, `instantiateBlueprint(input)`,
   `listDeliveryTargetOptions()`, `listJobTargets(jobId)`,
@@ -256,7 +256,7 @@ Files under `src/src/`:
 - `locales/*.json`: add all new strings to every shipped locale (en, vi, ja, zh,
   de, es, fr).
 
-Run `cd src && npm run build` for type/build verification.
+Run `npm run build` for type/build verification.
 
 ## Phase 6 — Tests
 

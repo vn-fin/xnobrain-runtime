@@ -279,7 +279,7 @@ if [[ "$skip_browser" == false ]]; then
   "$npm_prefix/bin/agent-browser" install --with-deps
 fi
 
-frontend_npmrc="$project_dir/src/.npmrc"
+frontend_npmrc="$project_dir/.npmrc"
 frontend_npmrc_created=false
 if npm install --help 2>&1 | grep -q -- '--allow-scripts' && [[ ! -e "$frontend_npmrc" ]]; then
   # npm only accepts allow-scripts for a project install through .npmrc.
@@ -294,7 +294,7 @@ cleanup_frontend_npmrc() {
 if [[ "$frontend_npmrc_created" == true ]]; then
   trap cleanup_frontend_npmrc EXIT
 fi
-npm --prefix "$project_dir/src" ci --no-audit --no-fund
+npm --prefix "$project_dir" ci --no-audit --no-fund
 cleanup_frontend_npmrc
 trap - EXIT
 

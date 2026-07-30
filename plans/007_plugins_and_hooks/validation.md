@@ -69,13 +69,13 @@ Also: a plugin enabled via the Hermes CLI appears in `GET /plugins` without sync
 
 ## 5. Frontend tests
 
-`cd src && npm test` — clone the skills test patterns:
+`npm test` — clone the skills test patterns:
 - `PluginsView` renders catalog, install panel, and disables the enable control
   for a `dangerous` verdict; the approval dialog gates enable.
 - `usePlugins` optimistic toggle reconciles on error.
 - RightPanel `tools` tab renders toolset toggles with ready/not-ready badges.
 - `useRouter` parses/produces `/plugins`.
-- `cd src && npm run build` passes (types).
+- `npm run build` passes (types).
 - All 7 locales contain the new keys (a key-parity test if one exists).
 
 ## 6. Repository checks

@@ -324,7 +324,7 @@ Swagger page during Phase 4.
 
 ## Phase 5 — Frontend
 
-### 5a. `src/src/api/teams.ts`
+### 5a. `src/api/teams.ts`
 
 1. Add types `TeamRunStep` and `TeamRunRecord` mirroring the Pydantic models
    (status unions included).
@@ -336,14 +336,14 @@ startRun: (teamId, task, workflow = [], synthesis?) =>
 listRuns: (teamId) => request<TeamRunRecord[]>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs`),
 getRun: (teamId, runId) => request<TeamRunRecord>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}`),
 cancelRun: (teamId, runId) => request<TeamRunRecord>(`/api/brain/v1/teams/${encodeURIComponent(teamId)}/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
-watchRun: async (teamId, runId, onEvent, signal) => { /* requestRaw + readSSE, mirroring src/src/api/kanban.ts lines 235–239 */ },
+watchRun: async (teamId, runId, onEvent, signal) => { /* requestRaw + readSSE, mirroring src/api/kanban.ts lines 235–239 */ },
 ```
 
    Import `readSSE` from `./stream` and the raw-request helper from
    `./client` exactly as `kanban.ts` does (verify the helper name —
    `requestRaw` — during Phase 5).
 
-### 5b. `src/src/hooks/useTeams.ts`
+### 5b. `src/hooks/useTeams.ts`
 
 Extend the hook (keep the existing surface untouched — `lastRun` and `run`
 stay for the legacy sync button until the view drops them):
@@ -355,10 +355,10 @@ stay for the legacy sync button until the view drops them):
 - A `useEffect` that, while `activeRun` is non-terminal, opens
   `teamsApi.watchRun` with an `AbortController`, replaces `activeRun` (and
   the matching entry in `runs`) on each `run` event, and closes on `done` —
-  mirror the reconnect/cleanup structure of `src/src/hooks/useKanban.ts`
+  mirror the reconnect/cleanup structure of `src/hooks/useKanban.ts`
   lines 228–300.
 
-### 5c. `src/src/components/TeamsView.tsx`
+### 5c. `src/components/TeamsView.tsx`
 
 - New component `TeamRunsPanel` (same file, following the existing single-file
   card style): rendered when a team is selected, replacing/augmenting the
@@ -374,12 +374,12 @@ stay for the legacy sync button until the view drops them):
   switch its handler to `startRun` and delete `lastRun` usage as the final
   step of the phase.
 - Styles: reuse the existing `teams-card` / `team-policy` / badge classes
-  (check `src/src/` styles for kanban status chips to reuse; verify class
+  (check `src/` styles for kanban status chips to reuse; verify class
   names during Phase 5).
 - Wiring: `TeamsView` receives the extended `useTeams` state — no new props
   from the app shell.
 
-Run `cd src && npm run build` for type verification.
+Run `npm run build` for type verification.
 
 ## Phase 6 — Tests
 

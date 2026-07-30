@@ -113,7 +113,7 @@ Brain4All layers (`AGENTS.md`, `plans/001_kanban_foundation/README.md`):
 | Services | `brain4all/services/` | `kanban.py`, `platform.py`, `portability.py`. **No** `channels.py`. |
 | Integrations | `brain4all/integrations/` | `hermes.py`, `config.py`, `nine_router.py`, `kanban.py`, `runtime.py`. **No** `gateway.py`. |
 | Models | `brain4all/models/api.py` | No channel/gateway/pairing models. |
-| Frontend | `src/src/` | `components/ConnectionsView.tsx` is **model-provider** connections (9router/API keys), **not** channels. `hooks/useConnections.ts` likewise. No channels page, hook, or `api/channels.ts`. |
+| Frontend | `src/` | `components/ConnectionsView.tsx` is **model-provider** connections (9router/API keys), **not** channels. `hooks/useConnections.ts` likewise. No channels page, hook, or `api/channels.ts`. |
 
 Brain4All already proves the pattern this plan reuses: each **agent is a Hermes
 profile** (`integrations/hermes.py::_profile_dir`, `_native_profile_dir`,

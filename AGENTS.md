@@ -49,8 +49,8 @@ correctness.
 - Build Docker images: `make build`
 - Run the API smoke test: `make smoke-api`
 
-Prefer a focused Python test or `cd src && npm test -- <test>` during iteration.
-Use `cd src && npm run build` for the final frontend type/build verification.
+Prefer a focused Python test or `npm test -- <test>` during iteration.
+Use `npm run build` for the final frontend type/build verification.
 
 ## Architecture rules
 

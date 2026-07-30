@@ -195,10 +195,10 @@ Under Settings > Automations (Plan 003 already established this destination):
   control. A "Run now" button calls `POST /cron/jobs/{id}/trigger`; a runs
   panel reads `GET /cron/jobs/{id}/runs` and shows per-run delivery status.
 
-Frontend files: extend `src/src/api/crons.ts` (add blueprint/target/trigger/
-runs calls), `src/src/hooks/useCrons.ts` (or a new `useBlueprints`/
+Frontend files: extend `src/api/crons.ts` (add blueprint/target/trigger/
+runs calls), `src/hooks/useCrons.ts` (or a new `useBlueprints`/
 `useDeliveryTargets` hook), and the automations feature view. Add strings to
-every locale in `src/src/locales/*.json`.
+every locale in `src/locales/*.json`.
 
 ## ASCII sequence diagram — daily brief → Telegram
 

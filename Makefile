@@ -12,17 +12,17 @@ backend:
 	$(PYTHON_BIN) server.py
 
 src:
-	cd src && npm run dev
+	npm run dev:frontend
 
 test:
 	$(PYTHON_BIN) -m unittest discover -s brain4all/tests -t . -p 'test_*.py'
-	cd src && npm test
+	npm test
 
 check:
 	$(PYTHON_BIN) -m unittest discover -s brain4all/tests -t . -p 'test_*.py'
 	$(PYTHON_BIN) -m compileall -q brain4all server.py
-	cd src && npm test
-	cd src && npm run build
+	npm test
+	npm run build
 
 smoke-api:
 	./scripts/SmokeAPI.sh

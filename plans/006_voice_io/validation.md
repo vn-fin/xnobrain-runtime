@@ -74,8 +74,8 @@ Same harness as `test_kanban.py` (`Brain4AllApplication`, `httpx.AsyncClient`,
 - [ ] Component test for the mic/play controls: play button calls `speak` and
       constructs an `Audio`; recorder wires `MediaRecorder` and puts the
       transcript into the composer (mock `getUserMedia`/`MediaRecorder`).
-- [ ] `cd src && npm test` passes for the new tests.
-- [ ] `cd src && npm run build` passes (type + build).
+- [ ] `npm test` passes for the new tests.
+- [ ] `npm run build` passes (type + build).
 
 ## 5. Repo checks
 
@@ -132,7 +132,7 @@ Config:
 - [ ] Per-agent voice honored (B2) or documented global fallback (B1). Evidence:
       the two-agent provider test, or the B1 note in the panel + test.
 - [ ] No key leaks in responses, logs, or errors. Evidence: section 7 tests.
-- [ ] `make check` + focused tests + `cd src && npm run build` pass. Evidence:
+- [ ] `make check` + focused tests + `npm run build` pass. Evidence:
       command output.
 - [ ] Temp audio files are always cleaned up. Evidence: post-call file-absence
       assertions.

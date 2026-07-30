@@ -49,13 +49,13 @@ the *raw Hermes* voice path can do and what E04 deliberately does not use:
   per agent) — synthesis no longer happens in Hermes, so the override kwarg
   is **not needed** here.
 - **UI touchpoints (006 §2):** assistant-message action row in
-  `src/src/components/ChatArea.tsx` (Copy/ThumbsUp/ThumbsDown, ~line 574) is
+  `src/components/ChatArea.tsx` (Copy/ThumbsUp/ThumbsDown, ~line 574) is
   the home for the Play button; composer in the same file hosts the mic; no
   `MediaRecorder`/`getUserMedia`/`new Audio` usage exists yet; 7 locales
-  under `src/src/locales/{en,de,es,fr,ja,vi,zh}.json`; envelope-aware client
-  in `src/src/api/client.ts` (`request`, `requestRaw`, `requestMultipart`,
+  under `src/locales/{en,de,es,fr,ja,vi,zh}.json`; envelope-aware client
+  in `src/api/client.ts` (`request`, `requestRaw`, `requestMultipart`,
   `buildApiUrl`). (006 wrote these as `src/api/...`; the tree root is
-  `src/src/` — same files.)
+  `src/` — same files.)
 
 **What E04 keeps from all this:** the browser-side capture/playback design,
 the 25 MiB upload cap value (adopted as gateway parity), the mime map, the
@@ -181,7 +181,7 @@ roster can grow without contract changes.
   enterprise integration in this repo — its connection/auth plumbing should
   be shaped so E02's usage reporter can share it (Phase 0 check with E02's
   implementation state).
-- Frontend: `src/src/api/client.ts` has `request`, `requestRaw`,
+- Frontend: `src/api/client.ts` has `request`, `requestRaw`,
   `requestMultipart` — multipart upload and raw (non-envelope) responses are
   already supported client-side, which Decision D relies on.
 

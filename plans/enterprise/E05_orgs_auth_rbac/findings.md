@@ -263,7 +263,7 @@ then the same suspend/deprovision transitions via
    ever introduced. Pinned as an evidence line in
    [validation.md](validation.md).
 6. **Cross-repo timing with E03.** E03's plan creates
-   `src/src/features/system/EnterpriseSection.tsx`
+   `src/features/system/EnterpriseSection.tsx`
    ([E03 implementation.md](../E03_fleet_management/implementation.md)
    step 10); E05 lands before E03 in program order and also needs a home
    for the login stub. Resolution: **E05 creates the file** with the

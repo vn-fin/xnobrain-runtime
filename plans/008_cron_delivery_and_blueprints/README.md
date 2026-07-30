@@ -97,7 +97,7 @@ per-run streaming delivery, and blueprint authoring UI (catalog is upstream).
   `brain4all/handlers/api.py` and `Route(...)` lines in the existing `Cron`
   group in `brain4all/routes/setup.py`.
 - **Phase 5 — Frontend.** Blueprint gallery + "Deliver to" selector under
-  Settings > Automations; extend `src/src/api/crons.ts` / `useCrons.ts`.
+  Settings > Automations; extend `src/api/crons.ts` / `useCrons.ts`.
 - **Phase 6 — Tests + validation.** Unit, integration (temp `HERMES_HOME`),
   `make check`, `make smoke-api`, manual journey. See
   [validation.md](validation.md).

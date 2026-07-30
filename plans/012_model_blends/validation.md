@@ -103,7 +103,7 @@ python -m unittest brain4all.tests.test_fastapi -v
 ```
 make test
 make check
-cd src && npm run build
+npm run build
 make smoke-api   # with the stack running
 ```
 
@@ -185,6 +185,6 @@ Prereq: at least two provider models connected (e.g. one `cc/...` and one
       integration 503 test).
 - [ ] No credentials or raw 9router settings payload in any response or log
       (evidence: whitelist unit test in §5).
-- [ ] `make test`, `make check`, `cd src && npm run build`, and
+- [ ] `make test`, `make check`, `npm run build`, and
       `make smoke-api` all pass (evidence: command outputs).
 - [ ] `docs/api.md` and `docs/architecture.md` updated (evidence: diff).

@@ -372,7 +372,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             async def is_disconnected(self):
                 return False
 
-        with patch("brain4all.handlers.api.asyncio.sleep", new=AsyncMock()) as sleep:
+        with patch(
+            "brain4all.handlers.streaming.asyncio.sleep", new=AsyncMock()
+        ) as sleep:
             response = await self.composition.handlers.sandbox_detail_stream(ConnectedRequest())
             event = await anext(response.body_iterator)
             next_event = await anext(response.body_iterator)

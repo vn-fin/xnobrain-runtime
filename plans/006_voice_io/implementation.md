@@ -232,7 +232,7 @@ for speak/transcribe/providers/voices and config get/set; `make check` green.
   zh).
 
 Exit Phase 2: browser manual steps in [validation.md](validation.md) pass;
-frontend component/hook tests and `cd src && npm run build` pass.
+frontend component/hook tests and `npm run build` pass.
 
 ---
 

@@ -107,8 +107,8 @@ Evidence: response-key allowlist test + log inspection.
 - `make test` (or focused `python -m pytest brain4all/tests/test_analytics.py`)
   passes.
 - `make check` passes (backend + lint + frontend type/build).
-- `cd src && npm run build` passes (inline SVG chart, no new dependency added —
-  verify `src/package.json` diff adds no chart lib).
+- `npm run build` passes (inline SVG chart, no new dependency added —
+  verify `package.json` diff adds no chart lib).
 - `make smoke-api`: the new routes respond over the real stack.
 
 Evidence: command output showing success (read it; do not assume).
@@ -164,7 +164,7 @@ Evidence: screenshots/notes; the manual SQL sum equals the API total.
 - [ ] No prompts/content/keys in responses or logs (evidence: allowlist + log
   test).
 - [ ] No new persistent store or DB added; no new API process; provider forced
-  9router (evidence: code review + `src/package.json` and deps diff).
+  9router (evidence: code review + `package.json` and deps diff).
 - [ ] `make check` and `make smoke-api` pass (evidence: command output).
 - [ ] Manual E2E: real chats -> visible totals/per-model/time + a budget warning
   (evidence: notes + matching manual SQL sum).

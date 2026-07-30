@@ -21,7 +21,7 @@ Safest. Everything downstream is built and tested for exactly these six:
   lines 619–653) hardcode per-provider redirect URIs and the
   authorize/exchange choreography for `claude`/`codex`/`antigravity` only.
 - The UI auth copy, brand icons (`providerBrand()` in
-  [`src/src/api/mappers/providers.ts`](../../src/src/api/mappers/providers.ts)),
+  [`src/api/mappers/providers.ts`](../../src/api/mappers/providers.ts)),
   and the api-key placeholder text are written per provider.
 - `ROUTER_MODEL_ALIASES` (lines 30–37 of the adapter) is a **hardcoded**
   provider→model-owner mapping used by `list_models()` and `usage()` for
