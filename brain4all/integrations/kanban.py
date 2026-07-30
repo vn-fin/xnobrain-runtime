@@ -466,6 +466,25 @@ def create_task(conn: Any, **fields: Any) -> str:
     return str(creator(conn, **compatible))
 
 
+def park_task_in_todo(conn: Any, task_id: str) -> bool:
+    """Convert Hermes' initial ready state into an explicit Todo state."""
+    kb = _module()
+    with kb.write_txn(conn):
+        changed = conn.execute(
+            "UPDATE tasks SET status = 'todo' WHERE id = ? AND status = 'ready'",
+            (task_id,),
+        )
+        if changed.rowcount != 1:
+            current = kb.get_task(conn, task_id)
+            return current is not None and str(current.status) == "todo"
+        conn.execute(
+            "INSERT INTO task_events (task_id, kind, payload, created_at) "
+            "VALUES (?, 'edited', ?, unixepoch())",
+            (task_id, json.dumps({"fields": ["status"], "status": "todo"})),
+        )
+    return True
+
+
 def update_task_fields(
     conn: Any,
     task_id: str,
