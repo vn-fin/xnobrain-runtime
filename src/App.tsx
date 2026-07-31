@@ -18,6 +18,7 @@ import { ChatArea } from './components/ChatArea';
 import { RightPanel } from './components/RightPanel';
 import { SkillsView } from './components/SkillsView';
 import { Onboarding } from './components/Onboarding';
+import { SandboxView } from './components/SandboxView';
 import { SystemView } from './features/system/SystemView';
 import { TeamsView } from './components/TeamsView';
 import { KanbanView } from './components/KanbanView';
@@ -29,23 +30,26 @@ import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
 import { useAuth } from './auth';
+import { sandboxApi } from './api/sandbox';
 import type { Agent } from './types';
 
 export default function App() {
   const { t } = useTranslation();
   const auth = useAuth();
   const router = useRouter();
-  const assistants = useAssistants();
-  const assistantsReady = assistants.status === 'ready';
+  const managedWorkspace = sandboxApi.managed;
+  const sandbox = useSandbox(
+    managedWorkspace || router.centerView === 'chat'
+      || (router.centerView === 'data' && router.settingsSection === 'vm'),
+  );
+  const workspaceReady = !managedWorkspace || sandbox.provisioned;
+  const assistants = useAssistants(workspaceReady);
+  const assistantsReady = workspaceReady && assistants.status === 'ready';
   const onboarding = assistantsReady && assistants.agents.length === 0;
   const connections = useConnections(
     assistantsReady
     && (onboarding || router.centerView === 'chat'
       || (router.centerView === 'data' && router.settingsSection === 'connectors')),
-  );
-  const sandbox = useSandbox(
-    assistantsReady
-    && (onboarding || (router.centerView === 'data' && router.settingsSection === 'vm')),
   );
   const conversation = useConversation(
     router.centerView === 'chat' ? router.activeAgentId : '',
@@ -57,10 +61,10 @@ export default function App() {
   );
   // Kanban's new-task modal also needs saved teams, so keep this lightweight
   // list loaded outside the dedicated Teams screen as well.
-  const teams = useTeams(true);
-  const kanban = useKanban(router.centerView === 'kanban' || router.centerView === 'analytics');
-  const analytics = useAnalytics(router.centerView === 'analytics', assistants.agents);
-  const blends = useBlends(router.centerView === 'chat');
+  const teams = useTeams(workspaceReady);
+  const kanban = useKanban(workspaceReady && (router.centerView === 'kanban' || router.centerView === 'analytics'));
+  const analytics = useAnalytics(workspaceReady && router.centerView === 'analytics', assistants.agents);
+  const blends = useBlends(workspaceReady && router.centerView === 'chat');
   const crons = useCrons(
     assistantsReady && (router.centerView === 'cron' || (router.centerView === 'chat' && router.rightView === 'cron')),
   );
@@ -250,6 +254,23 @@ export default function App() {
     const nextId = await assistants.deleteConversation(router.activeAgentId, conversationId);
     if (conversationId === router.activeConversationId) router.setActiveConversationId(nextId ?? '');
   };
+
+  if (managedWorkspace && !workspaceReady) {
+    return (
+      <SandboxView
+        data={sandbox.data}
+        provisioned={sandbox.provisioned}
+        status={sandbox.status}
+        error={sandbox.error}
+        setupRunning={sandbox.setupRunning}
+        setupProgress={sandbox.setupProgress}
+        setupMessage={sandbox.setupMessage}
+        onCreate={sandbox.createSandbox}
+        onRefresh={sandbox.refresh}
+        onClose={() => undefined}
+      />
+    );
+  }
 
   if (assistants.status === 'loading') return <AsyncState status="loading" />;
   if (assistants.status === 'error') return <AsyncState status="error" error={assistants.error} onRetry={assistants.refresh} />;

@@ -41,12 +41,12 @@ function mapGlobalConfig(config: AgentConfigDTO | null): GlobalRuntimeConfig | n
   };
 }
 
-export function useAssistants() {
+export function useAssistants(active = true) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [library, setLibrary] = useState<AgentSkill[]>([]);
   const [agentSkillPages, setAgentSkillPages] = useState<Record<string, ResponsePagination>>({});
   const [defaultConfig, setDefaultConfig] = useState<GlobalRuntimeConfig | null>(null);
-  const [status, setStatus] = useState<AsyncStatus>('loading');
+  const [status, setStatus] = useState<AsyncStatus>(active ? 'loading' : 'ready');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const [skillInstallPending, setSkillInstallPending] = useState(false);
@@ -88,10 +88,10 @@ export function useAssistants() {
   }, []);
 
   useEffect(() => {
-    if (initialLoadStarted.current) return;
+    if (!active || initialLoadStarted.current) return;
     initialLoadStarted.current = true;
     void refresh();
-  }, [refresh]);
+  }, [active, refresh]);
 
   const loadConversations = useCallback(async (agentId: string, force = false) => {
     if (!agentId) return [];
