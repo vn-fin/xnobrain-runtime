@@ -48,7 +48,7 @@ import type {
 /** Animated three-dot "assistant is responding" indicator shown before the first token. */
 function TypingIndicator() {
   return (
-    <span className="typing-indicator" role="status" aria-label="Assistant is responding">
+    <span className="typing-indicator" role="status" aria-label="Agent is responding">
       <span /><span /><span />
     </span>
   );

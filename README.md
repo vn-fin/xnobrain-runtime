@@ -119,8 +119,10 @@ sudo ./scripts/install-systemd-services.sh --start
   port `8642`;
 - `brain4all-9router.service` runs 9router on loopback port `20128`.
 
-Hermes agent executions are children of the API service. Persistent state is
-stored below `/srv/brain4all-data`, and runtime configuration is read from
+Hermes agent executions are children of the API service. The service user's
+home is `/srv/brain4all-data/home`, so the standard homes are easy to inspect
+at `~/.hermes` (`/srv/brain4all-data/home/.hermes`) and `~/.9router`
+(`/srv/brain4all-data/home/.9router`). Runtime configuration is read from
 `/etc/brain4all/brain4all.env`. The VM firewall must allow port `8642` only
 from the authenticated workspace gateway; port `20128` must remain private to
 the VM.
@@ -134,7 +136,7 @@ make smoke-api
 
 ## Data safety
 
-Named agent data belongs under `DATA_DIR/profiles/<agent-id>/`. Skills are
+Named agent data belongs under `~/.hermes/profiles/<agent-id>/`. Skills are
 written only to `skills/<skill-id>/SKILL.md` inside that profile. Memory,
 config, and skill mutations create immutable local snapshots, and mutable
 files use temp-file, fsync, and rename. Provider credentials remain owned by

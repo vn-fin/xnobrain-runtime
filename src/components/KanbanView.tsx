@@ -309,7 +309,7 @@ function AgentPicker({
                 onClick={() => { onChange(agent.id); setOpen(false); }}
               >
                 <span className="kb-avatar" style={{ background: person.color }}>{monogram(person.name)}</span>
-                <span><strong>{person.name}</strong><small>{agent.description || agent.model || 'Assistant'}</small></span>
+                <span><strong>{person.name}</strong><small>{agent.description || agent.model || 'Agent'}</small></span>
                 {value === agent.id && <Check size={14} />}
               </button>
             );
@@ -624,7 +624,7 @@ function KanbanConversationModal({
       },
       (reason: unknown) => {
         if (!active) return;
-        setError(reason instanceof Error ? reason.message : 'Could not load this conversation.');
+        setError(reason instanceof Error ? reason.message : 'Could not load this session.');
         setStatus('error');
       },
     );
@@ -658,11 +658,11 @@ function KanbanConversationModal({
             <strong id="kanban-conversation-title">{task.title}</strong>
             <small>{assignee.name} · {nativeStatusLabel(task.nativeStatus)}</small>
           </span>
-          <button className="icon-button" onClick={onClose} aria-label="Close task conversation">
+          <button className="icon-button" onClick={onClose} aria-label="Close task session">
             <X size={17} />
           </button>
         </header>
-        <section className="team-conversation-metrics" aria-label="Conversation metrics">
+        <section className="team-conversation-metrics" aria-label="Session metrics">
           <span><Coins size={14} /><small>Tokens</small><strong>{usage ? usage.totalTokens.toLocaleString() : '—'}</strong></span>
           <span><Brain size={14} /><small>Steps</small><strong>{usage?.steps != null ? usage.steps.toLocaleString() : '—'}</strong></span>
           <span><Clock size={14} /><small>Execution time</small><strong>{usage?.executionSeconds != null ? `${usage.executionSeconds.toFixed(1)}s` : '—'}</strong></span>
@@ -672,11 +672,11 @@ function KanbanConversationModal({
           {status === 'loading' ? (
             <div className="team-conversation-empty">
               <Loader2 className="run-step-spin" size={22} />
-              <strong>Loading conversation…</strong>
+              <strong>Loading session…</strong>
             </div>
           ) : status === 'error' ? (
             <div className="team-conversation-empty error">
-              <X size={22} /><strong>Conversation unavailable</strong><p>{error}</p>
+              <X size={22} /><strong>Session unavailable</strong><p>{error}</p>
             </div>
           ) : visibleMessages.length === 0 ? (
             <div className="team-conversation-empty"><MessageSquare size={22} /><strong>No stored messages</strong></div>
@@ -1003,11 +1003,11 @@ function TaskDrawer({
             <section className="kb-detail-section kb-conversation-tracking">
               <div className="kb-section-heading">
                 <div>
-                  <span className="kb-label">Conversation tracking</span>
-                  <small>Follow the worker’s stored Hermes conversation.</small>
+                  <span className="kb-label">Session tracking</span>
+                  <small>Follow the worker’s stored Hermes session.</small>
                 </div>
                 <button className="kb-text-action" onClick={onOpenConversation}>
-                  View conversation
+                  View session
                 </button>
               </div>
               <a className="kb-conversation-link" href={task.conversation.url}>

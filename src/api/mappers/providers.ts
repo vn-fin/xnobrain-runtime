@@ -9,6 +9,10 @@ function connectionMode(value?: string): ConnectionMode {
 
 function providerBrand(dto: ProviderConnectorDTO): ProviderBrand {
   const value = `${dto.id ?? ''} ${dto.provider_type ?? ''}`.toLowerCase();
+  if (value.includes('deepseek')) return 'deepseek';
+  if (value.includes('moonshot') || value.includes('kimi')) return 'moonshot';
+  if (value.includes('qwen')) return 'qwen';
+  if (value.includes('openai-like') || value.includes('openai-compatible')) return 'openai-like';
   if (value.includes('openrouter')) return 'openrouter';
   if (value.includes('gemini') || value.includes('google') || value.includes('antigravity')) return 'gemini';
   if (value.includes('claude-code')) return 'claude';
@@ -31,6 +35,8 @@ export function mapConnectionProvider(dto: ProviderConnectorDTO): ConnectionProv
     ...(dto.default_model ? { default_model: dto.default_model } : {}),
     ...(dto.available_models ? { available_models: dto.available_models } : {}),
     ...(typeof dto.connection_count === 'number' ? { connection_count: dto.connection_count } : {}),
+    ...(dto.base_url !== undefined ? { base_url: dto.base_url } : {}),
+    ...(dto.requires_base_url !== undefined ? { requires_base_url: dto.requires_base_url } : {}),
   };
 }
 

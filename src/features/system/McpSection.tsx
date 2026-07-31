@@ -109,7 +109,7 @@ export function McpSection({ agents }: { agents: Agent[] }) {
   };
 
   if (agents.length === 0) {
-    return <div className="system-empty">Create an assistant before configuring MCP servers.</div>;
+    return <div className="system-empty">Create an agent before configuring MCP servers.</div>;
   }
 
   return (
@@ -118,12 +118,12 @@ export function McpSection({ agents }: { agents: Agent[] }) {
         <Braces size={18} />
         <div>
           <strong>Hermes MCP servers</strong>
-          <small>Saved to this assistant's native config.yaml under mcp_servers.</small>
+          <small>Saved to this agent's native config.yaml under mcp_servers.</small>
         </div>
         <span className="conn-badge">{serverCount} server{serverCount === 1 ? '' : 's'}</span>
       </div>
       <label className="mcp-agent-picker">
-        Assistant
+        Agent
         <select value={agentId} onChange={(event) => setAgentId(event.target.value)}>
           {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.title} ({agent.id})</option>)}
         </select>

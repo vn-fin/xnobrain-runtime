@@ -27,6 +27,9 @@ SUPPORTED_ROUTER_PROVIDERS = frozenset(
 )
 OAUTH_ROUTER_PROVIDERS = frozenset({"claude", "codex", "antigravity"})
 API_KEY_ROUTER_PROVIDERS = frozenset({"openai", "anthropic", "gemini"})
+OPENAI_COMPATIBLE_PROVIDERS = frozenset(
+    {"deepseek", "moonshot", "qwen", "openai-like"}
+)
 ROUTER_MODEL_ALIASES = {
     "claude": "cc",
     "codex": "cx",
@@ -124,14 +127,21 @@ class NineRouterManager:
         }
 
     async def list_connections(self) -> dict[str, Any]:
+        custom_nodes = await self.list_provider_nodes()
+        custom_provider_ids = {
+            str(node.get("id") or ""): str(node.get("prefix") or "")
+            for node in custom_nodes
+            if str(node.get("prefix") or "") in OPENAI_COMPATIBLE_PROVIDERS
+        }
         payload = await self._request("GET", "/api/providers")
         raw_connections = payload.get("connections", []) if isinstance(payload, Mapping) else []
         connections = []
         for item in raw_connections if isinstance(raw_connections, list) else []:
             if not isinstance(item, Mapping):
                 continue
-            provider = str(item.get("provider") or "").strip()
-            if provider not in SUPPORTED_ROUTER_PROVIDERS:
+            router_provider = str(item.get("provider") or "").strip()
+            provider = custom_provider_ids.get(router_provider, router_provider)
+            if provider not in SUPPORTED_ROUTER_PROVIDERS | OPENAI_COMPATIBLE_PROVIDERS:
                 continue
             connections.append(
                 {
@@ -149,8 +159,86 @@ class NineRouterManager:
             )
         return {"object": "nine_router.providers", "connections": connections}
 
+    async def list_provider_nodes(self) -> list[dict[str, str]]:
+        payload = await self._request("GET", "/api/provider-nodes")
+        raw_nodes = payload.get("nodes", []) if isinstance(payload, Mapping) else []
+        result = []
+        for item in raw_nodes if isinstance(raw_nodes, list) else []:
+            if not isinstance(item, Mapping):
+                continue
+            result.append({
+                "id": str(item.get("id") or ""),
+                "name": str(item.get("name") or ""),
+                "prefix": str(item.get("prefix") or ""),
+                "type": str(item.get("type") or ""),
+                "api_type": str(item.get("apiType") or ""),
+                "base_url": str(item.get("baseUrl") or ""),
+            })
+        return result
+
+    async def ensure_openai_compatible_provider(
+        self,
+        provider: Any,
+        *,
+        display_name: Any,
+        base_url: Any,
+    ) -> str:
+        provider = self._provider(provider, OPENAI_COMPATIBLE_PROVIDERS)
+        normalized_url = str(base_url or "").strip().rstrip("/")
+        if not normalized_url.startswith(("https://", "http://")):
+            raise NineRouterAPIError(
+                "base_url must be an HTTP or HTTPS URL",
+                code="invalid_provider_connection",
+                status=400,
+            )
+        name = str(display_name or provider).strip() or provider
+        current = next(
+            (node for node in await self.list_provider_nodes() if node["prefix"] == provider),
+            None,
+        )
+        body = {
+            "name": name,
+            "prefix": provider,
+            "type": "openai-compatible",
+            "apiType": "chat",
+            "baseUrl": normalized_url,
+        }
+        if current is None:
+            payload = await self._request("POST", "/api/provider-nodes", body)
+            node = payload.get("node", {}) if isinstance(payload, Mapping) else {}
+            node_id = str(node.get("id") or "") if isinstance(node, Mapping) else ""
+        else:
+            node_id = current["id"]
+            if current["base_url"].rstrip("/") != normalized_url or current["name"] != name:
+                payload = await self._request(
+                    "PUT", f"/api/provider-nodes/{quote(node_id, safe='')}", body
+                )
+                node = payload.get("node", {}) if isinstance(payload, Mapping) else {}
+                if isinstance(node, Mapping):
+                    node_id = str(node.get("id") or node_id)
+        return self._safe_id(node_id, "provider_node_id")
+
+    async def openai_compatible_provider_id(self, provider: Any) -> str:
+        """Resolve a logical compatible-provider name to 9router's node id."""
+        provider = self._provider(provider, OPENAI_COMPATIBLE_PROVIDERS)
+        current = next(
+            (node for node in await self.list_provider_nodes() if node["prefix"] == provider),
+            None,
+        )
+        if current is None:
+            raise NineRouterAPIError(
+                "provider base URL must be configured first",
+                code="invalid_provider_connection",
+                status=400,
+            )
+        return self._safe_id(current["id"], "provider_node_id")
+
     async def create_api_key_connection(self, body: Mapping[str, Any]) -> dict[str, Any]:
-        provider = self._provider(body.get("provider"), API_KEY_ROUTER_PROVIDERS)
+        raw_provider = str(body.get("provider") or "").strip()
+        if raw_provider.startswith("openai-compatible-"):
+            provider = self._safe_id(raw_provider, "provider")
+        else:
+            provider = self._provider(raw_provider, API_KEY_ROUTER_PROVIDERS)
         api_key = str(body.get("api_key") or body.get("apiKey") or "").strip()
         if not api_key:
             raise NineRouterAPIError(
@@ -268,6 +356,10 @@ class NineRouterManager:
             for provider in connected_providers
             if provider in ROUTER_MODEL_ALIASES
         }
+        active_owners.update(
+            provider for provider in connected_providers
+            if provider in OPENAI_COMPATIBLE_PROVIDERS
+        )
         payload = await self._request("GET", "/v1/models?kind=llm")
         raw_models = payload.get("data", []) if isinstance(payload, Mapping) else []
         models: list[dict[str, str]] = []

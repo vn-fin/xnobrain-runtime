@@ -82,7 +82,7 @@ export function useAssistants(active = true) {
       }));
       setStatus('ready');
     } catch (value) {
-      setError(value instanceof Error ? value.message : 'Could not load assistants.');
+      setError(value instanceof Error ? value.message : 'Could not load agents.');
       setStatus('error');
     }
   }, []);
@@ -190,7 +190,7 @@ export function useAssistants(active = true) {
       conversations = [conversation];
       loadedConversations.current.add(agent.id);
     } catch (value) {
-      setError(value instanceof Error ? value.message : 'Agent created, but its first conversation could not be created.');
+      setError(value instanceof Error ? value.message : 'Agent created, but its first session could not be created.');
     } finally {
       setPending(false);
     }
@@ -207,7 +207,7 @@ export function useAssistants(active = true) {
         ? { ...updated, conversations: agent.conversations, skills: agent.skills }
         : agent));
     } catch (value) {
-      setError(value instanceof Error ? value.message : 'Could not update assistant.');
+      setError(value instanceof Error ? value.message : 'Could not update agent.');
       throw value;
     } finally {
       setPending(false);
@@ -225,7 +225,7 @@ export function useAssistants(active = true) {
         ? { ...updated, conversations: agent.conversations, skills: agent.skills }
         : agent));
     } catch (value) {
-      setError(value instanceof Error ? value.message : 'Could not rename assistant.');
+      setError(value instanceof Error ? value.message : 'Could not rename agent.');
       throw value;
     } finally {
       setPending(false);

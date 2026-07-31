@@ -41,7 +41,7 @@ request GET /api/brain/v1/sandboxes/stats >/dev/null
 request GET /api/brain/v1/sandboxes/health >/dev/null
 
 providers="$(request GET /api/brain/v1/providers)"
-for provider in claude codex antigravity openai anthropic gemini; do
+for provider in claude codex antigravity openai anthropic gemini deepseek moonshot qwen openai-like; do
   request GET "/api/brain/v1/providers/$provider/connect" >/dev/null
   request GET "/api/brain/v1/providers/$provider/models" >/dev/null
   request GET "/api/brain/v1/providers/$provider/models/auto/reasoning" >/dev/null
@@ -51,7 +51,7 @@ for provider in claude codex antigravity; do
   started="$(request POST "/api/brain/v1/providers/$provider/connect")"
   jq -e '.data.login_url | type == "string" and length > 0' <<<"$started" >/dev/null
 done
-for provider in openai anthropic gemini; do
+for provider in openai anthropic gemini deepseek moonshot qwen openai-like; do
   started="$(request POST "/api/brain/v1/providers/$provider/connect")"
   jq -e '.data.required_client_action == "submit_text"' <<<"$started" >/dev/null
 done
@@ -69,12 +69,12 @@ if [[ -n "$agent_id" ]]; then
   if [[ -n "$workspace_file" ]]; then
     request POST "/api/brain/v1/agents-workspaces/$agent_id/read" "$(jq -cn --arg path "$workspace_file" '{path:$path}')" >/dev/null
   fi
-  conversations="$(request GET "/api/brain/v1/conversations?agent=$agent_id")"
-  conversation_id="$(jq -r '.data.conversations[0].id // empty' <<<"$conversations")"
+  sessions="$(request GET "/api/brain/v1/sessions?agent=$agent_id")"
+  conversation_id="$(jq -r '.data.conversations[0].id // empty' <<<"$sessions")"
   if [[ -n "$conversation_id" ]]; then
-    request GET "/api/brain/v1/conversations/$conversation_id/detail?agent=$agent_id" >/dev/null
-    request GET "/api/brain/v1/conversations/$conversation_id/messages?agent=$agent_id" >/dev/null
-    request GET "/api/brain/v1/conversations/$conversation_id/usage?agent=$agent_id" >/dev/null
+    request GET "/api/brain/v1/sessions/$conversation_id/detail?agent=$agent_id" >/dev/null
+    request GET "/api/brain/v1/sessions/$conversation_id/messages?agent=$agent_id" >/dev/null
+    request GET "/api/brain/v1/sessions/$conversation_id/usage?agent=$agent_id" >/dev/null
   fi
 fi
 
@@ -89,5 +89,5 @@ jq -e '.data | type == "array"' <<<"$crons" >/dev/null
 jq -e '.data | type == "array"' <<<"$notifications" >/dev/null
 jq -e '.data | type == "array"' <<<"$default_skills" >/dev/null
 
-jq -e '.data | length == 6' <<<"$providers" >/dev/null
+jq -e '.data | length == 10' <<<"$providers" >/dev/null
 printf 'Public API smoke checks passed.\n'

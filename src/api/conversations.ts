@@ -10,7 +10,7 @@ import { mapConversation, mapMessage } from './mappers/conversations';
 import { readSSE, type SSEEvent } from './stream';
 import type { ChatMessage, Conversation, ConversationUsage, RunApprovalChoice } from '../types';
 
-const ROOT = '/api/brain/v1/conversations';
+const ROOT = '/api/brain/v1/sessions';
 const encoded = (value: string) => encodeURIComponent(value);
 
 export type ResolveRunApprovalResponse = {

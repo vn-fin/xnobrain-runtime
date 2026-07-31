@@ -48,41 +48,41 @@
     "search": "Rechercher"
   },
   "agents": {
-    "title": "Assistants",
+    "title": "Agents",
     "recent": "Récents",
-    "searchPlaceholder": "Rechercher des assistants…",
-    "new": "Nouvel assistant",
-    "settings": "Paramètres de l'assistant",
+    "searchPlaceholder": "Rechercher des agents…",
+    "new": "Nouvel agent",
+    "settings": "Paramètres de l'agent",
     "runtimeConfig": "Configuration d'exécution",
-    "test": "Tester l'assistant",
+    "test": "Tester l'agent",
     "renameAction": "Renommer",
     "exportAction": "Exporter",
-    "delete": "Supprimer l'assistant"
+    "delete": "Supprimer l'agent"
   },
   "chat": {
     "placeholder": "Demander d'autres modifications",
     "workLocally": "Travailler en local",
     "ide": "Contexte de l'IDE",
     "fullAccess": "Accès complet",
-    "createConversation": "Créer une conversation",
-    "closeConversation": "Fermer la conversation",
-    "emptyTitle": "Aucune conversation pour le moment",
-    "emptyDesc": "Démarrez une nouvelle conversation pour discuter avec {{name}}.",
+    "createSession": "Créer une session",
+    "closeSession": "Fermer la session",
+    "emptyTitle": "Aucune session pour le moment",
+    "emptyDesc": "Démarrez une nouvelle session pour discuter avec {{name}}.",
     "emptyReady": "Envoyez un message à {{name}} pour commencer.",
-    "newConversation": "Nouvelle conversation"
+    "newSession": "Nouvelle session"
   },
   "conversation": {
     "share": "Partager",
     "shareUnavailable": "Le partage n'est pas encore disponible",
     "rename": "Renommer",
     "delete": "Supprimer",
-    "deleteTitle": "Supprimer la conversation",
-    "deleteMessage": "Supprimer « {{name}} » ? Cette action supprime définitivement la conversation et ses messages. Elle est irréversible.",
-    "renameLabel": "Nom de la conversation",
-    "menu": "Options de conversation"
+    "deleteTitle": "Supprimer la session",
+    "deleteMessage": "Supprimer « {{name}} » ? Cette action supprime définitivement la session et ses messages. Elle est irréversible.",
+    "renameLabel": "Nom de la session",
+    "menu": "Options de session"
   },
   "controls": {
-    "title": "Contrôles de l'assistant",
+    "title": "Contrôles de l'agent",
     "workspace": "Espace de travail",
     "skills": "Compétences",
     "runtime": "Exécution",
@@ -94,7 +94,7 @@
   },
   "skillsView": {
     "title": "Compétences",
-    "subtitle": "Parcourez les compétences installées, installez-en de nouvelles et appliquez-les à vos assistants.",
+    "subtitle": "Parcourez les compétences installées, installez-en de nouvelles et appliquez-les à vos agents.",
     "installNew": "Installer",
     "searchPlaceholder": "Rechercher des compétences…",
     "all": "Toutes",
@@ -104,11 +104,11 @@
     "empty": "Aucune compétence ne correspond à votre recherche ou filtre.",
     "selected_one": "{{count}} compétence sélectionnée",
     "selected_other": "{{count}} compétences sélectionnées",
-    "applyToAgents_one": "Appliquer à {{count}} assistant",
-    "applyToAgents_other": "Appliquer à {{count}} assistants"
+    "applyToAgents_one": "Appliquer à {{count}} agent",
+    "applyToAgents_other": "Appliquer à {{count}} agents"
   },
   "agentSkills": {
-    "title": "Compétences de l'assistant",
+    "title": "Compétences de l'agent",
     "add": "Ajouter une compétence",
     "searchPlaceholder": "Rechercher des compétences à ajouter…",
     "enabledFor_one": "{{count}} compétence activée pour {{name}}.",
@@ -127,7 +127,7 @@
   },
   "connections": {
     "title": "Connexions",
-    "subtitle": "Connectez des fournisseurs LLM (clé API ou authentification CLI) pour que vos assistants puissent fonctionner.",
+    "subtitle": "Connectez des fournisseurs LLM (clé API ou authentification CLI) pour que vos agents puissent fonctionner.",
     "notConnected": "non connecté",
     "connected": "connecté",
     "healthy": "opérationnel",
@@ -158,7 +158,7 @@
   },
   "onboarding": {
     "title": "Configurons tout",
-    "subtitle": "Quelques étapes rapides pour commencer avec votre assistant.",
+    "subtitle": "Quelques étapes rapides pour commencer avec votre agent.",
     "checking": "Vérification…",
     "vm": {
       "title": "Préparer le conteneur Hermes",
@@ -174,7 +174,7 @@
     },
     "model": {
       "title": "Choisir un modèle par défaut",
-      "desc": "Choisissez le fournisseur et le modèle par défaut pour les nouveaux assistants.",
+      "desc": "Choisissez le fournisseur et le modèle par défaut pour les nouveaux agents.",
       "action": "Enregistrer par défaut",
       "saving": "Enregistrement…",
       "loading": "Chargement des modèles…",
@@ -182,24 +182,24 @@
       "ready": "Modèle par défaut : {{model}}"
     },
     "agent": {
-      "title": "Créer un assistant",
+      "title": "Créer un agent",
       "desc": "Donnez-lui un nom et un objectif. Vous pourrez ensuite connecter un fournisseur et choisir un modèle.",
-      "action": "Créer un assistant"
+      "action": "Créer un agent"
     },
     "conversation": {
-      "title": "Démarrer une conversation",
-      "desc": "Votre première conversation est créée automatiquement pour commencer à discuter tout de suite."
+      "title": "Démarrer une session",
+      "desc": "Votre première session est créée automatiquement pour commencer à discuter tout de suite."
     }
   },
   "modals": {
-    "createAgent": "Créer un assistant",
+    "createAgent": "Créer un agent",
     "createAgentApi": "Correspond à POST /api/brain/v1/agents",
     "name": "Nom",
     "namePlaceholder": "ex. Analyste de données",
     "description": "Description",
-    "descPlaceholder": "Que doit faire cet assistant ?",
-    "createAgentBtn": "Créer l'assistant",
-    "agentSettings": "Paramètres de l'assistant",
+    "descPlaceholder": "Que doit faire cet agent ?",
+    "createAgentBtn": "Créer l'agent",
+    "agentSettings": "Paramètres de l'agent",
     "settingsTitle": "Titre",
     "provider": "Fournisseur",
     "model": "Modèle",
@@ -208,8 +208,8 @@
     "saveConfirm": "Enregistrer les modifications de “{{name}}” ?",
     "back": "Retour",
     "confirmSave": "Confirmer l'enregistrement",
-    "deleteAgentTitle": "Supprimer l'assistant",
-    "deleteAgentMsg": "Supprimer « {{name}} » ? Les conversations, fichiers de l’espace de travail, configurations, compétences, mémoires et tâches Kanban assignées seront définitivement supprimés. Cette action est irréversible."
+    "deleteAgentTitle": "Supprimer l'agent",
+    "deleteAgentMsg": "Supprimer « {{name}} » ? Les sessions, fichiers de l’espace de travail, configurations, compétences, mémoires et tâches Kanban assignées seront définitivement supprimés. Cette action est irréversible."
   },
   "cron": {
     "title": "Tâches cron",

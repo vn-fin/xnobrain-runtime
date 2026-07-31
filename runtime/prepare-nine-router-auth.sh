@@ -2,7 +2,7 @@
 # Prepare the private 9router CLI identity shared with Brain4All Studio.
 set -euo pipefail
 
-data_directory="${NINE_ROUTER_DATA_DIR:-/opt/data/.9router}"
+data_directory="${NINE_ROUTER_DATA_DIR:-$HOME/.9router}"
 mkdir -p "$data_directory/auth"
 umask 077
 printf '%s' 'brain4all-runtime' >"$data_directory/machine-id"

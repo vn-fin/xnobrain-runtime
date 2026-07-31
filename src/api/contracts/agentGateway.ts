@@ -78,6 +78,7 @@ export type ProviderConnectorDTO = {
   available_models?: string[];
   connection_count?: number;
   base_url?: string;
+  requires_base_url?: boolean;
   capabilities?: string[];
   requires_restart?: boolean;
 };

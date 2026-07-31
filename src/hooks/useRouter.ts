@@ -69,7 +69,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
   }
   else if (seg[0] === 'agents') {
     agentId = seg[1] ?? '';
-    if (seg[2] === 'conversations') conversationId = seg[3] ?? '';
+    if (seg[2] === 'sessions' || seg[2] === 'conversations') conversationId = seg[3] ?? '';
     const panel = sp.get('panel');
     if (panel === 'skills' || panel === 'cron' || panel === 'runtime' || panel === 'workspace') rightView = panel;
   }
@@ -125,7 +125,7 @@ export function computeUrl(state: RouteState): string {
   }
   if (!state.agentId) return '/';
   let path = `/agents/${encodeURIComponent(state.agentId)}`;
-  if (state.conversationId) path += `/conversations/${encodeURIComponent(state.conversationId)}`;
+  if (state.conversationId) path += `/sessions/${encodeURIComponent(state.conversationId)}`;
   if (state.rightView !== 'workspace') params.set('panel', state.rightView);
   if (state.agentSearch.trim()) params.set('agentq', state.agentSearch.trim());
   return `${path}${params.size ? `?${params}` : ''}`;

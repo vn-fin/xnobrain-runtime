@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-router_data_dir="${NINE_ROUTER_DATA_DIR:-/opt/data/.9router}"
+router_data_dir="${NINE_ROUTER_DATA_DIR:-$HOME/.9router}"
 mkdir -p "$router_data_dir"
 
 DATA_DIR="$router_data_dir" \

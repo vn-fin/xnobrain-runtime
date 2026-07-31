@@ -49,7 +49,7 @@ describe('Sidebar assistant actions', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Assistant options' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Agent options' }));
 
     const menu = screen.getByRole('menu');
     expect(menu).toHaveTextContent('Rename');
@@ -117,12 +117,12 @@ describe('Sidebar assistant actions', () => {
     expect(requestSignOut).toHaveBeenCalledOnce();
   });
 
-  it('keeps the sidebar focused on recent assistants and opens the full library', () => {
+  it('keeps a stable full agent list with Big Brother first', () => {
     const agents = Array.from({ length: 6 }, (_, index) => ({
       ...agent,
-      id: `agent-${index}`,
-      name: `agent-${index}`,
-      title: `Assistant ${index + 1}`,
+      id: index === 5 ? 'big-brother' : `agent-${index}`,
+      name: index === 5 ? 'big-brother' : `agent-${index}`,
+      title: index === 5 ? 'Big Brother' : `Agent ${index + 1}`,
     }));
     const { container } = render(
       <Sidebar
@@ -140,11 +140,13 @@ describe('Sidebar assistant actions', () => {
       />,
     );
 
-    expect(screen.getByText('Assistant 1')).toBeVisible();
-    expect(screen.queryByText('Assistant 6')).not.toBeInTheDocument();
+    const rows = within(container).getAllByRole('button').filter((button) => button.classList.contains('agent-row-main'));
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'Big Brotherauto', 'Agent 1auto', 'Agent 2auto', 'Agent 3auto', 'Agent 4auto', 'Agent 5auto',
+    ]);
 
     fireEvent.click(within(container).getByRole('button', { name: 'Open in Library' }));
-    expect(screen.getByRole('dialog', { name: 'Assistant Library' })).toBeVisible();
-    expect(screen.getByText('Assistant 6')).toBeVisible();
+    expect(screen.getByRole('dialog', { name: 'Agent Library' })).toBeVisible();
+    expect(screen.getAllByText('Big Brother')).toHaveLength(2);
   });
 });

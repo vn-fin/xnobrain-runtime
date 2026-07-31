@@ -88,6 +88,7 @@ def setup_routes(app: Any, handlers: Any) -> None:
             methods=[route.method],
             name=route.operation,
             tags=list(route.tags),
+            include_in_schema=route.include_in_schema,
             response_model=None if raw_response else APIEnvelope,
         )
 

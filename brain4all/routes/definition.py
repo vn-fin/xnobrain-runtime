@@ -15,6 +15,7 @@ class Route:
     body: type | None = None
     special: str | None = None
     tags: tuple[str, ...] = ("Brain4All",)
+    include_in_schema: bool = True
 
 
 def route(
@@ -24,7 +25,8 @@ def route(
     body: type | None = None,
     special: str | None = None,
     tags: tuple[str, ...] = ("Brain4All",),
+    include_in_schema: bool = True,
 ) -> Route:
     """Declare a route relative to the current public API version."""
     suffix = f"/{path.lstrip('/')}" if path else ""
-    return Route(method, f"{API_PREFIX}{suffix}", operation, body, special, tags)
+    return Route(method, f"{API_PREFIX}{suffix}", operation, body, special, tags, include_in_schema)

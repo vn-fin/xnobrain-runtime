@@ -465,7 +465,7 @@ class KanbanService:
                     "id": session_id,
                     "agent_id": assignee,
                     "url": (
-                        f"/agents/{quote(str(assignee), safe='')}/conversations/"
+                        f"/agents/{quote(str(assignee), safe='')}/sessions/"
                         f"{quote(str(session_id), safe='')}"
                     ),
                 }

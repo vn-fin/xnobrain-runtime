@@ -48,41 +48,41 @@
     "search": "Buscar"
   },
   "agents": {
-    "title": "Asistentes",
+    "title": "Agentes",
     "recent": "Recientes",
-    "searchPlaceholder": "Buscar asistentes…",
-    "new": "Nuevo asistente",
-    "settings": "Ajustes del asistente",
+    "searchPlaceholder": "Buscar agentes…",
+    "new": "Nuevo agente",
+    "settings": "Ajustes del agente",
     "runtimeConfig": "Configuración de ejecución",
-    "test": "Probar asistente",
+    "test": "Probar agente",
     "renameAction": "Renombrar",
     "exportAction": "Exportar",
-    "delete": "Eliminar asistente"
+    "delete": "Eliminar agente"
   },
   "chat": {
     "placeholder": "Pide cambios adicionales",
     "workLocally": "Trabajar localmente",
     "ide": "Contexto del IDE",
     "fullAccess": "Acceso total",
-    "createConversation": "Crear conversación",
-    "closeConversation": "Cerrar conversación",
-    "emptyTitle": "Aún no hay conversaciones",
-    "emptyDesc": "Inicia una nueva conversación para empezar a chatear con {{name}}.",
+    "createConversation": "Crear sesión",
+    "closeConversation": "Cerrar sesión",
+    "emptyTitle": "Aún no hay sesiones",
+    "emptyDesc": "Inicia una nueva sesión para empezar a chatear con {{name}}.",
     "emptyReady": "Envía un mensaje a {{name}} para empezar.",
-    "newConversation": "Nueva conversación"
+    "newConversation": "Nueva sesión"
   },
   "conversation": {
     "share": "Compartir",
     "shareUnavailable": "Compartir aún no está disponible",
     "rename": "Renombrar",
     "delete": "Eliminar",
-    "deleteTitle": "Eliminar conversación",
-    "deleteMessage": "¿Eliminar “{{name}}”? Esto elimina permanentemente la conversación y sus mensajes. Esta acción no se puede deshacer.",
-    "renameLabel": "Nombre de la conversación",
-    "menu": "Opciones de conversación"
+    "deleteTitle": "Eliminar sesión",
+    "deleteMessage": "¿Eliminar “{{name}}”? Esto elimina permanentemente la sesión y sus mensajes. Esta acción no se puede deshacer.",
+    "renameLabel": "Nombre de la sesión",
+    "menu": "Opciones de sesión"
   },
   "controls": {
-    "title": "Controles del asistente",
+    "title": "Controles del agente",
     "workspace": "Espacio de trabajo",
     "skills": "Habilidades",
     "runtime": "Ejecución",
@@ -94,7 +94,7 @@
   },
   "skillsView": {
     "title": "Habilidades",
-    "subtitle": "Explora las habilidades instaladas, instala nuevas y aplícalas a tus asistentes.",
+    "subtitle": "Explora las habilidades instaladas, instala nuevas y aplícalas a tus agentes.",
     "installNew": "Instalar nueva",
     "searchPlaceholder": "Buscar habilidades…",
     "all": "Todas",
@@ -104,11 +104,11 @@
     "empty": "Ninguna habilidad coincide con tu búsqueda o filtro.",
     "selected_one": "{{count}} habilidad seleccionada",
     "selected_other": "{{count}} habilidades seleccionadas",
-    "applyToAgents_one": "Aplicar a {{count}} asistente",
-    "applyToAgents_other": "Aplicar a {{count}} asistentes"
+    "applyToAgents_one": "Aplicar a {{count}} agente",
+    "applyToAgents_other": "Aplicar a {{count}} agentes"
   },
   "agentSkills": {
-    "title": "Habilidades del asistente",
+    "title": "Habilidades del agente",
     "add": "Añadir habilidad",
     "searchPlaceholder": "Buscar habilidades raíz para añadir…",
     "enabledFor_one": "{{count}} habilidad activada para {{name}}.",
@@ -127,7 +127,7 @@
   },
   "connections": {
     "title": "Conexiones",
-    "subtitle": "Conecta proveedores de LLM (clave API o autenticación CLI) para que tus asistentes funcionen.",
+    "subtitle": "Conecta proveedores de LLM (clave API o autenticación CLI) para que tus agentes funcionen.",
     "notConnected": "sin conectar",
     "connected": "conectado",
     "healthy": "en buen estado",
@@ -150,7 +150,7 @@
     "notProvisioned": "sin aprovisionar",
     "provisioning": "aprovisionando…",
     "noSandbox": "Aún no hay sandbox",
-    "noSandboxDesc": "No tienes un runtime de Hermes en ejecución. Inicia el contenedor local para dar a tus asistentes espacio de trabajo, terminal y cómputo.",
+    "noSandboxDesc": "No tienes un runtime de Hermes en ejecución. Inicia el contenedor local para dar a tus agentes espacio de trabajo, terminal y cómputo.",
     "create": "Crear sandbox",
     "provisioningTitle": "Aprovisionando sandbox…",
     "specs": "Aprovisiona vía POST /api/brain/v1/sandboxes/setup · 6 vCPU · 24 GiB · disco 80 GiB",
@@ -158,11 +158,11 @@
   },
   "onboarding": {
     "title": "Vamos a configurarlo",
-    "subtitle": "Unos pasos rápidos para empezar a trabajar con tu asistente.",
+    "subtitle": "Unos pasos rápidos para empezar a trabajar con tu agente.",
     "checking": "Comprobando…",
     "vm": {
       "title": "Preparar el contenedor Hermes",
-      "desc": "Prepara el contenedor local de Hermes con espacio de trabajo, terminal y cómputo para tu asistente.",
+      "desc": "Prepara el contenedor local de Hermes con espacio de trabajo, terminal y cómputo para tu agente.",
       "action": "Preparar contenedor",
       "provisioning": "Aprovisionando… {{percent}}%",
       "ready": "Sandbox lista."
@@ -174,7 +174,7 @@
     },
     "model": {
       "title": "Elegir un modelo predeterminado",
-      "desc": "Elige el proveedor y el modelo predeterminados para los nuevos asistentes.",
+      "desc": "Elige el proveedor y el modelo predeterminados para los nuevos agentes.",
       "action": "Guardar predeterminado",
       "saving": "Guardando…",
       "loading": "Cargando modelos…",
@@ -182,24 +182,24 @@
       "ready": "Modelo predeterminado: {{model}}"
     },
     "agent": {
-      "title": "Crear un asistente",
+      "title": "Crear un agente",
       "desc": "Ponle un nombre y un propósito. Luego podrás conectar un proveedor y elegir un modelo.",
-      "action": "Crear asistente"
+      "action": "Crear agente"
     },
     "conversation": {
-      "title": "Iniciar una conversación",
-      "desc": "Tu primera conversación se crea automáticamente para que puedas empezar a chatear."
+      "title": "Iniciar una sesión",
+      "desc": "Tu primera sesión se crea automáticamente para que puedas empezar a chatear."
     }
   },
   "modals": {
-    "createAgent": "Crear asistente",
+    "createAgent": "Crear agente",
     "createAgentApi": "Corresponde a POST /api/brain/v1/agents",
     "name": "Nombre",
     "namePlaceholder": "ej. Analista de datos",
     "description": "Descripción",
-    "descPlaceholder": "¿Qué debe hacer este asistente?",
-    "createAgentBtn": "Crear asistente",
-    "agentSettings": "Ajustes del asistente",
+    "descPlaceholder": "¿Qué debe hacer este agente?",
+    "createAgentBtn": "Crear agente",
+    "agentSettings": "Ajustes del agente",
     "settingsTitle": "Título",
     "provider": "Proveedor",
     "model": "Modelo",
@@ -208,8 +208,8 @@
     "saveConfirm": "¿Guardar los cambios de “{{name}}”?",
     "back": "Atrás",
     "confirmSave": "Confirmar guardado",
-    "deleteAgentTitle": "Eliminar asistente",
-    "deleteAgentMsg": "¿Eliminar “{{name}}”? Se eliminarán permanentemente todas las conversaciones, archivos del espacio de trabajo, configuración, habilidades, memoria y tareas Kanban asignadas. Esta acción no se puede deshacer."
+    "deleteAgentTitle": "Eliminar agente",
+    "deleteAgentMsg": "¿Eliminar “{{name}}”? Se eliminarán permanentemente todas las sesiones, archivos del espacio de trabajo, configuración, habilidades, memoria y tareas Kanban asignadas. Esta acción no se puede deshacer."
   },
   "cron": {
     "title": "Tareas cron",

@@ -34,8 +34,6 @@ import { SUPPORTED_LANGUAGES } from '../i18n';
 import { useTheme } from '../theme';
 import type { Agent, CenterView } from '../types';
 
-const RECENT_LIMIT = 4;
-const RECENT_KEY = 'brain4all.recentAssistants';
 const PINNED_KEY = 'brain4all.pinnedAssistants';
 
 const navItems = [
@@ -105,16 +103,7 @@ export function Sidebar({
   const [agentActionError, setAgentActionError] = useState('');
   const [renamingAgentId, setRenamingAgentId] = useState<string | null>(null);
   const [agentRenameValue, setAgentRenameValue] = useState('');
-  const [recentIds, setRecentIds] = useState(() => readIds(RECENT_KEY));
   const [pinnedIds, setPinnedIds] = useState(() => readIds(PINNED_KEY));
-
-  useEffect(() => {
-    setRecentIds((current) => {
-      const next = [activeAgent.id, ...current.filter((id) => id !== activeAgent.id)].slice(0, RECENT_LIMIT);
-      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, [activeAgent.id]);
 
   useEffect(() => {
     localStorage.setItem(PINNED_KEY, JSON.stringify(pinnedIds));
@@ -125,16 +114,17 @@ export function Sidebar({
     || agent.title.toLowerCase().includes(query)
     || agent.name.toLowerCase().includes(query)
     || agent.model.toLowerCase().includes(query);
-  const pinnedAgents = pinnedIds.map((id) => agents.find((agent) => agent.id === id)).filter((agent): agent is Agent => !!agent);
-  const recentAgents = recentIds
-    .filter((id) => !pinnedIds.includes(id))
-    .map((id) => agents.find((agent) => agent.id === id))
-    .filter((agent): agent is Agent => !!agent);
-  const focusedAgents = q ? agents.filter((agent) => matches(agent, q)) : [...pinnedAgents, ...recentAgents];
+  const orderedAgents = useMemo(
+    () => agents.map((agent, index) => ({ agent, index }))
+      .sort((left, right) => Number(right.agent.id === 'big-brother') - Number(left.agent.id === 'big-brother') || left.index - right.index)
+      .map(({ agent }) => agent),
+    [agents],
+  );
+  const focusedAgents = q ? orderedAgents.filter((agent) => matches(agent, q)) : orderedAgents;
   const libraryAgents = useMemo(() => {
     const query = librarySearch.trim().toLowerCase();
-    return agents.filter((agent) => matches(agent, query));
-  }, [agents, librarySearch]);
+    return orderedAgents.filter((agent) => matches(agent, query));
+  }, [orderedAgents, librarySearch]);
 
   const startAgentRename = (agent: Agent) => {
     setAgentMenuId(null);
@@ -207,8 +197,8 @@ export function Sidebar({
             {pinnedIds.includes(agent.id) && <Pin className="agent-pin" size={12} aria-label={t('agents.pinned')} />}
             <button
               className="agent-row-more"
-              title={t('agents.menu', { defaultValue: 'Assistant options' })}
-              aria-label={t('agents.menu', { defaultValue: 'Assistant options' })}
+              title={t('agents.menu', { defaultValue: 'Agent options' })}
+              aria-label={t('agents.menu', { defaultValue: 'Agent options' })}
               aria-expanded={agentMenuId === agent.id}
               onClick={(event) => {
                 event.stopPropagation();
@@ -257,11 +247,8 @@ export function Sidebar({
           <Search size={14} />
           <input value={agentSearch} onChange={(event) => onAgentSearch(event.target.value)} placeholder={t('agents.searchPlaceholder')} />
         </div>
-        {!q && pinnedAgents.length > 0 && <div className="assistant-list-label"><Pin size={12} /> {t('agents.pinned')}</div>}
-        {!q && pinnedAgents.map((agent) => renderAgent(agent))}
-        {!q && recentAgents.length > 0 && <div className="assistant-list-label">{t('agents.recent')}</div>}
         {q && focusedAgents.length > 0 && <div className="assistant-list-label">{t('agents.searchResults')}</div>}
-        {(q ? focusedAgents : recentAgents).map((agent) => renderAgent(agent))}
+        {focusedAgents.map((agent) => renderAgent(agent))}
         {focusedAgents.length === 0 && <div className="assistant-list-empty">{t('agents.noMatch')}</div>}
         <button className="open-library-button" onClick={() => setLibraryOpen(true)}>
           <BookOpen size={15} /> {t('agents.openLibrary')}

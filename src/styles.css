@@ -817,7 +817,12 @@ body.col-resizing {
 
 .ob-key-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.ob-key-row input[type='url'] {
+  flex-basis: 100%;
 }
 
 .ob-key-row input {
@@ -5084,6 +5089,22 @@ body.col-resizing {
   background: #3b82f6;
 }
 
+.brand-icon.deepseek {
+  background: #4d6bfe;
+}
+
+.brand-icon.moonshot {
+  background: #7c3aed;
+}
+
+.brand-icon.qwen {
+  background: #615ced;
+}
+
+.brand-icon.openai-like {
+  background: linear-gradient(135deg, #10a37f 0%, #2563eb 100%);
+}
+
 .brand-icon.openrouter {
   background: #6467f2;
 }
@@ -5268,6 +5289,10 @@ body.col-resizing {
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr) auto;
   gap: 10px;
+}
+
+.conn-keyform.has-base-url {
+  grid-template-columns: 200px minmax(180px, 1fr) minmax(180px, 1fr) auto;
 }
 
 .conn-select {
@@ -7172,6 +7197,10 @@ body.col-resizing {
   }
 
   .conn-keyform {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .conn-keyform.has-base-url {
     grid-template-columns: minmax(0, 1fr);
   }
 

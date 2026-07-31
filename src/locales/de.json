@@ -48,41 +48,41 @@
     "search": "Suchen"
   },
   "agents": {
-    "title": "Assistenten",
+    "title": "Agenten",
     "recent": "Zuletzt",
-    "searchPlaceholder": "Assistenten suchen…",
-    "new": "Neuer Assistent",
-    "settings": "Assistenteneinstellungen",
+    "searchPlaceholder": "Agenten suchen…",
+    "new": "Neuer Agent",
+    "settings": "Agenteneinstellungen",
     "runtimeConfig": "Laufzeitkonfiguration",
-    "test": "Assistent testen",
+    "test": "Agent testen",
     "renameAction": "Umbenennen",
     "exportAction": "Exportieren",
-    "delete": "Assistent löschen"
+    "delete": "Agent löschen"
   },
   "chat": {
     "placeholder": "Weitere Änderungen anfordern",
     "workLocally": "Lokal arbeiten",
     "ide": "IDE-Kontext",
     "fullAccess": "Voller Zugriff",
-    "createConversation": "Konversation erstellen",
-    "closeConversation": "Konversation schließen",
-    "emptyTitle": "Noch keine Konversationen",
-    "emptyDesc": "Starte eine neue Konversation, um mit {{name}} zu chatten.",
+    "createConversation": "Sitzung erstellen",
+    "closeConversation": "Sitzung schließen",
+    "emptyTitle": "Noch keine Sitzungen",
+    "emptyDesc": "Starte eine neue Sitzung, um mit {{name}} zu chatten.",
     "emptyReady": "Sende {{name}} eine Nachricht, um zu beginnen.",
-    "newConversation": "Neue Konversation"
+    "newConversation": "Neue Sitzung"
   },
   "conversation": {
     "share": "Teilen",
     "shareUnavailable": "Teilen ist noch nicht verfügbar",
     "rename": "Umbenennen",
     "delete": "Löschen",
-    "deleteTitle": "Konversation löschen",
-    "deleteMessage": "„{{name}}“ löschen? Dadurch werden die Konversation und ihre Nachrichten dauerhaft entfernt. Diese Aktion kann nicht rückgängig gemacht werden.",
-    "renameLabel": "Name der Konversation",
-    "menu": "Konversationsoptionen"
+    "deleteTitle": "Sitzung löschen",
+    "deleteMessage": "„{{name}}“ löschen? Dadurch werden die Sitzung und ihre Nachrichten dauerhaft entfernt. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "renameLabel": "Name der Sitzung",
+    "menu": "Sitzungsoptionen"
   },
   "controls": {
-    "title": "Assistentensteuerung",
+    "title": "Agentensteuerung",
     "workspace": "Arbeitsbereich",
     "skills": "Fähigkeiten",
     "runtime": "Laufzeit",
@@ -94,7 +94,7 @@
   },
   "skillsView": {
     "title": "Fähigkeiten",
-    "subtitle": "Durchsuche installierte Fähigkeiten, installiere neue und weise sie deinen Assistenten zu.",
+    "subtitle": "Durchsuche installierte Fähigkeiten, installiere neue und weise sie deinen Agenten zu.",
     "installNew": "Neu installieren",
     "searchPlaceholder": "Fähigkeiten suchen…",
     "all": "Alle",
@@ -104,11 +104,11 @@
     "empty": "Keine Fähigkeit passt zu deiner Suche oder deinem Filter.",
     "selected_one": "{{count}} Fähigkeit ausgewählt",
     "selected_other": "{{count}} Fähigkeiten ausgewählt",
-    "applyToAgents_one": "Auf {{count}} Assistent anwenden",
-    "applyToAgents_other": "Auf {{count}} Assistenten anwenden"
+    "applyToAgents_one": "Auf {{count}} Agent anwenden",
+    "applyToAgents_other": "Auf {{count}} Agenten anwenden"
   },
   "agentSkills": {
-    "title": "Assistenten-Fähigkeiten",
+    "title": "Agenten-Fähigkeiten",
     "add": "Fähigkeit hinzufügen",
     "searchPlaceholder": "Root-Fähigkeiten zum Hinzufügen suchen…",
     "enabledFor_one": "{{count}} Fähigkeit für {{name}} aktiviert.",
@@ -127,7 +127,7 @@
   },
   "connections": {
     "title": "Verbindungen",
-    "subtitle": "Verbinde LLM-Anbieter (API-Schlüssel oder CLI-Authentifizierung), damit deine Assistenten laufen können.",
+    "subtitle": "Verbinde LLM-Anbieter (API-Schlüssel oder CLI-Authentifizierung), damit deine Agenten laufen können.",
     "notConnected": "nicht verbunden",
     "connected": "verbunden",
     "healthy": "funktionsfähig",
@@ -158,7 +158,7 @@
   },
   "onboarding": {
     "title": "Los geht’s mit der Einrichtung",
-    "subtitle": "Ein paar schnelle Schritte, um mit deinem Assistenten zu starten.",
+    "subtitle": "Ein paar schnelle Schritte, um mit deinem Agenten zu starten.",
     "checking": "Wird geprüft…",
     "vm": {
       "title": "Hermes-Container vorbereiten",
@@ -174,7 +174,7 @@
     },
     "model": {
       "title": "Standardmodell wählen",
-      "desc": "Wähle Standardanbieter und -modell für neue Assistenten.",
+      "desc": "Wähle Standardanbieter und -modell für neue Agenten.",
       "action": "Standard speichern",
       "saving": "Wird gespeichert…",
       "loading": "Modelle werden geladen…",
@@ -182,24 +182,24 @@
       "ready": "Standardmodell: {{model}}"
     },
     "agent": {
-      "title": "Assistent erstellen",
+      "title": "Agent erstellen",
       "desc": "Gib ihm einen Namen und einen Zweck. Danach kannst du einen Anbieter verbinden und ein Modell wählen.",
-      "action": "Assistent erstellen"
+      "action": "Agent erstellen"
     },
     "conversation": {
-      "title": "Konversation starten",
-      "desc": "Deine erste Konversation wird automatisch erstellt, damit du sofort loslegen kannst."
+      "title": "Sitzung starten",
+      "desc": "Deine erste Sitzung wird automatisch erstellt, damit du sofort loslegen kannst."
     }
   },
   "modals": {
-    "createAgent": "Assistent erstellen",
+    "createAgent": "Agent erstellen",
     "createAgentApi": "Entspricht POST /api/brain/v1/agents",
     "name": "Name",
     "namePlaceholder": "z. B. Datenanalyst",
     "description": "Beschreibung",
-    "descPlaceholder": "Was soll dieser Assistent tun?",
-    "createAgentBtn": "Assistent erstellen",
-    "agentSettings": "Assistenteneinstellungen",
+    "descPlaceholder": "Was soll dieser Agent tun?",
+    "createAgentBtn": "Agent erstellen",
+    "agentSettings": "Agenteneinstellungen",
     "settingsTitle": "Titel",
     "provider": "Anbieter",
     "model": "Modell",
@@ -208,8 +208,8 @@
     "saveConfirm": "Änderungen an „{{name}}“ speichern?",
     "back": "Zurück",
     "confirmSave": "Speichern bestätigen",
-    "deleteAgentTitle": "Assistent löschen",
-    "deleteAgentMsg": "„{{name}}“ löschen? Alle Konversationen, Arbeitsbereichsdateien, Konfigurationen, Fähigkeiten, Erinnerungen und zugewiesenen Kanban-Aufgaben werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+    "deleteAgentTitle": "Agent löschen",
+    "deleteAgentMsg": "„{{name}}“ löschen? Alle Sitzungen, Arbeitsbereichsdateien, Konfigurationen, Fähigkeiten, Erinnerungen und zugewiesenen Kanban-Aufgaben werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
   },
   "cron": {
     "title": "Cron-Jobs",

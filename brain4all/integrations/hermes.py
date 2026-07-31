@@ -56,9 +56,9 @@ DEFAULT_ROOT_PROFILE = str(Path.home() / ".hermes")
 DEFAULT_PROFILES_ROOT = str(Path.home() / ".hermes" / "profiles")
 DEFAULT_LEGACY_AGENTS_ROOT = str(Path.home() / ".hermes" / "legacy-agents")
 DEFAULT_AGENT_CONFIG_DIR = str(Path.home() / ".config" / "sandbox-agent")
-DEFAULT_CONVERSATION_TITLE = "New Conversation"
+DEFAULT_CONVERSATION_TITLE = "New Session"
 DEFAULT_CONVERSATION_TITLE_RE = re.compile(
-    r"^New Conversation(?: ([1-9][0-9]*))?$",
+    r"^New Session(?: ([1-9][0-9]*))?$",
     re.IGNORECASE,
 )
 METADATA_FILE = "agent.json"

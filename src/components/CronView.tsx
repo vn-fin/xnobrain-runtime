@@ -209,7 +209,7 @@ export function CronView({
         <div>
           <p className="cron-eyebrow">{t('cron.eyebrow', { defaultValue: 'Automation' })}</p>
           <h1>{t('cron.globalTitle', { defaultValue: 'Scheduled tasks' })}</h1>
-          <p>{t('cron.globalSubtitle', { defaultValue: 'Let your assistants take care of recurring work while you focus on what matters.' })}</p>
+          <p>{t('cron.globalSubtitle', { defaultValue: 'Let your agents take care of recurring work while you focus on what matters.' })}</p>
         </div>
         <div className="cron-header-actions">
           <button className="cron-secondary-button" onClick={() => setBlueprintOpen(true)}>Blueprints</button>
@@ -233,9 +233,9 @@ export function CronView({
           ))}
         </div>
         <label className="cron-agent-filter">
-          <span>{t('cron.agent', { defaultValue: 'Assistant' })}</span>
+          <span>{t('cron.agent', { defaultValue: 'Agent' })}</span>
           <select value={agentFilter} onChange={(event) => setAgentFilter(event.target.value)}>
-            <option value="all">{t('cron.allAssistants', { defaultValue: 'All assistants' })}</option>
+            <option value="all">{t('cron.allAssistants', { defaultValue: 'All agents' })}</option>
             {agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.title}</option>)}
           </select>
         </label>
@@ -245,7 +245,7 @@ export function CronView({
       {status === 'loading' ? (
         <div className="cron-page-empty"><Clock3 size={22} /><strong>{t('cron.loading', { defaultValue: 'Loading scheduled tasks…' })}</strong></div>
       ) : visible.length === 0 ? (
-        <div className="cron-page-empty"><CalendarClock size={26} /><strong>{t('cron.globalEmpty', { defaultValue: 'Nothing scheduled yet' })}</strong><span>{t('cron.globalEmptyHint', { defaultValue: 'Create a scheduled task and let an assistant handle it for you.' })}</span><button className="cron-new-button" onClick={() => setCreateOpen(true)}><Plus size={15} /> {t('cron.new')}</button></div>
+        <div className="cron-page-empty"><CalendarClock size={26} /><strong>{t('cron.globalEmpty', { defaultValue: 'Nothing scheduled yet' })}</strong><span>{t('cron.globalEmptyHint', { defaultValue: 'Create a scheduled task and let an agent handle it for you.' })}</span><button className="cron-new-button" onClick={() => setCreateOpen(true)}><Plus size={15} /> {t('cron.new')}</button></div>
       ) : (
         <div className="cron-job-grid">
           {visible.map((job) => {
@@ -320,7 +320,7 @@ export function CronView({
                     <div className={`cron-graph-edge ${selectedRun?.state ?? 'idle'}`}>
                       <span>{selectedRun ? stateIcon(selectedRun.state, 11) : null}</span>
                     </div>
-                    <div className={`cron-graph-node agent ${selectedRun?.state ?? 'idle'}`}><Bot size={17} /><div><span>Assistant run</span><strong>{agentNames.get(detail.job.agentId) ?? detail.job.agentId}</strong><small>{selectedRun?.state ?? 'Not started'}</small></div>{selectedRun && <span className={`cron-node-status ${selectedRun.state}`}>{stateIcon(selectedRun.state, 14)}</span>}</div>
+                    <div className={`cron-graph-node agent ${selectedRun?.state ?? 'idle'}`}><Bot size={17} /><div><span>Agent run</span><strong>{agentNames.get(detail.job.agentId) ?? detail.job.agentId}</strong><small>{selectedRun?.state ?? 'Not started'}</small></div>{selectedRun && <span className={`cron-node-status ${selectedRun.state}`}>{stateIcon(selectedRun.state, 14)}</span>}</div>
                     <div className="cron-graph-edge branch" aria-hidden="true"><span /></div>
                     <div className="cron-graph-target-heading"><span>Delivery targets</span><button onClick={() => openTargetComposer()} title="Add destination"><Plus size={14} /><span>Add target</span></button></div>
                     <div className="cron-graph-targets">
@@ -345,7 +345,7 @@ export function CronView({
                       <div><span className={`cron-inspector-icon ${selectedRun?.state ?? 'empty'}`}>{selectedRun ? stateIcon(selectedRun.state, 14) : <Clock3 size={14} />}</span><strong className={`cron-run-state ${selectedRun?.state ?? 'empty'}`}>{selectedRun ? (selectedRun.state === 'success' ? 'Success' : selectedRun.state === 'running' ? 'Running' : selectedRun.state === 'failed' ? 'Failed' : selectedRun.state) : 'Not run yet'}</strong></div>
                       {selectedRun && runDuration(selectedRun) && <small>Finished in {runDuration(selectedRun)}</small>}
                     </div>
-                    {!selectedRun ? <p className="cron-run-empty">Run this automation to inspect its output and deliveries.</p> : selectedRun.state === 'running' ? <p className="cron-run-empty">The assistant is working on this run…</p> : selectedRun.error ? <pre className="cron-run-output error">{selectedRun.error}</pre> : <pre className="cron-run-output">{selectedRun.output || 'The run completed without text output.'}</pre>}
+                    {!selectedRun ? <p className="cron-run-empty">Run this automation to inspect its output and deliveries.</p> : selectedRun.state === 'running' ? <p className="cron-run-empty">The agent is working on this run…</p> : selectedRun.error ? <pre className="cron-run-output error">{selectedRun.error}</pre> : <pre className="cron-run-output">{selectedRun.output || 'The run completed without text output.'}</pre>}
                     {selectedRun && (selectedRun.output || selectedRun.error) && <div className="cron-inspector-footer"><span><ChevronDown size={13} /> Output preview (Markdown)</span></div>}
                   </section>
                 </main>
@@ -385,7 +385,7 @@ export function CronView({
         <div className="cron-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) resetForm(); }}>
           <form className="cron-modal" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
             <div className="cron-modal-heading"><div><p className="cron-eyebrow">{t('cron.eyebrow', { defaultValue: 'Automation' })}</p><h2>{t('cron.createTitle', { defaultValue: 'Schedule a task' })}</h2></div><button type="button" onClick={resetForm} aria-label={t('common.close')}>×</button></div>
-            <label>{t('cron.agent', { defaultValue: 'Assistant' })}<select value={agentId} onChange={(event) => setAgentId(event.target.value)}>{agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.title}</option>)}</select></label>
+            <label>{t('cron.agent', { defaultValue: 'Agent' })}<select value={agentId} onChange={(event) => setAgentId(event.target.value)}>{agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.title}</option>)}</select></label>
             <label>{t('cron.name')}<input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('cron.namePlaceholder')} autoFocus /></label>
             <label>{t('cron.prompt')}<textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={t('cron.promptPlaceholder')} rows={4} /></label>
             <label>{t('cron.intervalLabel')}<input type="number" min={1} value={interval} onChange={(event) => setInterval(event.target.value)} /></label>
@@ -402,7 +402,7 @@ export function CronView({
               <div className="cron-blueprint-grid">{blueprints.map((blueprint) => <article key={blueprint.key}><span>{blueprint.category}</span><h3>{blueprint.title}</h3><p>{blueprint.description}</p><small>{blueprint.scheduleHuman}</small><button onClick={() => chooseBlueprint(blueprint)}>Use blueprint</button></article>)}</div>
             ) : (
               <div className="cron-blueprint-form">
-                <label>Assistant<select value={blueprintAgentId} onChange={(event) => setBlueprintAgentId(event.target.value)}>{agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.title}</option>)}</select></label>
+                <label>Agent<select value={blueprintAgentId} onChange={(event) => setBlueprintAgentId(event.target.value)}>{agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.title}</option>)}</select></label>
                 {selectedBlueprint.fields.map((field) => <label key={field.name}>{field.label}{field.type === 'enum' || field.type === 'weekdays' ? <select value={String(blueprintValues[field.name] ?? '')} onChange={(event) => setBlueprintValues((current) => ({ ...current, [field.name]: event.target.value }))}>{(field.options ?? []).map((option) => <option value={String(option)} key={String(option)}>{String(option)}</option>)}</select> : <input type={field.type === 'time' ? 'time' : 'text'} value={String(blueprintValues[field.name] ?? '')} onChange={(event) => setBlueprintValues((current) => ({ ...current, [field.name]: event.target.value }))} />}{field.help && <small>{field.help}</small>}</label>)}
                 <div className="cron-modal-actions"><button onClick={() => setSelectedBlueprint(null)}>Back</button><button className="primary" disabled={!blueprintAgentId} onClick={() => void createFromBlueprint()}><Check size={15} /> Create automation</button></div>
               </div>

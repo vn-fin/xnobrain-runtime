@@ -48,41 +48,41 @@
     "search": "Tìm kiếm"
   },
   "agents": {
-    "title": "Trợ lý",
+    "title": "Tác nhân",
     "recent": "Gần đây",
-    "searchPlaceholder": "Tìm trợ lý…",
-    "new": "Trợ lý mới",
-    "settings": "Cài đặt trợ lý",
+    "searchPlaceholder": "Tìm tác nhân…",
+    "new": "Tác nhân mới",
+    "settings": "Cài đặt tác nhân",
     "runtimeConfig": "Cấu hình runtime",
-    "test": "Kiểm tra trợ lý",
+    "test": "Kiểm tra tác nhân",
     "renameAction": "Đổi tên",
     "exportAction": "Xuất",
-    "delete": "Xóa trợ lý"
+    "delete": "Xóa tác nhân"
   },
   "chat": {
     "placeholder": "Yêu cầu thay đổi tiếp theo",
     "workLocally": "Làm việc cục bộ",
     "ide": "Ngữ cảnh IDE",
     "fullAccess": "Toàn quyền",
-    "createConversation": "Tạo cuộc trò chuyện",
-    "closeConversation": "Đóng cuộc trò chuyện",
-    "emptyTitle": "Chưa có cuộc trò chuyện nào",
-    "emptyDesc": "Bắt đầu một cuộc trò chuyện mới để trò chuyện với {{name}}.",
+    "createConversation": "Tạo phiên",
+    "closeConversation": "Đóng phiên",
+    "emptyTitle": "Chưa có phiên nào",
+    "emptyDesc": "Bắt đầu một phiên mới để trò chuyện với {{name}}.",
     "emptyReady": "Gửi tin nhắn cho {{name}} để bắt đầu.",
-    "newConversation": "Cuộc trò chuyện mới"
+    "newConversation": "Phiên mới"
   },
   "conversation": {
     "share": "Chia sẻ",
     "shareUnavailable": "Tính năng chia sẻ chưa khả dụng",
     "rename": "Đổi tên",
     "delete": "Xóa",
-    "deleteTitle": "Xóa cuộc trò chuyện",
-    "deleteMessage": "Xóa “{{name}}”? Thao tác này sẽ xóa vĩnh viễn cuộc trò chuyện và các tin nhắn của nó. Không thể hoàn tác.",
-    "renameLabel": "Tên cuộc trò chuyện",
-    "menu": "Tùy chọn cuộc trò chuyện"
+    "deleteTitle": "Xóa phiên",
+    "deleteMessage": "Xóa “{{name}}”? Thao tác này sẽ xóa vĩnh viễn phiên và các tin nhắn của nó. Không thể hoàn tác.",
+    "renameLabel": "Tên phiên",
+    "menu": "Tùy chọn phiên"
   },
   "controls": {
-    "title": "Điều khiển trợ lý",
+    "title": "Điều khiển tác nhân",
     "workspace": "Không gian làm việc",
     "skills": "Kỹ năng",
     "runtime": "Runtime",
@@ -94,7 +94,7 @@
   },
   "skillsView": {
     "title": "Kỹ năng",
-    "subtitle": "Duyệt các kỹ năng đã cài, cài kỹ năng mới và áp dụng cho trợ lý của bạn.",
+    "subtitle": "Duyệt các kỹ năng đã cài, cài kỹ năng mới và áp dụng cho tác nhân của bạn.",
     "installNew": "Cài mới",
     "searchPlaceholder": "Tìm kỹ năng…",
     "all": "Tất cả",
@@ -104,11 +104,11 @@
     "empty": "Không có kỹ năng nào khớp với tìm kiếm hoặc bộ lọc.",
     "selected_one": "Đã chọn {{count}} kỹ năng",
     "selected_other": "Đã chọn {{count}} kỹ năng",
-    "applyToAgents_one": "Áp dụng cho {{count}} trợ lý",
-    "applyToAgents_other": "Áp dụng cho {{count}} trợ lý"
+    "applyToAgents_one": "Áp dụng cho {{count}} tác nhân",
+    "applyToAgents_other": "Áp dụng cho {{count}} tác nhân"
   },
   "agentSkills": {
-    "title": "Kỹ năng trợ lý",
+    "title": "Kỹ năng tác nhân",
     "add": "Thêm kỹ năng",
     "searchPlaceholder": "Tìm kỹ năng gốc để thêm…",
     "enabledFor_one": "Đã bật {{count}} kỹ năng cho {{name}}.",
@@ -127,7 +127,7 @@
   },
   "connections": {
     "title": "Kết nối",
-    "subtitle": "Kết nối các nhà cung cấp LLM (khóa API hoặc xác thực CLI) để trợ lý có thể chạy.",
+    "subtitle": "Kết nối các nhà cung cấp LLM (khóa API hoặc xác thực CLI) để tác nhân có thể chạy.",
     "notConnected": "chưa kết nối",
     "connected": "đã kết nối",
     "healthy": "hoạt động tốt",
@@ -150,7 +150,7 @@
     "notProvisioned": "chưa cấp phát",
     "provisioning": "đang cấp phát…",
     "noSandbox": "Chưa có sandbox",
-    "noSandboxDesc": "Bạn chưa có runtime Hermes nào đang chạy. Khởi động container cục bộ để cấp không gian làm việc, terminal và tài nguyên tính toán cho trợ lý.",
+    "noSandboxDesc": "Bạn chưa có runtime Hermes nào đang chạy. Khởi động container cục bộ để cấp không gian làm việc, terminal và tài nguyên tính toán cho tác nhân.",
     "create": "Tạo sandbox",
     "provisioningTitle": "Đang cấp phát sandbox…",
     "specs": "Cấp phát qua POST /api/brain/v1/sandboxes/setup · 6 vCPU · 24 GiB · đĩa 80 GiB",
@@ -158,11 +158,11 @@
   },
   "onboarding": {
     "title": "Hãy thiết lập nào",
-    "subtitle": "Vài bước nhanh để bắt đầu làm việc với trợ lý của bạn.",
+    "subtitle": "Vài bước nhanh để bắt đầu làm việc với tác nhân của bạn.",
     "checking": "Đang kiểm tra…",
     "vm": {
       "title": "Chuẩn bị container Hermes",
-      "desc": "Chuẩn bị container Hermes cục bộ có không gian làm việc, terminal và tài nguyên tính toán cho trợ lý.",
+      "desc": "Chuẩn bị container Hermes cục bộ có không gian làm việc, terminal và tài nguyên tính toán cho tác nhân.",
       "action": "Chuẩn bị container",
       "provisioning": "Đang cấp phát… {{percent}}%",
       "ready": "Sandbox đã sẵn sàng."
@@ -174,7 +174,7 @@
     },
     "model": {
       "title": "Chọn mô hình mặc định",
-      "desc": "Chọn nhà cung cấp và mô hình mặc định cho trợ lý mới.",
+      "desc": "Chọn nhà cung cấp và mô hình mặc định cho tác nhân mới.",
       "action": "Lưu mặc định",
       "saving": "Đang lưu…",
       "loading": "Đang tải mô hình…",
@@ -182,24 +182,24 @@
       "ready": "Mô hình mặc định: {{model}}"
     },
     "agent": {
-      "title": "Tạo trợ lý",
+      "title": "Tạo tác nhân",
       "desc": "Đặt tên và mục đích. Sau đó bạn có thể kết nối nhà cung cấp và chọn mô hình.",
-      "action": "Tạo trợ lý"
+      "action": "Tạo tác nhân"
     },
     "conversation": {
-      "title": "Bắt đầu cuộc trò chuyện",
-      "desc": "Cuộc trò chuyện đầu tiên được tạo tự động để bạn có thể trò chuyện ngay."
+      "title": "Bắt đầu phiên",
+      "desc": "Phiên đầu tiên được tạo tự động để bạn có thể trò chuyện ngay."
     }
   },
   "modals": {
-    "createAgent": "Tạo trợ lý",
+    "createAgent": "Tạo tác nhân",
     "createAgentApi": "Ánh xạ tới POST /api/brain/v1/agents",
     "name": "Tên",
     "namePlaceholder": "vd: Chuyên viên phân tích dữ liệu",
     "description": "Mô tả",
-    "descPlaceholder": "Trợ lý này nên làm gì?",
-    "createAgentBtn": "Tạo trợ lý",
-    "agentSettings": "Cài đặt trợ lý",
+    "descPlaceholder": "Tác nhân này nên làm gì?",
+    "createAgentBtn": "Tạo tác nhân",
+    "agentSettings": "Cài đặt tác nhân",
     "settingsTitle": "Tiêu đề",
     "provider": "Nhà cung cấp",
     "model": "Mô hình",
@@ -208,8 +208,8 @@
     "saveConfirm": "Lưu thay đổi cho “{{name}}”?",
     "back": "Quay lại",
     "confirmSave": "Xác nhận lưu",
-    "deleteAgentTitle": "Xóa trợ lý",
-    "deleteAgentMsg": "Xóa “{{name}}”? Tất cả cuộc trò chuyện, tệp trong không gian làm việc, cấu hình, kỹ năng, bộ nhớ và tác vụ Kanban được giao sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
+    "deleteAgentTitle": "Xóa tác nhân",
+    "deleteAgentMsg": "Xóa “{{name}}”? Tất cả phiên, tệp trong không gian làm việc, cấu hình, kỹ năng, bộ nhớ và tác vụ Kanban được giao sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
   },
   "cron": {
     "title": "Công việc định kỳ",

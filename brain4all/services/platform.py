@@ -44,8 +44,35 @@ from .workspace_preview import WorkspacePreview, WorkspacePreviewError, Workspac
 from .workspace_upload import WorkspaceUploadError, WorkspaceUploadService
 
 
-SUPPORTED_PROVIDERS = ("claude", "codex", "antigravity", "openai", "anthropic", "gemini")
-API_KEY_PROVIDERS = frozenset({"openai", "anthropic", "gemini"})
+OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS = {
+    "deepseek": {
+        "display_name": "DeepSeek",
+        "description": "DeepSeek models through its OpenAI-compatible API.",
+        "base_url": "https://api.deepseek.com/v1",
+    },
+    "moonshot": {
+        "display_name": "Moonshot AI",
+        "description": "Moonshot and Kimi models through its OpenAI-compatible API.",
+        "base_url": "https://api.moonshot.cn/v1",
+    },
+    "qwen": {
+        "display_name": "Qwen",
+        "description": "Qwen models through Alibaba Cloud's OpenAI-compatible API.",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    },
+    "openai-like": {
+        "display_name": "OpenAI-compatible",
+        "description": "Connect any OpenAI-compatible endpoint with a base URL and API key.",
+        "base_url": "",
+    },
+}
+SUPPORTED_PROVIDERS = (
+    "claude", "codex", "antigravity", "openai", "anthropic", "gemini",
+    *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
+)
+API_KEY_PROVIDERS = frozenset({
+    "openai", "anthropic", "gemini", *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
+})
 SAFE_TOOLSETS = frozenset({
     "browser", "code_execution", "computer_use", "context_engine", "file",
     "image_gen", "session_search", "skills", "terminal", "todo", "tts",
@@ -677,7 +704,7 @@ class PlatformService:
         return {"conversations": [self._conversation_dto(agent_id, item) for item in payload["conversations"]], "pagination": {"page": 1, "limit": 50, "has_more": False}}
 
     def create_conversation(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        payload = self.agents.create_conversation(agent_id, {"title": body.get("title") or "New Conversation"})
+        payload = self.agents.create_conversation(agent_id, {"title": body.get("title") or "New Session"})
         return self._conversation_dto(agent_id, payload["conversation"])
 
     def get_conversation(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
@@ -1101,6 +1128,7 @@ class PlatformService:
             connections, models = [], []
         result = []
         for provider in SUPPORTED_PROVIDERS:
+            definition = OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS.get(provider, {})
             provider_rows = sorted(
                 (item for item in connections if item.get("provider") == provider),
                 key=lambda item: (int(item.get("priority") or 0), str(item.get("name") or "")),
@@ -1108,9 +1136,15 @@ class PlatformService:
             active_rows = [item for item in provider_rows if item.get("active") is not False]
             primary = active_rows[0] if active_rows else (provider_rows[0] if provider_rows else {})
             result.append({
-                "id": provider, "display_name": provider.title(), "provider_type": provider,
-                "description": "Credentials are managed by the local 9router runtime.",
+                "id": provider,
+                "display_name": definition.get("display_name", provider.title()),
+                "provider_type": provider,
+                "description": definition.get(
+                    "description", "Credentials are managed by the local 9router runtime."
+                ),
                 "connection_mode": "api-key" if provider in API_KEY_PROVIDERS else "cli",
+                "base_url": definition.get("base_url", ""),
+                "requires_base_url": provider == "openai-like",
                 "connected": bool(active_rows),
                 "status": "connected" if active_rows else "disconnected",
                 "last_test_status": primary.get("test_status", "unknown"),
@@ -1158,7 +1192,18 @@ class PlatformService:
         if not value:
             raise ServiceError("provider credential or callback is required")
         if provider in API_KEY_PROVIDERS:
-            await self.router.create_api_key_connection({"provider": provider, "api_key": value})
+            router_provider = provider
+            if provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
+                definition = OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS[provider]
+                base_url = str(body.get("base_url") or definition["base_url"]).strip()
+                if not base_url:
+                    raise ServiceError("base_url is required", code="invalid_provider_connection")
+                router_provider = await self.router.ensure_openai_compatible_provider(
+                    provider,
+                    display_name=definition["display_name"],
+                    base_url=base_url,
+                )
+            await self.router.create_api_key_connection({"provider": router_provider, "api_key": value})
             return {**self._api_key_info(provider), "connected": True, "status": "connected"}
         from urllib.parse import parse_qs, urlparse
         attempt = self._oauth_attempts.get(provider)
@@ -1180,7 +1225,18 @@ class PlatformService:
         self._provider(provider)
         if provider not in API_KEY_PROVIDERS:
             raise ServiceError("OAuth providers must be updated through connect")
-        result = await self.router.create_api_key_connection({"provider": provider, "api_key": body.get("api_key"), "name": body.get("display_name"), "default_model": body.get("default_model")})
+        router_provider = provider
+        if provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
+            definition = OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS[provider]
+            base_url = str(body.get("base_url") or definition["base_url"]).strip()
+            if not base_url:
+                raise ServiceError("base_url is required", code="invalid_provider_connection")
+            router_provider = await self.router.ensure_openai_compatible_provider(
+                provider,
+                display_name=definition["display_name"],
+                base_url=base_url,
+            )
+        result = await self.router.create_api_key_connection({"provider": router_provider, "api_key": body.get("api_key"), "name": body.get("display_name") or OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS.get(provider, {}).get("display_name"), "default_model": body.get("default_model")})
         return {"provider_id": provider, "connected": True, "status": "connected", "connection": result}
 
     async def disconnect_provider(self, provider: str) -> dict[str, Any]:
@@ -1220,8 +1276,11 @@ class PlatformService:
                 "use the provider connect flow to add an OAuth account",
                 status=400, code="oauth_connect_required",
             )
+        router_provider = provider
+        if provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
+            router_provider = await self.router.openai_compatible_provider_id(provider)
         result = await self.router.create_api_key_connection({
-            "provider": provider,
+            "provider": router_provider,
             "api_key": body.get("api_key"),
             "name": body.get("name"),
             "default_model": body.get("default_model"),
@@ -1489,7 +1548,7 @@ class PlatformService:
 
     @staticmethod
     def _conversation_dto(agent_id: str, item: Mapping[str, Any]) -> dict[str, Any]:
-        return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Conversation"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tool_call_count") or item.get("tools") or 0), "created_at": item.get("created_at"), "updated_at": item.get("updated_at")}
+        return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Session"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tool_call_count") or item.get("tools") or 0), "created_at": item.get("created_at"), "updated_at": item.get("updated_at")}
 
     @staticmethod
     def _agent_dto(item: Mapping[str, Any]) -> dict[str, Any]:

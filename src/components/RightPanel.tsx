@@ -442,7 +442,7 @@ export function RightPanel({
 
       <div className="api-note">
         <Code2 size={15} />
-        <span>Mapped from agents, providers, conversations, workspace files, and sandbox APIs.</span>
+        <span>Mapped from agents, providers, sessions, workspace files, and sandbox APIs.</span>
       </div>
     </aside>
   );

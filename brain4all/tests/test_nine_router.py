@@ -13,6 +13,7 @@ from unittest.mock import patch
 import yaml
 
 from brain4all.integrations.hermes import AgentAPIError, AgentManager
+from brain4all.integrations.config import GlobalConfigManager
 from brain4all.integrations.nine_router import (
     NINE_ROUTER_API_BASE_URL,
     NINE_ROUTER_PROVIDER,
@@ -39,6 +40,22 @@ class FakeNineRouterManager(NineRouterManager):
 
 
 class NineRouterConfigTests(unittest.TestCase):
+    def test_global_catalog_includes_skills_bundled_with_hermes(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            profile = root / "home" / ".hermes"
+            bundled = root / "hermes-install" / "skills" / "research"
+            profile.mkdir(parents=True)
+            bundled.mkdir(parents=True)
+            (bundled / "SKILL.md").write_text(
+                "---\nname: research\ndescription: Bundled research skill\n---\n",
+                encoding="utf-8",
+            )
+            with patch.dict("os.environ", {"HERMES_INSTALL_DIR": str(root / "hermes-install")}):
+                skills = GlobalConfigManager(root_profile=profile).list_skills()["skills"]
+
+        self.assertEqual([item["skill_id"] for item in skills], ["research"])
+
     def test_hermes_exit_zero_provider_error_is_detected(self) -> None:
         message = (
             'HTTP 401: [codex/gpt-5.5] [401]: {"error": {'
@@ -82,6 +99,39 @@ class NineRouterConfigTests(unittest.TestCase):
 
 
 class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_openai_compatible_node_is_created_and_connections_use_logical_provider(self) -> None:
+        node_id = "openai-compatible-chat-deepseek1"
+        manager = FakeNineRouterManager({
+            ("GET", "/api/provider-nodes"): {"nodes": []},
+            ("POST", "/api/provider-nodes"): {"node": {"id": node_id}},
+        })
+
+        resolved = await manager.ensure_openai_compatible_provider(
+            "deepseek",
+            display_name="DeepSeek",
+            base_url="https://api.deepseek.com/v1/",
+        )
+
+        self.assertEqual(resolved, node_id)
+        self.assertIn(("POST", "/api/provider-nodes", {
+            "name": "DeepSeek",
+            "prefix": "deepseek",
+            "type": "openai-compatible",
+            "apiType": "chat",
+            "baseUrl": "https://api.deepseek.com/v1",
+        }), manager.requests)
+
+        manager.responses[("GET", "/api/provider-nodes")] = {"nodes": [{
+            "id": node_id, "prefix": "deepseek", "name": "DeepSeek",
+            "type": "openai-compatible", "apiType": "chat",
+            "baseUrl": "https://api.deepseek.com/v1",
+        }]}
+        manager.responses[("GET", "/api/providers")] = {"connections": [{
+            "id": "deepseek-account", "provider": node_id, "authType": "api-key",
+        }]}
+        rows = (await manager.list_connections())["connections"]
+        self.assertEqual(rows[0]["provider"], "deepseek")
+
     async def test_models_are_filtered_and_auto_combo_is_created(self) -> None:
         manager = FakeNineRouterManager(
             {
@@ -415,20 +465,20 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             first = manager.create_conversation("news", {})
             second = manager.create_conversation(
                 "news",
-                {"title": "New Conversation"},
+                {"title": "New Session"},
             )
             third = manager.create_conversation(
                 "news",
-                {"title": "new conversation"},
+                {"title": "new session"},
             )
             custom = manager.create_conversation(
                 "news",
                 {"title": "Daily Briefing"},
             )
 
-            self.assertEqual(first["conversation"]["title"], "New Conversation")
-            self.assertEqual(second["conversation"]["title"], "New Conversation 2")
-            self.assertEqual(third["conversation"]["title"], "New Conversation 3")
+            self.assertEqual(first["conversation"]["title"], "New Session")
+            self.assertEqual(second["conversation"]["title"], "New Session 2")
+            self.assertEqual(third["conversation"]["title"], "New Session 3")
             self.assertEqual(custom["conversation"]["title"], "Daily Briefing")
 
             manager.delete_conversation(
@@ -436,7 +486,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 second["conversation"]["id"],
             )
             fourth = manager.create_conversation("news", {})
-            self.assertEqual(fourth["conversation"]["title"], "New Conversation 4")
+            self.assertEqual(fourth["conversation"]["title"], "New Session 4")
 
             titles = [
                 item["title"]
@@ -448,7 +498,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             research = manager.create_conversation("research", {})
             self.assertEqual(
                 research["conversation"]["title"],
-                "New Conversation",
+                "New Session",
             )
 
     def test_default_conversation_retries_an_atomic_title_conflict(self) -> None:
@@ -467,11 +517,11 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(
                 manager,
                 "_next_default_conversation_title",
-                side_effect=["New Conversation", real_next_title],
+                side_effect=["New Session", real_next_title],
             ):
                 second = manager.create_conversation("news", {})
 
-            self.assertEqual(second["conversation"]["title"], "New Conversation 2")
+            self.assertEqual(second["conversation"]["title"], "New Session 2")
             sessions = manager.list_conversations("news")["conversations"]
             self.assertEqual(len(sessions), 2)
             self.assertTrue(all(item["title"] for item in sessions))

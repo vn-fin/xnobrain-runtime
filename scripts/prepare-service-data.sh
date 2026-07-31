@@ -3,9 +3,10 @@ set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 python_bin="$project_dir/.tools/python/bin/python"
-hermes_home="${HERMES_HOME:-/srv/brain4all-data/hermes/root}"
-profiles_root="${HERMES_PROFILES_ROOT:-/srv/brain4all-data/hermes/profiles}"
-router_data_dir="${NINE_ROUTER_DATA_DIR:-/srv/brain4all-data/9router}"
+service_home="${HOME:-/srv/brain4all-data/home}"
+hermes_home="${HERMES_HOME:-$service_home/.hermes}"
+profiles_root="${HERMES_PROFILES_ROOT:-$hermes_home/profiles}"
+router_data_dir="${NINE_ROUTER_DATA_DIR:-$service_home/.9router}"
 lock_file="$router_data_dir/.prepare.lock"
 
 if [[ ! -x "$python_bin" ]]; then
@@ -18,7 +19,7 @@ mkdir -p \
   "$profiles_root" \
   "$router_data_dir/auth" \
   "${DATA_DIR:-/srv/brain4all-data/brain4all}" \
-  "${HOME:-/srv/brain4all-data/home}"
+  "$service_home"
 
 exec 9>"$lock_file"
 flock 9

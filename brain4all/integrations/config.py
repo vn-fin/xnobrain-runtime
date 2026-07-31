@@ -495,12 +495,17 @@ class GlobalConfigManager:
         if not isinstance(raw, list):
             return []
         result = []
+        install_root = Path(str(os.environ.get("HERMES_INSTALL_DIR") or "").strip())
+        packaged_skills = install_root / "skills" if str(install_root) not in {"", "."} else None
+        if packaged_skills is not None and packaged_skills.is_dir():
+            result.append(packaged_skills)
         for item in raw:
             expanded = os.path.expandvars(os.path.expanduser(str(item)))
             path = Path(expanded)
             if not path.is_absolute():
                 path = self.root_profile / path
-            result.append(path)
+            if path not in result:
+                result.append(path)
         return result
 
     def _read_skill_frontmatter(self, path: Path) -> dict[str, Any]:

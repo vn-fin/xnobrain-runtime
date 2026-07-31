@@ -388,7 +388,7 @@ describe('TeamsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Menu Team options' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }));
     expect(screen.getByText('Remove this Team?')).toBeVisible();
-    expect(screen.getByText(/assistants in this Team will not be deleted/i)).toBeVisible();
+    expect(screen.getByText(/agents in this Team will not be deleted/i)).toBeVisible();
     expect(remove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Remove Team' }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith('team-menu'));
@@ -407,7 +407,7 @@ describe('TeamsView', () => {
       max_depth: 1,
       enabled: true,
     };
-    const exportSnapshot = vi.spyOn(systemApi, 'export').mockResolvedValue({
+    const exportSnapshot = vi.spyOn(systemApi, 'download').mockResolvedValue({
       blob: new Blob(['team'], { type: 'application/zip' }),
       filename: 'team.zip',
     });
@@ -470,7 +470,7 @@ describe('TeamsView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete run delete12' }));
     expect(screen.getByText('Delete this execution?')).toBeVisible();
-    expect(screen.getByText(/Agent conversations will not be deleted/i)).toBeVisible();
+    expect(screen.getByText(/Agent sessions will not be deleted/i)).toBeVisible();
     expect(deleteRun).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete execution' }));
@@ -640,7 +640,7 @@ describe('TeamsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Researcher: completed' }));
     expect(screen.getByText('Research found three viable launch plans.')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'View Researcher conversation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View Researcher session' }));
     const dialog = await screen.findByRole('dialog', { name: 'Researcher' });
     expect(dialog).toHaveTextContent('1,234');
     expect(dialog).toHaveTextContent('Reasoning steps');
@@ -651,7 +651,7 @@ describe('TeamsView', () => {
     expect(dialog).toHaveTextContent('I compared the available evidence.');
     fireEvent.click(screen.getByRole('button', { name: 'Used skills' }));
     expect(dialog).toHaveTextContent('Viewed skill product-research');
-    fireEvent.click(screen.getByRole('button', { name: 'Close node conversation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close node session' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
     await waitFor(() => expect(cancelRun).toHaveBeenCalledWith('team-1', 'tr_live1234'));

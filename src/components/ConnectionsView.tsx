@@ -130,12 +130,13 @@ export function ConnectionsView({
   onConnect: (id: string) => void;
   onDisconnect: (id: string) => void;
   onTest: (id: string) => Promise<ProviderTestOutcome> | void;
-  onSaveKey: (id: string, key: string) => void;
+  onSaveKey: (id: string, key: string, baseUrl?: string) => void;
   onClose: () => void;
   embedded?: boolean;
 } & AccountProps) {
   const { t } = useTranslation();
   const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [testResults, setTestResults] = useState<Record<string, ProviderTestOutcome>>({});
   const [confirmation, setConfirmation] = useState<{
@@ -146,6 +147,7 @@ export function ConnectionsView({
   } | null>(null);
   const apiKeyProviders = providers.filter((p) => p.connection_mode === 'api-key');
   const selectedKeyProvider = providers.find((p) => p.id === keyProviderId);
+  const selectedBaseUrl = baseUrl || selectedKeyProvider?.base_url || '';
 
   const runTest = async (id: string) => {
     setTestResults((current) => {
@@ -305,9 +307,9 @@ export function ConnectionsView({
         <section className="conn-keypanel">
           <strong>{t('connections.addKeyTitle')}</strong>
           <p>{t('connections.addKeyDesc', { env: selectedKeyProvider?.environment_variable ?? 'PROVIDER_API_KEY' })}</p>
-          <div className="conn-keyform">
+          <div className={(selectedKeyProvider?.requires_base_url || selectedKeyProvider?.base_url) ? 'conn-keyform has-base-url' : 'conn-keyform'}>
             <div className="conn-select">
-              <select value={keyProviderId} onChange={(e) => onSelectKeyProvider(e.target.value)}>
+              <select value={keyProviderId} onChange={(e) => { onSelectKeyProvider(e.target.value); setBaseUrl(''); }}>
                 {apiKeyProviders.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.display_name}
@@ -316,12 +318,21 @@ export function ConnectionsView({
               </select>
               <ChevronDown size={15} />
             </div>
+            {(selectedKeyProvider?.requires_base_url || selectedKeyProvider?.base_url) && (
+              <input
+                value={selectedBaseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://api.example.com/v1"
+                type="url"
+                aria-label="Provider base URL"
+              />
+            )}
             <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-… / AIza… / sk-ant-…" type="password" />
             <button
               className="conn-btn primary"
-              disabled={!apiKey.trim()}
+              disabled={!apiKey.trim() || Boolean(selectedKeyProvider?.requires_base_url && !selectedBaseUrl.trim())}
               onClick={() => {
-                onSaveKey(keyProviderId, apiKey);
+                onSaveKey(keyProviderId, apiKey, selectedBaseUrl);
                 setApiKey('');
               }}
             >

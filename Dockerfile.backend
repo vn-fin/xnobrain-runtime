@@ -125,7 +125,7 @@ COPY runtime/container-entrypoint.sh /usr/local/bin/brain4all-runtime
 COPY runtime/prepare-nine-router-auth.sh /usr/local/bin/brain4all-prepare-nine-router-auth
 RUN find /opt/brain4all/brain4all -type d -name __pycache__ -prune -exec rm -rf {} + \
     && find /opt/brain4all/brain4all -type f -name '*.pyc' -delete \
-    && install -d -m 0700 /opt/data /root/.config \
+    && install -d -m 0700 /opt/data /opt/data/home /opt/data/home/.config \
     && chmod 0755 /usr/local/bin/brain4all-runtime /usr/local/bin/brain4all-prepare-nine-router-auth /usr/local/bin/brain4all-apply-profile-templates \
     && /usr/local/lib/hermes-agent/venv/bin/python -m compileall -q \
       /opt/brain4all/brain4all /opt/brain4all/server.py \
@@ -135,13 +135,9 @@ ENV PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr
     HERMES_INSTALL_DIR=/usr/local/lib/hermes-agent \
     HERMES_RUNTIME_PYTHON=/usr/local/lib/hermes-agent/venv/bin/python \
     HERMES_CLI=/usr/local/bin/hermes \
-    HERMES_HOME=/opt/data/brain4all/root \
-    HERMES_ROOT_PROFILE=/opt/data/brain4all/root \
-    HERMES_PROFILES_ROOT=/opt/data/brain4all/profiles \
-    NINE_ROUTER_DATA_DIR=/opt/data/.9router \
     HERMES_DESKTOP=1 \
-    HOME=/root \
-    XDG_CONFIG_HOME=/root/.config \
+    HOME=/opt/data/home \
+    XDG_CONFIG_HOME=/opt/data/home/.config \
     API_SERVER_HOST=0.0.0.0 \
     API_SERVER_PORT=8642
 

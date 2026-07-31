@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+export HERMES_ROOT_PROFILE="${HERMES_ROOT_PROFILE:-$HERMES_HOME}"
+export HERMES_PROFILES_ROOT="${HERMES_PROFILES_ROOT:-$HERMES_HOME/profiles}"
+export NINE_ROUTER_DATA_DIR="${NINE_ROUTER_DATA_DIR:-$HOME/.9router}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$NINE_ROUTER_DATA_DIR"
 hermes_python="${HERMES_RUNTIME_PYTHON:-/usr/local/lib/hermes-agent/venv/bin/python}"
 if [[ ! -x "$hermes_python" ]]; then
@@ -13,10 +19,9 @@ mkdir -p "$HERMES_HOME/bin"
 if [[ ! -e "$HERMES_HOME/bin/uv" ]]; then
   ln -s /usr/local/bin/uv "$HERMES_HOME/bin/uv"
 fi
-# Hermes CLI discovers named profiles at HERMES_HOME/profiles. Brain4All's
-# stable data contract keeps them at DATA_DIR/profiles, so expose that one
-# directory through a compatibility symlink instead of duplicating state.
-if [[ ! -e "$HERMES_HOME/profiles" ]]; then
+# Preserve compatibility for deployments that explicitly place named profiles
+# outside the normal ~/.hermes/profiles location.
+if [[ "$HERMES_PROFILES_ROOT" != "$HERMES_HOME/profiles" && ! -e "$HERMES_HOME/profiles" ]]; then
   ln -s "$HERMES_PROFILES_ROOT" "$HERMES_HOME/profiles"
 fi
 /usr/local/bin/brain4all-prepare-nine-router-auth

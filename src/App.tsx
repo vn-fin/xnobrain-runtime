@@ -45,12 +45,10 @@ export default function App() {
   const workspaceReady = !managedWorkspace || sandbox.provisioned;
   const assistants = useAssistants(workspaceReady);
   const assistantsReady = workspaceReady && assistants.status === 'ready';
-  const onboarding = assistantsReady && assistants.agents.length === 0;
-  const connections = useConnections(
-    assistantsReady
-    && (onboarding || router.centerView === 'chat'
-      || (router.centerView === 'data' && router.settingsSection === 'connectors')),
-  );
+  const connections = useConnections(assistantsReady);
+  const onboarding = assistantsReady
+    && connections.status === 'ready'
+    && !connections.connections.some((provider) => provider.connected);
   const conversation = useConversation(
     router.centerView === 'chat' ? router.activeAgentId : '',
     router.centerView === 'chat' ? router.activeConversationId : '',
@@ -274,7 +272,7 @@ export default function App() {
 
   if (assistants.status === 'loading') return <AsyncState status="loading" />;
   if (assistants.status === 'error') return <AsyncState status="error" error={assistants.error} onRetry={assistants.refresh} />;
-  if (!activeAgent) {
+  if (onboarding || !activeAgent) {
     return (
       <div className="empty-app">
         <Onboarding
@@ -292,11 +290,6 @@ export default function App() {
           onSubmitConnectText={connections.submitAuth}
           onTestProvider={connections.test}
           onSaveKey={connections.saveKey}
-          defaultConfig={assistants.defaultConfig}
-          onLoadModels={connections.loadModels}
-          onSaveDefaultModel={assistants.setDefaultModel}
-          onCreateAgent={handleCreateAgent}
-          creatingAgent={assistants.pending}
         />
       </div>
     );
@@ -600,7 +593,7 @@ export default function App() {
       {deleteAgentId && (
         <ConfirmDialog
           title={t('modals.deleteAgentTitle')}
-          message={t('modals.deleteAgentMsg', { name: assistants.agents.find((a) => a.id === deleteAgentId)?.title ?? 'assistant' })}
+          message={t('modals.deleteAgentMsg', { name: assistants.agents.find((a) => a.id === deleteAgentId)?.title ?? 'agent' })}
           confirmLabel={t('common.delete')}
           danger
           onConfirm={() => handleDeleteAgent(deleteAgentId)}

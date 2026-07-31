@@ -67,6 +67,33 @@ function abortError(value: unknown) {
   return value instanceof DOMException && value.name === 'AbortError';
 }
 
+function nestedErrorText(value: unknown, depth = 0): string {
+  if (typeof value === 'string') return value.trim();
+  if (!value || typeof value !== 'object' || depth > 4) return '';
+  const item = value as Record<string, unknown>;
+  for (const key of ['message', 'detail', 'error', 'reason', 'code', 'type']) {
+    const text = nestedErrorText(item[key], depth + 1);
+    if (text) return text;
+  }
+  return '';
+}
+
+/** Turn provider error payloads into a stable, actionable stream message. */
+export function streamErrorMessage(value: unknown): string {
+  const original = nestedErrorText(value) || 'Chat stream failed.';
+  const normalized = original.toLowerCase();
+  if (/license|subscription/.test(normalized) && /expir|inactive|invalid/.test(normalized)) {
+    return `The LLM provider subscription or license has expired. Renew it or switch provider account. (${original})`;
+  }
+  if (/insufficient[_ -]?quota|out of quota|quota.*exceed|billing.*limit|payment required|\b402\b/.test(normalized)) {
+    return `The LLM provider account is out of quota. Add credits or switch provider account. (${original})`;
+  }
+  if (/rate[_ -]?limit|too many requests|\b429\b/.test(normalized)) {
+    return `The LLM provider rate limit was reached. Wait and retry, or switch provider account. (${original})`;
+  }
+  return original;
+}
+
 function streamText(event: SSEEvent): string {
   const data = event.data && typeof event.data === 'object' ? event.data as Record<string, unknown> : null;
   const bodyType = data && typeof data.event === 'string' ? data.event : '';
@@ -174,9 +201,7 @@ async function execute(key: string, text: string) {
     }
 
     if (type === 'error' || type === 'run.failed') {
-      const message = typeof event.data === 'string'
-        ? event.data
-        : String(data.message ?? data.error ?? 'Chat stream failed.');
+      const message = streamErrorMessage(event.data);
       patch(key, { error: message });
       return;
     }
@@ -202,7 +227,7 @@ async function execute(key: string, text: string) {
     await conversationsApi.stream(agentId, conversationId, text, handleEvent, controller.signal);
     updateAssistant((m) => ({ ...m, streaming: false }));
   } catch (value) {
-    if (!abortError(value)) patch(key, { error: value instanceof Error ? value.message : 'Chat stream failed.' });
+    if (!abortError(value)) patch(key, { error: streamErrorMessage(value instanceof Error ? value.message : value) });
     updateAssistant((m) => ({ ...m, streaming: false }));
   } finally {
     if (runtime.controller === controller) runtime.controller = undefined;

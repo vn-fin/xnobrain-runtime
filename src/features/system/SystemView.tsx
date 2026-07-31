@@ -19,7 +19,7 @@ type SystemViewProps = {
   onConnect: (id: string) => void;
   onDisconnect: (id: string) => void;
   onTestProvider: (id: string) => Promise<ProviderTestOutcome>;
-  onSaveKey: (id: string, key: string) => void;
+  onSaveKey: (id: string, key: string, baseUrl?: string) => void;
   accounts: AccountProps;
   sandbox: {
     data: SandboxData | null;

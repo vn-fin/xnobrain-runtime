@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Activity, ArrowLeft, ArrowRight, Bot, Check, ChevronDown, ClipboardPaste, Cpu, ExternalLink, Languages, MessageSquare, Plug, Plus, Server } from 'lucide-react';
+import { Activity, ArrowLeft, ArrowRight, Check, ChevronDown, ClipboardPaste, ExternalLink, Languages, Plug, Plus, Server } from 'lucide-react';
 import { ProviderBrandIcon } from './common';
 import type { AsyncStatus, ConnectionProvider, ProviderConnectInfo } from '../types';
 import { providerConnectNeedsText } from '../utils/providers';
@@ -9,8 +9,8 @@ import { closeProviderAuthPopup } from '../utils/providerAuth';
 import { SUPPORTED_LANGUAGES } from '../i18n';
 import { brain4AllRuntime } from '../runtime';
 
-const STEP_ICONS = [Server, Plug, Cpu, Bot, MessageSquare];
-const TOTAL = 5;
+const STEP_ICONS = [Server, Plug];
+const TOTAL = 2;
 
 export function Onboarding({
   sandboxStatus,
@@ -27,11 +27,6 @@ export function Onboarding({
   onSubmitConnectText,
   onTestProvider,
   onSaveKey,
-  defaultConfig,
-  onLoadModels,
-  onSaveDefaultModel,
-  onCreateAgent,
-  creatingAgent,
 }: {
   sandboxStatus: AsyncStatus;
   sandboxProvisioned: boolean;
@@ -46,12 +41,7 @@ export function Onboarding({
   onCheckConnect: (id: string) => Promise<boolean>;
   onSubmitConnectText: (id: string, text: string) => Promise<boolean>;
   onTestProvider: (id: string) => void;
-  onSaveKey: (id: string, key: string) => void;
-  defaultConfig: { provider: string; model: string } | null;
-  onLoadModels: (id: string) => Promise<{ defaultModel: string; models: string[] }>;
-  onSaveDefaultModel: (provider: string, model: string) => Promise<void>;
-  onCreateAgent: (name: string, description: string) => void;
-  creatingAgent: boolean;
+  onSaveKey: (id: string, key: string, baseUrl?: string) => void;
 }) {
   const { t, i18n } = useTranslation();
   const managedVM = brain4AllRuntime.edition === 'cloud';
@@ -59,6 +49,7 @@ export function Onboarding({
 
   const connected = providers.filter((p) => p.connected);
   const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
+  const [baseUrlDrafts, setBaseUrlDrafts] = useState<Record<string, string>>({});
 
   // Connect step: work with a single selected provider at a time.
   const [selectedProviderId, setSelectedProviderId] = useState('');
@@ -68,21 +59,6 @@ export function Onboarding({
   const [connectText, setConnectText] = useState('');
   const [submittingConnectText, setSubmittingConnectText] = useState(false);
   const connectNeedsText = Boolean(selectedProvider && connectInfo && providerConnectNeedsText(selectedProvider, connectInfo));
-
-  // Default-model step state
-  const [modelProvider, setModelProvider] = useState('');
-  const [model, setModel] = useState('');
-  const [models, setModels] = useState<string[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
-  const [savingModel, setSavingModel] = useState(false);
-  const [savedModel, setSavedModel] = useState(false);
-
-  // Assistant details (collected on step 4, created on step 5)
-  const [agentName, setAgentName] = useState('');
-  const [agentDesc, setAgentDesc] = useState('');
-
-  const providerDone = connected.length > 0;
-  const modelDone = savedModel || Boolean(defaultConfig?.model);
 
   // Default the connect step to the first available provider.
   useEffect(() => {
@@ -137,47 +113,11 @@ export function Onboarding({
 
   useEffect(() => () => closeProviderAuthPopup(), []);
 
-  useEffect(() => {
-    if (modelProvider || connected.length === 0) return;
-    const preferred = connected.find((p) => p.id === defaultConfig?.provider)?.id ?? connected[0].id;
-    setModelProvider(preferred);
-  }, [connected, defaultConfig, modelProvider]);
-
-  useEffect(() => {
-    if (!modelProvider) return;
-    let cancelled = false;
-    setModelsLoading(true);
-    onLoadModels(modelProvider)
-      .then(({ defaultModel, models: list }) => {
-        if (cancelled) return;
-        setModels(list);
-        setModel((current) => current || defaultConfig?.model || defaultModel || list[0] || '');
-      })
-      .catch(() => { if (!cancelled) setModels([]); })
-      .finally(() => { if (!cancelled) setModelsLoading(false); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelProvider]);
-
-  const saveModel = async () => {
-    if (!modelProvider || !model) return;
-    setSavingModel(true);
-    try {
-      await onSaveDefaultModel(modelProvider, model);
-      setSavedModel(true);
-    } finally {
-      setSavingModel(false);
-    }
-  };
-
-  const canProceed = [sandboxProvisioned, providerDone, modelDone, agentName.trim().length > 0][step] ?? true;
+  const canProceed = step === 0 ? sandboxProvisioned : connected.length > 0;
 
   const stepTitles = [
     t('onboarding.vm.title'),
     t('onboarding.provider.title'),
-    t('onboarding.model.title'),
-    t('onboarding.agent.title'),
-    t('onboarding.conversation.title'),
   ];
 
   return (
@@ -287,6 +227,15 @@ export function Onboarding({
                     )
                   ) : selectedProvider.connection_mode === 'api-key' ? (
                     <div className="ob-key-row">
+                      {(selectedProvider.requires_base_url || selectedProvider.base_url) && (
+                        <input
+                          type="url"
+                          value={baseUrlDrafts[selectedProvider.id] ?? selectedProvider.base_url ?? ''}
+                          placeholder="https://api.example.com/v1"
+                          aria-label="Provider base URL"
+                          onChange={(e) => setBaseUrlDrafts((drafts) => ({ ...drafts, [selectedProvider.id]: e.target.value }))}
+                        />
+                      )}
                       <input
                         type="password"
                         value={keyDrafts[selectedProvider.id] ?? ''}
@@ -295,8 +244,14 @@ export function Onboarding({
                       />
                       <button
                         className="conn-btn primary"
-                        disabled={!(keyDrafts[selectedProvider.id] ?? '').trim() || providerPendingId === selectedProvider.id}
-                        onClick={() => onSaveKey(selectedProvider.id, keyDrafts[selectedProvider.id] ?? '')}
+                        disabled={!(keyDrafts[selectedProvider.id] ?? '').trim()
+                          || Boolean(selectedProvider.requires_base_url && !(baseUrlDrafts[selectedProvider.id] ?? selectedProvider.base_url ?? '').trim())
+                          || providerPendingId === selectedProvider.id}
+                        onClick={() => onSaveKey(
+                          selectedProvider.id,
+                          keyDrafts[selectedProvider.id] ?? '',
+                          baseUrlDrafts[selectedProvider.id] ?? selectedProvider.base_url,
+                        )}
                       >
                         {t('common.save')}
                       </button>
@@ -369,90 +324,17 @@ export function Onboarding({
             </div>
           )}
 
-          {step === 2 && (
-            <div className="ob-step-body">
-              <strong>{t('onboarding.model.title')}</strong>
-              <span className="ob-step-desc">{t('onboarding.model.desc')}</span>
-              <div className="ob-model-form">
-                <label className="ob-field">
-                  <span>{t('modals.provider')}</span>
-                  <div className="ob-select">
-                    <select value={modelProvider} onChange={(e) => { setModelProvider(e.target.value); setModel(''); setSavedModel(false); }}>
-                      {providers.map((p) => (
-                        <option key={p.id} value={p.id} disabled={!p.connected}>
-                          {p.connected ? p.display_name : `${p.display_name} · ${t('connections.notConnected')}`}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown size={15} />
-                  </div>
-                </label>
-                <label className="ob-field">
-                  <span>{t('modals.model')}</span>
-                  <div className="ob-select">
-                    <select value={model} disabled={modelsLoading || models.length === 0} onChange={(e) => { setModel(e.target.value); setSavedModel(false); }}>
-                      {modelsLoading && <option>{t('onboarding.model.loading')}</option>}
-                      {!modelsLoading && models.length === 0 && <option value="">{t('onboarding.model.none')}</option>}
-                      {models.map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
-                    <ChevronDown size={15} />
-                  </div>
-                </label>
-                {modelDone ? (
-                  <span className="ob-done-note">{t('onboarding.model.ready', { model: model || defaultConfig?.model })}</span>
-                ) : (
-                  <button className="ob-step-btn primary" disabled={!model || savingModel} onClick={saveModel}>
-                    <Check size={15} />
-                    {savingModel ? t('onboarding.model.saving') : t('onboarding.model.action')}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="ob-step-body">
-              <strong>{t('onboarding.agent.title')}</strong>
-              <span className="ob-step-desc">{t('onboarding.agent.desc')}</span>
-              <label className="ob-field">
-                <span>{t('modals.name')}</span>
-                <input className="ob-input" value={agentName} placeholder={t('modals.namePlaceholder')} autoFocus onChange={(e) => setAgentName(e.target.value)} />
-              </label>
-              <label className="ob-field">
-                <span>{t('modals.description')}</span>
-                <textarea className="ob-input" rows={3} value={agentDesc} placeholder={t('modals.descPlaceholder')} onChange={(e) => setAgentDesc(e.target.value)} />
-              </label>
-            </div>
-          )}
-
-          {step === 4 && (
-            <div className="ob-step-body">
-              <strong>{t('onboarding.conversation.title')}</strong>
-              <span className="ob-step-desc">{t('onboarding.conversation.desc')}</span>
-              <div className="ob-summary">
-                <div><span>{t('modals.name')}</span><strong>{agentName || '—'}</strong></div>
-                <div><span>{t('modals.model')}</span><strong>{model || defaultConfig?.model || '—'}</strong></div>
-              </div>
-            </div>
-          )}
         </div>
 
         <footer className="ob-nav">
-          <button className="ob-step-btn" disabled={step === 0 || creatingAgent} onClick={() => setStep((s) => Math.max(0, s - 1))}>
+          <button className="ob-step-btn" disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>
             <ArrowLeft size={15} />
             {t('common.back')}
           </button>
-          {step < TOTAL - 1 ? (
+          {step < TOTAL - 1 && (
             <button className="ob-step-btn primary" disabled={!canProceed} onClick={() => setStep((s) => Math.min(TOTAL - 1, s + 1))}>
               {t('common.next')}
               <ArrowRight size={15} />
-            </button>
-          ) : (
-            <button className="ob-step-btn primary" disabled={!agentName.trim() || creatingAgent} onClick={() => onCreateAgent(agentName.trim(), agentDesc.trim())}>
-              <Plus size={15} />
-              {creatingAgent ? t('onboarding.checking') : t('onboarding.agent.action')}
             </button>
           )}
         </footer>

@@ -138,7 +138,7 @@ describe('KanbanView', () => {
           conversation: providerTask || archived ? null : {
             id: '20260727_140600_abcdef',
             agent_id: 'research-agent',
-            url: '/agents/research-agent/conversations/20260727_140600_abcdef',
+            url: '/agents/research-agent/sessions/20260727_140600_abcdef',
           },
           updated_at: new Date().toISOString(),
         } }), { status: 200 });
@@ -297,27 +297,27 @@ describe('KanbanView', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' }));
     const drawer = screen.getByRole('dialog');
-    await waitFor(() => expect(within(drawer).getByText('Conversation tracking')).toBeVisible());
+    await waitFor(() => expect(within(drawer).getByText('Session tracking')).toBeVisible());
     expect(within(drawer).getByRole('link', {
-      name: /agents\/research-agent\/conversations\/20260727_140600_abcdef/,
+      name: /agents\/research-agent\/sessions\/20260727_140600_abcdef/,
     })).toBeVisible();
 
-    await user.click(within(drawer).getByRole('button', { name: 'View conversation' }));
+    await user.click(within(drawer).getByRole('button', { name: 'View session' }));
     expect(screen.getByRole('dialog', { name: 'Prepare the weekly report' })).toBeVisible();
     await waitFor(() => {
       expect(fetchMock.mock.calls.filter(([input]) => String(input).includes(
-        '/conversations/20260727_140600_abcdef/messages?agent=research-agent',
+        '/sessions/20260727_140600_abcdef/messages?agent=research-agent',
       ))).toHaveLength(1);
       expect(fetchMock.mock.calls.filter(([input]) => String(input).includes(
-        '/conversations/20260727_140600_abcdef/usage?agent=research-agent',
+        '/sessions/20260727_140600_abcdef/usage?agent=research-agent',
       ))).toHaveLength(1);
     });
-    await user.click(screen.getByRole('button', { name: 'Close task conversation' }));
-    await user.click(within(drawer).getByRole('button', { name: 'View conversation' }));
+    await user.click(screen.getByRole('button', { name: 'Close task session' }));
+    await user.click(within(drawer).getByRole('button', { name: 'View session' }));
     expect(fetchMock.mock.calls.filter(([input]) => String(input).includes(
-      '/conversations/20260727_140600_abcdef/messages?agent=research-agent',
+      '/sessions/20260727_140600_abcdef/messages?agent=research-agent',
     ))).toHaveLength(1);
-    await user.click(screen.getByRole('button', { name: 'Close task conversation' }));
+    await user.click(screen.getByRole('button', { name: 'Close task session' }));
 
     await user.click(within(drawer).getByRole('button', { name: 'Cancel task' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) =>

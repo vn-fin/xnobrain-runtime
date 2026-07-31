@@ -69,7 +69,7 @@ export function CronPanel({
             {t('cron.intervalLabel')}
             <input type="number" min={1} value={interval} onChange={(event) => setInterval(event.target.value)} />
           </label>
-          <p className="cron-form-hint">{t('cron.providerHint', { defaultValue: "The job uses this assistant's current provider and model." })}</p>
+          <p className="cron-form-hint">{t('cron.providerHint', { defaultValue: "The job uses this agent's current provider and model." })}</p>
           <div className="cron-form-actions">
             <button className="conn-btn ghost" onClick={() => setFormOpen(false)}>{t('common.cancel')}</button>
             <button

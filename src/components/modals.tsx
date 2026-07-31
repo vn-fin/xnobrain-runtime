@@ -177,7 +177,7 @@ export function CreateAgentModal({
       setTransfer(undefined);
       await onImported(report);
     } catch (value) {
-      setError(value instanceof Error ? value.message : 'Could not create assistant from profile.');
+      setError(value instanceof Error ? value.message : 'Could not create agent from profile.');
     } finally {
       setBusy('');
     }
@@ -193,7 +193,7 @@ export function CreateAgentModal({
           </button>
         </div>
         <div className="create-agent-tabs">
-          <button className={mode === 'new' ? 'active' : ''} onClick={() => setMode('new')}><Plus size={14} />New assistant</button>
+          <button className={mode === 'new' ? 'active' : ''} onClick={() => setMode('new')}><Plus size={14} />New agent</button>
           <button className={mode === 'upload' ? 'active' : ''} onClick={() => setMode('upload')}><Upload size={14} />Upload profile</button>
         </div>
         {mode === 'new' ? (

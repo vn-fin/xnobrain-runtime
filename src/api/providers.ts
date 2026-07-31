@@ -125,8 +125,8 @@ export const providersApi = {
     await request<unknown>(`${ROOT}/${encoded(id)}/update`, { method: 'PATCH', body: JSON.stringify(input) });
   },
 
-  saveKey(id: string, apiKey: string): Promise<void> {
-    return providersApi.update(id, { api_key: apiKey });
+  saveKey(id: string, apiKey: string, baseUrl?: string): Promise<void> {
+    return providersApi.update(id, { api_key: apiKey, ...(baseUrl?.trim() ? { base_url: baseUrl.trim() } : {}) });
   },
 
   async disconnect(id: string): Promise<void> {

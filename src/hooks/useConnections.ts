@@ -166,11 +166,11 @@ export function useConnections(active = true) {
     }
   };
 
-  const saveKey = async (id: string, key: string) => {
+  const saveKey = async (id: string, key: string, baseUrl?: string) => {
     if (!key.trim()) return;
     setPendingId(id);
     try {
-      await providersApi.saveKey(id, key.trim());
+      await providersApi.saveKey(id, key.trim(), baseUrl);
       await refresh();
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Could not save provider key.');

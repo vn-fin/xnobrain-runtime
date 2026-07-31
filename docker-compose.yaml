@@ -52,13 +52,9 @@ services:
     storage_opt:
       size: ${BRAIN4ALL_RUNTIME_DISK_SIZE:-100G}
     environment:
-      HERMES_HOME: /opt/data/brain4all/root
-      HERMES_ROOT_PROFILE: /opt/data/brain4all/root
-      HERMES_PROFILES_ROOT: /opt/data/brain4all/profiles
       HERMES_DESKTOP: "1"
-      HOME: /root
-      XDG_CONFIG_HOME: /root/.config
-      NINE_ROUTER_DATA_DIR: /opt/data/.9router
+      HOME: /opt/data/home
+      XDG_CONFIG_HOME: /opt/data/home/.config
       NINE_ROUTER_INTERNAL_SECRET: ${NINE_ROUTER_INTERNAL_SECRET:-brain4all-local-9router}
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: 8642

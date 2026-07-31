@@ -271,8 +271,8 @@ function LiveRunGraph({
               <button
                 className="run-node-more"
                 onClick={() => onOpenConversation(step)}
-                aria-label={`View ${agent?.title ?? step.role} conversation`}
-                title="View conversation details"
+                aria-label={`View ${agent?.title ?? step.role} session`}
+                title="View session details"
               >
                 <MoreHorizontal size={15} />
               </button>
@@ -408,10 +408,10 @@ function TeamNodeConversationModal({
             <strong id="team-conversation-title">{agent?.title ?? step.role}</strong>
             <small>{step.role} · {step.status}</small>
           </span>
-          <button className="icon-button" onClick={onClose} aria-label="Close node conversation"><X size={17} /></button>
+          <button className="icon-button" onClick={onClose} aria-label="Close node session"><X size={17} /></button>
         </header>
 
-        <section className="team-conversation-metrics" aria-label="Conversation metrics">
+        <section className="team-conversation-metrics" aria-label="Session metrics">
           <span><Coins size={14} /><small>Tokens</small><strong>{insight?.usage ? insight.usage.totalTokens.toLocaleString() : '—'}</strong></span>
           <span><Brain size={14} /><small>Reasoning steps</small><strong>{insight ? insight.reasoningSteps.toLocaleString() : '—'}</strong></span>
           <span><Clock size={14} /><small>Execution time</small><strong>{elapsed(step.started_at, step.ended_at, now)}</strong></span>
@@ -422,19 +422,19 @@ function TeamNodeConversationModal({
           {!step.conversation_id ? (
             <div className="team-conversation-empty">
               <MessageSquare size={22} />
-              <strong>No conversation yet</strong>
+              <strong>No session yet</strong>
               <p>This trace becomes available after Hermes starts this node.</p>
             </div>
           ) : insight?.status === 'loading' || !insight ? (
-            <div className="team-conversation-empty"><Loader2 className="run-step-spin" size={22} /><strong>Loading conversation…</strong></div>
+            <div className="team-conversation-empty"><Loader2 className="run-step-spin" size={22} /><strong>Loading session…</strong></div>
           ) : insight.status === 'error' ? (
-            <div className="team-conversation-empty error"><X size={22} /><strong>Conversation unavailable</strong><p>{insight.error}</p></div>
+            <div className="team-conversation-empty error"><X size={22} /><strong>Session unavailable</strong><p>{insight.error}</p></div>
           ) : insight.messages.length === 0 ? (
             <div className="team-conversation-empty"><MessageSquare size={22} /><strong>No stored messages</strong></div>
           ) : <TeamConversationTranscript messages={insight.messages} runs={insight.runs} />}
         </div>
         <footer className="team-conversation-foot">
-          <span>Metrics come from this node’s stored Hermes conversation.</span>
+          <span>Metrics come from this node’s stored Hermes session.</span>
           <button className="conn-btn" onClick={onClose}>Close</button>
         </footer>
       </div>
@@ -525,7 +525,7 @@ function TeamRunsPanel({
               messages: [],
               runs: [],
               reasoningSteps: 0,
-              error: messagesResult.reason instanceof Error ? messagesResult.reason.message : 'Could not load this conversation.',
+              error: messagesResult.reason instanceof Error ? messagesResult.reason.message : 'Could not load this session.',
             },
           }));
           return;
@@ -771,7 +771,7 @@ function TeamRunsPanel({
       {runToDelete && (
         <ConfirmDialog
           title="Delete this execution?"
-          message={`Run ${runToDelete.id.replace(/^tr_/, '').slice(0, 8)} will be permanently removed from this Team's execution history. Agent conversations will not be deleted.`}
+          message={`Run ${runToDelete.id.replace(/^tr_/, '').slice(0, 8)} will be permanently removed from this Team's execution history. Agent sessions will not be deleted.`}
           confirmLabel={deletingRun ? 'Deleting…' : 'Delete execution'}
           danger
           onConfirm={() => void confirmDeleteRun()}
@@ -1500,7 +1500,7 @@ function TeamImportModal({
           <button className="icon-button" onClick={close} aria-label="Close Team import"><X size={17} /></button>
         </div>
         <p className="app-modal-sub">
-          Import a verified Brain4All ZIP. Referenced assistants are cloned with new IDs when needed; credentials are never taken from the archive.
+          Import a verified Brain4All ZIP. Referenced agents are cloned with new IDs when needed; credentials are never taken from the archive.
         </p>
         <label className="profile-upload-picker">
           <FileArchive size={20} />
@@ -1529,7 +1529,7 @@ function TeamImportModal({
           <div className="profile-import-preview">
             <strong>{teamCount} Team snapshot ready</strong>
             <small>
-              {transfer.preview.inspection.manifest.agents.length} referenced assistants · {transfer.preview.inspection.files} verified files
+              {transfer.preview.inspection.manifest.agents.length} referenced agents · {transfer.preview.inspection.files} verified files
             </small>
             {(transfer.preview.missing_environment ?? []).map((key) => (
               <label key={key}>
@@ -1749,7 +1749,7 @@ function TeamLibrary({
       {removeTeam && (
         <ConfirmDialog
           title="Remove this Team?"
-          message={`“${removeTeam.name}” and its saved workflow will be permanently removed. The assistants in this Team will not be deleted.`}
+          message={`“${removeTeam.name}” and its saved workflow will be permanently removed. The agents in this Team will not be deleted.`}
           confirmLabel="Remove Team"
           danger
           onConfirm={() => void confirmRemove()}

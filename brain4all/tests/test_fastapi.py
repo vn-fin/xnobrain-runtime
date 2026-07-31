@@ -800,7 +800,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             "#/components/schemas/AgentCreate",
         )
         self.assertEqual(
-            schema["paths"]["/api/brain/v1/conversations/{conversation_id}/chat/stream"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            schema["paths"]["/api/brain/v1/sessions/{conversation_id}/chat/stream"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ChatRequest",
         )
 
@@ -1165,15 +1165,15 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             )
             third = await client.post(
                 f"/api/brain/v1/conversations?agent={agent_id}",
-                json={"title": "New Conversation"},
+                json={"title": "New Session"},
             )
 
         self.assertEqual(first.status_code, 201, first.text)
         self.assertEqual(second.status_code, 201, second.text)
         self.assertEqual(third.status_code, 201, third.text)
-        self.assertEqual(first.json()["data"]["title"], "New Conversation")
-        self.assertEqual(second.json()["data"]["title"], "New Conversation 2")
-        self.assertEqual(third.json()["data"]["title"], "New Conversation 3")
+        self.assertEqual(first.json()["data"]["title"], "New Session")
+        self.assertEqual(second.json()["data"]["title"], "New Session 2")
+        self.assertEqual(third.json()["data"]["title"], "New Session 3")
 
     async def test_conversation_usage_is_aggregated_from_the_hermes_session(self):
         async with self.client() as client:

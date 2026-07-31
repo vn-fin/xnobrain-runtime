@@ -71,43 +71,43 @@
     "open": "Open"
   },
   "agents": {
-    "title": "Assistants",
+    "title": "Agents",
     "recent": "Recent",
     "pinned": "Pinned",
-    "pin": "Pin assistant",
-    "unpin": "Unpin assistant",
-    "switch": "Switch assistant",
+    "pin": "Pin agent",
+    "unpin": "Unpin agent",
+    "switch": "Switch agent",
     "searchResults": "Search results",
-    "noMatch": "No assistants match your search.",
+    "noMatch": "No agents match your search.",
     "openLibrary": "Open in Library",
-    "libraryTitle": "Assistant Library",
-    "libraryCount_one": "{{count}} assistant",
-    "libraryCount_other": "{{count}} assistants",
-    "searchPlaceholder": "Search assistants…",
-    "new": "New assistant",
-    "settings": "Assistant settings",
+    "libraryTitle": "Agent Library",
+    "libraryCount_one": "{{count}} agent",
+    "libraryCount_other": "{{count}} agents",
+    "searchPlaceholder": "Search agents…",
+    "new": "New agent",
+    "settings": "Agent settings",
     "runtimeConfig": "Runtime config",
-    "test": "Test assistant",
-    "rename": "Rename assistant",
+    "test": "Test agent",
+    "rename": "Rename agent",
     "renameAction": "Rename",
-    "renameLabel": "Assistant name",
-    "menu": "Assistant options",
+    "renameLabel": "Agent name",
+    "menu": "Agent options",
     "export": "Export profile",
     "exportAction": "Export",
-    "delete": "Delete assistant"
+    "delete": "Delete agent"
   },
   "chat": {
     "placeholder": "Ask for follow-up changes",
     "workLocally": "Work locally",
     "ide": "IDE context",
     "fullAccess": "Full access",
-    "createConversation": "Create conversation",
-    "showAllConversations": "Show all conversations",
-    "closeConversation": "Close conversation",
-    "emptyTitle": "No conversations yet",
-    "emptyDesc": "Start a new conversation to begin chatting with {{name}}.",
+    "createConversation": "Create session",
+    "showAllConversations": "Show all sessions",
+    "closeConversation": "Close session",
+    "emptyTitle": "No sessions yet",
+    "emptyDesc": "Start a new session to begin chatting with {{name}}.",
     "emptyReady": "Send a message to {{name}} to get started.",
-    "newConversation": "New conversation",
+    "newConversation": "New session",
     "dropToUpload": "Drop files or folders to upload",
     "dropTarget": "to {{dir}}"
   },
@@ -116,13 +116,13 @@
     "shareUnavailable": "Sharing isn't available yet",
     "rename": "Rename",
     "delete": "Delete",
-    "deleteTitle": "Delete conversation",
-    "deleteMessage": "Delete “{{name}}”? This permanently removes the conversation and its messages. This action cannot be undone.",
-    "renameLabel": "Conversation name",
-    "menu": "Conversation options"
+    "deleteTitle": "Delete session",
+    "deleteMessage": "Delete “{{name}}”? This permanently removes the session and its messages. This action cannot be undone.",
+    "renameLabel": "Session name",
+    "menu": "Session options"
   },
   "controls": {
-    "title": "Assistant controls",
+    "title": "Agent controls",
     "workspace": "Workspace",
     "skills": "Skills",
     "runtime": "Runtime",
@@ -134,7 +134,7 @@
   },
   "skillsView": {
     "title": "Skills",
-    "subtitle": "Browse installed skills, install new ones, and apply them to your assistants.",
+    "subtitle": "Browse installed skills, install new ones, and apply them to your agents.",
     "installNew": "Install new",
     "searchPlaceholder": "Search skills…",
     "all": "All",
@@ -144,8 +144,8 @@
     "available": "available",
     "enabled": "enabled",
     "disabled": "disabled",
-    "enableDefault": "Enable {{name}} for new assistants",
-    "disableDefault": "Disable {{name}} for new assistants",
+    "enableDefault": "Enable {{name}} for new agents",
+    "disableDefault": "Disable {{name}} for new agents",
     "defaultEnabledLabel": "Use {{name}} in the default profile",
     "installPlaceholder": "Paste a SKILL.md URL or hub identifier",
     "installHint": "Installs into the default Hermes profile. Supports direct SKILL.md URLs, skills.sh identifiers, Hermes official skills, and GitHub/OpenAI repositories.",
@@ -171,11 +171,11 @@
     "ratingTitle_other": "{{count}} ratings",
     "selected_one": "{{count}} skill selected",
     "selected_other": "{{count}} skills selected",
-    "applyToAgents_one": "Apply to {{count}} assistant",
-    "applyToAgents_other": "Apply to {{count}} assistants"
+    "applyToAgents_one": "Apply to {{count}} agent",
+    "applyToAgents_other": "Apply to {{count}} agents"
   },
   "agentSkills": {
-    "title": "Assistant skills",
+    "title": "Agent skills",
     "add": "Add skill",
     "searchPlaceholder": "Search root skills to add…",
     "enabledFor_one": "{{count}} skill enabled for {{name}}.",
@@ -194,7 +194,7 @@
   },
   "connections": {
     "title": "Connections",
-    "subtitle": "Connect LLM providers (API key or CLI auth) so your assistants can run.",
+    "subtitle": "Connect LLM providers (API key or CLI auth) so your agents can run.",
     "notConnected": "not connected",
     "connected": "connected",
     "healthy": "healthy",
@@ -224,7 +224,7 @@
     "notProvisioned": "not provisioned",
     "provisioning": "provisioning…",
     "noSandbox": "No sandbox yet",
-    "noSandboxDesc": "You don't have a Hermes runtime running. Start the local container to give your assistants a workspace, terminal, and compute.",
+    "noSandboxDesc": "You don't have a Hermes runtime running. Start the local container to give your agents a workspace, terminal, and compute.",
     "create": "Create sandbox",
     "provisioningTitle": "Provisioning sandbox…",
     "specs": "Provisions via POST /api/brain/v1/sandboxes/setup?stream=true · 6 vCPU · 24 GiB · 80 GiB disk",
@@ -232,7 +232,7 @@
   },
   "onboarding": {
     "title": "Let's get you set up",
-    "subtitle": "A few quick steps to start working with your assistant.",
+    "subtitle": "A few quick steps to start working with your agent.",
     "step": "Step {{current}} of {{total}}",
     "checking": "Checking…",
     "vm": {
@@ -255,7 +255,7 @@
     },
     "model": {
       "title": "Choose a default model",
-      "desc": "Pick the default provider and model for new assistants.",
+      "desc": "Pick the default provider and model for new agents.",
       "action": "Save default",
       "saving": "Saving…",
       "loading": "Loading models…",
@@ -263,24 +263,24 @@
       "ready": "Default model: {{model}}"
     },
     "agent": {
-      "title": "Create an assistant",
+      "title": "Create an agent",
       "desc": "Give it a name and a purpose. It uses your default model to start.",
-      "action": "Create assistant"
+      "action": "Create agent"
     },
     "conversation": {
-      "title": "Start a conversation",
-      "desc": "Your first conversation is created automatically so you can start chatting right away."
+      "title": "Start a session",
+      "desc": "Your first session is created automatically so you can start chatting right away."
     }
   },
   "modals": {
-    "createAgent": "Create assistant",
+    "createAgent": "Create agent",
     "createAgentApi": "Maps to POST /api/brain/v1/agents",
     "name": "Display name",
     "namePlaceholder": "e.g. Data Analyst",
     "description": "Description",
-    "descPlaceholder": "What should this assistant do?",
-    "createAgentBtn": "Create assistant",
-    "agentSettings": "Assistant settings",
+    "descPlaceholder": "What should this agent do?",
+    "createAgentBtn": "Create agent",
+    "agentSettings": "Agent settings",
     "settingsTitle": "Title",
     "provider": "Provider",
     "model": "Model",
@@ -289,8 +289,8 @@
     "saveConfirm": "Save changes to “{{name}}”?",
     "back": "Back",
     "confirmSave": "Confirm save",
-    "deleteAgentTitle": "Delete assistant",
-    "deleteAgentMsg": "Delete “{{name}}”? All conversations, workspace files, configuration, skills, memory, and assigned Kanban tasks will be permanently deleted. This action cannot be undone."
+    "deleteAgentTitle": "Delete agent",
+    "deleteAgentMsg": "Delete “{{name}}”? All sessions, workspace files, configuration, skills, memory, and assigned Kanban tasks will be permanently deleted. This action cannot be undone."
   },
   "cron": {
     "title": "Cron jobs",
