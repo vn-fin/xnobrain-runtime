@@ -1,5 +1,8 @@
 # Brain4All
 
+For detailed local, Docker, and native VM installation instructions, see
+[SETUP.md](SETUP.md).
+
 Brain4All is a self-hosted React workspace for creating and running Hermes
 agents. One Python/FastAPI process extends the original Hermes CLI dashboard
 application and serves the default profile plus every named profile. One

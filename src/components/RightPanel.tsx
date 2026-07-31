@@ -245,7 +245,6 @@ export function RightPanel({
               .filter((s) => !q
                 || s.name.toLowerCase().includes(q)
                 || s.description.toLowerCase().includes(q)
-                || s.path.toLowerCase().includes(q)
                 || s.category.toLowerCase().includes(q));
 
             const sorted = [...filtered].sort((a, b) => {
@@ -304,7 +303,7 @@ export function RightPanel({
                         <span className={`cat-dot ${skill.category}`} />
                         <div className="skill-item-main">
                           <strong>{skill.name}</strong>
-                          <em>{skill.path || skill.category}</em>
+                          <span className="skill-item-description">{skill.description || t('agentSkills.noDescription', { defaultValue: 'No description available.' })}</span>
                           <span className="skill-tooltip">{skill.description || skill.name}</span>
                         </div>
                         <label className="toggle" title={t(skill.enabled ? 'agentSkills.disableHint' : 'agentSkills.enableHint', { name: agent.title })}>

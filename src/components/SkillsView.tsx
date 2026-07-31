@@ -191,8 +191,7 @@ export function SkillsView({
                     </div>
                     <p className="skv-desc">{skill.description}</p>
                     <div className="skv-card-foot">
-                      <span className="skv-path">{skill.path}</span>
-                      {skill.installed ? usedBy > 0 && <span className="skv-used">{usedBy} agent{usedBy > 1 ? 's' : ''}</span> : <button className="skv-install-mini" disabled={agents.length === 0} onClick={(event) => { event.stopPropagation(); onInstallExisting(skill.skill_id, agents.map((agent) => agent.id)); }}><Plus size={13} />{t('common.install')}</button>}
+                      {skill.installed ? <span className="skv-used">{usedBy}/{agents.length} agents</span> : <button className="skv-install-mini" disabled={agents.length === 0} onClick={(event) => { event.stopPropagation(); onInstallExisting(skill.skill_id, agents.map((agent) => agent.id)); }}><Plus size={13} />{t('common.install')}</button>}
                     </div>
                   </article>
                 );
