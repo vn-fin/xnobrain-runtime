@@ -57,6 +57,7 @@ export function CronView({
   agents,
   crons,
   status,
+  profileStates = {},
   error,
   pendingId,
   detail = null,
@@ -76,6 +77,7 @@ export function CronView({
   agents: Agent[];
   crons: CronJob[];
   status: 'idle' | 'loading' | 'ready' | 'error';
+  profileStates?: Record<string, 'loading' | 'ready' | 'error'>;
   error: string;
   pendingId: string;
   detail?: CronDetail | null;
@@ -83,13 +85,13 @@ export function CronView({
   deliveryOptions?: CronDeliveryOption[];
   onCreate: (input: CreateCronInput) => Promise<void>;
   onInstantiateBlueprint?: (input: { blueprint: string; agentId: string; values: Record<string, unknown> }) => Promise<CronJob>;
-  onAddTarget?: (id: string, target: { targetType: string; destination: string }) => Promise<unknown>;
-  onRemoveTarget?: (id: string, targetId: string) => Promise<void>;
-  onLoadRuns?: (id: string) => Promise<CronJobRun[]>;
-  onToggle: (id: string) => Promise<void>;
-  onRun: (id: string) => Promise<void>;
-  onDelete: (id: string) => Promise<void>;
-  onLoadDetail?: (id: string) => Promise<void>;
+  onAddTarget?: (id: string, target: { targetType: string; destination: string }, agentId?: string) => Promise<unknown>;
+  onRemoveTarget?: (id: string, targetId: string, agentId?: string) => Promise<void>;
+  onLoadRuns?: (id: string, agentId?: string) => Promise<CronJobRun[]>;
+  onToggle: (id: string, agentId?: string) => Promise<void>;
+  onRun: (id: string, agentId?: string) => Promise<void>;
+  onDelete: (id: string, agentId?: string) => Promise<void>;
+  onLoadDetail?: (id: string, agentId?: string) => Promise<void>;
   onCloseDetail?: () => void;
 }) {
   const { t } = useTranslation();
@@ -101,6 +103,7 @@ export function CronView({
   const [prompt, setPrompt] = useState('');
   const [interval, setInterval] = useState('60');
   const [selectedId, setSelectedId] = useState('');
+  const [selectedAgentId, setSelectedAgentId] = useState('');
   const [selectedRunId, setSelectedRunId] = useState('');
   const [blueprintOpen, setBlueprintOpen] = useState(false);
   const [selectedBlueprint, setSelectedBlueprint] = useState<CronBlueprint | null>(null);
@@ -113,19 +116,20 @@ export function CronView({
 
   useEffect(() => {
     if (!selectedId || detail?.job.id !== selectedId || detail.run?.state !== 'running') return;
-    const timer = window.setInterval(() => void onLoadDetail(selectedId), 2500);
+    const timer = window.setInterval(() => void onLoadDetail(selectedId, selectedAgentId), 2500);
     return () => window.clearInterval(timer);
-  }, [detail, onLoadDetail, selectedId]);
+  }, [detail, onLoadDetail, selectedAgentId, selectedId]);
 
-  const openDetail = (id: string) => {
+  const openDetail = (id: string, agentId: string) => {
     setSelectedId(id);
+    setSelectedAgentId(agentId);
     setSelectedRunId('');
-    void onLoadDetail(id);
-    void onLoadRuns(id);
+    void onLoadDetail(id, agentId);
   };
 
   const closeDetail = () => {
     setSelectedId('');
+    setSelectedAgentId('');
     setSelectedRunId('');
     setDetailMenuOpen(false);
     onCloseDetail();
@@ -155,6 +159,13 @@ export function CronView({
 
   const agentNames = useMemo(() => new Map(agents.map((agent) => [agent.id, agent.title])), [agents]);
   const visible = crons.filter((job) => (filter === 'all' || job.state === filter) && (agentFilter === 'all' || job.agentId === agentFilter));
+  const profileGroups = agents
+    .filter((agent) => agentFilter === 'all' || agent.id === agentFilter)
+    .map((agent) => ({
+      agent,
+      jobs: visible.filter((job) => job.agentId === agent.id),
+      state: profileStates[agent.id] ?? (status === 'loading' ? 'loading' : 'ready'),
+    }));
   const counts = {
     all: crons.length,
     scheduled: crons.filter((job) => job.state === 'scheduled').length,
@@ -192,7 +203,7 @@ export function CronView({
 
   const addTarget = async () => {
     if (!selectedId || !targetDestination.trim()) return;
-    await onAddTarget(selectedId, { targetType, destination: targetDestination.trim() });
+    await onAddTarget(selectedId, { targetType, destination: targetDestination.trim() }, selectedAgentId);
     setTargetComposerOpen(false);
   };
 
@@ -242,32 +253,46 @@ export function CronView({
       </div>
 
       {error && <div className="cron-page-error" role="alert">{error}</div>}
-      {status === 'loading' ? (
-        <div className="cron-page-empty"><Clock3 size={22} /><strong>{t('cron.loading', { defaultValue: 'Loading scheduled tasks…' })}</strong></div>
-      ) : visible.length === 0 ? (
+      {profileGroups.length === 0 ? (
         <div className="cron-page-empty"><CalendarClock size={26} /><strong>{t('cron.globalEmpty', { defaultValue: 'Nothing scheduled yet' })}</strong><span>{t('cron.globalEmptyHint', { defaultValue: 'Create a scheduled task and let an agent handle it for you.' })}</span><button className="cron-new-button" onClick={() => setCreateOpen(true)}><Plus size={15} /> {t('cron.new')}</button></div>
       ) : (
-        <div className="cron-job-grid">
-          {visible.map((job) => {
-            const busy = pendingId === job.id;
-            const assistant = agentNames.get(job.agentId) ?? job.agentId;
-            return (
-              <article className="cron-job-card" key={job.id} role="button" tabIndex={0} onClick={() => openDetail(job.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openDetail(job.id); }}>
-                <div className="cron-job-heading">
-                  <div className="cron-job-icon"><CalendarClock size={18} /></div>
-                  <div><h2>{job.name}</h2><p>{assistant}</p></div>
-                  <span className={`cron-friendly-status ${job.state}`}><span />{t(`cron.${job.state}`, { defaultValue: job.state })}</span>
+        <div className="cron-profile-groups">
+          {profileGroups.map(({ agent, jobs, state }) => (
+            <section className="cron-profile-group" key={agent.id}>
+              <header className="cron-profile-heading">
+                <div className="cron-profile-avatar"><Bot size={17} /></div>
+                <div><h2>{agent.title}</h2><p>{agent.id}</p></div>
+                {state === 'loading' ? <span className="cron-profile-loading"><RefreshCw size={13} /> Loading…</span> : state === 'error' ? <span className="cron-profile-error"><AlertTriangle size={13} /> Failed</span> : <span className="cron-profile-count">{jobs.length} task{jobs.length === 1 ? '' : 's'}</span>}
+              </header>
+              {state === 'loading' && jobs.length === 0 ? (
+                <div className="cron-profile-placeholder"><Clock3 size={16} /> Loading this profile’s schedules…</div>
+              ) : jobs.length === 0 ? (
+                <div className="cron-profile-placeholder">No tasks match this filter.</div>
+              ) : (
+                <div className="cron-job-grid">
+                  {jobs.map((job) => {
+                    const busy = pendingId === job.id;
+                    return (
+                      <article className="cron-job-card" key={job.id} role="button" tabIndex={0} onClick={() => openDetail(job.id, job.agentId)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openDetail(job.id, job.agentId); }}>
+                        <div className="cron-job-heading">
+                          <div className="cron-job-icon"><CalendarClock size={18} /></div>
+                          <div><h2>{job.name}</h2><p>{agent.title}</p></div>
+                          <span className={`cron-friendly-status ${job.state}`}><span />{t(`cron.${job.state}`, { defaultValue: job.state })}</span>
+                        </div>
+                        <p className="cron-job-prompt">{job.prompt}</p>
+                        <div className="cron-job-meta"><span><Clock3 size={14} />{scheduleCopy(job)}</span><span><CalendarClock size={14} />{nextRunCopy(job)}</span></div>
+                        <div className="cron-job-actions">
+                          <button disabled={busy} onClick={(event) => { event.stopPropagation(); void onRun(job.id, job.agentId).then(() => openDetail(job.id, job.agentId)); }}><Play size={14} /> {t('cron.runNow', { defaultValue: 'Run now' })}</button>
+                          <button disabled={busy} onClick={(event) => { event.stopPropagation(); void onToggle(job.id, job.agentId); }}>{job.state === 'stopped' ? <Play size={14} /> : <Pause size={14} />} {job.state === 'stopped' ? t('cron.start') : t('cron.stop')}</button>
+                          <button className="danger" disabled={busy} onClick={(event) => { event.stopPropagation(); void onDelete(job.id, job.agentId); }}><Trash2 size={14} /> {t('cron.delete')}</button>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
-                <p className="cron-job-prompt">{job.prompt}</p>
-                <div className="cron-job-meta"><span><Clock3 size={14} />{scheduleCopy(job)}</span><span><CalendarClock size={14} />{nextRunCopy(job)}</span></div>
-                <div className="cron-job-actions">
-                  <button disabled={busy} onClick={(event) => { event.stopPropagation(); void onRun(job.id).then(() => openDetail(job.id)); }}><Play size={14} /> {t('cron.runNow', { defaultValue: 'Run now' })}</button>
-                  <button disabled={busy} onClick={(event) => { event.stopPropagation(); void onToggle(job.id); }}>{job.state === 'stopped' ? <Play size={14} /> : <Pause size={14} />} {job.state === 'stopped' ? t('cron.start') : t('cron.stop')}</button>
-                  <button className="danger" disabled={busy} onClick={(event) => { event.stopPropagation(); void onDelete(job.id); }}><Trash2 size={14} /> {t('cron.delete')}</button>
-                </div>
-              </article>
-            );
-          })}
+              )}
+            </section>
+          ))}
         </div>
       )}
 
@@ -282,13 +307,13 @@ export function CronView({
                   {detail && <span className="cron-detail-sub"><Bot size={13} />{agentNames.get(detail.job.agentId) ?? detail.job.agentId}<i>•</i>{scheduleCopy(detail.job)}</span>}
                 </div>
                 {detail && <div className="cron-detail-header-actions">
-                  <button className="run-now" onClick={() => void onRun(selectedId)}><Play size={14} /> Run now</button>
+                  <button className="run-now" onClick={() => void onRun(selectedId, selectedAgentId)}><Play size={14} /> Run now</button>
                   <span className={`cron-friendly-status ${detail.job.state}`}><span />{t(`cron.${detail.job.state}`, { defaultValue: detail.job.state })}</span>
                   <div className="cron-detail-menu-wrap">
                     <button className="cron-detail-menu-toggle" onClick={() => setDetailMenuOpen((open) => !open)} aria-label="More actions" aria-expanded={detailMenuOpen}><MoreHorizontal size={18} /></button>
                     {detailMenuOpen && <div className="cron-detail-menu" role="menu">
-                      <button role="menuitem" onClick={() => { setDetailMenuOpen(false); void onToggle(selectedId); }}>{detail.job.state === 'stopped' ? <><Play size={14} /> Start schedule</> : <><Pause size={14} /> Pause schedule</>}</button>
-                      <button role="menuitem" className="danger" onClick={() => { setDetailMenuOpen(false); void onDelete(selectedId).then(closeDetail); }}><Trash2 size={14} /> Delete automation</button>
+                      <button role="menuitem" onClick={() => { setDetailMenuOpen(false); void onToggle(selectedId, selectedAgentId); }}>{detail.job.state === 'stopped' ? <><Play size={14} /> Start schedule</> : <><Pause size={14} /> Pause schedule</>}</button>
+                      <button role="menuitem" className="danger" onClick={() => { setDetailMenuOpen(false); void onDelete(selectedId, selectedAgentId).then(closeDetail); }}><Trash2 size={14} /> Delete automation</button>
                     </div>}
                   </div>
                 </div>}
@@ -299,7 +324,7 @@ export function CronView({
             ) : (
               <div className="cron-detail-body cron-runbook-layout">
                 <aside className="cron-run-list">
-                  <div className="cron-run-list-heading"><span>Run history</span><button onClick={() => void onLoadRuns(selectedId)} aria-label="Refresh run history"><RefreshCw size={14} /></button></div>
+                  <div className="cron-run-list-heading"><span>Run history</span><button onClick={() => void onLoadRuns(selectedId, selectedAgentId)} aria-label="Refresh run history"><RefreshCw size={14} /></button></div>
                   {detailRuns.length === 0 ? <p className="cron-run-empty">No runs yet.</p> : detailRuns.slice(0, 5).map((run, index) => (
                     <button className={`cron-run-card ${run.state} ${selectedRun?.id === run.id ? 'active' : ''}`} onClick={() => setSelectedRunId(run.id)} key={run.id}>
                       <span className={`cron-run-badge ${run.state}`}>{stateIcon(run.state, 13)}</span>
@@ -310,11 +335,11 @@ export function CronView({
                       </div>
                     </button>
                   ))}
-                  {detailRuns.length > 5 && <button className="cron-run-viewall" onClick={() => void onLoadRuns(selectedId)}>View all runs</button>}
+                  {detailRuns.length > 5 && <button className="cron-run-viewall" onClick={() => void onLoadRuns(selectedId, selectedAgentId)}>View all runs</button>}
                 </aside>
 
                 <main className="cron-run-canvas">
-                  <div className="cron-run-canvas-heading"><span>Execution graph</span><div className="cron-canvas-actions"><button onClick={() => void onLoadDetail(selectedId)}><RefreshCw size={14} /> Refresh</button>{selectedRun && <strong className={`cron-run-state ${selectedRun.state}`}>{selectedRun.state === 'success' ? 'Completed' : selectedRun.state === 'running' ? 'Running' : selectedRun.state === 'failed' ? 'Failed' : selectedRun.state}</strong>}</div></div>
+                  <div className="cron-run-canvas-heading"><span>Execution graph</span><div className="cron-canvas-actions"><button onClick={() => void onLoadDetail(selectedId, selectedAgentId)}><RefreshCw size={14} /> Refresh</button>{selectedRun && <strong className={`cron-run-state ${selectedRun.state}`}>{selectedRun.state === 'success' ? 'Completed' : selectedRun.state === 'running' ? 'Running' : selectedRun.state === 'failed' ? 'Failed' : selectedRun.state}</strong>}</div></div>
                   <div className="cron-run-graph">
                     <div className="cron-graph-node schedule"><CalendarClock size={17} /><div><span>Trigger</span><strong>{scheduleCopy(detail.job)}</strong><small>{selectedRun?.triggeredAt ? new Date(selectedRun.triggeredAt).toLocaleString() : nextRunCopy(detail.job)}</small></div></div>
                     <div className={`cron-graph-edge ${selectedRun?.state ?? 'idle'}`}>
@@ -369,7 +394,7 @@ export function CronView({
                       return <div className={`cron-target-row ${target.available ? 'available' : 'unavailable'}`} key={target.id}>
                         <div className="cron-target-row-icon">{icon}</div>
                         <div className="cron-target-row-copy"><strong>{label}</strong><span>{target.destination}</span><small>{target.available ? <><i />Pending</> : <><AlertTriangle size={11} />Delivery target is not configured</>}</small></div>
-                        <button onClick={() => void onRemoveTarget(selectedId, target.id)} aria-label={`Remove ${target.targetType} target`}><Trash2 size={14} /></button>
+                        <button onClick={() => void onRemoveTarget(selectedId, target.id, selectedAgentId)} aria-label={`Remove ${target.targetType} target`}><Trash2 size={14} /></button>
                       </div>;
                     })}</div>
                     <button className="cron-manage-targets" onClick={() => openTargetComposer()}><Plus size={14} /> Manage delivery targets</button>

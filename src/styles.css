@@ -6612,7 +6612,17 @@ body.col-resizing {
 .cron-agent-filter { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .cron-agent-filter select { min-width: 180px; height: 35px; padding: 0 28px 0 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--elevated); }
 
-.cron-job-grid { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.cron-profile-groups { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px; }
+.cron-profile-group { display: grid; gap: 12px; }
+.cron-profile-heading { min-height: 48px; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 0 2px 9px; border-bottom: 1px solid var(--border); }
+.cron-profile-avatar { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: var(--green); background: color-mix(in srgb, var(--green) 11%, var(--elevated)); }
+.cron-profile-heading h2 { margin: 0 0 2px; font-size: 14px; }
+.cron-profile-heading p { margin: 0; color: var(--muted); font-size: 11px; }
+.cron-profile-count, .cron-profile-loading, .cron-profile-error { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 650; }
+.cron-profile-loading svg { animation: spin 1s linear infinite; }
+.cron-profile-error { color: var(--danger); }
+.cron-profile-placeholder { min-height: 70px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px dashed var(--border); border-radius: 9px; color: var(--muted); font-size: 12px; }
+.cron-job-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .cron-job-card { display: grid; gap: 15px; padding: 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel); }
 .cron-job-card { cursor: pointer; transition: border-color 140ms ease, background-color 140ms ease; }
 .cron-job-card:hover, .cron-job-card:focus-visible { border-color: var(--border-2); background: var(--elevated-hi); outline: none; }

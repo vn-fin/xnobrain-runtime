@@ -166,6 +166,27 @@ class AgentManager:
             "agents": agents,
         }
 
+    def list_agent_names(self) -> list[str]:
+        """Return valid profile names without loading configs, skills, or memory."""
+        names = [BIG_BROTHER_AGENT_ID]
+        seen = {BIG_BROTHER_AGENT_ID}
+        for path in sorted(self.profiles_root.iterdir(), key=lambda item: item.name):
+            if path.name in seen or not self._is_native_agent_profile(path):
+                continue
+            seen.add(path.name)
+            names.append(path.name)
+        if self.legacy_agents_root.is_dir():
+            for path in sorted(self.legacy_agents_root.iterdir(), key=lambda item: item.name):
+                if path.name in seen or not path.is_dir() or not (path / ".profile").is_dir():
+                    continue
+                seen.add(path.name)
+                names.append(path.name)
+        return names
+
+    def profile_path(self, raw_name: Any) -> Path:
+        """Return an existing profile path without building its full agent DTO."""
+        return self._require_profile(self._agent_name(raw_name)).resolve()
+
     def create_agent(self, body: Mapping[str, Any]) -> tuple[dict[str, Any], int]:
         name = self._agent_name(body.get("name") or self._new_agent_name())
         existed = self._existing_profile_dir(name) is not None

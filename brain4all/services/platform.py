@@ -871,23 +871,28 @@ class PlatformService:
     def delete_bundle_transfer(self, kind: str, transfer_id: str) -> dict[str, Any]:
         return self.portability.delete_transfer(kind, transfer_id)
 
-    def list_crons(self) -> list[dict[str, Any]]:
-        return self.cron.list_jobs()
+    def list_crons(self, agent_id: str | None = None) -> list[dict[str, Any]]:
+        return self.cron.list_jobs(agent_id)
 
-    def get_job_detail(self, cron_id: str) -> dict[str, Any]:
-        return self.cron.get_job_detail(cron_id)
+    def get_job_detail(self, cron_id: str, agent_id: str | None = None) -> dict[str, Any]:
+        return self.cron.get_job_detail(cron_id, agent_id)
 
     def create_cron(self, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.cron.create_job(body)
 
-    def set_cron_enabled(self, cron_id: str, enabled: bool) -> dict[str, Any]:
-        return self.cron.set_enabled(cron_id, enabled)
+    def set_cron_enabled(
+        self,
+        cron_id: str,
+        enabled: bool,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.cron.set_enabled(cron_id, enabled, agent_id)
 
-    def delete_cron(self, cron_id: str) -> dict[str, Any]:
-        return self.cron.delete_job(cron_id)
+    def delete_cron(self, cron_id: str, agent_id: str | None = None) -> dict[str, Any]:
+        return self.cron.delete_job(cron_id, agent_id)
 
-    def run_cron(self, cron_id: str) -> dict[str, Any]:
-        return self.cron.request_run(cron_id)
+    def run_cron(self, cron_id: str, agent_id: str | None = None) -> dict[str, Any]:
+        return self.cron.request_run(cron_id, agent_id)
 
     @staticmethod
     def _schedule_job(task: Mapping[str, Any]) -> dict[str, Any]:
@@ -929,17 +934,32 @@ class PlatformService:
     def list_cron_delivery_targets(self, agent_id: str | None = None) -> dict[str, Any]:
         return self.cron.list_delivery_target_options(agent_id)
 
-    def list_cron_job_targets(self, cron_id: str) -> dict[str, Any]:
-        return self.cron.list_job_targets(cron_id)
+    def list_cron_job_targets(self, cron_id: str, agent_id: str | None = None) -> dict[str, Any]:
+        return self.cron.list_job_targets(cron_id, agent_id)
 
-    def add_cron_job_target(self, cron_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        return self.cron.add_delivery_target(cron_id, body)
+    def add_cron_job_target(
+        self,
+        cron_id: str,
+        body: Mapping[str, Any],
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.cron.add_delivery_target(cron_id, body, agent_id)
 
-    def remove_cron_job_target(self, cron_id: str, target_id: str) -> dict[str, Any]:
-        return self.cron.remove_delivery_target(cron_id, target_id)
+    def remove_cron_job_target(
+        self,
+        cron_id: str,
+        target_id: str,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.cron.remove_delivery_target(cron_id, target_id, agent_id)
 
-    def list_cron_runs(self, cron_id: str, limit: int = 20) -> dict[str, Any]:
-        return self.cron.list_job_runs(cron_id, limit)
+    def list_cron_runs(
+        self,
+        cron_id: str,
+        limit: int = 20,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.cron.list_job_runs(cron_id, limit, agent_id)
 
     @staticmethod
     def _team_with_description(team: Mapping[str, Any]) -> dict[str, Any]:

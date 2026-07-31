@@ -27,6 +27,15 @@ describe('CronView', () => {
     expect(screen.getAllByText('Research Lead').length).toBeGreaterThan(0);
   });
 
+  it('shows profile loading independently while keeping completed profile stats visible', () => {
+    const second = { ...agent, id: 'agent-2', name: 'agent-2', title: 'Writer' };
+    render(<CronView agents={[agent, second]} crons={[job]} status="loading" profileStates={{ 'agent-1': 'ready', 'agent-2': 'loading' }} error="" pendingId="" onCreate={vi.fn()} onToggle={vi.fn()} onRun={vi.fn()} onDelete={vi.fn()} />);
+
+    expect(screen.getByText('Morning summary')).toBeInTheDocument();
+    expect(screen.getByText('1 task')).toBeInTheDocument();
+    expect(screen.getByText('Loading this profile’s schedules…')).toBeInTheDocument();
+  });
+
   it('opens the simple scheduling form and submits an assistant selection', async () => {
     const onCreate = vi.fn().mockResolvedValue(undefined);
     render(<CronView agents={[agent]} crons={[]} status="ready" error="" pendingId="" onCreate={onCreate} onToggle={vi.fn()} onRun={vi.fn()} onDelete={vi.fn()} />);
@@ -41,7 +50,7 @@ describe('CronView', () => {
     const onLoadDetail = vi.fn().mockResolvedValue(undefined);
     render(<CronView agents={[agent]} crons={[job]} status="ready" error="" pendingId="" detail={{ job, run: { id: 'run-1', state: 'success', triggeredAt: '2026-07-29T12:00:00Z', completedAt: '2026-07-29T12:01:00Z', output: 'HPG report ready', error: '' } }} onCreate={vi.fn()} onToggle={vi.fn()} onRun={vi.fn()} onDelete={vi.fn()} onLoadDetail={onLoadDetail} onCloseDetail={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /morning summary/i }));
-    expect(onLoadDetail).toHaveBeenCalledWith('job-1');
+    expect(onLoadDetail).toHaveBeenCalledWith('job-1', 'agent-1');
     expect(screen.getByRole('dialog', { name: /scheduled task details/i })).toBeInTheDocument();
     expect(screen.getByText('HPG report ready')).toBeInTheDocument();
   });

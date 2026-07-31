@@ -65,6 +65,7 @@ export default function App() {
   const blends = useBlends(workspaceReady && router.centerView === 'chat');
   const crons = useCrons(
     assistantsReady && (router.centerView === 'cron' || (router.centerView === 'chat' && router.rightView === 'cron')),
+    assistants.agents.map((agent) => agent.id),
   );
 
   // Resizable right panel width (persisted). Applied as the --right grid column.
@@ -425,6 +426,7 @@ export default function App() {
             agents={assistants.agents}
             crons={crons.crons}
             status={crons.status}
+            profileStates={crons.profileStates}
             error={crons.error}
             pendingId={crons.pendingId}
             detail={crons.detail}

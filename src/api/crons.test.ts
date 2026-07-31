@@ -4,6 +4,20 @@ import { cronsApi } from './crons';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('cronsApi', () => {
+  it('scopes job lists and details to the selected profile', async () => {
+    const dto = { id: 'job-1', agent_id: 'agent-1', name: 'Digest', enabled: true, schedule: 'every 60m', prompt: 'Summarize' };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: [dto] }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { job: dto, run: null } }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await cronsApi.list('agent-1');
+    await cronsApi.detail('job-1', 'agent-1');
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/cron/jobs?agent_id=agent-1');
+    expect(fetchMock.mock.calls[1][0]).toContain('/cron/jobs/job-1?agent_id=agent-1');
+  });
+
   it('creates through the Brain4All cron wrapper', async () => {
     const dto = { id: 'job-1', agent_id: 'agent-1', name: 'Health check', enabled: true, schedule: 'every 30m', prompt: 'Check the service', next_run_at: '2099-07-29T12:00:00Z' };
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: dto }), { status: 200, headers: { 'Content-Type': 'application/json' } }));

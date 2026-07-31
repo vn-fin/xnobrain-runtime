@@ -38,7 +38,7 @@ function authenticatedHeaders(init?: RequestInit, includeJson = true): Headers {
   if (includeJson && init?.body != null && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
-  if (brain4AllRuntime.features.login && !headers.has('Authorization')) {
+  if (brain4AllRuntime.features.login && brain4AllRuntime.auth?.mode !== 'disabled' && !headers.has('Authorization')) {
     const token = storedAccessToken();
     if (token) headers.set('Authorization', `Bearer ${token}`);
   }

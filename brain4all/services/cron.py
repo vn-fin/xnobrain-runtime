@@ -47,21 +47,25 @@ class CronService:
         self.delivery = CronDeliveryAdapter()
         self.kanban: Any | None = None
 
-    def list_jobs(self) -> list[dict[str, Any]]:
-        self.reconcile_deliveries()
-        jobs: list[dict[str, Any]] = []
-        for profile in self._profiles():
-            jobs.extend(self._dto(profile, job) for job in self._native(profile, "list_jobs", True))
-        return jobs
+    def list_jobs(self, agent_id: str | None = None) -> list[dict[str, Any]]:
+        profile_jobs = self._jobs_by_profile([agent_id] if agent_id else None)
+        self.reconcile_deliveries(profile_jobs)
+        return [
+            self._dto(profile, job)
+            for profile, jobs in profile_jobs
+            for job in jobs
+        ]
 
-    def get_job_detail(self, job_id: str) -> dict[str, Any]:
-        self.reconcile_deliveries()
-        profile, job = self._find(job_id)
+    def get_job_detail(self, job_id: str, agent_id: str | None = None) -> dict[str, Any]:
+        profile_jobs = self._jobs_by_profile([agent_id] if agent_id else None)
+        self.reconcile_deliveries(profile_jobs)
+        profile, job = self._find(job_id, profile_jobs)
+        runs = self._run_dtos(profile, job, limit=20)
         return {
             "job": self._dto(profile, job),
-            "run": self._latest_run(profile, job),
+            "run": self._latest_run(profile, job, runs),
             "targets": self._target_dtos(profile, job),
-            "runs": self._run_dtos(profile, job, limit=20),
+            "runs": runs,
         }
 
     def create_job(self, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -130,8 +134,8 @@ class CronService:
                 "destination": native_deliver,
             }]
         for target in targets:
-            self.add_delivery_target(str(created["id"]), target)
-        profile, updated = self._find(str(created["id"]))
+            self.add_delivery_target(str(created["id"]), target, agent_id)
+        profile, updated = self._find_job(str(created["id"]), agent_id)
         return self._dto(profile, updated)
 
     def list_delivery_target_options(self, agent_id: str | None = None) -> dict[str, Any]:
@@ -166,12 +170,17 @@ class CronService:
             ]
         }
 
-    def list_job_targets(self, job_id: str) -> dict[str, Any]:
-        profile, job = self._find(job_id)
+    def list_job_targets(self, job_id: str, agent_id: str | None = None) -> dict[str, Any]:
+        profile, job = self._find_job(job_id, agent_id)
         return {"targets": self._target_dtos(profile, job)}
 
-    def add_delivery_target(self, job_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        profile, job = self._find(job_id)
+    def add_delivery_target(
+        self,
+        job_id: str,
+        body: Mapping[str, Any],
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        profile, job = self._find_job(job_id, agent_id)
         target_type = str(body.get("target_type") or "").strip()
         destination = str(body.get("destination") or "").strip()
         if target_type not in {"channel", "email", "kanban", "file"}:
@@ -210,8 +219,13 @@ class CronService:
         })
         return self._target_dto(profile, updated or job, target)
 
-    def remove_delivery_target(self, job_id: str, target_id: str) -> dict[str, Any]:
-        profile, job = self._find(job_id)
+    def remove_delivery_target(
+        self,
+        job_id: str,
+        target_id: str,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        profile, job = self._find_job(job_id, agent_id)
         targets = [dict(item) for item in job.get("brain4all_delivery_targets") or []]
         kept = [item for item in targets if str(item.get("id")) != str(target_id)]
         if len(kept) == len(targets):
@@ -223,20 +237,25 @@ class CronService:
         })
         return {"deleted": True}
 
-    def set_enabled(self, job_id: str, enabled: bool) -> dict[str, Any]:
-        profile, job = self._find(job_id)
+    def set_enabled(
+        self,
+        job_id: str,
+        enabled: bool,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        profile, job = self._find_job(job_id, agent_id)
         action = "resume_job" if enabled else "pause_job"
         return self._dto(profile, self._native(profile, action, job["id"]))
 
-    def delete_job(self, job_id: str) -> dict[str, Any]:
-        profile, job = self._find(job_id)
+    def delete_job(self, job_id: str, agent_id: str | None = None) -> dict[str, Any]:
+        profile, job = self._find_job(job_id, agent_id)
         self._snapshot_store(profile)
         if not self._native(profile, "remove_job", job["id"]):
             raise CronServiceError("cron job not found", status=404, code="cron_not_found")
         return {"deleted": True}
 
-    def request_run(self, job_id: str) -> dict[str, Any]:
-        profile, job = self._find(job_id)
+    def request_run(self, job_id: str, agent_id: str | None = None) -> dict[str, Any]:
+        profile, job = self._find_job(job_id, agent_id)
         triggered = self._native(profile, "trigger_job", job["id"])
         if not triggered:
             raise CronServiceError("cron job not found", status=404, code="cron_not_found")
@@ -292,18 +311,23 @@ class CronService:
         finally:
             reset_hermes_home_override(token)
 
-    def list_job_runs(self, job_id: str, limit: int = 20) -> dict[str, Any]:
-        self.reconcile_deliveries()
-        profile, job = self._find(job_id)
+    def list_job_runs(
+        self,
+        job_id: str,
+        limit: int = 20,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        profile_jobs = self._jobs_by_profile([agent_id] if agent_id else None)
+        self.reconcile_deliveries(profile_jobs)
+        profile, job = self._find(job_id, profile_jobs)
         bounded = max(1, min(int(limit), 100))
         return {"runs": self._run_dtos(profile, job, bounded), "limit": bounded}
 
-    def reconcile_deliveries(self) -> None:
-        for profile in self._profiles():
-            try:
-                jobs = self._native(profile, "list_jobs", True)
-            except Exception:
-                continue
+    def reconcile_deliveries(
+        self,
+        profile_jobs: list[tuple[str, list[dict[str, Any]]]] | None = None,
+    ) -> None:
+        for profile, jobs in profile_jobs if profile_jobs is not None else self._jobs_by_profile():
             for job in jobs:
                 targets = [dict(item) for item in job.get("brain4all_delivery_targets") or []]
                 if not targets:
@@ -396,15 +420,40 @@ class CronService:
         return {"status": "delivered", "reason": None}
 
     def _profiles(self) -> list[str]:
-        return [str(item["name"]) for item in self.agents.list_agents()["agents"]]
+        return self.agents.list_agent_names()
 
-    def _find(self, job_id: str) -> tuple[str, dict[str, Any]]:
+    def _jobs_by_profile(
+        self,
+        profiles: list[str] | None = None,
+    ) -> list[tuple[str, list[dict[str, Any]]]]:
+        rows: list[tuple[str, list[dict[str, Any]]]] = []
+        for profile in profiles if profiles is not None else self._profiles():
+            try:
+                rows.append((profile, self._native(profile, "list_jobs", True)))
+            except Exception:
+                continue
+        return rows
+
+    def _find(
+        self,
+        job_id: str,
+        profile_jobs: list[tuple[str, list[dict[str, Any]]]] | None = None,
+    ) -> tuple[str, dict[str, Any]]:
         wanted = str(job_id or "").strip()
-        for profile in self._profiles():
-            for job in self._native(profile, "list_jobs", True):
+        rows = profile_jobs if profile_jobs is not None else self._jobs_by_profile()
+        for profile, jobs in rows:
+            for job in jobs:
                 if str(job.get("id") or "") == wanted or str(job.get("name") or "") == wanted:
                     return profile, job
         raise CronServiceError("cron job not found", status=404, code="cron_not_found")
+
+    def _find_job(
+        self,
+        job_id: str,
+        agent_id: str | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        rows = self._jobs_by_profile([agent_id]) if agent_id else None
+        return self._find(job_id, rows)
 
     def _native(self, profile: str, function: str, *args, **kwargs):
         return self._native_module(profile, "cron.jobs", function, *args, **kwargs)
@@ -425,8 +474,7 @@ class CronService:
             reset_hermes_home_override(token)
 
     def _profile_home(self, agent_id: str) -> Path:
-        detail = self.agents.describe_agent(agent_id, include_memory=False)
-        home = Path(detail["profile_path"]).resolve()
+        home = self.agents.profile_path(agent_id)
         if not home.is_dir():
             raise CronServiceError("cron agent profile is unavailable", status=404, code="agent_not_found")
         return home
@@ -457,16 +505,25 @@ class CronService:
         return ",".join(item for item in destinations if item) or "local"
 
     def _target_dtos(self, profile: str, job: Mapping[str, Any]) -> list[dict[str, Any]]:
-        return [self._target_dto(profile, job, item) for item in job.get("brain4all_delivery_targets") or []]
+        targets = list(job.get("brain4all_delivery_targets") or [])
+        needs_options = any(str(item.get("target_type") or "") in {"channel", "email"} for item in targets)
+        options = self.list_delivery_target_options(profile)["options"] if needs_options else []
+        return [self._target_dto(profile, job, item, options) for item in targets]
 
-    def _target_dto(self, profile: str, job: Mapping[str, Any], target: Mapping[str, Any]) -> dict[str, Any]:
+    def _target_dto(
+        self,
+        profile: str,
+        job: Mapping[str, Any],
+        target: Mapping[str, Any],
+        options: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         target_type = str(target.get("target_type") or "")
         destination = str(target.get("destination") or "")
         available, reason = True, None
         if target_type in {"channel", "email"}:
             option_id = destination.split(":", 1)[0] or "email"
-            options = self.list_delivery_target_options(profile)["options"]
-            option = next((item for item in options if item["target_type"] == target_type and item["id"] == option_id), None)
+            available_options = options if options is not None else self.list_delivery_target_options(profile)["options"]
+            option = next((item for item in available_options if item["target_type"] == target_type and item["id"] == option_id), None)
             available = bool(option and option.get("available"))
             reason = None if available else "Delivery target is not configured"
         return {
@@ -557,10 +614,15 @@ class CronService:
             return ""
         return text.strip()[:50_000]
 
-    def _latest_run(self, profile: str, job: Mapping[str, Any]) -> dict[str, Any] | None:
-        runs = self._run_dtos(profile, job, 1)
+    def _latest_run(
+        self,
+        profile: str,
+        job: Mapping[str, Any],
+        known_runs: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
+        runs = known_runs if known_runs is not None else self._run_dtos(profile, job, 1)
         if runs:
-            run = runs[0]
+            run = dict(runs[0])
             run["output"] = self._execution_output(profile, job, {"finished_at": run["completed_at"]}) or ""
             return run
         last_at = str(job.get("last_run_at") or "")

@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -98,6 +100,35 @@ class CronDeliveryAPITests(unittest.IsolatedAsyncioTestCase):
         self.env.stop()
         self.temp.cleanup()
 
+    async def test_cron_scan_does_not_block_unrelated_requests(self):
+        started = threading.Event()
+
+        def slow_list(*_args) -> list[dict]:
+            started.set()
+            time.sleep(0.2)
+            return []
+
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            with patch.object(self.composition.service, "list_crons", side_effect=slow_list):
+                cron_request = asyncio.create_task(client.get("/api/brain/v1/cron/jobs"))
+                self.assertTrue(await asyncio.to_thread(started.wait, 1))
+                before = asyncio.get_running_loop().time()
+                providers = await client.get("/api/brain/v1/providers")
+                elapsed = asyncio.get_running_loop().time() - before
+                cron = await cron_request
+
+        self.assertEqual(cron.status_code, 200, cron.text)
+        self.assertEqual(providers.status_code, 200, providers.text)
+        self.assertLess(elapsed, 0.1)
+
+    def test_cron_profile_discovery_skips_full_agent_dtos(self):
+        with patch.object(
+            self.composition.service.agents,
+            "list_agents",
+            side_effect=AssertionError("cron discovery must not scan agent DTOs"),
+        ):
+            self.assertEqual(self.composition.service.cron.list_jobs(), [])
+
     async def test_blueprints_targets_and_runs_routes(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
             created = await client.post("/api/brain/v1/agents", json={"name": "Automation"})
@@ -114,6 +145,17 @@ class CronDeliveryAPITests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertEqual(cron.status_code, 201, cron.text)
             job_id = cron.json()["data"]["id"]
+            scoped = await client.get(f"/api/brain/v1/cron/jobs?agent_id={agent_id}")
+            self.assertEqual([item["id"] for item in scoped.json()["data"]], [job_id])
+            with patch.object(
+                self.composition.service.cron,
+                "_profiles",
+                side_effect=AssertionError("scoped detail must not enumerate every profile"),
+            ):
+                scoped_detail = await client.get(
+                    f"/api/brain/v1/cron/jobs/{job_id}?agent_id={agent_id}"
+                )
+            self.assertEqual(scoped_detail.status_code, 200, scoped_detail.text)
             added = await client.post(f"/api/brain/v1/cron/jobs/{job_id}/delivery-targets", json={
                 "target_type": "file", "destination": "reports/daily.md",
             })

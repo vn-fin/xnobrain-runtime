@@ -53,11 +53,18 @@ router_host="${BRAIN4ALL_DEV_ROUTER_HOST:-127.0.0.1}"
 router_port="${BRAIN4ALL_DEV_ROUTER_PORT:-20128}"
 hermes_home="${HERMES_HOME:-$HOME/.hermes}"
 router_data_dir="${NINE_ROUTER_DATA_DIR:-$HOME/.9router}"
+frontend_api_base="${BRAIN4ALL_DEV_API_BASE_URL:-http://$backend_host:$backend_port}"
 
 if [[ ! -x "$project_dir/node_modules/.bin/vite" ]]; then
   npm --prefix "$project_dir" install
 fi
-npm --prefix "$project_dir" run dev:frontend -- --host "$frontend_host" --port "$frontend_port" &
+VITE_API_BASE_URL="$frontend_api_base" \
+  VITE_APP_EDITION=opensource \
+  VITE_AUTH_MODE=disabled \
+  VITE_AUTH_PROVIDER=local-profile \
+  VITE_AUTH_API_URL= \
+  VITE_CONTROL_API_BASE_URL= \
+  npm --prefix "$project_dir" run dev:frontend -- --host "$frontend_host" --port "$frontend_port" &
 frontend_pid=$!
 backend_pid=""
 router_pid=""

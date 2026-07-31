@@ -71,10 +71,18 @@ function mapRunHistory(value: CronRunDTO): CronJobRun {
   return { ...(mapRun(value) as NonNullable<CronDetail['run']>), deliveries: (value.deliveries ?? []).map((item) => ({ targetId: item.target_id, targetType: item.target_type, status: item.status, at: item.at, reason: item.reason })) };
 }
 
+function scoped(path: string, agentId?: string): string {
+  return agentId ? `${path}?agent_id=${encodeURIComponent(agentId)}` : path;
+}
+
 export const cronsApi = {
-  list: async () => (await request<CronDTO[]>(ROOT)).map(mapCron),
-  detail: async (id: string): Promise<CronDetail> => {
-    const value = await request<{ job: CronDTO; run: CronRunDTO | null; targets?: TargetDTO[]; runs?: CronRunDTO[] }>(`${ROOT}/${encodeURIComponent(id)}`);
+  list: async (agentId?: string) => {
+    const query = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : '';
+    return (await request<CronDTO[]>(`${ROOT}${query}`)).map(mapCron);
+  },
+  detail: async (id: string, agentId?: string): Promise<CronDetail> => {
+    const query = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : '';
+    const value = await request<{ job: CronDTO; run: CronRunDTO | null; targets?: TargetDTO[]; runs?: CronRunDTO[] }>(`${ROOT}/${encodeURIComponent(id)}${query}`);
     return { job: mapCron(value.job), run: mapRun(value.run), targets: (value.targets ?? []).map(mapTarget), runs: (value.runs ?? []).map(mapRunHistory) };
   },
   create: async (input: CreateCronInput): Promise<CronJob> =>
@@ -87,11 +95,11 @@ export const cronsApi = {
         interval_minutes: input.intervalMinutes,
       }),
     })),
-  setState: async (id: string, state: 'scheduled' | 'stopped') =>
-    mapCron(await request<CronDTO>(`${ROOT}/${encodeURIComponent(id)}/${state === 'scheduled' ? 'resume' : 'pause'}`, { method: 'POST' })),
-  runNow: async (id: string): Promise<CronDetail> => {
+  setState: async (id: string, state: 'scheduled' | 'stopped', agentId?: string) =>
+    mapCron(await request<CronDTO>(scoped(`${ROOT}/${encodeURIComponent(id)}/${state === 'scheduled' ? 'resume' : 'pause'}`, agentId), { method: 'POST' })),
+  runNow: async (id: string, agentId?: string): Promise<CronDetail> => {
     const value = await request<{ job: CronDTO; run: CronRunDTO | null }>(
-      `${ROOT}/${encodeURIComponent(id)}/run`,
+      scoped(`${ROOT}/${encodeURIComponent(id)}/run`, agentId),
       { method: 'POST' },
     );
     return { job: mapCron(value.job), run: mapRun(value.run) };
@@ -107,16 +115,17 @@ export const cronsApi = {
     const value = await request<{ options: TargetDTO[] }>(`${CRON_ROOT}/delivery-targets${query}`);
     return value.options.map((item) => ({ ...mapTarget(item), name: item.name ?? item.id }));
   },
-  listJobTargets: async (id: string): Promise<CronDeliveryTarget[]> => {
-    const value = await request<{ targets: TargetDTO[] }>(`${ROOT}/${encodeURIComponent(id)}/delivery-targets`);
+  listJobTargets: async (id: string, agentId?: string): Promise<CronDeliveryTarget[]> => {
+    const value = await request<{ targets: TargetDTO[] }>(scoped(`${ROOT}/${encodeURIComponent(id)}/delivery-targets`, agentId));
     return value.targets.map(mapTarget);
   },
-  addJobTarget: async (id: string, target: { targetType: string; destination: string }): Promise<CronDeliveryTarget> =>
-    mapTarget(await request<TargetDTO>(`${ROOT}/${encodeURIComponent(id)}/delivery-targets`, { method: 'POST', body: JSON.stringify({ target_type: target.targetType, destination: target.destination }) })),
-  removeJobTarget: (id: string, targetId: string) => request(`${ROOT}/${encodeURIComponent(id)}/delivery-targets/${encodeURIComponent(targetId)}`, { method: 'DELETE' }),
-  listRuns: async (id: string): Promise<CronJobRun[]> => {
-    const value = await request<{ runs: CronRunDTO[] }>(`${ROOT}/${encodeURIComponent(id)}/runs`);
+  addJobTarget: async (id: string, target: { targetType: string; destination: string }, agentId?: string): Promise<CronDeliveryTarget> =>
+    mapTarget(await request<TargetDTO>(scoped(`${ROOT}/${encodeURIComponent(id)}/delivery-targets`, agentId), { method: 'POST', body: JSON.stringify({ target_type: target.targetType, destination: target.destination }) })),
+  removeJobTarget: (id: string, targetId: string, agentId?: string) => request(scoped(`${ROOT}/${encodeURIComponent(id)}/delivery-targets/${encodeURIComponent(targetId)}`, agentId), { method: 'DELETE' }),
+  listRuns: async (id: string, agentId?: string): Promise<CronJobRun[]> => {
+    const query = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : '';
+    const value = await request<{ runs: CronRunDTO[] }>(`${ROOT}/${encodeURIComponent(id)}/runs${query}`);
     return value.runs.map(mapRunHistory);
   },
-  remove: (id: string) => request(`${ROOT}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  remove: (id: string, agentId?: string) => request(scoped(`${ROOT}/${encodeURIComponent(id)}`, agentId), { method: 'DELETE' }),
 };
