@@ -9991,6 +9991,8 @@ body.col-resizing {
   font-size: 11px;
 }
 
+.kb-skill-picker-head > span strong { color: var(--text); font-weight: 700; }
+
 .kb-skill-picker-head button {
   color: var(--accent);
   font-size: 11px;

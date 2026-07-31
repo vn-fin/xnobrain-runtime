@@ -355,6 +355,7 @@ describe('KanbanView', () => {
     expect(writing).toBeChecked();
     expect(webResearch).toBeChecked();
     expect(disabledSkill).not.toBeChecked();
+    expect(modal.querySelector('.kb-skill-picker-head > span')).toHaveTextContent('2 of 3 enabled');
     expect(within(modal).getByText('disabled', { selector: '.kb-skill-name em' })).toBeVisible();
 
     await user.click(webResearch);

@@ -410,6 +410,7 @@ function SkillPicker({
   loading?: boolean;
 }) {
   const [search, setSearch] = useState('');
+  const enabledCount = skills.filter((skill) => skill.enabled).length;
   const filteredSkills = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     if (!query) return skills;
@@ -427,7 +428,7 @@ function SkillPicker({
       ) : (
         <>
           <div className="kb-skill-picker-head">
-            <span>{selected.length} of {skills.length} selected</span>
+            <span><strong>{enabledCount}</strong> of <strong>{skills.length}</strong> enabled</span>
             <button
               type="button"
               onClick={() => onChange(
