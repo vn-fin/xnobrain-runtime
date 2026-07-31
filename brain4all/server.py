@@ -21,7 +21,7 @@ def create_app():
     if not getattr(app.state, "brain4all_registered", False):
         cors_origins = [
             origin.strip()
-            for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+            for origin in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")
             if origin.strip()
         ]
         if cors_origins:
