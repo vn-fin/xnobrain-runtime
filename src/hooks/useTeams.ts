@@ -179,7 +179,7 @@ export function useTeams(active = true) {
   const watchRunId = activeRun?.id;
   const watchTerminal = activeRun ? isRunTerminal(activeRun.status) : true;
   useEffect(() => {
-    if (!watchTeamId || !watchRunId || watchTerminal) return undefined;
+    if (!active || !watchTeamId || !watchRunId || watchTerminal) return undefined;
     const controller = new AbortController();
 
     const connect = async () => {
@@ -196,7 +196,7 @@ export function useTeams(active = true) {
 
     void connect();
     return () => controller.abort();
-  }, [watchTeamId, watchRunId, watchTerminal, applyRun]);
+  }, [active, watchTeamId, watchRunId, watchTerminal, applyRun]);
 
   return {
     teams, status, pending, error, runs, activeRun, runsStatus,

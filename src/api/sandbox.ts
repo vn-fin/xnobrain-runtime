@@ -9,7 +9,10 @@ export type SandboxResult = { provisioned: boolean; data: SandboxData | null };
 export type SandboxSetupProgress = { percent: number; message: string };
 const SANDBOX_BASE = '/api/brain/v1/sandboxes';
 const CONTROL_BASE = brain4AllRuntime.api.controlBaseUrl.replace(/\/+$/, '');
-const MANAGED_WORKSPACE = brain4AllRuntime.edition === 'cloud' && CONTROL_BASE.length > 0;
+// Cloud always requires a managed workspace. A missing control URL must be
+// visible as a setup/configuration error instead of silently falling back to
+// the local OSS sandbox API.
+const MANAGED_WORKSPACE = brain4AllRuntime.edition === 'cloud';
 const WORKSPACE_CURRENT = `${CONTROL_BASE}/api/brain-control/v1/workspace/current`;
 const WORKSPACE_CREATE = `${CONTROL_BASE}/api/brain-control/v1/workspace/create`;
 

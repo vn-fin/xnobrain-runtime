@@ -292,6 +292,22 @@ export function useKanban(active = true) {
   } | null>(null);
   const streamStopTimer = useRef<number>();
   useEffect(() => {
+    if (!active) {
+      if (streamStopTimer.current !== undefined) {
+        window.clearTimeout(streamStopTimer.current);
+        streamStopTimer.current = undefined;
+      }
+      const existing = streamRef.current;
+      if (existing) {
+        existing.controller.abort();
+        if (existing.reconnectTimer !== undefined) window.clearTimeout(existing.reconnectTimer);
+        if (existing.refreshTimer !== undefined) window.clearTimeout(existing.refreshTimer);
+        streamRef.current = null;
+      }
+      setLiveStatus('offline');
+      return undefined;
+    }
+
     if (streamStopTimer.current !== undefined) {
       window.clearTimeout(streamStopTimer.current);
       streamStopTimer.current = undefined;
@@ -389,7 +405,7 @@ export function useKanban(active = true) {
         streamStopTimer.current = undefined;
       }, 0);
     };
-  }, []);
+  }, [active]);
 
   // Tasks filtered by the search box, sorted by priority within their group.
   const visibleTasks = useMemo(() => {

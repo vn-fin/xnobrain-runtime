@@ -25,6 +25,14 @@ vi.mock('../api/kanban', () => ({
 describe('useKanban global event feed', () => {
   afterEach(() => vi.clearAllMocks());
 
+  it('does not open the board or event stream while inactive', async () => {
+    const { unmount } = renderHook(() => useKanban(false));
+    await Promise.resolve();
+    expect(mocks.getBoards).not.toHaveBeenCalled();
+    expect(mocks.watchBoard).not.toHaveBeenCalled();
+    unmount();
+  });
+
   it('keeps one stream and loads boards once per activation under StrictMode', async () => {
     const wrapper = ({ children }: PropsWithChildren) => <StrictMode>{children}</StrictMode>;
     const { rerender, unmount } = renderHook(
@@ -39,7 +47,7 @@ describe('useKanban global event feed', () => {
     rerender({ active: false });
     rerender({ active: true });
     await waitFor(() => expect(mocks.getBoards).toHaveBeenCalledTimes(2));
-    expect(mocks.watchBoard).toHaveBeenCalledTimes(1);
+    expect(mocks.watchBoard).toHaveBeenCalledTimes(2);
     unmount();
   });
 
@@ -65,7 +73,7 @@ describe('useKanban global event feed', () => {
       });
       await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
     });
-    const { result, unmount } = renderHook(() => useKanban(false));
+    const { result, unmount } = renderHook(() => useKanban(true));
     await waitFor(() => expect(mocks.watchBoard).toHaveBeenCalled());
     expect(result.current.events).toEqual([]);
     unmount();
