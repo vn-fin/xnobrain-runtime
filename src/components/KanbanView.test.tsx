@@ -140,6 +140,15 @@ describe('KanbanView', () => {
             agent_id: 'research-agent',
             url: '/agents/research-agent/sessions/20260727_140600_abcdef',
           },
+          runs: providerTask ? [] : [{
+            id: 1,
+            profile: 'research-agent',
+            status: 'completed',
+            outcome: 'completed',
+            summary: 'Prepared the report.',
+            started_at: '2026-07-31T05:12:00Z',
+            ended_at: '2026-07-31T05:13:00Z',
+          }],
           updated_at: new Date().toISOString(),
         } }), { status: 200 });
       }
@@ -298,6 +307,10 @@ describe('KanbanView', () => {
     await user.click(await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' }));
     const drawer = screen.getByRole('dialog');
     await waitFor(() => expect(within(drawer).getByText('Session tracking')).toBeVisible());
+    expect(within(drawer).getByText('Research Agent', { selector: '.kb-run-agent-name' })).toBeVisible();
+    const runAgentTooltip = within(drawer).getByRole('tooltip');
+    expect(runAgentTooltip).toHaveTextContent('Agent ID: research-agent');
+    expect(runAgentTooltip).toHaveTextContent('Finds and writes useful information');
     expect(within(drawer).getByRole('link', {
       name: /agents\/research-agent\/sessions\/20260727_140600_abcdef/,
     })).toBeVisible();
@@ -325,7 +338,7 @@ describe('KanbanView', () => {
     )).toBe(true));
   });
 
-  it('enables every enabled agent skill by default and sends unchecked selections', async () => {
+  it('shows enabled and disabled agent skills, selecting only enabled skills by default', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.mocked(fetch);
     render(<TestBoard agents={[researchAgent]} />);
@@ -338,11 +351,14 @@ describe('KanbanView', () => {
 
     const writing = within(modal).getByRole('checkbox', { name: /Writing/ });
     const webResearch = within(modal).getByRole('checkbox', { name: /Web research/ });
+    const disabledSkill = within(modal).getByRole('checkbox', { name: /Disabled skill/ });
     expect(writing).toBeChecked();
     expect(webResearch).toBeChecked();
-    expect(within(modal).queryByText('Disabled skill')).toBeNull();
+    expect(disabledSkill).not.toBeChecked();
+    expect(within(modal).getByText('disabled', { selector: '.kb-skill-name em' })).toBeVisible();
 
     await user.click(webResearch);
+    await user.click(disabledSkill);
     await user.type(within(modal).getByLabelText('Title'), 'Create a short brief');
     await user.type(within(modal).getByLabelText(/Description/), 'Write a concise brief for the user.');
     await user.click(within(modal).getByRole('button', { name: /Create task/ }));
@@ -352,7 +368,7 @@ describe('KanbanView', () => {
         String(input).endsWith('/kanban/boards/default/tasks') && init?.method === 'POST'
       );
       expect(request).toBeDefined();
-      expect(JSON.parse(String(request?.[1]?.body)).skills).toEqual(['writing']);
+      expect(JSON.parse(String(request?.[1]?.body)).skills).toEqual(['writing', 'disabled-skill']);
     });
   });
 
@@ -390,6 +406,7 @@ describe('KanbanView', () => {
     await waitFor(() => {
       expect(loadAgentSkills).toHaveBeenCalledWith('research-agent');
       expect(within(modal).getByRole('checkbox', { name: /Writing/ })).toBeChecked();
+      expect(within(modal).getByRole('checkbox', { name: /Disabled skill/ })).not.toBeChecked();
     });
   });
 

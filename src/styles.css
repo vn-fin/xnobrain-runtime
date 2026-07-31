@@ -10085,6 +10085,21 @@ body.col-resizing {
   font-weight: 650;
 }
 
+.kb-skill-name { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.kb-skill-name strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-skill-name em {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 999px;
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 11%, transparent);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.kb-skill-name em.disabled { color: var(--muted-2); background: var(--track); }
+
 .kb-skill-options small {
   color: var(--muted-2);
   overflow: hidden;
@@ -10261,6 +10276,34 @@ body.col-resizing {
   color: var(--muted-2);
   font-size: 10px;
 }
+
+.kb-run-agent { position: relative; min-width: 0; font-size: 11px; }
+.kb-run-agent-name { display: block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-run-agent-tooltip {
+  position: absolute;
+  z-index: 8;
+  left: 0;
+  bottom: calc(100% + 6px);
+  width: max-content;
+  max-width: min(300px, 70vw);
+  padding: 8px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--hover);
+  color: var(--text);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+  pointer-events: none;
+}
+.kb-run-agent-tooltip b,
+.kb-run-agent-tooltip small { display: block; }
+.kb-run-agent-tooltip b { font-family: var(--mono, monospace); font-size: 10px; }
+.kb-run-agent-tooltip small { margin-top: 4px; color: var(--muted); font-size: 10px; font-weight: 400; line-height: 1.4; }
+.kb-run-agent:hover .kb-run-agent-tooltip,
+.kb-run-agent:focus-visible .kb-run-agent-tooltip { opacity: 1; visibility: visible; transform: translateY(0); }
 
 .kb-comment p,
 .kb-runs article p {

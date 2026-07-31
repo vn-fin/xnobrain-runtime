@@ -391,9 +391,9 @@ function TeamPicker({
   );
 }
 
-function enabledSkillsFor(agents: Agent[], assignee: string) {
+function installedSkillsFor(agents: Agent[], assignee: string) {
   const agent = agents.find((item) => item.id === assignee || item.name === assignee);
-  return agent?.skills.filter((skill) => skill.installed && skill.enabled) ?? [];
+  return agent?.skills.filter((skill) => skill.installed) ?? [];
 }
 
 function SkillPicker({
@@ -419,22 +419,22 @@ function SkillPicker({
   return (
     <div className="kb-skill-picker">
       {!assignee ? (
-        <span className="kb-skill-empty">Choose an agent to select its enabled skills.</span>
+        <span className="kb-skill-empty">Choose an agent to select its skills.</span>
       ) : loading ? (
-        <span className="kb-skill-empty">Loading enabled skills…</span>
+        <span className="kb-skill-empty">Loading agent skills…</span>
       ) : skills.length === 0 ? (
-        <span className="kb-skill-empty">This agent has no enabled skills.</span>
+        <span className="kb-skill-empty">This agent has no installed skills.</span>
       ) : (
         <>
           <div className="kb-skill-picker-head">
-            <span>{selected.length} of {skills.length} enabled</span>
+            <span>{selected.length} of {skills.length} selected</span>
             <button
               type="button"
               onClick={() => onChange(
                 selected.length === skills.length ? [] : skills.map((skill) => skill.skill_id),
               )}
             >
-              {selected.length === skills.length ? 'Disable all' : 'Enable all'}
+              {selected.length === skills.length ? 'Clear all' : 'Select all'}
             </button>
           </div>
           <label className="kb-skill-search">
@@ -463,7 +463,10 @@ function SkillPicker({
                   />
                   <span className="kb-skill-check">{checked && <Check size={12} />}</span>
                   <span>
-                    <strong>{skill.name || skill.skill_id}</strong>
+                    <span className="kb-skill-name">
+                      <strong>{skill.name || skill.skill_id}</strong>
+                      <em className={skill.enabled ? 'enabled' : 'disabled'}>{skill.enabled ? 'enabled' : 'disabled'}</em>
+                    </span>
                     <small>{skill.description || skill.category}</small>
                   </span>
                 </label>
@@ -723,8 +726,8 @@ function TaskDrawer({
   const [description, setDescription] = useState(task.description);
   const [priority, setPriority] = useState(task.priority);
   const [skills, setSkills] = useState(() => {
-    const enabled = enabledSkillsFor(agents, task.assignees[0] ?? '');
-    return task.skills.filter((skill) => enabled.some((item) => item.skill_id === skill));
+    const installed = installedSkillsFor(agents, task.assignees[0] ?? '');
+    return task.skills.filter((skill) => installed.some((item) => item.skill_id === skill));
   });
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
@@ -739,8 +742,8 @@ function TaskDrawer({
     setTitle(task.title);
     setDescription(task.description);
     setPriority(task.priority);
-    const enabled = enabledSkillsFor(agents, task.assignees[0] ?? '');
-    setSkills(task.skills.filter((skill) => enabled.some((item) => item.skill_id === skill)));
+    const installed = installedSkillsFor(agents, task.assignees[0] ?? '');
+    setSkills(task.skills.filter((skill) => installed.some((item) => item.skill_id === skill)));
   }, [agents, editing, task.assignees, task.description, task.priority, task.skills, task.title]);
 
   if (!board) return null;
@@ -841,7 +844,7 @@ function TaskDrawer({
                 <div className="kb-field">
                   Skills used for this task
                   <SkillPicker
-                    skills={enabledSkillsFor(agents, task.assignees[0] ?? '')}
+                    skills={installedSkillsFor(agents, task.assignees[0] ?? '')}
                     assignee={task.assignees[0] ?? ''}
                     selected={skills}
                     onChange={setSkills}
@@ -1104,16 +1107,28 @@ function TaskDrawer({
             <section className="kb-detail-section">
               <span className="kb-label">Run history ({task.runs.length})</span>
               <div className="kb-runs">
-                {[...task.runs].reverse().map((run) => (
-                  <article key={run.id}>
-                    <header>
-                      <span className={`kb-run-state ${run.outcome || run.status}`}>{run.outcome || run.status}</span>
-                      <strong>@{run.profile || 'unassigned'}</strong>
-                      <time>{eventTime(run.startedAt)}</time>
-                    </header>
-                    {run.summary && <p>{run.summary}</p>}
-                  </article>
-                ))}
+                {[...task.runs].reverse().map((run) => {
+                  const agentId = run.profile || '';
+                  const person = resolveAssignee(agentId, agents);
+                  const agent = agents.find((item) => item.id === agentId || item.name === agentId);
+                  const tooltipId = `kb-run-agent-${run.id}`;
+                  return (
+                    <article key={run.id}>
+                      <header>
+                        <span className={`kb-run-state ${run.outcome || run.status}`}>{run.outcome || run.status}</span>
+                        <strong className="kb-run-agent" tabIndex={0} aria-describedby={tooltipId}>
+                          <span className="kb-run-agent-name">{agentId ? person.name : 'Unassigned'}</span>
+                          <span className="kb-run-agent-tooltip" id={tooltipId} role="tooltip">
+                            <b>{agentId ? `Agent ID: ${agentId}` : 'No agent assigned'}</b>
+                            {agent?.description && <small>{agent.description}</small>}
+                          </span>
+                        </strong>
+                        <time>{eventTime(run.startedAt)}</time>
+                      </header>
+                      {run.summary && <p>{run.summary}</p>}
+                    </article>
+                  );
+                })}
               </div>
             </section>
           )}
@@ -1373,9 +1388,9 @@ function NewTaskModal({
   };
 
   useEffect(() => {
-    const cached = enabledSkillsFor(agents, assignee);
+    const cached = installedSkillsFor(agents, assignee);
     setAvailableSkills(cached);
-    setSkills(cached.map((skill) => skill.skill_id));
+    setSkills(cached.filter((skill) => skill.enabled).map((skill) => skill.skill_id));
     if (!assignee || !onLoadAgentSkills) {
       setSkillsLoading(false);
       return undefined;
@@ -1384,9 +1399,9 @@ function NewTaskModal({
     setSkillsLoading(true);
     void onLoadAgentSkills(assignee).then((loaded) => {
       if (cancelled) return;
-      const enabled = loaded.filter((skill) => skill.installed && skill.enabled);
-      setAvailableSkills(enabled);
-      setSkills(enabled.map((skill) => skill.skill_id));
+      const installed = loaded.filter((skill) => skill.installed);
+      setAvailableSkills(installed);
+      setSkills(installed.filter((skill) => skill.enabled).map((skill) => skill.skill_id));
     }).catch(() => undefined).finally(() => {
       if (!cancelled) setSkillsLoading(false);
     });
