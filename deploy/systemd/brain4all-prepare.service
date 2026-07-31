@@ -8,6 +8,10 @@ Type=oneshot
 User=root
 Group=root
 ExecStart=/usr/bin/install -d -o brain4all -g brain4all -m 0700 /srv/brain4all-data /srv/brain4all-data/home /srv/brain4all-data/brain4all /srv/brain4all-data/hermes /srv/brain4all-data/9router
+# The image builder and restored persistent volumes may have created these
+# service-owned directories as root. The API and 9router run as brain4all,
+# so normalize their ownership before either service starts.
+ExecStart=/usr/bin/chown -R brain4all:brain4all /srv/brain4all-data
 RemainAfterExit=yes
 
 [Install]
