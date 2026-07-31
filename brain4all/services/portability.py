@@ -480,7 +480,12 @@ class PortabilityService:
                 if info.file_size > MAX_FILE_BYTES or (info.file_size and not info.compress_size):
                     raise StoreError("bundle contains an oversized file", code="invalid_bundle")
                 expanded += info.file_size
-                if expanded > MAX_EXPANDED or (info.compress_size and info.file_size / info.compress_size > 200):
+                # Full Hermes profiles legitimately contain extremely
+                # compressible logs, sparse database pages, caches, and model
+                # output. A per-member ratio limit rejects archives produced
+                # by our own exporter. Bound extraction with absolute file,
+                # aggregate-byte, file-count, and path limits instead.
+                if expanded > MAX_EXPANDED:
                     raise StoreError("bundle expansion limits exceeded", code="invalid_bundle")
                 files[raw] = info
                 folded.add(key)

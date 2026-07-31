@@ -25,7 +25,12 @@ export cannot recursively capture sibling profiles or transfer staging data.
 
 ## Import rules
 
-Inspect before extraction. Enforce compressed bytes, expanded bytes, file count, per-file bytes, path depth, and compression ratio. Verify every checksum and reject unlisted payloads. Unsupported major versions fail; compatible minor additions are ignored unless declared required.
+Inspect before extraction. Enforce compressed bytes, expanded bytes, file count,
+per-file bytes, and path depth. Absolute expansion limits are used instead of a
+per-file compression-ratio limit because valid profile logs, sparse databases,
+and caches may be extremely compressible. Verify every checksum and reject
+unlisted payloads. Unsupported major versions fail; compatible minor additions
+are ignored unless declared required.
 
 Apply uses staging and atomic publish. Ownership and conflicting IDs are remapped consistently, crons are paused, persistent approvals reset, providers disconnected, and custom executable content quarantined. An import report lists every transformation and warning.
 

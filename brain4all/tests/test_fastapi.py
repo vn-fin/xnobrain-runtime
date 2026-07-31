@@ -975,6 +975,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             (profile / "logs" / "runtime.log").write_text("kept log\n", encoding="utf-8")
             (profile / "cache").mkdir(exist_ok=True)
             (profile / "cache" / "result.bin").write_bytes(b"kept cache")
+            (profile / "cache" / "highly-compressible.bin").write_bytes(
+                b"\0" * (1024 * 1024)
+            )
             (profile / "tmp").mkdir(exist_ok=True)
             (profile / "tmp" / "scratch.txt").write_text("kept temp\n", encoding="utf-8")
             expected = {
@@ -988,6 +991,10 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(expected.issubset(set(archive.namelist())))
             self.assertIn(f"profiles/{agent_id}/logs/runtime.log", archive.namelist())
             self.assertIn(f"profiles/{agent_id}/cache/result.bin", archive.namelist())
+            self.assertIn(
+                f"profiles/{agent_id}/cache/highly-compressible.bin",
+                archive.namelist(),
+            )
             self.assertIn(f"profiles/{agent_id}/tmp/scratch.txt", archive.namelist())
             self.assertEqual(archive.read(f"profiles/{agent_id}/.env"), b"[REDACTED]\n")
 
