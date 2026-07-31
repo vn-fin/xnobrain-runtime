@@ -74,7 +74,7 @@ export function SandboxView({
                 <Plus size={16} />
                 {managedVM ? 'Create VM' : t('sandbox.create')}
               </button>
-              <small>{managedVM ? '4 vCPU · 8 GiB RAM · 20 GiB disk' : t('sandbox.specs')}</small>
+              <small>{managedVM ? '4 vCPU · 8 GiB RAM · 40 GiB disk' : t('sandbox.specs')}</small>
             </div>
           )}
         </div>
