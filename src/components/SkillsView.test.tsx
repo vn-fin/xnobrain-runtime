@@ -63,7 +63,7 @@ describe('SkillsView default profile controls', () => {
   });
 
   it('shows enabled agents over the total agent count for each skill', () => {
-    render(
+    const { container } = render(
       <SkillsView
         library={[skill]}
         agents={agents}
@@ -88,6 +88,7 @@ describe('SkillsView default profile controls', () => {
     );
 
     expect(screen.getByText('3/4 agents')).toBeInTheDocument();
+    expect(container.querySelector('[role="tooltip"]')).toHaveTextContent('Writes documents');
     expect(screen.queryByText('/skills/writer')).not.toBeInTheDocument();
   });
 });

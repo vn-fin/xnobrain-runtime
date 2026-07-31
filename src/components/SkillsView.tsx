@@ -190,6 +190,7 @@ export function SkillsView({
                       <span className={skill.enabled ? 'skv-badge installed' : 'skv-badge'}>{skill.enabled ? t('skillsView.enabled', { defaultValue: 'enabled' }) : t('skillsView.disabled', { defaultValue: 'disabled' })}</span>
                     </div>
                     <p className="skv-desc">{skill.description}</p>
+                    <span className="skill-tooltip" role="tooltip">{skill.description || skill.name}</span>
                     <div className="skv-card-foot">
                       {skill.installed ? <span className="skv-used">{usedBy}/{agents.length} agents</span> : <button className="skv-install-mini" disabled={agents.length === 0} onClick={(event) => { event.stopPropagation(); onInstallExisting(skill.skill_id, agents.map((agent) => agent.id)); }}><Plus size={13} />{t('common.install')}</button>}
                     </div>
