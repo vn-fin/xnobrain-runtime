@@ -61,23 +61,25 @@ class AnalyticsService:
     async def usage_summary(
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
     ) -> dict[str, Any]:
-        items = self._resolve_items(agent_ids)
+        items, available = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
             start=start_epoch, end=end_epoch, bucket=bucket,
         )
-        return await self._decorate_overview(summary, items, agent_ids)
+        return await self._decorate_overview(summary, items, agent_ids, available)
 
     async def usage_overview(
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
     ) -> dict[str, Any]:
         """Return dashboard totals and attribution without chart payloads."""
-        items = self._resolve_items(agent_ids)
+        items, available = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
             start=start_epoch, end=end_epoch, bucket=bucket,
         )
-        complete = await self._decorate_overview(summary, items, agent_ids)
+        complete = await self._decorate_overview(
+            summary, items, agent_ids, available,
+        )
         return {
             key: value
             for key, value in complete.items()
@@ -89,6 +91,7 @@ class AnalyticsService:
         summary: dict[str, Any],
         items: list[dict[str, Any]],
         agent_ids: list[str],
+        agents_available: int,
     ) -> dict[str, Any]:
         by_path = {str(item.get("name") or ""): item for item in items}
         for row in summary["agents"]:
@@ -97,7 +100,7 @@ class AnalyticsService:
         summary["agents_selected"] = (
             [str(item.get("name") or "") for item in items] if agent_ids else []
         )
-        summary["agents_available"] = len(self._agents())
+        summary["agents_available"] = agents_available
         summary["quota"] = await self._quota_overlay()
         return summary
 
@@ -121,7 +124,7 @@ class AnalyticsService:
     async def models_breakdown(
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
     ) -> dict[str, Any]:
-        items = self._resolve_items(agent_ids)
+        items, _ = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
             start=start_epoch, end=end_epoch, bucket=bucket,
@@ -135,7 +138,7 @@ class AnalyticsService:
     async def timeseries(
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
     ) -> dict[str, Any]:
-        items = self._resolve_items(agent_ids)
+        items, _ = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
             start=start_epoch, end=end_epoch, bucket=bucket,
@@ -178,12 +181,13 @@ class AnalyticsService:
     def _agents(self) -> list[dict[str, Any]]:
         return list(self.agents.list_agents()["agents"])
 
-    def _resolve_items(self, agent_ids: list[str]) -> list[dict[str, Any]]:
+    def _resolve_items(self, agent_ids: list[str]) -> tuple[list[dict[str, Any]], int]:
         items = self._agents()
+        available = len(items)
         if agent_ids:
             want = set(agent_ids)
             items = [item for item in items if str(item.get("name") or "") in want]
-        return items
+        return items, available
 
     def _require_item(self, agent_id: str) -> dict[str, Any]:
         # 404 through the Hermes manager if the agent does not exist.

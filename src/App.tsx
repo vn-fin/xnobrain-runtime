@@ -39,7 +39,7 @@ export default function App() {
   const router = useRouter();
   const managedWorkspace = sandboxApi.managed;
   const sandbox = useSandbox(
-    managedWorkspace || router.centerView === 'chat'
+    managedWorkspace
       || (router.centerView === 'data' && router.settingsSection === 'vm'),
   );
   const workspaceReady = !managedWorkspace || sandbox.provisioned;

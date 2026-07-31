@@ -75,6 +75,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             GlobalConfigManager(root_profile=self.root), FakeRouter(self.router_data),
         )
         composition.register(app)
+        self.analytics = composition.service.analytics
         self.app = app
 
     def tearDown(self):
@@ -228,6 +229,17 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual({row["model"] for row in data["by_model"]}, {"m1", "m2"})
             self.assertEqual(len(data["agents"]), 3)
             self.assertEqual(data["agents_available"], 3)
+
+    async def test_combined_usage_lists_agents_once(self):
+        async with self.client() as client:
+            await self._create_agent(client, "Agent A")
+            with patch.object(
+                self.analytics, "_agents", wraps=self.analytics._agents,
+            ) as list_agents:
+                response = await client.get("/api/brain/v1/analytics/usage")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(list_agents.call_count, 1)
 
     async def test_parallel_dashboard_endpoints_share_one_computation(self):
         async with self.client() as client:

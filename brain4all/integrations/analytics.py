@@ -150,7 +150,6 @@ def aggregate_router_usage(
                    COALESCE(tokens,'') AS tokens
             FROM usageHistory
             WHERE timestamp > ? AND timestamp <= ?
-            ORDER BY timestamp
             """,
             (start_iso, end_iso),
         ).fetchall()

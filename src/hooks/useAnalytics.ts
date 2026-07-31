@@ -68,7 +68,7 @@ export function useAnalytics(
   const [controls, setControlsState] = useState<AnalyticsControls>(() => loadControls());
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [status, setStatus] = useState<AnalyticsStatus>('idle');
-  const [progress, setProgress] = useState({ completed: 0, total: 3 });
+  const [progress, setProgress] = useState({ completed: 0, total: 1 });
   const [error, setError] = useState<string | null>(null);
   const automaticLoadKey = useRef('');
   const requestSerial = useRef(0);
@@ -88,7 +88,7 @@ export function useAnalytics(
     const serial = ++requestSerial.current;
     const task = (async () => {
       setStatus('loading');
-      setProgress({ completed: 0, total: 3 });
+      setProgress({ completed: 0, total: 1 });
       setError(null);
       const track = async <T,>(request: Promise<T>): Promise<T> => {
         try {
@@ -101,21 +101,9 @@ export function useAnalytics(
       };
       try {
         const query = toQuery(controls);
-        const [overview, breakdown, timeseries] = await Promise.allSettled([
-          track(analyticsApi.overview(query)),
-          track(analyticsApi.models(query)),
-          track(analyticsApi.timeseries(query)),
-        ]);
+        const usage = await track(analyticsApi.usage(query));
         if (serial !== requestSerial.current) return;
-        const failure = [overview, breakdown, timeseries].find((result) => result.status === 'rejected');
-        if (failure?.status === 'rejected') throw failure.reason;
-        if (overview.status !== 'fulfilled' || breakdown.status !== 'fulfilled' || timeseries.status !== 'fulfilled') return;
-        setSummary({
-          ...overview.value,
-          by_model: breakdown.value.by_model,
-          by_provider: breakdown.value.by_provider,
-          series: timeseries.value.series,
-        });
+        setSummary(usage);
         setStatus('ready');
       } catch (cause) {
         if (serial !== requestSerial.current) return;
