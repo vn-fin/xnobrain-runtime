@@ -39,9 +39,9 @@ const DEFAULT_CONFIG: RuntimeConfig = {
     loginPath: '/api/brain-control/v1/auth/login',
     logoutPath: '/api/brain-control/v1/auth/logout',
     firebaseApiKey: '',
-    tokenPath: '/api/brain-control/v1/auth/token',
+    tokenPath: '/auth/v1/auth/token',
     refreshPath: '/api/brain-control/v1/auth/refresh',
-    mePath: '/api/brain-control/v1/auth/me',
+    mePath: '/auth/v1/me',
   },
   features: {
     login: true,

@@ -19,9 +19,9 @@ vi.mock('./runtime', () => ({
       mode: 'optional',
       provider: 'xno-firebase',
       firebaseApiKey: 'public-firebase-key',
-      tokenPath: '/api/brain-control/v1/auth/token',
+      tokenPath: '/auth/v1/auth/token',
       refreshPath: '/api/brain-control/v1/auth/refresh',
-      mePath: '/api/brain-control/v1/auth/me',
+      mePath: '/auth/v1/me',
       bootstrapPath: '/api/brain-control/v1/bootstrap',
       loginPath: '/api/brain-control/v1/auth/login',
       logoutPath: '/api/brain-control/v1/auth/logout',
@@ -97,14 +97,14 @@ describe('XNOQuant Firebase authentication adapter', () => {
     expect(await screen.findByText('Nguyen Tan Kim')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      'https://auth.example.com/api/brain-control/v1/auth/token',
+      'https://auth.example.com/auth/v1/auth/token',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer firebase-token' }),
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      'https://auth.example.com/api/brain-control/v1/auth/me',
+      'https://auth.example.com/auth/v1/me',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer access-token' }),
       }),
@@ -160,14 +160,14 @@ describe('XNOQuant Firebase authentication adapter', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      'https://auth.example.com/api/brain-control/v1/auth/token',
+      'https://auth.example.com/auth/v1/auth/token',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer refreshed-firebase-token' }),
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      'https://auth.example.com/api/brain-control/v1/auth/me',
+      'https://auth.example.com/auth/v1/me',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer fresh-xno-access-token' }),
       }),
