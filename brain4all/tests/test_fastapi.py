@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from io import BytesIO
-import json
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -964,15 +965,31 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(streamed.headers["content-length"], str(len(payload)))
         self.assertIn("inline", streamed.headers["content-disposition"])
 
-    async def test_bundle_round_trip_is_checked_and_excludes_credentials(self):
+    async def test_bundle_round_trip_exports_every_profile_file_and_redacts_credentials(self):
         async with self.client() as client:
             created = await client.post("/api/brain/v1/agents", json={"name": "Portable"})
             agent_id = created.json()["data"]["id"]
-            (self.profiles / agent_id / ".env").write_text("SECRET=never-export\n", encoding="utf-8")
+            profile = self.profiles / agent_id
+            (profile / ".env").write_text("SECRET=never-export\n", encoding="utf-8")
+            (profile / "logs").mkdir(exist_ok=True)
+            (profile / "logs" / "runtime.log").write_text("kept log\n", encoding="utf-8")
+            (profile / "cache").mkdir(exist_ok=True)
+            (profile / "cache" / "result.bin").write_bytes(b"kept cache")
+            (profile / "tmp").mkdir(exist_ok=True)
+            (profile / "tmp" / "scratch.txt").write_text("kept temp\n", encoding="utf-8")
+            expected = {
+                f"profiles/{agent_id}/{path.relative_to(profile).as_posix()}"
+                for path in profile.rglob("*")
+                if path.is_file() and not path.is_symlink()
+            }
             exported = await client.post("/api/brain/v1/bundles/export", json={"agent_ids": [agent_id]})
         self.assertEqual(exported.status_code, 200, exported.text)
         with ZipFile(BytesIO(exported.content)) as archive:
-            self.assertNotIn(f"profiles/{agent_id}/.env", archive.namelist())
+            self.assertTrue(expected.issubset(set(archive.namelist())))
+            self.assertIn(f"profiles/{agent_id}/logs/runtime.log", archive.namelist())
+            self.assertIn(f"profiles/{agent_id}/cache/result.bin", archive.namelist())
+            self.assertIn(f"profiles/{agent_id}/tmp/scratch.txt", archive.namelist())
+            self.assertEqual(archive.read(f"profiles/{agent_id}/.env"), b"[REDACTED]\n")
 
         self.assertEqual(exported.headers["content-type"], "application/zip")
         self.assertIn('.zip"', exported.headers["content-disposition"])
@@ -988,6 +1005,61 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         imported_id = applied.json()["data"]["agent_id_mappings"][agent_id]
         self.assertNotEqual(imported_id, agent_id)
         self.assertTrue((self.profiles / imported_id / "config.yaml").is_file())
+
+    async def test_chunk_merge_rejects_non_hermes_profile_before_create(self):
+        manifest = {
+            "format": "brain4all-bundle",
+            "version": 1,
+            "source_version": "test",
+            "created_at": "2026-07-31T00:00:00+00:00",
+            "export_id": "invalid-profile",
+            "agents": [{"id": "not-hermes", "name": "not-hermes"}],
+            "teams": [],
+            "included": ["profile_directory"],
+            "required_capabilities": [],
+            "required_environment": [],
+            "credentials_included": False,
+        }
+        payloads = {
+            "manifest.json": (json.dumps(manifest) + "\n").encode(),
+            "profiles/not-hermes/readme.txt": b"This is an arbitrary directory, not Hermes.\n",
+        }
+        checksums = {
+            name: {"sha256": hashlib.sha256(payload).hexdigest(), "size": len(payload)}
+            for name, payload in payloads.items()
+        }
+        output = BytesIO()
+        with ZipFile(output, "w") as archive:
+            for name, payload in payloads.items():
+                archive.writestr(name, payload)
+            archive.writestr("checksums.json", json.dumps(checksums) + "\n")
+        bundle = output.getvalue()
+
+        async with self.client() as client:
+            started = await client.post(
+                "/api/brain/v1/bundles/uploads",
+                json={"filename": "not-hermes.zip", "size": len(bundle)},
+            )
+            upload = started.json()["data"]
+            part = await client.put(
+                f"/api/brain/v1/bundles/uploads/{upload['upload_id']}/parts/0",
+                content=bundle,
+                headers={"Content-Type": "application/octet-stream"},
+            )
+            completed = await client.post(
+                f"/api/brain/v1/bundles/uploads/{upload['upload_id']}/complete",
+                json={},
+            )
+            applied = await client.post(
+                f"/api/brain/v1/bundles/uploads/{upload['upload_id']}/apply",
+                json={},
+            )
+
+        self.assertEqual(part.status_code, 201, part.text)
+        self.assertEqual(completed.status_code, 400, completed.text)
+        self.assertEqual(completed.json()["error"]["code"], "invalid_hermes_profile")
+        self.assertEqual(applied.status_code, 409, applied.text)
+        self.assertFalse((self.profiles / "not-hermes").exists())
 
     async def test_team_snapshot_exports_profiles_and_remaps_the_complete_workflow(self):
         (self.root / "auth.json").write_text(
@@ -1075,6 +1147,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             started = await client.post("/api/brain/v1/bundles/exports", json={"agent_ids": [agent_id]})
             transfer = started.json()["data"]
             self.assertTrue(transfer["filename"].endswith(".zip"))
+            self.assertEqual(transfer["chunk_size"], 512 * 1024)
             parts = []
             for number in range(transfer["total_parts"]):
                 response = await client.get(f"/api/brain/v1/bundles/exports/{transfer['export_id']}/parts/{number}")
@@ -1086,7 +1159,8 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(__import__("hashlib").sha256(bundle).hexdigest(), transfer["sha256"])
         with ZipFile(BytesIO(bundle)) as archive:
             names = archive.namelist()
-            self.assertNotIn(f"profiles/{agent_id}/.env", names)
+            self.assertIn(f"profiles/{agent_id}/.env", names)
+            self.assertEqual(archive.read(f"profiles/{agent_id}/.env"), b"[REDACTED]\n")
             self.assertNotIn(b"never-export-this", archive.read(f"profiles/{agent_id}/workspace/secret.txt"))
             exported_config = yaml.safe_load(archive.read(f"profiles/{agent_id}/config.yaml"))
             self.assertNotIn("api_key", exported_config.get("providers", {}).get("private", {}))

@@ -14,10 +14,14 @@ profiles/<agent-id>/...
 `manifest.json` contains format `brain4all-bundle`, version `1`, source version, UTC creation time, export ID, selected agent records, included optional sections, required capabilities, and encryption metadata when applicable. `checksums.json` maps normalized relative paths to SHA-256 and size. Paths are UTF-8 forward-slash relative paths with no empty, dot, parent, absolute, drive-prefix, control, or duplicate case-folded components.
 
 Optional `required_environment` lists environment-variable names needed by the
-profile. Values are never included. `credentials_included` is always `false`
-for Community exports.
+profile. `credentials_included` is always `false` for Community exports.
 
-Allowed profile content is config/metadata, memories, skills, workspace regular files, immutable snapshots, cron definitions, and optional logical conversation export. Device identity, credentials, tokens, endpoints, PIDs, sockets, symlinks, logs, caches, and temporary files are forbidden.
+Every regular file beneath each selected named profile directory is included,
+including conversations, logs, caches, databases, and temporary files. Secret
+values are redacted in transit, and imported credential files are discarded in
+favor of destination-installation credentials. Symlinks are not archive
+members. The default/root profile excludes nested managed data roots so an
+export cannot recursively capture sibling profiles or transfer staging data.
 
 ## Import rules
 
@@ -43,7 +47,9 @@ Large and small archives use the same fixed-size part protocol:
 5. `PUT /api/brain/v1/bundles/uploads/{id}/parts/{part}` uploads one exact-size
    binary part. Parts are idempotently replaceable and may arrive out of order.
 6. `POST /api/brain/v1/bundles/uploads/{id}/complete` verifies and merges all parts,
-   validates the archive, and returns its dry-run report.
+   validates that every declared profile has a parseable Hermes `config.yaml`,
+   and returns its dry-run report. Invalid profile directories are rejected
+   before profile creation.
 7. `POST /api/brain/v1/bundles/uploads/{id}/apply` atomically publishes the import;
    its optional `environment` object may fill only names reported missing.
 

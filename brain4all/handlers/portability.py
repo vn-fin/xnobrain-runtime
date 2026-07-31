@@ -6,6 +6,7 @@ from fastapi import Request
 from fastapi.responses import Response
 
 from ..services import EXPECTED_ERRORS
+from ..services.portability import CHUNK_SIZE
 
 
 class PortabilityHandlers:
@@ -51,7 +52,7 @@ class PortabilityHandlers:
                 operation = request.scope["route"].name
                 if operation == "bundle_upload_part":
                     content_length = int(request.headers.get("content-length") or 0)
-                    if content_length <= 0 or content_length > 4 * 1024 * 1024:
+                    if content_length <= 0 or content_length > CHUNK_SIZE:
                         raise ValueError("upload part size is invalid")
                     payload = await request.body()
                     expected_hash = str(request.headers.get("x-part-sha256") or "").lower()

@@ -160,8 +160,8 @@ without limit and without an account.
 - Open workspace files referenced by the assistant.
 
 ### 2.12 Portable profiles
-- Export one or more assistants as a portable `.zip` bundle (credentials, logs, host
-  paths, and device identity are excluded).
+- Export one or more assistants as a portable `.zip` bundle containing every
+  regular profile file, with credential values redacted.
 - Preview an import (ID collisions, paused crons, quarantined code) before applying.
 - Import a bundle into the local installation.
 

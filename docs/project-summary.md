@@ -30,9 +30,10 @@ by default and writes metadata-only span summaries to its container logs.
 ## Privacy and persistence
 
 Brain4All-owned state is stored under `DATA_DIR`; Hermes and 9router retain
-their native embedded local state. Portable bundles and telemetry exclude
-credentials, prompts, responses, memories, skills, tool arguments, and logs.
-There is no ORM and no Community application database.
+their native embedded local state. Portable bundles include complete regular
+profile-file trees with secret values redacted. Telemetry excludes credentials,
+prompts, responses, memories, skills, tool arguments, and logs. There is no ORM
+and no Community application database.
 
 ## Build
 

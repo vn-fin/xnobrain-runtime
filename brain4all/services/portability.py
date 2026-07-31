@@ -25,17 +25,16 @@ from ..defaults import BIG_BROTHER_AGENT_ID
 
 BUNDLE_FORMAT = "brain4all-bundle"
 BUNDLE_VERSION = 1
-CHUNK_SIZE = 4 * 1024 * 1024
+# Keep transfer parts below the common/default 1 MiB reverse-proxy body limit.
+# The archive itself remains file-backed and may be up to MAX_COMPRESSED.
+CHUNK_SIZE = 512 * 1024
 MAX_COMPRESSED = 2 * 1024 * 1024 * 1024
 MAX_EXPANDED = 8 * 1024 * 1024 * 1024
 MAX_FILE_BYTES = 512 * 1024 * 1024
 MAX_FILES = 20_000
 MAX_PATH_DEPTH = 32
 TRANSFER_TTL_SECONDS = 24 * 60 * 60
-EXCLUDED_PARTS = {"credentials", "logs", "cache", "__pycache__", ".git", "node_modules", "tmp", "temp"}
 ROOT_EXCLUDED_PARTS = {"profiles"}
-ROOT_PROFILE_PARTS = {"workspace", "skills", "memories", "snapshots", "cron", "state.db"}
-ROOT_PROFILE_FILES = {"agent.json", "config.yaml", "agents.md", "soul.md"}
 SECRET_FILES = {".env", "auth.json", "credentials.env", "secrets.json", "tokens.json", "oauth.json"}
 CODE_SUFFIXES = {".py", ".sh", ".js", ".ts", ".so", ".dll", ".dylib"}
 SENSITIVE_KEY = re.compile(r"(?:api[_-]?key|secret|token|password|credential|authorization|cookie|oauth)", re.I)
@@ -406,7 +405,7 @@ class PortabilityService:
             "export_id": export_id,
             "agents": agents,
             "teams": teams,
-            "included": ["config", "memory", "skills", "workspace", "snapshots", "crons"] + (["conversations"] if include_conversations else []),
+            "included": ["profile_directory"],
             "required_capabilities": [],
             "required_environment": sorted(required_environment),
             "credentials_included": False,
@@ -417,7 +416,14 @@ class PortabilityService:
             manifest_payload = (json.dumps(manifest, indent=2) + "\n").encode()
             checksums["manifest.json"] = self._write_zip_payload(archive, "manifest.json", manifest_payload, secrets)
             for name, source in sorted(entries):
-                if source.name == "config.yaml":
+                if source.name.lower() in SECRET_FILES:
+                    checksums[name] = self._write_zip_payload(
+                        archive,
+                        name,
+                        REDACTED + b"\n",
+                        secrets,
+                    )
+                elif source.name == "config.yaml":
                     payload = self._sanitized_config(source)
                     checksums[name] = self._write_zip_payload(archive, name, payload, secrets)
                 else:
@@ -497,12 +503,11 @@ class PortabilityService:
                     raise StoreError(f"bundle checksum mismatch: {name}", code="invalid_bundle")
             if set(checksums) != set(files) - {"checksums.json"}:
                 raise StoreError("bundle checksum inventory is invalid", code="invalid_bundle")
-            declared = {self.repository._id(item.get("id"), "agent id") for item in manifest.get("agents", [])}
+            declared = self._validate_hermes_profiles(archive, files, manifest)
             for name in files:
                 parts = PurePosixPath(name).parts
                 if parts and parts[0] == "profiles":
-                    relative_parts = {part.lower() for part in parts[2:]}
-                    if len(parts) < 3 or parts[1] not in declared or relative_parts & EXCLUDED_PARTS or parts[-1].lower() in SECRET_FILES:
+                    if len(parts) < 3 or parts[1] not in declared:
                         raise StoreError("bundle references unsafe profile content", code="invalid_bundle")
             return archive, files, expanded
         except Exception:
@@ -512,27 +517,66 @@ class PortabilityService:
     @staticmethod
     def _portable(
         relative: Path,
-        include_conversations: bool,
+        _include_conversations: bool,
         *,
         root_profile: bool = False,
         managed_subtrees: tuple[Path, ...] = (),
     ) -> bool:
-        lowered = {part.lower() for part in relative.parts}
-        if lowered & EXCLUDED_PARTS or relative.name.lower() in SECRET_FILES or relative.name.endswith((".sock", ".pid", ".log", ".db-shm", ".db-wal")):
-            return False
+        # A named Hermes profile is exported as a complete directory snapshot.
+        # The root/default profile is also the parent of managed Brain4All data,
+        # so those nested stores remain outside the profile boundary to prevent
+        # recursively exporting sibling profiles and transfer staging data.
         if root_profile and relative.parts and relative.parts[0].lower() in ROOT_EXCLUDED_PARTS:
             return False
-        if root_profile:
-            top_level = relative.parts[0].lower()
-            if top_level not in ROOT_PROFILE_PARTS and top_level not in ROOT_PROFILE_FILES:
-                return False
-            if top_level == "state.db" and not include_conversations:
-                return False
         if any(relative == subtree or subtree in relative.parents for subtree in managed_subtrees):
             return False
-        if relative.name == "state.db" and not include_conversations:
-            return False
         return True
+
+    def _validate_hermes_profiles(
+        self,
+        archive: ZipFile,
+        files: Mapping[str, ZipInfo],
+        manifest: Mapping[str, Any],
+    ) -> set[str]:
+        agents = manifest.get("agents")
+        if not isinstance(agents, list) or not agents:
+            raise StoreError(
+                "bundle does not contain a Hermes profile",
+                code="invalid_hermes_profile",
+            )
+        declared: set[str] = set()
+        for item in agents:
+            if not isinstance(item, Mapping):
+                raise StoreError(
+                    "bundle contains invalid Hermes profile metadata",
+                    code="invalid_hermes_profile",
+                )
+            profile_id = self.repository._id(item.get("id"), "agent id")
+            if profile_id in declared:
+                raise StoreError(
+                    "bundle contains duplicate Hermes profiles",
+                    code="invalid_hermes_profile",
+                )
+            declared.add(profile_id)
+            config_name = f"profiles/{profile_id}/config.yaml"
+            if config_name not in files:
+                raise StoreError(
+                    f"profile {profile_id} is not a Hermes profile: config.yaml is missing",
+                    code="invalid_hermes_profile",
+                )
+            try:
+                config = yaml.safe_load(archive.read(config_name)) or {}
+            except (OSError, UnicodeDecodeError, yaml.YAMLError) as error:
+                raise StoreError(
+                    f"profile {profile_id} is not a Hermes profile: config.yaml is invalid",
+                    code="invalid_hermes_profile",
+                ) from error
+            if not isinstance(config, Mapping):
+                raise StoreError(
+                    f"profile {profile_id} is not a Hermes profile: config.yaml must be an object",
+                    code="invalid_hermes_profile",
+                )
+        return declared
 
     def _managed_subtrees(self, profile: Path) -> tuple[Path, ...]:
         subtrees: list[Path] = []
@@ -590,6 +634,7 @@ class PortabilityService:
         config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
         for filename in SECRET_FILES:
+            (profile / filename).unlink(missing_ok=True)
             source = self.root_profile / filename
             if source.is_file():
                 shutil.copy2(source, profile / filename)

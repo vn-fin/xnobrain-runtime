@@ -137,7 +137,7 @@ export function SystemView({
           </div>
           </section>
           <section className="system-card">
-          <div className="system-card-title"><FileArchive size={18} /><div><strong>Portable profiles</strong><small>Credentials, logs, host paths, and device identity are excluded.</small></div></div>
+          <div className="system-card-title"><FileArchive size={18} /><div><strong>Portable profiles</strong><small>Every profile file is included; credential values are redacted and restored from this installation on import.</small></div></div>
           <div className="system-agent-list">
             {portableAgents.map((agent) => <label key={agent.id}><input type="checkbox" checked={selected.has(agent.id)} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(agent.id)) next.delete(agent.id); else next.add(agent.id); return next; })} /><span>{agent.title}</span><code>{agent.id}</code></label>)}
           </div>

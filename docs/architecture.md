@@ -33,9 +33,9 @@ profile-local `state.db` for native session history; that is an upstream
 profile file, not an Brain4All database or schema.
 
 Every named profile owns config, prompts, skills, memory, workspace, session,
-cron, log, MCP, and snapshot data. Portable bundles exclude `.env`,
-credentials, logs, caches, and provider secrets; imported approvals reset to
-manual and imported cron jobs are paused.
+cron, log, MCP, and snapshot data. Portable bundles include every regular file
+in the profile directory while redacting secret values. Imported credential
+files are discarded, approvals reset to manual, and cron jobs are paused.
 
 New named profiles are seeded from the installer-managed
 `HERMES_ROOT_PROFILE/profile-template`, whose default model is `auto`. They do

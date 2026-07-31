@@ -143,7 +143,9 @@ Named agent data belongs under `~/.hermes/profiles/<agent-id>/`. Skills are
 written only to `skills/<skill-id>/SKILL.md` inside that profile. Memory,
 config, and skill mutations create immutable local snapshots, and mutable
 files use temp-file, fsync, and rename. Provider credentials remain owned by
-Hermes/9router and are excluded from portable `.zip` profile archives.
+Hermes/9router. Portable `.zip` exports include every regular file in the
+selected profile directory while redacting credential values; imports discard
+archived credential files and inherit them from the destination installation.
 
 Self-hosted agents, profiles, skills, memory, MCP, providers, teams, and local
 cron are unlimited. The application has no managed control plane, login, or
