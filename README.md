@@ -39,12 +39,10 @@ document at <http://localhost:5152/api/brain/openapi.json>.
 
 ### Optional account UI
 
-The frontend reads `/config.js` before it starts. Its built-in fallback remains
-the offline-compatible optional `local-profile` mode. Set
-`features.login: true` to show sign-in, the Account item in the left sidebar,
-and confirmed sign-out. The checked-in standalone trial uses
-`edition: "opensource"` with optional `xno-firebase` login; users can still
-continue into the local server without signing in.
+The frontend's built-in fallback remains the offline-compatible
+`edition=opensource`, optional `local-profile` mode. Managed images select
+their edition and login provider with Docker build arguments; no runtime
+JavaScript configuration file is loaded.
 
 Firebase is the only persistent browser login session. On every initial page
 load or revisit, the frontend refreshes the Firebase identity token and calls
@@ -63,15 +61,12 @@ direct-browser token provider is for integration testing; production managed
 deployment should prefer the same-origin gateway provider and HttpOnly
 session cookies.
 
-Cloud and Enterprise deployments reuse the same frontend build and replace
-`/config.js`. Set `api.remoteBaseUrl` to the Brain4All runtime API and
-`api.authBaseUrl` to the browser authentication API, and
-`api.controlBaseUrl` to the XNOBrain control API. The frontend Docker build
-accepts the corresponding `API_BASE_URL`, `AUTH_BASE_URL`, and
-`API_CONTROL_BASE_URL` arguments. They are exposed to Vite as
-`VITE_API_BASE_URL`, `VITE_AUTH_API_URL`, and
-`VITE_CONTROL_API_BASE_URL`. The checked-in cloud example demonstrates
-required XNO login. For the recommended production gateway mode, configure:
+Cloud and Enterprise deployments build the frontend with `API_BASE_URL`,
+`AUTH_BASE_URL`, and `API_CONTROL_BASE_URL`. They are exposed to TypeScript
+through `VITE_API_BASE_URL`, `VITE_AUTH_API_URL`, and
+`VITE_CONTROL_API_BASE_URL`. `APP_EDITION`, `AUTH_MODE`, `AUTH_PROVIDER`, and
+`FIREBASE_API_KEY` configure the managed login contract at the same build
+boundary. For the recommended production gateway mode, configure:
 
 - `GET /api/brain-control/v1/bootstrap` to restore the active HttpOnly-cookie session;
 - `POST /api/brain-control/v1/auth/login` for the login form;

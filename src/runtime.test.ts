@@ -3,7 +3,7 @@ import { runtimeConfig } from './runtime';
 
 describe('runtimeConfig', () => {
   it('defaults to optional standalone mode', () => {
-    expect(runtimeConfig(undefined)).toMatchObject({
+    expect(runtimeConfig(undefined, {})).toMatchObject({
       edition: 'opensource',
       auth: { mode: 'optional', provider: 'local-profile' },
       api: { remoteBaseUrl: '', authBaseUrl: '', controlBaseUrl: '' },
@@ -24,7 +24,7 @@ describe('runtimeConfig', () => {
         provider: 'gateway',
         bootstrapPath: '/api/brain-control/v1/bootstrap',
       },
-    })).toMatchObject({
+    }, {})).toMatchObject({
       edition: 'enterprise',
       api: {
         remoteBaseUrl: 'https://runtime.xno.vn',
@@ -39,11 +39,35 @@ describe('runtimeConfig', () => {
     });
   });
 
+  it('uses compile-time values for a managed cloud image', () => {
+    expect(runtimeConfig(undefined, {
+      VITE_API_BASE_URL: '/api/brain',
+      VITE_AUTH_API_URL: 'https://api.dev.xnoquant.io',
+      VITE_CONTROL_API_BASE_URL: '/api/brain-control',
+      VITE_APP_EDITION: 'cloud',
+      VITE_AUTH_MODE: 'required',
+      VITE_AUTH_PROVIDER: 'xno-firebase',
+      VITE_FIREBASE_API_KEY: 'firebase-public-key',
+    })).toMatchObject({
+      edition: 'cloud',
+      api: {
+        remoteBaseUrl: '/api/brain',
+        authBaseUrl: 'https://api.dev.xnoquant.io',
+        controlBaseUrl: '/api/brain-control',
+      },
+      auth: {
+        mode: 'required',
+        provider: 'xno-firebase',
+        firebaseApiKey: 'firebase-public-key',
+      },
+    });
+  });
+
   it('rejects unknown edition and auth values', () => {
     expect(runtimeConfig({
       edition: 'unknown' as never,
       auth: { mode: 'sometimes' as never, provider: 'unsafe' as never },
-    })).toMatchObject({
+    }, {})).toMatchObject({
       edition: 'opensource',
       auth: { mode: 'optional', provider: 'local-profile' },
     });
