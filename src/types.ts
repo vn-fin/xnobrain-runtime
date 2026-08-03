@@ -4,8 +4,8 @@
 export type RightView = 'workspace' | 'skills' | 'cron' | 'runtime';
 export type CenterView = 'chat' | 'skills' | 'teams' | 'data' | 'kanban' | 'analytics' | 'cron';
 
-export type ConnectionMode = 'device-code' | 'cli' | 'api-key';
-export type ProviderBrand = 'openai' | 'claude' | 'anthropic' | 'gemini' | 'openrouter' | 'deepseek' | 'moonshot' | 'qwen' | 'openai-like';
+export type ConnectionMode = 'device-code' | 'cli' | 'api-key' | 'no-auth';
+export type ProviderBrand = 'openai' | 'claude' | 'anthropic' | 'gemini' | 'openrouter' | 'deepseek' | 'moonshot' | 'qwen' | 'openai-like' | 'opencode';
 
 // Mirrors agent-gateway models.ProviderConnector (connections view)
 export type ConnectionProvider = {
@@ -17,6 +17,7 @@ export type ConnectionProvider = {
   environment_variable?: string;
   brand: ProviderBrand;
   connected: boolean;
+  free_models_available?: boolean;
   status: string;
   last_test_status?: string;
   default_model?: string;
@@ -46,6 +47,7 @@ export type ProviderConnector = {
   connected: boolean;
   connection_mode: string;
   default_model: string;
+  available_models?: string[];
   status: string;
 };
 
@@ -241,6 +243,7 @@ export type Agent = {
   title: string;
   name: string;
   description: string;
+  soul: string;
   status: string;
   provider: string;
   model: string;

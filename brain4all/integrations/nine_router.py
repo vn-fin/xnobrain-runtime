@@ -21,12 +21,17 @@ NINE_ROUTER_BASE_URL = "http://127.0.0.1:20128"
 NINE_ROUTER_API_BASE_URL = f"{NINE_ROUTER_BASE_URL}/v1"
 NINE_ROUTER_KEY_ENV = "NINE_ROUTER_API_KEY"
 NINE_ROUTER_DEFAULT_MODEL = "auto"
+OPENCODE_ZEN_ROUTER_ALIAS = "ocz"
+OPENCODE_ZEN_API_BASE_URL = "https://opencode.ai/zen/v1"
 
-SUPPORTED_ROUTER_PROVIDERS = frozenset(
-    {"claude", "codex", "antigravity", "openai", "anthropic", "gemini"}
-)
+SUPPORTED_ROUTER_PROVIDERS = frozenset({
+    "claude", "codex", "antigravity", "openai", "anthropic", "gemini",
+    "opencode-go", "opencode",
+})
 OAUTH_ROUTER_PROVIDERS = frozenset({"claude", "codex", "antigravity"})
-API_KEY_ROUTER_PROVIDERS = frozenset({"openai", "anthropic", "gemini"})
+API_KEY_ROUTER_PROVIDERS = frozenset({
+    "openai", "anthropic", "gemini", "opencode-go",
+})
 OPENAI_COMPATIBLE_PROVIDERS = frozenset(
     {"deepseek", "moonshot", "qwen", "openai-like"}
 )
@@ -37,16 +42,20 @@ ROUTER_MODEL_ALIASES = {
     "openai": "openai",
     "anthropic": "anthropic",
     "gemini": "gemini",
+    "opencode-go": "ocg",
+    "opencode": "oc",
 }
 ROUTER_PROVIDER_BY_MODEL_OWNER = {
     owner: provider for provider, owner in ROUTER_MODEL_ALIASES.items()
 }
+ROUTER_PROVIDER_BY_MODEL_OWNER[OPENCODE_ZEN_ROUTER_ALIAS] = "opencode"
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
 _OAUTH_GET_ACTIONS = frozenset(
     {"authorize", "device-code", "start-proxy", "poll-status", "stop-proxy"}
 )
 _OAUTH_POST_ACTIONS = frozenset({"exchange", "poll", "manual-code"})
+_OPENCODE_FREE_MODEL_IDS = frozenset({"big-pickle"})
 
 
 class NineRouterAPIError(RuntimeError):
@@ -56,6 +65,23 @@ class NineRouterAPIError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.status = status
+
+
+def route_nine_router_model(model: Any) -> str:
+    model_id = str(model or "").strip()
+    if not model_id.startswith("oc/"):
+        return model_id
+    upstream_id = model_id.removeprefix("oc/")
+    if upstream_id.endswith("-free") or upstream_id in _OPENCODE_FREE_MODEL_IDS:
+        return model_id
+    return f"{OPENCODE_ZEN_ROUTER_ALIAS}/{upstream_id}"
+
+
+def display_nine_router_model(model: Any) -> str:
+    model_id = str(model or "").strip()
+    if model_id.startswith(f"{OPENCODE_ZEN_ROUTER_ALIAS}/"):
+        return "oc/" + model_id.removeprefix(f"{OPENCODE_ZEN_ROUTER_ALIAS}/")
+    return model_id
 
 
 def normalize_nine_router_config(config: dict[str, Any], model: str | None = None) -> str:
@@ -74,6 +100,7 @@ def normalize_nine_router_config(config: dict[str, Any], model: str | None = Non
     ).strip()
     if not selected_model:
         selected_model = NINE_ROUTER_DEFAULT_MODEL
+    selected_model = route_nine_router_model(selected_model)
 
     model_config["provider"] = NINE_ROUTER_PROVIDER
     model_config["default"] = selected_model
@@ -129,9 +156,15 @@ class NineRouterManager:
     async def list_connections(self) -> dict[str, Any]:
         custom_nodes = await self.list_provider_nodes()
         custom_provider_ids = {
-            str(node.get("id") or ""): str(node.get("prefix") or "")
+            str(node.get("id") or ""): ROUTER_PROVIDER_BY_MODEL_OWNER.get(
+                str(node.get("prefix") or ""),
+                str(node.get("prefix") or ""),
+            )
             for node in custom_nodes
-            if str(node.get("prefix") or "") in OPENAI_COMPATIBLE_PROVIDERS
+            if ROUTER_PROVIDER_BY_MODEL_OWNER.get(
+                str(node.get("prefix") or ""),
+                str(node.get("prefix") or ""),
+            ) in OPENAI_COMPATIBLE_PROVIDERS | {"opencode"}
         }
         payload = await self._request("GET", "/api/providers")
         raw_connections = payload.get("connections", []) if isinstance(payload, Mapping) else []
@@ -182,8 +215,13 @@ class NineRouterManager:
         *,
         display_name: Any,
         base_url: Any,
+        router_prefix: Any = None,
     ) -> str:
-        provider = self._provider(provider, OPENAI_COMPATIBLE_PROVIDERS)
+        provider = self._provider(
+            provider,
+            OPENAI_COMPATIBLE_PROVIDERS | {"opencode"},
+        )
+        prefix = str(router_prefix or provider).strip()
         normalized_url = str(base_url or "").strip().rstrip("/")
         if not normalized_url.startswith(("https://", "http://")):
             raise NineRouterAPIError(
@@ -193,12 +231,12 @@ class NineRouterManager:
             )
         name = str(display_name or provider).strip() or provider
         current = next(
-            (node for node in await self.list_provider_nodes() if node["prefix"] == provider),
+            (node for node in await self.list_provider_nodes() if node["prefix"] == prefix),
             None,
         )
         body = {
             "name": name,
-            "prefix": provider,
+            "prefix": prefix,
             "type": "openai-compatible",
             "apiType": "chat",
             "baseUrl": normalized_url,
@@ -218,11 +256,27 @@ class NineRouterManager:
                     node_id = str(node.get("id") or node_id)
         return self._safe_id(node_id, "provider_node_id")
 
+    async def ensure_opencode_zen_provider(self) -> str:
+        return await self.ensure_openai_compatible_provider(
+            "opencode",
+            display_name="OpenCode Zen",
+            base_url=OPENCODE_ZEN_API_BASE_URL,
+            router_prefix=OPENCODE_ZEN_ROUTER_ALIAS,
+        )
+
     async def openai_compatible_provider_id(self, provider: Any) -> str:
         """Resolve a logical compatible-provider name to 9router's node id."""
-        provider = self._provider(provider, OPENAI_COMPATIBLE_PROVIDERS)
+        provider = self._provider(
+            provider,
+            OPENAI_COMPATIBLE_PROVIDERS | {"opencode"},
+        )
+        prefix = (
+            OPENCODE_ZEN_ROUTER_ALIAS
+            if provider == "opencode"
+            else provider
+        )
         current = next(
-            (node for node in await self.list_provider_nodes() if node["prefix"] == provider),
+            (node for node in await self.list_provider_nodes() if node["prefix"] == prefix),
             None,
         )
         if current is None:
@@ -356,6 +410,8 @@ class NineRouterManager:
             for provider in connected_providers
             if provider in ROUTER_MODEL_ALIASES
         }
+        if "opencode" in connected_providers:
+            active_owners.add(OPENCODE_ZEN_ROUTER_ALIAS)
         active_owners.update(
             provider for provider in connected_providers
             if provider in OPENAI_COMPATIBLE_PROVIDERS
@@ -379,24 +435,32 @@ class NineRouterManager:
                 continue
             if owner not in active_owners:
                 continue
-            seen.add(model_id)
+            public_model_id = model_id
+            if owner == OPENCODE_ZEN_ROUTER_ALIAS:
+                public_model_id = "oc/" + model_id.removeprefix(
+                    f"{OPENCODE_ZEN_ROUTER_ALIAS}/"
+                )
+            if public_model_id in seen:
+                continue
+            seen.add(public_model_id)
             provider = next(
                 (
                     provider_id
                     for provider_id, alias in ROUTER_MODEL_ALIASES.items()
                     if alias == owner
                 ),
-                owner,
+                ROUTER_PROVIDER_BY_MODEL_OWNER.get(owner, owner),
             )
             models.append(
                 {
-                    "id": model_id,
+                    "id": public_model_id,
                     "provider": provider,
-                    "name": str(item.get("name") or model_id),
+                    "name": str(item.get("name") or public_model_id),
                 }
             )
         if ensure_auto:
             await self._ensure_auto_combo(models)
+        models.extend(await self._opencode_free_models(seen))
         return {
             "object": "list",
             "provider": NINE_ROUTER_PROVIDER_KEY,
@@ -411,6 +475,35 @@ class NineRouterManager:
                 *models,
             ],
         }
+
+    async def _opencode_free_models(self, seen: set[str]) -> list[dict[str, str]]:
+        path = (
+            "/api/providers/suggested-models?"
+            f"url={quote('https://opencode.ai/zen/v1/models', safe='')}&"
+            "type=opencode-free"
+        )
+        try:
+            payload = await self._request("GET", path)
+        except NineRouterAPIError:
+            return []
+        raw_models = payload.get("data", []) if isinstance(payload, Mapping) else []
+        result: list[dict[str, str]] = []
+        for item in raw_models if isinstance(raw_models, list) else []:
+            if not isinstance(item, Mapping):
+                continue
+            raw_id = str(item.get("id") or "").strip()
+            if not raw_id:
+                continue
+            model_id = raw_id if raw_id.startswith("oc/") else f"oc/{raw_id}"
+            if model_id in seen:
+                continue
+            seen.add(model_id)
+            result.append({
+                "id": model_id,
+                "provider": "opencode",
+                "name": str(item.get("name") or model_id),
+            })
+        return result
 
     async def usage(self, model: Any) -> dict[str, Any]:
         """Return filtered quota windows for the provider behind one model."""
@@ -515,7 +608,7 @@ class NineRouterManager:
             if owner in owners:
                 continue
             owners.add(owner)
-            selected.append(model_id)
+            selected.append(route_nine_router_model(model_id))
             if len(selected) >= 12:
                 break
         payload = await self._request("GET", "/api/combos")
@@ -562,7 +655,10 @@ class NineRouterManager:
             "id": str(item.get("id") or ""),
             "name": str(item.get("name") or ""),
             "kind": str(item.get("kind") or "") if item.get("kind") is not None else "",
-            "models": [str(model) for model in models] if isinstance(models, list) else [],
+            "models": [
+                display_nine_router_model(model)
+                for model in models
+            ] if isinstance(models, list) else [],
             "created_at": str(item.get("createdAt") or ""),
             "updated_at": str(item.get("updatedAt") or ""),
         }
@@ -573,7 +669,10 @@ class NineRouterManager:
         return [self._normalize_combo(row) for row in rows if isinstance(row, Mapping)]
 
     async def create_combo(self, name: str, models: list[str]) -> dict[str, Any]:
-        payload = await self._request("POST", "/api/combos", {"name": name, "models": list(models)})
+        payload = await self._request("POST", "/api/combos", {
+            "name": name,
+            "models": [route_nine_router_model(model) for model in models],
+        })
         combo = payload.get("combo") if isinstance(payload, Mapping) and isinstance(payload.get("combo"), Mapping) else payload
         return self._normalize_combo(combo)
 
@@ -585,7 +684,7 @@ class NineRouterManager:
         if name is not None:
             body["name"] = name
         if models is not None:
-            body["models"] = list(models)
+            body["models"] = [route_nine_router_model(model) for model in models]
         payload = await self._request("PUT", f"/api/combos/{quote(combo_id, safe='')}", body)
         combo = payload.get("combo") if isinstance(payload, Mapping) and isinstance(payload.get("combo"), Mapping) else payload
         normalized = self._normalize_combo(combo)

@@ -30,8 +30,11 @@ import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
 import { useAuth } from './auth';
+import { agentsApi } from './api/agents';
 import { sandboxApi } from './api/sandbox';
+import { workspaceApi } from './api/workspace';
 import type { Agent } from './types';
+import { hasUsableProvider } from './utils/providers';
 
 export default function App() {
   const { t } = useTranslation();
@@ -45,13 +48,15 @@ export default function App() {
   const workspaceReady = !managedWorkspace || sandbox.provisioned;
   const assistants = useAssistants(workspaceReady);
   const assistantsReady = workspaceReady && assistants.status === 'ready';
+  const activeAgent = useActiveAgent(assistants.agents, router.activeAgentId);
   const connections = useConnections(assistantsReady);
   const onboarding = assistantsReady
     && connections.status === 'ready'
-    && !connections.connections.some((provider) => provider.connected);
+    && !hasUsableProvider(connections.connections);
   const conversation = useConversation(
     router.centerView === 'chat' ? router.activeAgentId : '',
     router.centerView === 'chat' ? router.activeConversationId : '',
+    router.centerView === 'chat' ? activeAgent?.model ?? '' : '',
   );
   const workspace = useWorkspace(
     router.activeAgentId,
@@ -79,7 +84,6 @@ export default function App() {
   useEffect(() => { localStorage.setItem('rightPanelWidth', String(rightWidth)); }, [rightWidth]);
   const clampRightWidth = (width: number) => Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, Math.min(width, Math.round(window.innerWidth * 0.6))));
 
-  const activeAgent = useActiveAgent(assistants.agents, router.activeAgentId);
   const activeConversation =
     activeAgent?.conversations.find((c) => c.id === router.activeConversationId) ?? activeAgent?.conversations[0];
 
@@ -226,6 +230,7 @@ export default function App() {
     connected: provider.connected,
     connection_mode: provider.connection_mode,
     default_model: provider.default_model ?? provider.available_models?.[0] ?? '',
+    available_models: provider.available_models ?? [],
     status: provider.status,
   })), [connections.connections]);
 
@@ -393,6 +398,14 @@ export default function App() {
               onRefresh: sandbox.refresh,
             }}
             onImported={assistants.refresh}
+            onLoadContextFile={async (agentId, file) => {
+              if (file === 'SOUL.md') return (await agentsApi.detail(agentId)).soul;
+              return workspaceApi.readOptional(agentId, 'AGENTS.md');
+            }}
+            onSaveContextFile={async (agentId, file, content) => {
+              if (file === 'SOUL.md') await agentsApi.updateSoul(agentId, content);
+              else await workspaceApi.write(agentId, 'AGENTS.md', content);
+            }}
             section={router.settingsSection}
             onSectionChange={router.setSettingsSection}
             onClose={() => router.setCenterView('chat')}
@@ -484,10 +497,6 @@ export default function App() {
             onRetry={conversation.refresh}
             onSelectModel={(provider, model) => assistants.updateAgent(activeAgent.id, { provider, model })}
             onTestAgent={() => void assistants.testAgent(activeAgent.id)}
-            onOpenRuntime={() => {
-              router.setRightView('runtime');
-              setRightPanelOpen(true);
-            }}
             onSelectAgent={(agent) => {
               void assistants.loadConversations(agent.id).then((rows) => {
                 router.openChat(agent.id, rows[0]?.id ?? '');
@@ -561,7 +570,12 @@ export default function App() {
       {createAgentOpen && <CreateAgentModal onCreate={handleCreateAgent} onImported={handleImportedProfile} onClose={() => setCreateAgentOpen(false)} />}
 
       {settingsOpen && (
-        <AgentSettingsModal agent={activeAgent} providers={runtimeProviders} onSave={handleUpdateAgent} onClose={() => setSettingsOpen(false)} />
+        <AgentSettingsModal
+          agent={activeAgent}
+          providers={runtimeProviders}
+          onSave={handleUpdateAgent}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
 
       {accountOpen && auth.sessionActive && (
@@ -648,6 +662,7 @@ export default function App() {
           router.openKanbanTask(taskId);
         }}
       />
+
     </div>
   );
 }

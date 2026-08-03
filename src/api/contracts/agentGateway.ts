@@ -25,6 +25,7 @@ export type AgentDTO = {
   id?: string;
   metadata?: { config?: AgentConfigDTO };
   name?: string;
+  soul?: string;
   status?: string;
   title?: string;
   updated_at?: string;
@@ -72,6 +73,7 @@ export type ProviderConnectorDTO = {
   connection_mode?: string;
   environment_variable?: string;
   connected?: boolean;
+  free_models_available?: boolean;
   status?: string;
   last_test_status?: string;
   default_model?: string;

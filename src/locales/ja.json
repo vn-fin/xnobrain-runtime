@@ -89,6 +89,7 @@
     "workspace": "ワークスペース",
     "skills": "スキル",
     "runtime": "ランタイム",
+    "settings": "設定",
     "newFile": "新規ファイル",
     "newFolder": "新規フォルダ",
     "upload": "ファイルをアップロード（ドラッグ＆ドロップ対応）",
@@ -212,7 +213,8 @@
     "back": "戻る",
     "confirmSave": "保存を確認",
     "deleteAgentTitle": "エージェントを削除",
-    "deleteAgentMsg": "「{{name}}」を削除しますか？すべてのセッション、ワークスペースファイル、設定、スキル、メモリ、割り当てられたKanbanタスクが完全に削除されます。この操作は元に戻せません。"
+    "deleteAgentMsg": "「{{name}}」を削除しますか？すべてのセッション、ワークスペースファイル、設定、スキル、メモリ、割り当てられたKanbanタスクが完全に削除されます。この操作は元に戻せません。",
+    "personalityInstructions": "人格と指示"
   },
   "cron": {
     "title": "Cron ジョブ",

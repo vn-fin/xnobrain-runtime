@@ -89,6 +89,7 @@
     "workspace": "工作区",
     "skills": "技能",
     "runtime": "运行时",
+    "settings": "设置",
     "newFile": "新建文件",
     "newFolder": "新建文件夹",
     "upload": "上传文件（支持拖放）",
@@ -212,7 +213,8 @@
     "back": "返回",
     "confirmSave": "确认保存",
     "deleteAgentTitle": "删除智能体",
-    "deleteAgentMsg": "删除“{{name}}”？所有会话、工作区文件、配置、技能、记忆和已分配的看板任务都将被永久删除。此操作无法撤销。"
+    "deleteAgentMsg": "删除“{{name}}”？所有会话、工作区文件、配置、技能、记忆和已分配的看板任务都将被永久删除。此操作无法撤销。",
+    "personalityInstructions": "个性与指令"
   },
   "cron": {
     "title": "定时任务",

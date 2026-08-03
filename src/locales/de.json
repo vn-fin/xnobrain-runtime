@@ -89,6 +89,7 @@
     "workspace": "Arbeitsbereich",
     "skills": "Fähigkeiten",
     "runtime": "Laufzeit",
+    "settings": "Einstellungen",
     "newFile": "Neue Datei",
     "newFolder": "Neuer Ordner",
     "upload": "Dateien hochladen (Drag & Drop möglich)",
@@ -212,7 +213,8 @@
     "back": "Zurück",
     "confirmSave": "Speichern bestätigen",
     "deleteAgentTitle": "Agent löschen",
-    "deleteAgentMsg": "„{{name}}“ löschen? Alle Sitzungen, Arbeitsbereichsdateien, Konfigurationen, Fähigkeiten, Erinnerungen und zugewiesenen Kanban-Aufgaben werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+    "deleteAgentMsg": "„{{name}}“ löschen? Alle Sitzungen, Arbeitsbereichsdateien, Konfigurationen, Fähigkeiten, Erinnerungen und zugewiesenen Kanban-Aufgaben werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "personalityInstructions": "Persönlichkeit & Anweisungen"
   },
   "cron": {
     "title": "Cron-Jobs",

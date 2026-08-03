@@ -89,6 +89,7 @@
     "workspace": "Espacio de trabajo",
     "skills": "Habilidades",
     "runtime": "Ejecución",
+    "settings": "Ajustes",
     "newFile": "Nuevo archivo",
     "newFolder": "Nueva carpeta",
     "upload": "Subir archivos (arrastrar y soltar)",
@@ -212,7 +213,8 @@
     "back": "Atrás",
     "confirmSave": "Confirmar guardado",
     "deleteAgentTitle": "Eliminar agente",
-    "deleteAgentMsg": "¿Eliminar “{{name}}”? Se eliminarán permanentemente todas las sesiones, archivos del espacio de trabajo, configuración, habilidades, memoria y tareas Kanban asignadas. Esta acción no se puede deshacer."
+    "deleteAgentMsg": "¿Eliminar “{{name}}”? Se eliminarán permanentemente todas las sesiones, archivos del espacio de trabajo, configuración, habilidades, memoria y tareas Kanban asignadas. Esta acción no se puede deshacer.",
+    "personalityInstructions": "Personalidad e instrucciones"
   },
   "cron": {
     "title": "Tareas cron",

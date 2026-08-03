@@ -14,6 +14,7 @@ const encoded = (value: string) => encodeURIComponent(value);
 function mode(value?: string): ConnectionMode {
   if (value === 'api_key' || value === 'api-key') return 'api-key';
   if (value === 'device_code' || value === 'device-code') return 'device-code';
+  if (value === 'no_auth' || value === 'no-auth') return 'no-auth';
   return 'cli';
 }
 

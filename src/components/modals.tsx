@@ -251,99 +251,143 @@ export function CreateAgentModal({
   );
 }
 
+function providerModels(provider: ProviderConnector | undefined): string[] {
+  if (!provider) return [];
+  return Array.from(new Set([
+    provider.default_model,
+    ...(provider.available_models ?? []),
+  ].filter(Boolean)));
+}
+
 export function AgentSettingsModal({
   agent,
   providers,
   onSave,
   onClose,
+  embedded = false,
 }: {
   agent: Agent;
   providers: ProviderConnector[];
   onSave: (updates: Partial<Agent>) => void;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const [title, setTitle] = useState(agent.title);
   const [description, setDescription] = useState(agent.description);
-  const [provider, setProvider] = useState(agent.provider);
-  const [model, setModel] = useState(agent.model);
+  const initialProvider = providers.find((item) => providerModels(item).includes(agent.model))
+    ?? providers.find((item) => item.id === agent.provider);
+  const initialModels = providerModels(initialProvider);
+  const [provider, setProvider] = useState(initialProvider?.id ?? agent.provider);
+  const [model, setModel] = useState(
+    initialModels.includes(agent.model)
+      ? agent.model
+      : initialProvider?.default_model || initialModels[0] || agent.model,
+  );
   const [reasoningEffort, setReasoningEffort] = useState(agent.reasoningEffort);
   const [approvalMode, setApprovalMode] = useState<Agent['approvalMode']>(agent.approvalMode);
   const [confirming, setConfirming] = useState(false);
+  const selectedProvider = providers.find((item) => item.id === provider);
+  const selectedProviderModels = providerModels(selectedProvider);
+  const modelOptions = selectedProviderModels.length
+    ? selectedProviderModels
+    : model ? [model] : [];
 
   const save = () => onSave({ title, description, provider, model, reasoningEffort, approvalMode });
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="app-modal" role="dialog" aria-modal="true" aria-label={t('modals.agentSettings')} onClick={(e) => e.stopPropagation()}>
-        <div className="app-modal-head">
-          <strong>{t('modals.agentSettings')}</strong>
-          <button className="icon-button" onClick={onClose} title={t('common.close')}>
-            <X size={17} />
-          </button>
-        </div>
-
-        <p className="app-modal-sub">PATCH /agents/{'{id}'}/metadata · PATCH /agents-configs/{'{id}'}</p>
-
-        <div className="modal-form">
-          <label>
-            {t('modals.settingsTitle')}
-            <input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </label>
-          <label>
-            {t('modals.description')}
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
-          </label>
-          <div className="modal-form-row">
-            <label>
-              {t('modals.provider')}
-              <select value={provider} onChange={(e) => setProvider(e.target.value)}>
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>{p.display_name}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {t('modals.model')}
-              <input value={model} onChange={(e) => setModel(e.target.value)} />
-            </label>
-          </div>
-          <div className="modal-form-row">
-            <label>
-              {t('modals.reasoningEffort')}
-              <select value={reasoningEffort} onChange={(e) => setReasoningEffort(e.target.value)}>
-                <option value="low">low</option>
-                <option value="medium">medium</option>
-                <option value="high">high</option>
-              </select>
-            </label>
-            <label>
-              {t('modals.approvalMode')}
-              <select value={approvalMode} onChange={(e) => setApprovalMode(e.target.value as Agent['approvalMode'])}>
-                <option value="manual">manual</option>
-                <option value="auto">auto</option>
-              </select>
-            </label>
-          </div>
-        </div>
-
-        {confirming ? (
-          <div className="modal-confirm">
-            <span>{t('modals.saveConfirm', { name: title })}</span>
-            <div className="modal-actions">
-              <button className="conn-btn ghost" onClick={() => setConfirming(false)}>{t('modals.back')}</button>
-              <button className="conn-btn primary" onClick={save}>
-                <Check size={15} />
-                {t('modals.confirmSave')}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="modal-actions">
-            <button className="conn-btn ghost" onClick={onClose}>{t('common.cancel')}</button>
-            <button className="conn-btn primary" onClick={() => setConfirming(true)}>{t('common.save')}</button>
+    <div className={embedded ? 'agent-settings-embedded' : 'modal-overlay'} onClick={embedded ? undefined : onClose}>
+      <div
+        className={embedded ? 'agent-settings-surface' : 'app-modal agent-settings-modal'}
+        role={embedded ? undefined : 'dialog'}
+        aria-modal={embedded ? undefined : true}
+        aria-label={embedded ? undefined : t('modals.agentSettings')}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {!embedded && (
+          <div className="app-modal-head">
+            <strong>{t('modals.agentSettings')}</strong>
+            <button className="icon-button" onClick={onClose} title={t('common.close')}>
+              <X size={17} />
+            </button>
           </div>
         )}
+
+        <div className="agent-settings-general">
+            <p className="app-modal-sub">PATCH /agents/{'{id}'}/metadata · PATCH /agents-configs/{'{id}'}</p>
+
+            <div className="modal-form">
+              <label>
+                {t('modals.settingsTitle')}
+                <input value={title} onChange={(e) => setTitle(e.target.value)} />
+              </label>
+              <label>
+                {t('modals.description')}
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+              </label>
+              <div className="modal-form-row">
+                <label>
+                  {t('modals.provider')}
+                  <select
+                    value={provider}
+                    onChange={(e) => {
+                      const nextProvider = providers.find((item) => item.id === e.target.value);
+                      const nextModels = providerModels(nextProvider);
+                      setProvider(e.target.value);
+                      setModel(nextProvider?.default_model || nextModels[0] || '');
+                    }}
+                  >
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>{p.display_name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  {t('modals.model')}
+                  <select value={model} onChange={(e) => setModel(e.target.value)}>
+                    {modelOptions.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="modal-form-row">
+                <label>
+                  {t('modals.reasoningEffort')}
+                  <select value={reasoningEffort} onChange={(e) => setReasoningEffort(e.target.value)}>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </label>
+                <label>
+                  {t('modals.approvalMode')}
+                  <select value={approvalMode} onChange={(e) => setApprovalMode(e.target.value as Agent['approvalMode'])}>
+                    <option value="manual">manual</option>
+                    <option value="auto">auto</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            {confirming ? (
+              <div className="modal-confirm">
+                <span>{t('modals.saveConfirm', { name: title })}</span>
+                <div className="modal-actions">
+                  <button className="conn-btn ghost" onClick={() => setConfirming(false)}>{t('modals.back')}</button>
+                  <button className="conn-btn primary" onClick={save}>
+                    <Check size={15} />
+                    {t('modals.confirmSave')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="modal-actions">
+                <button className="conn-btn ghost" onClick={onClose}>{t('common.cancel')}</button>
+                <button className="conn-btn primary" onClick={() => setConfirming(true)}>{t('common.save')}</button>
+              </div>
+            )}
+        </div>
       </div>
     </div>
   );

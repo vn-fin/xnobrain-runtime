@@ -17,7 +17,14 @@ import { CronPanel } from './CronPanel';
 import type { ResponsePagination } from '../api/client';
 import type { Agent, AgentSkill, AgentSkillMap, CronJob, GlobalRuntimeConfig, ProviderConnector, RightView } from '../types';
 
-const AGENT_ACTIONS = ['Create', 'Metadata', 'Runtime', 'Memory', 'Test', 'Delete'];
+const AGENT_ACTIONS = [
+  { id: 'create', label: 'Create' },
+  { id: 'settings', label: 'Agent settings' },
+  { id: 'runtime', label: 'Runtime' },
+  { id: 'memory', label: 'Memory' },
+  { id: 'test', label: 'Test' },
+  { id: 'delete', label: 'Delete' },
+] as const;
 type WriteApprovalPatch = Partial<Pick<GlobalRuntimeConfig, 'skillsWriteApproval' | 'memoryWriteApproval'>>;
 
 export function RightPanel({
@@ -152,7 +159,7 @@ export function RightPanel({
       </div>
 
       <div className="right-tabs">
-        {(['workspace', 'skills', 'cron', 'runtime'] as const).map((tab) => (
+        {(['workspace', 'skills', 'cron'] as const).map((tab) => (
           <button
             key={tab}
             className={rightView === tab ? 'active' : ''}
@@ -163,8 +170,12 @@ export function RightPanel({
               onOpen();
             }}
           >
-            {tab === 'workspace' ? <Code2 size={17} /> : tab === 'skills' ? <Sparkles size={17} /> : tab === 'cron' ? <Clock3 size={17} /> : <Wrench size={17} />}
-            <span>{t(`controls.${tab}`)}</span>
+            {tab === 'workspace'
+              ? <Code2 size={17} />
+              : tab === 'skills'
+                ? <Sparkles size={17} />
+                : <Clock3 size={17} />}
+            <span>{t(`controls.${tab}`, { defaultValue: tab })}</span>
           </button>
         ))}
       </div>
@@ -422,17 +433,17 @@ export function RightPanel({
             {approvalError && <p className="runtime-approval-error">{approvalError}</p>}
           </div>
           <div className="button-grid">
-            {AGENT_ACTIONS.map((label) => (
+            {AGENT_ACTIONS.map((action) => (
               <button
-                key={label}
+                key={action.id}
                 onClick={() => {
-                  if (label === 'Create') onCreateAgent();
-                  else if (label === 'Metadata') onOpenSettings();
-                  else if (label === 'Delete') onDeleteAgent();
+                  if (action.id === 'create') onCreateAgent();
+                  else if (action.id === 'settings') onOpenSettings();
+                  else if (action.id === 'delete') onDeleteAgent();
                 }}
               >
                 <Wrench size={15} />
-                {label}
+                {action.label}
               </button>
             ))}
           </div>

@@ -1,5 +1,11 @@
 import type { ConnectionProvider, ProviderConnectInfo } from '../types';
 
+export function hasUsableProvider(providers: ConnectionProvider[]): boolean {
+  return providers.some((provider) => (
+    provider.connected || provider.free_models_available === true
+  ));
+}
+
 export function providerConnectNeedsText(provider: ConnectionProvider, info: ProviderConnectInfo): boolean {
   const action = info.required_client_action.trim().toLowerCase().replaceAll('-', '_');
   if (action === 'submit_response' || action === 'submit_text') return true;

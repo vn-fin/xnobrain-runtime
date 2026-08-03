@@ -1,4 +1,4 @@
-import { request, requestMultipartWithProgress, requestRaw, type UploadProgress } from './client';
+import { ApiError, request, requestMultipartWithProgress, requestRaw, type UploadProgress } from './client';
 import type { WorkspaceFileDTO, WorkspaceListDTO } from './contracts/agentGateway';
 import { mapWorkspaceEntry } from './mappers/workspace';
 import { randomId } from '../utils/id';
@@ -64,6 +64,32 @@ function uploadProgress(loaded: number, total: number): UploadProgress {
     total,
     percent: Math.min(100, Math.round((bounded / total) * 100)),
   };
+}
+
+async function readWorkspaceText(agentId: string, path: string, signal?: AbortSignal) {
+  const response = await requestRaw(`${root(agentId)}/file?path=${encodeURIComponent(path)}`, {
+    signal,
+    headers: { Accept: 'text/plain, text/*;q=0.9, */*;q=0.1' },
+  });
+  if (!response.body) return response.text();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let content = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    content += decoder.decode(value, { stream: true });
+  }
+  return content + decoder.decode();
+}
+
+function isMissingWorkspaceFile(error: unknown) {
+  if (!(error instanceof ApiError) || error.status !== 404) return false;
+  if (!error.details || typeof error.details !== 'object') return false;
+  const detail = (error.details as { error?: unknown }).error;
+  return !!detail
+    && typeof detail === 'object'
+    && (detail as { code?: unknown }).code === 'invalid_workspace_path';
 }
 
 async function uploadFileInChunks(
@@ -171,21 +197,14 @@ export const workspaceApi = {
     const xlsxMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     return blob.type === xlsxMime ? blob : blob.slice(0, blob.size, xlsxMime);
   },
-  async read(agentId: string, path: string, signal?: AbortSignal) {
-    const response = await requestRaw(`${root(agentId)}/file?path=${encodeURIComponent(path)}`, {
-      signal,
-      headers: { Accept: 'text/plain, text/*;q=0.9, */*;q=0.1' },
-    });
-    if (!response.body) return response.text();
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let content = '';
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      content += decoder.decode(value, { stream: true });
+  read: (agentId: string, path: string, signal?: AbortSignal) => readWorkspaceText(agentId, path, signal),
+  async readOptional(agentId: string, path: string, signal?: AbortSignal) {
+    try {
+      return await readWorkspaceText(agentId, path, signal);
+    } catch (error) {
+      if (isMissingWorkspaceFile(error)) return null;
+      throw error;
     }
-    return content + decoder.decode();
   },
   create: (agentId: string, input: { path: string; type: 'file' | 'directory'; content?: string }) =>
     request(`${root(agentId)}/create`, { method: 'POST', body: JSON.stringify(input) }),

@@ -8,6 +8,7 @@ export function mapAgent(dto: AgentDTO): Agent {
     title: dto.display_name?.trim() || dto.title?.trim() || dto.name || '',
     name: dto.name ?? '',
     description: dto.description ?? '',
+    soul: dto.soul ?? '',
     status: dto.status ?? 'unknown',
     // nine-router is the only runtime transport and is intentionally omitted
     // from the public agent DTO because it is not a user-selectable provider.

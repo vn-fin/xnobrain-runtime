@@ -66,13 +66,30 @@ OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS = {
         "base_url": "",
     },
 }
+PROVIDER_DEFINITIONS = {
+    "opencode-go": {
+        "display_name": "OpenCode Go",
+        "description": "OpenCode Go subscription models through 9router.",
+        "base_url": "",
+    },
+    "opencode": {
+        "display_name": "OpenCode Zen",
+        "description": "Free and paid OpenCode Zen models through 9router. Paid models require a Zen API key.",
+        "base_url": "",
+    },
+    **OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
+}
 SUPPORTED_PROVIDERS = (
     "claude", "codex", "antigravity", "openai", "anthropic", "gemini",
+    "opencode-go", "opencode",
     *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
 )
 API_KEY_PROVIDERS = frozenset({
-    "openai", "anthropic", "gemini", *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
+    "openai", "anthropic", "gemini", "opencode-go", "opencode",
+    *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
 })
+NO_AUTH_PROVIDERS = frozenset()
+FREE_MODEL_PROVIDERS = frozenset({"opencode"})
 SAFE_TOOLSETS = frozenset({
     "browser", "code_execution", "computer_use", "context_engine", "file",
     "image_gen", "session_search", "skills", "terminal", "todo", "tts",
@@ -215,7 +232,9 @@ class PlatformService:
         """Expose and repair the root Hermes profile as Big Brother."""
         profile = self.config.root_profile
         profile.mkdir(parents=True, exist_ok=True)
-        (profile / "workspace").mkdir(parents=True, exist_ok=True)
+        workspace = profile / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        self.agents._ensure_workspace_agents(profile, workspace)
         metadata_path = profile / "agent.json"
         metadata = {}
         if metadata_path.is_file():
@@ -395,7 +414,10 @@ class PlatformService:
         return self._agent_dto(raw)
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
-        return self._agent_dto(self.agents.describe_agent(agent_id))
+        return self._agent_dto(
+            self.agents.describe_agent(agent_id),
+            include_soul=True,
+        )
 
     @staticmethod
     def _is_big_brother(agent_id: str) -> bool:
@@ -1158,11 +1180,17 @@ class PlatformService:
         try:
             connections = (await self.router.list_connections())["connections"]
             models = (await self.router.list_models())["data"]
+            router_available = True
         except NineRouterAPIError:
             connections, models = [], []
+            router_available = False
         result = []
         for provider in SUPPORTED_PROVIDERS:
-            definition = OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS.get(provider, {})
+            definition = PROVIDER_DEFINITIONS.get(provider, {})
+            no_auth = provider in NO_AUTH_PROVIDERS
+            free_models_available = (
+                provider in FREE_MODEL_PROVIDERS and router_available
+            )
             provider_rows = sorted(
                 (item for item in connections if item.get("provider") == provider),
                 key=lambda item: (int(item.get("priority") or 0), str(item.get("name") or "")),
@@ -1176,11 +1204,22 @@ class PlatformService:
                 "description": definition.get(
                     "description", "Credentials are managed by the local 9router runtime."
                 ),
-                "connection_mode": "api-key" if provider in API_KEY_PROVIDERS else "cli",
+                "connection_mode": (
+                    "no-auth" if no_auth
+                    else "api-key" if provider in API_KEY_PROVIDERS
+                    else "cli"
+                ),
                 "base_url": definition.get("base_url", ""),
                 "requires_base_url": provider == "openai-like",
                 "connected": bool(active_rows),
-                "status": "connected" if active_rows else "disconnected",
+                "status": (
+                    "available" if no_auth and router_available
+                    else "unavailable" if no_auth
+                    else "connected" if active_rows
+                    else "available" if free_models_available
+                    else "disconnected"
+                ),
+                "free_models_available": free_models_available,
                 "last_test_status": primary.get("test_status", "unknown"),
                 "default_model": primary.get("default_model", ""),
                 "connection_count": len(provider_rows),
@@ -1210,6 +1249,7 @@ class PlatformService:
 
     async def start_provider_connect(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         if provider in API_KEY_PROVIDERS:
             return self._api_key_info(provider)
         redirect = "http://localhost:1455/auth/callback" if provider == "codex" else "http://localhost:20128/callback"
@@ -1222,12 +1262,15 @@ class PlatformService:
 
     async def submit_provider_connect(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         value = str(body.get("text") or body.get("response_text") or body.get("token") or body.get("api_key") or "").strip()
         if not value:
             raise ServiceError("provider credential or callback is required")
         if provider in API_KEY_PROVIDERS:
             router_provider = provider
-            if provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
+            if provider == "opencode":
+                router_provider = await self.router.ensure_opencode_zen_provider()
+            elif provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
                 definition = OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS[provider]
                 base_url = str(body.get("base_url") or definition["base_url"]).strip()
                 if not base_url:
@@ -1237,7 +1280,16 @@ class PlatformService:
                     display_name=definition["display_name"],
                     base_url=base_url,
                 )
-            await self.router.create_api_key_connection({"provider": router_provider, "api_key": value})
+            await self.router.create_api_key_connection({
+                "provider": router_provider,
+                "api_key": value,
+                "default_model": (
+                    body.get("default_model")
+                    or "deepseek-v4-flash-free"
+                    if provider == "opencode"
+                    else body.get("default_model")
+                ),
+            })
             return {**self._api_key_info(provider), "connected": True, "status": "connected"}
         from urllib.parse import parse_qs, urlparse
         attempt = self._oauth_attempts.get(provider)
@@ -1257,10 +1309,13 @@ class PlatformService:
 
     async def update_provider(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         if provider not in API_KEY_PROVIDERS:
             raise ServiceError("OAuth providers must be updated through connect")
         router_provider = provider
-        if provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
+        if provider == "opencode":
+            router_provider = await self.router.ensure_opencode_zen_provider()
+        elif provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
             definition = OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS[provider]
             base_url = str(body.get("base_url") or definition["base_url"]).strip()
             if not base_url:
@@ -1270,11 +1325,19 @@ class PlatformService:
                 display_name=definition["display_name"],
                 base_url=base_url,
             )
-        result = await self.router.create_api_key_connection({"provider": router_provider, "api_key": body.get("api_key"), "name": body.get("display_name") or OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS.get(provider, {}).get("display_name"), "default_model": body.get("default_model")})
+        result = await self.router.create_api_key_connection({
+            "provider": router_provider,
+            "api_key": body.get("api_key"),
+            "name": body.get("display_name") or PROVIDER_DEFINITIONS.get(provider, {}).get("display_name"),
+            "default_model": body.get("default_model") or (
+                "deepseek-v4-flash-free" if provider == "opencode" else None
+            ),
+        })
         return {"provider_id": provider, "connected": True, "status": "connected", "connection": result}
 
     async def disconnect_provider(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         connections = (await self.router.list_connections())["connections"]
         for item in connections:
             if item.get("provider") == provider:
@@ -1284,6 +1347,7 @@ class PlatformService:
 
     async def test_provider(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         rows = await self._provider_connections(provider)
         current = next(
             (item for item in rows if item.get("active") is not False),
@@ -1296,6 +1360,7 @@ class PlatformService:
 
     async def list_provider_connections(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         connections = await self._provider_connections(provider)
         return {
             "provider_id": provider,
@@ -1305,19 +1370,24 @@ class PlatformService:
 
     async def add_provider_connection(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         if provider not in API_KEY_PROVIDERS:
             raise ServiceError(
                 "use the provider connect flow to add an OAuth account",
                 status=400, code="oauth_connect_required",
             )
         router_provider = provider
-        if provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
+        if provider == "opencode":
+            router_provider = await self.router.ensure_opencode_zen_provider()
+        elif provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
             router_provider = await self.router.openai_compatible_provider_id(provider)
         result = await self.router.create_api_key_connection({
             "provider": router_provider,
             "api_key": body.get("api_key"),
             "name": body.get("name"),
-            "default_model": body.get("default_model"),
+            "default_model": body.get("default_model") or (
+                "deepseek-v4-flash-free" if provider == "opencode" else None
+            ),
         })
         return {"provider_id": provider, "connected": True, "connection": result["connection"]}
 
@@ -1377,6 +1447,15 @@ class PlatformService:
         if provider not in SUPPORTED_PROVIDERS:
             raise ServiceError("provider not found", status=404, code="not_found")
         return provider
+
+    @staticmethod
+    def _require_connection_auth(provider: str) -> None:
+        if provider in NO_AUTH_PROVIDERS:
+            raise ServiceError(
+                "provider is available without authentication",
+                status=400,
+                code="no_auth_provider",
+            )
 
     @staticmethod
     def _api_key_info(provider: str) -> dict[str, Any]:
@@ -1585,7 +1664,11 @@ class PlatformService:
         return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Session"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tool_call_count") or item.get("tools") or 0), "created_at": item.get("created_at") or item.get("started_at"), "updated_at": item.get("last_active_at") or item.get("updated_at") or item.get("ended_at") or item.get("started_at") or item.get("created_at")}
 
     @staticmethod
-    def _agent_dto(item: Mapping[str, Any]) -> dict[str, Any]:
+    def _agent_dto(
+        item: Mapping[str, Any],
+        *,
+        include_soul: bool = False,
+    ) -> dict[str, Any]:
         metadata = dict(item.get("metadata") or {})
         config = dict(item.get("config") or {})
         name = str(item.get("name") or item.get("profile_name") or "")
@@ -1594,7 +1677,7 @@ class PlatformService:
             "display_name": display_name,
             "description": str(metadata.get("description") or ""),
         }
-        return {
+        result = {
             "id": name,
             "name": display_name,
             "display_name": display_name,
@@ -1612,6 +1695,9 @@ class PlatformService:
             "updated_at": metadata.get("updated_at"),
             "metadata": public_metadata,
         }
+        if include_soul:
+            result["soul"] = str(item.get("soul") or "")
+        return result
 
 
 EXPECTED_ERRORS = (

@@ -190,19 +190,34 @@ export function ConnectionsView({
             const rows = accounts.connectionsByProvider[p.id] ?? [];
             const count = p.connection_count ?? (rows.length || (p.connected ? 1 : 0));
             const isOpen = expanded.has(p.id);
+            const noAuth = p.connection_mode === 'no-auth';
             return (
             <article className="conn-card" key={p.id}>
               <div className="conn-card-head">
                 <ProviderBrandIcon brand={p.brand} />
                 <strong>{p.display_name}</strong>
                 <span className={p.connected ? 'conn-badge ok' : 'conn-badge'}>
-                  {p.connected
+                  {noAuth
+                    ? p.connected
+                      ? t('common.available', { defaultValue: 'available' })
+                      : t('common.unavailable', { defaultValue: 'unavailable' })
+                    : p.connected
                     ? t('connections.connectedCount', { defaultValue: 'connected · {{count}} account(s)', count })
+                    : p.free_models_available
+                    ? t('common.available', { defaultValue: 'available' })
                     : t('connections.notConnected')}
                 </span>
               </div>
               <p className="conn-desc">{p.description}</p>
-              {p.connected ? (
+              {noAuth ? (
+                <div className={`conn-no-auth${p.connected ? '' : ' unavailable'}`}>
+                  {p.connected ? <Check size={14} /> : <X size={14} />}
+                  <span>{p.connected
+                    ? t('connections.noAuthRequired', { defaultValue: 'No API key required' })
+                    : t('connections.routerUnavailable', { defaultValue: '9router unavailable' })}
+                  </span>
+                </div>
+              ) : p.connected ? (
                 <>
                   <button className="conn-accounts-toggle" onClick={() => toggleExpand(p.id)}>
                     {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -271,6 +286,18 @@ export function ConnectionsView({
                       {t('connections.removeAllAccounts', { defaultValue: 'Remove all accounts' })}
                     </button>
                   </div>
+                </>
+              ) : p.free_models_available ? (
+                <>
+                  <div className="conn-no-auth">
+                    <Check size={14} />
+                    <span>{t('connections.freeModelsAvailable', {
+                      defaultValue: 'Free models available without an API key.',
+                    })}</span>
+                  </div>
+                  <button className="conn-btn primary" onClick={() => onConnect(p.id)}>
+                    {t('connections.addApiKey')}
+                  </button>
                 </>
               ) : (
                 <button className="conn-btn primary" onClick={() => onConnect(p.id)}>

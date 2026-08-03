@@ -24,6 +24,7 @@ import {
   Puzzle,
   Search,
   Settings,
+  SlidersHorizontal,
   Sun,
   Trash2,
   X,
@@ -32,6 +33,7 @@ import type { ActiveUser } from '../auth';
 import type { Brain4AllEdition } from '../runtime';
 import { SUPPORTED_LANGUAGES } from '../i18n';
 import { useTheme } from '../theme';
+import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 import type { Agent, CenterView } from '../types';
 
 const PINNED_KEY = 'brain4all.pinnedAssistants';
@@ -96,6 +98,8 @@ export function Sidebar({
   const { t, i18n } = useTranslation();
   const { preference: themePref, setPreference: setThemePref } = useTheme();
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const preferencesRoot = useDismissibleLayer<HTMLDivElement>(preferencesOpen, () => setPreferencesOpen(false));
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [librarySearch, setLibrarySearch] = useState('');
   const [agentMenuId, setAgentMenuId] = useState<string | null>(null);
@@ -267,17 +271,22 @@ export function Sidebar({
         {q && focusedAgents.length > 0 && <div className="assistant-list-label">{t('agents.searchResults')}</div>}
         {focusedAgents.map((agent) => renderAgent(agent))}
         {focusedAgents.length === 0 && <div className="assistant-list-empty">{t('agents.noMatch')}</div>}
-        <button className="open-library-button" onClick={() => setLibraryOpen(true)}>
-          <BookOpen size={15} /> {t('agents.openLibrary')}
-        </button>
         {agentActionError && <div className="agent-action-error" role="alert">{agentActionError}</div>}
       </div>
 
-      <div className="workspace-nav">
-        <button className="workspace-nav-toggle" aria-expanded={workspaceOpen} onClick={() => setWorkspaceOpen((open) => !open)}>
-          {workspaceOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-          <span>{t('nav.manage', { defaultValue: 'Manage' })}</span>
+      <div className="library-nav">
+        <button className="open-library-button" onClick={() => setLibraryOpen(true)}>
+          <BookOpen size={15} /> {t('agents.openLibrary')}
         </button>
+      </div>
+
+      <div className="workspace-nav">
+        <div className="workspace-nav-heading">
+          <button className="workspace-nav-toggle" aria-expanded={workspaceOpen} onClick={() => setWorkspaceOpen((open) => !open)}>
+            {workspaceOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+            <span>{t('nav.manage', { defaultValue: 'Manage' })}</span>
+          </button>
+        </div>
         {workspaceOpen && (
           <div className="main-nav">
             {loginEnabled && (
@@ -301,32 +310,61 @@ export function Sidebar({
       </div>
 
       <div className="left-footer">
-        <div className="theme-switcher" role="group" aria-label={t('theme.label')}>
-          <button className={themePref === 'light' ? 'active' : ''} title={t('theme.light')} onClick={() => setThemePref('light')}><Sun size={15} /></button>
-          <button className={themePref === 'dark' ? 'active' : ''} title={t('theme.dark')} onClick={() => setThemePref('dark')}><Moon size={15} /></button>
-          <button className={themePref === 'auto' ? 'active' : ''} title={t('theme.auto')} onClick={() => setThemePref('auto')}><Monitor size={15} /></button>
-        </div>
-        <div className="lang-switcher">
-          <Languages size={15} />
-          <select value={i18n.resolvedLanguage} onChange={(event) => i18n.changeLanguage(event.target.value)} aria-label={t('language.label')}>
-            {SUPPORTED_LANGUAGES.map((language) => <option key={language} value={language}>{t(`language.${language}`)}</option>)}
-          </select>
-          <ChevronDown size={14} />
-        </div>
-        {loginEnabled && (sessionActive ? (
-          <div className="user-row">
-            <button className="user-login" onClick={onOpenAccount} title="Open account">
-              <span className="user-avatar">{user ? (user.displayName || user.email).charAt(0).toUpperCase() : <CircleUserRound size={14} />}</span>
-              <span className="user-name">{user ? user.displayName || user.email : 'Account'}</span>
-            </button>
-            <button className="icon-button" title="Sign out" onClick={() => void onSignOut?.()}><LogOut size={16} /></button>
-          </div>
-        ) : (
-          <button className="user-row user-login" onClick={onOpenLogin}>
-            <span className="user-avatar"><LogIn size={14} /></span>
-            <span className="user-name">Sign in</span>
+        <div className="preferences-menu" ref={preferencesRoot}>
+          {preferencesOpen && (
+            <section className="preferences-popover" role="region" aria-label="Preferences">
+              <div className="preferences-row appearance-row">
+                <span className="preferences-label"><SlidersHorizontal size={17} /> Appearance</span>
+                <div className="theme-switcher" role="group" aria-label={t('theme.label')}>
+                  <button className={themePref === 'light' ? 'active' : ''} title={t('theme.light')} onClick={() => setThemePref('light')}><Sun size={16} /></button>
+                  <button className={themePref === 'dark' ? 'active' : ''} title={t('theme.dark')} onClick={() => setThemePref('dark')}><Moon size={16} /></button>
+                  <button className={themePref === 'auto' ? 'active' : ''} title={t('theme.auto')} onClick={() => setThemePref('auto')}><Monitor size={16} /></button>
+                </div>
+              </div>
+              <label className="preferences-row language-row">
+                <span className="preferences-label"><Languages size={17} /> {t('language.label')}</span>
+                <span className="preferences-select">
+                  <select value={i18n.resolvedLanguage} onChange={(event) => i18n.changeLanguage(event.target.value)} aria-label={t('language.label')}>
+                    {SUPPORTED_LANGUAGES.map((language) => <option key={language} value={language}>{t(`language.${language}`)}</option>)}
+                  </select>
+                  <ChevronDown size={15} />
+                </span>
+              </label>
+              {loginEnabled && (
+                <button
+                  className={sessionActive ? 'preferences-auth danger' : 'preferences-auth'}
+                  aria-label={sessionActive ? 'Sign out' : 'Sign in'}
+                  onClick={() => {
+                    setPreferencesOpen(false);
+                    if (sessionActive) void onSignOut?.();
+                    else onOpenLogin?.();
+                  }}
+                >
+                  {sessionActive ? <LogOut size={17} /> : <LogIn size={17} />}
+                  {sessionActive ? 'Log out' : 'Sign in'}
+                </button>
+              )}
+            </section>
+          )}
+          <button
+            className="preferences-trigger"
+            aria-label={sessionActive && user ? `Open preferences for ${user.displayName || user.email}` : 'Open preferences'}
+            aria-expanded={preferencesOpen}
+            onClick={() => setPreferencesOpen((open) => !open)}
+          >
+            <span className="user-avatar">
+              {sessionActive && user
+                ? (user.displayName || user.email).charAt(0).toUpperCase()
+                : <SlidersHorizontal size={15} />}
+            </span>
+            <span className="preferences-trigger-copy">
+              <strong>{sessionActive && user ? user.displayName || user.email : 'Preferences'}</strong>
+              {sessionActive && user && <small>{user.email}</small>}
+              {!sessionActive && <small>Appearance and language</small>}
+            </span>
+            <ChevronDown size={15} className={preferencesOpen ? 'open' : ''} />
           </button>
-        ))}
+        </div>
       </div>
 
       {agentMenuId && <div className="row-menu-catcher" onClick={() => setAgentMenuId(null)} />}

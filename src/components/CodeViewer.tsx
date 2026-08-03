@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import hljs from 'highlight.js/lib/common';
 import dart from 'highlight.js/lib/languages/dart';
 import dockerfile from 'highlight.js/lib/languages/dockerfile';
@@ -9,6 +9,8 @@ hljs.registerLanguage('dart', dart);
 hljs.registerLanguage('dockerfile', dockerfile);
 
 const MAX_HIGHLIGHT_CHARS = 1_000_000;
+const EDITOR_LINE_HEIGHT = 13 * 1.55;
+const EDITOR_VERTICAL_PADDING = 28;
 
 function escaped(content: string): string {
   return content
@@ -45,18 +47,84 @@ export function highlightedSource(
   };
 }
 
-export function lineNumberText(content: string): string {
-  const count = Math.max(1, content.split('\n').length);
+export function lineNumberText(content: string, minimumLines = 1): string {
+  const count = Math.max(1, minimumLines, content.split('\n').length);
   return Array.from({ length: count }, (_, index) => String(index + 1)).join('\n');
 }
 
-export default function CodeViewer({ content, path }: { content: string; path: string }) {
+function useVisibleLineCount(ref: React.RefObject<HTMLElement | null>, fillViewport: boolean) {
+  const [minimumLines, setMinimumLines] = useState(1);
+
+  useLayoutEffect(() => {
+    if (!fillViewport) {
+      setMinimumLines(1);
+      return undefined;
+    }
+    const element = ref.current;
+    if (!element) return undefined;
+    const update = () => {
+      const usableHeight = Math.max(0, element.clientHeight - EDITOR_VERTICAL_PADDING);
+      setMinimumLines(Math.max(1, Math.ceil(usableHeight / EDITOR_LINE_HEIGHT)));
+    };
+    update();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    observer?.observe(element);
+    window.addEventListener('resize', update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [fillViewport, ref]);
+
+  return minimumLines;
+}
+
+export function NumberedTextEditor({
+  value,
+  ariaLabel,
+  disabled,
+  autoFocus,
+  onChange,
+}: {
+  value: string;
+  ariaLabel: string;
+  disabled?: boolean;
+  autoFocus?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const gutterRef = useRef<HTMLPreElement>(null);
+  const minimumLines = useVisibleLineCount(rootRef, true);
+  const lineNumbers = useMemo(() => lineNumberText(value, minimumLines), [minimumLines, value]);
+
+  return (
+    <div className="gd-numbered-editor" ref={rootRef}>
+      <pre ref={gutterRef} className="gd-code-lines" aria-hidden="true">{lineNumbers}</pre>
+      <textarea
+        aria-label={ariaLabel}
+        autoFocus={autoFocus}
+        disabled={disabled}
+        value={value}
+        wrap="off"
+        onChange={(event) => onChange(event.target.value)}
+        onScroll={(event) => {
+          if (gutterRef.current) gutterRef.current.scrollTop = event.currentTarget.scrollTop;
+        }}
+      />
+    </div>
+  );
+}
+
+export default function CodeViewer({ content, path, fillViewport = false }: { content: string; path: string; fillViewport?: boolean }) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const highlighted = useMemo(() => highlightedSource(content, path), [content, path]);
-  const lineNumbers = useMemo(() => lineNumberText(content), [content]);
+  const minimumLines = useVisibleLineCount(rootRef, fillViewport);
+  const lineNumbers = useMemo(() => lineNumberText(content, minimumLines), [content, minimumLines]);
 
   return (
     <div
       className="gd-code-editor"
+      ref={rootRef}
       data-language={highlighted.language}
       data-highlighted={highlighted.highlighted}
     >

@@ -34,7 +34,9 @@ from .nine_router import (
     NINE_ROUTER_PROVIDER,
     NineRouterAPIError,
     NineRouterManager,
+    display_nine_router_model,
     normalize_nine_router_config,
+    route_nine_router_model,
 )
 
 
@@ -920,7 +922,12 @@ class AgentManager:
         if conversation_id:
             command.extend(["--resume", conversation_id])
         if body.get("model"):
-            command.extend(["--model", self._nonempty_string(body["model"], "model")])
+            command.extend([
+                "--model",
+                route_nine_router_model(
+                    self._nonempty_string(body["model"], "model")
+                ),
+            ])
         skills = body.get("skills")
         if skills is None:
             disabled = self._disabled_skills(self._read_config(profile_dir))
@@ -2276,7 +2283,13 @@ class AgentManager:
         approval = self._get_nested(config, ("approvals", "mode"), "manual")
         return {
             "provider": "nine-router",
-            "model": self._get_nested(config, ("model", "default"), NINE_ROUTER_DEFAULT_MODEL),
+            "model": display_nine_router_model(
+                self._get_nested(
+                    config,
+                    ("model", "default"),
+                    NINE_ROUTER_DEFAULT_MODEL,
+                )
+            ),
             "reasoning": effort != "none",
             "effort": effort,
             "approval_mode": "off" if approval is False or str(approval).lower() == "off" else "on",
@@ -2417,7 +2430,9 @@ class AgentManager:
 
     def _conversation_model(self, profile_dir: Path, body: Mapping[str, Any]) -> str:
         if body.get("model"):
-            return self._nonempty_string(body["model"], "model")
+            return route_nine_router_model(
+                self._nonempty_string(body["model"], "model")
+            )
         config = self._read_config(profile_dir)
         model = self._get_nested(config, ("model", "default"), None)
         if not model:
