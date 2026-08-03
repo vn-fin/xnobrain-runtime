@@ -243,7 +243,7 @@ impl InstallerService {
         })
     }
 
-    pub fn control_runtime(&self, action: RuntimeAction) -> InstallerResult<RuntimeOverview> {
+    pub fn manage_runtime(&self, action: RuntimeAction) -> InstallerResult<RuntimeOverview> {
         let _guard = self.mutation.try_lock().map_err(|_| {
             InstallerError::retryable(
                 "operation_in_progress",

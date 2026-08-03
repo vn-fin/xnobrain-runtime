@@ -1,14 +1,16 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "release": "0.1.0-dev",
   "default_host_port": 5152,
   "minimum_disk_bytes": 8589934592,
   "health_path": "/api/v1/health",
   "health_timeout_seconds": 180,
-  "web_auth": {
-    "base_url": "https://api.dev.xnoquant.io",
-    "mode": "required",
-    "provider": "xno-firebase"
+  "web_build": {
+    "auth_base_url": "https://api.dev.xnoquant.io",
+    "brain_control_base_url": "https://api.dev.xnoquant.io",
+    "auth_mode": "required",
+    "auth_provider": "xno-firebase",
+    "firebase_api_key_sha256": "REPLACE_WITH_64_HEX_CHARACTERS"
   },
   "docker_installers": {
     "windows_amd64": {
@@ -28,11 +30,11 @@
     "traefik": {
       "reference": "traefik@sha256:f79c88ed5252ae1e31c757a9796d751461ddb502437b8d8526db9e12605a82eb"
     },
-    "xnobrain": {
+    "brain": {
       "reference": "registry.example/xnobrain@sha256:REPLACE_WITH_64_HEX_CHARACTERS"
     },
-    "control": {
-      "reference": "registry.example/xnobrain-control@sha256:REPLACE_WITH_64_HEX_CHARACTERS"
+    "runtime_api": {
+      "reference": "registry.example/xnobrain-runtime-api@sha256:REPLACE_WITH_64_HEX_CHARACTERS"
     }
   }
 }

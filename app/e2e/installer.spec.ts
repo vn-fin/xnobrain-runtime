@@ -73,7 +73,7 @@ test('Windows existing-Docker journey installs on a custom Traefik port', async 
   await page.getByRole('button', { name: 'Close settings' }).click()
   await page.getByRole('button', { name: 'Docker Web settings' }).click()
   await page.getByRole('menuitem', { name: /Logs/ }).click()
-  await expect(page.getByText(/Configuration loaded from Docker provider/)).toBeVisible()
+  await expect(page.getByText(/Configuration loaded from the file provider/)).toBeVisible()
   await capture(page, '14-logs-overlay')
   await page.getByRole('button', { name: 'Close settings' }).click()
   await page.getByRole('button', { name: 'Docker Web settings' }).click()

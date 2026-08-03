@@ -9,12 +9,12 @@
 - Rust format check, Clippy with warnings denied, and eight unit tests.
 - Native 1120 × 620 installer journey from edition selection through healthy
   completion.
-- Pull-only Compose runtime with three immutable image references. No image was
-  built by the installer.
-- Traefik is the sole published service at `127.0.0.1:6253`; XNOBrain Web and
-  control remain Docker-internal.
+- Pull-only Compose runtime with three immutable image references: Traefik,
+  Brain UI, and Runtime API. No image was built by the installer.
+- Traefik is the sole published service at `127.0.0.1:6253`; Brain UI and
+  Runtime API remain Docker-internal.
 - Generated file-provider routing works without mounting the Docker socket.
-- Control health returned HTTP 200 through Traefik.
+- Runtime API health returned HTTP 200 through Traefik.
 - DEB and RPM contain the native binary, desktop entry, and Docker installation
   helper.
 
@@ -34,7 +34,7 @@ now rejects loopback registries unless `config-local` is explicitly requested.
 The available local pull-only Web image made one Firebase sign-in request, but
 Firebase returned `API key not valid` before account authentication. A synthetic
 auth exchange then showed one request each for agents, blends, and teams; the
-control API correctly rejected the synthetic bearer token with HTTP 401.
+Runtime API correctly rejected the synthetic bearer token with HTTP 401.
 
 Consequently, authenticated page-by-page API timing and duplicate-call
 validation is not claimed. It requires the immutable published XNOBrain Web

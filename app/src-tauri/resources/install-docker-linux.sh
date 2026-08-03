@@ -9,8 +9,10 @@ fi
 . /etc/os-release
 case "${ID:-}:${ID_LIKE:-}" in
   ubuntu:*|debian:*|pop:*|*:debian*)
-    repository_distribution="${ID:-debian}"
-    [ "$repository_distribution" = pop ] && repository_distribution=ubuntu
+    case "${ID:-}:${ID_LIKE:-}" in
+      ubuntu:*|pop:*|linuxmint:*|elementary:*|*:ubuntu*) repository_distribution=ubuntu ;;
+      *) repository_distribution=debian ;;
+    esac
     apt-get update
     apt-get install -y ca-certificates curl
     install -m 0755 -d /etc/apt/keyrings
@@ -31,13 +33,13 @@ case "${ID:-}:${ID_LIKE:-}" in
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     ;;
   fedora:*|*:fedora*)
-    dnf install -y dnf-plugins-core
-    dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+    dnf install -y ca-certificates curl
+    curl -fsSL https://download.docker.com/linux/fedora/docker-ce.repo -o /etc/yum.repos.d/docker-ce.repo
     dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     ;;
   centos:*|rhel:*|*:rhel*)
-    dnf install -y dnf-plugins-core
-    dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    dnf install -y ca-certificates curl
+    curl -fsSL https://download.docker.com/linux/centos/docker-ce.repo -o /etc/yum.repos.d/docker-ce.repo
     dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     ;;
   *)

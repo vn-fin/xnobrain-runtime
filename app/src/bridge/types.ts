@@ -115,7 +115,7 @@ export interface InstallerBridge {
   openDockerHelp(): Promise<void>
   installDocker(onProgress: (progress: DockerInstallProgress) => void): Promise<DockerInstallResult>
   inspectRuntime(): Promise<RuntimeOverview>
-  controlRuntime(action: RuntimeAction): Promise<RuntimeOverview>
+  manageRuntime(action: RuntimeAction): Promise<RuntimeOverview>
   readLogs(service: LogService): Promise<RuntimeLogs>
   toggleFullscreen(): Promise<boolean>
   resetInstallation(): Promise<void>

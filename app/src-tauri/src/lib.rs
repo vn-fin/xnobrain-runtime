@@ -44,7 +44,7 @@ pub fn run() {
             commands::open_web,
             commands::open_docker_help,
             commands::inspect_runtime,
-            commands::control_runtime,
+            commands::manage_runtime,
             commands::read_logs,
             commands::toggle_fullscreen,
             commands::reset_installation,

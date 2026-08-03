@@ -8,6 +8,7 @@ APP_PACKAGE := package.json
 GENERATED_DIR := $(abspath generated)
 GENERATED_MANIFEST := $(GENERATED_DIR)/runtime-manifest.json
 GENERATED_TAURI_CONFIG := $(GENERATED_DIR)/tauri.release.conf.json
+GENERATED_BRAIN_BUILD_ENV := $(GENERATED_DIR)/brain-ui-build.env
 export XNOBRAIN_RUNTIME_MANIFEST := $(GENERATED_MANIFEST)
 
 -include .env
@@ -37,10 +38,12 @@ setup-windows:
 config: require-project
 	@node scripts/generate-runtime-manifest.mjs "$(GENERATED_MANIFEST)"
 	@node scripts/generate-tauri-config.mjs "$(GENERATED_TAURI_CONFIG)"
+	@node scripts/generate-brain-build-env.mjs "$(GENERATED_BRAIN_BUILD_ENV)"
 
 config-local: require-project
 	@node scripts/generate-runtime-manifest.mjs "$(GENERATED_MANIFEST)" --allow-local
 	@node scripts/generate-tauri-config.mjs "$(GENERATED_TAURI_CONFIG)"
+	@node scripts/generate-brain-build-env.mjs "$(GENERATED_BRAIN_BUILD_ENV)"
 
 config-test: require-project
 	@node scripts/prepare-test-config.mjs "$(GENERATED_MANIFEST)"

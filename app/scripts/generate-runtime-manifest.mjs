@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 
 const output = resolve(process.argv[2] ?? 'generated/runtime-manifest.json')
@@ -58,16 +59,30 @@ const httpsUrl = (name, fallback) => {
   return url
 }
 
-const authBaseUrl = value('XNOBRAIN_AUTH_BASE_URL', example.web_auth.base_url)
+const authBaseUrl = value('XNOBRAIN_AUTH_BASE_URL', example.web_build.auth_base_url)
 if (!/^https:\/\/[^/].*[^/]$/.test(authBaseUrl)) {
   throw new Error('XNOBRAIN_AUTH_BASE_URL must be an HTTPS origin without a trailing slash')
 }
+const brainControlBaseUrl = value('XNOBRAIN_BRAIN_CONTROL_BASE_URL', example.web_build.brain_control_base_url)
+if (!/^https:\/\/[^/].*[^/]$/.test(brainControlBaseUrl)) {
+  throw new Error('XNOBRAIN_BRAIN_CONTROL_BASE_URL must be an HTTPS origin without a trailing slash')
+}
+const firebaseApiKey = value('XNOBRAIN_FIREBASE_API_KEY', '')
+if (!/^AIza[0-9A-Za-z_-]{35}$/.test(firebaseApiKey)) {
+  throw new Error('XNOBRAIN_FIREBASE_API_KEY must be the complete 39-character Firebase Web API key beginning with AIza')
+}
+const firebaseApiKeySha256 = createHash('sha256').update(firebaseApiKey).digest('hex')
 
 const manifest = {
   ...example,
   release: value('XNOBRAIN_RELEASE', example.release),
   default_host_port: integer('XNOBRAIN_DEFAULT_PORT', example.default_host_port, 1024, 65535),
-  web_auth: { ...example.web_auth, base_url: authBaseUrl },
+  web_build: {
+    ...example.web_build,
+    auth_base_url: authBaseUrl,
+    brain_control_base_url: brainControlBaseUrl,
+    firebase_api_key_sha256: firebaseApiKeySha256,
+  },
   docker_installers: {
     windows_amd64: {
       url: httpsUrl('XNOBRAIN_DOCKER_WINDOWS_URL', example.docker_installers.windows_amd64.url),
@@ -86,11 +101,11 @@ const manifest = {
     traefik: {
       reference: digestReference('XNOBRAIN_TRAEFIK_IMAGE', example.images.traefik.reference),
     },
-    xnobrain: {
-      reference: digestReference('XNOBRAIN_IMAGE', example.images.xnobrain.reference),
+    brain: {
+      reference: digestReference('XNOBRAIN_IMAGE', example.images.brain.reference),
     },
-    control: {
-      reference: digestReference('XNOBRAIN_CONTROL_IMAGE', example.images.control.reference),
+    runtime_api: {
+      reference: digestReference('XNOBRAIN_RUNTIME_API_IMAGE', example.images.runtime_api.reference),
     },
   },
 }

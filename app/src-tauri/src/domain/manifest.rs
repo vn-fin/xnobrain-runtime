@@ -12,15 +12,17 @@ pub struct ImageManifest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RuntimeImages {
     pub traefik: ImageManifest,
-    pub xnobrain: ImageManifest,
-    pub control: ImageManifest,
+    pub brain: ImageManifest,
+    pub runtime_api: ImageManifest,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct WebAuthManifest {
-    pub base_url: String,
-    pub mode: String,
-    pub provider: String,
+pub struct WebBuildManifest {
+    pub auth_base_url: String,
+    pub brain_control_base_url: String,
+    pub auth_mode: String,
+    pub auth_provider: String,
+    pub firebase_api_key_sha256: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -44,7 +46,7 @@ pub struct RuntimeManifest {
     pub minimum_disk_bytes: u64,
     pub health_path: String,
     pub health_timeout_seconds: u64,
-    pub web_auth: WebAuthManifest,
+    pub web_build: WebBuildManifest,
     pub docker_installers: DockerInstallers,
     pub images: RuntimeImages,
 }
@@ -62,7 +64,7 @@ impl RuntimeManifest {
     }
 
     fn validate(&self) -> InstallerResult<()> {
-        if self.schema_version != 1 {
+        if self.schema_version != 2 {
             return Err(InstallerError::terminal(
                 "manifest_schema_unsupported",
                 "This installer cannot read the bundled runtime manifest.",
@@ -74,10 +76,16 @@ impl RuntimeManifest {
                 "The runtime manifest contains an invalid default port.",
             ));
         }
-        if !self.web_auth.base_url.starts_with("https://")
-            || self.web_auth.base_url.ends_with('/')
-            || self.web_auth.mode != "required"
-            || self.web_auth.provider != "xno-firebase"
+        if !valid_https_origin(&self.web_build.auth_base_url)
+            || !valid_https_origin(&self.web_build.brain_control_base_url)
+            || self.web_build.auth_mode != "required"
+            || self.web_build.auth_provider != "xno-firebase"
+            || self.web_build.firebase_api_key_sha256.len() != 64
+            || !self
+                .web_build
+                .firebase_api_key_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
         {
             return Err(InstallerError::terminal(
                 "manifest_auth_invalid",
@@ -86,8 +94,8 @@ impl RuntimeManifest {
         }
         for image in [
             &self.images.traefik,
-            &self.images.xnobrain,
-            &self.images.control,
+            &self.images.brain,
+            &self.images.runtime_api,
         ] {
             let Some((repository, digest)) = image.reference.rsplit_once("@sha256:") else {
                 return Err(InstallerError::terminal(
@@ -129,6 +137,10 @@ impl RuntimeManifest {
     }
 }
 
+fn valid_https_origin(value: &str) -> bool {
+    value.starts_with("https://") && !value.ends_with('/') && !value.contains(char::is_whitespace)
+}
+
 #[cfg(test)]
 mod tests {
     use super::RuntimeManifest;
@@ -137,9 +149,18 @@ mod tests {
     fn bundled_manifest_is_valid_and_immutable() {
         let manifest = RuntimeManifest::bundled().expect("bundled manifest should validate");
         assert_eq!(manifest.default_host_port, 5152);
-        assert!(manifest.images.xnobrain.reference.contains("@sha256:"));
-        assert_eq!(manifest.web_auth.base_url, "https://api.dev.xnoquant.io");
-        assert_eq!(manifest.web_auth.mode, "required");
-        assert_eq!(manifest.web_auth.provider, "xno-firebase");
+        assert!(manifest.images.brain.reference.contains("@sha256:"));
+        assert!(manifest.images.runtime_api.reference.contains("@sha256:"));
+        assert_eq!(
+            manifest.web_build.auth_base_url,
+            "https://api.dev.xnoquant.io"
+        );
+        assert_eq!(
+            manifest.web_build.brain_control_base_url,
+            "https://api.dev.xnoquant.io"
+        );
+        assert_eq!(manifest.web_build.auth_mode, "required");
+        assert_eq!(manifest.web_build.auth_provider, "xno-firebase");
+        assert_eq!(manifest.web_build.firebase_api_key_sha256.len(), 64);
     }
 }

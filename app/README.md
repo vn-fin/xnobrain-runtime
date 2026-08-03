@@ -6,7 +6,8 @@ workspace. It does not import or modify the existing Web UI or backend source.
 The current Docker/Web edition is distributed as one native installer file.
 After launch it can install Docker Engine/Desktop and Docker Compose (with the
 operating system's permission and Docker-license prompts), pull three immutable
-images, generate a private Compose stack, and start XNOBrain. Traefik is the
+images (Traefik, Brain UI, and Runtime API), generate a private Compose stack,
+and start XNOBrain. Traefik is the
 only service with a host mapping and binds only to `127.0.0.1` on the selected
 default or custom port. Routing uses a generated read-only file; the Traefik
 container is not given the Docker socket.
@@ -28,7 +29,7 @@ The bootstrap installs Make as well as Node, MSVC, WebView2, and Rust. Open a
 new terminal afterward; subsequent setup and build commands use Make normally.
 
 Copy `.env.example` to `.env` or pass variables directly to Make. Release
-builds require the XNOBrain Web and control images as immutable registry digest
+builds require the Brain UI and Runtime API images as immutable registry digest
 references; mutable tags, example registries, and local-only images are
 rejected. `make config-local` is an explicit exception for isolated installer
 validation and must not feed release artifacts.
@@ -54,19 +55,27 @@ Example release configuration:
 make rpm \
   XNOBRAIN_APP_NAME=XNOBrain \
   XNOBRAIN_APP_DESCRIPTION="Private XNOBrain Docker Web workspace" \
+  XNOBRAIN_AUTH_BASE_URL=https://api.example.com \
+  XNOBRAIN_BRAIN_CONTROL_BASE_URL=https://control.example.com \
+  XNOBRAIN_FIREBASE_API_KEY=AIza<complete-public-web-api-key> \
   XNOBRAIN_IMAGE=registry.example/xnobrain@sha256:<64-hex-digest> \
-  XNOBRAIN_CONTROL_IMAGE=registry.example/xnobrain-control@sha256:<64-hex-digest>
+  XNOBRAIN_RUNTIME_API_IMAGE=registry.example/xnobrain-runtime-api@sha256:<64-hex-digest>
 ```
 
 No credentials belong in `.env`, generated manifests, Compose, screenshots, or
-logs. Authentication remains the Web application's HTTPS contract with the
-configured `XNOBRAIN_AUTH_BASE_URL`.
+logs. Authentication and Brain Control are external HTTPS contracts compiled
+into the Brain UI image from `AUTH_BASE_URL` and `API_CONTROL_BASE_URL`. Their
+expected origins are recorded with `XNOBRAIN_AUTH_BASE_URL` and
+`XNOBRAIN_BRAIN_CONTROL_BASE_URL`; neither runs as a local container.
+`make config` also writes the matching ignored, mode-0600
+`generated/brain-ui-build.env` for the separate Brain UI image build. The
+installer manifest stores only the Firebase key's SHA-256 fingerprint.
 
-The published Web image must already be compiled for the same authentication
-origin, provider, and Firebase public API key. Vite embeds those values at Web
-image build time; installer labels cannot retrofit them. Release validation
-must reject an image that cannot complete authentication against the selected
-environment.
+The published Brain UI image must already be compiled for those same origins,
+the authentication provider, and Firebase public API key. Vite embeds those
+values at image build time; installer metadata cannot retrofit them. Release
+validation must reject an image that cannot complete authentication and Brain
+Control calls against the selected environment.
 
 See [platform support](docs/platform-support.md) for the native validation and
 release requirements.

@@ -142,7 +142,7 @@ const createDemoBridge = (): InstallerBridge => ({
     await wait(140)
     return demoRuntimeOverview()
   },
-  async controlRuntime(action) {
+  async manageRuntime(action) {
     await wait(360)
     window.localStorage.setItem('xnobrain-demo-state', action === 'stop' ? 'stopped' : 'running')
     return demoRuntimeOverview()
@@ -150,7 +150,7 @@ const createDemoBridge = (): InstallerBridge => ({
   async readLogs(service) {
     await wait(120)
     const allLines = [
-      '2026-08-03T07:42:11Z  traefik   INFO  Configuration loaded from Docker provider',
+      '2026-08-03T07:42:11Z  traefik   INFO  Configuration loaded from the file provider',
       '2026-08-03T07:42:12Z  runtime   INFO  API server listening on private port 8642',
       '2026-08-03T07:42:12Z  frontend  INFO  Web interface ready on private port 8080',
       '2026-08-03T07:42:13Z  runtime   INFO  Health check passed',
@@ -184,7 +184,7 @@ function demoRuntimeOverview(): RuntimeOverview {
     composeVersion: '5.3.1',
     services: storedPort ? (['traefik', 'frontend', 'runtime'] as LogService[]).map((id) => ({
       id,
-      name: id === 'traefik' ? 'Traefik ingress' : id === 'frontend' ? 'XNOBrain Web' : 'XNOBrain control',
+      name: id === 'traefik' ? 'Traefik ingress' : id === 'frontend' ? 'Brain UI' : 'Runtime API',
       state: running ? 'running' : 'stopped',
       detail: id === 'traefik' ? `127.0.0.1:${port} → private :5152` : 'Docker-internal only',
     })) : [],
@@ -207,7 +207,7 @@ const tauriBridge: InstallerBridge = {
     return invoke<DockerInstallResult>('install_docker', { progress })
   },
   inspectRuntime: () => invoke<RuntimeOverview>('inspect_runtime'),
-  controlRuntime: (action) => invoke<RuntimeOverview>('control_runtime', { action }),
+  manageRuntime: (action) => invoke<RuntimeOverview>('manage_runtime', { action }),
   readLogs: (service) => invoke<RuntimeLogs>('read_logs', { service }),
   toggleFullscreen: () => invoke<boolean>('toggle_fullscreen'),
   resetInstallation: () => invoke<void>('reset_installation'),

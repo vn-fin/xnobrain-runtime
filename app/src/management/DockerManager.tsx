@@ -38,12 +38,12 @@ export function DockerManager({ bridge, initialOverview }: { bridge: InstallerBr
     return () => { active = false }
   }, [bridge, initialOverview])
 
-  const control = async (action: RuntimeAction) => {
+  const applyRuntimeAction = async (action: RuntimeAction) => {
     if (activeAction) return
     setActiveAction(action)
     setError(undefined)
     try {
-      setOverview(await bridge.controlRuntime(action))
+      setOverview(await bridge.manageRuntime(action))
     } catch (cause) {
       setError(messageOf(cause))
     } finally {
@@ -73,8 +73,8 @@ export function DockerManager({ bridge, initialOverview }: { bridge: InstallerBr
               <button role="menuitem" onClick={() => { setPanel('logs'); setMenuOpen(false) }}><TerminalIcon /><span><strong>Logs</strong><small>Recent output for this stack</small></span></button>
               <button role="menuitem" disabled={!running} onClick={() => { void bridge.openWeb(); setMenuOpen(false) }}><ExternalIcon /><span><strong>Open in browser</strong><small>Use your default browser</small></span></button>
               <div className="workspace-menu-controls">
-                {running ? <button disabled={Boolean(activeAction)} onClick={() => { setMenuOpen(false); void control('stop') }}><StopIcon /> Stop</button> : <button disabled={Boolean(activeAction)} onClick={() => { setMenuOpen(false); void control('start') }}><PlayIcon /> Start</button>}
-                <button disabled={!running || Boolean(activeAction)} onClick={() => { setMenuOpen(false); void control('restart') }}><RefreshIcon /> Restart</button>
+                {running ? <button disabled={Boolean(activeAction)} onClick={() => { setMenuOpen(false); void applyRuntimeAction('stop') }}><StopIcon /> Stop</button> : <button disabled={Boolean(activeAction)} onClick={() => { setMenuOpen(false); void applyRuntimeAction('start') }}><PlayIcon /> Start</button>}
+                <button disabled={!running || Boolean(activeAction)} onClick={() => { setMenuOpen(false); void applyRuntimeAction('restart') }}><RefreshIcon /> Restart</button>
               </div>
             </div>
           )}
@@ -94,7 +94,7 @@ export function DockerManager({ bridge, initialOverview }: { bridge: InstallerBr
             <span><GlobeIcon /></span>
             <h1>{loading ? `Connecting to ${productName}` : `${productName} Web is stopped`}</h1>
             <p>{loading ? 'Checking the local Docker runtime…' : 'Start the dedicated stack to show the Web application here.'}</p>
-            {!loading && <button className="button primary" disabled={Boolean(activeAction)} onClick={() => void control('start')}><PlayIcon /> Start {productName}</button>}
+            {!loading && <button className="button primary" disabled={Boolean(activeAction)} onClick={() => void applyRuntimeAction('start')}><PlayIcon /> Start {productName}</button>}
           </div>
         )}
       </div>

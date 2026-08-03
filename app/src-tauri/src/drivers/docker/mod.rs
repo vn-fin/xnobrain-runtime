@@ -162,8 +162,8 @@ impl DockerDriver {
     pub fn prepare_images(&self, manifest: &RuntimeManifest) -> InstallerResult<()> {
         for image in [
             &manifest.images.traefik,
-            &manifest.images.xnobrain,
-            &manifest.images.control,
+            &manifest.images.brain,
+            &manifest.images.runtime_api,
         ] {
             run_docker(&["pull", &image.reference], "image_pull_failed")?;
             self.verify_image(image)?;
@@ -183,6 +183,7 @@ impl DockerDriver {
                 "up",
                 "-d",
                 "--no-build",
+                "--remove-orphans",
             ],
             "docker_start_failed",
         );
@@ -235,8 +236,8 @@ impl DockerDriver {
     ) -> (RuntimeState, Vec<ServiceStatus>) {
         let definitions = [
             ("traefik", LogService::Traefik, "Traefik ingress"),
-            ("xnobrain", LogService::Frontend, "XNOBrain Web"),
-            ("control", LogService::Runtime, "XNOBrain control"),
+            ("brain", LogService::Frontend, "Brain UI"),
+            ("runtime-api", LogService::Runtime, "Runtime API"),
         ];
         let services: Vec<ServiceStatus> = definitions
             .into_iter()
@@ -287,8 +288,8 @@ impl DockerDriver {
         match service {
             LogService::All => {}
             LogService::Traefik => arguments.push("traefik"),
-            LogService::Frontend => arguments.push("xnobrain"),
-            LogService::Runtime => arguments.push("control"),
+            LogService::Frontend => arguments.push("brain"),
+            LogService::Runtime => arguments.push("runtime-api"),
         }
         let output = self.run_compose(compose_path, &arguments, "docker_logs_failed")?;
         let combined = if output.stdout.is_empty() {

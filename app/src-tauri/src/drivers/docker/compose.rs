@@ -30,20 +30,22 @@ services:
       - xnobrain.install-id=xnobrain_web
     restart: unless-stopped
 
-  xnobrain:
-    image: {xnobrain_image}
+  brain:
+    image: {brain_image}
     pull_policy: always
     labels:
       - xnobrain.install-id=xnobrain_web
-      - xnobrain.web-auth-base-url={auth_base_url}
-      - xnobrain.web-auth-mode={auth_mode}
-      - xnobrain.web-auth-provider={auth_provider}
+      - xnobrain.web-build.auth-base-url={auth_base_url}
+      - xnobrain.web-build.brain-control-base-url={brain_control_base_url}
+      - xnobrain.web-build.auth-mode={auth_mode}
+      - xnobrain.web-build.auth-provider={auth_provider}
+      - xnobrain.web-build.firebase-api-key-sha256={firebase_api_key_sha256}
     networks:
       - edge
     restart: unless-stopped
 
-  control:
-    image: {control_image}
+  runtime-api:
+    image: {runtime_api_image}
     pull_policy: always
     user: "0:0"
     cpus: 4.0
@@ -58,7 +60,7 @@ services:
       API_SERVER_PORT: 8642
       DATA_DIR: /opt/data/xnobrain
       DEVELOPMENT_ENVIRONMENT: production
-      SERVICE_NAME: xnobrain-control
+      SERVICE_NAME: xnobrain-runtime-api
       OTEL_ENABLED: "false"
     volumes:
       - xnobrain_data:/opt/data
@@ -68,7 +70,7 @@ services:
       - xnobrain.install-id=xnobrain_web
     networks:
       - edge
-      - control
+      - runtime
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/api/v1/health',timeout=2)"]
       interval: 15s
@@ -79,8 +81,8 @@ services:
 networks:
   edge:
     name: xnobrain_web_edge
-  control:
-    name: xnobrain_web_control
+  runtime:
+    name: xnobrain_web_runtime
     internal: true
 
 volumes:
@@ -88,11 +90,13 @@ volumes:
     name: xnobrain_web_data
 "#,
             traefik_image = self.manifest.images.traefik.reference,
-            xnobrain_image = self.manifest.images.xnobrain.reference,
-            control_image = self.manifest.images.control.reference,
-            auth_base_url = self.manifest.web_auth.base_url,
-            auth_mode = self.manifest.web_auth.mode,
-            auth_provider = self.manifest.web_auth.provider,
+            brain_image = self.manifest.images.brain.reference,
+            runtime_api_image = self.manifest.images.runtime_api.reference,
+            auth_base_url = self.manifest.web_build.auth_base_url,
+            brain_control_base_url = self.manifest.web_build.brain_control_base_url,
+            auth_mode = self.manifest.web_build.auth_mode,
+            auth_provider = self.manifest.web_build.auth_provider,
+            firebase_api_key_sha256 = self.manifest.web_build.firebase_api_key_sha256,
             port = self.port,
             internal_secret = self.internal_secret,
         )
@@ -105,21 +109,21 @@ volumes:
       rule: PathPrefix(`/api`) || PathPrefix(`/internal`)
       entryPoints: [web]
       priority: 100
-      service: xnobrain-control
+      service: xnobrain-runtime-api
     xnobrain-web-app-ui:
       rule: PathPrefix(`/`)
       entryPoints: [web]
       priority: 1
-      service: xnobrain-web
+      service: xnobrain-brain
   services:
-    xnobrain-control:
+    xnobrain-runtime-api:
       loadBalancer:
         servers:
-          - url: http://control:8642
-    xnobrain-web:
+          - url: http://runtime-api:8642
+    xnobrain-brain:
       loadBalancer:
         servers:
-          - url: http://xnobrain:8080
+          - url: http://brain:8080
 "#
         .to_owned()
     }
@@ -147,9 +151,17 @@ mod tests {
         assert!(compose.contains("--providers.file.filename=/etc/traefik/dynamic.yaml"));
         assert!(!compose.contains("/var/run/docker.sock"));
         assert!(compose.contains("xnobrain_web_data"));
-        assert!(compose.contains("xnobrain.web-auth-base-url=https://api.dev.xnoquant.io"));
-        assert!(compose.contains("xnobrain.web-auth-mode=required"));
-        assert!(compose.contains("xnobrain.web-auth-provider=xno-firebase"));
+        assert!(compose.contains("xnobrain.web-build.auth-base-url=https://api.dev.xnoquant.io"));
+        assert!(
+            compose
+                .contains("xnobrain.web-build.brain-control-base-url=https://api.dev.xnoquant.io")
+        );
+        assert!(compose.contains("xnobrain.web-build.auth-mode=required"));
+        assert!(compose.contains("xnobrain.web-build.auth-provider=xno-firebase"));
+        assert!(compose.contains(
+            "xnobrain.web-build.firebase-api-key-sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ));
+        assert!(!compose.contains("  control:"));
         assert_eq!(compose.matches("pull_policy: always").count(), 3);
         assert!(!compose.contains("build:"));
 
@@ -161,7 +173,7 @@ mod tests {
         .render_traefik_dynamic();
         assert!(dynamic.contains("xnobrain-web-app-ui"));
         assert!(dynamic.contains("xnobrain-web-app-api"));
-        assert!(dynamic.contains("http://control:8642"));
-        assert!(dynamic.contains("http://xnobrain:8080"));
+        assert!(dynamic.contains("http://runtime-api:8642"));
+        assert!(dynamic.contains("http://brain:8080"));
     }
 }

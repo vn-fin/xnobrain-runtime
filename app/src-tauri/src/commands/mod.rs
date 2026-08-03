@@ -110,12 +110,12 @@ pub async fn inspect_runtime(
 }
 
 #[tauri::command]
-pub async fn control_runtime(
+pub async fn manage_runtime(
     state: State<'_, AppState>,
     action: RuntimeAction,
 ) -> Result<RuntimeOverview, InstallerError> {
     let service = Arc::clone(&state.service);
-    tauri::async_runtime::spawn_blocking(move || service.control_runtime(action))
+    tauri::async_runtime::spawn_blocking(move || service.manage_runtime(action))
         .await
         .map_err(|_| {
             InstallerError::retryable(

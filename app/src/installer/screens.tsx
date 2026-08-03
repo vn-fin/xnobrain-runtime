@@ -197,7 +197,7 @@ export function ReviewScreen({ state, dispatch, runInstall }: ScreenProps) {
         <ReviewRow label="User data" value="Persistent Docker volume" />
       </div>
       <InlineNotice tone="info" title="What happens next">
-        The installer pulls immutable runtime images, creates a private Docker network, starts {productName}, and checks it through Traefik. It will not build source code or expose internal services.
+        The installer pulls immutable Traefik, Brain UI, and Runtime API images, creates private Docker networks, starts {productName}, and checks it through Traefik. Authentication and Brain Control remain external HTTPS services configured when the Brain UI image is built.
       </InlineNotice>
       {state.error && <InlineNotice tone="error" title="Installation could not continue">{state.error}</InlineNotice>}
       <Actions>
