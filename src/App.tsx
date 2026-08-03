@@ -164,15 +164,20 @@ export default function App() {
     router.setActiveConversationId,
   ]);
 
+  const skillsViewActiveRef = useRef(false);
   useEffect(() => {
+    const skillsViewActive = assistantsReady && !onboarding && router.centerView === 'skills';
+    if (skillsViewActive && !skillsViewActiveRef.current) {
+      void assistants.loadLibrary(true);
+    }
+    skillsViewActiveRef.current = skillsViewActive;
+
     if (!assistantsReady) return;
     if (onboarding) {
       void assistants.loadDefaultConfig();
       return;
     }
-    if (router.centerView === 'skills') {
-      void assistants.loadLibrary(true);
-    } else if (router.centerView === 'chat' && router.rightView === 'skills' && activeAgent) {
+    if (router.centerView === 'chat' && router.rightView === 'skills' && activeAgent) {
       void assistants.loadLibrary();
       void assistants.loadAgentSkills(activeAgent.id);
     }
@@ -479,7 +484,6 @@ export default function App() {
             }}
             onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}
             onSelectConversation={(id) => {
-              if (id === router.activeConversationId) void conversation.requestUsage();
               router.setActiveConversationId(id);
             }}
             onCreateConversation={handleCreateConversation}

@@ -29,6 +29,7 @@ import { conversationsApi } from '../api/conversations';
 import { ARCHIVED_COLUMN, KANBAN_COLUMNS } from '../api/kanban';
 import type { Team } from '../api/teams';
 import type { useKanban } from '../hooks/useKanban';
+import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 import type {
   Agent,
   AgentSkill,
@@ -262,9 +263,10 @@ function AgentPicker({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const root = useDismissibleLayer<HTMLDivElement>(open, () => setOpen(false));
   const selected = value ? resolveAssignee(value, agents) : null;
   return (
-    <div className="kb-agent-picker">
+    <div className="kb-agent-picker" ref={root}>
       <button
         type="button"
         className="kb-agent-trigger"
@@ -330,10 +332,11 @@ function TeamPicker({
   onChange: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const root = useDismissibleLayer<HTMLDivElement>(open, () => setOpen(false));
   const available = teams.filter((team) => team.enabled);
   const selected = available.find((team) => team.id === value);
   return (
-    <div className="kb-agent-picker kb-team-picker">
+    <div className="kb-agent-picker kb-team-picker" ref={root}>
       <button
         type="button"
         className="kb-agent-trigger kb-team-trigger"

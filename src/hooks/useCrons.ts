@@ -40,24 +40,21 @@ export function useCrons(enabled = true, profileIds: string[] = []) {
       return () => { cancelled = true; };
     }
 
-    let remaining = ids.length;
-    let failures = 0;
-    for (const id of ids) {
-      void cronsApi.list(id).then((jobs) => {
-        if (cancelled) return;
-        setCrons((current) => [...current.filter((job) => job.agentId !== id), ...jobs]);
-        setProfileStates((current) => ({ ...current, [id]: 'ready' }));
-      }).catch((cause) => {
-        if (cancelled) return;
-        failures += 1;
-        setProfileStates((current) => ({ ...current, [id]: 'error' }));
-        setError(cause instanceof Error ? cause.message : `Could not load cron jobs for ${id}.`);
-      }).finally(() => {
-        if (cancelled) return;
-        remaining -= 1;
-        if (remaining === 0) setStatus(failures === ids.length ? 'error' : 'ready');
-      });
-    }
+    // The unscoped endpoint already aggregates every local profile. Loading it
+    // once avoids one identical request per agent and lets the server do the
+    // profile scan concurrently/efficiently.
+    void cronsApi.list().then((jobs) => {
+      if (cancelled) return;
+      const visibleProfiles = new Set(ids);
+      setCrons(jobs.filter((job) => visibleProfiles.has(job.agentId)));
+      setProfileStates(Object.fromEntries(ids.map((id) => [id, 'ready'])));
+      setStatus('ready');
+    }).catch((cause) => {
+      if (cancelled) return;
+      setProfileStates(Object.fromEntries(ids.map((id) => [id, 'error'])));
+      setError(cause instanceof Error ? cause.message : 'Could not load cron jobs.');
+      setStatus('error');
+    });
     return () => { cancelled = true; };
   }, [enabled, profileKey]);
 

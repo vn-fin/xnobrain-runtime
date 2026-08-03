@@ -61,10 +61,14 @@ export const conversationsApi = {
     return (data.conversations ?? []).map(mapConversation);
   },
 
-  async create(agentId: string, title = 'New Conversation'): Promise<Conversation> {
+  async create(agentId: string, title?: string): Promise<Conversation> {
+    const cleanTitle = title?.trim();
     const data = await request<ConversationSummaryDTO>(pathWithAgent(ROOT, agentId), {
       method: 'POST',
-      body: JSON.stringify(title.trim() ? { title: title.trim() } : {}),
+      // Let the runtime allocate its next unique default title. Sending a
+      // fixed "New Conversation" made every subsequent session creation hit
+      // a 409 and forced an unnecessary recovery GET.
+      body: JSON.stringify(cleanTitle ? { title: cleanTitle } : {}),
     });
     return mapConversation(data);
   },

@@ -18,6 +18,7 @@ export function useTeams(active = true) {
   const [runsStatus, setRunsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const teamsRequest = useRef<Promise<void> | null>(null);
   const runsRequests = useRef(new Map<string, Promise<void>>());
+  const runRequests = useRef(new Map<string, Promise<void>>());
 
   const refresh = useCallback(() => {
     if (teamsRequest.current) return teamsRequest.current;
@@ -120,11 +121,20 @@ export function useTeams(active = true) {
   }, []);
 
   const openRun = useCallback(async (teamId: string, runId: string) => {
-    try {
-      setActiveRun(await teamsApi.getRun(teamId, runId));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not load run');
-    }
+    const requestKey = `${teamId}::${runId}`;
+    const pendingRequest = runRequests.current.get(requestKey);
+    if (pendingRequest) return pendingRequest;
+    const request = (async () => {
+      try {
+        setActiveRun(await teamsApi.getRun(teamId, runId));
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Could not load run');
+      }
+    })().finally(() => {
+      if (runRequests.current.get(requestKey) === request) runRequests.current.delete(requestKey);
+    });
+    runRequests.current.set(requestKey, request);
+    return request;
   }, []);
 
   const deleteRun = async (teamId: string, runId: string) => {

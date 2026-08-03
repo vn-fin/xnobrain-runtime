@@ -23,6 +23,7 @@ import type {
   UsageSummary,
 } from '../api/analytics';
 import type { Agent, CenterView, KanbanBoard } from '../types';
+import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 
 const PRESETS: Array<{ label: string; days: number }> = [
   { label: '24h', days: 1 },
@@ -79,6 +80,7 @@ export function AnalyticsView({
   const loading = status === 'loading';
   const contentRef = useRef<HTMLDivElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useDismissibleLayer<HTMLDivElement>(pickerOpen, () => setPickerOpen(false));
   const [metric, setMetric] = useState<'tokens' | 'cost'>('tokens');
   const selectedCount = controls.agents.length;
   const agentLabel = selectedCount
@@ -132,7 +134,7 @@ export function AnalyticsView({
         </div>
 
         <section className="analytics-toolbar" aria-label="Analytics controls">
-        <div className="analytics-agent-picker">
+        <div className="analytics-agent-picker" ref={pickerRef}>
           <button
             className="analytics-control analytics-agent-trigger"
             onClick={() => setPickerOpen((value) => !value)}

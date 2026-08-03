@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Braces, RefreshCw, Save } from 'lucide-react';
 import { agentsApi } from '../../api/agents';
 import type { Agent } from '../../types';
@@ -32,6 +32,7 @@ export function McpSection({ agents }: { agents: Agent[] }) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'saving'>('idle');
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const loadRequest = useRef<{ id: string; request: ReturnType<typeof agentsApi.getMcp> }>();
 
   useEffect(() => {
     if (agents.some((agent) => agent.id === agentId)) return;
@@ -46,12 +47,16 @@ export function McpSection({ agents }: { agents: Agent[] }) {
     setStatus('loading');
     setError('');
     setSaved(false);
+    const existing = loadRequest.current;
+    const request = existing?.id === id ? existing.request : agentsApi.getMcp(id);
+    if (!existing || existing.id !== id) loadRequest.current = { id, request };
     try {
-      const config = await agentsApi.getMcp(id);
+      const config = await request;
       setEditor(JSON.stringify(config.servers ?? {}, null, 2));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not load MCP configuration.');
     } finally {
+      if (loadRequest.current?.request === request) loadRequest.current = undefined;
       setStatus('idle');
     }
   };

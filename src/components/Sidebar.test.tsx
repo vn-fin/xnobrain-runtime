@@ -54,7 +54,7 @@ describe('Sidebar assistant actions', () => {
     const menu = screen.getByRole('menu');
     expect(menu).toHaveTextContent('Rename');
     expect(menu).toHaveTextContent('Export');
-    const deleteButton = screen.getByRole('button', { name: 'Delete' });
+    const deleteButton = screen.getByRole('menuitem', { name: 'Delete' });
     expect(deleteButton).toHaveClass('danger');
 
     fireEvent.click(deleteButton);

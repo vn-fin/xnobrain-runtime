@@ -185,7 +185,7 @@ export function CreateAgentModal({
 
   return (
     <div className="modal-overlay" onClick={close}>
-      <div className="app-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="app-modal" role="dialog" aria-modal="true" aria-label={t('modals.createAgent')} onClick={(e) => e.stopPropagation()}>
         <div className="app-modal-head">
           <strong>{t('modals.createAgent')}</strong>
           <button className="icon-button" onClick={close} title={t('common.close')}>
@@ -275,7 +275,7 @@ export function AgentSettingsModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="app-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="app-modal" role="dialog" aria-modal="true" aria-label={t('modals.agentSettings')} onClick={(e) => e.stopPropagation()}>
         <div className="app-modal-head">
           <strong>{t('modals.agentSettings')}</strong>
           <button className="icon-button" onClick={onClose} title={t('common.close')}>

@@ -1590,6 +1590,23 @@ function TeamLibrary({
   const [renameValue, setRenameValue] = useState('');
   const [exportingTeamId, setExportingTeamId] = useState('');
   const [actionError, setActionError] = useState('');
+
+  useEffect(() => {
+    if (!menuTeamId) return undefined;
+    const closeOutside = (event: PointerEvent) => {
+      const row = event.target instanceof Element ? event.target.closest('[data-team-row-id]') : null;
+      if (row?.getAttribute('data-team-row-id') !== menuTeamId) setMenuTeamId('');
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuTeamId('');
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [menuTeamId]);
   const [removeTeam, setRemoveTeam] = useState<Team>();
   const selectedTeam = state.teams.find((team) => team.id === selectedTeamId);
   const { loadRuns } = state;
@@ -1690,7 +1707,7 @@ function TeamLibrary({
             />
           </div>
         ) : (
-          <div className={`team-list-item ${selectedTeamId === team.id ? 'active' : ''}`} key={team.id}>
+          <div data-team-row-id={team.id} className={`team-list-item ${selectedTeamId === team.id ? 'active' : ''}`} key={team.id}>
             <button className="team-list-select" onClick={() => setSelectedTeamId(team.id)}>
               <span className="team-list-icon"><GitBranch size={17} /></span>
               <span><strong>{team.name}</strong><small>{team.description}</small></span>

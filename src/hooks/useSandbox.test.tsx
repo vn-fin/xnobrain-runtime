@@ -1,3 +1,4 @@
+import { StrictMode, type PropsWithChildren } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useSandbox } from './useSandbox';
@@ -23,6 +24,14 @@ afterEach(() => {
 });
 
 describe('useSandbox stream activation', () => {
+  it('opens one stream under StrictMode', async () => {
+    const wrapper = ({ children }: PropsWithChildren) => <StrictMode>{children}</StrictMode>;
+    const { unmount } = renderHook(() => useSandbox(true), { wrapper });
+
+    await waitFor(() => expect(mocks.stream).toHaveBeenCalledTimes(1));
+    unmount();
+  });
+
   it('does not request runtime data until its UI is active', async () => {
     const { rerender, unmount } = renderHook(
       ({ vmActive }: { vmActive: boolean }) => useSandbox(vmActive),

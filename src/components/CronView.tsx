@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Bot, CalendarClock, Check, ChevronDown, Clock3, Columns3, FileText, Mail, MessageCircle, MoreHorizontal, Pause, Play, Plus, RefreshCw, Send, Settings2, Trash2, X } from 'lucide-react';
 import type { CreateCronInput } from '../api/crons';
 import type { Agent, CronBlueprint, CronDeliveryOption, CronDeliveryTargetType, CronDetail, CronJob, CronJobRun } from '../types';
+import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 
 type Filter = 'all' | 'scheduled' | 'running' | 'stopped';
 
@@ -113,6 +114,7 @@ export function CronView({
   const [targetDestination, setTargetDestination] = useState('reports/automation.md');
   const [targetComposerOpen, setTargetComposerOpen] = useState(false);
   const [detailMenuOpen, setDetailMenuOpen] = useState(false);
+  const detailMenuRef = useDismissibleLayer<HTMLDivElement>(detailMenuOpen, () => setDetailMenuOpen(false));
 
   useEffect(() => {
     if (!selectedId || detail?.job.id !== selectedId || detail.run?.state !== 'running') return;
@@ -309,7 +311,7 @@ export function CronView({
                 {detail && <div className="cron-detail-header-actions">
                   <button className="run-now" onClick={() => void onRun(selectedId, selectedAgentId)}><Play size={14} /> Run now</button>
                   <span className={`cron-friendly-status ${detail.job.state}`}><span />{t(`cron.${detail.job.state}`, { defaultValue: detail.job.state })}</span>
-                  <div className="cron-detail-menu-wrap">
+                  <div className="cron-detail-menu-wrap" ref={detailMenuRef}>
                     <button className="cron-detail-menu-toggle" onClick={() => setDetailMenuOpen((open) => !open)} aria-label="More actions" aria-expanded={detailMenuOpen}><MoreHorizontal size={18} /></button>
                     {detailMenuOpen && <div className="cron-detail-menu" role="menu">
                       <button role="menuitem" onClick={() => { setDetailMenuOpen(false); void onToggle(selectedId, selectedAgentId); }}>{detail.job.state === 'stopped' ? <><Play size={14} /> Start schedule</> : <><Pause size={14} /> Pause schedule</>}</button>
@@ -408,7 +410,7 @@ export function CronView({
 
       {createOpen && (
         <div className="cron-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) resetForm(); }}>
-          <form className="cron-modal" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          <form className="cron-modal" role="dialog" aria-modal="true" aria-label={t('cron.createTitle', { defaultValue: 'Schedule a task' })} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
             <div className="cron-modal-heading"><div><p className="cron-eyebrow">{t('cron.eyebrow', { defaultValue: 'Automation' })}</p><h2>{t('cron.createTitle', { defaultValue: 'Schedule a task' })}</h2></div><button type="button" onClick={resetForm} aria-label={t('common.close')}>×</button></div>
             <label>{t('cron.agent', { defaultValue: 'Agent' })}<select value={agentId} onChange={(event) => setAgentId(event.target.value)}>{agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.title}</option>)}</select></label>
             <label>{t('cron.name')}<input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('cron.namePlaceholder')} autoFocus /></label>

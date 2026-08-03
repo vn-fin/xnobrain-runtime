@@ -39,6 +39,7 @@ export function useSandbox(active: boolean) {
       return undefined;
     }
     const controller = new AbortController();
+    let initialTimer: number | undefined;
     let reconnectTimer: number | undefined;
     let received = false;
 
@@ -63,9 +64,13 @@ export function useSandbox(active: boolean) {
       if (!controller.signal.aborted) reconnectTimer = window.setTimeout(() => void connect(), 1_000);
     };
 
-    void connect();
+    // Defer the initial connection so React StrictMode can complete its
+    // development-only setup/cleanup pass without opening an abandoned SSE
+    // request that the backend still has to accept.
+    initialTimer = window.setTimeout(() => void connect(), 0);
     return () => {
       controller.abort();
+      if (initialTimer !== undefined) window.clearTimeout(initialTimer);
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
     };
   }, [active, refresh]);

@@ -28,6 +28,7 @@ export function useBlends(active = true): BlendsState {
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const loadActive = useRef(false);
+  const modelsRequest = useRef<Promise<BlendModel[]> | null>(null);
 
   const refresh = useCallback(async () => {
     setStatus((current) => (current === 'ready' ? 'ready' : 'loading'));
@@ -63,7 +64,15 @@ export function useBlends(active = true): BlendsState {
   const deleteBlend = useCallback(
     async (id: string) => { await blendsApi.remove(id); await refresh(); },
     [refresh]);
-  const availableModels = useCallback(() => blendsApi.availableModels(), []);
+  const availableModels = useCallback(() => {
+    if (!modelsRequest.current) {
+      modelsRequest.current = blendsApi.availableModels().catch((cause) => {
+        modelsRequest.current = null;
+        throw cause;
+      });
+    }
+    return modelsRequest.current;
+  }, []);
 
   return { blends, status, error, unavailable, refresh, createBlend, updateBlend, deleteBlend, availableModels };
 }

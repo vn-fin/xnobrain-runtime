@@ -51,4 +51,20 @@ describe('useTeams request deduplication', () => {
     expect(mocks.listRuns).toHaveBeenCalledWith('team-one');
     expect(result.current.runsStatus).toBe('ready');
   });
+
+  it('shares concurrent run-detail requests for the same execution', async () => {
+    mocks.list.mockResolvedValue([]);
+    mocks.getRun.mockResolvedValue({ id: 'run-one', team_id: 'team-one', status: 'completed' });
+    const { result } = renderHook(() => useTeams(false));
+
+    await act(async () => {
+      await Promise.all([
+        result.current.openRun('team-one', 'run-one'),
+        result.current.openRun('team-one', 'run-one'),
+      ]);
+    });
+
+    expect(mocks.getRun).toHaveBeenCalledTimes(1);
+    expect(mocks.getRun).toHaveBeenCalledWith('team-one', 'run-one');
+  });
 });

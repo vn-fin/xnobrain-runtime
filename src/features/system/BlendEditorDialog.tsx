@@ -80,7 +80,7 @@ export function BlendEditorDialog({
 
   return (
     <div style={S.overlay} onClick={onClose}>
-      <div style={S.dialog} onClick={(e) => e.stopPropagation()}>
+      <div style={S.dialog} role="dialog" aria-modal="true" aria-label={blend ? 'Edit blend' : 'New blend'} onClick={(e) => e.stopPropagation()}>
         <div style={S.head}>
           <strong>{blend ? 'Edit blend' : 'New blend'}</strong>
           <button style={S.iconbtn} onClick={onClose} aria-label="Close"><X size={15} /></button>

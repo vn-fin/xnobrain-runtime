@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { TreeIcon } from './common';
 import { useStreamingConversations } from '../hooks/useConversation';
+import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 import { AsyncState } from './AsyncState';
 import { RunSteps, RunUsage } from './RunSteps';
 import { Markdown } from './Markdown';
@@ -179,6 +180,7 @@ export function ChatArea({
   const [mentionListing, setMentionListing] = useState<WorkspaceEntry[]>([]);
   const [mentionLoading, setMentionLoading] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const modelPickerRef = useDismissibleLayer<HTMLDivElement>(modelOpen, () => setModelOpen(false));
   // Hermes always stores `nine-router`; find the upstream account that owns
   // the selected routed model so the picker can still highlight it.
   const currentProvider = providers.find((provider) =>
@@ -802,7 +804,7 @@ export function ChatArea({
               </button>
 
               <div className="composer-row-right">
-                <div className="composer-model-control">
+                <div className="composer-model-control" ref={modelPickerRef}>
                   <button className="composer-model" title="Model and reasoning" onClick={() => setModelOpen((open) => !open)}>
                     <ContextGauge usage={usage} model={currentModelLabel} />
                     {currentModelLabel}

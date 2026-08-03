@@ -109,6 +109,23 @@ export function Sidebar({
     localStorage.setItem(PINNED_KEY, JSON.stringify(pinnedIds));
   }, [pinnedIds]);
 
+  useEffect(() => {
+    if (!agentMenuId) return undefined;
+    const closeOutside = (event: PointerEvent) => {
+      const row = event.target instanceof Element ? event.target.closest('[data-agent-row-id]') : null;
+      if (row?.getAttribute('data-agent-row-id') !== agentMenuId) setAgentMenuId(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAgentMenuId(null);
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [agentMenuId]);
+
   const q = agentSearch.trim().toLowerCase();
   const matches = (agent: Agent, query: string) => !query
     || agent.title.toLowerCase().includes(query)
@@ -184,7 +201,7 @@ export function Sidebar({
       );
     }
     return (
-      <div key={agent.id} className={`${active ? 'agent-row active' : 'agent-row'}${library ? ' library-agent-row' : ''}`}>
+      <div data-agent-row-id={agent.id} key={agent.id} className={`${active ? 'agent-row active' : 'agent-row'}${library ? ' library-agent-row' : ''}`}>
         <button className="agent-row-main" onClick={() => selectAgent(agent)} onDoubleClick={() => !library && startAgentRename(agent)} title={agent.title}>
           <span className="status-dot" />
           <span>
@@ -210,17 +227,17 @@ export function Sidebar({
             </button>
             {agentMenuId === agent.id && (
               <div className="row-menu" role="menu">
-                <button className="row-menu-item" onClick={() => togglePinned(agent.id)}>
+                <button className="row-menu-item" role="menuitem" onClick={() => togglePinned(agent.id)}>
                   {pinnedIds.includes(agent.id) ? <PinOff size={14} /> : <Pin size={14} />}
                   {t(pinnedIds.includes(agent.id) ? 'agents.unpin' : 'agents.pin')}
                 </button>
-                <button className="row-menu-item" disabled={exportingAgentId === agent.id} onClick={() => startAgentRename(agent)}>
+                <button className="row-menu-item" role="menuitem" disabled={exportingAgentId === agent.id} onClick={() => startAgentRename(agent)}>
                   <Pencil size={14} /> {t('agents.renameAction', { defaultValue: 'Rename' })}
                 </button>
-                <button className="row-menu-item" disabled={exportingAgentId === agent.id} onClick={() => void exportAgent(agent)}>
+                <button className="row-menu-item" role="menuitem" disabled={exportingAgentId === agent.id} onClick={() => void exportAgent(agent)}>
                   <Download size={14} /> {exportingAgentId === agent.id ? 'Exporting…' : t('agents.exportAction', { defaultValue: 'Export' })}
                 </button>
-                <button className="row-menu-item danger" onClick={() => { setAgentMenuId(null); onRequestDeleteAgent(agent.id); }}>
+                <button className="row-menu-item danger" role="menuitem" onClick={() => { setAgentMenuId(null); onRequestDeleteAgent(agent.id); }}>
                   <Trash2 size={14} /> {t('common.delete')}
                 </button>
               </div>

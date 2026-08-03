@@ -1632,6 +1632,7 @@ body.col-resizing {
   min-width: 0;
   min-height: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 58px auto minmax(0, 1fr) auto;
   background: var(--bg);
 }
@@ -7157,10 +7158,11 @@ body.col-resizing {
     overflow: auto;
   }
 
-  .app {
+  .app,
+  .app.no-right {
     min-height: 100%;
     height: auto;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .left-panel {
@@ -7302,6 +7304,16 @@ body.col-resizing {
   align-items: flex-start;
   gap: 10px;
   pointer-events: none;
+}
+
+.app.inspector-open .kanban-notifications {
+  right: calc(var(--right) + 16px);
+}
+
+@media (max-width: 1180px) {
+  .app.inspector-open .kanban-notifications {
+    right: 16px;
+  }
 }
 
 .kanban-notification-bell,

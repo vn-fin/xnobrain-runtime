@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, CheckCheck, Columns3, X } from 'lucide-react';
 import type { KanbanEvent } from '../types';
+import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 
 function eventMessage(event: KanbanEvent): string {
   const kind = event.kind.toLowerCase();
@@ -37,6 +38,7 @@ export function KanbanNotifications({
   onOpenTask: (taskId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const root = useDismissibleLayer<HTMLDivElement>(open, () => setOpen(false));
   const [readIds, setReadIds] = useState<Set<number>>(() => new Set());
   const [previewId, setPreviewId] = useState<number | null>(null);
   const visibleEvents = useMemo(
@@ -74,7 +76,7 @@ export function KanbanNotifications({
   };
 
   return (
-    <div className="kanban-notifications">
+    <div className="kanban-notifications" ref={root}>
       {!open && preview && (
         <div className="kanban-notification-preview" role="status">
           <button className="kanban-notification-preview-main" onClick={() => openTask(preview)}>
