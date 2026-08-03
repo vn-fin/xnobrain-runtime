@@ -139,7 +139,7 @@
     "addApiKey": "API-Schlüssel hinzufügen",
     "disconnect": "Trennen",
     "addKeyTitle": "API-Schlüssel hinzufügen",
-    "addKeyDesc": "Wähle einen Anbieter und füge den API-Schlüssel ein. Der Schlüssel wird verschlüsselt gespeichert und als {{env}} in die Sandbox eingefügt."
+    "addKeyDesc": "Wähle einen Anbieter und füge den API-Schlüssel ein. Der Schlüssel wird von der lokalen 9router-Laufzeit gespeichert und nie von Brain4All zurückgegeben."
   },
   "auth": {
     "connect": "{{name}} verbinden",

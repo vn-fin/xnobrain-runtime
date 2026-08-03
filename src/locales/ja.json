@@ -139,7 +139,7 @@
     "addApiKey": "API キーを追加",
     "disconnect": "切断",
     "addKeyTitle": "API キーを追加",
-    "addKeyDesc": "プロバイダーを選択して API キーを貼り付けます。キーは暗号化して保存され、{{env}} としてサンドボックスに挿入されます。"
+    "addKeyDesc": "プロバイダーを選択して API キーを貼り付けます。キーはローカルの 9router ランタイムに保存され、Brain4All から返されることはありません。"
   },
   "auth": {
     "connect": "{{name}} に接続",

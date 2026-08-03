@@ -137,7 +137,7 @@
     "addApiKey": "Ajouter une clé API",
     "disconnect": "Déconnecter",
     "addKeyTitle": "Ajouter une clé API",
-    "addKeyDesc": "Choisissez un fournisseur et collez la clé API. La clé est stockée chiffrée et injectée dans le sandbox sous {{env}}."
+    "addKeyDesc": "Choisissez un fournisseur et collez la clé API. La clé est stockée par le runtime 9router local et n'est jamais renvoyée par Brain4All."
   },
   "auth": {
     "connect": "Connecter {{name}}",

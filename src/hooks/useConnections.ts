@@ -6,7 +6,11 @@ import {
   type ConnectionUsage,
 } from '../api/providers';
 import type { AsyncStatus, ConnectionProvider, ProviderConnectInfo } from '../types';
-import { providerConnectNeedsText } from '../utils/providers';
+import {
+  providerConnectNeedsText,
+  providerUsesAuthFlow,
+  providerUsesInlineApiKey,
+} from '../utils/providers';
 import {
   closeProviderAuthPopup,
   navigateProviderAuthPopup,
@@ -33,7 +37,11 @@ export function useConnections(active = true) {
     try {
       const data = await providersApi.list();
       setConnections(data);
-      setKeyProviderId((current) => current || data.find((provider) => provider.connection_mode === 'api-key')?.id || data[0]?.id || '');
+      setKeyProviderId((current) => (
+        data.some((provider) => provider.id === current && providerUsesInlineApiKey(provider))
+          ? current
+          : data.find(providerUsesInlineApiKey)?.id || ''
+      ));
       setStatus('ready');
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Could not load providers.');
@@ -46,9 +54,9 @@ export function useConnections(active = true) {
   }, [active, refresh]);
 
   // CLI/device-code authentication can complete in the provider popup, so
-  // poll the providers list. API-key providers never enter this flow: they only
-  // call the backend when Save is clicked. Ignore unchanged poll responses to
-  // avoid needlessly rerendering (and visually flashing) the connection UI.
+  // poll the providers list. Flows that require submitted text (including the
+  // key issued by OpenCode Go) complete through the modal instead. Ignore
+  // unchanged responses to avoid visually flashing the connection UI.
   useEffect(() => {
     if (!authProviderId || !authInfo || authInfo.connection_mode === 'api-key') return;
 
@@ -93,7 +101,7 @@ export function useConnections(active = true) {
   const connect = async (id: string) => {
     const provider = connections.find((item) => item.id === id);
     if (!provider) return;
-    if (provider.connection_mode === 'api-key') {
+    if (!providerUsesAuthFlow(provider)) {
       setKeyProviderId(id);
       return;
     }
@@ -189,7 +197,7 @@ export function useConnections(active = true) {
   // Used by the onboarding flow, which shares the popup and callback helpers.
   const startConnect = async (id: string): Promise<ProviderConnectInfo | null> => {
     const provider = connections.find((item) => item.id === id);
-    if (provider?.connection_mode !== 'api-key') openProviderAuthPopup();
+    if (provider && providerUsesAuthFlow(provider)) openProviderAuthPopup();
     setPendingId(id);
     setError('');
     try {
@@ -248,8 +256,8 @@ export function useConnections(active = true) {
 
   const addAccount = async (providerId: string, input?: { api_key: string; name?: string }) => {
     const provider = connections.find((item) => item.id === providerId);
-    // OAuth providers add a second account through the existing popup flow.
-    if (provider && provider.connection_mode !== 'api-key') {
+    // Guided providers add a second account through the existing auth flow.
+    if (provider && providerUsesAuthFlow(provider)) {
       await connect(providerId);
       return;
     }

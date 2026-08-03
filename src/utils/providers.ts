@@ -6,6 +6,19 @@ export function hasUsableProvider(providers: ConnectionProvider[]): boolean {
   ));
 }
 
+/**
+ * OpenCode Go issues an API key after the user signs in to OpenCode. Treat it
+ * as a guided authentication flow in the UI instead of a generic key field.
+ * The backend still stores the issued key through 9router's API-key contract.
+ */
+export function providerUsesAuthFlow(provider: ConnectionProvider): boolean {
+  return provider.connection_mode !== 'api-key' || provider.id === 'opencode-go';
+}
+
+export function providerUsesInlineApiKey(provider: ConnectionProvider): boolean {
+  return provider.connection_mode === 'api-key' && !providerUsesAuthFlow(provider);
+}
+
 export function providerConnectNeedsText(provider: ConnectionProvider, info: ProviderConnectInfo): boolean {
   const action = info.required_client_action.trim().toLowerCase().replaceAll('-', '_');
   if (action === 'submit_response' || action === 'submit_text') return true;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Activity, ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Plus, Trash2, X,
@@ -8,6 +8,7 @@ import { ConfirmDialog } from './modals';
 import type { ConnectionProvider } from '../types';
 import type { ProviderTestOutcome } from '../hooks/useConnections';
 import type { ProviderConnection, ConnectionUsage } from '../api/providers';
+import { providerUsesAuthFlow, providerUsesInlineApiKey } from '../utils/providers';
 
 export type AccountProps = {
   connectionsByProvider: Record<string, ProviderConnection[]>;
@@ -89,7 +90,7 @@ function AddAccount({ provider, actions }: { provider: ConnectionProvider; actio
   const { t } = useTranslation();
   const [key, setKey] = useState('');
   const [name, setName] = useState('');
-  if (provider.connection_mode !== 'api-key') {
+  if (providerUsesAuthFlow(provider)) {
     return (
       <button className="conn-btn ghost conn-add" onClick={() => actions.onAddAccount(provider.id)}>
         <Plus size={13} /> {t('connections.addAccount', { defaultValue: 'Add account' })}
@@ -137,6 +138,8 @@ export function ConnectionsView({
   const { t } = useTranslation();
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
+  const keyPanelRef = useRef<HTMLElement>(null);
+  const keyInputRef = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [testResults, setTestResults] = useState<Record<string, ProviderTestOutcome>>({});
   const [confirmation, setConfirmation] = useState<{
@@ -145,9 +148,20 @@ export function ConnectionsView({
     confirmLabel: string;
     action: () => void;
   } | null>(null);
-  const apiKeyProviders = providers.filter((p) => p.connection_mode === 'api-key');
-  const selectedKeyProvider = providers.find((p) => p.id === keyProviderId);
+  const apiKeyProviders = providers.filter(providerUsesInlineApiKey);
+  const selectedKeyProvider = apiKeyProviders.find((p) => p.id === keyProviderId) ?? apiKeyProviders[0];
   const selectedBaseUrl = baseUrl || selectedKeyProvider?.base_url || '';
+
+  const beginConnect = (provider: ConnectionProvider) => {
+    if (!providerUsesInlineApiKey(provider)) {
+      onConnect(provider.id);
+      return;
+    }
+    onSelectKeyProvider(provider.id);
+    setBaseUrl('');
+    keyPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    keyInputRef.current?.focus();
+  };
 
   const runTest = async (id: string) => {
     setTestResults((current) => {
@@ -295,13 +309,13 @@ export function ConnectionsView({
                       defaultValue: 'Free models available without an API key.',
                     })}</span>
                   </div>
-                  <button className="conn-btn primary" onClick={() => onConnect(p.id)}>
+                  <button className="conn-btn primary" onClick={() => beginConnect(p)}>
                     {t('connections.addApiKey')}
                   </button>
                 </>
               ) : (
-                <button className="conn-btn primary" onClick={() => onConnect(p.id)}>
-                  {p.connection_mode === 'api-key' ? t('connections.addApiKey') : t('connections.authenticate')}
+                <button className="conn-btn primary" onClick={() => beginConnect(p)}>
+                  {providerUsesInlineApiKey(p) ? t('connections.addApiKey') : t('connections.authenticate')}
                 </button>
               )}
               {p.connected && pendingId !== p.id && testResults[p.id] && (() => {
@@ -331,12 +345,12 @@ export function ConnectionsView({
           })}
         </div>
 
-        <section className="conn-keypanel">
+        {apiKeyProviders.length > 0 && <section className="conn-keypanel" ref={keyPanelRef}>
           <strong>{t('connections.addKeyTitle')}</strong>
-          <p>{t('connections.addKeyDesc', { env: selectedKeyProvider?.environment_variable ?? 'PROVIDER_API_KEY' })}</p>
+          <p>{t('connections.addKeyDesc')}</p>
           <div className={(selectedKeyProvider?.requires_base_url || selectedKeyProvider?.base_url) ? 'conn-keyform has-base-url' : 'conn-keyform'}>
             <div className="conn-select">
-              <select value={keyProviderId} onChange={(e) => { onSelectKeyProvider(e.target.value); setBaseUrl(''); }}>
+              <select value={selectedKeyProvider?.id ?? ''} onChange={(e) => { onSelectKeyProvider(e.target.value); setBaseUrl(''); }}>
                 {apiKeyProviders.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.display_name}
@@ -354,19 +368,19 @@ export function ConnectionsView({
                 aria-label="Provider base URL"
               />
             )}
-            <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-… / AIza… / sk-ant-…" type="password" />
+            <input ref={keyInputRef} value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-… / AIza… / sk-ant-…" type="password" />
             <button
               className="conn-btn primary"
               disabled={!apiKey.trim() || Boolean(selectedKeyProvider?.requires_base_url && !selectedBaseUrl.trim())}
               onClick={() => {
-                onSaveKey(keyProviderId, apiKey, selectedBaseUrl);
+                if (selectedKeyProvider) onSaveKey(selectedKeyProvider.id, apiKey, selectedBaseUrl);
                 setApiKey('');
               }}
             >
               {t('common.save')}
             </button>
           </div>
-        </section>
+        </section>}
       </div>
       {confirmation && (
         <ConfirmDialog

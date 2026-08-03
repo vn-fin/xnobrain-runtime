@@ -22,6 +22,7 @@ export function AuthModal({
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const needsText = providerConnectNeedsText(provider, info);
+  const apiKeyFlow = info.connection_mode === 'api-key';
   const authURL = info.verification_url || info.login_url;
   const pasteStep = info.user_code ? 3 : 2;
 
@@ -84,16 +85,16 @@ export function AuthModal({
             <span className="auth-step-num">{pasteStep}</span>
             <div className="auth-step-grow">
               <label className="auth-step-label">{info.text_label || t('auth.pasteHint')}</label>
-              <p className="auth-instructions">{t('auth.pasteInstructions')}</p>
+              {!apiKeyFlow && <p className="auth-instructions">{t('auth.pasteInstructions')}</p>}
               <div className="auth-response-wrap">
                 <textarea
                   className="auth-response-text"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  placeholder={t('auth.pasteHint')}
+                  placeholder={apiKeyFlow ? info.text_label : t('auth.pasteHint')}
                   rows={4}
                 />
-                <button
+                {!apiKeyFlow && <button
                   className="auth-paste-button"
                   type="button"
                   disabled={submitting}
@@ -101,7 +102,7 @@ export function AuthModal({
                   onClick={() => void pasteFromClipboard()}
                 >
                   <ClipboardPaste size={16} />
-                </button>
+                </button>}
               </div>
             </div>
           </div>

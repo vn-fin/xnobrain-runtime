@@ -158,6 +158,36 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"]["code"], "oauth_connect_required")
 
+    async def test_opencode_go_connect_guides_auth_then_accepts_issued_key(self):
+        async with self.client() as client:
+            started = await client.post(
+                "/api/brain/v1/providers/opencode-go/connect")
+            completed = await client.put(
+                "/api/brain/v1/providers/opencode-go/connect",
+                json={"text": "oc-go-secret"},
+            )
+
+        self.assertEqual(started.status_code, 200)
+        info = started.json()["data"]
+        self.assertEqual(info["connection_mode"], "api-key")
+        self.assertEqual(info["required_client_action"], "submit_text")
+        self.assertEqual(info["login_url"], "https://opencode.ai/auth")
+        self.assertNotIn("oc-go-secret", completed.text)
+        self.assertEqual(
+            self.router.created_bodies[-1],
+            {"provider": "opencode-go", "api_key": "oc-go-secret", "default_model": None},
+        )
+
+    async def test_opencode_zen_connect_stays_direct_api_key(self):
+        async with self.client() as client:
+            started = await client.post(
+                "/api/brain/v1/providers/opencode/connect")
+
+        self.assertEqual(started.status_code, 200)
+        info = started.json()["data"]
+        self.assertEqual(info["connection_mode"], "api-key")
+        self.assertNotIn("login_url", info)
+
     async def test_patch_activates_reorders_and_requires_a_field(self):
         async with self.client() as client:
             activated = await client.patch(

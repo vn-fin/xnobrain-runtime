@@ -213,7 +213,7 @@
     "testError": "Test failed",
     "capabilities": "Capabilities",
     "addKeyTitle": "Add API key",
-    "addKeyDesc": "Choose a provider and paste the API key. The key is stored encrypted and injected into the sandbox as {{env}}."
+    "addKeyDesc": "Choose a provider and paste the API key. The key is stored by the local 9router runtime and is never returned by Brain4All."
   },
   "auth": {
     "connect": "Connect {{name}}",

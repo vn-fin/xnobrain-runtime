@@ -139,7 +139,7 @@
     "addApiKey": "Thêm khóa API",
     "disconnect": "Ngắt kết nối",
     "addKeyTitle": "Thêm khóa API",
-    "addKeyDesc": "Chọn nhà cung cấp và dán khóa API. Khóa được lưu mã hóa và đưa vào sandbox dưới biến {{env}}."
+    "addKeyDesc": "Chọn nhà cung cấp và dán khóa API. Khóa được lưu bởi 9router cục bộ và Brain4All không bao giờ trả khóa về."
   },
   "auth": {
     "connect": "Kết nối {{name}}",

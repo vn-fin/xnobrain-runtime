@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Activity, ArrowLeft, ArrowRight, Check, ChevronDown, ClipboardPaste, ExternalLink, Languages, Plug, Plus, Server } from 'lucide-react';
 import { ProviderBrandIcon } from './common';
 import type { AsyncStatus, ConnectionProvider, ProviderConnectInfo } from '../types';
-import { providerConnectNeedsText } from '../utils/providers';
+import { providerConnectNeedsText, providerUsesInlineApiKey } from '../utils/providers';
 import { useProviderAuthPopup } from '../hooks/useProviderAuthPopup';
 import { closeProviderAuthPopup } from '../utils/providerAuth';
 import { SUPPORTED_LANGUAGES } from '../i18n';
@@ -59,6 +59,7 @@ export function Onboarding({
   const [connectText, setConnectText] = useState('');
   const [submittingConnectText, setSubmittingConnectText] = useState(false);
   const connectNeedsText = Boolean(selectedProvider && connectInfo && providerConnectNeedsText(selectedProvider, connectInfo));
+  const apiKeyConnectFlow = connectInfo?.connection_mode === 'api-key';
 
   // Default the connect step to the first available provider.
   useEffect(() => {
@@ -234,7 +235,7 @@ export function Onboarding({
                         {providerPendingId === selectedProvider.id ? t('onboarding.checking') : t('onboarding.provider.verify')}
                       </button>
                     )
-                  ) : selectedProvider.connection_mode === 'api-key' ? (
+                  ) : providerUsesInlineApiKey(selectedProvider) ? (
                     <div className="ob-key-row">
                       {(selectedProvider.requires_base_url || selectedProvider.base_url) && (
                         <input
@@ -281,17 +282,17 @@ export function Onboarding({
                       {connectInfo.user_code && <div className="ob-code">{connectInfo.user_code}</div>}
                       {connectNeedsText ? (
                         <div className="ob-connect-response">
-                          <p className="ob-step-desc">{t('auth.pasteInstructions')}</p>
+                          {!apiKeyConnectFlow && <p className="ob-step-desc">{t('auth.pasteInstructions')}</p>}
                           <label className="ob-field">
                             <span>{connectInfo.text_label || t('auth.pasteHint')}</span>
                             <div className="auth-response-wrap">
                               <textarea
                                 value={connectText}
                                 onChange={(e) => setConnectText(e.target.value)}
-                                placeholder={t('auth.pasteHint')}
+                                placeholder={apiKeyConnectFlow ? connectInfo.text_label : t('auth.pasteHint')}
                                 rows={4}
                               />
-                              <button
+                              {!apiKeyConnectFlow && <button
                                 className="auth-paste-button"
                                 type="button"
                                 disabled={submittingConnectText}
@@ -299,7 +300,7 @@ export function Onboarding({
                                 onClick={() => void pasteFromClipboard()}
                               >
                                 <ClipboardPaste size={16} />
-                              </button>
+                              </button>}
                             </div>
                           </label>
                           <button

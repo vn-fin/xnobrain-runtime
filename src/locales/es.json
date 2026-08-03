@@ -139,7 +139,7 @@
     "addApiKey": "Añadir clave API",
     "disconnect": "Desconectar",
     "addKeyTitle": "Añadir clave API",
-    "addKeyDesc": "Elige un proveedor y pega la clave API. La clave se guarda cifrada y se inyecta en el sandbox como {{env}}."
+    "addKeyDesc": "Elige un proveedor y pega la clave API. La clave se guarda en el entorno local de 9router y Brain4All nunca la devuelve."
   },
   "auth": {
     "connect": "Conectar {{name}}",

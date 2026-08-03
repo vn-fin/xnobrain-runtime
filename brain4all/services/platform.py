@@ -1459,7 +1459,29 @@ class PlatformService:
 
     @staticmethod
     def _api_key_info(provider: str) -> dict[str, Any]:
-        return {"provider_id": provider, "provider_type": provider, "connection_mode": "api-key", "required_client_action": "submit_text", "instructions": "Enter the provider API key. It is stored by 9router, not Brain4All.", "text_label": "API key", "status": "waiting_for_user"}
+        info = {
+            "provider_id": provider,
+            "provider_type": provider,
+            "connection_mode": "api-key",
+            "required_client_action": "submit_text",
+            "instructions": (
+                "Enter the provider API key. It is stored by 9router, not "
+                "Brain4All."
+            ),
+            "text_label": "API key",
+            "status": "waiting_for_user",
+        }
+        if provider == "opencode-go":
+            info.update({
+                "login_url": "https://opencode.ai/auth",
+                "verification_url": "https://opencode.ai/auth",
+                "instructions": (
+                    "Sign in to OpenCode, subscribe to Go, then paste the "
+                    "issued API key here. The key is stored by 9router, not "
+                    "Brain4All."
+                ),
+            })
+        return info
 
     def _team_workflow(
         self,
