@@ -122,13 +122,14 @@ export const conversationsApi = {
     agentId: string,
     conversationId: string,
     input: string,
+    model: string,
     onEvent: (event: SSEEvent) => void,
     signal?: AbortSignal,
   ): Promise<void> {
     const response = await requestRaw(pathWithAgent(`${ROOT}/${encoded(conversationId)}/chat/stream`, agentId), {
       method: 'POST',
       headers: { Accept: 'text/event-stream' },
-      body: JSON.stringify({ input }),
+      body: JSON.stringify({ input, model }),
       signal,
     });
     await readSSE(response, onEvent, signal);

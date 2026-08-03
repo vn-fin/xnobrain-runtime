@@ -167,7 +167,7 @@ export function RightPanel({
       </div>
 
       <div className="right-tabs">
-        {(['workspace', 'skills', 'cron', 'runtime', 'settings'] as const).map((tab) => (
+        {(['workspace', 'skills', 'cron', 'settings'] as const).map((tab) => (
           <button
             key={tab}
             className={rightView === tab ? 'active' : ''}
@@ -184,9 +184,7 @@ export function RightPanel({
                 ? <Sparkles size={17} />
                 : tab === 'cron'
                   ? <Clock3 size={17} />
-                  : tab === 'runtime'
-                    ? <Wrench size={17} />
-                    : <Settings2 size={17} />}
+                : <Settings2 size={17} />}
             <span>{t(`controls.${tab}`, { defaultValue: tab })}</span>
           </button>
         ))}

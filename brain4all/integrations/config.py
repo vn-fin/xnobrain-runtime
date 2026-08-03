@@ -19,6 +19,7 @@ from .nine_router import (
     NINE_ROUTER_API_BASE_URL,
     NINE_ROUTER_DEFAULT_MODEL,
     NINE_ROUTER_PROVIDER,
+    display_nine_router_model,
     normalize_nine_router_config,
 )
 
@@ -287,6 +288,21 @@ class GlobalConfigManager:
     def _describe(self, config: Mapping[str, Any]) -> dict[str, Any]:
         normalized = self._sanitize_config_value(config, "config")
         normalize_nine_router_config(normalized)
+        public_model = display_nine_router_model(
+            self._get_nested(
+                normalized,
+                ("model", "default"),
+                NINE_ROUTER_DEFAULT_MODEL,
+            )
+        )
+        self._set_nested(normalized, ("model", "default"), public_model)
+        provider_config = normalized.get("providers", {}).get("nine-router")
+        if isinstance(provider_config, dict):
+            for field in ("default_model", "model"):
+                if field in provider_config:
+                    provider_config[field] = display_nine_router_model(
+                        provider_config[field]
+                    )
         effort = str(self._get_nested(config, ("agent", "reasoning_effort"), "medium") or "medium").lower()
         approval = self._get_nested(config, ("approvals", "mode"), "manual")
         soul = self._read_text(self.root_profile / "SOUL.md")
@@ -296,7 +312,7 @@ class GlobalConfigManager:
             "config_path": str(self.root_profile / "config.yaml"),
             "soul_path": str(self.root_profile / "SOUL.md"),
             "provider": "nine-router",
-            "model": self._get_nested(normalized, ("model", "default"), NINE_ROUTER_DEFAULT_MODEL),
+            "model": public_model,
             "base_url": NINE_ROUTER_API_BASE_URL,
             "reasoning": effort != "none",
             "effort": effort,

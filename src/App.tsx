@@ -34,6 +34,7 @@ import { agentsApi } from './api/agents';
 import { sandboxApi } from './api/sandbox';
 import { workspaceApi } from './api/workspace';
 import type { Agent } from './types';
+import { hasUsableProvider } from './utils/providers';
 
 export default function App() {
   const { t } = useTranslation();
@@ -47,13 +48,15 @@ export default function App() {
   const workspaceReady = !managedWorkspace || sandbox.provisioned;
   const assistants = useAssistants(workspaceReady);
   const assistantsReady = workspaceReady && assistants.status === 'ready';
+  const activeAgent = useActiveAgent(assistants.agents, router.activeAgentId);
   const connections = useConnections(assistantsReady);
   const onboarding = assistantsReady
     && connections.status === 'ready'
-    && !connections.connections.some((provider) => provider.connected);
+    && !hasUsableProvider(connections.connections);
   const conversation = useConversation(
     router.centerView === 'chat' ? router.activeAgentId : '',
     router.centerView === 'chat' ? router.activeConversationId : '',
+    router.centerView === 'chat' ? activeAgent?.model ?? '' : '',
   );
   const workspace = useWorkspace(
     router.activeAgentId,
@@ -81,7 +84,6 @@ export default function App() {
   useEffect(() => { localStorage.setItem('rightPanelWidth', String(rightWidth)); }, [rightWidth]);
   const clampRightWidth = (width: number) => Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, Math.min(width, Math.round(window.innerWidth * 0.6))));
 
-  const activeAgent = useActiveAgent(assistants.agents, router.activeAgentId);
   const activeConversation =
     activeAgent?.conversations.find((c) => c.id === router.activeConversationId) ?? activeAgent?.conversations[0];
 
@@ -228,6 +230,7 @@ export default function App() {
     connected: provider.connected,
     connection_mode: provider.connection_mode,
     default_model: provider.default_model ?? provider.available_models?.[0] ?? '',
+    available_models: provider.available_models ?? [],
     status: provider.status,
   })), [connections.connections]);
 
@@ -683,6 +686,7 @@ export default function App() {
           router.openKanbanTask(taskId);
         }}
       />
+
     </div>
   );
 }

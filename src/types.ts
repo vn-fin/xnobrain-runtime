@@ -17,6 +17,7 @@ export type ConnectionProvider = {
   environment_variable?: string;
   brand: ProviderBrand;
   connected: boolean;
+  free_models_available?: boolean;
   status: string;
   last_test_status?: string;
   default_model?: string;
@@ -46,6 +47,7 @@ export type ProviderConnector = {
   connected: boolean;
   connection_mode: string;
   default_model: string;
+  available_models?: string[];
   status: string;
 };
 

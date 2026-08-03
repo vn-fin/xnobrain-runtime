@@ -253,6 +253,14 @@ export function CreateAgentModal({
 
 export type AgentContext = { soul: string; instructions: string };
 
+function providerModels(provider: ProviderConnector | undefined): string[] {
+  if (!provider) return [];
+  return Array.from(new Set([
+    provider.default_model,
+    ...(provider.available_models ?? []),
+  ].filter(Boolean)));
+}
+
 export function AgentSettingsModal({
   agent,
   providers,
@@ -275,8 +283,15 @@ export function AgentSettingsModal({
   const [tab, setTab] = useState<'general' | 'context'>('general');
   const [title, setTitle] = useState(agent.title);
   const [description, setDescription] = useState(agent.description);
-  const [provider, setProvider] = useState(agent.provider);
-  const [model, setModel] = useState(agent.model);
+  const initialProvider = providers.find((item) => providerModels(item).includes(agent.model))
+    ?? providers.find((item) => item.id === agent.provider);
+  const initialModels = providerModels(initialProvider);
+  const [provider, setProvider] = useState(initialProvider?.id ?? agent.provider);
+  const [model, setModel] = useState(
+    initialModels.includes(agent.model)
+      ? agent.model
+      : initialProvider?.default_model || initialModels[0] || agent.model,
+  );
   const [reasoningEffort, setReasoningEffort] = useState(agent.reasoningEffort);
   const [approvalMode, setApprovalMode] = useState<Agent['approvalMode']>(agent.approvalMode);
   const [confirming, setConfirming] = useState(false);
@@ -287,6 +302,11 @@ export function AgentSettingsModal({
   const [savedContext, setSavedContext] = useState<AgentContext | null>(null);
   const [soul, setSoul] = useState('');
   const [instructions, setInstructions] = useState('');
+  const selectedProvider = providers.find((item) => item.id === provider);
+  const selectedProviderModels = providerModels(selectedProvider);
+  const modelOptions = selectedProviderModels.length
+    ? selectedProviderModels
+    : model ? [model] : [];
 
   const contextDirty = savedContext !== null
     && (soul !== savedContext.soul || instructions !== savedContext.instructions);
@@ -385,7 +405,15 @@ export function AgentSettingsModal({
               <div className="modal-form-row">
                 <label>
                   {t('modals.provider')}
-                  <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+                  <select
+                    value={provider}
+                    onChange={(e) => {
+                      const nextProvider = providers.find((item) => item.id === e.target.value);
+                      const nextModels = providerModels(nextProvider);
+                      setProvider(e.target.value);
+                      setModel(nextProvider?.default_model || nextModels[0] || '');
+                    }}
+                  >
                     {providers.map((p) => (
                       <option key={p.id} value={p.id}>{p.display_name}</option>
                     ))}
@@ -393,7 +421,11 @@ export function AgentSettingsModal({
                 </label>
                 <label>
                   {t('modals.model')}
-                  <input value={model} onChange={(e) => setModel(e.target.value)} />
+                  <select value={model} onChange={(e) => setModel(e.target.value)}>
+                    {modelOptions.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
                 </label>
               </div>
               <div className="modal-form-row">

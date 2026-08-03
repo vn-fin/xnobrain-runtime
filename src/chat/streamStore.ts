@@ -9,7 +9,7 @@ import { randomId } from '../utils/id';
 // the user switches to another conversation tab. Components subscribe via
 // `useSyncExternalStore` and read an immutable snapshot per conversation.
 
-export type QueuedMessage = { id: string; content: string };
+export type QueuedMessage = { id: string; content: string; model: string };
 export type SessionStatus = 'idle' | 'streaming' | 'done' | 'error' | 'cancelled';
 
 export type SessionSnapshot = {
@@ -151,7 +151,7 @@ function runtimeFor(key: string, agentId: string, conversationId: string): Runti
   return runtime;
 }
 
-async function execute(key: string, text: string) {
+async function execute(key: string, text: string, model: string) {
   const runtime = runtimes.get(key);
   if (!runtime) return;
   const { agentId, conversationId } = runtime;
@@ -230,7 +230,7 @@ async function execute(key: string, text: string) {
   };
 
   try {
-    await conversationsApi.stream(agentId, conversationId, text, handleEvent, controller.signal);
+    await conversationsApi.stream(agentId, conversationId, text, model, handleEvent, controller.signal);
     updateAssistant((m) => ({ ...m, streaming: false }));
   } catch (value) {
     if (!abortError(value)) patch(key, { error: streamErrorMessage(value instanceof Error ? value.message : value) });
@@ -253,7 +253,7 @@ async function drain(key: string) {
       const snap = getSnapshot(key);
       const [next, ...rest] = snap.queue;
       patch(key, { queue: rest });
-      if (next) await execute(key, next.content);
+      if (next) await execute(key, next.content, next.model);
     }
   } finally {
     runtime.processing = false;
@@ -315,13 +315,19 @@ export const streamStore = {
     return getSnapshot(keyOf(agentId, conversationId)).streaming;
   },
 
-  send(agentId: string, conversationId: string, text: string) {
+  send(agentId: string, conversationId: string, text: string, model = '') {
     const clean = text.trim();
     if (!clean || !agentId || !conversationId) return;
     const key = keyOf(agentId, conversationId);
     runtimeFor(key, agentId, conversationId);
     const snap = getSnapshot(key);
-    patch(key, { queue: [...snap.queue, { id: `queued-${randomId()}`, content: clean }] });
+    patch(key, {
+      queue: [...snap.queue, {
+        id: `queued-${randomId()}`,
+        content: clean,
+        model: model.trim(),
+      }],
+    });
     void drain(key);
   },
 

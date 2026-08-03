@@ -73,6 +73,7 @@ export type ProviderConnectorDTO = {
   connection_mode?: string;
   environment_variable?: string;
   connected?: boolean;
+  free_models_available?: boolean;
   status?: string;
   last_test_status?: string;
   default_model?: string;

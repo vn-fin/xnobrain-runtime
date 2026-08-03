@@ -45,7 +45,7 @@ export function mergeConversationRuns(server: ChatRun[], local: ChatRun[], local
   return [...historical, ...local];
 }
 
-export function useConversation(agentId: string, conversationId: string) {
+export function useConversation(agentId: string, conversationId: string, model = '', markActive = true) {
   const key = `${agentId}::${conversationId}`;
   const [serverMessages, setServerMessages] = useState<ChatMessage[]>([]);
   const [serverRuns, setServerRuns] = useState<ChatRun[]>([]);
@@ -128,8 +128,8 @@ export function useConversation(agentId: string, conversationId: string) {
   // Mark the active conversation so the store knows which completions are
   // "background" (and should raise a notification).
   useEffect(() => {
-    streamStore.setActive(agentId, conversationId);
-  }, [agentId, conversationId]);
+    if (markActive) streamStore.setActive(agentId, conversationId);
+  }, [agentId, conversationId, markActive]);
 
   useEffect(() => {
     if (loadKey.current !== key) {
@@ -158,7 +158,7 @@ export function useConversation(agentId: string, conversationId: string) {
       await requestUsage();
       return;
     }
-    streamStore.send(agentId, conversationId, text);
+    streamStore.send(agentId, conversationId, text, model);
   };
 
   const stopStream = async () => {
