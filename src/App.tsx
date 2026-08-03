@@ -497,11 +497,6 @@ export default function App() {
             onRetry={conversation.refresh}
             onSelectModel={(provider, model) => assistants.updateAgent(activeAgent.id, { provider, model })}
             onTestAgent={() => void assistants.testAgent(activeAgent.id)}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onOpenRuntime={() => {
-              router.setRightView('runtime');
-              setRightPanelOpen(true);
-            }}
             onSelectAgent={(agent) => {
               void assistants.loadConversations(agent.id).then((rows) => {
                 router.openChat(agent.id, rows[0]?.id ?? '');
@@ -555,7 +550,6 @@ export default function App() {
           onDeleteCron={crons.deleteCron}
           onCreateAgent={() => setCreateAgentOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
-          onSaveSettings={handleUpdateAgent}
           onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}
           workspaceOpenRequest={workspaceOpenRequest}
           workspace={workspace}

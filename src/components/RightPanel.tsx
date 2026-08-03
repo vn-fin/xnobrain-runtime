@@ -6,7 +6,6 @@ import {
   Code2,
   Plus,
   Search,
-  Settings2,
   ShieldCheck,
   Sparkles,
   Wrench,
@@ -15,7 +14,6 @@ import {
 } from 'lucide-react';
 import { WorkspacePanel, type WorkspaceController } from './WorkspacePanel';
 import { CronPanel } from './CronPanel';
-import { AgentSettingsModal } from './modals';
 import type { ResponsePagination } from '../api/client';
 import type { Agent, AgentSkill, AgentSkillMap, CronJob, GlobalRuntimeConfig, ProviderConnector, RightView } from '../types';
 
@@ -55,7 +53,6 @@ export function RightPanel({
   onDeleteCron,
   onCreateAgent,
   onOpenSettings,
-  onSaveSettings,
   onDeleteAgent,
   workspaceOpenRequest,
   workspace,
@@ -87,7 +84,6 @@ export function RightPanel({
   onDeleteCron: (id: string) => Promise<void>;
   onCreateAgent: () => void;
   onOpenSettings: () => void;
-  onSaveSettings: (updates: Partial<Agent>) => void;
   onDeleteAgent: () => void;
   workspaceOpenRequest?: { path: string; token: number };
   workspace: WorkspaceController;
@@ -163,7 +159,7 @@ export function RightPanel({
       </div>
 
       <div className="right-tabs">
-        {(['workspace', 'skills', 'cron', 'settings'] as const).map((tab) => (
+        {(['workspace', 'skills', 'cron'] as const).map((tab) => (
           <button
             key={tab}
             className={rightView === tab ? 'active' : ''}
@@ -178,9 +174,7 @@ export function RightPanel({
               ? <Code2 size={17} />
               : tab === 'skills'
                 ? <Sparkles size={17} />
-                : tab === 'cron'
-                  ? <Clock3 size={17} />
-                : <Settings2 size={17} />}
+                : <Clock3 size={17} />}
             <span>{t(`controls.${tab}`, { defaultValue: tab })}</span>
           </button>
         ))}
@@ -363,17 +357,6 @@ export function RightPanel({
           onToggle={onToggleCron}
           onRun={onRunCron}
           onDelete={onDeleteCron}
-        />
-      )}
-
-      {rightView === 'settings' && (
-        <AgentSettingsModal
-          key={agent.id}
-          agent={agent}
-          providers={providers}
-          onSave={onSaveSettings}
-          onClose={onClose}
-          embedded
         />
       )}
 
