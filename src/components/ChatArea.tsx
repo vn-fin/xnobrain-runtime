@@ -106,11 +106,9 @@ export function ChatArea({
   onResolveRunApproval,
   onRetry,
   onSelectModel,
-  onOpenSettings,
   onOpenRuntime,
   onSelectAgent,
   onTestAgent,
-  onDeleteAgent,
   onSelectConversation,
   onCreateConversation,
   onDeleteConversation,
@@ -141,11 +139,9 @@ export function ChatArea({
   onResolveRunApproval: (runId: string, choice: RunApprovalChoice) => void | Promise<void>;
   onRetry: () => void;
   onSelectModel: (providerId: string, model: string) => void | Promise<void>;
-  onOpenSettings: () => void;
   onOpenRuntime: () => void;
   onSelectAgent: (agent: Agent) => void;
   onTestAgent: () => void;
-  onDeleteAgent: () => void;
   onSelectConversation: (id: string) => void;
   onCreateConversation: () => void;
   onDeleteConversation: (id: string) => void;

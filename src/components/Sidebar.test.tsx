@@ -79,7 +79,7 @@ describe('Sidebar assistant actions', () => {
       />,
     );
 
-    fireEvent.click(within(container).getByRole('button', { name: 'Workspace' }));
+    fireEvent.click(within(container).getByRole('button', { name: 'Manage' }));
     fireEvent.click(within(container).getByRole('button', { name: 'Skills' }));
     expect(navigate).toHaveBeenCalledWith('skills');
   });
@@ -109,7 +109,7 @@ describe('Sidebar assistant actions', () => {
       />,
     );
 
-    fireEvent.click(within(container).getByRole('button', { name: 'Workspace' }));
+    fireEvent.click(within(container).getByRole('button', { name: 'Manage' }));
     fireEvent.click(within(container).getByRole('button', { name: /Accountpro/i }));
     expect(openAccount).toHaveBeenCalledOnce();
 

@@ -475,7 +475,6 @@ export default function App() {
             onRetry={conversation.refresh}
             onSelectModel={(provider, model) => assistants.updateAgent(activeAgent.id, { provider, model })}
             onTestAgent={() => void assistants.testAgent(activeAgent.id)}
-            onOpenSettings={() => setSettingsOpen(true)}
             onOpenRuntime={() => {
               router.setRightView('runtime');
               setRightPanelOpen(true);
@@ -485,7 +484,6 @@ export default function App() {
                 router.openChat(agent.id, rows[0]?.id ?? '');
               });
             }}
-            onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}
             onSelectConversation={(id) => {
               router.setActiveConversationId(id);
             }}
