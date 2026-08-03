@@ -175,8 +175,8 @@ function queryString(query: AnalyticsQuery): string {
 const ROOT = '/api/brain/v1/analytics';
 
 export const analyticsApi = {
-  usage: (query: AnalyticsQuery): Promise<UsageSummary> =>
-    request<UsageSummary>(`${ROOT}/usage?${queryString(query)}`),
+  usage: (query: AnalyticsQuery, signal?: AbortSignal): Promise<UsageSummary> =>
+    request<UsageSummary>(`${ROOT}/usage?${queryString(query)}`, { signal }),
   overview: (query: AnalyticsQuery): Promise<UsageOverview> =>
     request<UsageOverview>(`${ROOT}/overview?${queryString(query)}`),
   models: (query: AnalyticsQuery): Promise<UsageBreakdown> =>

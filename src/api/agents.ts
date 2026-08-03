@@ -87,7 +87,12 @@ export const agentsApi = {
     if (updates.provider !== undefined) config.provider = updates.provider;
     if (updates.model !== undefined) config.model = updates.model;
     if (updates.reasoningEffort !== undefined) config.reasoning_effort = updates.reasoningEffort;
-    if (updates.approvalMode !== undefined) config.approval_mode = updates.approvalMode;
+    if (updates.approvalMode !== undefined) {
+      // The UI describes the user-facing behavior while Hermes persists the
+      // inverse approval gate: manual approvals are "on" and full-access
+      // automatic execution is "off".
+      config.approval_mode = updates.approvalMode === 'auto' ? 'off' : 'on';
+    }
     await Promise.all([
       Object.keys(metadata).length ? agentsApi.updateMetadata(id, metadata) : Promise.resolve(),
       Object.keys(config).length ? agentsApi.updateConfig(id, config) : Promise.resolve(),

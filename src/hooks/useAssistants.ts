@@ -68,7 +68,8 @@ export function useAssistants(active = true) {
   const { enabled: agentSkills, states: skillStates } = useMemo(() => deriveSkills(agents), [agents]);
 
   const refresh = useCallback(async () => {
-    setStatus('loading');
+    const isInitialLoad = agentsRef.current.length === 0;
+    if (isInitialLoad) setStatus('loading');
     setError('');
     try {
       const baseAgents = await agentsApi.list();
@@ -83,7 +84,7 @@ export function useAssistants(active = true) {
       setStatus('ready');
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Could not load agents.');
-      setStatus('error');
+      setStatus(isInitialLoad ? 'error' : 'ready');
     }
   }, []);
 

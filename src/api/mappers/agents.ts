@@ -14,7 +14,7 @@ export function mapAgent(dto: AgentDTO): Agent {
     provider: config?.provider ?? 'nine-router',
     model: config?.model ?? '',
     reasoningEffort: config?.reasoning_effort ?? config?.effort ?? '',
-    approvalMode: config?.approval_mode === 'auto' ? 'auto' : 'manual',
+    approvalMode: config?.approval_mode === 'off' ? 'auto' : 'manual',
     skillsWriteApproval: config?.skills_write_approval ?? true,
     memoryWriteApproval: config?.memory_write_approval ?? true,
     workspace: dto.id ? `${dto.id}/workspace` : '',

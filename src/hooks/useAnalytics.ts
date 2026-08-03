@@ -72,7 +72,11 @@ export function useAnalytics(
   const [error, setError] = useState<string | null>(null);
   const automaticLoadKey = useRef('');
   const requestSerial = useRef(0);
-  const refreshInFlight = useRef<Promise<void> | null>(null);
+  const refreshInFlight = useRef<{
+    key: string;
+    controller: AbortController;
+    promise: Promise<void>;
+  } | null>(null);
 
   const setControls = useCallback((next: AnalyticsControls) => {
     setControlsState(next);
@@ -83,8 +87,12 @@ export function useAnalytics(
     }
   }, []);
 
-  const refresh = useCallback(() => {
-    if (refreshInFlight.current) return refreshInFlight.current;
+  const startRefresh = useCallback((force = false) => {
+    const query = toQuery(controls);
+    const key = JSON.stringify(query);
+    if (!force && refreshInFlight.current?.key === key) return refreshInFlight.current.promise;
+    refreshInFlight.current?.controller.abort();
+    const controller = new AbortController();
     const serial = ++requestSerial.current;
     const task = (async () => {
       setStatus('loading');
@@ -100,23 +108,25 @@ export function useAnalytics(
         }
       };
       try {
-        const query = toQuery(controls);
-        const usage = await track(analyticsApi.usage(query));
+        const usage = await track(analyticsApi.usage(query, controller.signal));
         if (serial !== requestSerial.current) return;
         setSummary(usage);
         setStatus('ready');
       } catch (cause) {
         if (serial !== requestSerial.current) return;
+        if (cause instanceof DOMException && cause.name === 'AbortError') return;
         setError(cause instanceof Error ? cause.message : 'Failed to load usage');
         setStatus('error');
       }
     })();
-    refreshInFlight.current = task;
+    refreshInFlight.current = { key, controller, promise: task };
     void task.finally(() => {
-      if (refreshInFlight.current === task) refreshInFlight.current = null;
+      if (refreshInFlight.current?.promise === task) refreshInFlight.current = null;
     });
     return task;
   }, [controls]);
+
+  const refresh = useCallback(() => startRefresh(), [startRefresh]);
 
   useEffect(() => {
     if (!active) {
@@ -132,9 +142,9 @@ export function useAnalytics(
   const setBudget = useCallback(
     async (agentId: string, patch: BudgetPatch) => {
       await analyticsApi.setBudget(agentId, patch);
-      await refresh();
+      await startRefresh(true);
     },
-    [refresh],
+    [startRefresh],
   );
   const available = useMemo<SelectableAgent[]>(
     () => agents

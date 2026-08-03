@@ -81,6 +81,31 @@ describe('agentsApi profile display names', () => {
     });
   });
 
+  it('translates user-facing approval behavior to the Hermes on/off contract', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: null }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        success: true,
+        data: {
+          id: 'a1b2c3',
+          display_name: 'Research Lead',
+          config: { reasoning_effort: 'high', approval_mode: 'off' },
+        },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const profile = await agentsApi.update('a1b2c3', { reasoningEffort: 'high', approvalMode: 'auto' });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+      reasoning_effort: 'high',
+      approval_mode: 'off',
+    });
+    expect(profile.reasoningEffort).toBe('high');
+    expect(profile.approvalMode).toBe('auto');
+  });
+
   it('calls the permanent assistant delete endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       success: true,

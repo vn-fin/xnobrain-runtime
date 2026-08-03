@@ -61,4 +61,26 @@ describe('useAnalytics', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(result.current.progress).toEqual({ completed: 1, total: 1 });
   });
+
+  it('cancels an obsolete request and loads the newest controls once', async () => {
+    let firstSignal: AbortSignal | undefined;
+    let resolveLatest!: (value: { generated_at: string; agents: never[]; by_model: never[]; by_provider: never[]; series: never[] }) => void;
+    mocks.usage
+      .mockImplementationOnce((_query, signal) => {
+        firstSignal = signal;
+        return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))));
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveLatest = resolve; }));
+
+    const { result } = renderHook(() => useAnalytics(true, []));
+    await waitFor(() => expect(result.current.status).toBe('loading'));
+
+    act(() => result.current.setControls({ agents: [], days: 7, bucket: 'day' }));
+    await waitFor(() => expect(mocks.usage).toHaveBeenCalledTimes(2));
+    expect(firstSignal?.aborted).toBe(true);
+    expect(mocks.usage.mock.calls[1][0]).toEqual({ agents: [], days: 7, bucket: 'day' });
+
+    await act(async () => resolveLatest({ generated_at: '2026-07-28T00:00:00Z', agents: [], by_model: [], by_provider: [], series: [] }));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+  });
 });

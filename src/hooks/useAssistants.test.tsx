@@ -105,6 +105,22 @@ describe('useAssistants lazy collections', () => {
     expect(mocks.listDefaultSkills).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the populated workspace mounted during a background profile refresh', async () => {
+    mocks.listAgents.mockResolvedValueOnce(agents);
+    const { result } = renderHook(() => useAssistants());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    let resolveRefresh!: (value: Agent[]) => void;
+    mocks.listAgents.mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve; }));
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.refresh(); });
+
+    expect(result.current.status).toBe('ready');
+    expect(result.current.agents).toHaveLength(2);
+    await act(async () => resolveRefresh(agents));
+    await pending;
+  });
+
   it('opens a conversation committed by an older backend before it returned 409', async () => {
     mocks.listAgents.mockResolvedValue(agents);
     mocks.createConversation.mockRejectedValue(

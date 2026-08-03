@@ -23,6 +23,15 @@ const resources = {
   zh: { translation: zh },
 };
 
+const applyDocumentLanguage = (language: string) => {
+  const normalized = language.split('-')[0];
+  document.documentElement.lang = SUPPORTED_LANGUAGES.includes(normalized as SupportedLanguage)
+    ? normalized
+    : 'en';
+};
+
+i18n.on('languageChanged', applyDocumentLanguage);
+
 i18n
   // Auto-detect language from localStorage cache first, then the browser
   .use(LanguageDetector)
@@ -44,5 +53,7 @@ i18n
       caches: ['localStorage'], // persist the selected language
     },
   });
+
+applyDocumentLanguage(i18n.resolvedLanguage || i18n.language || 'en');
 
 export default i18n;
