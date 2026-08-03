@@ -37,10 +37,10 @@ services:
     pull_policy: {pull_policy}
     labels:
       - traefik.enable=true
-      - traefik.http.routers.brain4all-ui.rule=PathPrefix(`/`)
-      - traefik.http.routers.brain4all-ui.entrypoints=web
-      - traefik.http.routers.brain4all-ui.priority=1
-      - traefik.http.services.brain4all-ui.loadbalancer.server.port=8080
+      - traefik.http.routers.brain4all-web-app-ui.rule=PathPrefix(`/`)
+      - traefik.http.routers.brain4all-web-app-ui.entrypoints=web
+      - traefik.http.routers.brain4all-web-app-ui.priority=1
+      - traefik.http.services.brain4all-web-app-ui.loadbalancer.server.port=8080
       - brain4all.install-id=brain4all_web
     networks:
       - edge
@@ -70,10 +70,10 @@ services:
       - host.docker.internal:host-gateway
     labels:
       - traefik.enable=true
-      - traefik.http.routers.brain4all-api.rule=PathPrefix(`/api`) || PathPrefix(`/internal`)
-      - traefik.http.routers.brain4all-api.entrypoints=web
-      - traefik.http.routers.brain4all-api.priority=100
-      - traefik.http.services.brain4all-api.loadbalancer.server.port=8642
+      - traefik.http.routers.brain4all-web-app-api.rule=PathPrefix(`/api`) || PathPrefix(`/internal`)
+      - traefik.http.routers.brain4all-web-app-api.entrypoints=web
+      - traefik.http.routers.brain4all-web-app-api.priority=100
+      - traefik.http.services.brain4all-web-app-api.loadbalancer.server.port=8642
       - brain4all.install-id=brain4all_web
     networks:
       - edge
@@ -128,5 +128,9 @@ mod tests {
         assert!(compose.contains("--api.dashboard=false"));
         assert!(compose.contains("--providers.docker.exposedbydefault=false"));
         assert!(compose.contains("brain4all_web_data"));
+        assert!(compose.contains("brain4all-web-app-ui"));
+        assert!(compose.contains("brain4all-web-app-api"));
+        assert!(!compose.contains("routers.brain4all-ui"));
+        assert!(!compose.contains("routers.brain4all-api"));
     }
 }
