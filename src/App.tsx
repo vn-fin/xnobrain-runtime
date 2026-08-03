@@ -475,7 +475,10 @@ export default function App() {
             chatError={conversation.error}
             streaming={conversation.streaming}
             canStop={conversation.canStop}
-            onSend={conversation.sendMessage}
+            onSend={(input) => {
+              assistants.touchConversation(activeAgent.id, activeConversation?.id ?? '');
+              return conversation.sendMessage(input);
+            }}
             onStop={conversation.stopStream}
             onResolveRunApproval={conversation.resolveRunApproval}
             onRetry={conversation.refresh}

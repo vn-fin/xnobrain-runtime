@@ -200,5 +200,8 @@ describe('useAssistants lazy collections', () => {
     expect(mocks.listConversations).toHaveBeenLastCalledWith('agent-one', 2, 50);
     expect(result.current.agents[0].conversations.map((item) => item.id)).toEqual(['newest', 'middle', 'older']);
     expect(result.current.conversationPages['agent-one'].hasMore).toBe(false);
+
+    act(() => result.current.touchConversation('agent-one', 'older'));
+    expect(result.current.agents[0].conversations.map((item) => item.id)).toEqual(['older', 'newest', 'middle']);
   });
 });
