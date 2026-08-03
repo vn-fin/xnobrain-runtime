@@ -5,6 +5,10 @@ developer-machine run is not release evidence.
 
 ## 1. Stage-0 Web-installer proof
 
+- `git diff --name-only` for an app feature contains only `app/` paths, except
+  an explicitly scoped Plan 013, skill, or root Makefile contract update.
+- `make -n dev-app`, `make -n win-app`, `make -n mac-app`, and
+  `make -n rpm-app` delegate only to `app/`.
 - Existing frontend production build passes unchanged in web mode.
 - Web-installer Tauri development and production builds pass on Windows,
   macOS, and Linux.
@@ -131,3 +135,4 @@ tests.
       advertised.
 - [ ] Existing web tests, focused desktop tests, frontend production build,
       Rust tests/lints, and repository `make check` pass.
+- [ ] No app implementation changes core backend or Web UI source.

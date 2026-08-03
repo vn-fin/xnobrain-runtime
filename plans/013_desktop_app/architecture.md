@@ -29,6 +29,86 @@ The existing FastAPI/Hermes application remains the only application API.
 Tauri commands are local install/management operations, not a second product
 API. Docker Web never loads the product UI inside Tauri.
 
+## Repository layout
+
+All app-owned code and documentation lives below `app/`:
+
+```text
+app/
+├── AGENTS.md                    App boundary and mandatory rules
+├── README.md                    Contributor entrypoint
+├── .gitignore                   Build, local state, and signing exclusions
+├── Makefile                     Native-host build implementation
+├── package.json                 App-only Node/Tauri scripts
+├── package-lock.json            Pinned app frontend dependencies
+├── index.html                   Installer/management shell entry
+├── tsconfig.json
+├── vite.config.ts
+├── src/                         App-only React/TypeScript
+│   ├── main.tsx
+│   ├── App.tsx
+│   ├── editions/                Web installer vs Full Managed selection
+│   ├── installer/               Wizard, preflight, progress, recovery
+│   ├── managed/                 App-version management screens
+│   ├── bridge/                  Typed invoke/channel/event adapters only
+│   ├── state/                   Reducers/state-machine projections
+│   ├── components/              App-only accessible UI primitives
+│   ├── styles/
+│   └── test/
+├── src-tauri/                   Rust/Tauri application
+│   ├── Cargo.toml
+│   ├── Cargo.lock
+│   ├── build.rs
+│   ├── tauri.conf.json
+│   ├── capabilities/
+│   │   ├── installer.json       Least privilege for Web installer
+│   │   └── managed.json         Full Managed permissions
+│   ├── icons/
+│   └── src/
+│       ├── main.rs              Minimal desktop entrypoint
+│       ├── lib.rs               Wiring and command registration
+│       ├── commands/            Thin typed Tauri boundary
+│       ├── domain/              States, plans, manifests, errors
+│       ├── services/            Installer/lifecycle orchestration
+│       ├── drivers/
+│       │   ├── docker/          Web edition only
+│       │   ├── linux/           Managed app runtime
+│       │   ├── windows_wsl/     Managed app runtime
+│       │   └── macos/           Managed app runtime
+│       ├── security/            Signature, digest, secret, redaction
+│       ├── persistence/         Atomic local state
+│       └── diagnostics/
+├── schemas/                     Versioned manifest and IPC schemas
+├── resources/                   Non-secret templates/notices bundled in app
+├── scripts/                     Packaging/signing orchestration
+├── tests/                       Cross-boundary and end-to-end tests
+│   ├── fixtures/
+│   └── e2e/
+└── docs/                        App ADRs, support matrix, release operations
+```
+
+Generated frontend output, Rust `target/`, installers, signing intermediates,
+download caches, secrets, and local runtime state are ignored and never
+committed. Release artifacts go to Tauri's platform bundle directories and CI
+publishes them without copying them into core repository directories.
+
+### Dependency direction
+
+```text
+app/src → app/src/bridge → typed Tauri commands
+                              ↓
+commands → services → domain + driver traits
+                         ↓
+                      platform drivers
+
+Full Managed product view → released loopback HTTP/SSE API
+Docker Web product view   → default system browser → loopback HTTP/SSE API
+```
+
+No arrow points from core backend/Web UI source into app source. Tests may run
+the released/core stack as an external fixture, but app code does not import
+Python modules or `../src` files.
+
 ## Installer state machine
 
 Persist non-secret state atomically after each transition:
@@ -70,9 +150,10 @@ uninstall_runtime(preserve_data)
 diagnostics() -> redacted structured records
 ```
 
-Neither installer React nor application React can pass arbitrary executables, Compose YAML, shell
-fragments, paths, ports, or environment variables to this interface. Commands
-use typed, validated inputs and a Tauri capability allowlist.
+Neither installer React nor application React can pass arbitrary executables,
+Compose YAML, shell fragments, paths, ports, or environment variables to this
+interface. Commands use typed, validated inputs and a Tauri capability
+allowlist.
 
 ## Runtime manifests
 
@@ -155,5 +236,5 @@ behind “Details” and is redacted before display/export.
   a controlled boundary, verify health, then mark active.
 - On failure: restore the previous manifest/images and preserve the data
   volume. Data migrations require an explicit forward/rollback contract.
-- Direct drivers use versioned runtime directories/packages and the same
+- Managed platform drivers use versioned runtime directories/packages and the same
   health-before-commit rule.

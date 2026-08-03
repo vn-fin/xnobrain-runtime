@@ -18,7 +18,8 @@ Read the sibling documents in order:
 
 Also read [`AGENTS.md`](../../AGENTS.md) and
 [`plans/LOCAL_FEATURES_CHECKLIST.md`](../LOCAL_FEATURES_CHECKLIST.md) before
-implementation.
+implementation. All application code belongs under [`app/`](../../app/); its
+local [`AGENTS.md`](../../app/AGENTS.md) is mandatory for app work.
 
 ## Goal
 
@@ -99,6 +100,28 @@ Not included in the MVP:
 - Full Managed App installation or embedded desktop product UI.
 - Building Docker images on the customer's computer.
 - Silent Docker Desktop installation or automatic license acceptance.
+
+## Repository boundary
+
+Plan 013 is implemented entirely in `app/`. App development must not modify
+the core backend (`brain4all/`, `server.py`, Hermes/9router runtime), the Web UI
+(`src/`), or their existing behavior. The app consumes released HTTP/SSE
+contracts and may display an unmodified production Web build. If a missing
+public contract is discovered, record it and schedule an explicitly authorized
+core-contract change separately; do not make an incidental core edit.
+
+The stable build entrypoints are:
+
+```text
+make dev-app    # local Tauri development
+make win-app    # Windows NSIS build, on Windows
+make mac-app    # signed app/DMG build, on macOS
+make rpm-app    # RPM build, on supported RPM Linux
+```
+
+Release packaging is performed on its native OS so platform signing and
+bundling are real. Future users receive the resulting signed installer/package
+and open it normally; they do not install Node, Rust, or run Make.
 
 ## Definition of done for the first release
 

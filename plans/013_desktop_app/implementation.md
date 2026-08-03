@@ -5,19 +5,25 @@ features while a P0 installer gate remains incomplete.
 
 ## Stage 0 — P0: edition contract and Web-installer proof
 
-1. Record supported OS/architecture targets and measured runtime resource
+1. Create the Tauri project exclusively under `app/` following the structure in
+   [architecture.md](architecture.md). Do not change core backend or Web UI
+   source.
+2. Wire the root Makefile entrypoints to `app/Makefile`:
+   `make dev-app`, `make win-app`, `make mac-app`, and `make rpm-app`.
+   Native release targets fail clearly on the wrong build host.
+3. Record supported OS/architecture targets and measured runtime resource
    requirements in a versioned desktop support document.
-2. Define separate identifiers, manifests, data locations, and UI copy for
+4. Define separate identifiers, manifests, data locations, and UI copy for
    Docker Web and Full Managed App.
-3. Add a minimal Tauri workspace for the Web installer/maintenance wizard. It
+5. Add a minimal Tauri workspace for the Web installer/maintenance wizard. It
    must not embed or present the Brain4All product UI.
-4. Prove that successful install/start launches the default browser at the
+6. Prove that successful install/start launches the default browser at the
    loopback Web URL on Windows, macOS, and Linux.
-5. Define and validate the signed runtime-manifest schema.
-6. Define typed installer command/event contracts and the runtime-driver trait.
-7. Produce installer wireframes for every state, including Full Managed App
+7. Define and validate the signed runtime-manifest schema.
+8. Define typed installer command/event contracts and the runtime-driver trait.
+9. Produce installer wireframes for every state, including Full Managed App
    planned, reboot, retry, repair, and destructive data deletion confirmation.
-8. Complete the third-party redistribution and Docker Desktop licensing gate.
+10. Complete the third-party redistribution and Docker Desktop licensing gate.
 
 Gate: the Web installer completes its wizard and browser handoff on all target
 systems without implying that it is the Full Managed App.

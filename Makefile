@@ -3,7 +3,7 @@ CONTAINER_CLI ?= docker
 IMAGE_TAG ?= local
 BRAIN4ALL_FRONTEND_IMAGE ?= brain4all-frontend:$(IMAGE_TAG)
 HERMES_RUNTIME_IMAGE ?= brain4all-hermes-runtime:$(IMAGE_TAG)
-.PHONY: dev backend src test check smoke-api build run image frontend-image runtime-image bundle load-bundle install install-local
+.PHONY: dev backend src test check smoke-api build run image frontend-image runtime-image bundle load-bundle install install-local dev-app win-app mac-app rpm-app
 
 dev:
 	bash ./scripts/dev.sh
@@ -51,3 +51,17 @@ install: run
 
 install-local:
 	./scripts/install-linux.sh
+
+# Brain4All installer and Full Managed App. All app implementation and release
+# logic is isolated below app/; these targets are the stable repository entrypoints.
+dev-app:
+	$(MAKE) -C app dev
+
+win-app:
+	$(MAKE) -C app win
+
+mac-app:
+	$(MAKE) -C app mac
+
+rpm-app:
+	$(MAKE) -C app rpm

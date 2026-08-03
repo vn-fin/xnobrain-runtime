@@ -1,85 +1,71 @@
 ---
 name: tauri-app-development
-description: [TODO: Complete and informative explanation of what the skill does and when to use it. Include WHEN to use this skill - specific scenarios, file types, or tasks that trigger it.]
+description: Build, review, test, package, or document the Brain4All Tauri 2 installer and Full Managed App under app/. Use for Tauri/Rust commands, app-only React UI, Docker Web installation, managed platform drivers, native installers, signing, updates, capabilities, IPC, or make dev-app/win-app/mac-app/rpm-app work.
 ---
 
-# Tauri App Development
+# Develop the Brain4All Tauri app
 
-## Overview
+Keep every implementation change under `app/`. Read `app/AGENTS.md` and
+`plans/013_desktop_app/README.md` before acting.
 
-[TODO: 1-2 sentences explaining what this skill enables]
+## Preserve the product boundary
 
-## Structuring This Skill
+- Treat Docker as the Web edition. Install/start it, then open the loopback URL
+  in the default system browser. Do not host its product UI in Tauri.
+- Treat Full Managed as the app edition. Put its installer and management UI in
+  `app/src/` and its Rust lifecycle implementation in `app/src-tauri/`.
+- Do not modify `src/`, `brain4all/`, `server.py`, Hermes, 9router, or existing
+  API behavior for an app task. Consume released HTTP/SSE contracts only.
+- If a contract is missing, document the gap and stop that portion. Require a
+  separately authorized core-contract change.
 
-[TODO: Choose the structure that best fits this skill's purpose. Common patterns:
+Read [references/boundaries-and-structure.md](references/boundaries-and-structure.md)
+before adding or moving files.
 
-**1. Workflow-Based** (best for sequential processes)
-- Works well when there are clear step-by-step procedures
-- Example: DOCX skill with "Workflow Decision Tree" -> "Reading" -> "Creating" -> "Editing"
-- Structure: ## Overview -> ## Workflow Decision Tree -> ## Step 1 -> ## Step 2...
+## Workflow
 
-**2. Task-Based** (best for tool collections)
-- Works well when the skill offers different operations/capabilities
-- Example: PDF skill with "Quick Start" -> "Merge PDFs" -> "Split PDFs" -> "Extract Text"
-- Structure: ## Overview -> ## Quick Start -> ## Task Category 1 -> ## Task Category 2...
+1. Inspect the nearest app module, tests, `app/AGENTS.md`, and the applicable
+   Plan 013 stage.
+2. Check the current Tauri 2 official documentation before using a
+   version-sensitive API or configuration key. Use
+   [references/official-api-links.md](references/official-api-links.md) to
+   choose the authoritative page.
+3. Model lifecycle rules in Rust services and driver traits. Keep Tauri
+   commands as thin typed serialization boundaries.
+4. Expose one typed TypeScript adapter per command/channel. Components never
+   call `invoke` directly and never construct shell/process input.
+5. Add least-privilege capability entries only for the window/edition that
+   needs them. Never use broad shell or filesystem permissions.
+6. Add unit tests for domain/service behavior, IPC contract tests, frontend
+   tests, and a platform-focused smoke test proportional to the change.
+7. Run `make -C app check`, then the relevant native-host build target. Do not
+   claim Windows/macOS packaging from Linux.
 
-**3. Reference/Guidelines** (best for standards or specifications)
-- Works well for brand guidelines, coding standards, or requirements
-- Example: Brand styling with "Brand Guidelines" -> "Colors" -> "Typography" -> "Features"
-- Structure: ## Overview -> ## Guidelines -> ## Specifications -> ## Usage...
+Read [references/coding-style.md](references/coding-style.md) for Rust,
+TypeScript, IPC, error, state, security, and test conventions. Read
+[references/packaging-and-release.md](references/packaging-and-release.md) for
+build artifacts, signing, updater, sidecar, and platform rules.
 
-**4. Capabilities-Based** (best for integrated systems)
-- Works well when the skill provides multiple interrelated features
-- Example: Product Management with "Core Capabilities" -> numbered capability list
-- Structure: ## Overview -> ## Core Capabilities -> ### 1. Feature -> ### 2. Feature...
+## Stable commands
 
-Patterns can be mixed and matched as needed. Most skills combine patterns (e.g., start with task-based, add workflow for complex operations).
+```text
+make dev-app    local Tauri development
+make win-app    NSIS build on Windows
+make mac-app    app and DMG build on macOS
+make rpm-app    RPM build on supported RPM Linux
+make -C app check
+```
 
-Delete this entire "Structuring This Skill" section when done - it's just guidance.]
+End users receive a signed native artifact and open it normally. They do not
+run these contributor commands or install the Rust/Node toolchains.
 
-## [TODO: Replace with the first main section based on chosen structure]
+## Completion gate
 
-[TODO: Add content here. See examples in existing skills:
-- Code samples for technical skills
-- Decision trees for complex workflows
-- Concrete examples with realistic user requests
-- References to scripts/templates/references as needed]
-
-## Resources (optional)
-
-Create only the resource directories this skill actually needs. Delete this section if no resources are required.
-
-### scripts/
-Executable code (Python/Bash/etc.) that can be run directly to perform specific operations.
-
-**Examples from other skills:**
-- PDF skill: `fill_fillable_fields.py`, `extract_form_field_info.py` - utilities for PDF manipulation
-- DOCX skill: `document.py`, `utilities.py` - Python modules for document processing
-
-**Appropriate for:** Python scripts, shell scripts, or any executable code that performs automation, data processing, or specific operations.
-
-**Note:** Scripts may be executed without loading into context, but can still be read by Codex for patching or environment adjustments.
-
-### references/
-Documentation and reference material intended to be loaded into context to inform Codex's process and thinking.
-
-**Examples from other skills:**
-- Product management: `communication.md`, `context_building.md` - detailed workflow guides
-- BigQuery: API reference documentation and query examples
-- Finance: Schema documentation, company policies
-
-**Appropriate for:** In-depth documentation, API references, database schemas, comprehensive guides, or any detailed information that Codex should reference while working.
-
-### assets/
-Files not intended to be loaded into context, but rather used within the output Codex produces.
-
-**Examples from other skills:**
-- Brand styling: PowerPoint template files (.pptx), logo files
-- Frontend builder: HTML/React boilerplate project directories
-- Typography: Font files (.ttf, .woff2)
-
-**Appropriate for:** Templates, boilerplate code, document templates, images, icons, fonts, or any files meant to be copied or used in the final output.
-
----
-
-**Not every skill requires all three types of resources.**
+- Keep the diff within `app/` except an explicitly requested plan, skill, or
+  root Makefile entrypoint change.
+- Preserve existing Web/backend tests and behavior.
+- Reject arbitrary commands, paths, URLs, environment, Compose content, and
+  privileged operations at the webview boundary.
+- Verify manifests, update signatures, and artifact digests; redact secrets and
+  user content; preserve data by default.
+- Record the exact test/build commands and observed native-host artifacts.
