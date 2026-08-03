@@ -2746,8 +2746,9 @@ class AgentManager:
             ]
             sql = "SELECT * FROM sessions"
             if activity_columns:
-                activity = ", ".join(f"COALESCE({column}, 0)" for column in activity_columns)
-                sql += f" ORDER BY MAX({activity}) DESC, id DESC"
+                activity_values = [f"COALESCE({column}, 0)" for column in activity_columns]
+                activity = activity_values[0] if len(activity_values) == 1 else f"MAX({', '.join(activity_values)})"
+                sql += f" ORDER BY {activity} DESC, id DESC"
             else:
                 sql += " ORDER BY id DESC"
             sql += " LIMIT ? OFFSET ?"

@@ -113,6 +113,7 @@ export type Conversation = {
   title: string;
   preview: string;
   startedAt: string;
+  updatedAt?: number;
   model: string;
   messages: number;
   tools: number;

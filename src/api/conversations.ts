@@ -19,6 +19,11 @@ export type ResolveRunApprovalResponse = {
   resolved?: number;
 };
 
+export type ConversationPage = {
+  conversations: Conversation[];
+  pagination: { page: number; limit: number; hasMore: boolean };
+};
+
 function pathWithAgent(path: string, agentId: string, extra?: Record<string, string | number | undefined>) {
   const params = new URLSearchParams({ agent: agentId });
   for (const [key, value] of Object.entries(extra ?? {})) {
@@ -56,9 +61,16 @@ function mapUsage(dto: ConversationUsageDTO): ConversationUsage {
 }
 
 export const conversationsApi = {
-  async list(agentId: string, page = 1, limit = 500): Promise<Conversation[]> {
+  async list(agentId: string, page = 1, limit = 50): Promise<ConversationPage> {
     const data = await request<ConversationListResponseDTO>(pathWithAgent(ROOT, agentId, { page, limit }));
-    return (data.conversations ?? []).map(mapConversation);
+    return {
+      conversations: (data.conversations ?? []).map(mapConversation),
+      pagination: {
+        page: data.pagination?.page ?? page,
+        limit: data.pagination?.limit ?? limit,
+        hasMore: data.pagination?.has_more ?? false,
+      },
+    };
   },
 
   async create(agentId: string, title?: string): Promise<Conversation> {

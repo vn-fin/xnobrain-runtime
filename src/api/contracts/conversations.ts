@@ -6,9 +6,11 @@ export type ConversationSummaryDTO = {
   preview?: string | null;
   message_count?: number;
   tool_call_count?: number;
-  started_at?: number;
-  last_active_at?: number;
-  ended_at?: number;
+  started_at?: number | string;
+  last_active_at?: number | string;
+  ended_at?: number | string;
+  created_at?: number | string;
+  updated_at?: number | string;
   end_reason?: string;
   system_prompt?: string;
   model_config?: Record<string, unknown>;

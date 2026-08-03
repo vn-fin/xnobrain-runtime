@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -500,6 +501,33 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 research["conversation"]["title"],
                 "New Session",
             )
+
+    def test_conversations_are_paged_by_most_recent_activity(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            manager.create_agent({"name": "news"})
+            first = manager.create_conversation("news", {"title": "First"})["conversation"]
+            second = manager.create_conversation("news", {"title": "Second"})["conversation"]
+            third = manager.create_conversation("news", {"title": "Third"})["conversation"]
+
+            database = manager._profile_dir("news") / "state.db"
+            with sqlite3.connect(database) as connection:
+                connection.execute("UPDATE sessions SET started_at = 1, ended_at = 30 WHERE id = ?", (first["id"],))
+                connection.execute("UPDATE sessions SET started_at = 2, ended_at = 20 WHERE id = ?", (second["id"],))
+                connection.execute("UPDATE sessions SET started_at = 3, ended_at = 10 WHERE id = ?", (third["id"],))
+
+            page_one = manager.list_conversations("news", {"page": 1, "limit": 2})
+            page_two = manager.list_conversations("news", {"page": 2, "limit": 2})
+
+            self.assertEqual([item["id"] for item in page_one["conversations"]], [first["id"], second["id"]])
+            self.assertEqual(page_one["pagination"], {"page": 1, "limit": 2, "has_more": True})
+            self.assertEqual([item["id"] for item in page_two["conversations"]], [third["id"]])
+            self.assertEqual(page_two["pagination"], {"page": 2, "limit": 2, "has_more": False})
 
     def test_default_conversation_retries_an_atomic_title_conflict(self) -> None:
         with TemporaryDirectory() as temp_dir:

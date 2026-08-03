@@ -149,9 +149,14 @@ export default function App() {
     if (!assistantsReady || router.centerView !== 'chat' || !activeAgent) return undefined;
     if (activeAgent.id !== router.activeAgentId) return undefined;
     let cancelled = false;
-    void assistants.loadConversations(activeAgent.id).then((rows) => {
+    void assistants.loadConversations(activeAgent.id).then(async (rows) => {
       if (cancelled) return;
-      const selected = rows.find((item) => item.id === router.activeConversationId) ?? rows[0];
+      let selected = rows.find((item) => item.id === router.activeConversationId);
+      if (!selected && router.activeConversationId) {
+        selected = await assistants.loadConversation(activeAgent.id, router.activeConversationId).catch(() => undefined);
+        if (cancelled) return;
+      }
+      selected ??= rows[0];
       if ((selected?.id ?? '') !== router.activeConversationId) {
         router.setActiveConversationId(selected?.id ?? '');
       }
@@ -160,6 +165,7 @@ export default function App() {
   }, [
     activeAgent,
     assistants.loadConversations,
+    assistants.loadConversation,
     assistantsReady,
     router.activeAgentId,
     router.activeConversationId,
@@ -490,6 +496,8 @@ export default function App() {
             onCreateConversation={handleCreateConversation}
             onDeleteConversation={(id) => setDeleteConversationId(id)}
             onRenameConversation={handleRenameConversation}
+            conversationHasMore={assistants.conversationPages[activeAgent.id]?.hasMore ?? false}
+            onLoadMoreConversations={() => assistants.loadMoreConversations(activeAgent.id)}
             onOpenFile={handleOpenWorkspaceFile}
             onUploadFiles={workspace.uploadFiles}
             onUploadTree={workspace.uploadTree}

@@ -41,10 +41,28 @@ function mapGlobalConfig(config: AgentConfigDTO | null): GlobalRuntimeConfig | n
   };
 }
 
+const CONVERSATION_PAGE_SIZE = 50;
+
+function recentConversations(conversations: Agent['conversations']): Agent['conversations'] {
+  return [...conversations].sort((left, right) =>
+    (right.updatedAt ?? (Date.parse(right.startedAt) || 0))
+    - (left.updatedAt ?? (Date.parse(left.startedAt) || 0)));
+}
+
+function mergeConversations(
+  current: Agent['conversations'],
+  incoming: Agent['conversations'],
+): Agent['conversations'] {
+  const conversations = new Map(current.map((conversation) => [conversation.id, conversation]));
+  for (const conversation of incoming) conversations.set(conversation.id, conversation);
+  return recentConversations([...conversations.values()]);
+}
+
 export function useAssistants(active = true) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [library, setLibrary] = useState<AgentSkill[]>([]);
   const [agentSkillPages, setAgentSkillPages] = useState<Record<string, ResponsePagination>>({});
+  const [conversationPages, setConversationPages] = useState<Record<string, { page: number; limit: number; hasMore: boolean }>>({});
   const [defaultConfig, setDefaultConfig] = useState<GlobalRuntimeConfig | null>(null);
   const [status, setStatus] = useState<AsyncStatus>(active ? 'loading' : 'ready');
   const [error, setError] = useState('');
@@ -54,6 +72,8 @@ export function useAssistants(active = true) {
   const agentsRef = useRef(agents);
   const loadedConversations = useRef(new Set<string>());
   const conversationRequests = useRef(new Map<string, Promise<Agent['conversations']>>());
+  const conversationPageRequests = useRef(new Map<string, Promise<Agent['conversations']>>());
+  const conversationPagesRef = useRef(conversationPages);
   const loadedSkills = useRef(new Set<string>());
   const skillRequests = useRef(new Map<string, Promise<AgentSkill[]>>());
   const libraryRequest = useRef<Promise<AgentSkill[]> | null>(null);
@@ -65,6 +85,7 @@ export function useAssistants(active = true) {
 
   agentsRef.current = agents;
   libraryRef.current = library;
+  conversationPagesRef.current = conversationPages;
   const { enabled: agentSkills, states: skillStates } = useMemo(() => deriveSkills(agents), [agents]);
 
   const refresh = useCallback(async () => {
@@ -102,12 +123,14 @@ export function useAssistants(active = true) {
     const pendingRequest = conversationRequests.current.get(agentId);
     if (pendingRequest && !force) return pendingRequest;
 
-    const request = conversationsApi.list(agentId)
-      .then((conversations) => {
+    const request = conversationsApi.list(agentId, 1, CONVERSATION_PAGE_SIZE)
+      .then(({ conversations, pagination }) => {
+        const sorted = recentConversations(conversations);
         loadedConversations.current.add(agentId);
         setAgents((current) => current.map((agent) =>
-          agent.id === agentId ? { ...agent, conversations } : agent));
-        return conversations;
+          agent.id === agentId ? { ...agent, conversations: sorted } : agent));
+        setConversationPages((current) => ({ ...current, [agentId]: pagination }));
+        return sorted;
       })
       .finally(() => {
         if (conversationRequests.current.get(agentId) === request) {
@@ -116,6 +139,45 @@ export function useAssistants(active = true) {
       });
     conversationRequests.current.set(agentId, request);
     return request;
+  }, []);
+
+  const loadMoreConversations = useCallback(async (agentId: string) => {
+    if (!agentId) return [];
+    const pagination = conversationPagesRef.current[agentId];
+    const existing = agentsRef.current.find((agent) => agent.id === agentId)?.conversations ?? [];
+    if (!pagination?.hasMore) return existing;
+    const pendingRequest = conversationPageRequests.current.get(agentId);
+    if (pendingRequest) return pendingRequest;
+
+    const request = conversationsApi.list(agentId, pagination.page + 1, pagination.limit)
+      .then(({ conversations, pagination: nextPage }) => {
+        let merged = existing;
+        setAgents((current) => current.map((agent) => {
+          if (agent.id !== agentId) return agent;
+          merged = mergeConversations(agent.conversations, conversations);
+          return { ...agent, conversations: merged };
+        }));
+        setConversationPages((current) => ({ ...current, [agentId]: nextPage }));
+        return merged;
+      })
+      .finally(() => {
+        if (conversationPageRequests.current.get(agentId) === request) {
+          conversationPageRequests.current.delete(agentId);
+        }
+      });
+    conversationPageRequests.current.set(agentId, request);
+    return request;
+  }, []);
+
+  const loadConversation = useCallback(async (agentId: string, conversationId: string) => {
+    const existing = agentsRef.current.find((agent) => agent.id === agentId)
+      ?.conversations.find((conversation) => conversation.id === conversationId);
+    if (existing) return existing;
+    const conversation = await conversationsApi.detail(agentId, conversationId);
+    setAgents((current) => current.map((agent) => agent.id === agentId
+      ? { ...agent, conversations: mergeConversations(agent.conversations, [conversation]) }
+      : agent));
+    return conversation;
   }, []);
 
   const loadAgentSkills = useCallback(async (agentId: string, force = false) => {
@@ -190,6 +252,10 @@ export function useAssistants(active = true) {
       conversationId = conversation.id;
       conversations = [conversation];
       loadedConversations.current.add(agent.id);
+      setConversationPages((current) => ({
+        ...current,
+        [agent.id]: { page: 1, limit: CONVERSATION_PAGE_SIZE, hasMore: false },
+      }));
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Agent created, but its first session could not be created.');
     } finally {
@@ -291,7 +357,7 @@ export function useAssistants(active = true) {
     }
     loadedConversations.current.add(agentId);
     setAgents((current) => current.map((agent) => agent.id === agentId
-      ? { ...agent, conversations: [...agent.conversations, conversation] }
+      ? { ...agent, conversations: mergeConversations(agent.conversations, [{ ...conversation, updatedAt: Date.now() }]) }
       : agent));
     return conversation.id;
   };
@@ -315,8 +381,10 @@ export function useAssistants(active = true) {
     setAgents((current) => current.map((agent) => agent.id === agentId
       ? {
           ...agent,
-          conversations: agent.conversations.map((conversation) =>
-            conversation.id === conversationId ? { ...conversation, title: clean } : conversation),
+          conversations: recentConversations(agent.conversations.map((conversation) =>
+            conversation.id === conversationId
+              ? { ...conversation, title: clean, updatedAt: Date.now() }
+              : conversation)),
         }
       : agent));
   };
@@ -442,8 +510,8 @@ export function useAssistants(active = true) {
   };
 
   return {
-    agents, library, agentSkills, skillStates, agentSkillPages, defaultConfig, status, error, pending,
-    skillInstallPending, skillInstallError, refresh, loadConversations, loadAgentSkills, loadLibrary, loadDefaultConfig,
+    agents, library, agentSkills, skillStates, agentSkillPages, conversationPages, defaultConfig, status, error, pending,
+    skillInstallPending, skillInstallError, refresh, loadConversations, loadMoreConversations, loadConversation, loadAgentSkills, loadLibrary, loadDefaultConfig,
     createAgent, updateAgent, renameAgent, deleteAgent, testAgent, setDefaultModel, setWriteApprovals,
     createConversation, deleteConversation, renameConversation, setConversationTitle,
     toggleAgentSkill, setSkillEnabled, loadSkillsPage, installDefaultSkill, setDefaultSkillEnabled, installExistingSkill, applySkillsToAgents,

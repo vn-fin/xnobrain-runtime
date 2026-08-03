@@ -113,6 +113,8 @@ export function ChatArea({
   onCreateConversation,
   onDeleteConversation,
   onRenameConversation,
+  conversationHasMore = false,
+  onLoadMoreConversations,
   onOpenFile,
   onUploadFiles,
   onUploadTree,
@@ -146,6 +148,8 @@ export function ChatArea({
   onCreateConversation: () => void;
   onDeleteConversation: (id: string) => void;
   onRenameConversation: (id: string, title: string) => void | Promise<void>;
+  conversationHasMore?: boolean;
+  onLoadMoreConversations?: () => void | Promise<unknown>;
   onOpenFile: (path: string) => void;
   onUploadFiles?: (files: File[]) => void | Promise<void>;
   onUploadTree?: (items: { file: File; relativeDir: string }[]) => void | Promise<void>;
@@ -159,6 +163,7 @@ export function ChatArea({
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [conversationPickerOpen, setConversationPickerOpen] = useState(false);
   const [conversationSearch, setConversationSearch] = useState('');
+  const [conversationLoadingMore, setConversationLoadingMore] = useState(false);
   const [conversationPickerPosition, setConversationPickerPosition] = useState({ top: 0, left: 0 });
   const [attachments, setAttachments] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -625,7 +630,22 @@ export function ChatArea({
                 <Plus size={15} />
                 <span>{t('chat.createConversation')}</span>
               </button>
-              <div className="conversation-picker-list" role="listbox" aria-label={t('chat.showAllConversations')}>
+              <div
+                className="conversation-picker-list"
+                role="listbox"
+                aria-label={t('chat.showAllConversations')}
+                onScroll={(event) => {
+                  const list = event.currentTarget;
+                  if (
+                    conversationHasMore
+                    && !conversationLoadingMore
+                    && list.scrollHeight - list.scrollTop - list.clientHeight < 80
+                  ) {
+                    setConversationLoadingMore(true);
+                    void Promise.resolve(onLoadMoreConversations?.()).finally(() => setConversationLoadingMore(false));
+                  }
+                }}
+              >
                 {filteredConversations.map((conversation) => {
                   const selected = conversation.id === activeConversation?.id;
                   const tabStreaming = streamingKeys.includes(`${agent.id}::${conversation.id}`);
@@ -683,6 +703,21 @@ export function ChatArea({
                 })}
                 {filteredConversations.length === 0 && (
                   <p>{t('chat.noMatchingConversations', { defaultValue: 'No matching sessions.' })}</p>
+                )}
+                {(conversationHasMore || conversationLoadingMore) && (
+                  <button
+                    className="conversation-load-more"
+                    disabled={conversationLoadingMore}
+                    onClick={() => {
+                      if (conversationLoadingMore) return;
+                      setConversationLoadingMore(true);
+                      void Promise.resolve(onLoadMoreConversations?.()).finally(() => setConversationLoadingMore(false));
+                    }}
+                  >
+                    {conversationLoadingMore
+                      ? t('chat.loadingOlderSessions', { defaultValue: 'Loading older sessions…' })
+                      : t('chat.loadOlderSessions', { defaultValue: 'Load older sessions' })}
+                  </button>
                 )}
               </div>
             </div>

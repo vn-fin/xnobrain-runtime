@@ -2,18 +2,33 @@ import type { ConversationMessageDTO, ConversationSummaryDTO } from '../contract
 import type { ChatMessage, Conversation } from '../../types';
 import { randomId } from '../../utils/id';
 
-function formatTimestamp(epoch?: number): string {
-  if (!epoch) return '';
-  const milliseconds = epoch > 10_000_000_000 ? epoch : epoch * 1000;
+function timestampValue(value?: number | string): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 10_000_000_000 ? value : value * 1000;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric > 10_000_000_000 ? numeric : numeric * 1000;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function formatTimestamp(value?: number | string): string {
+  const milliseconds = timestampValue(value);
+  if (!milliseconds) return '';
   return new Date(milliseconds).toLocaleString();
 }
 
 export function mapConversation(dto: ConversationSummaryDTO): Conversation {
+  const activity = dto.last_active_at ?? dto.updated_at ?? dto.ended_at ?? dto.started_at ?? dto.created_at;
   return {
     id: dto.id ?? '',
     title: dto.title ?? 'New Conversation',
     preview: dto.preview ?? '',
-    startedAt: formatTimestamp(dto.last_active_at ?? dto.started_at),
+    startedAt: formatTimestamp(activity),
+    updatedAt: timestampValue(activity),
     model: dto.model ?? '',
     messages: dto.message_count ?? 0,
     tools: dto.tool_call_count ?? 0,

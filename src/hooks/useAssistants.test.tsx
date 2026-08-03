@@ -25,11 +25,17 @@ const agents: Agent[] = ['agent-one', 'agent-two'].map((id) => ({
 const mocks = vi.hoisted(() => ({
   listAgents: vi.fn(),
   listConversations: vi.fn(),
+  getConversation: vi.fn(),
   createConversation: vi.fn(),
   listSkills: vi.fn(),
   listDefaultSkills: vi.fn(),
   getGlobalConfig: vi.fn(),
 }));
+
+const conversationPage = (conversations: unknown[], page = 1, hasMore = false) => ({
+  conversations,
+  pagination: { page, limit: 50, hasMore },
+});
 
 vi.mock('../api/agents', () => ({
   agentsApi: {
@@ -41,6 +47,7 @@ vi.mock('../api/agents', () => ({
 vi.mock('../api/conversations', () => ({
   conversationsApi: {
     list: mocks.listConversations,
+    detail: mocks.getConversation,
     create: mocks.createConversation,
   },
 }));
@@ -57,9 +64,9 @@ describe('useAssistants lazy collections', () => {
 
   it('loads agent summaries once under StrictMode and fetches selected collections on demand', async () => {
     mocks.listAgents.mockResolvedValue(agents);
-    mocks.listConversations.mockResolvedValue([
+    mocks.listConversations.mockResolvedValue(conversationPage([
       { id: 'conversation-one', title: 'New Conversation', updated: 'now', messages: 0 },
-    ]);
+    ]));
     mocks.listSkills.mockResolvedValue({ skills: [], pagination: undefined });
     mocks.listDefaultSkills.mockResolvedValue({ skills: [], pagination: undefined });
     mocks.getGlobalConfig.mockResolvedValue(null);
@@ -77,7 +84,7 @@ describe('useAssistants lazy collections', () => {
     await act(() => result.current.loadConversations('agent-one'));
 
     expect(mocks.listConversations).toHaveBeenCalledTimes(1);
-    expect(mocks.listConversations).toHaveBeenCalledWith('agent-one');
+    expect(mocks.listConversations).toHaveBeenCalledWith('agent-one', 1, 50);
     expect(result.current.agents[0].conversations[0]?.id).toBe('conversation-one');
     expect(result.current.agents[1].conversations).toEqual([]);
 
@@ -127,13 +134,13 @@ describe('useAssistants lazy collections', () => {
       new ApiError(409, 'conversation already exists'),
     );
     mocks.listConversations
-      .mockResolvedValueOnce([
+      .mockResolvedValueOnce(conversationPage([
         { id: 'existing', title: 'New Conversation', updated: 'now', messages: 0 },
-      ])
-      .mockResolvedValueOnce([
+      ]))
+      .mockResolvedValueOnce(conversationPage([
         { id: 'existing', title: 'New Conversation', updated: 'now', messages: 0 },
         { id: 'recovered', title: 'New Conversation 2', updated: 'now', messages: 0 },
-      ]);
+      ]));
 
     const { result } = renderHook(() => useAssistants());
     await waitFor(() => expect(result.current.status).toBe('ready'));
@@ -146,13 +153,15 @@ describe('useAssistants lazy collections', () => {
     });
 
     expect(id).toBe('recovered');
-    expect(mocks.listConversations).toHaveBeenCalledWith('agent-one');
+    expect(mocks.listConversations).toHaveBeenCalledWith('agent-one', 1, 50);
     expect(result.current.agents[0].conversations).toHaveLength(2);
   });
 
   it('reconciles a streamed conversation title without another API request', async () => {
     mocks.listAgents.mockResolvedValue([agents[0]]);
-    mocks.listConversations.mockResolvedValue([{ id: 'session-one', title: 'New Session', updated: 'now', messages: 0 }]);
+    mocks.listConversations.mockResolvedValue(conversationPage([
+      { id: 'session-one', title: 'New Session', updated: 'now', messages: 0 },
+    ]));
     const { result } = renderHook(() => useAssistants());
     await waitFor(() => expect(result.current.status).toBe('ready'));
     await act(() => result.current.loadConversations('agent-one'));
@@ -162,5 +171,34 @@ describe('useAssistants lazy collections', () => {
 
     expect(result.current.agents[0].conversations[0].title).toBe('Market risk summary');
     expect(mocks.listConversations).not.toHaveBeenCalled();
+  });
+
+  it('sorts recent sessions first and appends the next API page once', async () => {
+    mocks.listAgents.mockResolvedValue([agents[0]]);
+    mocks.listConversations
+      .mockResolvedValueOnce(conversationPage([
+        { id: 'older', title: 'Older', startedAt: '2026-08-01T00:00:00Z', updatedAt: 1 },
+        { id: 'newest', title: 'Newest', startedAt: '2026-08-03T00:00:00Z', updatedAt: 3 },
+      ], 1, true))
+      .mockResolvedValueOnce(conversationPage([
+        { id: 'middle', title: 'Middle', startedAt: '2026-08-02T00:00:00Z', updatedAt: 2 },
+      ], 2, false));
+
+    const { result } = renderHook(() => useAssistants());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await act(() => result.current.loadConversations('agent-one'));
+
+    expect(result.current.agents[0].conversations.map((item) => item.id)).toEqual(['newest', 'older']);
+    await act(async () => {
+      await Promise.all([
+        result.current.loadMoreConversations('agent-one'),
+        result.current.loadMoreConversations('agent-one'),
+      ]);
+    });
+
+    expect(mocks.listConversations).toHaveBeenCalledTimes(2);
+    expect(mocks.listConversations).toHaveBeenLastCalledWith('agent-one', 2, 50);
+    expect(result.current.agents[0].conversations.map((item) => item.id)).toEqual(['newest', 'middle', 'older']);
+    expect(result.current.conversationPages['agent-one'].hasMore).toBe(false);
   });
 });

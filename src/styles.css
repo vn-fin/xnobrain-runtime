@@ -1868,6 +1868,13 @@ body.col-resizing {
 .conversation-picker-list small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .conversation-picker-list small { color: var(--muted-2); font-family: 'IBM Plex Mono', monospace; font-size: 10px; }
 .conversation-picker-list > p { margin: 18px 8px; color: var(--muted); text-align: center; font-size: 12px; }
+.conversation-picker-list > .conversation-load-more {
+  justify-content: center;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+.conversation-picker-list > .conversation-load-more:disabled { cursor: wait; opacity: 0.7; }
 .conversation-option-delete {
   width: 24px;
   height: 24px;
