@@ -8,7 +8,11 @@ pub struct ComposeSpec<'a> {
 
 impl ComposeSpec<'_> {
     pub fn render(&self) -> String {
-        let pull_policy = if self.manifest.development { "never" } else { "always" };
+        let pull_policy = if self.manifest.development {
+            "never"
+        } else {
+            "always"
+        };
         format!(
             r#"name: brain4all_web
 

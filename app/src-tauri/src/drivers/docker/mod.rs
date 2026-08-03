@@ -68,7 +68,11 @@ impl DockerDriver {
                     .clone()
                     .unwrap_or_else(|| "Docker is running.".to_owned())
             },
-            status: if status.running { CheckStatus::Pass } else { CheckStatus::Fail },
+            status: if status.running {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Fail
+            },
             blocking: !status.running,
         });
         checks.push(PreflightCheck {
@@ -79,7 +83,11 @@ impl DockerDriver {
                 .clone()
                 .map(|version| format!("Compose {version} is available."))
                 .unwrap_or_else(|| "Docker Compose is not available.".to_owned()),
-            status: if status.compose_available { CheckStatus::Pass } else { CheckStatus::Fail },
+            status: if status.compose_available {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Fail
+            },
             blocking: !status.compose_available,
         });
         let disk = available_space(data_root).ok();
@@ -114,9 +122,14 @@ impl DockerDriver {
                 detail: if images_ready {
                     "All locally pinned image IDs are available.".to_owned()
                 } else {
-                    "One or more locally pinned development images are missing or changed.".to_owned()
+                    "One or more locally pinned development images are missing or changed."
+                        .to_owned()
                 },
-                status: if images_ready { CheckStatus::Pass } else { CheckStatus::Fail },
+                status: if images_ready {
+                    CheckStatus::Pass
+                } else {
+                    CheckStatus::Fail
+                },
                 blocking: !images_ready,
             });
         }
@@ -165,17 +178,26 @@ impl DockerDriver {
     pub fn up(&self, compose_path: &Path) -> InstallerResult<()> {
         let path = compose_path.to_string_lossy();
         let output = run_docker(
-            &["compose", "-p", "brain4all_web", "-f", &path, "up", "-d", "--no-build"],
+            &[
+                "compose",
+                "-p",
+                "brain4all_web",
+                "-f",
+                &path,
+                "up",
+                "-d",
+                "--no-build",
+            ],
             "docker_start_failed",
         );
         match output {
             Ok(_) => Ok(()),
-            Err(error) if error.message.to_ascii_lowercase().contains("port") => Err(
-                InstallerError::retryable(
+            Err(error) if error.message.to_ascii_lowercase().contains("port") => {
+                Err(InstallerError::retryable(
                     "port_in_use",
                     "The selected port became unavailable. Choose another port and retry.",
-                ),
-            ),
+                ))
+            }
             Err(_) => Err(InstallerError::retryable(
                 "docker_start_failed",
                 "Docker could not start the Brain4All Web services.",
@@ -186,7 +208,15 @@ impl DockerDriver {
     pub fn down_preserving_data(&self, compose_path: &Path) -> InstallerResult<()> {
         let path = compose_path.to_string_lossy();
         run_docker(
-            &["compose", "-p", "brain4all_web", "-f", &path, "down", "--remove-orphans"],
+            &[
+                "compose",
+                "-p",
+                "brain4all_web",
+                "-f",
+                &path,
+                "down",
+                "--remove-orphans",
+            ],
             "docker_stop_failed",
         )?;
         Ok(())
@@ -202,7 +232,11 @@ impl DockerDriver {
         Ok(())
     }
 
-    pub fn runtime_status(&self, compose_path: &Path, port: u16) -> (RuntimeState, Vec<ServiceStatus>) {
+    pub fn runtime_status(
+        &self,
+        compose_path: &Path,
+        port: u16,
+    ) -> (RuntimeState, Vec<ServiceStatus>) {
         let definitions = [
             ("traefik", LogService::Traefik, "Traefik ingress"),
             ("frontend", LogService::Frontend, "Web interface"),
@@ -211,7 +245,8 @@ impl DockerDriver {
         let services: Vec<ServiceStatus> = definitions
             .into_iter()
             .map(|(service, id, name)| {
-                let container_id = self.compose_output(compose_path, &["ps", "--all", "-q", service]);
+                let container_id =
+                    self.compose_output(compose_path, &["ps", "--all", "-q", service]);
                 let state = container_id
                     .as_deref()
                     .and_then(container_state)
@@ -221,13 +256,25 @@ impl DockerDriver {
                 } else {
                     "Docker-internal only".to_owned()
                 };
-                ServiceStatus { id, name: name.to_owned(), state, detail }
+                ServiceStatus {
+                    id,
+                    name: name.to_owned(),
+                    state,
+                    detail,
+                }
             })
             .collect();
-        let running = services.iter().filter(|service| service.state == ServiceState::Running).count();
+        let running = services
+            .iter()
+            .filter(|service| service.state == ServiceState::Running)
+            .count();
         let state = if running == services.len() {
             RuntimeState::Running
-        } else if running == 0 && services.iter().all(|service| matches!(service.state, ServiceState::Stopped | ServiceState::Missing)) {
+        } else if running == 0
+            && services.iter().all(|service| {
+                matches!(service.state, ServiceState::Stopped | ServiceState::Missing)
+            })
+        {
             RuntimeState::Stopped
         } else {
             RuntimeState::Degraded
@@ -235,7 +282,11 @@ impl DockerDriver {
         (state, services)
     }
 
-    pub fn logs(&self, compose_path: &Path, service: LogService) -> InstallerResult<(Vec<String>, bool)> {
+    pub fn logs(
+        &self,
+        compose_path: &Path,
+        service: LogService,
+    ) -> InstallerResult<(Vec<String>, bool)> {
         let mut arguments = vec!["logs", "--no-color", "--timestamps", "--tail", "251"];
         match service {
             LogService::All => {}
@@ -244,26 +295,33 @@ impl DockerDriver {
             LogService::Runtime => arguments.push("runtime"),
         }
         let output = self.run_compose(compose_path, &arguments, "docker_logs_failed")?;
-        let combined = if output.stdout.is_empty() { output.stderr } else { output.stdout };
+        let combined = if output.stdout.is_empty() {
+            output.stderr
+        } else {
+            output.stdout
+        };
         let mut lines: Vec<String> = String::from_utf8_lossy(&combined)
             .lines()
             .map(redact_log_line)
             .collect();
         let truncated = lines.len() > 250;
-        if truncated { lines.drain(..lines.len() - 250); }
+        if truncated {
+            lines.drain(..lines.len() - 250);
+        }
         Ok((lines, truncated))
     }
 
-    pub fn wait_for_health(
-        &self,
-        url: &str,
-        timeout: Duration,
-    ) -> InstallerResult<()> {
+    pub fn wait_for_health(&self, url: &str, timeout: Duration) -> InstallerResult<()> {
         let client = reqwest::blocking::Client::builder()
             .connect_timeout(Duration::from_secs(2))
             .timeout(Duration::from_secs(4))
             .build()
-            .map_err(|_| InstallerError::retryable("health_client_failed", "Could not initialize the health check."))?;
+            .map_err(|_| {
+                InstallerError::retryable(
+                    "health_client_failed",
+                    "Could not initialize the health check.",
+                )
+            })?;
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
             if client.get(url).send().is_ok_and(health_response_valid) {
@@ -292,13 +350,21 @@ impl DockerDriver {
         if actual.as_deref() != Some(image.expected_id.as_str()) {
             return Err(InstallerError::retryable(
                 "image_verification_failed",
-                format!("The verified runtime image {} is not available.", image.reference),
+                format!(
+                    "The verified runtime image {} is not available.",
+                    image.reference
+                ),
             ));
         }
         Ok(())
     }
 
-    fn run_compose(&self, compose_path: &Path, arguments: &[&str], code: &str) -> InstallerResult<Output> {
+    fn run_compose(
+        &self,
+        compose_path: &Path,
+        arguments: &[&str],
+        code: &str,
+    ) -> InstallerResult<Output> {
         let path = compose_path.to_string_lossy();
         let mut fixed = vec!["compose", "-p", "brain4all_web", "-f", path.as_ref()];
         fixed.extend_from_slice(arguments);
@@ -338,12 +404,18 @@ fn health_response_valid(response: reqwest::blocking::Response) -> bool {
 
 fn health_payload_valid(payload: &serde_json::Value) -> bool {
     payload.get("success").and_then(serde_json::Value::as_bool) == Some(true)
-        && payload.pointer("/data/status").and_then(serde_json::Value::as_str) == Some("ok")
+        && payload
+            .pointer("/data/status")
+            .and_then(serde_json::Value::as_str)
+            == Some("ok")
 }
 
 fn redact_log_line(line: &str) -> String {
     let lower = line.to_ascii_lowercase();
-    if ["authorization:", "token=", "secret=", "password="].iter().any(|needle| lower.contains(needle)) {
+    if ["authorization:", "token=", "secret=", "password="]
+        .iter()
+        .any(|needle| lower.contains(needle))
+    {
         "[REDACTED sensitive log line]".to_owned()
     } else {
         line.to_owned()
@@ -371,12 +443,16 @@ fn run_docker(arguments: &[&str], code: &str) -> InstallerResult<Output> {
     let output = Command::new("docker")
         .args(arguments)
         .output()
-        .map_err(|_| InstallerError::retryable("docker_unavailable", "Docker could not be started."))?;
+        .map_err(|_| {
+            InstallerError::retryable("docker_unavailable", "Docker could not be started.")
+        })?;
     if output.status.success() {
         return Ok(output);
     }
     let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
-    let safe_message = if stderr.contains("port is already allocated") || stderr.contains("address already in use") {
+    let safe_message = if stderr.contains("port is already allocated")
+        || stderr.contains("address already in use")
+    {
         "Docker reported that the selected port is already in use."
     } else if stderr.contains("permission denied") {
         "Docker denied access. Check the current user's Docker permissions."
@@ -426,7 +502,10 @@ mod tests {
 
     #[test]
     fn privileged_ports_are_rejected() {
-        assert_eq!(validate_port(80).expect_err("port should fail").code, "port_invalid");
+        assert_eq!(
+            validate_port(80).expect_err("port should fail").code,
+            "port_invalid"
+        );
         assert!(validate_port(5152).is_ok());
     }
 
@@ -441,7 +520,10 @@ mod tests {
 
     #[test]
     fn sensitive_log_lines_are_replaced() {
-        assert_eq!(redact_log_line("authorization: bearer private"), "[REDACTED sensitive log line]");
+        assert_eq!(
+            redact_log_line("authorization: bearer private"),
+            "[REDACTED sensitive log line]"
+        );
         assert_eq!(redact_log_line("runtime ready"), "runtime ready");
     }
 

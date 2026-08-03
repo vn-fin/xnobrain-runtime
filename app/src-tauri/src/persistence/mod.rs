@@ -31,15 +31,18 @@ impl StateStore {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(InstallerError::io("read", &error)),
         };
-        serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|_| InstallerError::retryable("state_invalid", "The saved installation state is damaged."))
+        serde_json::from_slice(&bytes).map(Some).map_err(|_| {
+            InstallerError::retryable("state_invalid", "The saved installation state is damaged.")
+        })
     }
 
     pub fn save(&self, state: &InstallState) -> InstallerResult<()> {
         fs::create_dir_all(&self.root).map_err(|error| InstallerError::io("create", &error))?;
         let payload = serde_json::to_vec_pretty(state).map_err(|_| {
-            InstallerError::terminal("state_serialize_failed", "Could not prepare installer state.")
+            InstallerError::terminal(
+                "state_serialize_failed",
+                "Could not prepare installer state.",
+            )
         })?;
         atomic_write(&self.root.join("install-state.json"), &payload)
     }

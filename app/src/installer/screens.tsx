@@ -23,7 +23,7 @@ export function EditionScreen({ state, dispatch }: ScreenProps) {
           icon={<GlobeIcon />}
           eyebrow="Available now"
           title="Web Version"
-          description="Runs locally with Docker and opens securely in your browser."
+          description="Runs locally with Docker and opens directly inside the desktop app."
           meta="Recommended · Windows, macOS, Linux"
         />
         <ChoiceCard
@@ -235,11 +235,11 @@ export function ReadyScreen({ state, bridge, dispatch }: ScreenProps) {
       <div className="ready-grid">
         <div><ShieldIcon /><span><strong>Local only</strong>Traefik is bound to loopback</span></div>
         <div><DockerIcon /><span><strong>Runtime healthy</strong>Docker services passed checks</span></div>
-        <div><GlobeIcon /><span><strong>Browser based</strong>Opens in your default browser</span></div>
+        <div><GlobeIcon /><span><strong>Web application</strong>Embedded here, with browser fallback</span></div>
       </div>
       <Actions>
-        <SecondaryButton onClick={() => dispatch({ type: 'go', step: 'dashboard' })}>Manage Docker</SecondaryButton>
-        <PrimaryButton onClick={() => void bridge.openWeb()}>Open in browser <ExternalIcon /></PrimaryButton>
+        <SecondaryButton onClick={() => void bridge.openWeb()}>Open in browser <ExternalIcon /></SecondaryButton>
+        <PrimaryButton onClick={() => dispatch({ type: 'go', step: 'dashboard' })}>Open application <ArrowIcon /></PrimaryButton>
       </Actions>
     </Screen>
   )

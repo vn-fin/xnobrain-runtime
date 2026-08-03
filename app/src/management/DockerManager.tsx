@@ -64,7 +64,10 @@ export function DockerManager({ bridge, initialOverview }: { bridge: InstallerBr
           <button className="workspace-menu-button" aria-label="Docker Web settings" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>•••</button>
           {menuOpen && (
             <div className="workspace-menu" role="menu">
-              <div className="workspace-menu-status"><StatusBadge state={overview?.state} loading={loading} /><span>{overview?.webUrl ?? 'Local Docker runtime'}</span></div>
+              <div className="workspace-menu-status">
+                <div><StatusBadge state={overview?.state} loading={loading} /><span>{overview?.webUrl ?? 'Local Docker runtime'}</span></div>
+                <button className="workspace-fullscreen-button" onClick={() => { setMenuOpen(false); void toggleFullscreen() }} aria-label={fullscreen ? 'Exit full screen' : 'Enter full screen'} title={fullscreen ? 'Exit full screen' : 'Enter full screen'}>{fullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}</button>
+              </div>
               <button role="menuitem" onClick={() => { setPanel('system'); setMenuOpen(false) }}><SlidersIcon /><span><strong>System</strong><small>Services, health, and ingress</small></span></button>
               <button role="menuitem" onClick={() => { setPanel('logs'); setMenuOpen(false) }}><TerminalIcon /><span><strong>Logs</strong><small>Recent output for this stack</small></span></button>
               <button role="menuitem" disabled={!running} onClick={() => { void bridge.openWeb(); setMenuOpen(false) }}><ExternalIcon /><span><strong>Open in browser</strong><small>Use your default browser</small></span></button>
@@ -76,7 +79,6 @@ export function DockerManager({ bridge, initialOverview }: { bridge: InstallerBr
             </div>
           )}
         </div>
-        <button className="workspace-fullscreen-button" onClick={() => void toggleFullscreen()} aria-label={fullscreen ? 'Exit full screen' : 'Enter full screen'} title={fullscreen ? 'Exit full screen' : 'Enter full screen'}>{fullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}</button>
       </div>
       <div className="embedded-application">
         {error && <div className="embedded-error" role="alert">{error}<button onClick={() => void refresh()}>Retry</button></div>}

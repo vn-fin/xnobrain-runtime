@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{InstallerError, InstallerResult};
 
-const DEVELOPMENT_MANIFEST: &str =
-    include_str!("../../../resources/runtime-manifest.dev.json");
+const DEVELOPMENT_MANIFEST: &str = include_str!("../../../resources/runtime-manifest.dev.json");
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ImageManifest {

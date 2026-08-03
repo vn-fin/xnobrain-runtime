@@ -190,7 +190,7 @@ main { min-width: 0; display: flex; }
 .app-layout.management-layout { height: 100vh; min-height: 100vh; grid-template-columns: 1fr; }
 .management-layout main { height: 100vh; min-height: 0; }
 .manager-shell { position: relative; width: 100%; height: 100vh; min-height: 0; overflow: hidden; display: flex; flex-direction: column; animation: enter .28s ease both; }
-.workspace-floating-controls { position: absolute; z-index: 8; top: 10px; left: 10px; display: flex; align-items: flex-start; gap: 8px; pointer-events: none; }
+.workspace-floating-controls { position: absolute; z-index: 8; top: 10px; left: 10px; display: flex; align-items: flex-start; pointer-events: none; }
 .workspace-floating-controls > * { pointer-events: auto; }
 .workspace-toolbar { position: relative; z-index: 4; height: 47px; flex: 0 0 47px; padding: 0 12px; display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; border-bottom: 1px solid var(--line); background: #fbfcfb; }
 .workspace-menu-wrap { position: relative; }
@@ -203,8 +203,10 @@ main { min-width: 0; display: flex; }
 .workspace-address { justify-self: center; max-width: 440px; display: flex; align-items: center; gap: 7px; overflow: hidden; color: #66726c; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-address svg { width: 13px; color: var(--green); }
 .workspace-menu { position: absolute; top: 42px; left: 0; width: 285px; padding: 8px; border: 1px solid #d5ddd8; border-radius: 13px; background: white; box-shadow: 0 18px 45px rgba(25,42,34,.2); }
-.workspace-menu-status { padding: 9px 9px 11px; border-bottom: 1px solid #edf0ee; }
-.workspace-menu-status > span:last-child { display: block; margin-top: 7px; overflow: hidden; color: #78837d; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-menu-status { padding: 7px 7px 9px 9px; display: flex; align-items: center; justify-content: space-between; gap: 9px; border-bottom: 1px solid #edf0ee; }
+.workspace-menu-status > div { min-width: 0; }
+.workspace-menu-status > div > span:last-child { display: block; margin-top: 7px; overflow: hidden; color: #78837d; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-menu-status .workspace-fullscreen-button { flex: 0 0 34px; box-shadow: none; }
 .workspace-menu > button { width: 100%; min-height: 52px; padding: 9px; display: flex; align-items: center; gap: 11px; border: 0; border-radius: 9px; text-align: left; background: transparent; cursor: pointer; }
 .workspace-menu > button:hover { background: #f3f7f5; }
 .workspace-menu > button:disabled { opacity: .42; cursor: not-allowed; }

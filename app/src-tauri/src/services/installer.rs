@@ -1,18 +1,13 @@
-use std::{
-    fs,
-    path::PathBuf,
-    sync::Mutex,
-    time::Duration,
-};
+use std::{fs, path::PathBuf, sync::Mutex, time::Duration};
 
 use tauri::ipc::Channel;
 use uuid::Uuid;
 
 use crate::{
     domain::{
-        InstallPhase, InstallProgress, InstallRequest, InstallResult, InstallState,
-        InstallerError, InstallerResult, LogService, PortInspection, RuntimeAction, RuntimeLogs,
-        RuntimeManifest, RuntimeOverview, RuntimeState, SystemInspection,
+        InstallPhase, InstallProgress, InstallRequest, InstallResult, InstallState, InstallerError,
+        InstallerResult, LogService, PortInspection, RuntimeAction, RuntimeLogs, RuntimeManifest,
+        RuntimeOverview, RuntimeState, SystemInspection,
     },
     drivers::docker::{ComposeSpec, DockerDriver, platform, platform_label, validate_port},
     persistence::StateStore,
@@ -77,7 +72,13 @@ impl InstallerService {
             )
         })?;
         validate_port(request.port)?;
-        send_progress(progress, InstallPhase::Validating, 8, "Validating installation", "Checking Docker and port availability")?;
+        send_progress(
+            progress,
+            InstallPhase::Validating,
+            8,
+            "Validating installation",
+            "Checking Docker and port availability",
+        )?;
         let status = self.docker.status();
         if !status.running || !status.compose_available {
             return Err(InstallerError::retryable(
@@ -91,10 +92,22 @@ impl InstallerService {
                 "The selected port is already used. Choose another port and retry.",
             ));
         }
-        send_progress(progress, InstallPhase::Pulling, 32, "Verifying runtime", "Checking immutable Brain4All image IDs")?;
+        send_progress(
+            progress,
+            InstallPhase::Pulling,
+            32,
+            "Verifying runtime",
+            "Checking immutable Brain4All image IDs",
+        )?;
         self.docker.prepare_images(&self.manifest)?;
 
-        send_progress(progress, InstallPhase::Preparing, 50, "Preparing Brain4All", "Creating secure local configuration")?;
+        send_progress(
+            progress,
+            InstallPhase::Preparing,
+            50,
+            "Preparing Brain4All",
+            "Creating secure local configuration",
+        )?;
         let secret = Uuid::new_v4().simple().to_string();
         let compose = ComposeSpec {
             manifest: &self.manifest,
@@ -105,13 +118,31 @@ impl InstallerService {
         ensure_single_traefik_port(&compose, request.port)?;
         let compose_path = self.store.write_compose(&compose)?;
 
-        send_progress(progress, InstallPhase::Creating, 68, "Creating services", "Configuring Traefik as the only local entrypoint")?;
-        send_progress(progress, InstallPhase::Starting, 80, "Starting Brain4All", "Starting the Docker Web runtime")?;
+        send_progress(
+            progress,
+            InstallPhase::Creating,
+            68,
+            "Creating services",
+            "Configuring Traefik as the only local entrypoint",
+        )?;
+        send_progress(
+            progress,
+            InstallPhase::Starting,
+            80,
+            "Starting Brain4All",
+            "Starting the Docker Web runtime",
+        )?;
         self.docker.up(&compose_path)?;
 
         let web_url = format!("http://127.0.0.1:{}", request.port);
         let health_url = format!("{web_url}{}", self.manifest.health_path);
-        send_progress(progress, InstallPhase::HealthCheck, 92, "Checking health", format!("Waiting at 127.0.0.1:{}", request.port))?;
+        send_progress(
+            progress,
+            InstallPhase::HealthCheck,
+            92,
+            "Checking health",
+            format!("Waiting at 127.0.0.1:{}", request.port),
+        )?;
         self.docker.wait_for_health(
             &health_url,
             Duration::from_secs(self.manifest.health_timeout_seconds),
@@ -126,7 +157,13 @@ impl InstallerService {
             installed: true,
         };
         self.store.save(&state)?;
-        send_progress(progress, InstallPhase::Ready, 100, "Brain4All is ready", "The Web version is healthy")?;
+        send_progress(
+            progress,
+            InstallPhase::Ready,
+            100,
+            "Brain4All is ready",
+            "The Web version is healthy",
+        )?;
         Ok(InstallResult {
             port: request.port,
             web_url,
@@ -139,7 +176,9 @@ impl InstallerService {
             .load()?
             .filter(|state| state.installed)
             .map(|state| state.web_url)
-            .ok_or_else(|| InstallerError::retryable("not_installed", "Brain4All Web is not installed yet."))
+            .ok_or_else(|| {
+                InstallerError::retryable("not_installed", "Brain4All Web is not installed yet.")
+            })
     }
 
     pub fn runtime_overview(&self) -> InstallerResult<RuntimeOverview> {
@@ -167,36 +206,60 @@ impl InstallerService {
 
     pub fn control_runtime(&self, action: RuntimeAction) -> InstallerResult<RuntimeOverview> {
         let _guard = self.mutation.try_lock().map_err(|_| {
-            InstallerError::retryable("operation_in_progress", "Another Brain4All operation is already running.")
+            InstallerError::retryable(
+                "operation_in_progress",
+                "Another Brain4All operation is already running.",
+            )
         })?;
-        let state = self.store.load()?.filter(|state| state.installed).ok_or_else(|| {
-            InstallerError::retryable("not_installed", "Brain4All Web is not installed yet.")
-        })?;
+        let state = self
+            .store
+            .load()?
+            .filter(|state| state.installed)
+            .ok_or_else(|| {
+                InstallerError::retryable("not_installed", "Brain4All Web is not installed yet.")
+            })?;
         match action {
             RuntimeAction::Start => {
                 self.docker.up(&state.compose_path)?;
-                self.docker.wait_for_health(&health_url(&state), Duration::from_secs(self.manifest.health_timeout_seconds))?;
+                self.docker.wait_for_health(
+                    &health_url(&state),
+                    Duration::from_secs(self.manifest.health_timeout_seconds),
+                )?;
             }
             RuntimeAction::Stop => self.docker.stop(&state.compose_path)?,
             RuntimeAction::Restart => {
                 self.docker.restart(&state.compose_path)?;
-                self.docker.wait_for_health(&health_url(&state), Duration::from_secs(self.manifest.health_timeout_seconds))?;
+                self.docker.wait_for_health(
+                    &health_url(&state),
+                    Duration::from_secs(self.manifest.health_timeout_seconds),
+                )?;
             }
         }
         self.runtime_overview()
     }
 
     pub fn logs(&self, service: LogService) -> InstallerResult<RuntimeLogs> {
-        let state = self.store.load()?.filter(|state| state.installed).ok_or_else(|| {
-            InstallerError::retryable("not_installed", "Brain4All Web is not installed yet.")
-        })?;
+        let state = self
+            .store
+            .load()?
+            .filter(|state| state.installed)
+            .ok_or_else(|| {
+                InstallerError::retryable("not_installed", "Brain4All Web is not installed yet.")
+            })?;
         let (lines, truncated) = self.docker.logs(&state.compose_path, service)?;
-        Ok(RuntimeLogs { service, lines, truncated })
+        Ok(RuntimeLogs {
+            service,
+            lines,
+            truncated,
+        })
     }
 
     pub fn reset_preserving_data(&self) -> InstallerResult<()> {
         let _guard = self.mutation.try_lock().map_err(|_| {
-            InstallerError::retryable("installation_in_progress", "Another installation operation is running.")
+            InstallerError::retryable(
+                "installation_in_progress",
+                "Another installation operation is running.",
+            )
         })?;
         if let Some(state) = self.store.load()? {
             self.docker.down_preserving_data(&state.compose_path)?;
@@ -214,7 +277,12 @@ fn send_progress(
 ) -> InstallerResult<()> {
     channel
         .send(InstallProgress::new(phase, percent, title, detail))
-        .map_err(|_| InstallerError::retryable("progress_channel_closed", "The installer window stopped receiving progress."))
+        .map_err(|_| {
+            InstallerError::retryable(
+                "progress_channel_closed",
+                "The installer window stopped receiving progress.",
+            )
+        })
 }
 
 fn ensure_single_traefik_port(compose: &str, port: u16) -> InstallerResult<()> {

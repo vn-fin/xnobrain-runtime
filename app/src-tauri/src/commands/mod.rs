@@ -12,19 +12,28 @@ use crate::{
 };
 
 #[tauri::command]
-pub async fn inspect_system(state: State<'_, AppState>) -> Result<SystemInspection, InstallerError> {
+pub async fn inspect_system(
+    state: State<'_, AppState>,
+) -> Result<SystemInspection, InstallerError> {
     let service = Arc::clone(&state.service);
     tauri::async_runtime::spawn_blocking(move || service.inspect_system())
         .await
-        .map_err(|_| InstallerError::retryable("worker_failed", "The system check stopped unexpectedly."))?
+        .map_err(|_| {
+            InstallerError::retryable("worker_failed", "The system check stopped unexpectedly.")
+        })?
 }
 
 #[tauri::command]
-pub async fn inspect_port(state: State<'_, AppState>, port: u16) -> Result<PortInspection, InstallerError> {
+pub async fn inspect_port(
+    state: State<'_, AppState>,
+    port: u16,
+) -> Result<PortInspection, InstallerError> {
     let service = Arc::clone(&state.service);
     tauri::async_runtime::spawn_blocking(move || service.inspect_port(port))
         .await
-        .map_err(|_| InstallerError::retryable("worker_failed", "The port check stopped unexpectedly."))?
+        .map_err(|_| {
+            InstallerError::retryable("worker_failed", "The port check stopped unexpectedly.")
+        })?
 }
 
 #[tauri::command]
@@ -36,7 +45,9 @@ pub async fn install_web(
     let service = Arc::clone(&state.service);
     tauri::async_runtime::spawn_blocking(move || service.install_web(request, &progress))
         .await
-        .map_err(|_| InstallerError::retryable("worker_failed", "The installation stopped unexpectedly."))?
+        .map_err(|_| {
+            InstallerError::retryable("worker_failed", "The installation stopped unexpectedly.")
+        })?
 }
 
 #[tauri::command]
@@ -44,10 +55,12 @@ pub async fn open_web(app: AppHandle, state: State<'_, AppState>) -> Result<(), 
     let service = Arc::clone(&state.service);
     let url = tauri::async_runtime::spawn_blocking(move || service.web_url())
         .await
-        .map_err(|_| InstallerError::retryable("worker_failed", "Could not read the Web address."))??;
-    app.opener()
-        .open_url(url, None::<&str>)
-        .map_err(|_| InstallerError::retryable("browser_open_failed", "Could not open the default browser."))
+        .map_err(|_| {
+            InstallerError::retryable("worker_failed", "Could not read the Web address.")
+        })??;
+    app.opener().open_url(url, None::<&str>).map_err(|_| {
+        InstallerError::retryable("browser_open_failed", "Could not open the default browser.")
+    })
 }
 
 #[tauri::command]
@@ -59,17 +72,24 @@ pub fn open_docker_help(app: AppHandle) -> Result<(), InstallerError> {
     } else {
         "https://docs.docker.com/engine/install/"
     };
-    app.opener()
-        .open_url(url, None::<&str>)
-        .map_err(|_| InstallerError::retryable("browser_open_failed", "Could not open Docker's official setup guide."))
+    app.opener().open_url(url, None::<&str>).map_err(|_| {
+        InstallerError::retryable(
+            "browser_open_failed",
+            "Could not open Docker's official setup guide.",
+        )
+    })
 }
 
 #[tauri::command]
-pub async fn inspect_runtime(state: State<'_, AppState>) -> Result<RuntimeOverview, InstallerError> {
+pub async fn inspect_runtime(
+    state: State<'_, AppState>,
+) -> Result<RuntimeOverview, InstallerError> {
     let service = Arc::clone(&state.service);
     tauri::async_runtime::spawn_blocking(move || service.runtime_overview())
         .await
-        .map_err(|_| InstallerError::retryable("worker_failed", "The runtime check stopped unexpectedly."))?
+        .map_err(|_| {
+            InstallerError::retryable("worker_failed", "The runtime check stopped unexpectedly.")
+        })?
 }
 
 #[tauri::command]
@@ -80,7 +100,12 @@ pub async fn control_runtime(
     let service = Arc::clone(&state.service);
     tauri::async_runtime::spawn_blocking(move || service.control_runtime(action))
         .await
-        .map_err(|_| InstallerError::retryable("worker_failed", "The Docker operation stopped unexpectedly."))?
+        .map_err(|_| {
+            InstallerError::retryable(
+                "worker_failed",
+                "The Docker operation stopped unexpectedly.",
+            )
+        })?
 }
 
 #[tauri::command]
@@ -91,18 +116,20 @@ pub async fn read_logs(
     let installer = Arc::clone(&state.service);
     tauri::async_runtime::spawn_blocking(move || installer.logs(service))
         .await
-        .map_err(|_| InstallerError::retryable("worker_failed", "The log request stopped unexpectedly."))?
+        .map_err(|_| {
+            InstallerError::retryable("worker_failed", "The log request stopped unexpectedly.")
+        })?
 }
 
 #[tauri::command]
 pub fn toggle_fullscreen(window: Window) -> Result<bool, InstallerError> {
-    let fullscreen = window
-        .is_fullscreen()
-        .map_err(|_| InstallerError::retryable("window_state_failed", "Could not read the window state."))?;
+    let fullscreen = window.is_fullscreen().map_err(|_| {
+        InstallerError::retryable("window_state_failed", "Could not read the window state.")
+    })?;
     let next = !fullscreen;
-    window
-        .set_fullscreen(next)
-        .map_err(|_| InstallerError::retryable("fullscreen_failed", "Could not change fullscreen mode."))?;
+    window.set_fullscreen(next).map_err(|_| {
+        InstallerError::retryable("fullscreen_failed", "Could not change fullscreen mode.")
+    })?;
     Ok(next)
 }
 
@@ -111,5 +138,7 @@ pub async fn reset_installation(state: State<'_, AppState>) -> Result<(), Instal
     let service = Arc::clone(&state.service);
     tauri::async_runtime::spawn_blocking(move || service.reset_preserving_data())
         .await
-        .map_err(|_| InstallerError::retryable("worker_failed", "The reset operation stopped unexpectedly."))?
+        .map_err(|_| {
+            InstallerError::retryable("worker_failed", "The reset operation stopped unexpectedly.")
+        })?
 }

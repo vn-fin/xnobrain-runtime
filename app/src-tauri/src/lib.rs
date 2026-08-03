@@ -21,7 +21,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let data_root = app.path().app_data_dir().map_err(|error| error.to_string())?;
+            let data_root = app
+                .path()
+                .app_data_dir()
+                .map_err(|error| error.to_string())?;
             let service = InstallerService::new(data_root).map_err(|error| error.to_string())?;
             app.manage(AppState {
                 service: Arc::new(service),
