@@ -2,20 +2,18 @@ use serde::{Deserialize, Serialize};
 
 use super::{InstallerError, InstallerResult};
 
-const DEVELOPMENT_MANIFEST: &str = include_str!("../../../resources/runtime-manifest.dev.json");
+const BUNDLED_MANIFEST: &str = include_str!(concat!(env!("OUT_DIR"), "/runtime-manifest.json"));
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ImageManifest {
     pub reference: String,
-    pub expected_id: String,
-    pub pull: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RuntimeImages {
     pub traefik: ImageManifest,
-    pub frontend: ImageManifest,
-    pub runtime: ImageManifest,
+    pub xnobrain: ImageManifest,
+    pub control: ImageManifest,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -26,24 +24,37 @@ pub struct WebAuthManifest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct DockerInstallerArtifact {
+    pub url: String,
+    pub sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct DockerInstallers {
+    pub windows_amd64: DockerInstallerArtifact,
+    pub macos_arm64: DockerInstallerArtifact,
+    pub macos_amd64: DockerInstallerArtifact,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RuntimeManifest {
     pub schema_version: u32,
     pub release: String,
-    pub development: bool,
     pub default_host_port: u16,
     pub minimum_disk_bytes: u64,
     pub health_path: String,
     pub health_timeout_seconds: u64,
     pub web_auth: WebAuthManifest,
+    pub docker_installers: DockerInstallers,
     pub images: RuntimeImages,
 }
 
 impl RuntimeManifest {
     pub fn bundled() -> InstallerResult<Self> {
-        let manifest: Self = serde_json::from_str(DEVELOPMENT_MANIFEST).map_err(|_| {
+        let manifest: Self = serde_json::from_str(BUNDLED_MANIFEST).map_err(|_| {
             InstallerError::terminal(
                 "manifest_invalid",
-                "The bundled Brain4All runtime manifest is invalid.",
+                "The bundled XNOBrain runtime manifest is invalid.",
             )
         })?;
         manifest.validate()?;
@@ -75,16 +86,42 @@ impl RuntimeManifest {
         }
         for image in [
             &self.images.traefik,
-            &self.images.frontend,
-            &self.images.runtime,
+            &self.images.xnobrain,
+            &self.images.control,
         ] {
-            if image.reference.trim().is_empty()
-                || !image.expected_id.starts_with("sha256:")
-                || image.expected_id.len() != 71
+            let Some((repository, digest)) = image.reference.rsplit_once("@sha256:") else {
+                return Err(InstallerError::terminal(
+                    "manifest_image_invalid",
+                    "The runtime manifest contains a mutable image reference.",
+                ));
+            };
+            if repository.is_empty()
+                || digest.len() != 64
+                || !digest
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
             {
                 return Err(InstallerError::terminal(
                     "manifest_image_invalid",
                     "The runtime manifest contains an invalid image reference.",
+                ));
+            }
+        }
+        for installer in [
+            &self.docker_installers.windows_amd64,
+            &self.docker_installers.macos_arm64,
+            &self.docker_installers.macos_amd64,
+        ] {
+            if !installer.url.starts_with("https://")
+                || installer.sha256.len() != 64
+                || !installer
+                    .sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            {
+                return Err(InstallerError::terminal(
+                    "manifest_docker_installer_invalid",
+                    "The runtime manifest contains an invalid Docker installer artifact.",
                 ));
             }
         }
@@ -97,11 +134,10 @@ mod tests {
     use super::RuntimeManifest;
 
     #[test]
-    fn bundled_manifest_is_valid_and_development_only() {
+    fn bundled_manifest_is_valid_and_immutable() {
         let manifest = RuntimeManifest::bundled().expect("bundled manifest should validate");
-        assert!(manifest.development);
         assert_eq!(manifest.default_host_port, 5152);
-        assert!(!manifest.images.frontend.pull);
+        assert!(manifest.images.xnobrain.reference.contains("@sha256:"));
         assert_eq!(manifest.web_auth.base_url, "https://api.dev.xnoquant.io");
         assert_eq!(manifest.web_auth.mode, "required");
         assert_eq!(manifest.web_auth.provider, "xno-firebase");

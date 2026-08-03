@@ -5,6 +5,7 @@ import { StepRail } from './installer/StepRail'
 import { DockerScreen, EditionScreen, InstallingScreen, PortScreen, PreflightScreen, ReadyScreen, ReviewScreen } from './installer/screens'
 import { initialInstallerState, installerReducer } from './state/installer'
 import { DockerManager } from './management/DockerManager'
+import { productName } from './config/product'
 
 export function App() {
   const [state, dispatch] = useReducer(installerReducer, initialInstallerState)
@@ -78,6 +79,20 @@ export function App() {
     }
   }
 
+  const runDockerInstall = async () => {
+    if (state.installingDocker) return
+    dispatch({ type: 'docker_install_started' })
+    try {
+      const result = await installerBridge.installDocker((progress) => {
+        dispatch({ type: 'docker_install_progress', progress })
+      })
+      dispatch({ type: 'docker_install_finished', message: result.message })
+      await runInspection()
+    } catch (error) {
+      dispatch({ type: 'docker_install_failed', message: safeMessage(error) })
+    }
+  }
+
   const screenProps = {
     state,
     dispatch,
@@ -85,12 +100,13 @@ export function App() {
     runInspection,
     runPortCheck,
     runInstall,
+    runDockerInstall,
   }
 
   return (
     <div className={`app-shell ${state.step === 'dashboard' ? 'dashboard-shell' : ''}`}>
       {state.step !== 'dashboard' && <header className="app-bar">
-        <div className="brand"><span><BrainIcon /></span><strong>Brain4All</strong><em>Installer</em></div>
+        <div className="brand"><span><BrainIcon /></span><strong>{productName}</strong><em>Installer</em></div>
         <span className="app-edition">Docker Web · Preview</span>
       </header>}
       <div className={`app-layout ${state.step === 'dashboard' ? 'management-layout' : ''}`}>

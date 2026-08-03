@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Brain4All Installer",
+  "productName": "XNOBrain",
   "version": "0.1.0",
-  "identifier": "com.brain4all.installer",
+  "identifier": "com.xnoquant.xnobrain",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "installer",
-        "title": "Brain4All Installer",
+        "title": "XNOBrain",
         "width": 1120,
         "height": 760,
         "minWidth": 780,
@@ -29,10 +29,11 @@
   },
   "bundle": {
     "active": true,
+    "resources": ["resources/install-docker-linux.sh"],
     "targets": "all",
     "category": "Utility",
-    "shortDescription": "Install the Brain4All Docker Web version",
-    "longDescription": "Installs and verifies the local Brain4All Docker Web runtime, exposed only through Traefik on loopback.",
+    "shortDescription": "Install and run the private XNOBrain Docker Web workspace.",
+    "longDescription": "Install and run the private XNOBrain Docker Web workspace.",
     "windows": {
       "nsis": {
         "installMode": "currentUser"

@@ -51,6 +51,31 @@ pub struct PortInspection {
     pub message: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DockerInstallProgress {
+    pub percent: u8,
+    pub title: String,
+    pub detail: String,
+}
+
+impl DockerInstallProgress {
+    pub fn new(percent: u8, title: &str, detail: &str) -> Self {
+        Self {
+            percent,
+            title: title.to_owned(),
+            detail: detail.to_owned(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DockerInstallResult {
+    pub restart_required: bool,
+    pub message: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InstallRequest {

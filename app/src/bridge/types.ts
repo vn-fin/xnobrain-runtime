@@ -33,6 +33,17 @@ export interface PortInspection {
   message: string
 }
 
+export interface DockerInstallProgress {
+  percent: number
+  title: string
+  detail: string
+}
+
+export interface DockerInstallResult {
+  restartRequired: boolean
+  message: string
+}
+
 export interface InstallRequest {
   port: number
 }
@@ -102,6 +113,7 @@ export interface InstallerBridge {
   ): Promise<InstallResult>
   openWeb(): Promise<void>
   openDockerHelp(): Promise<void>
+  installDocker(onProgress: (progress: DockerInstallProgress) => void): Promise<DockerInstallResult>
   inspectRuntime(): Promise<RuntimeOverview>
   controlRuntime(action: RuntimeAction): Promise<RuntimeOverview>
   readLogs(service: LogService): Promise<RuntimeLogs>

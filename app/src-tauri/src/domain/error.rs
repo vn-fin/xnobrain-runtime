@@ -36,7 +36,7 @@ impl InstallerError {
     pub fn io(operation: &str, error: &std::io::Error) -> Self {
         Self {
             code: "local_state_error".to_owned(),
-            message: format!("Could not {operation} the Brain4All installer state."),
+            message: format!("Could not {operation} the XNOBrain installer state."),
             detail: Some(format!("I/O error kind: {:?}", error.kind())),
             retryable: true,
         }

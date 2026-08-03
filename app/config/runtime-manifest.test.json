@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "release": "0.1.0-test",
+  "default_host_port": 5152,
+  "minimum_disk_bytes": 8589934592,
+  "health_path": "/api/v1/health",
+  "health_timeout_seconds": 180,
+  "web_auth": {
+    "base_url": "https://api.dev.xnoquant.io",
+    "mode": "required",
+    "provider": "xno-firebase"
+  },
+  "docker_installers": {
+    "windows_amd64": { "url": "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe", "sha256": "3333333333333333333333333333333333333333333333333333333333333333" },
+    "macos_arm64": { "url": "https://desktop.docker.com/mac/main/arm64/Docker.dmg", "sha256": "4444444444444444444444444444444444444444444444444444444444444444" },
+    "macos_amd64": { "url": "https://desktop.docker.com/mac/main/amd64/Docker.dmg", "sha256": "5555555555555555555555555555555555555555555555555555555555555555" }
+  },
+  "images": {
+    "traefik": { "reference": "traefik@sha256:f79c88ed5252ae1e31c757a9796d751461ddb502437b8d8526db9e12605a82eb" },
+    "xnobrain": { "reference": "example.invalid/xnobrain@sha256:1111111111111111111111111111111111111111111111111111111111111111" },
+    "control": { "reference": "example.invalid/xnobrain-control@sha256:2222222222222222222222222222222222222222222222222222222222222222" }
+  }
+}

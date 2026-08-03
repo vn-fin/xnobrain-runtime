@@ -1,5 +1,5 @@
 {
-  "name": "brain4all-app",
+  "name": "xnobrain-app",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -9,9 +9,10 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
+    "test:config": "node --test scripts/config-generators.test.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check": "npm run typecheck && npm run test && npm run build",
+    "check": "npm run typecheck && npm run test && npm run test:config && npm run build",
     "tauri": "tauri"
   },
   "dependencies": {

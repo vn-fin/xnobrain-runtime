@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { InstallerBridge, LogService, RuntimeAction, RuntimeLogs, RuntimeOverview } from '../bridge/types'
 import { DockerIcon, ExitFullscreenIcon, ExternalIcon, FullscreenIcon, GlobeIcon, PlayIcon, RefreshIcon, ShieldIcon, SlidersIcon, StopIcon, TerminalIcon } from '../components/Icons'
+import { productName } from '../config/product'
 
 type ManagerPanel = 'system' | 'logs'
 
@@ -83,7 +84,7 @@ export function DockerManager({ bridge, initialOverview }: { bridge: InstallerBr
         {error && <div className="embedded-error" role="alert">{error}<button onClick={() => void refresh()}>Retry</button></div>}
         {running && embeddedUrl ? (
           <iframe
-            title="Brain4All Web application"
+            title={`${productName} Web application`}
             src={embeddedUrl}
             sandbox="allow-same-origin allow-scripts allow-forms allow-downloads allow-modals allow-popups allow-popups-to-escape-sandbox"
             allow="clipboard-read; clipboard-write"
@@ -91,16 +92,16 @@ export function DockerManager({ bridge, initialOverview }: { bridge: InstallerBr
         ) : (
           <div className="embedded-stopped">
             <span><GlobeIcon /></span>
-            <h1>{loading ? 'Connecting to Brain4All' : 'Brain4All Web is stopped'}</h1>
+            <h1>{loading ? `Connecting to ${productName}` : `${productName} Web is stopped`}</h1>
             <p>{loading ? 'Checking the local Docker runtime…' : 'Start the dedicated stack to show the Web application here.'}</p>
-            {!loading && <button className="button primary" disabled={Boolean(activeAction)} onClick={() => void control('start')}><PlayIcon /> Start Brain4All</button>}
+            {!loading && <button className="button primary" disabled={Boolean(activeAction)} onClick={() => void control('start')}><PlayIcon /> Start {productName}</button>}
           </div>
         )}
       </div>
       {panel && (
         <div className="manager-overlay" role="dialog" aria-modal="true" aria-label={panel === 'system' ? 'System' : 'Logs'}>
           <div className="manager-overlay-card">
-            <header><div><span className="manager-product"><DockerIcon /></span><strong>Brain4All Docker Web</strong></div><button aria-label="Close settings" onClick={() => setPanel(undefined)}>×</button></header>
+            <header><div><span className="manager-product"><DockerIcon /></span><strong>{productName} Docker Web</strong></div><button aria-label="Close settings" onClick={() => setPanel(undefined)}>×</button></header>
             <div className="manager-content">
               {panel === 'system' && <SystemTab overview={overview} refresh={refresh} loading={loading} />}
               {panel === 'logs' && <LogsTab bridge={bridge} />}
@@ -115,14 +116,14 @@ export function DockerManager({ bridge, initialOverview }: { bridge: InstallerBr
 function SystemTab({ overview, refresh, loading }: { overview?: RuntimeOverview; refresh: () => Promise<void>; loading: boolean }) {
   return (
     <div className="manager-panel">
-      <div className="panel-heading"><div><span className="section-kicker">System</span><h1>Docker runtime</h1><p>Health and network details for the Brain4All stack only.</p></div><button className="button secondary" disabled={loading} onClick={() => void refresh()}><RefreshIcon /> Refresh</button></div>
+      <div className="panel-heading"><div><span className="section-kicker">System</span><h1>Docker runtime</h1><p>Health and network details for the XNOBrain stack only.</p></div><button className="button secondary" disabled={loading} onClick={() => void refresh()}><RefreshIcon /> Refresh</button></div>
       <div className="system-metrics">
         <Metric label="Docker Engine" value={overview?.dockerVersion ?? 'Unavailable'} />
         <Metric label="Docker Compose" value={overview?.composeVersion ?? 'Unavailable'} />
         <Metric label="Published ports" value={overview?.state === 'not_installed' ? 'None' : '1 · Traefik only'} />
         <Metric label="Data policy" value="Persistent volume" />
       </div>
-      <div className="service-table" role="table" aria-label="Brain4All services">
+      <div className="service-table" role="table" aria-label="XNOBrain services">
         <div className="service-table-head" role="row"><span>Service</span><span>Access</span><span>Status</span></div>
         {overview?.services.map((service) => (
           <div className="service-row" role="row" key={service.id}>
@@ -158,7 +159,7 @@ function LogsTab({ bridge }: { bridge: InstallerBridge }) {
 
   return (
     <div className="manager-panel logs-panel">
-      <div className="panel-heading"><div><span className="section-kicker">Logs</span><h1>Stack activity</h1><p>Recent, bounded output from Brain4All services. Secrets are redacted.</p></div><button className="button secondary" disabled={loading} onClick={() => void load(false)}><RefreshIcon /> Refresh</button></div>
+      <div className="panel-heading"><div><span className="section-kicker">Logs</span><h1>Stack activity</h1><p>Recent, bounded output from XNOBrain services. Secrets are redacted.</p></div><button className="button secondary" disabled={loading} onClick={() => void load(false)}><RefreshIcon /> Refresh</button></div>
       <div className="log-filters" aria-label="Log service filter">
         {(['all', 'traefik', 'frontend', 'runtime'] as LogService[]).map((item) => <button key={item} className={service === item ? 'active' : ''} onClick={() => setService(item)}>{item === 'all' ? 'All services' : item}</button>)}
       </div>
@@ -168,7 +169,7 @@ function LogsTab({ bridge }: { bridge: InstallerBridge }) {
         {!loading && !error && logs?.lines.length === 0 && <span className="log-placeholder">No recent log entries for this service.</span>}
         {!loading && !error && logs?.lines.map((line, index) => <div key={`${index}-${line}`}><span>{String(index + 1).padStart(2, '0')}</span><code>{line}</code></div>)}
       </div>
-      <p className="log-note"><ShieldIcon /> Output is limited to the Brain4All Compose project and the latest 250 lines.</p>
+      <p className="log-note"><ShieldIcon /> Output is limited to the XNOBrain Compose project and the latest 250 lines.</p>
     </div>
   )
 }

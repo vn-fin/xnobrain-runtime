@@ -1,8 +1,9 @@
 mod compose;
+mod install;
 
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Output},
     thread,
     time::{Duration, Instant},
@@ -16,6 +17,7 @@ use crate::domain::{
 };
 
 pub use compose::ComposeSpec;
+pub use install::DockerInstallerDriver;
 
 #[derive(Clone, Debug, Default)]
 pub struct DockerStatus {
@@ -55,6 +57,27 @@ impl DockerDriver {
             status: CheckStatus::Pass,
             blocking: false,
         }];
+        if cfg!(target_os = "windows") && !status.installed {
+            let wsl_ready = Command::new("wsl.exe")
+                .arg("--version")
+                .output()
+                .is_ok_and(|output| output.status.success());
+            checks.push(PreflightCheck {
+                id: "wsl2".to_owned(),
+                label: "Windows WSL 2 backend".to_owned(),
+                detail: if wsl_ready {
+                    "WSL 2 is available for Docker Desktop.".to_owned()
+                } else {
+                    "WSL 2 must be enabled; Windows may require one restart.".to_owned()
+                },
+                status: if wsl_ready {
+                    CheckStatus::Pass
+                } else {
+                    CheckStatus::Warning
+                },
+                blocking: false,
+            });
+        }
         checks.push(PreflightCheck {
             id: "docker".to_owned(),
             label: "Docker Engine".to_owned(),
@@ -108,31 +131,6 @@ impl DockerDriver {
             status: disk_status,
             blocking: !disk_ready,
         });
-        if manifest.development {
-            let images_ready = [
-                &manifest.images.traefik,
-                &manifest.images.frontend,
-                &manifest.images.runtime,
-            ]
-            .iter()
-            .all(|image| self.verify_image(image).is_ok());
-            checks.push(PreflightCheck {
-                id: "development_images".to_owned(),
-                label: "Development runtime images".to_owned(),
-                detail: if images_ready {
-                    "All locally pinned image IDs are available.".to_owned()
-                } else {
-                    "One or more locally pinned development images are missing or changed."
-                        .to_owned()
-                },
-                status: if images_ready {
-                    CheckStatus::Pass
-                } else {
-                    CheckStatus::Fail
-                },
-                blocking: !images_ready,
-            });
-        }
         checks
     }
 
@@ -164,12 +162,10 @@ impl DockerDriver {
     pub fn prepare_images(&self, manifest: &RuntimeManifest) -> InstallerResult<()> {
         for image in [
             &manifest.images.traefik,
-            &manifest.images.frontend,
-            &manifest.images.runtime,
+            &manifest.images.xnobrain,
+            &manifest.images.control,
         ] {
-            if image.pull {
-                run_docker(&["pull", &image.reference], "image_pull_failed")?;
-            }
+            run_docker(&["pull", &image.reference], "image_pull_failed")?;
             self.verify_image(image)?;
         }
         Ok(())
@@ -181,7 +177,7 @@ impl DockerDriver {
             &[
                 "compose",
                 "-p",
-                "brain4all_web",
+                "xnobrain_web",
                 "-f",
                 &path,
                 "up",
@@ -200,7 +196,7 @@ impl DockerDriver {
             }
             Err(_) => Err(InstallerError::retryable(
                 "docker_start_failed",
-                "Docker could not start the Brain4All Web services.",
+                "Docker could not start the XNOBrain Web services.",
             )),
         }
     }
@@ -211,7 +207,7 @@ impl DockerDriver {
             &[
                 "compose",
                 "-p",
-                "brain4all_web",
+                "xnobrain_web",
                 "-f",
                 &path,
                 "down",
@@ -239,8 +235,8 @@ impl DockerDriver {
     ) -> (RuntimeState, Vec<ServiceStatus>) {
         let definitions = [
             ("traefik", LogService::Traefik, "Traefik ingress"),
-            ("frontend", LogService::Frontend, "Web interface"),
-            ("runtime", LogService::Runtime, "Hermes runtime"),
+            ("xnobrain", LogService::Frontend, "XNOBrain Web"),
+            ("control", LogService::Runtime, "XNOBrain control"),
         ];
         let services: Vec<ServiceStatus> = definitions
             .into_iter()
@@ -291,8 +287,8 @@ impl DockerDriver {
         match service {
             LogService::All => {}
             LogService::Traefik => arguments.push("traefik"),
-            LogService::Frontend => arguments.push("frontend"),
-            LogService::Runtime => arguments.push("runtime"),
+            LogService::Frontend => arguments.push("xnobrain"),
+            LogService::Runtime => arguments.push("control"),
         }
         let output = self.run_compose(compose_path, &arguments, "docker_logs_failed")?;
         let combined = if output.stdout.is_empty() {
@@ -331,7 +327,7 @@ impl DockerDriver {
         }
         Err(InstallerError::retryable(
             "health_timeout",
-            "Brain4All started but did not become healthy in time.",
+            "XNOBrain started but did not become healthy in time.",
         ))
     }
 
@@ -346,8 +342,17 @@ impl DockerDriver {
     }
 
     fn verify_image(&self, image: &ImageManifest) -> InstallerResult<()> {
-        let actual = command_output(&["image", "inspect", "--format", "{{.Id}}", &image.reference]);
-        if actual.as_deref() != Some(image.expected_id.as_str()) {
+        let digests = command_output(&[
+            "image",
+            "inspect",
+            "--format",
+            "{{join .RepoDigests \"\\n\"}}",
+            &image.reference,
+        ]);
+        if !digests
+            .as_deref()
+            .is_some_and(|values| values.lines().any(|value| value == image.reference))
+        {
             return Err(InstallerError::retryable(
                 "image_verification_failed",
                 format!(
@@ -366,7 +371,7 @@ impl DockerDriver {
         code: &str,
     ) -> InstallerResult<Output> {
         let path = compose_path.to_string_lossy();
-        let mut fixed = vec!["compose", "-p", "brain4all_web", "-f", path.as_ref()];
+        let mut fixed = vec!["compose", "-p", "xnobrain_web", "-f", path.as_ref()];
         fixed.extend_from_slice(arguments);
         run_docker(&fixed, code)
     }
@@ -423,14 +428,14 @@ fn redact_log_line(line: &str) -> String {
 }
 
 fn command_succeeds(arguments: &[&str]) -> bool {
-    Command::new("docker")
+    Command::new(docker_executable())
         .args(arguments)
         .output()
         .is_ok_and(|output| output.status.success())
 }
 
 fn command_output(arguments: &[&str]) -> Option<String> {
-    Command::new("docker")
+    Command::new(docker_executable())
         .args(arguments)
         .output()
         .ok()
@@ -440,7 +445,7 @@ fn command_output(arguments: &[&str]) -> Option<String> {
 }
 
 fn run_docker(arguments: &[&str], code: &str) -> InstallerResult<Output> {
-    let output = Command::new("docker")
+    let output = Command::new(docker_executable())
         .args(arguments)
         .output()
         .map_err(|_| {
@@ -462,6 +467,34 @@ fn run_docker(arguments: &[&str], code: &str) -> InstallerResult<Output> {
         "Docker could not complete the requested installer operation."
     };
     Err(InstallerError::retryable(code, safe_message))
+}
+
+fn docker_executable() -> PathBuf {
+    let mut candidates = Vec::new();
+    if cfg!(target_os = "windows") {
+        if let Some(root) = std::env::var_os("ProgramFiles") {
+            candidates.push(PathBuf::from(root).join("Docker/Docker/resources/bin/docker.exe"));
+        }
+        if let Some(root) = std::env::var_os("LOCALAPPDATA") {
+            candidates
+                .push(PathBuf::from(root).join("Programs/Docker/Docker/resources/bin/docker.exe"));
+        }
+    } else if cfg!(target_os = "macos") {
+        candidates.push(PathBuf::from(
+            "/Applications/Docker.app/Contents/Resources/bin/docker",
+        ));
+        candidates.push(PathBuf::from("/usr/local/bin/docker"));
+        if let Some(root) = std::env::var_os("HOME") {
+            candidates.push(PathBuf::from(root).join(".docker/bin/docker"));
+        }
+    } else {
+        candidates.push(PathBuf::from("/usr/bin/docker"));
+        candidates.push(PathBuf::from("/usr/local/bin/docker"));
+    }
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| PathBuf::from("docker"))
 }
 
 pub fn validate_port(port: u16) -> InstallerResult<()> {
@@ -530,7 +563,7 @@ mod tests {
     #[test]
     fn health_requires_the_runtime_json_contract() {
         let healthy = serde_json::json!({"success": true, "data": {"status": "ok"}});
-        let frontend = serde_json::json!({"html": "Brain4All"});
+        let frontend = serde_json::json!({"html": "XNOBrain"});
         assert!(health_payload_valid(&healthy));
         assert!(!health_payload_valid(&frontend));
     }

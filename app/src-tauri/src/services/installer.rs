@@ -5,30 +5,62 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        InstallPhase, InstallProgress, InstallRequest, InstallResult, InstallState, InstallerError,
-        InstallerResult, LogService, PortInspection, RuntimeAction, RuntimeLogs, RuntimeManifest,
-        RuntimeOverview, RuntimeState, SystemInspection,
+        DockerInstallProgress, DockerInstallResult, InstallPhase, InstallProgress, InstallRequest,
+        InstallResult, InstallState, InstallerError, InstallerResult, LogService, PortInspection,
+        RuntimeAction, RuntimeLogs, RuntimeManifest, RuntimeOverview, RuntimeState,
+        SystemInspection,
     },
-    drivers::docker::{ComposeSpec, DockerDriver, platform, platform_label, validate_port},
+    drivers::docker::{
+        ComposeSpec, DockerDriver, DockerInstallerDriver, platform, platform_label, validate_port,
+    },
     persistence::StateStore,
 };
 
 pub struct InstallerService {
     manifest: RuntimeManifest,
     docker: DockerDriver,
+    docker_installer: DockerInstallerDriver,
     store: StateStore,
+    resource_root: PathBuf,
     mutation: Mutex<()>,
 }
 
 impl InstallerService {
-    pub fn new(data_root: PathBuf) -> InstallerResult<Self> {
+    pub fn new(data_root: PathBuf, resource_root: PathBuf) -> InstallerResult<Self> {
         fs::create_dir_all(&data_root).map_err(|error| InstallerError::io("create", &error))?;
         Ok(Self {
             manifest: RuntimeManifest::bundled()?,
             docker: DockerDriver,
+            docker_installer: DockerInstallerDriver,
             store: StateStore::new(data_root),
+            resource_root,
             mutation: Mutex::new(()),
         })
+    }
+
+    pub fn install_docker(
+        &self,
+        progress: &Channel<DockerInstallProgress>,
+    ) -> InstallerResult<DockerInstallResult> {
+        let _guard = self.mutation.try_lock().map_err(|_| {
+            InstallerError::retryable(
+                "operation_in_progress",
+                "Another XNOBrain installation operation is already running.",
+            )
+        })?;
+        self.docker_installer.install(
+            &self.manifest,
+            self.store.root(),
+            &self.resource_root,
+            |update| {
+                progress.send(update).map_err(|_| {
+                    InstallerError::retryable(
+                        "progress_channel_closed",
+                        "The installer window stopped receiving progress.",
+                    )
+                })
+            },
+        )
     }
 
     pub fn inspect_system(&self) -> InstallerResult<SystemInspection> {
@@ -68,7 +100,7 @@ impl InstallerService {
         let _guard = self.mutation.try_lock().map_err(|_| {
             InstallerError::retryable(
                 "installation_in_progress",
-                "Another Brain4All installation operation is already running.",
+                "Another XNOBrain installation operation is already running.",
             )
         })?;
         validate_port(request.port)?;
@@ -83,7 +115,7 @@ impl InstallerService {
         if !status.running || !status.compose_available {
             return Err(InstallerError::retryable(
                 "docker_not_ready",
-                "Install and start Docker before installing Brain4All.",
+                "Install and start Docker before installing XNOBrain.",
             ));
         }
         if !self.docker.inspect_port(request.port)?.available {
@@ -97,7 +129,7 @@ impl InstallerService {
             InstallPhase::Pulling,
             32,
             "Verifying runtime",
-            "Checking immutable Brain4All image IDs",
+            "Checking immutable XNOBrain image digests",
         )?;
         self.docker.prepare_images(&self.manifest)?;
 
@@ -105,7 +137,7 @@ impl InstallerService {
             progress,
             InstallPhase::Preparing,
             50,
-            "Preparing Brain4All",
+            "Preparing XNOBrain",
             "Creating secure local configuration",
         )?;
         let secret = Uuid::new_v4().simple().to_string();
@@ -115,7 +147,14 @@ impl InstallerService {
             internal_secret: &secret,
         }
         .render();
+        let traefik_dynamic = ComposeSpec {
+            manifest: &self.manifest,
+            port: request.port,
+            internal_secret: &secret,
+        }
+        .render_traefik_dynamic();
         ensure_single_traefik_port(&compose, request.port)?;
+        self.store.write_traefik_dynamic(&traefik_dynamic)?;
         let compose_path = self.store.write_compose(&compose)?;
 
         send_progress(
@@ -129,7 +168,7 @@ impl InstallerService {
             progress,
             InstallPhase::Starting,
             80,
-            "Starting Brain4All",
+            "Starting XNOBrain",
             "Starting the Docker Web runtime",
         )?;
         self.docker.up(&compose_path)?;
@@ -161,7 +200,7 @@ impl InstallerService {
             progress,
             InstallPhase::Ready,
             100,
-            "Brain4All is ready",
+            "XNOBrain is ready",
             "The Web version is healthy",
         )?;
         Ok(InstallResult {
@@ -177,7 +216,7 @@ impl InstallerService {
             .filter(|state| state.installed)
             .map(|state| state.web_url)
             .ok_or_else(|| {
-                InstallerError::retryable("not_installed", "Brain4All Web is not installed yet.")
+                InstallerError::retryable("not_installed", "XNOBrain Web is not installed yet.")
             })
     }
 
@@ -208,7 +247,7 @@ impl InstallerService {
         let _guard = self.mutation.try_lock().map_err(|_| {
             InstallerError::retryable(
                 "operation_in_progress",
-                "Another Brain4All operation is already running.",
+                "Another XNOBrain operation is already running.",
             )
         })?;
         let state = self
@@ -216,7 +255,7 @@ impl InstallerService {
             .load()?
             .filter(|state| state.installed)
             .ok_or_else(|| {
-                InstallerError::retryable("not_installed", "Brain4All Web is not installed yet.")
+                InstallerError::retryable("not_installed", "XNOBrain Web is not installed yet.")
             })?;
         match action {
             RuntimeAction::Start => {
@@ -244,7 +283,7 @@ impl InstallerService {
             .load()?
             .filter(|state| state.installed)
             .ok_or_else(|| {
-                InstallerError::retryable("not_installed", "Brain4All Web is not installed yet.")
+                InstallerError::retryable("not_installed", "XNOBrain Web is not installed yet.")
             })?;
         let (lines, truncated) = self.docker.logs(&state.compose_path, service)?;
         Ok(RuntimeLogs {

@@ -6,8 +6,9 @@ use tauri_plugin_opener::OpenerExt;
 use crate::{
     AppState,
     domain::{
-        InstallProgress, InstallRequest, InstallResult, InstallerError, LogService, PortInspection,
-        RuntimeAction, RuntimeLogs, RuntimeOverview, SystemInspection,
+        DockerInstallProgress, DockerInstallResult, InstallProgress, InstallRequest, InstallResult,
+        InstallerError, LogService, PortInspection, RuntimeAction, RuntimeLogs, RuntimeOverview,
+        SystemInspection,
     },
 };
 
@@ -20,6 +21,22 @@ pub async fn inspect_system(
         .await
         .map_err(|_| {
             InstallerError::retryable("worker_failed", "The system check stopped unexpectedly.")
+        })?
+}
+
+#[tauri::command]
+pub async fn install_docker(
+    state: State<'_, AppState>,
+    progress: Channel<DockerInstallProgress>,
+) -> Result<DockerInstallResult, InstallerError> {
+    let service = Arc::clone(&state.service);
+    tauri::async_runtime::spawn_blocking(move || service.install_docker(&progress))
+        .await
+        .map_err(|_| {
+            InstallerError::retryable(
+                "worker_failed",
+                "The Docker installation stopped unexpectedly.",
+            )
         })?
 }
 

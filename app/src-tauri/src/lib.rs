@@ -25,7 +25,12 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .map_err(|error| error.to_string())?;
-            let service = InstallerService::new(data_root).map_err(|error| error.to_string())?;
+            let resource_root = app
+                .path()
+                .resource_dir()
+                .map_err(|error| error.to_string())?;
+            let service = InstallerService::new(data_root, resource_root)
+                .map_err(|error| error.to_string())?;
             app.manage(AppState {
                 service: Arc::new(service),
             });
@@ -35,6 +40,7 @@ pub fn run() {
             commands::inspect_system,
             commands::inspect_port,
             commands::install_web,
+            commands::install_docker,
             commands::open_web,
             commands::open_docker_help,
             commands::inspect_runtime,
@@ -44,5 +50,5 @@ pub fn run() {
             commands::reset_installation,
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run Brain4All installer");
+        .expect("failed to run XNOBrain app");
 }

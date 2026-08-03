@@ -1,42 +1,72 @@
-# Brain4All App Workspace
+# XNOBrain Desktop App
 
-All native installer and Full Managed App code lives here. Plan 013 defines
-the staged implementation. The Docker edition installs the existing Web app
-and displays that loopback site in a sandboxed Tauri webview, with an explicit
-option to open it in the default browser. The later Full Managed edition will
-reuse the same application shell while managing the runtime directly.
+This directory is the isolated Tauri 2 installer and future managed desktop
+workspace. It does not import or modify the existing Web UI or backend source.
 
-Docker Web publishes exactly one loopback host port through Traefik. The
-installer offers the release default (initially 5152) or a validated custom
-port; no backend, frontend, router, or telemetry container publishes a host
-port directly.
+The current Docker/Web edition is distributed as one native installer file.
+After launch it can install Docker Engine/Desktop and Docker Compose (with the
+operating system's permission and Docker-license prompts), pull three immutable
+images, generate a private Compose stack, and start XNOBrain. Traefik is the
+only service with a host mapping and binds only to `127.0.0.1` on the selected
+default or custom port. Routing uses a generated read-only file; the Traefik
+container is not given the Docker socket.
 
-The development runtime manifest selects the authenticated Web build with
-required `xno-firebase` login and records its test authentication base URL.
-Authentication remains a compile-time frontend contract, so the manifest pins
-the exact matching image ID instead of trying to inject unsupported runtime
-JavaScript configuration. The Firebase browser key is public build metadata
-inside that image and is never copied into installer state or Compose files.
+## Contributor setup
 
-The Tauri 2 workspace and Docker Web installer are isolated in this directory.
-The browser-only development bridge is available for UI testing, while real
-install operations are accepted only by the typed Rust command boundary.
+From this directory, `make` installs/checks native Tauri prerequisites, installs
+the stable Rust toolchain with Clippy and rustfmt, and runs `npm ci`. The root
+delegates `make dev-app`, `make win-app`, `make mac-app`, and `make rpm-app` to
+this Makefile.
 
-Stable repository commands:
+On a fresh Windows machine without GNU Make, bootstrap once from PowerShell:
 
-```text
-make dev-app    development app
-make win-app    Windows NSIS installer (run on Windows)
-make mac-app    macOS app and DMG (run on macOS)
-make rpm-app    Linux RPM (run on supported RPM Linux)
+```powershell
+powershell -ExecutionPolicy Bypass -File app\scripts\setup-windows.ps1
 ```
 
-App-only validation:
+The bootstrap installs Make as well as Node, MSVC, WebView2, and Rust. Open a
+new terminal afterward; subsequent setup and build commands use Make normally.
+
+Copy `.env.example` to `.env` or pass variables directly to Make. Release
+builds require the XNOBrain Web and control images as immutable registry digest
+references; mutable tags, example registries, and local-only images are
+rejected. `make config-local` is an explicit exception for isolated installer
+validation and must not feed release artifacts.
 
 ```text
-make -C app check       TypeScript, React, production build, Rust format/lint/tests
-npm -C app run test:e2e Repeatable Windows-layout visual journeys and recordings
+make                         contributor setup on Linux, macOS, or Windows
+make dev                     local native development with a safe test manifest
+make win                     one NSIS .exe, on a Windows host
+make mac                     one DMG, on a macOS host
+make rpm                     one RPM, on a supported RPM Linux host
+make deb                     one DEB, on a supported Debian Linux host
+make check                   frontend plus strict Rust checks and tests
 ```
 
-See `AGENTS.md` for the hard repository boundary and
-`../plans/013_desktop_app/architecture.md` for the planned structure.
+Native package targets run a host preflight before compiling. Set
+`XNOBRAIN_REQUIRE_SIGNING=1` in release automation to require an installed
+Windows signing certificate or a macOS signing identity plus notarization
+credentials. Local developer artifacts remain unsigned by default.
+
+Example release configuration:
+
+```text
+make rpm \
+  XNOBRAIN_APP_NAME=XNOBrain \
+  XNOBRAIN_APP_DESCRIPTION="Private XNOBrain Docker Web workspace" \
+  XNOBRAIN_IMAGE=registry.example/xnobrain@sha256:<64-hex-digest> \
+  XNOBRAIN_CONTROL_IMAGE=registry.example/xnobrain-control@sha256:<64-hex-digest>
+```
+
+No credentials belong in `.env`, generated manifests, Compose, screenshots, or
+logs. Authentication remains the Web application's HTTPS contract with the
+configured `XNOBRAIN_AUTH_BASE_URL`.
+
+The published Web image must already be compiled for the same authentication
+origin, provider, and Firebase public API key. Vite embeds those values at Web
+image build time; installer labels cannot retrofit them. Release validation
+must reject an image that cannot complete authentication against the selected
+environment.
+
+See [platform support](docs/platform-support.md) for the native validation and
+release requirements.

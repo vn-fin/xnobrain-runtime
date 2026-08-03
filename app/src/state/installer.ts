@@ -1,4 +1,4 @@
-import type { InstallProgress, InstallResult, RuntimeOverview, SystemInspection } from '../bridge/types'
+import type { DockerInstallProgress, InstallProgress, InstallResult, RuntimeOverview, SystemInspection } from '../bridge/types'
 
 export type Edition = 'web' | 'managed'
 export type DockerPath = 'existing' | 'install'
@@ -27,6 +27,9 @@ export interface InstallerState {
   result?: InstallResult
   runtimeOverview?: RuntimeOverview
   error?: string
+  installingDocker: boolean
+  dockerInstallProgress?: DockerInstallProgress
+  dockerInstallMessage?: string
 }
 
 export const initialInstallerState: InstallerState = {
@@ -35,6 +38,7 @@ export const initialInstallerState: InstallerState = {
   port: 5152,
   portMode: 'default',
   checkingPort: false,
+  installingDocker: false,
 }
 
 export type InstallerAction =
@@ -53,6 +57,10 @@ export type InstallerAction =
   | { type: 'restored'; overview: RuntimeOverview }
   | { type: 'install_failed'; message: string }
   | { type: 'restart' }
+  | { type: 'docker_install_started' }
+  | { type: 'docker_install_progress'; progress: DockerInstallProgress }
+  | { type: 'docker_install_finished'; message: string }
+  | { type: 'docker_install_failed'; message: string }
 
 export function installerReducer(
   state: InstallerState,
@@ -121,5 +129,13 @@ export function installerReducer(
       return { ...state, step: 'review', error: action.message }
     case 'restart':
       return initialInstallerState
+    case 'docker_install_started':
+      return { ...state, installingDocker: true, dockerInstallMessage: undefined, error: undefined }
+    case 'docker_install_progress':
+      return { ...state, dockerInstallProgress: action.progress }
+    case 'docker_install_finished':
+      return { ...state, installingDocker: false, dockerInstallMessage: action.message }
+    case 'docker_install_failed':
+      return { ...state, installingDocker: false, error: action.message }
   }
 }

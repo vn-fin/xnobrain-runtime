@@ -2,6 +2,7 @@ import type { CSSProperties, Dispatch, ReactNode } from 'react'
 import type { InstallerBridge, PreflightCheck } from '../bridge/types'
 import { AlertIcon, ArrowIcon, CheckIcon, DesktopIcon, DockerIcon, ExternalIcon, GlobeIcon, RefreshIcon, ShieldIcon } from '../components/Icons'
 import type { InstallerAction, InstallerState } from '../state/installer'
+import { productDescription, productName } from '../config/product'
 
 interface ScreenProps {
   state: InstallerState
@@ -10,12 +11,13 @@ interface ScreenProps {
   runInspection: () => Promise<void>
   runPortCheck: () => Promise<void>
   runInstall: () => Promise<void>
+  runDockerInstall: () => Promise<void>
 }
 
 export function EditionScreen({ state, dispatch }: ScreenProps) {
   const managed = state.edition === 'managed'
   return (
-    <Screen title="Choose your Brain4All version" subtitle="Start with the Web version today. The fully managed desktop experience is coming next.">
+    <Screen title={`Choose your ${productName} version`} subtitle={productDescription}>
       <div className="edition-grid">
         <ChoiceCard
           selected={state.edition === 'web'}
@@ -39,7 +41,7 @@ export function EditionScreen({ state, dispatch }: ScreenProps) {
       </div>
       {managed && (
         <InlineNotice tone="info" title="Full Managed App is not available yet">
-          Choose Web Version to install Brain4All now. No partial managed runtime will be installed.
+          Choose Web Version to install {productName} now. No partial managed runtime will be installed.
         </InlineNotice>
       )}
       <Actions>
@@ -57,7 +59,7 @@ export function EditionScreen({ state, dispatch }: ScreenProps) {
 
 export function DockerScreen({ state, dispatch }: ScreenProps) {
   return (
-    <Screen title="Connect Docker" subtitle="Brain4All Web runs in verified containers, isolated from the rest of your computer.">
+    <Screen title="Connect Docker" subtitle={`${productName} Web runs in verified containers, isolated from the rest of your computer.`}>
       <div className="docker-banner">
         <span className="docker-mark"><DockerIcon /></span>
         <div><strong>Docker Web runtime</strong><span>The installer never builds source code on your computer.</span></div>
@@ -90,10 +92,10 @@ export function DockerScreen({ state, dispatch }: ScreenProps) {
   )
 }
 
-export function PreflightScreen({ state, dispatch, bridge, runInspection }: ScreenProps) {
+export function PreflightScreen({ state, dispatch, bridge, runInspection, runDockerInstall }: ScreenProps) {
   const failed = state.inspection?.checks.some((check) => check.blocking && check.status === 'fail')
   return (
-    <Screen title="System check" subtitle="Confirming this computer is ready for the Brain4All Web runtime.">
+    <Screen title="System check" subtitle={`Confirming this computer is ready for the ${productName} Web runtime.`}>
       {state.loadingInspection && <CheckingState />}
       {!state.loadingInspection && state.inspection && (
         <>
@@ -107,10 +109,18 @@ export function PreflightScreen({ state, dispatch, bridge, runInspection }: Scre
           </div>
           {failed && (
             <InlineNotice tone="warning" title="Docker needs attention">
-              Install and start Docker, then run the check again. Brain4All cannot accept Docker's license for you.
-              <button className="text-action" onClick={() => void bridge.openDockerHelp()}>Open official Docker setup <ExternalIcon /></button>
+              <span>Install and start Docker, then run the check again. {productName} cannot accept Docker's license for you.</span>
+              <span className="notice-actions">
+                {state.dockerPath === 'install' && (
+                  <button className="text-action" disabled={state.installingDocker} onClick={() => void runDockerInstall()}>
+                    {state.installingDocker ? `${state.dockerInstallProgress?.title ?? 'Preparing Docker'} · ${state.dockerInstallProgress?.percent ?? 0}%` : 'Install Docker and Compose'}
+                  </button>
+                )}
+                <button className="text-action" onClick={() => void bridge.openDockerHelp()}>Read official Docker setup <ExternalIcon /></button>
+              </span>
             </InlineNotice>
           )}
+          {state.dockerInstallMessage && <InlineNotice tone="info" title="Docker setup completed">{state.dockerInstallMessage}</InlineNotice>}
         </>
       )}
       {state.error && <InlineNotice tone="error" title="System check failed">{state.error}</InlineNotice>}
@@ -131,13 +141,13 @@ export function PortScreen({ state, dispatch, runPortCheck }: ScreenProps) {
   const defaultPort = state.inspection?.defaultPort ?? 5152
   const validRange = Number.isInteger(state.port) && state.port >= 1024 && state.port <= 65535
   return (
-    <Screen title="Choose Web access" subtitle="Brain4All will be available only on this computer through Traefik.">
+    <Screen title="Choose Web access" subtitle={`${productName} will be available only on this computer through Traefik.`}>
       <div className="port-visual">
         <div className="port-node"><GlobeIcon /><span>Your browser</span></div>
         <div className="port-line"><span>127.0.0.1</span></div>
         <div className="port-node accent"><ShieldIcon /><span>Traefik :{state.port || '—'}</span></div>
         <div className="port-line internal"><span>Private network</span></div>
-        <div className="port-node"><DockerIcon /><span>Brain4All</span></div>
+        <div className="port-node"><DockerIcon /><span>{productName}</span></div>
       </div>
       <fieldset className="port-options">
         <legend>Host port</legend>
@@ -178,7 +188,7 @@ export function PortScreen({ state, dispatch, runPortCheck }: ScreenProps) {
 
 export function ReviewScreen({ state, dispatch, runInstall }: ScreenProps) {
   return (
-    <Screen title="Ready to install" subtitle="Review what Brain4All will add to this computer.">
+    <Screen title="Ready to install" subtitle={`Review what ${productName} will add to this computer.`}>
       <div className="review-card">
         <ReviewRow label="Version" value="Web Version (Docker)" />
         <ReviewRow label="Web address" value={`http://127.0.0.1:${state.port}`} mono />
@@ -187,12 +197,12 @@ export function ReviewScreen({ state, dispatch, runInstall }: ScreenProps) {
         <ReviewRow label="User data" value="Persistent Docker volume" />
       </div>
       <InlineNotice tone="info" title="What happens next">
-        The installer verifies runtime images, creates a private Docker network, starts Brain4All, and checks it through Traefik. It will not build source code or expose internal services.
+        The installer pulls immutable runtime images, creates a private Docker network, starts {productName}, and checks it through Traefik. It will not build source code or expose internal services.
       </InlineNotice>
       {state.error && <InlineNotice tone="error" title="Installation could not continue">{state.error}</InlineNotice>}
       <Actions>
         <BackButton onClick={() => dispatch({ type: 'go', step: 'port' })} />
-        <PrimaryButton onClick={() => void runInstall()}>Install Brain4All <ArrowIcon /></PrimaryButton>
+        <PrimaryButton onClick={() => void runInstall()}>Install {productName} <ArrowIcon /></PrimaryButton>
       </Actions>
     </Screen>
   )
@@ -201,7 +211,7 @@ export function ReviewScreen({ state, dispatch, runInstall }: ScreenProps) {
 export function InstallingScreen({ state }: ScreenProps) {
   const progress = state.progress ?? { percent: 2, title: 'Starting installation', detail: 'Preparing secure local state' }
   return (
-    <Screen title="Installing Brain4All" subtitle="You can keep this window open while the Web runtime is prepared.">
+    <Screen title={`Installing ${productName}`} subtitle="You can keep this window open while the Web runtime is prepared.">
       <div className="installation-progress">
         <div
           className="progress-orbit"
@@ -227,7 +237,7 @@ export function InstallingScreen({ state }: ScreenProps) {
 export function ReadyScreen({ state, bridge, dispatch }: ScreenProps) {
   const url = state.result?.webUrl ?? state.inspection?.webUrl ?? `http://127.0.0.1:${state.port}`
   return (
-    <Screen title="Brain4All is ready" subtitle="Your private Web workspace is healthy and ready to open.">
+    <Screen title={`${productName} is ready`} subtitle="Your private Web workspace is healthy and ready to open.">
       <div className="ready-hero">
         <span className="ready-check"><CheckIcon /></span>
         <div><span>Running securely at</span><strong>{url}</strong></div>

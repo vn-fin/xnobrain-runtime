@@ -9,6 +9,8 @@ import type {
   RuntimeOverview,
   RuntimeLogs,
   SystemInspection,
+  DockerInstallProgress,
+  DockerInstallResult,
 } from './types'
 
 declare global {
@@ -42,7 +44,7 @@ const createDemoBridge = (): InstallerBridge => ({
     const params = new URLSearchParams(window.location.search)
     const missingDocker = params.get('scenario') === 'docker-missing'
     const platform = demoPlatform()
-    const storedPort = Number(window.localStorage.getItem('brain4all-demo-port')) || undefined
+    const storedPort = Number(window.localStorage.getItem('xnobrain-demo-port')) || undefined
     return {
       platform,
       platformLabel: platformLabel(platform),
@@ -104,20 +106,20 @@ const createDemoBridge = (): InstallerBridge => ({
   async installWeb(request, onProgress) {
     const stages: InstallProgress[] = [
       { phase: 'validating', percent: 8, title: 'Validating installation', detail: 'Checking Docker and port availability' },
-      { phase: 'preparing', percent: 20, title: 'Preparing Brain4All', detail: 'Creating secure local configuration' },
-      { phase: 'pulling', percent: 48, title: 'Downloading runtime', detail: 'Pulling verified Brain4All images' },
+      { phase: 'preparing', percent: 20, title: 'Preparing XNOBrain', detail: 'Creating secure local configuration' },
+      { phase: 'pulling', percent: 48, title: 'Downloading runtime', detail: 'Pulling verified XNOBrain images' },
       { phase: 'creating', percent: 68, title: 'Creating services', detail: 'Configuring Traefik as the only local entrypoint' },
-      { phase: 'starting', percent: 82, title: 'Starting Brain4All', detail: 'Starting the Web runtime' },
+      { phase: 'starting', percent: 82, title: 'Starting XNOBrain', detail: 'Starting the Web runtime' },
       { phase: 'health_check', percent: 94, title: 'Checking health', detail: `Waiting at 127.0.0.1:${request.port}` },
-      { phase: 'ready', percent: 100, title: 'Brain4All is ready', detail: 'The Web version is healthy' },
+      { phase: 'ready', percent: 100, title: 'XNOBrain is ready', detail: 'The Web version is healthy' },
     ]
     for (const stage of stages) {
       onProgress(stage)
       await wait(260)
     }
-    window.localStorage.setItem('brain4all-demo-port', String(request.port))
-    window.localStorage.setItem('brain4all-demo-state', 'running')
-    return { port: request.port, webUrl: `http://127.0.0.1:${request.port}`, composePath: '/demo/brain4all-web/compose.yaml' }
+    window.localStorage.setItem('xnobrain-demo-port', String(request.port))
+    window.localStorage.setItem('xnobrain-demo-state', 'running')
+    return { port: request.port, webUrl: `http://127.0.0.1:${request.port}`, composePath: '/demo/xnobrain-web/compose.yaml' }
   },
   async openWeb() {
     return Promise.resolve()
@@ -125,13 +127,24 @@ const createDemoBridge = (): InstallerBridge => ({
   async openDockerHelp() {
     window.open('https://docs.docker.com/desktop/', '_blank', 'noopener,noreferrer')
   },
+  async installDocker(onProgress) {
+    for (const update of [
+      { percent: 12, title: 'Requesting permission', detail: 'Preparing the official Docker installer.' },
+      { percent: 55, title: 'Downloading Docker', detail: 'Downloading the verified official installer.' },
+      { percent: 100, title: 'Docker setup opened', detail: 'Complete Docker setup, then check the system again.' },
+    ]) {
+      onProgress(update)
+      await wait(240)
+    }
+    return { restartRequired: false, message: 'Docker setup completed. Start Docker, then check the system again.' }
+  },
   async inspectRuntime() {
     await wait(140)
     return demoRuntimeOverview()
   },
   async controlRuntime(action) {
     await wait(360)
-    window.localStorage.setItem('brain4all-demo-state', action === 'stop' ? 'stopped' : 'running')
+    window.localStorage.setItem('xnobrain-demo-state', action === 'stop' ? 'stopped' : 'running')
     return demoRuntimeOverview()
   },
   async readLogs(service) {
@@ -141,7 +154,7 @@ const createDemoBridge = (): InstallerBridge => ({
       '2026-08-03T07:42:12Z  runtime   INFO  API server listening on private port 8642',
       '2026-08-03T07:42:12Z  frontend  INFO  Web interface ready on private port 8080',
       '2026-08-03T07:42:13Z  runtime   INFO  Health check passed',
-      '2026-08-03T07:42:13Z  traefik   INFO  Brain4All available through loopback ingress',
+      '2026-08-03T07:42:13Z  traefik   INFO  XNOBrain available through loopback ingress',
     ]
     return {
       service,
@@ -154,15 +167,15 @@ const createDemoBridge = (): InstallerBridge => ({
     return demoFullscreen
   },
   async resetInstallation() {
-    window.localStorage.removeItem('brain4all-demo-port')
-    window.localStorage.removeItem('brain4all-demo-state')
+    window.localStorage.removeItem('xnobrain-demo-port')
+    window.localStorage.removeItem('xnobrain-demo-state')
   },
 })
 
 function demoRuntimeOverview(): RuntimeOverview {
-  const storedPort = Number(window.localStorage.getItem('brain4all-demo-port')) || undefined
+  const storedPort = Number(window.localStorage.getItem('xnobrain-demo-port')) || undefined
   const port = storedPort ?? 5152
-  const running = window.localStorage.getItem('brain4all-demo-state') !== 'stopped'
+  const running = window.localStorage.getItem('xnobrain-demo-state') !== 'stopped'
   return {
     state: storedPort ? (running ? 'running' : 'stopped') : 'not_installed',
     webUrl: `http://127.0.0.1:${port}`,
@@ -171,7 +184,7 @@ function demoRuntimeOverview(): RuntimeOverview {
     composeVersion: '5.3.1',
     services: storedPort ? (['traefik', 'frontend', 'runtime'] as LogService[]).map((id) => ({
       id,
-      name: id === 'traefik' ? 'Traefik ingress' : id === 'frontend' ? 'Web interface' : 'Hermes runtime',
+      name: id === 'traefik' ? 'Traefik ingress' : id === 'frontend' ? 'XNOBrain Web' : 'XNOBrain control',
       state: running ? 'running' : 'stopped',
       detail: id === 'traefik' ? `127.0.0.1:${port} → private :5152` : 'Docker-internal only',
     })) : [],
@@ -188,6 +201,11 @@ const tauriBridge: InstallerBridge = {
   },
   openWeb: () => invoke<void>('open_web'),
   openDockerHelp: () => invoke<void>('open_docker_help'),
+  installDocker: async (onProgress) => {
+    const progress = new Channel<DockerInstallProgress>()
+    progress.onmessage = onProgress
+    return invoke<DockerInstallResult>('install_docker', { progress })
+  },
   inspectRuntime: () => invoke<RuntimeOverview>('inspect_runtime'),
   controlRuntime: (action) => invoke<RuntimeOverview>('control_runtime', { action }),
   readLogs: (service) => invoke<RuntimeLogs>('read_logs', { service }),

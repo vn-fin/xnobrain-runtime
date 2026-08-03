@@ -22,7 +22,7 @@ async function expectCleanPage(page: Page) {
 test('Windows existing-Docker journey installs on a custom Traefik port', async ({ page }) => {
   const assertClean = await expectCleanPage(page)
   await page.goto('/?platform=windows')
-  await expect(page.getByRole('heading', { name: 'Choose your Brain4All version' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Choose your XNOBrain version' })).toBeVisible()
   await capture(page, '01-edition')
 
   await page.getByRole('button', { name: /Web Version/ }).click()
@@ -45,16 +45,16 @@ test('Windows existing-Docker journey installs on a custom Traefik port', async 
   await expect(page.getByText('http://127.0.0.1:5252')).toBeVisible()
   await capture(page, '05-review')
 
-  await page.getByRole('button', { name: /Install Brain4All/ }).click()
-  await expect(page.getByRole('heading', { name: 'Installing Brain4All' })).toBeVisible()
+  await page.getByRole('button', { name: /Install XNOBrain/ }).click()
+  await expect(page.getByRole('heading', { name: 'Installing XNOBrain' })).toBeVisible()
   await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', /\d+/)
   await capture(page, '06-installing')
-  await expect(page.getByRole('heading', { name: 'Brain4All is ready' })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole('heading', { name: 'XNOBrain is ready' })).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('http://127.0.0.1:5252')).toBeVisible()
   await capture(page, '07-ready')
 
   await page.getByRole('button', { name: 'Open application' }).click()
-  const embedded = page.frameLocator('iframe[title="Brain4All Web application"]')
+  const embedded = page.frameLocator('iframe[title="XNOBrain Web application"]')
   await expect(embedded.getByRole('heading', { name: 'What can I help you build?' })).toBeVisible()
   await capture(page, '10-embedded-application')
   await page.getByRole('button', { name: 'Docker Web settings' }).click()
@@ -78,21 +78,21 @@ test('Windows existing-Docker journey installs on a custom Traefik port', async 
   await page.getByRole('button', { name: 'Close settings' }).click()
   await page.getByRole('button', { name: 'Docker Web settings' }).click()
   await page.getByRole('button', { name: 'Stop', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Brain4All Web is stopped' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'XNOBrain Web is stopped' })).toBeVisible()
   await capture(page, '15-application-stopped')
   await page.getByRole('button', { name: 'Docker Web settings' }).click()
   await page.getByRole('button', { name: 'Start', exact: true }).click()
-  await expect(page.frameLocator('iframe[title="Brain4All Web application"]').getByRole('heading', { name: 'What can I help you build?' })).toBeVisible()
+  await expect(page.frameLocator('iframe[title="XNOBrain Web application"]').getByRole('heading', { name: 'What can I help you build?' })).toBeVisible()
   assertClean()
 })
 
 test('installed Windows app relaunches directly into management', async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('brain4all-demo-port', '6252')
-    window.localStorage.setItem('brain4all-demo-state', 'running')
+    window.localStorage.setItem('xnobrain-demo-port', '6252')
+    window.localStorage.setItem('xnobrain-demo-state', 'running')
   })
   await page.goto('/?platform=windows')
-  await expect(page.frameLocator('iframe[title="Brain4All Web application"]').getByRole('heading', { name: 'What can I help you build?' })).toBeVisible()
+  await expect(page.frameLocator('iframe[title="XNOBrain Web application"]').getByRole('heading', { name: 'What can I help you build?' })).toBeVisible()
 })
 
 test('Windows Docker prerequisite failure is actionable', async ({ page }) => {
@@ -105,6 +105,9 @@ test('Windows Docker prerequisite failure is actionable', async ({ page }) => {
   await expect(page.getByText('Docker needs attention')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled()
   await capture(page, '08-docker-required')
+  await page.getByRole('button', { name: 'Install Docker and Compose' }).click()
+  await expect(page.getByText('Docker setup completed', { exact: true })).toBeVisible()
+  await capture(page, '08b-docker-setup-complete')
   assertClean()
 })
 

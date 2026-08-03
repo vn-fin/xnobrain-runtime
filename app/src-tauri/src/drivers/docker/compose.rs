@@ -8,54 +8,43 @@ pub struct ComposeSpec<'a> {
 
 impl ComposeSpec<'_> {
     pub fn render(&self) -> String {
-        let pull_policy = if self.manifest.development {
-            "never"
-        } else {
-            "always"
-        };
         format!(
-            r#"name: brain4all_web
+            r#"name: xnobrain_web
 
 services:
   traefik:
     image: {traefik_image}
-    pull_policy: {pull_policy}
+    pull_policy: always
     command:
       - --api.dashboard=false
-      - --providers.docker=true
-      - --providers.docker.exposedbydefault=false
-      - --providers.docker.network=brain4all_web_edge
+      - --providers.file.filename=/etc/traefik/dynamic.yaml
+      - --providers.file.watch=true
       - --entrypoints.web.address=:5152
     ports:
       - "127.0.0.1:{port}:5152"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik-dynamic.yaml:/etc/traefik/dynamic.yaml:ro
     networks:
       - edge
     labels:
-      - brain4all.install-id=brain4all_web
+      - xnobrain.install-id=xnobrain_web
     restart: unless-stopped
 
-  frontend:
-    image: {frontend_image}
-    pull_policy: {pull_policy}
+  xnobrain:
+    image: {xnobrain_image}
+    pull_policy: always
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.brain4all-web-app-ui.rule=PathPrefix(`/`)
-      - traefik.http.routers.brain4all-web-app-ui.entrypoints=web
-      - traefik.http.routers.brain4all-web-app-ui.priority=1
-      - traefik.http.services.brain4all-web-app-ui.loadbalancer.server.port=8080
-      - brain4all.install-id=brain4all_web
-      - brain4all.web-auth-base-url={auth_base_url}
-      - brain4all.web-auth-mode={auth_mode}
-      - brain4all.web-auth-provider={auth_provider}
+      - xnobrain.install-id=xnobrain_web
+      - xnobrain.web-auth-base-url={auth_base_url}
+      - xnobrain.web-auth-mode={auth_mode}
+      - xnobrain.web-auth-provider={auth_provider}
     networks:
       - edge
     restart: unless-stopped
 
-  runtime:
-    image: {runtime_image}
-    pull_policy: {pull_policy}
+  control:
+    image: {control_image}
+    pull_policy: always
     user: "0:0"
     cpus: 4.0
     mem_limit: 4G
@@ -67,21 +56,16 @@ services:
       NINE_ROUTER_INTERNAL_SECRET: "{internal_secret}"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: 8642
-      DATA_DIR: /opt/data/brain4all
+      DATA_DIR: /opt/data/xnobrain
       DEVELOPMENT_ENVIRONMENT: production
-      SERVICE_NAME: runtime
+      SERVICE_NAME: xnobrain-control
       OTEL_ENABLED: "false"
     volumes:
-      - brain4all_data:/opt/data
+      - xnobrain_data:/opt/data
     extra_hosts:
       - host.docker.internal:host-gateway
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.brain4all-web-app-api.rule=PathPrefix(`/api`) || PathPrefix(`/internal`)
-      - traefik.http.routers.brain4all-web-app-api.entrypoints=web
-      - traefik.http.routers.brain4all-web-app-api.priority=100
-      - traefik.http.services.brain4all-web-app-api.loadbalancer.server.port=8642
-      - brain4all.install-id=brain4all_web
+      - xnobrain.install-id=xnobrain_web
     networks:
       - edge
       - control
@@ -94,25 +78,50 @@ services:
 
 networks:
   edge:
-    name: brain4all_web_edge
+    name: xnobrain_web_edge
   control:
-    name: brain4all_web_control
+    name: xnobrain_web_control
     internal: true
 
 volumes:
-  brain4all_data:
-    name: brain4all_web_data
+  xnobrain_data:
+    name: xnobrain_web_data
 "#,
             traefik_image = self.manifest.images.traefik.reference,
-            frontend_image = self.manifest.images.frontend.reference,
-            runtime_image = self.manifest.images.runtime.reference,
+            xnobrain_image = self.manifest.images.xnobrain.reference,
+            control_image = self.manifest.images.control.reference,
             auth_base_url = self.manifest.web_auth.base_url,
             auth_mode = self.manifest.web_auth.mode,
             auth_provider = self.manifest.web_auth.provider,
-            pull_policy = pull_policy,
             port = self.port,
             internal_secret = self.internal_secret,
         )
+    }
+
+    pub fn render_traefik_dynamic(&self) -> String {
+        r#"http:
+  routers:
+    xnobrain-web-app-api:
+      rule: PathPrefix(`/api`) || PathPrefix(`/internal`)
+      entryPoints: [web]
+      priority: 100
+      service: xnobrain-control
+    xnobrain-web-app-ui:
+      rule: PathPrefix(`/`)
+      entryPoints: [web]
+      priority: 1
+      service: xnobrain-web
+  services:
+    xnobrain-control:
+      loadBalancer:
+        servers:
+          - url: http://control:8642
+    xnobrain-web:
+      loadBalancer:
+        servers:
+          - url: http://xnobrain:8080
+"#
+        .to_owned()
     }
 }
 
@@ -134,16 +143,25 @@ mod tests {
         assert_eq!(compose.matches("    ports:\n").count(), 1);
         assert!(compose.contains("127.0.0.1:6200:5152"));
         assert!(!compose.contains("8642:8642"));
-        assert!(!compose.contains("20128:20128"));
         assert!(compose.contains("--api.dashboard=false"));
-        assert!(compose.contains("--providers.docker.exposedbydefault=false"));
-        assert!(compose.contains("brain4all_web_data"));
-        assert!(compose.contains("brain4all-web-app-ui"));
-        assert!(compose.contains("brain4all-web-app-api"));
-        assert!(compose.contains("brain4all.web-auth-base-url=https://api.dev.xnoquant.io"));
-        assert!(compose.contains("brain4all.web-auth-mode=required"));
-        assert!(compose.contains("brain4all.web-auth-provider=xno-firebase"));
-        assert!(!compose.contains("routers.brain4all-ui"));
-        assert!(!compose.contains("routers.brain4all-api"));
+        assert!(compose.contains("--providers.file.filename=/etc/traefik/dynamic.yaml"));
+        assert!(!compose.contains("/var/run/docker.sock"));
+        assert!(compose.contains("xnobrain_web_data"));
+        assert!(compose.contains("xnobrain.web-auth-base-url=https://api.dev.xnoquant.io"));
+        assert!(compose.contains("xnobrain.web-auth-mode=required"));
+        assert!(compose.contains("xnobrain.web-auth-provider=xno-firebase"));
+        assert_eq!(compose.matches("pull_policy: always").count(), 3);
+        assert!(!compose.contains("build:"));
+
+        let dynamic = ComposeSpec {
+            manifest: &manifest,
+            port: 6200,
+            internal_secret: "test-secret",
+        }
+        .render_traefik_dynamic();
+        assert!(dynamic.contains("xnobrain-web-app-ui"));
+        assert!(dynamic.contains("xnobrain-web-app-api"));
+        assert!(dynamic.contains("http://control:8642"));
+        assert!(dynamic.contains("http://xnobrain:8080"));
     }
 }

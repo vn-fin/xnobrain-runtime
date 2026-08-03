@@ -4,6 +4,15 @@ import react from '@vitejs/plugin-react'
 const host = process.env.TAURI_DEV_HOST
 
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_XNOBRAIN_APP_NAME': JSON.stringify(
+      process.env.XNOBRAIN_APP_NAME?.trim() || 'XNOBrain',
+    ),
+    'import.meta.env.VITE_XNOBRAIN_APP_DESCRIPTION': JSON.stringify(
+      process.env.XNOBRAIN_APP_DESCRIPTION?.trim()
+        || 'Install and run the private XNOBrain Docker Web workspace.',
+    ),
+  },
   plugins: [react()],
   clearScreen: false,
   server: {

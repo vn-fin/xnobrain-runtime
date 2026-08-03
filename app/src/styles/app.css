@@ -89,7 +89,10 @@ main { min-width: 0; display: flex; }
 .inline-notice svg { width: 18px; }
 .inline-notice strong { display: block; font-size: 12px; margin-bottom: 2px; }
 .inline-notice p { margin: 0; font-size: 12px; line-height: 1.5; }
-.text-action { display: inline-flex; align-items: center; gap: 5px; margin: 7px 0 0; padding: 0; border: 0; background: transparent; color: inherit; font-weight: 700; cursor: pointer; }
+.inline-notice p > span:first-child { display: block; }
+.notice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-top: 7px; }
+.text-action { display: inline-flex; align-items: center; gap: 5px; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; font-weight: 700; cursor: pointer; }
+.text-action:disabled { cursor: wait; opacity: .65; }
 .text-action svg { width: 13px; }
 .docker-banner { display: flex; align-items: center; gap: 15px; padding: 15px 17px; border-radius: 13px; background: #f0f7f4; margin-bottom: 17px; }
 .docker-mark { width: 43px; height: 43px; display: grid; place-items: center; color: var(--green); background: white; border-radius: 11px; }
@@ -308,6 +311,25 @@ main { min-width: 0; display: flex; }
 .log-error { color: #f0a1a1; }
 .log-note { margin: 10px 0 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; }
 .log-note svg { width: 14px; color: var(--green); }
+
+@media (max-height: 700px) and (min-width: 761px) {
+  .app-shell { min-height: calc(100vh - 16px); margin: 8px auto; }
+  .app-layout { min-height: calc(100vh - 82px); }
+  .step-rail { padding: 20px 22px 16px; }
+  .step-rail li { height: 40px; }
+  .step-rail li:not(:last-child)::after { top: 31px; height: 18px; }
+  .rail-note { padding: 10px; }
+  .screen { padding: 24px 50px 16px; }
+  .screen-header { margin-bottom: 16px; }
+  .screen-header h1 { font-size: 27px; margin-bottom: 5px; }
+  .choice-card { min-height: 190px; }
+  .screen-actions { min-height: 42px; padding-top: 14px; }
+  .review-card > div { min-height: 42px; }
+  .inline-notice { margin-top: 12px; padding: 11px 13px; }
+  .port-visual { margin-bottom: 14px; }
+  .port-options label { min-height: 55px; }
+  .port-status { margin-top: 8px; }
+}
 
 @media (max-width: 760px) {
   body { background: white; }

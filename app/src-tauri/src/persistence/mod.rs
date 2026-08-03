@@ -54,6 +54,13 @@ impl StateStore {
         Ok(path)
     }
 
+    pub fn write_traefik_dynamic(&self, contents: &str) -> InstallerResult<PathBuf> {
+        fs::create_dir_all(&self.root).map_err(|error| InstallerError::io("create", &error))?;
+        let path = self.root.join("traefik-dynamic.yaml");
+        atomic_write(&path, contents.as_bytes())?;
+        Ok(path)
+    }
+
     pub fn clear_state(&self) -> InstallerResult<()> {
         let path = self.root.join("install-state.json");
         match fs::remove_file(path) {
