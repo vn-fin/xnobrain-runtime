@@ -8,6 +8,43 @@ function abortError(value: unknown) {
   return value instanceof DOMException && value.name === 'AbortError';
 }
 
+function sameMessage(left: ChatMessage, right: ChatMessage) {
+  if (left.role !== right.role || left.content.trim() !== right.content.trim()) return false;
+  if (left.timestamp === undefined || right.timestamp === undefined) return true;
+  return Math.abs(left.timestamp - right.timestamp) <= 60;
+}
+
+/** Keep optimistic stream messages only until their persisted copies arrive. */
+export function mergeConversationMessages(server: ChatMessage[], local: ChatMessage[]) {
+  if (!local.length) return server;
+  const available = server.map((_, index) => index);
+  const unmatched = local.filter((message) => {
+    // An empty streaming assistant is only a placeholder, never persisted content.
+    if (message.streaming && !message.content.trim()) return true;
+    let matchAt = -1;
+    for (let index = available.length - 1; index >= 0; index -= 1) {
+      if (sameMessage(server[available[index]], message)) {
+        matchAt = index;
+        break;
+      }
+    }
+    if (matchAt < 0) return true;
+    available.splice(matchAt, 1);
+    return false;
+  });
+  return unmatched.length ? [...server, ...unmatched] : server;
+}
+
+/** Replace a partially persisted current run with its live, updating version. */
+export function mergeConversationRuns(server: ChatRun[], local: ChatRun[], localMessages: ChatMessage[]) {
+  if (!local.length) return server;
+  const sentAt = localMessages.find((message) => message.role === 'user')?.timestamp;
+  const historical = sentAt === undefined
+    ? server.filter((run) => !local.some((live) => live.id === run.id))
+    : server.filter((run) => run.startedAt === undefined || run.startedAt < sentAt - 1);
+  return [...historical, ...local];
+}
+
 export function useConversation(agentId: string, conversationId: string) {
   const key = `${agentId}::${conversationId}`;
   const [serverMessages, setServerMessages] = useState<ChatMessage[]>([]);
@@ -139,12 +176,12 @@ export function useConversation(agentId: string, conversationId: string) {
   };
 
   const messages = useMemo(
-    () => (session.localMessages.length ? [...serverMessages, ...session.localMessages] : serverMessages),
+    () => mergeConversationMessages(serverMessages, session.localMessages),
     [serverMessages, session.localMessages],
   );
   const runs = useMemo(
-    () => (session.runs.length ? [...serverRuns, ...session.runs] : serverRuns),
-    [serverRuns, session.runs],
+    () => mergeConversationRuns(serverRuns, session.runs, session.localMessages),
+    [serverRuns, session.runs, session.localMessages],
   );
 
   return {

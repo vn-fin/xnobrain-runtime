@@ -1127,6 +1127,14 @@ class AgentManager:
                 yield self._chat_sse_done(chat_id, created, model, conversation_id)
                 return
 
+        title_task: asyncio.Task[str] | None = None
+        if self._conversation_has_default_title(profile_dir, conversation_id):
+            # Run the tiny title request beside the chat so it adds no serial
+            # model wait to the normal completion path.
+            title_task = asyncio.create_task(
+                self._summarize_conversation_title(prepared.get("message"), model)
+            )
+
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
         state: dict[str, Any] = {
@@ -1438,10 +1446,12 @@ class AgentManager:
                         "message": str(result.get("error") or "agent command failed"),
                     })
                 else:
+                    suggested_title = await title_task if title_task is not None else None
                     conversation_title = self._auto_title_conversation(
                         profile_dir,
                         conversation_id,
                         prepared.get("message"),
+                        suggested_title=suggested_title,
                     )
                     yield self._sse_data({
                         "event": "run.completed",
@@ -1502,6 +1512,8 @@ class AgentManager:
             })
             yield b"data: [DONE]\n\n"
         finally:
+            if title_task is not None and not title_task.done():
+                title_task.cancel()
             self._active_runs.pop(run_id, None)
             self._stopped_runs.discard(run_id)
 
@@ -2301,7 +2313,7 @@ class AgentManager:
         return None
 
     def _title_from_first_message(self, message: Any) -> str:
-        """Build a short, stable session title without another model request."""
+        """Build a short, stable fallback title from the first message."""
         candidates = []
         for line in str(message or "").splitlines():
             text = re.sub(r"^\s*(?:[-*+#>]|[0-9]+[.)])\s*", "", line).strip()
@@ -2312,16 +2324,46 @@ class AgentManager:
             if text:
                 candidates.append(text)
         title = candidates[0] if candidates else "Conversation"
-        if len(title) > 64:
-            shortened = title[:61].rsplit(" ", 1)[0].rstrip(".,:;- ")
-            title = (shortened or title[:61]).rstrip() + "…"
+        if len(title) > 48:
+            shortened = title[:45].rsplit(" ", 1)[0].rstrip(".,:;- ")
+            title = (shortened or title[:45]).rstrip() + "…"
         return title[0].upper() + title[1:] if title else "Conversation"
+
+    def _conversation_has_default_title(self, profile_dir: Path, session_id: str) -> bool:
+        with self._conversation_lock:
+            session = self._session(profile_dir, session_id)
+            current = str((session or {}).get("title") or "").strip()
+            return bool(DEFAULT_CONVERSATION_TITLE_RE.fullmatch(current))
+
+    def _clean_generated_title(self, value: Any) -> str:
+        title = re.sub(r"\s+", " ", str(value or "")).strip(" \t\r\n\"'`*_#")
+        title = re.sub(r"^(?:title|conversation title)\s*:\s*", "", title, flags=re.I)
+        title = title.strip(" \t\r\n\"'`*_#")
+        title = title.rstrip(".!?:;, -")
+        words = title.split()
+        if len(words) > 7:
+            title = " ".join(words[:7])
+        if len(title) > 48:
+            title = title[:48].rsplit(" ", 1)[0].rstrip(".,:;- ")
+        return title
+
+    async def _summarize_conversation_title(self, message: Any, model: str) -> str:
+        try:
+            generated = await asyncio.wait_for(
+                self.nine_router.generate_conversation_title(str(message or ""), model),
+                timeout=20,
+            )
+            return self._clean_generated_title(generated) or self._title_from_first_message(message)
+        except Exception:
+            return self._title_from_first_message(message)
 
     def _auto_title_conversation(
         self,
         profile_dir: Path,
         session_id: str,
         message: Any,
+        *,
+        suggested_title: str | None = None,
     ) -> str | None:
         """Rename a default session after its first successful chat turn."""
         with self._conversation_lock:
@@ -2329,7 +2371,7 @@ class AgentManager:
             current = str((session or {}).get("title") or "").strip()
             if not DEFAULT_CONVERSATION_TITLE_RE.fullmatch(current):
                 return current or None
-            base = self._title_from_first_message(message)
+            base = self._clean_generated_title(suggested_title) or self._title_from_first_message(message)
             for index in range(1, 101):
                 suffix = "" if index == 1 else f" {index}"
                 candidate = base[: max(1, 256 - len(suffix))].rstrip() + suffix

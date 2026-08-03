@@ -160,6 +160,7 @@ async function execute(key: string, text: string) {
 
   const userId = `local-user-${randomId()}`;
   const assistantId = `local-assistant-${randomId()}`;
+  const sentAt = Date.now() / 1000;
   const base = getSnapshot(key);
   patch(key, {
     status: 'streaming',
@@ -168,8 +169,8 @@ async function execute(key: string, text: string) {
     events: [],
     localMessages: [
       ...base.localMessages,
-      { id: userId, role: 'user', content: text },
-      { id: assistantId, role: 'assistant', content: '', streaming: true },
+      { id: userId, role: 'user', content: text, timestamp: sentAt },
+      { id: assistantId, role: 'assistant', content: '', streaming: true, timestamp: sentAt },
     ],
   });
 

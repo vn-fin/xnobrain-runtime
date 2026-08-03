@@ -556,13 +556,56 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 "This must not replace a manual title.",
             )
 
-            self.assertEqual(first_title, "Please summarize today's market news and key risks.")
-            self.assertEqual(second_title, "Please summarize today's market news and key risks. 2")
+            self.assertEqual(first_title, "Please summarize today's market news and key…")
+            self.assertEqual(second_title, "Please summarize today's market news and key… 2")
             self.assertEqual(custom_title, "Pinned title")
             self.assertEqual(
                 manager.get_conversation("news", first["id"])["conversation"]["title"],
                 first_title,
             )
+
+    def test_generated_conversation_title_is_clean_short_and_unique(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            manager.create_agent({"name": "news"})
+            first = manager.create_conversation("news", {})["conversation"]
+            second = manager.create_conversation("news", {})["conversation"]
+            profile_dir = manager._profile_dir("news")
+
+            first_title = manager._auto_title_conversation(
+                profile_dir,
+                first["id"],
+                "A long first prompt used only as fallback",
+                suggested_title='Title: "Iran US News Update."',
+            )
+            second_title = manager._auto_title_conversation(
+                profile_dir,
+                second["id"],
+                "A long first prompt used only as fallback",
+                suggested_title='Title: "Iran US News Update."',
+            )
+
+            self.assertEqual(first_title, "Iran US News Update")
+            self.assertEqual(second_title, "Iran US News Update 2")
+
+    async def test_title_summary_falls_back_when_router_fails(self) -> None:
+        manager = AgentManager()
+        with patch.object(
+            manager.nine_router,
+            "generate_conversation_title",
+            side_effect=NineRouterAPIError("offline"),
+        ):
+            title = await manager._summarize_conversation_title(
+                "Please summarize today's market news and key risks.",
+                "auto",
+            )
+
+        self.assertEqual(title, "Please summarize today's market news and key…")
 
     def test_conversation_stream_does_not_create_a_missing_session(self) -> None:
         with TemporaryDirectory() as temp_dir:
