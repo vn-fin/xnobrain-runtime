@@ -3,7 +3,7 @@
   "release": "0.1.0-test",
   "default_host_port": 5152,
   "minimum_disk_bytes": 8589934592,
-  "health_path": "/api/v1/health",
+  "health_path": "/api/brain/v1/health",
   "health_timeout_seconds": 180,
   "web_build": {
     "api_base_url": "https://public.dev.xno.vn",

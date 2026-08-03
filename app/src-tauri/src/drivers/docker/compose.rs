@@ -73,7 +73,7 @@ services:
       - edge
       - runtime
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/api/v1/health',timeout=2)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/api/brain/v1/health',timeout=2)"]
       interval: 15s
       timeout: 3s
       retries: 20
@@ -165,6 +165,7 @@ mod tests {
         ));
         assert!(!compose.contains("  control:"));
         assert_eq!(compose.matches("pull_policy: always").count(), 3);
+        assert!(compose.contains("http://127.0.0.1:8642/api/brain/v1/health"));
         assert!(!compose.contains("build:"));
 
         let dynamic = ComposeSpec {

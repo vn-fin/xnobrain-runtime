@@ -336,17 +336,34 @@ fn ensure_single_traefik_port(compose: &str, port: u16) -> InstallerResult<()> {
 }
 
 fn health_url(state: &InstallState) -> String {
-    format!("{}/api/v1/health", state.web_url)
+    format!("{}/api/brain/v1/health", state.web_url)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ensure_single_traefik_port;
+    use super::{ensure_single_traefik_port, health_url};
+    use crate::domain::InstallState;
 
     #[test]
     fn ingress_guard_rejects_missing_or_duplicate_ports() {
         assert!(ensure_single_traefik_port("services: {}", 5152).is_err());
         let duplicate = "    ports:\n      - 127.0.0.1:5152:5152\n    ports:\n";
         assert!(ensure_single_traefik_port(duplicate, 5152).is_err());
+    }
+
+    #[test]
+    fn runtime_health_uses_the_public_unauthenticated_route() {
+        let state = InstallState {
+            schema_version: 1,
+            release: "test".into(),
+            port: 5152,
+            web_url: "http://127.0.0.1:5152".into(),
+            compose_path: "docker-web.compose.yaml".into(),
+            installed: true,
+        };
+        assert_eq!(
+            health_url(&state),
+            "http://127.0.0.1:5152/api/brain/v1/health"
+        );
     }
 }
