@@ -30,7 +30,9 @@ import { systemApi, type ImportReport } from './features/system/api';
 import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
 import { useAuth } from './auth';
+import { agentsApi } from './api/agents';
 import { sandboxApi } from './api/sandbox';
+import { workspaceApi } from './api/workspace';
 import type { Agent } from './types';
 
 export default function App() {
@@ -484,6 +486,7 @@ export default function App() {
             onRetry={conversation.refresh}
             onSelectModel={(provider, model) => assistants.updateAgent(activeAgent.id, { provider, model })}
             onTestAgent={() => void assistants.testAgent(activeAgent.id)}
+            onOpenSettings={() => setSettingsOpen(true)}
             onOpenRuntime={() => {
               router.setRightView('runtime');
               setRightPanelOpen(true);
@@ -541,6 +544,20 @@ export default function App() {
           onDeleteCron={crons.deleteCron}
           onCreateAgent={() => setCreateAgentOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
+          onSaveSettings={handleUpdateAgent}
+          onLoadContext={async () => {
+            const [detail, instructions] = await Promise.all([
+              agentsApi.detail(activeAgent.id),
+              workspaceApi.read(activeAgent.id, 'AGENTS.md'),
+            ]);
+            return { soul: detail.soul, instructions };
+          }}
+          onSaveContext={async ({ soul, instructions }) => {
+            await Promise.all([
+              agentsApi.updateSoul(activeAgent.id, soul),
+              workspaceApi.write(activeAgent.id, 'AGENTS.md', instructions),
+            ]);
+          }}
           onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}
           workspaceOpenRequest={workspaceOpenRequest}
           workspace={workspace}
@@ -561,7 +578,25 @@ export default function App() {
       {createAgentOpen && <CreateAgentModal onCreate={handleCreateAgent} onImported={handleImportedProfile} onClose={() => setCreateAgentOpen(false)} />}
 
       {settingsOpen && (
-        <AgentSettingsModal agent={activeAgent} providers={runtimeProviders} onSave={handleUpdateAgent} onClose={() => setSettingsOpen(false)} />
+        <AgentSettingsModal
+          agent={activeAgent}
+          providers={runtimeProviders}
+          onSave={handleUpdateAgent}
+          onLoadContext={async () => {
+            const [detail, instructions] = await Promise.all([
+              agentsApi.detail(activeAgent.id),
+              workspaceApi.read(activeAgent.id, 'AGENTS.md'),
+            ]);
+            return { soul: detail.soul, instructions };
+          }}
+          onSaveContext={async ({ soul, instructions }) => {
+            await Promise.all([
+              agentsApi.updateSoul(activeAgent.id, soul),
+              workspaceApi.write(activeAgent.id, 'AGENTS.md', instructions),
+            ]);
+          }}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
 
       {accountOpen && auth.sessionActive && (

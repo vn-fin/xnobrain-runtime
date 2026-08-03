@@ -25,6 +25,7 @@ export type AgentDTO = {
   id?: string;
   metadata?: { config?: AgentConfigDTO };
   name?: string;
+  soul?: string;
   status?: string;
   title?: string;
   updated_at?: string;

@@ -89,6 +89,7 @@
     "workspace": "Không gian làm việc",
     "skills": "Kỹ năng",
     "runtime": "Runtime",
+    "settings": "Cài đặt",
     "newFile": "Tệp mới",
     "newFolder": "Thư mục mới",
     "upload": "Tải tệp lên (hỗ trợ kéo & thả)",
@@ -212,7 +213,8 @@
     "back": "Quay lại",
     "confirmSave": "Xác nhận lưu",
     "deleteAgentTitle": "Xóa tác nhân",
-    "deleteAgentMsg": "Xóa “{{name}}”? Tất cả phiên, tệp trong không gian làm việc, cấu hình, kỹ năng, bộ nhớ và tác vụ Kanban được giao sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
+    "deleteAgentMsg": "Xóa “{{name}}”? Tất cả phiên, tệp trong không gian làm việc, cấu hình, kỹ năng, bộ nhớ và tác vụ Kanban được giao sẽ bị xóa vĩnh viễn. Không thể hoàn tác.",
+    "personalityInstructions": "Tính cách & hướng dẫn"
   },
   "cron": {
     "title": "Công việc định kỳ",

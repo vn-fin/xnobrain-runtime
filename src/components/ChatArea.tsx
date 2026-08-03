@@ -23,6 +23,7 @@ import {
   ThumbsUp,
   Trash2,
   UploadCloud,
+  Wrench,
   X,
 } from 'lucide-react';
 import { TreeIcon } from './common';
@@ -106,6 +107,7 @@ export function ChatArea({
   onResolveRunApproval,
   onRetry,
   onSelectModel,
+  onOpenSettings,
   onOpenRuntime,
   onSelectAgent,
   onTestAgent,
@@ -141,6 +143,7 @@ export function ChatArea({
   onResolveRunApproval: (runId: string, choice: RunApprovalChoice) => void | Promise<void>;
   onRetry: () => void;
   onSelectModel: (providerId: string, model: string) => void | Promise<void>;
+  onOpenSettings: () => void;
   onOpenRuntime: () => void;
   onSelectAgent: (agent: Agent) => void;
   onTestAgent: () => void;
@@ -567,8 +570,12 @@ export function ChatArea({
             <MoreHorizontal size={18} />
           </button>
           <button className="top-action-item" title={t('agents.runtimeConfig')} onClick={() => { setMobileActionsOpen(false); onOpenRuntime(); }}>
-            <Settings2 size={17} />
+            <Wrench size={17} />
             <span className="top-action-label">{t('agents.runtimeConfig')}</span>
+          </button>
+          <button className="top-action-item" title={t('agents.settings')} onClick={() => { setMobileActionsOpen(false); onOpenSettings(); }}>
+            <Settings2 size={17} />
+            <span className="top-action-label">{t('agents.settings')}</span>
           </button>
           <button className="top-action-item" title={t('agents.test')} onClick={() => { setMobileActionsOpen(false); onTestAgent(); }}>
             <Gauge size={17} />

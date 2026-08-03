@@ -231,7 +231,9 @@ class PlatformService:
         """Expose and repair the root Hermes profile as Big Brother."""
         profile = self.config.root_profile
         profile.mkdir(parents=True, exist_ok=True)
-        (profile / "workspace").mkdir(parents=True, exist_ok=True)
+        workspace = profile / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        self.agents._ensure_workspace_agents(profile, workspace)
         metadata_path = profile / "agent.json"
         metadata = {}
         if metadata_path.is_file():
@@ -411,7 +413,10 @@ class PlatformService:
         return self._agent_dto(raw)
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
-        return self._agent_dto(self.agents.describe_agent(agent_id))
+        return self._agent_dto(
+            self.agents.describe_agent(agent_id),
+            include_soul=True,
+        )
 
     @staticmethod
     def _is_big_brother(agent_id: str) -> bool:
@@ -1629,7 +1634,11 @@ class PlatformService:
         return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Session"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tool_call_count") or item.get("tools") or 0), "created_at": item.get("created_at") or item.get("started_at"), "updated_at": item.get("last_active_at") or item.get("updated_at") or item.get("ended_at") or item.get("started_at") or item.get("created_at")}
 
     @staticmethod
-    def _agent_dto(item: Mapping[str, Any]) -> dict[str, Any]:
+    def _agent_dto(
+        item: Mapping[str, Any],
+        *,
+        include_soul: bool = False,
+    ) -> dict[str, Any]:
         metadata = dict(item.get("metadata") or {})
         config = dict(item.get("config") or {})
         name = str(item.get("name") or item.get("profile_name") or "")
@@ -1638,7 +1647,7 @@ class PlatformService:
             "display_name": display_name,
             "description": str(metadata.get("description") or ""),
         }
-        return {
+        result = {
             "id": name,
             "name": display_name,
             "display_name": display_name,
@@ -1656,6 +1665,9 @@ class PlatformService:
             "updated_at": metadata.get("updated_at"),
             "metadata": public_metadata,
         }
+        if include_soul:
+            result["soul"] = str(item.get("soul") or "")
+        return result
 
 
 EXPECTED_ERRORS = (

@@ -55,6 +55,10 @@ export const agentsApi = {
     });
   },
 
+  updateSoul(id: string, soul: string): Promise<void> {
+    return agentsApi.updateConfig(id, { soul });
+  },
+
   getMcp(id: string): Promise<MCPConfig> {
     return request<MCPConfig>(`${ROOT}/agents-mcp/${encoded(id)}`);
   },

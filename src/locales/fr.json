@@ -87,6 +87,7 @@
     "workspace": "Espace de travail",
     "skills": "Compétences",
     "runtime": "Exécution",
+    "settings": "Paramètres",
     "newFile": "Nouveau fichier",
     "newFolder": "Nouveau dossier",
     "upload": "Téléverser des fichiers (glisser-déposer pris en charge)",
@@ -210,7 +211,8 @@
     "back": "Retour",
     "confirmSave": "Confirmer l'enregistrement",
     "deleteAgentTitle": "Supprimer l'agent",
-    "deleteAgentMsg": "Supprimer « {{name}} » ? Les sessions, fichiers de l’espace de travail, configurations, compétences, mémoires et tâches Kanban assignées seront définitivement supprimés. Cette action est irréversible."
+    "deleteAgentMsg": "Supprimer « {{name}} » ? Les sessions, fichiers de l’espace de travail, configurations, compétences, mémoires et tâches Kanban assignées seront définitivement supprimés. Cette action est irréversible.",
+    "personalityInstructions": "Personnalité et instructions"
   },
   "cron": {
     "title": "Tâches cron",

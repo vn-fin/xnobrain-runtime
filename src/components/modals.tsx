@@ -251,18 +251,28 @@ export function CreateAgentModal({
   );
 }
 
+export type AgentContext = { soul: string; instructions: string };
+
 export function AgentSettingsModal({
   agent,
   providers,
   onSave,
+  onLoadContext,
+  onSaveContext,
   onClose,
+  embedded = false,
 }: {
   agent: Agent;
   providers: ProviderConnector[];
   onSave: (updates: Partial<Agent>) => void;
+  onLoadContext: () => Promise<AgentContext>;
+  onSaveContext: (context: AgentContext) => Promise<void>;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
+  const tabsId = useId();
+  const [tab, setTab] = useState<'general' | 'context'>('general');
   const [title, setTitle] = useState(agent.title);
   const [description, setDescription] = useState(agent.description);
   const [provider, setProvider] = useState(agent.provider);
@@ -270,78 +280,224 @@ export function AgentSettingsModal({
   const [reasoningEffort, setReasoningEffort] = useState(agent.reasoningEffort);
   const [approvalMode, setApprovalMode] = useState<Agent['approvalMode']>(agent.approvalMode);
   const [confirming, setConfirming] = useState(false);
+  const [contextStatus, setContextStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [contextSaving, setContextSaving] = useState(false);
+  const [contextError, setContextError] = useState('');
+  const [contextSaved, setContextSaved] = useState(false);
+  const [savedContext, setSavedContext] = useState<AgentContext | null>(null);
+  const [soul, setSoul] = useState('');
+  const [instructions, setInstructions] = useState('');
 
+  const contextDirty = savedContext !== null
+    && (soul !== savedContext.soul || instructions !== savedContext.instructions);
   const save = () => onSave({ title, description, provider, model, reasoningEffort, approvalMode });
+  const loadContext = async () => {
+    setContextStatus('loading');
+    setContextError('');
+    setContextSaved(false);
+    try {
+      const context = await onLoadContext();
+      setSoul(context.soul);
+      setInstructions(context.instructions);
+      setSavedContext(context);
+      setContextStatus('ready');
+    } catch (value) {
+      setContextError(value instanceof Error ? value.message : 'Could not load context.');
+      setContextStatus('error');
+    }
+  };
+  const saveContext = async () => {
+    if (!contextDirty || contextSaving) return;
+    const context = { soul, instructions };
+    setContextSaving(true);
+    setContextError('');
+    setContextSaved(false);
+    try {
+      await onSaveContext(context);
+      setSavedContext(context);
+      setContextSaved(true);
+    } catch (value) {
+      setContextError(value instanceof Error ? value.message : 'Could not save context.');
+    } finally {
+      setContextSaving(false);
+    }
+  };
+  const switchTab = (next: 'general' | 'context') => {
+    setTab(next);
+    setConfirming(false);
+    if (next === 'context' && contextStatus === 'idle') void loadContext();
+  };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="app-modal" role="dialog" aria-modal="true" aria-label={t('modals.agentSettings')} onClick={(e) => e.stopPropagation()}>
-        <div className="app-modal-head">
-          <strong>{t('modals.agentSettings')}</strong>
-          <button className="icon-button" onClick={onClose} title={t('common.close')}>
-            <X size={17} />
+    <div className={embedded ? 'agent-settings-embedded' : 'modal-overlay'} onClick={embedded ? undefined : onClose}>
+      <div
+        className={embedded ? 'agent-settings-surface' : 'app-modal agent-settings-modal'}
+        role={embedded ? undefined : 'dialog'}
+        aria-modal={embedded ? undefined : true}
+        aria-label={embedded ? undefined : t('modals.agentSettings')}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {!embedded && (
+          <div className="app-modal-head">
+            <strong>{t('modals.agentSettings')}</strong>
+            <button className="icon-button" onClick={onClose} title={t('common.close')}>
+              <X size={17} />
+            </button>
+          </div>
+        )}
+
+        <div className="agent-settings-tabs" role="tablist" aria-label="Agent settings sections">
+          <button
+            id={`${tabsId}-general-tab`}
+            className={tab === 'general' ? 'agent-settings-tab active' : 'agent-settings-tab'}
+            role="tab"
+            aria-selected={tab === 'general'}
+            aria-controls={`${tabsId}-general-panel`}
+            onClick={() => switchTab('general')}
+          >
+            General
+          </button>
+          <button
+            id={`${tabsId}-context-tab`}
+            className={tab === 'context' ? 'agent-settings-tab active' : 'agent-settings-tab'}
+            role="tab"
+            aria-selected={tab === 'context'}
+            aria-controls={`${tabsId}-context-panel`}
+            onClick={() => switchTab('context')}
+          >
+            {t('modals.personalityInstructions', { defaultValue: 'Personality & instructions' })}
           </button>
         </div>
 
-        <p className="app-modal-sub">PATCH /agents/{'{id}'}/metadata · PATCH /agents-configs/{'{id}'}</p>
+        {tab === 'general' ? (
+          <div id={`${tabsId}-general-panel`} role="tabpanel" aria-labelledby={`${tabsId}-general-tab`}>
+            <p className="app-modal-sub">PATCH /agents/{'{id}'}/metadata · PATCH /agents-configs/{'{id}'}</p>
 
-        <div className="modal-form">
-          <label>
-            {t('modals.settingsTitle')}
-            <input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </label>
-          <label>
-            {t('modals.description')}
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
-          </label>
-          <div className="modal-form-row">
-            <label>
-              {t('modals.provider')}
-              <select value={provider} onChange={(e) => setProvider(e.target.value)}>
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>{p.display_name}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {t('modals.model')}
-              <input value={model} onChange={(e) => setModel(e.target.value)} />
-            </label>
-          </div>
-          <div className="modal-form-row">
-            <label>
-              {t('modals.reasoningEffort')}
-              <select value={reasoningEffort} onChange={(e) => setReasoningEffort(e.target.value)}>
-                <option value="low">low</option>
-                <option value="medium">medium</option>
-                <option value="high">high</option>
-              </select>
-            </label>
-            <label>
-              {t('modals.approvalMode')}
-              <select value={approvalMode} onChange={(e) => setApprovalMode(e.target.value as Agent['approvalMode'])}>
-                <option value="manual">manual</option>
-                <option value="auto">auto</option>
-              </select>
-            </label>
-          </div>
-        </div>
-
-        {confirming ? (
-          <div className="modal-confirm">
-            <span>{t('modals.saveConfirm', { name: title })}</span>
-            <div className="modal-actions">
-              <button className="conn-btn ghost" onClick={() => setConfirming(false)}>{t('modals.back')}</button>
-              <button className="conn-btn primary" onClick={save}>
-                <Check size={15} />
-                {t('modals.confirmSave')}
-              </button>
+            <div className="modal-form">
+              <label>
+                {t('modals.settingsTitle')}
+                <input value={title} onChange={(e) => setTitle(e.target.value)} />
+              </label>
+              <label>
+                {t('modals.description')}
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+              </label>
+              <div className="modal-form-row">
+                <label>
+                  {t('modals.provider')}
+                  <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>{p.display_name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  {t('modals.model')}
+                  <input value={model} onChange={(e) => setModel(e.target.value)} />
+                </label>
+              </div>
+              <div className="modal-form-row">
+                <label>
+                  {t('modals.reasoningEffort')}
+                  <select value={reasoningEffort} onChange={(e) => setReasoningEffort(e.target.value)}>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </label>
+                <label>
+                  {t('modals.approvalMode')}
+                  <select value={approvalMode} onChange={(e) => setApprovalMode(e.target.value as Agent['approvalMode'])}>
+                    <option value="manual">manual</option>
+                    <option value="auto">auto</option>
+                  </select>
+                </label>
+              </div>
             </div>
+
+            {confirming ? (
+              <div className="modal-confirm">
+                <span>{t('modals.saveConfirm', { name: title })}</span>
+                <div className="modal-actions">
+                  <button className="conn-btn ghost" onClick={() => setConfirming(false)}>{t('modals.back')}</button>
+                  <button className="conn-btn primary" onClick={save}>
+                    <Check size={15} />
+                    {t('modals.confirmSave')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="modal-actions">
+                <button className="conn-btn ghost" onClick={onClose}>{t('common.cancel')}</button>
+                <button className="conn-btn primary" onClick={() => setConfirming(true)}>{t('common.save')}</button>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="modal-actions">
-            <button className="conn-btn ghost" onClick={onClose}>{t('common.cancel')}</button>
-            <button className="conn-btn primary" onClick={() => setConfirming(true)}>{t('common.save')}</button>
+          <div
+            id={`${tabsId}-context-panel`}
+            className="agent-settings-context"
+            role="tabpanel"
+            aria-labelledby={`${tabsId}-context-tab`}
+          >
+            {contextStatus === 'loading' ? (
+              <div className="context-status" role="status">Loading context…</div>
+            ) : contextStatus === 'error' ? (
+              <div className="context-error" role="alert">
+                <span>{contextError}</span>
+                <button className="conn-btn ghost" onClick={() => void loadContext()}>Try again</button>
+              </div>
+            ) : (
+              <>
+                {contextError && <div className="context-error" role="alert">{contextError}</div>}
+                {contextSaved && <div className="context-success" role="status">Context saved.</div>}
+
+                <label className="context-editor-field">
+                  <span>
+                    <strong>Agent personality <small>(SOUL.md)</small></strong>
+                  </span>
+                  <textarea
+                    aria-label="Agent personality"
+                    value={soul}
+                    disabled={contextSaving}
+                    onChange={(event) => {
+                      setSoul(event.target.value);
+                      setContextSaved(false);
+                    }}
+                    rows={7}
+                  />
+                  <small>Defines the agent’s identity, tone, and behavioral principles.</small>
+                </label>
+
+                <label className="context-editor-field">
+                  <span>
+                    <strong>Workspace instructions <small>(AGENTS.md)</small></strong>
+                  </span>
+                  <textarea
+                    aria-label="Workspace instructions"
+                    value={instructions}
+                    disabled={contextSaving}
+                    onChange={(event) => {
+                      setInstructions(event.target.value);
+                      setContextSaved(false);
+                    }}
+                    rows={7}
+                  />
+                  <small>Defines how the agent works with files and deliverables in its workspace.</small>
+                </label>
+
+                <div className="modal-actions">
+                  <button className="conn-btn ghost" disabled={contextSaving} onClick={onClose}>{t('common.cancel')}</button>
+                  <button
+                    className="conn-btn primary"
+                    disabled={!contextDirty || contextSaving}
+                    onClick={() => void saveContext()}
+                  >
+                    {contextSaving ? 'Saving…' : 'Save context'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

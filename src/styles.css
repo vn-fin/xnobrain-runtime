@@ -3076,22 +3076,32 @@ body.col-resizing {
 
 .right-tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
   padding: 8px;
   border-bottom: 1px solid var(--border);
 }
 
 .right-tabs button {
-  height: 30px;
+  min-width: 0;
+  height: 44px;
+  padding: 4px 2px;
   border-radius: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
   text-transform: capitalize;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 3px;
+}
+
+.right-tabs button span {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .right-panel.open {
@@ -3128,6 +3138,7 @@ body.col-resizing {
   width: 34px;
   height: 36px;
   padding: 0;
+  flex-direction: row;
 }
 
 .right-panel.collapsed .right-tabs button span {
@@ -5678,6 +5689,151 @@ body.col-resizing {
   border-radius: 16px;
   background: var(--panel);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.agent-settings-modal {
+  width: min(680px, 100%);
+}
+
+.agent-settings-embedded {
+  min-height: 0;
+  overflow: auto;
+}
+
+.agent-settings-surface {
+  padding: 12px;
+}
+
+.agent-settings-embedded .agent-settings-tabs {
+  margin-top: 0;
+}
+
+.agent-settings-embedded .modal-form-row {
+  grid-template-columns: 1fr;
+}
+
+.agent-settings-embedded .context-editor-field textarea {
+  min-height: 180px;
+}
+
+.agent-settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 12px 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-settings-tab {
+  min-height: 38px;
+  padding: 0 14px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.agent-settings-tab:hover {
+  color: var(--text);
+}
+
+.agent-settings-tab.active {
+  border-bottom-color: var(--green);
+  color: var(--text);
+}
+
+.agent-settings-context {
+  display: grid;
+  gap: 14px;
+}
+
+.context-status,
+.context-error,
+.context-success {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--panel-2);
+  font-size: 12px;
+}
+
+.context-status {
+  justify-content: center;
+  min-height: 180px;
+}
+
+.context-error {
+  justify-content: space-between;
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, var(--panel));
+}
+
+.context-error .conn-btn {
+  flex: 0 0 auto;
+}
+
+.context-success {
+  border-color: color-mix(in srgb, var(--green) 35%, var(--border));
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 7%, var(--panel));
+}
+
+.context-editor-field {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.context-editor-field > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.context-editor-field > span strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.context-editor-field > span small {
+  color: var(--muted-2);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.context-editor-field textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 11px 12px;
+  resize: vertical;
+  border-radius: 9px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.context-editor-field > small {
+  color: var(--muted-2);
+  line-height: 1.4;
+}
+
+@media (max-width: 600px) {
+  .agent-settings-modal {
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+  }
+
+  .context-editor-field textarea {
+    min-height: 120px;
+  }
 }
 
 .app-modal.confirm-modal {

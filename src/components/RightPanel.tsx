@@ -6,6 +6,7 @@ import {
   Code2,
   Plus,
   Search,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Wrench,
@@ -14,10 +15,18 @@ import {
 } from 'lucide-react';
 import { WorkspacePanel, type WorkspaceController } from './WorkspacePanel';
 import { CronPanel } from './CronPanel';
+import { AgentSettingsModal, type AgentContext } from './modals';
 import type { ResponsePagination } from '../api/client';
 import type { Agent, AgentSkill, AgentSkillMap, CronJob, GlobalRuntimeConfig, ProviderConnector, RightView } from '../types';
 
-const AGENT_ACTIONS = ['Create', 'Metadata', 'Runtime', 'Memory', 'Test', 'Delete'];
+const AGENT_ACTIONS = [
+  { id: 'create', label: 'Create' },
+  { id: 'settings', label: 'Agent settings' },
+  { id: 'runtime', label: 'Runtime' },
+  { id: 'memory', label: 'Memory' },
+  { id: 'test', label: 'Test' },
+  { id: 'delete', label: 'Delete' },
+] as const;
 type WriteApprovalPatch = Partial<Pick<GlobalRuntimeConfig, 'skillsWriteApproval' | 'memoryWriteApproval'>>;
 
 export function RightPanel({
@@ -46,6 +55,9 @@ export function RightPanel({
   onDeleteCron,
   onCreateAgent,
   onOpenSettings,
+  onSaveSettings,
+  onLoadContext,
+  onSaveContext,
   onDeleteAgent,
   workspaceOpenRequest,
   workspace,
@@ -77,6 +89,9 @@ export function RightPanel({
   onDeleteCron: (id: string) => Promise<void>;
   onCreateAgent: () => void;
   onOpenSettings: () => void;
+  onSaveSettings: (updates: Partial<Agent>) => void;
+  onLoadContext: () => Promise<AgentContext>;
+  onSaveContext: (context: AgentContext) => Promise<void>;
   onDeleteAgent: () => void;
   workspaceOpenRequest?: { path: string; token: number };
   workspace: WorkspaceController;
@@ -152,7 +167,7 @@ export function RightPanel({
       </div>
 
       <div className="right-tabs">
-        {(['workspace', 'skills', 'cron', 'runtime'] as const).map((tab) => (
+        {(['workspace', 'skills', 'cron', 'runtime', 'settings'] as const).map((tab) => (
           <button
             key={tab}
             className={rightView === tab ? 'active' : ''}
@@ -163,8 +178,16 @@ export function RightPanel({
               onOpen();
             }}
           >
-            {tab === 'workspace' ? <Code2 size={17} /> : tab === 'skills' ? <Sparkles size={17} /> : tab === 'cron' ? <Clock3 size={17} /> : <Wrench size={17} />}
-            <span>{t(`controls.${tab}`)}</span>
+            {tab === 'workspace'
+              ? <Code2 size={17} />
+              : tab === 'skills'
+                ? <Sparkles size={17} />
+                : tab === 'cron'
+                  ? <Clock3 size={17} />
+                  : tab === 'runtime'
+                    ? <Wrench size={17} />
+                    : <Settings2 size={17} />}
+            <span>{t(`controls.${tab}`, { defaultValue: tab })}</span>
           </button>
         ))}
       </div>
@@ -349,6 +372,19 @@ export function RightPanel({
         />
       )}
 
+      {rightView === 'settings' && (
+        <AgentSettingsModal
+          key={agent.id}
+          agent={agent}
+          providers={providers}
+          onSave={onSaveSettings}
+          onLoadContext={onLoadContext}
+          onSaveContext={onSaveContext}
+          onClose={onClose}
+          embedded
+        />
+      )}
+
       {rightView === 'runtime' && (
         <section className="panel-section">
           <div className="form-grid">
@@ -422,17 +458,17 @@ export function RightPanel({
             {approvalError && <p className="runtime-approval-error">{approvalError}</p>}
           </div>
           <div className="button-grid">
-            {AGENT_ACTIONS.map((label) => (
+            {AGENT_ACTIONS.map((action) => (
               <button
-                key={label}
+                key={action.id}
                 onClick={() => {
-                  if (label === 'Create') onCreateAgent();
-                  else if (label === 'Metadata') onOpenSettings();
-                  else if (label === 'Delete') onDeleteAgent();
+                  if (action.id === 'create') onCreateAgent();
+                  else if (action.id === 'settings') onOpenSettings();
+                  else if (action.id === 'delete') onDeleteAgent();
                 }}
               >
                 <Wrench size={15} />
-                {label}
+                {action.label}
               </button>
             ))}
           </div>

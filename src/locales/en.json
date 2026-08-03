@@ -131,6 +131,7 @@
     "workspace": "Workspace",
     "skills": "Skills",
     "runtime": "Runtime",
+    "settings": "Settings",
     "newFile": "New file",
     "newFolder": "New folder",
     "upload": "Upload files (drag & drop supported)",
@@ -295,7 +296,8 @@
     "back": "Back",
     "confirmSave": "Confirm save",
     "deleteAgentTitle": "Delete agent",
-    "deleteAgentMsg": "Delete “{{name}}”? All sessions, workspace files, configuration, skills, memory, and assigned Kanban tasks will be permanently deleted. This action cannot be undone."
+    "deleteAgentMsg": "Delete “{{name}}”? All sessions, workspace files, configuration, skills, memory, and assigned Kanban tasks will be permanently deleted. This action cannot be undone.",
+    "personalityInstructions": "Personality & instructions"
   },
   "cron": {
     "title": "Cron jobs",
