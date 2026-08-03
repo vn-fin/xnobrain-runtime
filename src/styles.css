@@ -1656,6 +1656,7 @@ body.col-resizing {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  max-width: 200px;
 }
 
 .agent-switch-catcher {
@@ -1738,6 +1739,8 @@ body.col-resizing {
 }
 
 .agent-switch button {
+  min-width: 0;
+  max-width: 160px;
   height: 36px;
   display: flex;
   align-items: center;
@@ -1747,11 +1750,20 @@ body.col-resizing {
   font-weight: 600;
 }
 
+.agent-switch button > svg { flex: 0 0 auto; }
+
+.agent-switch-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .agent-switch button:hover {
   background: var(--hover);
 }
 
-.agent-switch span {
+.agent-switch > span {
   color: var(--muted);
   font-family: 'IBM Plex Mono', monospace;
   font-size: 12px;
@@ -1773,7 +1785,7 @@ body.col-resizing {
   align-self: center;
   justify-self: stretch;
   z-index: 2;
-  margin: 0 104px 0 220px;
+  margin: 0 104px 0 232px;
   padding: 0;
 }
 

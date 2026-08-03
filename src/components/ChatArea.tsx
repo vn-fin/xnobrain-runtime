@@ -513,7 +513,7 @@ export function ChatArea({
             }}
           >
             <Bot size={18} />
-            {agent.title}
+            <span className="agent-switch-name">{agent.title}</span>
             <ChevronDown size={16} />
           </button>
           <span>{agent.model}</span>
