@@ -1632,11 +1632,14 @@ class AgentManager:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
         body = body or {}
-        limit = max(1, min(int(body.get("limit") or 500), 1000))
+        page = max(1, int(body.get("page") or 1))
+        limit = max(1, min(int(body.get("limit") or 50), 1000))
+        rows = self._sessions(profile_dir, limit=limit + 1, offset=(page - 1) * limit)
         return {
             "object": "hermes.agent_conversations",
             "agent": name,
-            "conversations": self._sessions(profile_dir, limit=limit),
+            "conversations": rows[:limit],
+            "pagination": {"page": page, "limit": limit, "has_more": len(rows) > limit},
         }
 
     def create_conversation(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -2726,18 +2729,29 @@ class AgentManager:
             return max(changed, key=lambda session_id: after[session_id])
         return max(after, key=lambda session_id: after[session_id]) if after else None
 
-    def _sessions(self, profile_dir: Path, *, limit: int) -> list[dict[str, Any]]:
+    def _sessions(self, profile_dir: Path, *, limit: int, offset: int = 0) -> list[dict[str, Any]]:
         db_path = profile_dir / "state.db"
         if not db_path.is_file():
             return []
         conn = self._open_readonly_db(db_path)
         try:
-            order_by = self._preferred_order_column(conn, "sessions")
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
+            }
+            activity_columns = [
+                column
+                for column in ("last_active_at", "updated_at", "ended_at", "started_at", "created_at")
+                if column in columns
+            ]
             sql = "SELECT * FROM sessions"
-            if order_by:
-                sql += f" ORDER BY {order_by} DESC"
-            sql += " LIMIT ?"
-            rows = conn.execute(sql, (limit,)).fetchall()
+            if activity_columns:
+                activity = ", ".join(f"COALESCE({column}, 0)" for column in activity_columns)
+                sql += f" ORDER BY MAX({activity}) DESC, id DESC"
+            else:
+                sql += " ORDER BY id DESC"
+            sql += " LIMIT ? OFFSET ?"
+            rows = conn.execute(sql, (limit, max(0, offset))).fetchall()
             return [self._row_dict(row) for row in rows]
         except sqlite3.Error:
             return []

@@ -699,11 +699,23 @@ class PlatformService:
     def delete_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.agents.delete_workspace_path(agent_id, body)
 
-    def list_conversations(self, agent_id: str, *, limit: int = 500) -> dict[str, Any]:
+    def list_conversations(self, agent_id: str, *, page: int = 1, limit: int = 50) -> dict[str, Any]:
+        bounded_page = max(1, int(page))
         bounded_limit = max(1, min(int(limit), 1000))
-        payload = self.agents.list_conversations(agent_id, {"limit": bounded_limit})
+        payload = self.agents.list_conversations(agent_id, {
+            "page": bounded_page,
+            "limit": bounded_limit,
+        })
         conversations = payload["conversations"]
-        return {"conversations": [self._conversation_dto(agent_id, item) for item in conversations], "pagination": {"page": 1, "limit": bounded_limit, "has_more": len(conversations) == bounded_limit}}
+        pagination = dict(payload.get("pagination") or {})
+        return {
+            "conversations": [self._conversation_dto(agent_id, item) for item in conversations],
+            "pagination": {
+                "page": int(pagination.get("page") or bounded_page),
+                "limit": int(pagination.get("limit") or bounded_limit),
+                "has_more": bool(pagination.get("has_more", False)),
+            },
+        }
 
     def create_conversation(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         payload = self.agents.create_conversation(agent_id, {"title": body.get("title") or "New Session"})
@@ -1570,7 +1582,7 @@ class PlatformService:
 
     @staticmethod
     def _conversation_dto(agent_id: str, item: Mapping[str, Any]) -> dict[str, Any]:
-        return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Session"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tool_call_count") or item.get("tools") or 0), "created_at": item.get("created_at"), "updated_at": item.get("updated_at")}
+        return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Session"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tool_call_count") or item.get("tools") or 0), "created_at": item.get("created_at") or item.get("started_at"), "updated_at": item.get("last_active_at") or item.get("updated_at") or item.get("ended_at") or item.get("started_at") or item.get("created_at")}
 
     @staticmethod
     def _agent_dto(item: Mapping[str, Any]) -> dict[str, Any]:
