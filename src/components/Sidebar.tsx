@@ -274,10 +274,13 @@ export function Sidebar({
         {agentActionError && <div className="agent-action-error" role="alert">{agentActionError}</div>}
       </div>
 
-      <div className="workspace-nav">
+      <div className="library-nav">
         <button className="open-library-button" onClick={() => setLibraryOpen(true)}>
           <BookOpen size={15} /> {t('agents.openLibrary')}
         </button>
+      </div>
+
+      <div className="workspace-nav">
         <div className="workspace-nav-heading">
           <button className="workspace-nav-toggle" aria-expanded={workspaceOpen} onClick={() => setWorkspaceOpen((open) => !open)}>
             {workspaceOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}

@@ -350,6 +350,15 @@ body.col-resizing {
   text-align: center;
 }
 
+.library-nav {
+  flex: 0 0 auto;
+  padding: 0 8px 8px;
+}
+
+.library-nav .open-library-button {
+  margin-top: 0;
+}
+
 .agent-pin {
   flex: 0 0 auto;
   color: var(--accent);
