@@ -37,6 +37,8 @@ validation and must not feed release artifacts.
 ```text
 make                         contributor setup on Linux, macOS, or Windows
 make dev                     local native development with a safe test manifest
+make brain-image             Brain UI image with validated public build env
+make appimage                one standalone Linux AppImage
 make win                     one NSIS .exe, on a Windows host
 make mac                     one DMG, on a macOS host
 make rpm                     one RPM, on a supported RPM Linux host
@@ -52,15 +54,22 @@ credentials. Local developer artifacts remain unsigned by default.
 Example release configuration:
 
 ```text
-make rpm \
+make linux-app \
   XNOBRAIN_APP_NAME=XNOBrain \
   XNOBRAIN_APP_DESCRIPTION="Private XNOBrain Docker Web workspace" \
-  XNOBRAIN_AUTH_BASE_URL=https://api.example.com \
-  XNOBRAIN_BRAIN_CONTROL_BASE_URL=https://control.example.com \
+  XNOBRAIN_API_BASE_URL=https://public.dev.xno.vn \
+  XNOBRAIN_AUTH_BASE_URL=https://public.dev.xno.vn \
+  XNOBRAIN_BRAIN_CONTROL_BASE_URL=https://public.dev.xno.vn \
   XNOBRAIN_FIREBASE_API_KEY=AIza<complete-public-web-api-key> \
   XNOBRAIN_IMAGE=registry.example/xnobrain@sha256:<64-hex-digest> \
   XNOBRAIN_RUNTIME_API_IMAGE=registry.example/xnobrain-runtime-api@sha256:<64-hex-digest>
 ```
+
+For the Docker-first single-file Linux release, use `make linux-app` from the
+repository root. It writes `binary/XNOBrain-linux-<architecture>.AppImage`.
+The user opens that one file to install/connect Docker, start the runtime, and
+open the Web version. DEB/RPM remain optional repository-packaging formats and
+are not required for this distribution path.
 
 No credentials belong in `.env`, generated manifests, Compose, screenshots, or
 logs. Authentication and Brain Control are external HTTPS contracts compiled

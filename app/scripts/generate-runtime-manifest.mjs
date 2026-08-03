@@ -59,14 +59,19 @@ const httpsUrl = (name, fallback) => {
   return url
 }
 
-const authBaseUrl = value('XNOBRAIN_AUTH_BASE_URL', example.web_build.auth_base_url)
-if (!/^https:\/\/[^/].*[^/]$/.test(authBaseUrl)) {
-  throw new Error('XNOBRAIN_AUTH_BASE_URL must be an HTTPS origin without a trailing slash')
+const httpsOrigin = (name, fallback) => {
+  const origin = value(name, fallback)
+  if (!/^https:\/\/[^\s/]+(?::[0-9]+)?$/.test(origin)) {
+    throw new Error(`${name} must be an HTTPS origin without a path or trailing slash`)
+  }
+  return origin
 }
-const brainControlBaseUrl = value('XNOBRAIN_BRAIN_CONTROL_BASE_URL', example.web_build.brain_control_base_url)
-if (!/^https:\/\/[^/].*[^/]$/.test(brainControlBaseUrl)) {
-  throw new Error('XNOBRAIN_BRAIN_CONTROL_BASE_URL must be an HTTPS origin without a trailing slash')
-}
+const apiBaseUrl = httpsOrigin('XNOBRAIN_API_BASE_URL', example.web_build.api_base_url)
+const authBaseUrl = httpsOrigin('XNOBRAIN_AUTH_BASE_URL', example.web_build.auth_base_url)
+const brainControlBaseUrl = httpsOrigin(
+  'XNOBRAIN_BRAIN_CONTROL_BASE_URL',
+  example.web_build.brain_control_base_url,
+)
 const firebaseApiKey = value('XNOBRAIN_FIREBASE_API_KEY', '')
 if (!/^AIza[0-9A-Za-z_-]{35}$/.test(firebaseApiKey)) {
   throw new Error('XNOBRAIN_FIREBASE_API_KEY must be the complete 39-character Firebase Web API key beginning with AIza')
@@ -79,6 +84,7 @@ const manifest = {
   default_host_port: integer('XNOBRAIN_DEFAULT_PORT', example.default_host_port, 1024, 65535),
   web_build: {
     ...example.web_build,
+    api_base_url: apiBaseUrl,
     auth_base_url: authBaseUrl,
     brain_control_base_url: brainControlBaseUrl,
     firebase_api_key_sha256: firebaseApiKeySha256,

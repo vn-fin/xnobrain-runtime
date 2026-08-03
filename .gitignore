@@ -84,3 +84,8 @@ desktop.ini
 *.key
 *.crt
 tmp/
+
+# Deliberate native release outputs. Linux ships first as one AppImage; native
+# Windows/macOS artifacts can be added here when built on their target hosts.
+!/binary/
+!/binary/**

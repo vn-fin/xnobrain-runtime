@@ -21,7 +21,7 @@ if (!['pro', 'cloud', 'enterprise'].includes(edition)) {
 }
 
 const lines = [
-  'API_BASE_URL=',
+  `API_BASE_URL=${httpsOrigin('XNOBRAIN_API_BASE_URL')}`,
   `AUTH_BASE_URL=${httpsOrigin('XNOBRAIN_AUTH_BASE_URL')}`,
   `API_CONTROL_BASE_URL=${httpsOrigin('XNOBRAIN_BRAIN_CONTROL_BASE_URL')}`,
   `APP_EDITION=${edition}`,

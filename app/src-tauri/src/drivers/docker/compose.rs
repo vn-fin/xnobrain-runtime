@@ -35,6 +35,7 @@ services:
     pull_policy: always
     labels:
       - xnobrain.install-id=xnobrain_web
+      - xnobrain.web-build.api-base-url={api_base_url}
       - xnobrain.web-build.auth-base-url={auth_base_url}
       - xnobrain.web-build.brain-control-base-url={brain_control_base_url}
       - xnobrain.web-build.auth-mode={auth_mode}
@@ -92,6 +93,7 @@ volumes:
             traefik_image = self.manifest.images.traefik.reference,
             brain_image = self.manifest.images.brain.reference,
             runtime_api_image = self.manifest.images.runtime_api.reference,
+            api_base_url = self.manifest.web_build.api_base_url,
             auth_base_url = self.manifest.web_build.auth_base_url,
             brain_control_base_url = self.manifest.web_build.brain_control_base_url,
             auth_mode = self.manifest.web_build.auth_mode,
@@ -151,10 +153,10 @@ mod tests {
         assert!(compose.contains("--providers.file.filename=/etc/traefik/dynamic.yaml"));
         assert!(!compose.contains("/var/run/docker.sock"));
         assert!(compose.contains("xnobrain_web_data"));
-        assert!(compose.contains("xnobrain.web-build.auth-base-url=https://api.dev.xnoquant.io"));
+        assert!(compose.contains("xnobrain.web-build.api-base-url=https://public.dev.xno.vn"));
+        assert!(compose.contains("xnobrain.web-build.auth-base-url=https://public.dev.xno.vn"));
         assert!(
-            compose
-                .contains("xnobrain.web-build.brain-control-base-url=https://api.dev.xnoquant.io")
+            compose.contains("xnobrain.web-build.brain-control-base-url=https://public.dev.xno.vn")
         );
         assert!(compose.contains("xnobrain.web-build.auth-mode=required"));
         assert!(compose.contains("xnobrain.web-build.auth-provider=xno-firebase"));

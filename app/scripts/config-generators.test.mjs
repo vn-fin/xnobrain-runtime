@@ -33,7 +33,8 @@ test('release manifest accepts immutable remote images', async (context) => {
   assert.equal(result.status, 0, result.stderr)
   const manifest = JSON.parse(await readFile(output, 'utf8'))
   assert.equal(manifest.images.brain.reference, `registry.xnoquant.io/xnobrain@sha256:${digest}`)
-  assert.equal(manifest.web_build.brain_control_base_url, 'https://api.dev.xnoquant.io')
+  assert.equal(manifest.web_build.api_base_url, 'https://public.dev.xno.vn')
+  assert.equal(manifest.web_build.brain_control_base_url, 'https://public.dev.xno.vn')
   assert.match(manifest.web_build.firebase_api_key_sha256, /^[a-f0-9]{64}$/)
 })
 
@@ -63,6 +64,7 @@ test('Brain UI build environment maps external URLs and rejects a truncated Fire
   context.after(() => rm(directory, { recursive: true, force: true }))
   const output = join(directory, 'brain.env')
   const environment = {
+    XNOBRAIN_API_BASE_URL: 'https://public.dev.xno.vn',
     XNOBRAIN_AUTH_BASE_URL: 'https://api.dev.xnoquant.io',
     XNOBRAIN_BRAIN_CONTROL_BASE_URL: 'https://control.dev.xnoquant.io',
     XNOBRAIN_FIREBASE_API_KEY: firebaseApiKey,
@@ -70,7 +72,7 @@ test('Brain UI build environment maps external URLs and rejects a truncated Fire
   const generated = run('generate-brain-build-env.mjs', output, environment)
   assert.equal(generated.status, 0, generated.stderr)
   const contents = await readFile(output, 'utf8')
-  assert.match(contents, /^API_BASE_URL=$/m)
+  assert.match(contents, /^API_BASE_URL=https:\/\/public\.dev\.xno\.vn$/m)
   assert.match(contents, /^AUTH_BASE_URL=https:\/\/api\.dev\.xnoquant\.io$/m)
   assert.match(contents, /^API_CONTROL_BASE_URL=https:\/\/control\.dev\.xnoquant\.io$/m)
   assert.match(contents, new RegExp(`^FIREBASE_API_KEY=${firebaseApiKey}$`, 'm'))

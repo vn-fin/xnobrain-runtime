@@ -18,6 +18,7 @@ pub struct RuntimeImages {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WebBuildManifest {
+    pub api_base_url: String,
     pub auth_base_url: String,
     pub brain_control_base_url: String,
     pub auth_mode: String,
@@ -64,7 +65,7 @@ impl RuntimeManifest {
     }
 
     fn validate(&self) -> InstallerResult<()> {
-        if self.schema_version != 2 {
+        if self.schema_version != 3 {
             return Err(InstallerError::terminal(
                 "manifest_schema_unsupported",
                 "This installer cannot read the bundled runtime manifest.",
@@ -76,7 +77,8 @@ impl RuntimeManifest {
                 "The runtime manifest contains an invalid default port.",
             ));
         }
-        if !valid_https_origin(&self.web_build.auth_base_url)
+        if !valid_https_origin(&self.web_build.api_base_url)
+            || !valid_https_origin(&self.web_build.auth_base_url)
             || !valid_https_origin(&self.web_build.brain_control_base_url)
             || self.web_build.auth_mode != "required"
             || self.web_build.auth_provider != "xno-firebase"
@@ -151,13 +153,14 @@ mod tests {
         assert_eq!(manifest.default_host_port, 5152);
         assert!(manifest.images.brain.reference.contains("@sha256:"));
         assert!(manifest.images.runtime_api.reference.contains("@sha256:"));
+        assert_eq!(manifest.web_build.api_base_url, "https://public.dev.xno.vn");
         assert_eq!(
             manifest.web_build.auth_base_url,
-            "https://api.dev.xnoquant.io"
+            "https://public.dev.xno.vn"
         );
         assert_eq!(
             manifest.web_build.brain_control_base_url,
-            "https://api.dev.xnoquant.io"
+            "https://public.dev.xno.vn"
         );
         assert_eq!(manifest.web_build.auth_mode, "required");
         assert_eq!(manifest.web_build.auth_provider, "xno-firebase");

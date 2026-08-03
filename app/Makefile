@@ -1,4 +1,5 @@
 NPM ?= npm
+CONTAINER_CLI ?= docker
 ifeq ($(OS),Windows_NT)
 UNAME_S := Windows
 else
@@ -9,6 +10,8 @@ GENERATED_DIR := $(abspath generated)
 GENERATED_MANIFEST := $(GENERATED_DIR)/runtime-manifest.json
 GENERATED_TAURI_CONFIG := $(GENERATED_DIR)/tauri.release.conf.json
 GENERATED_BRAIN_BUILD_ENV := $(GENERATED_DIR)/brain-ui-build.env
+BINARY_DIR := $(abspath ../binary)
+BRAIN_IMAGE_TAG ?= $(if $(XNOBRAIN_BRAIN_IMAGE_TAG),$(XNOBRAIN_BRAIN_IMAGE_TAG),xnobrain-brain:app)
 export XNOBRAIN_RUNTIME_MANIFEST := $(GENERATED_MANIFEST)
 
 -include .env
@@ -16,7 +19,7 @@ export
 
 .DEFAULT_GOAL := setup
 
-.PHONY: setup setup-unix setup-windows config config-local config-test dev win mac rpm deb linux check clean-generated require-project require-windows require-macos require-linux
+.PHONY: setup setup-unix setup-windows brain-config brain-image config config-local config-test dev win mac appimage appimage-local rpm deb linux check clean-generated require-project require-windows require-macos require-linux
 
 setup: require-project
 ifeq ($(OS),Windows_NT)
@@ -39,6 +42,18 @@ config: require-project
 	@node scripts/generate-runtime-manifest.mjs "$(GENERATED_MANIFEST)"
 	@node scripts/generate-tauri-config.mjs "$(GENERATED_TAURI_CONFIG)"
 	@node scripts/generate-brain-build-env.mjs "$(GENERATED_BRAIN_BUILD_ENV)"
+
+brain-config: require-project
+	@node scripts/generate-brain-build-env.mjs "$(GENERATED_BRAIN_BUILD_ENV)"
+
+brain-image: brain-config
+	@set -a; . "$(GENERATED_BRAIN_BUILD_ENV)"; set +a; \
+	cd ..; \
+	$(CONTAINER_CLI) build --file Dockerfile.frontend --tag "$(BRAIN_IMAGE_TAG)" \
+		--build-arg API_BASE_URL --build-arg AUTH_BASE_URL \
+		--build-arg API_CONTROL_BASE_URL --build-arg APP_EDITION \
+		--build-arg AUTH_MODE --build-arg AUTH_PROVIDER \
+		--build-arg FIREBASE_API_KEY .
 
 config-local: require-project
 	@node scripts/generate-runtime-manifest.mjs "$(GENERATED_MANIFEST)" --allow-local
@@ -78,9 +93,25 @@ deb: require-project require-linux config
 	./scripts/preflight-linux.sh
 	$(NPM) run tauri -- build --bundles deb --config "$(GENERATED_TAURI_CONFIG)"
 
-linux: require-project require-linux config
+linux: appimage
+
+appimage: require-project require-linux config
 	./scripts/preflight-linux.sh
-	$(NPM) run tauri -- build --bundles rpm,deb --config "$(GENERATED_TAURI_CONFIG)"
+	$(NPM) run tauri -- build --bundles appimage --config "$(GENERATED_TAURI_CONFIG)"
+	@mkdir -p "$(BINARY_DIR)"
+	@source_path=$$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit); \
+	test -n "$$source_path" || { echo 'Tauri did not produce an AppImage.' >&2; exit 2; }; \
+	install -m 0755 "$$source_path" "$(BINARY_DIR)/XNOBrain-linux-$$(uname -m).AppImage"
+	@echo "Standalone Linux app: $(BINARY_DIR)/XNOBrain-linux-$$(uname -m).AppImage"
+
+appimage-local: require-project require-linux config-local
+	./scripts/preflight-linux.sh
+	$(NPM) run tauri -- build --bundles appimage --config "$(GENERATED_TAURI_CONFIG)"
+	@mkdir -p "$(BINARY_DIR)"
+	@source_path=$$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit); \
+	test -n "$$source_path" || { echo 'Tauri did not produce an AppImage.' >&2; exit 2; }; \
+	install -m 0755 "$$source_path" "$(BINARY_DIR)/XNOBrain-linux-$$(uname -m).AppImage"
+	@echo "Local-validation Linux app: $(BINARY_DIR)/XNOBrain-linux-$$(uname -m).AppImage"
 
 check: require-project config-test
 	$(NPM) run check
