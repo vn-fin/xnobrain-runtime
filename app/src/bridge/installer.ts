@@ -154,20 +154,21 @@ const createDemoBridge = (): InstallerBridge => ({
 })
 
 function demoRuntimeOverview(): RuntimeOverview {
-  const port = Number(window.localStorage.getItem('brain4all-demo-port')) || 5152
+  const storedPort = Number(window.localStorage.getItem('brain4all-demo-port')) || undefined
+  const port = storedPort ?? 5152
   const running = window.localStorage.getItem('brain4all-demo-state') !== 'stopped'
   return {
-    state: running ? 'running' : 'stopped',
+    state: storedPort ? (running ? 'running' : 'stopped') : 'not_installed',
     webUrl: `http://localhost:${port}`,
     port,
     dockerVersion: '29.6.2',
     composeVersion: '5.3.1',
-    services: (['traefik', 'frontend', 'runtime'] as LogService[]).map((id) => ({
+    services: storedPort ? (['traefik', 'frontend', 'runtime'] as LogService[]).map((id) => ({
       id,
       name: id === 'traefik' ? 'Traefik ingress' : id === 'frontend' ? 'Web interface' : 'Hermes runtime',
       state: running ? 'running' : 'stopped',
       detail: id === 'traefik' ? `127.0.0.1:${port} → private :5152` : 'Docker-internal only',
-    })),
+    })) : [],
   }
 }
 

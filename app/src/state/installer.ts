@@ -1,4 +1,4 @@
-import type { InstallProgress, InstallResult, SystemInspection } from '../bridge/types'
+import type { InstallProgress, InstallResult, RuntimeOverview, SystemInspection } from '../bridge/types'
 
 export type Edition = 'web' | 'managed'
 export type DockerPath = 'existing' | 'install'
@@ -25,6 +25,7 @@ export interface InstallerState {
   checkingPort: boolean
   progress?: InstallProgress
   result?: InstallResult
+  runtimeOverview?: RuntimeOverview
   error?: string
 }
 
@@ -49,7 +50,7 @@ export type InstallerAction =
   | { type: 'port_check_finished'; available: boolean; message: string }
   | { type: 'progress'; progress: InstallProgress }
   | { type: 'installed'; result: InstallResult }
-  | { type: 'restored'; inspection: SystemInspection }
+  | { type: 'restored'; overview: RuntimeOverview }
   | { type: 'install_failed'; message: string }
   | { type: 'restart' }
 
@@ -106,13 +107,13 @@ export function installerReducer(
     case 'restored':
       return {
         ...state,
-        inspection: action.inspection,
-        port: action.inspection.selectedPort ?? action.inspection.defaultPort,
-        result: action.inspection.selectedPort && action.inspection.webUrl ? {
-          port: action.inspection.selectedPort,
-          webUrl: action.inspection.webUrl,
+        runtimeOverview: action.overview,
+        port: action.overview.port,
+        result: {
+          port: action.overview.port,
+          webUrl: action.overview.webUrl,
           composePath: '',
-        } : undefined,
+        },
         step: 'dashboard',
         error: undefined,
       }

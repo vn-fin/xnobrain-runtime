@@ -4,7 +4,7 @@
   "development": true,
   "default_host_port": 5152,
   "minimum_disk_bytes": 8589934592,
-  "health_path": "/api/brain/v1/health",
+  "health_path": "/api/v1/health",
   "health_timeout_seconds": 180,
   "images": {
     "traefik": {

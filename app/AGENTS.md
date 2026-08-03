@@ -17,8 +17,9 @@ skill `.agents/skills/tauri-app-development/SKILL.md` before app work.
 - If the public contract is insufficient, stop and document the missing
   contract in Plan 013. A separate explicitly authorized core-contract task is
   required before changing the core repository areas.
-- The Docker edition is Web-only and opens the system browser. Never render the
-  Docker Web product inside the Tauri installer webview.
+- The Docker edition still runs the unmodified Web product. After installation,
+  the app may show its loopback URL in a sandboxed embedded browser surface and
+  must also offer the system browser. Never copy, fork, or import the Web UI.
 - In Docker Web, Traefik is the only service allowed to publish a host port.
   Keep its container entrypoint fixed and bind the selected external port to
   loopback. Frontend, FastAPI/Hermes, 9router, and observability services stay

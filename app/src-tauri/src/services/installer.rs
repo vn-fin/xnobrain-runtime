@@ -229,7 +229,7 @@ fn ensure_single_traefik_port(compose: &str, port: u16) -> InstallerResult<()> {
 }
 
 fn health_url(state: &InstallState) -> String {
-    format!("{}/api/brain/v1/health", state.web_url)
+    format!("{}/api/v1/health", state.web_url)
 }
 
 #[cfg(test)]

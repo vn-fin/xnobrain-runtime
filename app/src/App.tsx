@@ -10,14 +10,14 @@ export function App() {
   const [state, dispatch] = useReducer(installerReducer, initialInstallerState)
   const inspectionStarted = useRef(false)
   const installStarted = useRef(false)
-  const bootstrapInspection = useRef<ReturnType<typeof installerBridge.inspectSystem> | undefined>(undefined)
+  const bootstrapInspection = useRef<ReturnType<typeof installerBridge.inspectRuntime> | undefined>(undefined)
 
   useEffect(() => {
-    bootstrapInspection.current ??= installerBridge.inspectSystem()
+    bootstrapInspection.current ??= installerBridge.inspectRuntime()
     let active = true
-    void bootstrapInspection.current.then((inspection) => {
-      if (active && inspection.installed && inspection.selectedPort && inspection.webUrl) {
-        dispatch({ type: 'restored', inspection })
+    void bootstrapInspection.current.then((overview) => {
+      if (active && overview.state !== 'not_installed') {
+        dispatch({ type: 'restored', overview })
       }
     }).catch(() => undefined)
     return () => { active = false }
@@ -103,7 +103,7 @@ export function App() {
           {state.step === 'review' && <ReviewScreen {...screenProps} />}
           {state.step === 'installing' && <InstallingScreen {...screenProps} />}
           {state.step === 'ready' && <ReadyScreen {...screenProps} />}
-          {state.step === 'dashboard' && <DockerManager bridge={installerBridge} />}
+          {state.step === 'dashboard' && <DockerManager bridge={installerBridge} initialOverview={state.runtimeOverview} />}
         </main>
       </div>
     </div>

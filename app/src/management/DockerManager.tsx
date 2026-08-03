@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { InstallerBridge, LogService, RuntimeAction, RuntimeLogs, RuntimeOverview } from '../bridge/types'
 import { DockerIcon, ExternalIcon, GlobeIcon, PlayIcon, RefreshIcon, ShieldIcon, SlidersIcon, StopIcon, TerminalIcon } from '../components/Icons'
 
-type ManagerTab = 'application' | 'system' | 'logs'
+type ManagerPanel = 'system' | 'logs'
 
-export function DockerManager({ bridge }: { bridge: InstallerBridge }) {
-  const [tab, setTab] = useState<ManagerTab>('application')
-  const [overview, setOverview] = useState<RuntimeOverview>()
-  const [loading, setLoading] = useState(true)
+export function DockerManager({ bridge, initialOverview }: { bridge: InstallerBridge; initialOverview?: RuntimeOverview }) {
+  const [panel, setPanel] = useState<ManagerPanel>()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [overview, setOverview] = useState<RuntimeOverview | undefined>(initialOverview)
+  const [loading, setLoading] = useState(!initialOverview)
+  const initialRequest = useRef<Promise<RuntimeOverview> | undefined>(undefined)
   const [activeAction, setActiveAction] = useState<RuntimeAction>()
   const [error, setError] = useState<string>()
 
@@ -23,7 +25,16 @@ export function DockerManager({ bridge }: { bridge: InstallerBridge }) {
     }
   }, [bridge])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    if (initialOverview) return
+    initialRequest.current ??= bridge.inspectRuntime()
+    let active = true
+    void initialRequest.current
+      .then((result) => { if (active) setOverview(result) })
+      .catch((cause) => { if (active) setError(messageOf(cause)) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [bridge, initialOverview])
 
   const control = async (action: RuntimeAction) => {
     if (activeAction) return
@@ -38,65 +49,60 @@ export function DockerManager({ bridge }: { bridge: InstallerBridge }) {
     }
   }
 
+  const running = overview?.state === 'running'
+  const embeddedUrl = window.__TAURI_INTERNALS__ ? overview?.webUrl : '/embedded-preview.html'
+
   return (
     <section className="manager-shell">
-      <header className="manager-header">
-        <div>
-          <span className="manager-product"><DockerIcon /></span>
-          <div><strong>Brain4All Web</strong><span>{overview?.webUrl ?? 'Local Docker runtime'}</span></div>
+      <header className="workspace-toolbar">
+        <div className="workspace-menu-wrap">
+          <button className="workspace-menu-button" aria-label="Docker Web settings" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>•••</button>
+          {menuOpen && (
+            <div className="workspace-menu" role="menu">
+              <div className="workspace-menu-status"><StatusBadge state={overview?.state} loading={loading} /><span>{overview?.webUrl ?? 'Local Docker runtime'}</span></div>
+              <button role="menuitem" onClick={() => { setPanel('system'); setMenuOpen(false) }}><SlidersIcon /><span><strong>System</strong><small>Services, health, and ingress</small></span></button>
+              <button role="menuitem" onClick={() => { setPanel('logs'); setMenuOpen(false) }}><TerminalIcon /><span><strong>Logs</strong><small>Recent output for this stack</small></span></button>
+              <button role="menuitem" disabled={!running} onClick={() => { void bridge.openWeb(); setMenuOpen(false) }}><ExternalIcon /><span><strong>Open in browser</strong><small>Use your default browser</small></span></button>
+              <div className="workspace-menu-controls">
+                {running ? <button disabled={Boolean(activeAction)} onClick={() => { setMenuOpen(false); void control('stop') }}><StopIcon /> Stop</button> : <button disabled={Boolean(activeAction)} onClick={() => { setMenuOpen(false); void control('start') }}><PlayIcon /> Start</button>}
+                <button disabled={!running || Boolean(activeAction)} onClick={() => { setMenuOpen(false); void control('restart') }}><RefreshIcon /> Restart</button>
+              </div>
+            </div>
+          )}
         </div>
-        <StatusBadge state={overview?.state} loading={loading} />
+        <span className="workspace-address"><ShieldIcon />{overview?.webUrl ?? 'Preparing local application…'}</span>
+        <button className="toolbar-browser-button" disabled={!running} onClick={() => void bridge.openWeb()} aria-label="Open Brain4All in browser"><ExternalIcon /></button>
       </header>
-      <nav className="manager-tabs" aria-label="Docker Web management">
-        <Tab active={tab === 'application'} onClick={() => setTab('application')} icon={<GlobeIcon />}>Application</Tab>
-        <Tab active={tab === 'system'} onClick={() => setTab('system')} icon={<SlidersIcon />}>System</Tab>
-        <Tab active={tab === 'logs'} onClick={() => setTab('logs')} icon={<TerminalIcon />}>Logs</Tab>
-      </nav>
-      <div className="manager-content">
-        {error && <div className="manager-error" role="alert">{error}</div>}
-        {tab === 'application' && <ApplicationTab overview={overview} busy={Boolean(activeAction)} bridge={bridge} control={control} refresh={refresh} />}
-        {tab === 'system' && <SystemTab overview={overview} refresh={refresh} loading={loading} />}
-        {tab === 'logs' && <LogsTab bridge={bridge} />}
-      </div>
-    </section>
-  )
-}
-
-function ApplicationTab({ overview, busy, bridge, control, refresh }: {
-  overview?: RuntimeOverview
-  busy: boolean
-  bridge: InstallerBridge
-  control: (action: RuntimeAction) => Promise<void>
-  refresh: () => Promise<void>
-}) {
-  const running = overview?.state === 'running'
-  return (
-    <div className="manager-panel application-panel">
-      <div className="application-hero">
-        <span className={`runtime-orb ${running ? 'running' : ''}`}><GlobeIcon /></span>
-        <div>
-          <span className="section-kicker">Application</span>
-          <h1>{running ? 'Your workspace is ready' : 'Your workspace is stopped'}</h1>
-          <p>{running ? 'Brain4All is running locally and ready in your normal browser.' : 'Start the Docker Web runtime to continue working.'}</p>
-          <code>{overview?.webUrl ?? 'http://localhost:5152'}</code>
-        </div>
-      </div>
-      <div className="manager-actions">
-        <button className="button primary" disabled={!running || busy} onClick={() => void bridge.openWeb()}>Open in browser <ExternalIcon /></button>
-        {running ? (
-          <button className="button secondary danger-subtle" disabled={busy} onClick={() => void control('stop')}><StopIcon /> Stop</button>
+      <div className="embedded-application">
+        {error && <div className="embedded-error" role="alert">{error}<button onClick={() => void refresh()}>Retry</button></div>}
+        {running && embeddedUrl ? (
+          <iframe
+            title="Brain4All Web application"
+            src={embeddedUrl}
+            sandbox="allow-same-origin allow-scripts allow-forms allow-downloads allow-modals allow-popups allow-popups-to-escape-sandbox"
+            allow="clipboard-read; clipboard-write"
+          />
         ) : (
-          <button className="button secondary" disabled={busy} onClick={() => void control('start')}><PlayIcon /> Start</button>
+          <div className="embedded-stopped">
+            <span><GlobeIcon /></span>
+            <h1>{loading ? 'Connecting to Brain4All' : 'Brain4All Web is stopped'}</h1>
+            <p>{loading ? 'Checking the local Docker runtime…' : 'Start the dedicated stack to show the Web application here.'}</p>
+            {!loading && <button className="button primary" disabled={Boolean(activeAction)} onClick={() => void control('start')}><PlayIcon /> Start Brain4All</button>}
+          </div>
         )}
-        <button className="button secondary" disabled={!running || busy} onClick={() => void control('restart')}><RefreshIcon /> Restart</button>
-        <button className="icon-button" aria-label="Refresh application status" disabled={busy} onClick={() => void refresh()}><RefreshIcon /></button>
       </div>
-      <div className="application-facts">
-        <Fact icon={<ShieldIcon />} title="Private by default" detail={`Traefik is the only ingress at 127.0.0.1:${overview?.port ?? 5152}.`} />
-        <Fact icon={<DockerIcon />} title="Dedicated stack" detail="Controls affect only Brain4All-owned containers and preserve your data." />
-        <Fact icon={<GlobeIcon />} title="Browser based" detail="The Web edition always opens in your system browser." />
-      </div>
-    </div>
+      {panel && (
+        <div className="manager-overlay" role="dialog" aria-modal="true" aria-label={panel === 'system' ? 'System' : 'Logs'}>
+          <div className="manager-overlay-card">
+            <header><div><span className="manager-product"><DockerIcon /></span><strong>Brain4All Docker Web</strong></div><button aria-label="Close settings" onClick={() => setPanel(undefined)}>×</button></header>
+            <div className="manager-content">
+              {panel === 'system' && <SystemTab overview={overview} refresh={refresh} loading={loading} />}
+              {panel === 'logs' && <LogsTab bridge={bridge} />}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -129,18 +135,24 @@ function LogsTab({ bridge }: { bridge: InstallerBridge }) {
   const [logs, setLogs] = useState<RuntimeLogs>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
-  const load = useCallback(async () => {
+  const pending = useRef<{ service: LogService; request: ReturnType<InstallerBridge['readLogs']> } | undefined>(undefined)
+  const load = useCallback(async (reusePending = false) => {
     setLoading(true)
     setError(undefined)
-    try { setLogs(await bridge.readLogs(service)) }
+    try {
+      if (!reusePending || pending.current?.service !== service) {
+        pending.current = { service, request: bridge.readLogs(service) }
+      }
+      setLogs(await pending.current.request)
+    }
     catch (cause) { setError(messageOf(cause)) }
     finally { setLoading(false) }
   }, [bridge, service])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load(true) }, [load])
 
   return (
     <div className="manager-panel logs-panel">
-      <div className="panel-heading"><div><span className="section-kicker">Logs</span><h1>Stack activity</h1><p>Recent, bounded output from Brain4All services. Secrets are redacted.</p></div><button className="button secondary" disabled={loading} onClick={() => void load()}><RefreshIcon /> Refresh</button></div>
+      <div className="panel-heading"><div><span className="section-kicker">Logs</span><h1>Stack activity</h1><p>Recent, bounded output from Brain4All services. Secrets are redacted.</p></div><button className="button secondary" disabled={loading} onClick={() => void load(false)}><RefreshIcon /> Refresh</button></div>
       <div className="log-filters" aria-label="Log service filter">
         {(['all', 'traefik', 'frontend', 'runtime'] as LogService[]).map((item) => <button key={item} className={service === item ? 'active' : ''} onClick={() => setService(item)}>{item === 'all' ? 'All services' : item}</button>)}
       </div>
@@ -155,13 +167,9 @@ function LogsTab({ bridge }: { bridge: InstallerBridge }) {
   )
 }
 
-function Tab({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) {
-  return <button className={active ? 'active' : ''} onClick={onClick} aria-current={active ? 'page' : undefined}>{icon}{children}</button>
-}
 function StatusBadge({ state, loading }: { state?: RuntimeOverview['state']; loading: boolean }) {
   const value = loading && !state ? 'checking' : state?.replace('_', ' ') ?? 'unknown'
   return <span className={`runtime-status ${state ?? 'checking'}`}><i />{value}</span>
 }
-function Fact({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) { return <div>{icon}<span><strong>{title}</strong><small>{detail}</small></span></div> }
 function Metric({ label, value }: { label: string; value: string }) { return <div><span>{label}</span><strong>{value}</strong></div> }
 function messageOf(cause: unknown) { return cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : 'The Docker operation could not be completed.' }
