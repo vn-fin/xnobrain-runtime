@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "release": "0.1.0-dev",
+  "development": true,
+  "default_host_port": 5152,
+  "minimum_disk_bytes": 8589934592,
+  "health_path": "/api/brain/v1/health",
+  "health_timeout_seconds": 180,
+  "images": {
+    "traefik": {
+      "reference": "traefik:v3.6.16",
+      "expected_id": "sha256:f79c88ed5252ae1e31c757a9796d751461ddb502437b8d8526db9e12605a82eb",
+      "pull": false
+    },
+    "frontend": {
+      "reference": "brain4all-frontend:local",
+      "expected_id": "sha256:4b17d3c4ad4acad21c8df7ce4655cae85af23157f149d8c627ff242a22f16c75",
+      "pull": false
+    },
+    "runtime": {
+      "reference": "brain4all-hermes-runtime:local",
+      "expected_id": "sha256:e448c83188651fa3ff01df29fefb08b0a8743554822ea75346803241fc2f2c35",
+      "pull": false
+    }
+  }
+}

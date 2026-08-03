@@ -9,8 +9,9 @@ installer offers the release default (initially 5152) or a validated custom
 port; no backend, frontend, 9router, or telemetry container publishes a host
 port directly.
 
-The Tauri project has not been scaffolded yet. Plan 013 Stage 0 creates it
-inside this directory without modifying the existing backend or Web UI.
+The Tauri 2 workspace and Docker Web installer are isolated in this directory.
+The browser-only development bridge is available for UI testing, while real
+install operations are accepted only by the typed Rust command boundary.
 
 Stable repository commands:
 
@@ -19,6 +20,13 @@ make dev-app    development app
 make win-app    Windows NSIS installer (run on Windows)
 make mac-app    macOS app and DMG (run on macOS)
 make rpm-app    Linux RPM (run on supported RPM Linux)
+```
+
+App-only validation:
+
+```text
+make -C app check       TypeScript, React, production build, Rust format/lint/tests
+npm -C app run test:e2e Repeatable Windows-layout visual journeys and recordings
 ```
 
 See `AGENTS.md` for the hard repository boundary and

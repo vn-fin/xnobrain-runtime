@@ -1,0 +1,31 @@
+[package]
+name = "brain4all-installer"
+version = "0.1.0"
+description = "Brain4All Docker Web installer"
+authors = ["Brain4All contributors"]
+edition = "2024"
+license = "UNLICENSED"
+
+[lib]
+name = "brain4all_installer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = ["desktop"]
+desktop = ["tauri/wry"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+fs2 = "0.4.3"
+reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "rustls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tauri = { version = "2.11.5", default-features = false, features = [] }
+tauri-plugin-opener = "2.5.4"
+thiserror = "2.0.18"
+uuid = { version = "1.24.0", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
