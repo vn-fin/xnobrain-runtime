@@ -516,7 +516,6 @@ export function ChatArea({
             <span className="agent-switch-name">{agent.title}</span>
             <ChevronDown size={16} />
           </button>
-          <span>{agent.model}</span>
           {agentPickerOpen && (
             <>
               <div className="agent-switch-catcher" onClick={() => setAgentPickerOpen(false)} />
