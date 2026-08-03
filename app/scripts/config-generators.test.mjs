@@ -98,6 +98,8 @@ test('Tauri override validates and emits configurable signing metadata', async (
   assert.equal(result.status, 0, result.stderr)
   const config = JSON.parse(await readFile(output, 'utf8'))
   assert.equal(config.productName, 'XNOBrain Enterprise')
+  assert.equal(config.app.windows[0].create, false)
+  assert.equal(config.app.windows[0].dragDropEnabled, false)
   assert.equal(config.bundle.windows.certificateThumbprint, thumbprint)
   assert.equal(config.bundle.windows.digestAlgorithm, 'sha256')
 })

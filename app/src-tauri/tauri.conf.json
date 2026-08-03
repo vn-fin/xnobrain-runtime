@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "installer",
+        "create": false,
         "title": "XNOBrain",
         "width": 1120,
         "height": 760,
@@ -20,7 +21,8 @@
         "minHeight": 620,
         "center": true,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {

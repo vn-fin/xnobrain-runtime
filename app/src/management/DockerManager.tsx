@@ -87,7 +87,7 @@ export function DockerManager({ bridge, initialOverview }: { bridge: InstallerBr
             title={`${productName} Web application`}
             src={embeddedUrl}
             sandbox="allow-same-origin allow-scripts allow-forms allow-downloads allow-modals allow-popups allow-popups-to-escape-sandbox"
-            allow="clipboard-read; clipboard-write"
+            allow="clipboard-read; clipboard-write; fullscreen"
           />
         ) : (
           <div className="embedded-stopped">

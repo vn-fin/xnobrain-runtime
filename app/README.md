@@ -71,6 +71,13 @@ The user opens that one file to install/connect Docker, start the runtime, and
 open the Web version. DEB/RPM remain optional repository-packaging formats and
 are not required for this distribution path.
 
+The embedded Web application keeps browser interactions inside the native
+shell: OAuth and other safe HTTP(S) `window.open` requests use a related popup
+so same-origin callbacks and device authorization continue to work. Native
+Tauri file-drop interception is disabled on the main window so files and
+folders reach the Web application's existing HTML5 workspace upload handlers.
+Downloads, clipboard access, and iframe fullscreen remain explicitly enabled.
+
 No credentials belong in `.env`, generated manifests, Compose, screenshots, or
 logs. Authentication and Brain Control are external HTTPS contracts compiled
 into the Brain UI image from `AUTH_BASE_URL` and `API_CONTROL_BASE_URL`. Their
