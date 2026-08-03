@@ -10,6 +10,7 @@
     "zh": "中文"
   },
   "nav": {
+    "manage": "Quản lý",
     "sandbox": "Sandbox",
     "connections": "Kết nối",
     "skills": "Kỹ năng"

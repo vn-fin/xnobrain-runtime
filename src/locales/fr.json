@@ -10,6 +10,7 @@
     "zh": "中文"
   },
   "nav": {
+    "manage": "Gérer",
     "sandbox": "Sandbox",
     "connections": "Connexions",
     "skills": "Compétences"

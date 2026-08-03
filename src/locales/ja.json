@@ -10,6 +10,7 @@
     "zh": "中文"
   },
   "nav": {
+    "manage": "管理",
     "sandbox": "サンドボックス",
     "connections": "接続",
     "skills": "スキル"

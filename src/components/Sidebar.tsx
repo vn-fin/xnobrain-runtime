@@ -276,7 +276,7 @@ export function Sidebar({
       <div className="workspace-nav">
         <button className="workspace-nav-toggle" aria-expanded={workspaceOpen} onClick={() => setWorkspaceOpen((open) => !open)}>
           {workspaceOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-          <span>{t('nav.workspace', { defaultValue: 'Workspace' })}</span>
+          <span>{t('nav.manage', { defaultValue: 'Manage' })}</span>
         </button>
         {workspaceOpen && (
           <div className="main-nav">

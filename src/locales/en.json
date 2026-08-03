@@ -10,6 +10,7 @@
     "zh": "中文"
   },
   "nav": {
+    "manage": "Manage",
     "workspace": "Workspace",
     "sandbox": "Runtime",
     "runtime": "Runtime",

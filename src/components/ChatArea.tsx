@@ -18,7 +18,6 @@ import {
   RefreshCw,
   Search,
   Settings2,
-  ShieldAlert,
   Square,
   ThumbsDown,
   ThumbsUp,
@@ -567,10 +566,6 @@ export function ChatArea({
           >
             <MoreHorizontal size={18} />
           </button>
-          <button className="top-action-item" title={t('agents.settings')} onClick={() => { setMobileActionsOpen(false); onOpenSettings(); }}>
-            <Pencil size={17} />
-            <span className="top-action-label">{t('agents.settings')}</span>
-          </button>
           <button className="top-action-item" title={t('agents.runtimeConfig')} onClick={() => { setMobileActionsOpen(false); onOpenRuntime(); }}>
             <Settings2 size={17} />
             <span className="top-action-label">{t('agents.runtimeConfig')}</span>
@@ -578,10 +573,6 @@ export function ChatArea({
           <button className="top-action-item" title={t('agents.test')} onClick={() => { setMobileActionsOpen(false); onTestAgent(); }}>
             <Gauge size={17} />
             <span className="top-action-label">{t('agents.test')}</span>
-          </button>
-          <button className="top-action-item" title={t('agents.delete')} onClick={() => { setMobileActionsOpen(false); onDeleteAgent(); }}>
-            <Trash2 size={17} />
-            <span className="top-action-label">{t('agents.delete')}</span>
           </button>
         </div>
       </header>
@@ -886,12 +877,6 @@ export function ChatArea({
               disabled={!activeConversation}
             />
             <div className="composer-row">
-              <button className="composer-access" title={t('modals.approvalMode')}>
-                <ShieldAlert size={15} />
-                {t('chat.fullAccess')}
-                <ChevronDown size={14} />
-              </button>
-
               <div className="composer-row-right">
                 <div className="composer-model-control" ref={modelPickerRef}>
                   <button className="composer-model" title="Model and reasoning" onClick={() => setModelOpen((open) => !open)}>

@@ -1633,17 +1633,22 @@ body.col-resizing {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 58px auto minmax(0, 1fr) auto;
+  grid-template-rows: 58px minmax(0, 1fr) auto;
   background: var(--bg);
 }
 
 .top-bar {
+  grid-row: 1;
+  grid-column: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 18px;
   border-bottom: 1px solid var(--border);
 }
+
+.top-bar .agent-switch,
+.top-bar .top-actions { z-index: 3; }
 
 .agent-switch {
   position: relative;
@@ -1762,8 +1767,14 @@ body.col-resizing {
 .top-action-label { display: none; }
 
 .conversation-navigation {
-  padding: 8px 18px;
-  border-bottom: 1px solid var(--border);
+  min-width: 0;
+  grid-row: 1;
+  grid-column: 1;
+  align-self: center;
+  justify-self: stretch;
+  z-index: 2;
+  margin: 0 104px 0 220px;
+  padding: 0;
 }
 
 .conversation-picker { position: relative; width: min(380px, 100%); }
@@ -1918,6 +1929,7 @@ body.col-resizing {
 }
 
 .message-canvas {
+  grid-row: 2;
   position: relative;
   min-height: 0;
   overflow: auto;
@@ -2587,6 +2599,7 @@ body.col-resizing {
 }
 
 .composer-wrap {
+  grid-row: 3;
   display: flex;
   justify-content: center;
   align-items: start;
@@ -7270,12 +7283,12 @@ body.col-resizing {
   .app:not(.no-right) > .chat-area {
     height: 100dvh;
     min-height: 0;
-    grid-template-rows: 54px auto minmax(0, 1fr) auto;
+    grid-template-rows: 54px minmax(0, 1fr) auto;
   }
 
   .top-bar { height: 54px; padding: 0 10px; }
   .agent-switch { gap: 2px; }
-  .agent-switch > button { max-width: min(250px, calc(100vw - 66px)); padding: 0 7px; }
+  .agent-switch > button { max-width: 125px; padding: 0 7px; }
   .agent-switch > button:not(.agent-switch-list button) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .agent-switch > span { display: none; }
   .agent-switch-popover { position: fixed; top: 60px; left: 8px; width: calc(100vw - 16px); }
@@ -7305,7 +7318,7 @@ body.col-resizing {
   }
   .top-actions.open .top-action-label { display: inline; font-size: 12px; white-space: nowrap; }
 
-  .conversation-navigation { padding: 7px 10px; }
+  .conversation-navigation { margin: 0 54px 0 135px; padding: 0; }
   .conversation-picker { width: 100%; }
   .conversation-trigger { height: 38px; }
   .conversation-trigger-copy small { display: none; }
