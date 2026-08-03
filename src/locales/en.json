@@ -104,6 +104,8 @@
     "createConversation": "Create session",
     "showAllConversations": "Show all sessions",
     "searchConversations": "Search sessions…",
+    "sessionCount_one": "{{count}} session",
+    "sessionCount_other": "{{count}} sessions",
     "noMatchingConversations": "No matching sessions.",
     "closeConversation": "Close session",
     "emptyTitle": "No sessions yet",

@@ -161,6 +161,7 @@ export function ChatArea({
   const [modelOpen, setModelOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [agentPickerSearch, setAgentPickerSearch] = useState('');
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [conversationPickerOpen, setConversationPickerOpen] = useState(false);
   const [conversationSearch, setConversationSearch] = useState('');
   const [conversationPickerPosition, setConversationPickerPosition] = useState({ top: 0, left: 0 });
@@ -173,7 +174,8 @@ export function ChatArea({
   const [editingQueuedText, setEditingQueuedText] = useState('');
   const streamingKeys = useStreamingConversations();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const conversationOverflowButtonRef = useRef<HTMLButtonElement>(null);
+  const conversationPickerButtonRef = useRef<HTMLButtonElement>(null);
+  const activeConversationOptionRef = useRef<HTMLButtonElement>(null);
   const messageCanvasRef = useRef<HTMLDivElement>(null);
   const pendingCaret = useRef<number | null>(null);
   const mentionCache = useRef<Map<string, WorkspaceEntry[]>>(new Map());
@@ -188,6 +190,7 @@ export function ChatArea({
     setConversationPickerOpen(false);
     setConversationSearch('');
   });
+  const mobileActionsRef = useDismissibleLayer<HTMLDivElement>(mobileActionsOpen, () => setMobileActionsOpen(false));
   // Hermes always stores `nine-router`; find the upstream account that owns
   // the selected routed model so the picker can still highlight it.
   const currentProvider = providers.find((provider) =>
@@ -200,25 +203,24 @@ export function ChatArea({
   const filteredAgents = agents.filter((item) => !agentPickerQuery
     || item.title.toLowerCase().includes(agentPickerQuery)
     || item.model.toLowerCase().includes(agentPickerQuery));
-  const compactConversations = (() => {
-    const initial = agent.conversations.slice(0, 3);
-    if (!activeConversation || initial.some((item) => item.id === activeConversation.id)) return initial;
-    return [...initial.slice(0, 2), activeConversation];
-  })();
-  const shownConversationIds = new Set(compactConversations.map((item) => item.id));
-  const hiddenConversations = agent.conversations.filter((item) => !shownConversationIds.has(item.id));
   const conversationQuery = conversationSearch.trim().toLowerCase();
-  const filteredHiddenConversations = hiddenConversations.filter((item) => !conversationQuery
+  const filteredConversations = agent.conversations.filter((item) => !conversationQuery
     || item.title.toLowerCase().includes(conversationQuery)
     || item.id.toLowerCase().includes(conversationQuery));
-  const hiddenConversationCount = hiddenConversations.length;
 
   useEffect(() => {
     setAgentPickerOpen(false);
     setAgentPickerSearch('');
+    setMobileActionsOpen(false);
     setConversationPickerOpen(false);
     setConversationSearch('');
   }, [agent.id]);
+
+  useEffect(() => {
+    if (!conversationPickerOpen || conversationQuery) return;
+    const option = activeConversationOptionRef.current;
+    if (typeof option?.scrollIntoView === 'function') option.scrollIntoView({ block: 'center' });
+  }, [activeConversation?.id, conversationPickerOpen, conversationQuery]);
   // Only the final answer of a turn is shown as a chat bubble. Intermediate
   // tool-call messages (finish_reason "tool_calls") are hidden here and instead
   // folded into the turn's collapsible "thinking" run. Live streaming messages
@@ -504,7 +506,11 @@ export function ChatArea({
           <button
             aria-haspopup="listbox"
             aria-expanded={agentPickerOpen}
-            onClick={() => setAgentPickerOpen((open) => !open)}
+            onClick={() => {
+              setConversationPickerOpen(false);
+              setMobileActionsOpen(false);
+              setAgentPickerOpen((open) => !open);
+            }}
           >
             <Bot size={18} />
             {agent.title}
@@ -547,128 +553,154 @@ export function ChatArea({
           )}
         </div>
 
-        <div className="top-actions">
-          <button title={t('agents.settings')} onClick={onOpenSettings}>
+        <div className={mobileActionsOpen ? 'top-actions open' : 'top-actions'} ref={mobileActionsRef}>
+          <button
+            className="mobile-actions-toggle"
+            title={t('agents.menu', { defaultValue: 'Agent actions' })}
+            aria-label={t('agents.menu', { defaultValue: 'Agent actions' })}
+            aria-expanded={mobileActionsOpen}
+            onClick={() => {
+              setAgentPickerOpen(false);
+              setConversationPickerOpen(false);
+              setMobileActionsOpen((open) => !open);
+            }}
+          >
+            <MoreHorizontal size={18} />
+          </button>
+          <button className="top-action-item" title={t('agents.settings')} onClick={() => { setMobileActionsOpen(false); onOpenSettings(); }}>
             <Pencil size={17} />
+            <span className="top-action-label">{t('agents.settings')}</span>
           </button>
-          <button title={t('agents.runtimeConfig')} onClick={onOpenRuntime}>
+          <button className="top-action-item" title={t('agents.runtimeConfig')} onClick={() => { setMobileActionsOpen(false); onOpenRuntime(); }}>
             <Settings2 size={17} />
+            <span className="top-action-label">{t('agents.runtimeConfig')}</span>
           </button>
-          <button title={t('agents.test')} onClick={onTestAgent}>
+          <button className="top-action-item" title={t('agents.test')} onClick={() => { setMobileActionsOpen(false); onTestAgent(); }}>
             <Gauge size={17} />
+            <span className="top-action-label">{t('agents.test')}</span>
           </button>
-          <button title={t('agents.delete')} onClick={onDeleteAgent}>
+          <button className="top-action-item" title={t('agents.delete')} onClick={() => { setMobileActionsOpen(false); onDeleteAgent(); }}>
             <Trash2 size={17} />
+            <span className="top-action-label">{t('agents.delete')}</span>
           </button>
         </div>
       </header>
 
-      <div className="conversation-tabs">
-        {compactConversations.map((conversation) => {
-          const tabStreaming = streamingKeys.includes(`${agent.id}::${conversation.id}`);
-          return (
-          <div
-            key={conversation.id}
-            className={conversation.id === activeConversation?.id ? 'chat-tab active' : 'chat-tab'}
-            onClick={() => onSelectConversation(conversation.id)}
-            onDoubleClick={(e) => { e.stopPropagation(); startTabRename(conversation); }}
-            title={t('conversation.rename')}
+      <div className="conversation-navigation">
+        <div className="conversation-picker" ref={conversationPickerRef}>
+          <button
+            className="conversation-trigger"
+            title={t('chat.showAllConversations')}
+            aria-label={`${t('chat.showAllConversations')}: ${activeConversation?.title ?? t('chat.newConversation')}`}
+            aria-haspopup="listbox"
+            aria-expanded={conversationPickerOpen}
+            ref={conversationPickerButtonRef}
+            onClick={() => {
+              setAgentPickerOpen(false);
+              setMobileActionsOpen(false);
+              const rect = conversationPickerButtonRef.current?.getBoundingClientRect();
+              if (rect) setConversationPickerPosition({
+                top: rect.bottom + 7,
+                left: Math.max(8, Math.min(rect.left, window.innerWidth - 392)),
+              });
+              setConversationSearch('');
+              setConversationPickerOpen((open) => !open);
+            }}
           >
-            {tabStreaming ? <span className="tab-stream-dot" title={t('queue.streaming')} /> : <MessageSquarePlus size={14} />}
-            {tabRenamingId === conversation.id ? (
-              <input
-                className="chat-tab-rename"
-                value={tabRenameValue}
-                autoFocus
-                aria-label={t('conversation.renameLabel')}
-                onClick={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => e.stopPropagation()}
-                onFocus={(e) => e.currentTarget.select()}
-                onChange={(e) => setTabRenameValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); commitTabRename(conversation); }
-                  if (e.key === 'Escape') { e.preventDefault(); setTabRenamingId(null); }
-                }}
-                onBlur={() => commitTabRename(conversation)}
-              />
-            ) : (
-              <span>{conversation.title}</span>
-            )}
-            <span
-              className="chat-tab-close"
-              title={t('chat.closeConversation')}
-              onDoubleClick={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteConversation(conversation.id);
-              }}
-            >
-              <X size={13} />
+            {activeConversation && streamingKeys.includes(`${agent.id}::${activeConversation.id}`)
+              ? <span className="tab-stream-dot" title={t('queue.streaming')} />
+              : <MessageSquarePlus size={15} />}
+            <span className="conversation-trigger-copy">
+              <strong>{activeConversation?.title ?? t('chat.newConversation')}</strong>
+              <small>{t('chat.sessionCount', { count: agent.conversations.length, defaultValue: '{{count}} sessions' })}</small>
             </span>
-          </div>
-          );
-        })}
-        {hiddenConversationCount > 0 && (
-          <div className="conversation-picker" ref={conversationPickerRef}>
-            <button
-              className="chat-tab conversation-overflow"
-              title={t('chat.showAllConversations')}
-              aria-haspopup="listbox"
-              aria-expanded={conversationPickerOpen}
-              ref={conversationOverflowButtonRef}
-              onClick={() => {
-                const rect = conversationOverflowButtonRef.current?.getBoundingClientRect();
-                if (rect) setConversationPickerPosition({
-                  top: rect.bottom + 7,
-                  left: Math.max(8, Math.min(rect.left, window.innerWidth - 368)),
-                });
-                setConversationPickerOpen((open) => !open);
-              }}
-            >
-              +{hiddenConversationCount}
-            </button>
-            {conversationPickerOpen && (
-              <div className="conversation-picker-popover" style={conversationPickerPosition}>
-                <div className="conversation-picker-search">
-                  <Search size={14} />
-                  <input
-                    value={conversationSearch}
-                    onChange={(event) => setConversationSearch(event.target.value)}
-                    placeholder={t('chat.searchConversations', { defaultValue: 'Search sessions…' })}
-                    autoFocus
-                  />
-                </div>
-                <div className="conversation-picker-list" role="listbox" aria-label={t('chat.showAllConversations')}>
-                  {filteredHiddenConversations.map((conversation) => {
-                    const tabStreaming = streamingKeys.includes(`${agent.id}::${conversation.id}`);
-                    return (
-                      <button
-                        key={conversation.id}
-                        role="option"
-                        aria-selected={conversation.id === activeConversation?.id}
-                        onClick={() => {
-                          onSelectConversation(conversation.id);
+            <ChevronDown size={16} />
+          </button>
+          {conversationPickerOpen && (
+            <div className="conversation-picker-popover" style={conversationPickerPosition}>
+              <div className="conversation-picker-search">
+                <Search size={14} />
+                <input
+                  value={conversationSearch}
+                  onChange={(event) => setConversationSearch(event.target.value)}
+                  placeholder={t('chat.searchConversations', { defaultValue: 'Search sessions…' })}
+                  autoFocus
+                />
+              </div>
+              <button
+                className="conversation-create-option"
+                onClick={() => {
+                  setConversationPickerOpen(false);
+                  setConversationSearch('');
+                  onCreateConversation();
+                }}
+              >
+                <Plus size={15} />
+                <span>{t('chat.createConversation')}</span>
+              </button>
+              <div className="conversation-picker-list" role="listbox" aria-label={t('chat.showAllConversations')}>
+                {filteredConversations.map((conversation) => {
+                  const selected = conversation.id === activeConversation?.id;
+                  const tabStreaming = streamingKeys.includes(`${agent.id}::${conversation.id}`);
+                  return (
+                    <button
+                      key={conversation.id}
+                      ref={selected ? activeConversationOptionRef : undefined}
+                      role="option"
+                      aria-selected={selected}
+                      onClick={() => {
+                        onSelectConversation(conversation.id);
+                        setConversationPickerOpen(false);
+                        setConversationSearch('');
+                      }}
+                      onDoubleClick={(event) => {
+                        event.stopPropagation();
+                        startTabRename(conversation);
+                      }}
+                    >
+                      {tabStreaming ? <span className="tab-stream-dot" /> : <MessageSquarePlus size={14} />}
+                      {tabRenamingId === conversation.id ? (
+                        <input
+                          className="chat-tab-rename"
+                          value={tabRenameValue}
+                          autoFocus
+                          aria-label={t('conversation.renameLabel')}
+                          onClick={(event) => event.stopPropagation()}
+                          onDoubleClick={(event) => event.stopPropagation()}
+                          onFocus={(event) => event.currentTarget.select()}
+                          onChange={(event) => setTabRenameValue(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') { event.preventDefault(); commitTabRename(conversation); }
+                            if (event.key === 'Escape') { event.preventDefault(); setTabRenamingId(null); }
+                          }}
+                          onBlur={() => commitTabRename(conversation)}
+                        />
+                      ) : (
+                        <span><strong>{conversation.title}</strong><small>{conversation.id}</small></span>
+                      )}
+                      {selected && <Check size={14} />}
+                      <span
+                        className="conversation-option-delete"
+                        title={t('chat.closeConversation')}
+                        onDoubleClick={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
                           setConversationPickerOpen(false);
-                          setConversationSearch('');
+                          onDeleteConversation(conversation.id);
                         }}
                       >
-                        {tabStreaming ? <span className="tab-stream-dot" /> : <MessageSquarePlus size={14} />}
-                        <span><strong>{conversation.title}</strong><small>{conversation.id}</small></span>
-                        {conversation.id === activeConversation?.id && <Check size={14} />}
-                      </button>
-                    );
-                  })}
-                  {filteredHiddenConversations.length === 0 && (
-                    <p>{t('chat.noMatchingConversations', { defaultValue: 'No matching sessions.' })}</p>
-                  )}
-                </div>
+                        <X size={13} />
+                      </span>
+                    </button>
+                  );
+                })}
+                {filteredConversations.length === 0 && (
+                  <p>{t('chat.noMatchingConversations', { defaultValue: 'No matching sessions.' })}</p>
+                )}
               </div>
-            )}
-          </div>
-        )}
-        <button className="chat-tab add" title={t('chat.createConversation')} onClick={onCreateConversation}>
-          <Plus size={16} />
-        </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div

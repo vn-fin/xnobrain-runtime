@@ -65,6 +65,8 @@
     "ide": "Contexto del IDE",
     "fullAccess": "Acceso total",
     "createConversation": "Crear sesión",
+    "sessionCount_one": "{{count}} sesión",
+    "sessionCount_other": "{{count}} sesiones",
     "closeConversation": "Cerrar sesión",
     "emptyTitle": "Aún no hay sesiones",
     "emptyDesc": "Inicia una nueva sesión para empezar a chatear con {{name}}.",

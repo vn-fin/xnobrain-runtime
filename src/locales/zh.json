@@ -65,6 +65,8 @@
     "ide": "IDE 上下文",
     "fullAccess": "完全访问",
     "createConversation": "创建会话",
+    "sessionCount_one": "{{count}} 个会话",
+    "sessionCount_other": "{{count}} 个会话",
     "closeConversation": "关闭会话",
     "emptyTitle": "还没有会话",
     "emptyDesc": "创建一个新会话，开始与 {{name}} 聊天。",

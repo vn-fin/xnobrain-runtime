@@ -65,6 +65,8 @@
     "ide": "Ngữ cảnh IDE",
     "fullAccess": "Toàn quyền",
     "createConversation": "Tạo phiên",
+    "sessionCount_one": "{{count}} phiên",
+    "sessionCount_other": "{{count}} phiên",
     "closeConversation": "Đóng phiên",
     "emptyTitle": "Chưa có phiên nào",
     "emptyDesc": "Bắt đầu một phiên mới để trò chuyện với {{name}}.",

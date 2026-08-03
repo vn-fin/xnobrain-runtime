@@ -65,6 +65,8 @@
     "ide": "IDE コンテキスト",
     "fullAccess": "フルアクセス",
     "createConversation": "セッションを作成",
+    "sessionCount_one": "{{count}} 件のセッション",
+    "sessionCount_other": "{{count}} 件のセッション",
     "closeConversation": "セッションを閉じる",
     "emptyTitle": "セッションがまだありません",
     "emptyDesc": "新しいセッションを開始して、{{name}} とのチャットを始めましょう。",
