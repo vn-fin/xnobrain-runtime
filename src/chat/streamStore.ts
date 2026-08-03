@@ -30,6 +30,7 @@ export type CompletionEvent = {
   conversationId: string;
   status: 'done' | 'error' | 'cancelled';
   active: boolean;
+  conversationTitle?: string;
 };
 
 type Runtime = {
@@ -38,6 +39,7 @@ type Runtime = {
   controller?: AbortController;
   cancelled: boolean;
   processing: boolean;
+  conversationTitle?: string;
 };
 
 const EMPTY: SessionSnapshot = {
@@ -214,6 +216,9 @@ async function execute(key: string, text: string) {
       return;
     }
     if (type === 'run.completed') {
+      if (typeof data.conversation_title === 'string' && data.conversation_title.trim()) {
+        runtime.conversationTitle = data.conversation_title.trim();
+      }
       if (typeof data.output === 'string' && data.output) {
         updateAssistant((m) => (m.content.trim() ? m : { ...m, content: data.output as string }));
       }
@@ -240,6 +245,7 @@ async function drain(key: string) {
   if (!runtime || runtime.processing) return;
   runtime.processing = true;
   runtime.cancelled = false;
+  runtime.conversationTitle = undefined;
   patch(key, { streaming: true });
   try {
     while (!runtime.cancelled && getSnapshot(key).queue.length > 0) {
@@ -259,6 +265,7 @@ async function drain(key: string) {
       conversationId: runtime.conversationId,
       status,
       active: activeKey === key,
+      conversationTitle: runtime.conversationTitle,
     };
     completionListeners.forEach((listener) => listener(completion));
   }

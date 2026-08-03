@@ -12,7 +12,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
     p, q, s = request.path_params, request.query_params, handler.service
     agent = lambda: str(q.get("agent") or "").strip() or (_ for _ in ()).throw(ValueError("agent is required"))
     return {
-        "conversations_list": (lambda: s.list_conversations(agent()), "conversations retrieved successfully", 200),
+        "conversations_list": (lambda: s.list_conversations(agent(), limit=int(q.get("limit") or 500)), "conversations retrieved successfully", 200),
         "conversations_create": (lambda: s.create_conversation(agent(), body), "conversation created successfully", 201),
         "conversations_get": (lambda: s.get_conversation(agent(), p["conversation_id"]), "conversation retrieved successfully", 200),
         "messages_list": (lambda: {"messages": s.get_conversation(agent(), p["conversation_id"])["messages"]}, "messages retrieved successfully", 200),

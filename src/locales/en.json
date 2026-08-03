@@ -103,6 +103,8 @@
     "fullAccess": "Full access",
     "createConversation": "Create session",
     "showAllConversations": "Show all sessions",
+    "searchConversations": "Search sessions…",
+    "noMatchingConversations": "No matching sessions.",
     "closeConversation": "Close session",
     "emptyTitle": "No sessions yet",
     "emptyDesc": "Start a new session to begin chatting with {{name}}.",

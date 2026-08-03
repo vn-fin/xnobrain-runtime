@@ -1438,6 +1438,11 @@ class AgentManager:
                         "message": str(result.get("error") or "agent command failed"),
                     })
                 else:
+                    conversation_title = self._auto_title_conversation(
+                        profile_dir,
+                        conversation_id,
+                        prepared.get("message"),
+                    )
                     yield self._sse_data({
                         "event": "run.completed",
                         "run_id": run_id,
@@ -1448,6 +1453,7 @@ class AgentManager:
                             "output_tokens": int(usage.get("output_tokens") or 0),
                             "total_tokens": int(usage.get("total_tokens") or 0),
                         },
+                        "conversation_title": conversation_title or "",
                     })
                 yield b"data: [DONE]\n\n"
                 return
@@ -1614,7 +1620,7 @@ class AgentManager:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
         body = body or {}
-        limit = max(1, min(int(body.get("limit") or 50), 200))
+        limit = max(1, min(int(body.get("limit") or 500), 1000))
         return {
             "object": "hermes.agent_conversations",
             "agent": name,
@@ -2293,6 +2299,47 @@ class AgentManager:
         if "title" in body:
             return self._nullable_text(body["title"], field="title", max_chars=256)
         return None
+
+    def _title_from_first_message(self, message: Any) -> str:
+        """Build a short, stable session title without another model request."""
+        candidates = []
+        for line in str(message or "").splitlines():
+            text = re.sub(r"^\s*(?:[-*+#>]|[0-9]+[.)])\s*", "", line).strip()
+            if not text or re.fullmatch(r"`[^`]+`", text):
+                continue
+            text = re.sub(r"`([^`]+)`", r"\1", text)
+            text = re.sub(r"\s+", " ", text).strip(" \t\r\n\"'")
+            if text:
+                candidates.append(text)
+        title = candidates[0] if candidates else "Conversation"
+        if len(title) > 64:
+            shortened = title[:61].rsplit(" ", 1)[0].rstrip(".,:;- ")
+            title = (shortened or title[:61]).rstrip() + "…"
+        return title[0].upper() + title[1:] if title else "Conversation"
+
+    def _auto_title_conversation(
+        self,
+        profile_dir: Path,
+        session_id: str,
+        message: Any,
+    ) -> str | None:
+        """Rename a default session after its first successful chat turn."""
+        with self._conversation_lock:
+            session = self._session(profile_dir, session_id)
+            current = str((session or {}).get("title") or "").strip()
+            if not DEFAULT_CONVERSATION_TITLE_RE.fullmatch(current):
+                return current or None
+            base = self._title_from_first_message(message)
+            for index in range(1, 101):
+                suffix = "" if index == 1 else f" {index}"
+                candidate = base[: max(1, 256 - len(suffix))].rstrip() + suffix
+                try:
+                    self._update_session_title(profile_dir, session_id, candidate)
+                    return candidate
+                except AgentAPIError as exc:
+                    if exc.code != "conversation_name_exists":
+                        return None
+            return None
 
     def _next_default_conversation_title(self, profile_dir: Path) -> str:
         db_path = profile_dir / "state.db"

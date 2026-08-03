@@ -309,6 +309,18 @@ export function useAssistants(active = true) {
       : agent));
   };
 
+  const setConversationTitle = (agentId: string, conversationId: string, title: string) => {
+    const clean = title.trim();
+    if (!clean) return;
+    setAgents((current) => current.map((agent) => agent.id === agentId
+      ? {
+          ...agent,
+          conversations: agent.conversations.map((conversation) =>
+            conversation.id === conversationId ? { ...conversation, title: clean } : conversation),
+        }
+      : agent));
+  };
+
   const deleteConversation = async (agentId: string, conversationId: string) => {
     await conversationsApi.remove(agentId, conversationId);
     let nextId: string | null = null;
@@ -433,7 +445,7 @@ export function useAssistants(active = true) {
     agents, library, agentSkills, skillStates, agentSkillPages, defaultConfig, status, error, pending,
     skillInstallPending, skillInstallError, refresh, loadConversations, loadAgentSkills, loadLibrary, loadDefaultConfig,
     createAgent, updateAgent, renameAgent, deleteAgent, testAgent, setDefaultModel, setWriteApprovals,
-    createConversation, deleteConversation, renameConversation,
+    createConversation, deleteConversation, renameConversation, setConversationTitle,
     toggleAgentSkill, setSkillEnabled, loadSkillsPage, installDefaultSkill, setDefaultSkillEnabled, installExistingSkill, applySkillsToAgents,
   };
 }

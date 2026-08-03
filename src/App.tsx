@@ -105,6 +105,9 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = streamStore.onComplete((event) => {
+      if (event.conversationTitle) {
+        assistants.setConversationTitle(event.agentId, event.conversationId, event.conversationTitle);
+      }
       if (event.agentId === activeAgentIdRef.current && workspaceVisibleRef.current) {
         void workspaceRefreshRef.current();
       }

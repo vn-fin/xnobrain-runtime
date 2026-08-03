@@ -161,7 +161,9 @@ export function ChatArea({
   const [modelOpen, setModelOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [agentPickerSearch, setAgentPickerSearch] = useState('');
-  const [conversationsExpanded, setConversationsExpanded] = useState(false);
+  const [conversationPickerOpen, setConversationPickerOpen] = useState(false);
+  const [conversationSearch, setConversationSearch] = useState('');
+  const [conversationPickerPosition, setConversationPickerPosition] = useState({ top: 0, left: 0 });
   const [attachments, setAttachments] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [fileDragOver, setFileDragOver] = useState(false);
@@ -171,6 +173,7 @@ export function ChatArea({
   const [editingQueuedText, setEditingQueuedText] = useState('');
   const streamingKeys = useStreamingConversations();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const conversationOverflowButtonRef = useRef<HTMLButtonElement>(null);
   const messageCanvasRef = useRef<HTMLDivElement>(null);
   const pendingCaret = useRef<number | null>(null);
   const mentionCache = useRef<Map<string, WorkspaceEntry[]>>(new Map());
@@ -181,6 +184,10 @@ export function ChatArea({
   const [mentionLoading, setMentionLoading] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
   const modelPickerRef = useDismissibleLayer<HTMLDivElement>(modelOpen, () => setModelOpen(false));
+  const conversationPickerRef = useDismissibleLayer<HTMLDivElement>(conversationPickerOpen, () => {
+    setConversationPickerOpen(false);
+    setConversationSearch('');
+  });
   // Hermes always stores `nine-router`; find the upstream account that owns
   // the selected routed model so the picker can still highlight it.
   const currentProvider = providers.find((provider) =>
@@ -198,13 +205,19 @@ export function ChatArea({
     if (!activeConversation || initial.some((item) => item.id === activeConversation.id)) return initial;
     return [...initial.slice(0, 2), activeConversation];
   })();
-  const shownConversations = conversationsExpanded ? agent.conversations : compactConversations;
-  const hiddenConversationCount = Math.max(0, agent.conversations.length - shownConversations.length);
+  const shownConversationIds = new Set(compactConversations.map((item) => item.id));
+  const hiddenConversations = agent.conversations.filter((item) => !shownConversationIds.has(item.id));
+  const conversationQuery = conversationSearch.trim().toLowerCase();
+  const filteredHiddenConversations = hiddenConversations.filter((item) => !conversationQuery
+    || item.title.toLowerCase().includes(conversationQuery)
+    || item.id.toLowerCase().includes(conversationQuery));
+  const hiddenConversationCount = hiddenConversations.length;
 
   useEffect(() => {
     setAgentPickerOpen(false);
     setAgentPickerSearch('');
-    setConversationsExpanded(false);
+    setConversationPickerOpen(false);
+    setConversationSearch('');
   }, [agent.id]);
   // Only the final answer of a turn is shown as a chat bubble. Intermediate
   // tool-call messages (finish_reason "tool_calls") are hidden here and instead
@@ -550,8 +563,8 @@ export function ChatArea({
         </div>
       </header>
 
-      <div className={conversationsExpanded ? 'conversation-tabs expanded' : 'conversation-tabs'}>
-        {shownConversations.map((conversation) => {
+      <div className="conversation-tabs">
+        {compactConversations.map((conversation) => {
           const tabStreaming = streamingKeys.includes(`${agent.id}::${conversation.id}`);
           return (
           <div
@@ -595,19 +608,63 @@ export function ChatArea({
           </div>
           );
         })}
-        {!conversationsExpanded && hiddenConversationCount > 0 && (
-          <button
-            className="chat-tab conversation-overflow"
-            title={t('chat.showAllConversations')}
-            onClick={() => setConversationsExpanded(true)}
-          >
-            +{hiddenConversationCount}
-          </button>
-        )}
-        {conversationsExpanded && agent.conversations.length > 3 && (
-          <button className="chat-tab conversation-overflow" onClick={() => setConversationsExpanded(false)}>
-            {t('common.showLess')}
-          </button>
+        {hiddenConversationCount > 0 && (
+          <div className="conversation-picker" ref={conversationPickerRef}>
+            <button
+              className="chat-tab conversation-overflow"
+              title={t('chat.showAllConversations')}
+              aria-haspopup="listbox"
+              aria-expanded={conversationPickerOpen}
+              ref={conversationOverflowButtonRef}
+              onClick={() => {
+                const rect = conversationOverflowButtonRef.current?.getBoundingClientRect();
+                if (rect) setConversationPickerPosition({
+                  top: rect.bottom + 7,
+                  left: Math.max(8, Math.min(rect.left, window.innerWidth - 368)),
+                });
+                setConversationPickerOpen((open) => !open);
+              }}
+            >
+              +{hiddenConversationCount}
+            </button>
+            {conversationPickerOpen && (
+              <div className="conversation-picker-popover" style={conversationPickerPosition}>
+                <div className="conversation-picker-search">
+                  <Search size={14} />
+                  <input
+                    value={conversationSearch}
+                    onChange={(event) => setConversationSearch(event.target.value)}
+                    placeholder={t('chat.searchConversations', { defaultValue: 'Search sessions…' })}
+                    autoFocus
+                  />
+                </div>
+                <div className="conversation-picker-list" role="listbox" aria-label={t('chat.showAllConversations')}>
+                  {filteredHiddenConversations.map((conversation) => {
+                    const tabStreaming = streamingKeys.includes(`${agent.id}::${conversation.id}`);
+                    return (
+                      <button
+                        key={conversation.id}
+                        role="option"
+                        aria-selected={conversation.id === activeConversation?.id}
+                        onClick={() => {
+                          onSelectConversation(conversation.id);
+                          setConversationPickerOpen(false);
+                          setConversationSearch('');
+                        }}
+                      >
+                        {tabStreaming ? <span className="tab-stream-dot" /> : <MessageSquarePlus size={14} />}
+                        <span><strong>{conversation.title}</strong><small>{conversation.id}</small></span>
+                        {conversation.id === activeConversation?.id && <Check size={14} />}
+                      </button>
+                    );
+                  })}
+                  {filteredHiddenConversations.length === 0 && (
+                    <p>{t('chat.noMatchingConversations', { defaultValue: 'No matching sessions.' })}</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         )}
         <button className="chat-tab add" title={t('chat.createConversation')} onClick={onCreateConversation}>
           <Plus size={16} />

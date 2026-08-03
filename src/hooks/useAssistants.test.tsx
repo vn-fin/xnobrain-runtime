@@ -149,4 +149,18 @@ describe('useAssistants lazy collections', () => {
     expect(mocks.listConversations).toHaveBeenCalledWith('agent-one');
     expect(result.current.agents[0].conversations).toHaveLength(2);
   });
+
+  it('reconciles a streamed conversation title without another API request', async () => {
+    mocks.listAgents.mockResolvedValue([agents[0]]);
+    mocks.listConversations.mockResolvedValue([{ id: 'session-one', title: 'New Session', updated: 'now', messages: 0 }]);
+    const { result } = renderHook(() => useAssistants());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await act(() => result.current.loadConversations('agent-one'));
+    mocks.listConversations.mockClear();
+
+    act(() => result.current.setConversationTitle('agent-one', 'session-one', 'Market risk summary'));
+
+    expect(result.current.agents[0].conversations[0].title).toBe('Market risk summary');
+    expect(mocks.listConversations).not.toHaveBeenCalled();
+  });
 });

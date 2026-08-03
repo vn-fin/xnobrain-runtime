@@ -699,9 +699,11 @@ class PlatformService:
     def delete_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.agents.delete_workspace_path(agent_id, body)
 
-    def list_conversations(self, agent_id: str) -> dict[str, Any]:
-        payload = self.agents.list_conversations(agent_id)
-        return {"conversations": [self._conversation_dto(agent_id, item) for item in payload["conversations"]], "pagination": {"page": 1, "limit": 50, "has_more": False}}
+    def list_conversations(self, agent_id: str, *, limit: int = 500) -> dict[str, Any]:
+        bounded_limit = max(1, min(int(limit), 1000))
+        payload = self.agents.list_conversations(agent_id, {"limit": bounded_limit})
+        conversations = payload["conversations"]
+        return {"conversations": [self._conversation_dto(agent_id, item) for item in conversations], "pagination": {"page": 1, "limit": bounded_limit, "has_more": len(conversations) == bounded_limit}}
 
     def create_conversation(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         payload = self.agents.create_conversation(agent_id, {"title": body.get("title") or "New Session"})

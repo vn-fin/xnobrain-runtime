@@ -56,7 +56,7 @@ function mapUsage(dto: ConversationUsageDTO): ConversationUsage {
 }
 
 export const conversationsApi = {
-  async list(agentId: string, page = 1, limit = 50): Promise<Conversation[]> {
+  async list(agentId: string, page = 1, limit = 500): Promise<Conversation[]> {
     const data = await request<ConversationListResponseDTO>(pathWithAgent(ROOT, agentId, { page, limit }));
     return (data.conversations ?? []).map(mapConversation);
   },

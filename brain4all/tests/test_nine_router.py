@@ -526,6 +526,44 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(sessions), 2)
             self.assertTrue(all(item["title"] for item in sessions))
 
+    def test_default_conversation_gets_a_unique_title_after_first_message(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            manager.create_agent({"name": "news"})
+            first = manager.create_conversation("news", {})["conversation"]
+            second = manager.create_conversation("news", {})["conversation"]
+            custom = manager.create_conversation("news", {"title": "Pinned title"})["conversation"]
+            profile_dir = manager._profile_dir("news")
+
+            first_title = manager._auto_title_conversation(
+                profile_dir,
+                first["id"],
+                "Please summarize today's market news and key risks.",
+            )
+            second_title = manager._auto_title_conversation(
+                profile_dir,
+                second["id"],
+                "Please summarize today's market news and key risks.",
+            )
+            custom_title = manager._auto_title_conversation(
+                profile_dir,
+                custom["id"],
+                "This must not replace a manual title.",
+            )
+
+            self.assertEqual(first_title, "Please summarize today's market news and key risks.")
+            self.assertEqual(second_title, "Please summarize today's market news and key risks. 2")
+            self.assertEqual(custom_title, "Pinned title")
+            self.assertEqual(
+                manager.get_conversation("news", first["id"])["conversation"]["title"],
+                first_title,
+            )
+
     def test_conversation_stream_does_not_create_a_missing_session(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
