@@ -4,11 +4,13 @@ import type { ConnectionMode, ConnectionProvider, ProviderBrand, ProviderConnect
 function connectionMode(value?: string): ConnectionMode {
   if (value === 'api_key' || value === 'api-key') return 'api-key';
   if (value === 'device_code' || value === 'device-code') return 'device-code';
+  if (value === 'no_auth' || value === 'no-auth') return 'no-auth';
   return 'cli';
 }
 
 function providerBrand(dto: ProviderConnectorDTO): ProviderBrand {
   const value = `${dto.id ?? ''} ${dto.provider_type ?? ''}`.toLowerCase();
+  if (value.includes('opencode')) return 'opencode';
   if (value.includes('deepseek')) return 'deepseek';
   if (value.includes('moonshot') || value.includes('kimi')) return 'moonshot';
   if (value.includes('qwen')) return 'qwen';

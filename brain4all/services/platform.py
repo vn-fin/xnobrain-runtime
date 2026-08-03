@@ -66,13 +66,29 @@ OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS = {
         "base_url": "",
     },
 }
+PROVIDER_DEFINITIONS = {
+    "opencode-go": {
+        "display_name": "OpenCode Go",
+        "description": "OpenCode Go subscription models through 9router.",
+        "base_url": "",
+    },
+    "opencode": {
+        "display_name": "OpenCode Zen Free",
+        "description": "Free OpenCode Zen models routed natively through 9router.",
+        "base_url": "",
+    },
+    **OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
+}
 SUPPORTED_PROVIDERS = (
     "claude", "codex", "antigravity", "openai", "anthropic", "gemini",
+    "opencode-go", "opencode",
     *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
 )
 API_KEY_PROVIDERS = frozenset({
-    "openai", "anthropic", "gemini", *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
+    "openai", "anthropic", "gemini", "opencode-go",
+    *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
 })
+NO_AUTH_PROVIDERS = frozenset({"opencode"})
 SAFE_TOOLSETS = frozenset({
     "browser", "code_execution", "computer_use", "context_engine", "file",
     "image_gen", "session_search", "skills", "terminal", "todo", "tts",
@@ -1158,11 +1174,14 @@ class PlatformService:
         try:
             connections = (await self.router.list_connections())["connections"]
             models = (await self.router.list_models())["data"]
+            router_available = True
         except NineRouterAPIError:
             connections, models = [], []
+            router_available = False
         result = []
         for provider in SUPPORTED_PROVIDERS:
-            definition = OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS.get(provider, {})
+            definition = PROVIDER_DEFINITIONS.get(provider, {})
+            no_auth = provider in NO_AUTH_PROVIDERS
             provider_rows = sorted(
                 (item for item in connections if item.get("provider") == provider),
                 key=lambda item: (int(item.get("priority") or 0), str(item.get("name") or "")),
@@ -1176,11 +1195,20 @@ class PlatformService:
                 "description": definition.get(
                     "description", "Credentials are managed by the local 9router runtime."
                 ),
-                "connection_mode": "api-key" if provider in API_KEY_PROVIDERS else "cli",
+                "connection_mode": (
+                    "no-auth" if no_auth
+                    else "api-key" if provider in API_KEY_PROVIDERS
+                    else "cli"
+                ),
                 "base_url": definition.get("base_url", ""),
                 "requires_base_url": provider == "openai-like",
-                "connected": bool(active_rows),
-                "status": "connected" if active_rows else "disconnected",
+                "connected": (no_auth and router_available) or bool(active_rows),
+                "status": (
+                    "available" if no_auth and router_available
+                    else "unavailable" if no_auth
+                    else "connected" if active_rows
+                    else "disconnected"
+                ),
                 "last_test_status": primary.get("test_status", "unknown"),
                 "default_model": primary.get("default_model", ""),
                 "connection_count": len(provider_rows),
@@ -1210,6 +1238,7 @@ class PlatformService:
 
     async def start_provider_connect(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         if provider in API_KEY_PROVIDERS:
             return self._api_key_info(provider)
         redirect = "http://localhost:1455/auth/callback" if provider == "codex" else "http://localhost:20128/callback"
@@ -1222,6 +1251,7 @@ class PlatformService:
 
     async def submit_provider_connect(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         value = str(body.get("text") or body.get("response_text") or body.get("token") or body.get("api_key") or "").strip()
         if not value:
             raise ServiceError("provider credential or callback is required")
@@ -1257,6 +1287,7 @@ class PlatformService:
 
     async def update_provider(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         if provider not in API_KEY_PROVIDERS:
             raise ServiceError("OAuth providers must be updated through connect")
         router_provider = provider
@@ -1275,6 +1306,7 @@ class PlatformService:
 
     async def disconnect_provider(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         connections = (await self.router.list_connections())["connections"]
         for item in connections:
             if item.get("provider") == provider:
@@ -1284,6 +1316,7 @@ class PlatformService:
 
     async def test_provider(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         rows = await self._provider_connections(provider)
         current = next(
             (item for item in rows if item.get("active") is not False),
@@ -1296,6 +1329,7 @@ class PlatformService:
 
     async def list_provider_connections(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         connections = await self._provider_connections(provider)
         return {
             "provider_id": provider,
@@ -1305,6 +1339,7 @@ class PlatformService:
 
     async def add_provider_connection(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
         self._provider(provider)
+        self._require_connection_auth(provider)
         if provider not in API_KEY_PROVIDERS:
             raise ServiceError(
                 "use the provider connect flow to add an OAuth account",
@@ -1377,6 +1412,15 @@ class PlatformService:
         if provider not in SUPPORTED_PROVIDERS:
             raise ServiceError("provider not found", status=404, code="not_found")
         return provider
+
+    @staticmethod
+    def _require_connection_auth(provider: str) -> None:
+        if provider in NO_AUTH_PROVIDERS:
+            raise ServiceError(
+                "provider is available without authentication",
+                status=400,
+                code="no_auth_provider",
+            )
 
     @staticmethod
     def _api_key_info(provider: str) -> dict[str, Any]:

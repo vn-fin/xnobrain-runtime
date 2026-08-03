@@ -209,14 +209,23 @@ export function Onboarding({
                     <ProviderBrandIcon brand={selectedProvider.brand} />
                     <strong>{selectedProvider.display_name}</strong>
                     <span className={selectedProvider.connected ? 'conn-badge ok' : 'conn-badge'}>
-                      {selectedProvider.connected
+                      {selectedProvider.connection_mode === 'no-auth'
+                        ? selectedProvider.connected
+                          ? t('common.available', { defaultValue: 'available' })
+                          : t('common.unavailable', { defaultValue: 'unavailable' })
+                        : selectedProvider.connected
                         ? (selectedVerified ? t('onboarding.provider.verified') : t('connections.connected'))
                         : t('connections.notConnected')}
                     </span>
                   </div>
                   <p className="ob-step-desc">{selectedProvider.description}</p>
 
-                  {selectedProvider.connected ? (
+                  {selectedProvider.connection_mode === 'no-auth' && selectedProvider.connected ? (
+                    <span className="ob-done-note">
+                      <Check size={14} />
+                      {t('connections.noAuthRequired', { defaultValue: 'No API key required' })}
+                    </span>
+                  ) : selectedProvider.connected ? (
                     selectedVerified ? (
                       <span className="ob-done-note"><Check size={14} /> {t('onboarding.provider.verifiedNote', { name: selectedProvider.display_name })}</span>
                     ) : (

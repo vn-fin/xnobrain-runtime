@@ -5230,6 +5230,35 @@ body.col-resizing {
   background: #6467f2;
 }
 
+.brand-icon.opencode {
+  background: #f4f4f0;
+  border: 1px solid #d4d4ce;
+}
+
+:root:not([data-theme='light']) .brand-icon.opencode {
+  background: #20201d;
+  border-color: #45453f;
+}
+
+.brand-icon.opencode img {
+  width: 19px;
+  height: 19px;
+}
+
+.conn-no-auth {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.conn-no-auth.unavailable {
+  color: var(--danger);
+}
+
 .conn-badge {
   margin-left: auto;
   flex: 0 0 auto;

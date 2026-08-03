@@ -22,11 +22,14 @@ NINE_ROUTER_API_BASE_URL = f"{NINE_ROUTER_BASE_URL}/v1"
 NINE_ROUTER_KEY_ENV = "NINE_ROUTER_API_KEY"
 NINE_ROUTER_DEFAULT_MODEL = "auto"
 
-SUPPORTED_ROUTER_PROVIDERS = frozenset(
-    {"claude", "codex", "antigravity", "openai", "anthropic", "gemini"}
-)
+SUPPORTED_ROUTER_PROVIDERS = frozenset({
+    "claude", "codex", "antigravity", "openai", "anthropic", "gemini",
+    "opencode-go", "opencode",
+})
 OAUTH_ROUTER_PROVIDERS = frozenset({"claude", "codex", "antigravity"})
-API_KEY_ROUTER_PROVIDERS = frozenset({"openai", "anthropic", "gemini"})
+API_KEY_ROUTER_PROVIDERS = frozenset({
+    "openai", "anthropic", "gemini", "opencode-go",
+})
 OPENAI_COMPATIBLE_PROVIDERS = frozenset(
     {"deepseek", "moonshot", "qwen", "openai-like"}
 )
@@ -37,6 +40,8 @@ ROUTER_MODEL_ALIASES = {
     "openai": "openai",
     "anthropic": "anthropic",
     "gemini": "gemini",
+    "opencode-go": "ocg",
+    "opencode": "oc",
 }
 ROUTER_PROVIDER_BY_MODEL_OWNER = {
     owner: provider for provider, owner in ROUTER_MODEL_ALIASES.items()
@@ -397,6 +402,7 @@ class NineRouterManager:
             )
         if ensure_auto:
             await self._ensure_auto_combo(models)
+        models.extend(await self._opencode_free_models(seen))
         return {
             "object": "list",
             "provider": NINE_ROUTER_PROVIDER_KEY,
@@ -411,6 +417,35 @@ class NineRouterManager:
                 *models,
             ],
         }
+
+    async def _opencode_free_models(self, seen: set[str]) -> list[dict[str, str]]:
+        path = (
+            "/api/providers/suggested-models?"
+            f"url={quote('https://opencode.ai/zen/v1/models', safe='')}&"
+            "type=opencode-free"
+        )
+        try:
+            payload = await self._request("GET", path)
+        except NineRouterAPIError:
+            return []
+        raw_models = payload.get("data", []) if isinstance(payload, Mapping) else []
+        result: list[dict[str, str]] = []
+        for item in raw_models if isinstance(raw_models, list) else []:
+            if not isinstance(item, Mapping):
+                continue
+            raw_id = str(item.get("id") or "").strip()
+            if not raw_id:
+                continue
+            model_id = raw_id if raw_id.startswith("oc/") else f"oc/{raw_id}"
+            if model_id in seen:
+                continue
+            seen.add(model_id)
+            result.append({
+                "id": model_id,
+                "provider": "opencode",
+                "name": str(item.get("name") or model_id),
+            })
+        return result
 
     async def usage(self, model: Any) -> dict[str, Any]:
         """Return filtered quota windows for the provider behind one model."""

@@ -4,8 +4,8 @@
 export type RightView = 'workspace' | 'skills' | 'cron' | 'runtime';
 export type CenterView = 'chat' | 'skills' | 'teams' | 'data' | 'kanban' | 'analytics' | 'cron';
 
-export type ConnectionMode = 'device-code' | 'cli' | 'api-key';
-export type ProviderBrand = 'openai' | 'claude' | 'anthropic' | 'gemini' | 'openrouter' | 'deepseek' | 'moonshot' | 'qwen' | 'openai-like';
+export type ConnectionMode = 'device-code' | 'cli' | 'api-key' | 'no-auth';
+export type ProviderBrand = 'openai' | 'claude' | 'anthropic' | 'gemini' | 'openrouter' | 'deepseek' | 'moonshot' | 'qwen' | 'openai-like' | 'opencode';
 
 // Mirrors agent-gateway models.ProviderConnector (connections view)
 export type ConnectionProvider = {
