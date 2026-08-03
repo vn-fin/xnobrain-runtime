@@ -45,6 +45,9 @@
 
 - Grant least privilege per edition/window in Tauri capabilities.
 - Permit only approved HTTPS origins and loopback product URLs.
+- Sandbox the Docker Web iframe/webview to the minimum browser capabilities
+  the product needs. Keep native controls outside the embedded document and
+  ensure they do not cover primary Web controls at supported window sizes.
 - For Docker Web, generate exactly one loopback host mapping on Traefik. Read
   the default port from the signed manifest, accept custom ports only in
   1024–65535, persist the choice, and never accept a bind host or URL from UI.

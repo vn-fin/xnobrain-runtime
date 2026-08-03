@@ -1,12 +1,14 @@
 # Brain4All App Workspace
 
 All native installer and Full Managed App code lives here. Plan 013 defines
-the staged implementation. The Docker edition remains Web-only and opens the
-default browser; the later Full Managed edition is the native Tauri app.
+the staged implementation. The Docker edition installs the existing Web app
+and displays that loopback site in a sandboxed Tauri webview, with an explicit
+option to open it in the default browser. The later Full Managed edition will
+reuse the same application shell while managing the runtime directly.
 
 Docker Web publishes exactly one loopback host port through Traefik. The
 installer offers the release default (initially 5152) or a validated custom
-port; no backend, frontend, 9router, or telemetry container publishes a host
+port; no backend, frontend, router, or telemetry container publishes a host
 port directly.
 
 The Tauri 2 workspace and Docker Web installer are isolated in this directory.

@@ -30,7 +30,8 @@ React component → typed bridge adapter → Tauri command
                                       → service → domain + driver trait
                                                         → platform driver
 Managed product view → loopback HTTP/SSE contract
-Docker Web UI → system browser → loopback HTTP/SSE contract
+Docker Web UI → sandboxed app webview → loopback HTTP/SSE contract
+              ↘ explicit system-browser fallback
 ```
 
 Commands translate IPC only. Services own installation/lifecycle rules. Domain
@@ -39,9 +40,11 @@ OS/Docker operations. Security and persistence are reusable infrastructure.
 
 ## Edition rules
 
-- `docker`: Web edition only; installer/maintenance utility opens the system
-  browser after health succeeds. Traefik alone maps
-  `127.0.0.1:<selected-port>:5152`; all other service ports stay internal.
+- `docker`: Web edition only; installer/maintenance utility embeds the
+  unchanged loopback Web site after health succeeds and also offers the system
+  browser. Traefik alone maps `127.0.0.1:<selected-port>:5152`; all other
+  service ports stay internal. Native overlays may manage only this Compose
+  project and must not replace or fork product pages.
 - `managed`: native Tauri app; integrates management and product views and owns
   a platform-managed runtime.
 - Use separate Tauri capability files, identifiers, manifests, and release

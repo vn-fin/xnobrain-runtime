@@ -10,8 +10,12 @@ Keep every implementation change under `app/`. Read `app/AGENTS.md` and
 
 ## Preserve the product boundary
 
-- Treat Docker as the Web edition. Install/start it, then open the loopback URL
-  in the default system browser. Do not host its product UI in Tauri.
+- Treat Docker as the Web edition. Install/start the unchanged Web stack, then
+  display its loopback URL in a sandboxed Tauri webview by default. Also offer
+  an explicit system-browser action and a usable fallback when embedding fails.
+- Keep the embedded Web surface visually primary. Put Docker lifecycle,
+  bounded/redacted logs, system health, browser fallback, and future account
+  actions behind small native overlay controls; do not fork or import Web UI.
 - Publish one Docker Web host port through Traefik only. Keep every product and
   runtime service internal. Offer the manifest default or a validated custom
   loopback port and persist the selection.
@@ -41,7 +45,10 @@ before adding or moving files.
    needs them. Never use broad shell or filesystem permissions.
 6. Add unit tests for domain/service behavior, IPC contract tests, frontend
    tests, and a platform-focused smoke test proportional to the change.
-7. Run `make -C app check`, then the relevant native-host build target. Do not
+7. For embedded-window changes, verify the real Tauri window, Web surface,
+   fullscreen restore, and lifecycle actions; browser-only simulation is not
+   native evidence.
+8. Run `make -C app check`, then the relevant native-host build target. Do not
    claim Windows/macOS packaging from Linux.
 
 Read [references/coding-style.md](references/coding-style.md) for Rust,
