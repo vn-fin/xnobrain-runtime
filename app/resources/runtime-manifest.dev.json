@@ -6,6 +6,11 @@
   "minimum_disk_bytes": 8589934592,
   "health_path": "/api/v1/health",
   "health_timeout_seconds": 180,
+  "web_auth": {
+    "base_url": "https://api.dev.xnoquant.io",
+    "mode": "required",
+    "provider": "xno-firebase"
+  },
   "images": {
     "traefik": {
       "reference": "traefik:v3.6.16",
@@ -13,8 +18,8 @@
       "pull": false
     },
     "frontend": {
-      "reference": "brain4all-frontend:local",
-      "expected_id": "sha256:4b17d3c4ad4acad21c8df7ce4655cae85af23157f149d8c627ff242a22f16c75",
+      "reference": "brain4all-frontend:desktop-auth-test",
+      "expected_id": "sha256:db22bc7d48397e80258697ed1e04234848d16c4113c796bd70d20960c1c041eb",
       "pull": false
     },
     "runtime": {

@@ -11,6 +11,13 @@ installer offers the release default (initially 5152) or a validated custom
 port; no backend, frontend, router, or telemetry container publishes a host
 port directly.
 
+The development runtime manifest selects the authenticated Web build with
+required `xno-firebase` login and records its test authentication base URL.
+Authentication remains a compile-time frontend contract, so the manifest pins
+the exact matching image ID instead of trying to inject unsupported runtime
+JavaScript configuration. The Firebase browser key is public build metadata
+inside that image and is never copied into installer state or Compose files.
+
 The Tauri 2 workspace and Docker Web installer are isolated in this directory.
 The browser-only development bridge is available for UI testing, while real
 install operations are accepted only by the typed Rust command boundary.

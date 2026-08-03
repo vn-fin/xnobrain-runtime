@@ -46,6 +46,9 @@ services:
       - traefik.http.routers.brain4all-web-app-ui.priority=1
       - traefik.http.services.brain4all-web-app-ui.loadbalancer.server.port=8080
       - brain4all.install-id=brain4all_web
+      - brain4all.web-auth-base-url={auth_base_url}
+      - brain4all.web-auth-mode={auth_mode}
+      - brain4all.web-auth-provider={auth_provider}
     networks:
       - edge
     restart: unless-stopped
@@ -103,6 +106,9 @@ volumes:
             traefik_image = self.manifest.images.traefik.reference,
             frontend_image = self.manifest.images.frontend.reference,
             runtime_image = self.manifest.images.runtime.reference,
+            auth_base_url = self.manifest.web_auth.base_url,
+            auth_mode = self.manifest.web_auth.mode,
+            auth_provider = self.manifest.web_auth.provider,
             pull_policy = pull_policy,
             port = self.port,
             internal_secret = self.internal_secret,
@@ -134,6 +140,9 @@ mod tests {
         assert!(compose.contains("brain4all_web_data"));
         assert!(compose.contains("brain4all-web-app-ui"));
         assert!(compose.contains("brain4all-web-app-api"));
+        assert!(compose.contains("brain4all.web-auth-base-url=https://api.dev.xnoquant.io"));
+        assert!(compose.contains("brain4all.web-auth-mode=required"));
+        assert!(compose.contains("brain4all.web-auth-provider=xno-firebase"));
         assert!(!compose.contains("routers.brain4all-ui"));
         assert!(!compose.contains("routers.brain4all-api"));
     }

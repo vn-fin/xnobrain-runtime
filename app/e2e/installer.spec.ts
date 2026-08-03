@@ -64,6 +64,7 @@ test('Windows existing-Docker journey installs on a custom Traefik port', async 
   await expect(page.getByRole('button', { name: 'Exit full screen' })).toBeVisible()
   await page.getByRole('button', { name: 'Exit full screen' }).click()
   await page.getByRole('button', { name: 'Docker Web settings' }).click()
+  await expect(page.getByRole('menuitem', { name: /Account & sign in/ })).toHaveCount(0)
   await capture(page, '12-settings-menu')
   await page.getByRole('menuitem', { name: /System/ }).click()
   await expect(page.getByRole('heading', { name: 'Docker runtime' })).toBeVisible()

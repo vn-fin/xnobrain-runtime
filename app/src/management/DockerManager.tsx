@@ -71,7 +71,6 @@ export function DockerManager({ bridge, initialOverview }: { bridge: InstallerBr
               <button role="menuitem" onClick={() => { setPanel('system'); setMenuOpen(false) }}><SlidersIcon /><span><strong>System</strong><small>Services, health, and ingress</small></span></button>
               <button role="menuitem" onClick={() => { setPanel('logs'); setMenuOpen(false) }}><TerminalIcon /><span><strong>Logs</strong><small>Recent output for this stack</small></span></button>
               <button role="menuitem" disabled={!running} onClick={() => { void bridge.openWeb(); setMenuOpen(false) }}><ExternalIcon /><span><strong>Open in browser</strong><small>Use your default browser</small></span></button>
-              <button role="menuitem" disabled><GlobeIcon /><span><strong>Account & sign in</strong><small>Coming in a later app stage</small></span></button>
               <div className="workspace-menu-controls">
                 {running ? <button disabled={Boolean(activeAction)} onClick={() => { setMenuOpen(false); void control('stop') }}><StopIcon /> Stop</button> : <button disabled={Boolean(activeAction)} onClick={() => { setMenuOpen(false); void control('start') }}><PlayIcon /> Start</button>}
                 <button disabled={!running || Boolean(activeAction)} onClick={() => { setMenuOpen(false); void control('restart') }}><RefreshIcon /> Restart</button>

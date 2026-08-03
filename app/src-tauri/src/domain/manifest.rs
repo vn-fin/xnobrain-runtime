@@ -19,6 +19,13 @@ pub struct RuntimeImages {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WebAuthManifest {
+    pub base_url: String,
+    pub mode: String,
+    pub provider: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RuntimeManifest {
     pub schema_version: u32,
     pub release: String,
@@ -27,6 +34,7 @@ pub struct RuntimeManifest {
     pub minimum_disk_bytes: u64,
     pub health_path: String,
     pub health_timeout_seconds: u64,
+    pub web_auth: WebAuthManifest,
     pub images: RuntimeImages,
 }
 
@@ -53,6 +61,16 @@ impl RuntimeManifest {
             return Err(InstallerError::terminal(
                 "manifest_port_invalid",
                 "The runtime manifest contains an invalid default port.",
+            ));
+        }
+        if !self.web_auth.base_url.starts_with("https://")
+            || self.web_auth.base_url.ends_with('/')
+            || self.web_auth.mode != "required"
+            || self.web_auth.provider != "xno-firebase"
+        {
+            return Err(InstallerError::terminal(
+                "manifest_auth_invalid",
+                "The runtime manifest contains an invalid Web authentication contract.",
             ));
         }
         for image in [
@@ -84,5 +102,8 @@ mod tests {
         assert!(manifest.development);
         assert_eq!(manifest.default_host_port, 5152);
         assert!(!manifest.images.frontend.pull);
+        assert_eq!(manifest.web_auth.base_url, "https://api.dev.xnoquant.io");
+        assert_eq!(manifest.web_auth.mode, "required");
+        assert_eq!(manifest.web_auth.provider, "xno-firebase");
     }
 }
