@@ -88,11 +88,11 @@ export function App() {
   }
 
   return (
-    <div className="app-shell">
-      <header className="app-bar">
+    <div className={`app-shell ${state.step === 'dashboard' ? 'dashboard-shell' : ''}`}>
+      {state.step !== 'dashboard' && <header className="app-bar">
         <div className="brand"><span><BrainIcon /></span><strong>Brain4All</strong><em>{state.step === 'dashboard' ? 'Docker Manager' : 'Installer'}</em></div>
         <span className="app-edition">{state.step === 'dashboard' ? 'Docker Web · Local' : 'Docker Web · Preview'}</span>
-      </header>
+      </header>}
       <div className={`app-layout ${state.step === 'dashboard' ? 'management-layout' : ''}`}>
         {state.step !== 'dashboard' && <StepRail current={state.step} />}
         <main>

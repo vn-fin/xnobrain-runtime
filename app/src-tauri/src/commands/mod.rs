@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tauri::{AppHandle, State, ipc::Channel};
+use tauri::{AppHandle, State, Window, ipc::Channel};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::{
@@ -92,6 +92,18 @@ pub async fn read_logs(
     tauri::async_runtime::spawn_blocking(move || installer.logs(service))
         .await
         .map_err(|_| InstallerError::retryable("worker_failed", "The log request stopped unexpectedly."))?
+}
+
+#[tauri::command]
+pub fn toggle_fullscreen(window: Window) -> Result<bool, InstallerError> {
+    let fullscreen = window
+        .is_fullscreen()
+        .map_err(|_| InstallerError::retryable("window_state_failed", "Could not read the window state."))?;
+    let next = !fullscreen;
+    window
+        .set_fullscreen(next)
+        .map_err(|_| InstallerError::retryable("fullscreen_failed", "Could not change fullscreen mode."))?;
+    Ok(next)
 }
 
 #[tauri::command]

@@ -23,3 +23,5 @@ export const PlayIcon = (props: IconProps) => <Icon {...props}><path d="m8 5 11 
 export const StopIcon = (props: IconProps) => <Icon {...props}><rect x="6" y="6" width="12" height="12" rx="1"/></Icon>
 export const TerminalIcon = (props: IconProps) => <Icon {...props}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M12 15h5"/></Icon>
 export const SlidersIcon = (props: IconProps) => <Icon {...props}><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></Icon>
+export const FullscreenIcon = (props: IconProps) => <Icon {...props}><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></Icon>
+export const ExitFullscreenIcon = (props: IconProps) => <Icon {...props}><path d="M3 8h5V3M21 8h-5V3M3 16h5v5M21 16h-5v5"/></Icon>

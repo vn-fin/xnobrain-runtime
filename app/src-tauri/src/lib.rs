@@ -37,6 +37,7 @@ pub fn run() {
             commands::inspect_runtime,
             commands::control_runtime,
             commands::read_logs,
+            commands::toggle_fullscreen,
             commands::reset_installation,
         ])
         .run(tauri::generate_context!())

@@ -20,6 +20,8 @@ declare global {
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds))
 
+let demoFullscreen = false
+
 const demoPlatform = (): SystemInspection['platform'] => {
   const requested = new URLSearchParams(window.location.search).get('platform')
   if (requested === 'windows' || requested === 'macos' || requested === 'linux') {
@@ -147,6 +149,10 @@ const createDemoBridge = (): InstallerBridge => ({
       truncated: false,
     }
   },
+  async toggleFullscreen() {
+    demoFullscreen = !demoFullscreen
+    return demoFullscreen
+  },
   async resetInstallation() {
     window.localStorage.removeItem('brain4all-demo-port')
     window.localStorage.removeItem('brain4all-demo-state')
@@ -185,6 +191,7 @@ const tauriBridge: InstallerBridge = {
   inspectRuntime: () => invoke<RuntimeOverview>('inspect_runtime'),
   controlRuntime: (action) => invoke<RuntimeOverview>('control_runtime', { action }),
   readLogs: (service) => invoke<RuntimeLogs>('read_logs', { service }),
+  toggleFullscreen: () => invoke<boolean>('toggle_fullscreen'),
   resetInstallation: () => invoke<void>('reset_installation'),
 }
 

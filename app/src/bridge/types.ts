@@ -105,5 +105,6 @@ export interface InstallerBridge {
   inspectRuntime(): Promise<RuntimeOverview>
   controlRuntime(action: RuntimeAction): Promise<RuntimeOverview>
   readLogs(service: LogService): Promise<RuntimeLogs>
+  toggleFullscreen(): Promise<boolean>
   resetInstallation(): Promise<void>
 }
