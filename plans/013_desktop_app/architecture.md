@@ -170,7 +170,13 @@ A signed JSON manifest contains at least:
   },
   "architectures": ["amd64", "arm64"],
   "minimum": {"disk_bytes": 0, "memory_bytes": 0},
-  "health": {"path": "/health", "timeout_seconds": 0},
+  "ingress": {
+    "service": "traefik",
+    "bind_host": "127.0.0.1",
+    "container_port": 5152,
+    "default_host_port": 5152
+  },
+  "health": {"path": "/api/brain/v1/health", "timeout_seconds": 0},
   "data_schema": 1
 }
 ```
@@ -182,11 +188,29 @@ supports a documented rotation procedure.
 
 ## Docker installation layout
 
+- Traefik is the only service with a Compose `ports` entry. It maps
+  `127.0.0.1:<selected-host-port>:5152`; its dashboard stays disabled and
+  `exposedByDefault` stays false.
+- Frontend, runtime/FastAPI/Hermes, 9router, and optional observability services
+  have no published host ports. Their internal ports are reachable only on the
+  app-owned Docker networks through Traefik or required service-to-service
+  links.
+- The installer displays the manifest's `default_host_port` (initially 5152)
+  and a Custom option. Custom input is a decimal integer from 1024 through
+  65535. The user cannot configure the bind host or internal container port.
+- Preflight binds/checks the exact loopback port immediately before create.
+  Treat the earlier availability check as advisory because another process can
+  win the race; translate Docker's bind failure back into port selection.
+- Persist the selected host port atomically with install identity. Reinstall,
+  repair, health checks, diagnostics, and browser launch use that stored value,
+  not the current release default.
+- Build the browser/health URL as `http://localhost:<selected-host-port>` and
+  keep Traefik host routing compatible with both local browser and installer
+  health requests. Never accept a user-supplied URL or hostname.
 - Use a stable, namespaced Compose project name.
 - Generate unique credentials on the device and store them in the OS secret
   store where possible; otherwise use an owner-only file.
-- Bind product endpoints to `127.0.0.1`, never all interfaces by default.
-- Resolve ports before creation and store the selected values.
+- Bind the Traefik product endpoint to `127.0.0.1`, never all interfaces.
 - Keep data in a stable named volume independent of image/container versions.
 - Label all Brain4All-owned Docker resources so repair/uninstall targets are
   exact and cannot touch unrelated Docker resources.
@@ -201,12 +225,14 @@ The wizard uses one primary action and one clear recovery action per screen:
 1. Welcome and requirements summary.
 2. Required Web Version/Full Managed App selection.
 3. Use existing Docker/Install Docker selection.
-4. Preflight results with pass, warning, fail, and remediation.
-5. Reviewed action plan including download size, disk use, data location, and
+4. Web access: **Default port 5152** or **Custom port**, with inline validation
+   and conflict detection.
+5. Preflight results with pass, warning, fail, and remediation.
+6. Reviewed action plan including URL, download size, disk use, data location, and
    required elevation/reboot.
-6. Progress with current action, total progress, elapsed time, and cancel.
-7. Health verification.
-8. Ready, with **Open Web Version**, which launches the system browser.
+7. Progress with current action, total progress, elapsed time, and cancel.
+8. Health verification through Traefik at the selected port.
+9. Ready, with **Open Web Version**, which launches the system browser.
 
 Progress comes from structured events (`phase`, `current`, `total`, `unit`,
 `message_code`), not parsed human log text. Raw technical detail is available

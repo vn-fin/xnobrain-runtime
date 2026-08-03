@@ -19,6 +19,10 @@ skill `.agents/skills/tauri-app-development/SKILL.md` before app work.
   required before changing the core repository areas.
 - The Docker edition is Web-only and opens the system browser. Never render the
   Docker Web product inside the Tauri installer webview.
+- In Docker Web, Traefik is the only service allowed to publish a host port.
+  Keep its container entrypoint fixed and bind the selected external port to
+  loopback. Frontend, FastAPI/Hermes, 9router, and observability services stay
+  Docker-internal.
 - The Full Managed edition is the app version. App-only installer and
   management UI belongs under `app/src/`.
 
@@ -33,6 +37,9 @@ skill `.agents/skills/tauri-app-development/SKILL.md` before app work.
   managed-app capability files.
 - Persist state atomically, redact diagnostics, bind product services to
   loopback, verify signed manifests/digests, and preserve user data by default.
+- Treat the Web port as a validated installer setting: offer the signed
+  manifest's default (initially 5152) or a custom unprivileged port, preflight
+  it, persist it, and use it consistently for health and browser launch.
 - Keep `src-tauri/src/main.rs` minimal; wire the application in `lib.rs` and
   feature modules.
 

@@ -59,7 +59,19 @@ Brain4All does not redistribute Docker Desktop inside its installer unless a
 later legal and technical decision explicitly permits it. Downloads use
 official sources and checksums/signatures where published.
 
-## Decision E — Separate Web installer, managed app, and runtimes
+## Decision E — Traefik is the only Docker Web ingress
+
+Only Traefik publishes a host port. Its container entrypoint stays fixed at
+5152; the installer maps a selected loopback host port to it. Frontend,
+FastAPI/Hermes, 9router, and optional observability services publish no host
+ports.
+
+The signed runtime manifest supplies the recommended external port (initially
+5152). The user may keep it or select a custom port in the unprivileged range.
+The bind address is not customizable in the consumer installer: it remains
+loopback. This prevents “custom port” from accidentally becoming LAN exposure.
+
+## Decision F — Separate Web installer, managed app, and runtimes
 
 Four independently versioned artifacts:
 
@@ -73,13 +85,13 @@ Four independently versioned artifacts:
 The desktop updater does not implicitly replace runtime data or pull a new
 runtime. Compatibility is checked before either side updates.
 
-## Decision F — Pull releases; never build on customer machines
+## Decision G — Pull releases; never build on customer machines
 
 The Web installer pulls prebuilt multi-architecture images by immutable
 digest. Tags are display metadata only. A failed new release retains the last
 healthy manifest and images for rollback.
 
-## Decision G — Web maintenance stays minimal; app management comes later
+## Decision H — Web maintenance stays minimal; app management comes later
 
 The Docker Web installer owns only what is necessary to complete installation:
 
@@ -95,7 +107,7 @@ experience: app window, lifecycle, live logs, resource settings,
 backup/restore, updates, repair, and diagnostics. These features are not added
 to the Docker Web edition as a desktop container dashboard.
 
-## Decision H — Full Managed App runtimes are platform-specific
+## Decision I — Full Managed App runtimes are platform-specific
 
 The Full Managed App hides a platform-specific managed runtime behind one app:
 
@@ -108,7 +120,7 @@ The Full Managed App hides a platform-specific managed runtime behind one app:
 Strict full-native Windows is deferred because it would require porting and
 validating every POSIX-oriented runtime tool and skill.
 
-## Decision I — Data removal is a separate destructive choice
+## Decision J — Data removal is a separate destructive choice
 
 Uninstalling the desktop shell, uninstalling runtime components, and deleting
 Brain4All user data are three separate operations. Data deletion requires a

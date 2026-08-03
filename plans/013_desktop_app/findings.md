@@ -38,6 +38,10 @@ Consequences:
   full-runtime installation are not currently complete.
 - The Compose path builds images locally. A desktop release must pull signed,
   prebuilt, multi-architecture images pinned by digest.
+- The development Compose currently uses Traefik's internal entrypoint 5152
+  and `BRAIN4ALL_HTTP_PORT` for its host mapping. The app-owned Docker Web
+  template must preserve Traefik as the sole ingress while binding the chosen
+  host port to loopback; it must not edit the core Compose file.
 
 ## 4. Tauri is viable for the Full Managed App and installer utility
 

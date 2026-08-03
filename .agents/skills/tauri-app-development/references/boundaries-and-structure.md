@@ -40,7 +40,8 @@ OS/Docker operations. Security and persistence are reusable infrastructure.
 ## Edition rules
 
 - `docker`: Web edition only; installer/maintenance utility opens the system
-  browser after health succeeds.
+  browser after health succeeds. Traefik alone maps
+  `127.0.0.1:<selected-port>:5152`; all other service ports stay internal.
 - `managed`: native Tauri app; integrates management and product views and owns
   a platform-managed runtime.
 - Use separate Tauri capability files, identifiers, manifests, and release

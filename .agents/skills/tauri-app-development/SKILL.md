@@ -12,6 +12,9 @@ Keep every implementation change under `app/`. Read `app/AGENTS.md` and
 
 - Treat Docker as the Web edition. Install/start it, then open the loopback URL
   in the default system browser. Do not host its product UI in Tauri.
+- Publish one Docker Web host port through Traefik only. Keep every product and
+  runtime service internal. Offer the manifest default or a validated custom
+  loopback port and persist the selection.
 - Treat Full Managed as the app edition. Put its installer and management UI in
   `app/src/` and its Rust lifecycle implementation in `app/src-tauri/`.
 - Do not modify `src/`, `brain4all/`, `server.py`, Hermes, 9router, or existing

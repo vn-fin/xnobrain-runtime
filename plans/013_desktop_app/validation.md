@@ -64,6 +64,8 @@ Run every supported OS/architecture through:
 5. Windows installation requiring reboot.
 6. Insufficient disk and insufficient memory.
 7. Occupied default ports.
+   Repeat with a valid custom port, invalid values, a privileged port, and a
+   bind race after preflight.
 8. Offline before manifest, network loss during pull, and registry error.
 9. Cancel during pull and during create.
 10. Runtime health timeout and one unhealthy image release.
@@ -74,6 +76,18 @@ Run every supported OS/architecture through:
 
 For each case record screenshots, structured state trace, elapsed time,
 resulting Docker resources, and whether user data remains.
+
+For every Docker Web case, inspect the effective Compose configuration and
+running containers:
+
+- Traefik has exactly one host mapping,
+  `127.0.0.1:<selected-port>:5152`.
+- Frontend, FastAPI/Hermes runtime, 9router, and observability containers have
+  no published host ports.
+- The health endpoint and browser UI are reachable through Traefik at the
+  selected port; direct host access to internal service ports fails.
+- Repair/relaunch continues using the persisted selected port even if the
+  manifest's default changes.
 
 ## 5. Platform release matrix
 
@@ -128,6 +142,10 @@ tests.
 - [ ] Progress, cancel, retry, repair, and relaunch are deterministic.
 - [ ] Ready appears only after all required health checks pass, then opens the
       Web version in the default system browser.
+- [ ] Installer offers the manifest default port or a validated custom port and
+      persists the selection.
+- [ ] Traefik is the only Docker Web service publishing a host port; its mapping
+      is loopback-only and all application/runtime ports remain internal.
 - [ ] Ports are loopback-only and secrets are absent from all diagnostics.
 - [ ] Runtime repair/update/uninstall preserves user data by default.
 - [ ] Signed Windows installer passes the complete Windows matrix.

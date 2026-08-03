@@ -45,6 +45,9 @@
 
 - Grant least privilege per edition/window in Tauri capabilities.
 - Permit only approved HTTPS origins and loopback product URLs.
+- For Docker Web, generate exactly one loopback host mapping on Traefik. Read
+  the default port from the signed manifest, accept custom ports only in
+  1024–65535, persist the choice, and never accept a bind host or URL from UI.
 - Verify signed manifests/updates and immutable digests before activation.
 - Never log secrets, tokens, Docker auth, environment dumps, prompts, chat
   content, request bodies, or raw tool output.

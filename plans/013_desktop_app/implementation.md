@@ -46,16 +46,25 @@ systems without implying that it is the Full Managed App.
 7. Pull images by digest with structured progress, cancellation, retry, and
    cleanup limited to incomplete Brain4All-owned artifacts.
 8. Generate per-install secrets, Compose configuration, labels, loopback
-   ports, and the persistent data volume.
-9. Start the stack, poll health with bounded backoff, and show Ready only after
+   ingress, and the persistent data volume. The generated app-owned Compose
+   configuration contains exactly one host port mapping:
+   `127.0.0.1:<selected-port>:5152` on Traefik.
+9. Implement the port screen: manifest default (initially 5152) or custom
+   1024–65535; reject invalid/reserved input, detect conflicts, persist the
+   selection, and return bind races to this screen without losing other state.
+10. Assert before create that no non-Traefik service has a published port.
+11. Start the stack, poll health through Traefik at the persisted port with
+   bounded backoff, and show Ready only after
    the API and required runtime components are healthy.
-10. Open the healthy loopback URL in the user's default browser. Later runs of
+12. Open the healthy `http://localhost:<selected-port>` URL in the user's
+    default browser. Later runs of
     the utility open/repair the Web version; they never host the product UI.
-11. Add Continue/Retry/Repair/Uninstall-runtime flows. Preserve data by
+13. Add Continue/Retry/Repair/Uninstall-runtime flows. Preserve data by
     default; deletion is a separate confirmed action.
-12. Export a redacted diagnostics ZIP containing versions, state transitions,
+14. Export a redacted diagnostics ZIP containing versions, selected port,
+    state transitions,
     check results, and bounded service logs.
-13. Produce and sign the NSIS installer. Evaluate MSI as an enterprise
+15. Produce and sign the NSIS installer. Evaluate MSI as an enterprise
     deployment artifact after the consumer flow is stable.
 
 Gate: clean-machine, existing-Docker, reboot-resume, repair, and failure

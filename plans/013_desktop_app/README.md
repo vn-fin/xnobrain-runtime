@@ -34,8 +34,10 @@ Brain4All product and one runtime contract:
 4. Web Version detects prerequisites, helps install or connect Docker, pulls
    pinned Brain4All images, creates persistent data, starts the stack, waits
    for health, and opens the URL in the **system browser**.
-5. A failed or interrupted install can resume or repair without losing data.
-6. Full runtime management is added only after installation is reliable.
+5. Docker Web publishes one loopback port through Traefik only. Installation
+   offers the release default port or a validated custom port.
+6. A failed or interrupted install can resume or repair without losing data.
+7. Full runtime management is added only after installation is reliable.
 
 ## Product rule: version selection is mandatory
 
@@ -86,6 +88,7 @@ Included:
 - Required Web Version/Full Managed App selection.
 - Existing-Docker and install-Docker choices.
 - OS/architecture, disk, memory, daemon, port, and virtualization checks.
+- Default/custom Web port selection; only Traefik publishes it to loopback.
 - Resumable prerequisite/install state, including reboot recovery on Windows.
 - Pull by immutable image digest with visible progress and cancellation.
 - Unique per-install secrets, loopback-only ports, persistent named data.
@@ -142,5 +145,7 @@ and open it normally; they do not install Node, Rust, or run Make.
 - UI commands cannot execute arbitrary shell input, ports bind only to
   `127.0.0.1`, secrets are not logged, and update/image signatures are
   verified.
+- Container inspection shows one published port owned by Traefik and zero
+  published ports on frontend, runtime, 9router, or observability services.
 - Automated tests and the manual platform matrix in
   [validation.md](validation.md) pass with recorded evidence.
