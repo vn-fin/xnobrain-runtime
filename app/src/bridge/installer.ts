@@ -7,6 +7,7 @@ import type {
   LogService,
   PortInspection,
   RuntimeOverview,
+  RuntimeLogs,
   SystemInspection,
 } from './types'
 
@@ -182,7 +183,7 @@ const tauriBridge: InstallerBridge = {
   openDockerHelp: () => invoke<void>('open_docker_help'),
   inspectRuntime: () => invoke<RuntimeOverview>('inspect_runtime'),
   controlRuntime: (action) => invoke<RuntimeOverview>('control_runtime', { action }),
-  readLogs: (service) => invoke<import('./types').RuntimeLogs>('read_logs', { service }),
+  readLogs: (service) => invoke<RuntimeLogs>('read_logs', { service }),
   resetInstallation: () => invoke<void>('reset_installation'),
 }
 

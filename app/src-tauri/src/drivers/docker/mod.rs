@@ -84,13 +84,20 @@ impl DockerDriver {
         });
         let disk = available_space(data_root).ok();
         let disk_ready = disk.is_some_and(|bytes| bytes >= manifest.minimum_disk_bytes);
+        let disk_status = if !disk_ready {
+            CheckStatus::Fail
+        } else if disk.is_some_and(|bytes| bytes < manifest.minimum_disk_bytes.saturating_mul(2)) {
+            CheckStatus::Warning
+        } else {
+            CheckStatus::Pass
+        };
         checks.push(PreflightCheck {
             id: "storage".to_owned(),
             label: "Available storage".to_owned(),
             detail: disk
                 .map(|bytes| format!("{} GB available for runtime data.", bytes / 1_073_741_824))
                 .unwrap_or_else(|| "Storage availability could not be measured.".to_owned()),
-            status: if disk_ready { CheckStatus::Pass } else { CheckStatus::Fail },
+            status: disk_status,
             blocking: !disk_ready,
         });
         if manifest.development {
