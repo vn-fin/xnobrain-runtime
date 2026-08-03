@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { WorkspacePanel, type WorkspaceController } from './WorkspacePanel';
 import { CronPanel } from './CronPanel';
-import { AgentSettingsModal, type AgentContext } from './modals';
+import { AgentSettingsModal } from './modals';
 import type { ResponsePagination } from '../api/client';
 import type { Agent, AgentSkill, AgentSkillMap, CronJob, GlobalRuntimeConfig, ProviderConnector, RightView } from '../types';
 
@@ -56,8 +56,6 @@ export function RightPanel({
   onCreateAgent,
   onOpenSettings,
   onSaveSettings,
-  onLoadContext,
-  onSaveContext,
   onDeleteAgent,
   workspaceOpenRequest,
   workspace,
@@ -90,8 +88,6 @@ export function RightPanel({
   onCreateAgent: () => void;
   onOpenSettings: () => void;
   onSaveSettings: (updates: Partial<Agent>) => void;
-  onLoadContext: () => Promise<AgentContext>;
-  onSaveContext: (context: AgentContext) => Promise<void>;
   onDeleteAgent: () => void;
   workspaceOpenRequest?: { path: string; token: number };
   workspace: WorkspaceController;
@@ -376,8 +372,6 @@ export function RightPanel({
           agent={agent}
           providers={providers}
           onSave={onSaveSettings}
-          onLoadContext={onLoadContext}
-          onSaveContext={onSaveContext}
           onClose={onClose}
           embedded
         />

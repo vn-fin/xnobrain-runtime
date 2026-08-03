@@ -398,6 +398,14 @@ export default function App() {
               onRefresh: sandbox.refresh,
             }}
             onImported={assistants.refresh}
+            onLoadContextFile={async (agentId, file) => {
+              if (file === 'SOUL.md') return (await agentsApi.detail(agentId)).soul;
+              return workspaceApi.readOptional(agentId, 'AGENTS.md');
+            }}
+            onSaveContextFile={async (agentId, file, content) => {
+              if (file === 'SOUL.md') await agentsApi.updateSoul(agentId, content);
+              else await workspaceApi.write(agentId, 'AGENTS.md', content);
+            }}
             section={router.settingsSection}
             onSectionChange={router.setSettingsSection}
             onClose={() => router.setCenterView('chat')}
@@ -548,19 +556,6 @@ export default function App() {
           onCreateAgent={() => setCreateAgentOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
           onSaveSettings={handleUpdateAgent}
-          onLoadContext={async () => {
-            const [detail, instructions] = await Promise.all([
-              agentsApi.detail(activeAgent.id),
-              workspaceApi.read(activeAgent.id, 'AGENTS.md'),
-            ]);
-            return { soul: detail.soul, instructions };
-          }}
-          onSaveContext={async ({ soul, instructions }) => {
-            await Promise.all([
-              agentsApi.updateSoul(activeAgent.id, soul),
-              workspaceApi.write(activeAgent.id, 'AGENTS.md', instructions),
-            ]);
-          }}
           onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}
           workspaceOpenRequest={workspaceOpenRequest}
           workspace={workspace}
@@ -585,19 +580,6 @@ export default function App() {
           agent={activeAgent}
           providers={runtimeProviders}
           onSave={handleUpdateAgent}
-          onLoadContext={async () => {
-            const [detail, instructions] = await Promise.all([
-              agentsApi.detail(activeAgent.id),
-              workspaceApi.read(activeAgent.id, 'AGENTS.md'),
-            ]);
-            return { soul: detail.soul, instructions };
-          }}
-          onSaveContext={async ({ soul, instructions }) => {
-            await Promise.all([
-              agentsApi.updateSoul(activeAgent.id, soul),
-              workspaceApi.write(activeAgent.id, 'AGENTS.md', instructions),
-            ]);
-          }}
           onClose={() => setSettingsOpen(false)}
         />
       )}

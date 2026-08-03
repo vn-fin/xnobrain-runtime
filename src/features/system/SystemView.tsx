@@ -9,6 +9,7 @@ import type { ProviderTestOutcome } from '../../hooks/useConnections';
 import type { SettingsSection } from '../../hooks/useRouter';
 import { systemApi, type BundleDryRun, type BundleTransfer, type DeploymentStatus, type ImportReport, type TransferProgress } from './api';
 import { sortPortableAgents } from './portableProfiles';
+import { ContextFilesSection, type ContextFileName } from './ContextFilesSection';
 
 type SystemViewProps = {
   agents: Agent[];
@@ -33,6 +34,8 @@ type SystemViewProps = {
     onRefresh: () => void;
   };
   onImported: () => Promise<void>;
+  onLoadContextFile: (agentId: string, file: ContextFileName) => Promise<string | null>;
+  onSaveContextFile: (agentId: string, file: ContextFileName, content: string) => Promise<void>;
   onClose: () => void;
   section: SettingsSection;
   onSectionChange: (section: SettingsSection) => void;
@@ -51,6 +54,8 @@ export function SystemView({
   accounts,
   sandbox,
   onImported,
+  onLoadContextFile,
+  onSaveContextFile,
   onClose,
   section,
   onSectionChange,
@@ -68,6 +73,7 @@ export function SystemView({
   const portableAgents = useMemo(() => sortPortableAgents(agents), [agents]);
   const tabs: Array<{ id: SettingsSection; label: string }> = [
     { id: 'profiles', label: 'Profiles' },
+    { id: 'context', label: 'Context files' },
     { id: 'vm', label: 'VM' },
     { id: 'connectors', label: 'Connectors' },
     { id: 'mcp', label: 'MCP' },
@@ -151,6 +157,13 @@ export function SystemView({
           </section>
         </>}
         {section === 'mcp' && <McpSection agents={agents} />}
+        {section === 'context' && (
+          <ContextFilesSection
+            agents={agents}
+            onLoadFile={onLoadContextFile}
+            onSaveFile={onSaveContextFile}
+          />
+        )}
         {section === 'connectors' && <section className="system-integrations-card">
           <ConnectionsView
             providers={providers}

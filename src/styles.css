@@ -3743,6 +3743,31 @@ body.col-resizing {
   background: var(--surface-code);
 }
 
+.gd-numbered-editor {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  background: var(--surface-code);
+}
+
+.gd-numbered-editor .gd-code-lines {
+  position: static;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.workspace-editor .gd-numbered-editor textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  white-space: pre;
+}
+
 .gd-code-editor .gd-code {
   flex: 1 0 auto;
   min-width: max-content;
@@ -9029,6 +9054,19 @@ body.col-resizing {
 .system-card-title { display: flex; align-items: flex-start; gap: 11px; }
 .system-card-title > div { display: grid; gap: 3px; flex: 1; }
 .system-card-title small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.context-files-card { align-content: start; }
+.context-agent-picker { display: grid; gap: 7px; max-width: 420px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.context-agent-picker select { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
+.context-file-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.context-file-card { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; align-items: start; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--text); text-align: left; cursor: pointer; }
+.context-file-card:hover { border-color: var(--accent); background: var(--hover); }
+.context-file-card > span { min-width: 0; display: grid; gap: 3px; }
+.context-file-card strong { overflow-wrap: anywhere; }
+.context-file-card small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.context-file-card > small { grid-column: 1 / -1; }
+.context-files-empty { padding: 20px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); text-align: center; }
+.context-file-viewer-state { max-width: 520px; margin: auto; }
+@media (max-width: 720px) { .context-file-grid { grid-template-columns: 1fr; } }
 .system-agent-list { display: grid; gap: 7px; }
 .system-agent-list label { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 9px 11px; border: 1px solid var(--border-2); border-radius: 9px; }
 .system-agent-list code, .system-device code { color: var(--muted); font-size: 11px; }

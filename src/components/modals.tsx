@@ -251,8 +251,6 @@ export function CreateAgentModal({
   );
 }
 
-export type AgentContext = { soul: string; instructions: string };
-
 function providerModels(provider: ProviderConnector | undefined): string[] {
   if (!provider) return [];
   return Array.from(new Set([
@@ -265,22 +263,16 @@ export function AgentSettingsModal({
   agent,
   providers,
   onSave,
-  onLoadContext,
-  onSaveContext,
   onClose,
   embedded = false,
 }: {
   agent: Agent;
   providers: ProviderConnector[];
   onSave: (updates: Partial<Agent>) => void;
-  onLoadContext: () => Promise<AgentContext>;
-  onSaveContext: (context: AgentContext) => Promise<void>;
   onClose: () => void;
   embedded?: boolean;
 }) {
   const { t } = useTranslation();
-  const tabsId = useId();
-  const [tab, setTab] = useState<'general' | 'context'>('general');
   const [title, setTitle] = useState(agent.title);
   const [description, setDescription] = useState(agent.description);
   const initialProvider = providers.find((item) => providerModels(item).includes(agent.model))
@@ -295,58 +287,13 @@ export function AgentSettingsModal({
   const [reasoningEffort, setReasoningEffort] = useState(agent.reasoningEffort);
   const [approvalMode, setApprovalMode] = useState<Agent['approvalMode']>(agent.approvalMode);
   const [confirming, setConfirming] = useState(false);
-  const [contextStatus, setContextStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
-  const [contextSaving, setContextSaving] = useState(false);
-  const [contextError, setContextError] = useState('');
-  const [contextSaved, setContextSaved] = useState(false);
-  const [savedContext, setSavedContext] = useState<AgentContext | null>(null);
-  const [soul, setSoul] = useState('');
-  const [instructions, setInstructions] = useState('');
   const selectedProvider = providers.find((item) => item.id === provider);
   const selectedProviderModels = providerModels(selectedProvider);
   const modelOptions = selectedProviderModels.length
     ? selectedProviderModels
     : model ? [model] : [];
 
-  const contextDirty = savedContext !== null
-    && (soul !== savedContext.soul || instructions !== savedContext.instructions);
   const save = () => onSave({ title, description, provider, model, reasoningEffort, approvalMode });
-  const loadContext = async () => {
-    setContextStatus('loading');
-    setContextError('');
-    setContextSaved(false);
-    try {
-      const context = await onLoadContext();
-      setSoul(context.soul);
-      setInstructions(context.instructions);
-      setSavedContext(context);
-      setContextStatus('ready');
-    } catch (value) {
-      setContextError(value instanceof Error ? value.message : 'Could not load context.');
-      setContextStatus('error');
-    }
-  };
-  const saveContext = async () => {
-    if (!contextDirty || contextSaving) return;
-    const context = { soul, instructions };
-    setContextSaving(true);
-    setContextError('');
-    setContextSaved(false);
-    try {
-      await onSaveContext(context);
-      setSavedContext(context);
-      setContextSaved(true);
-    } catch (value) {
-      setContextError(value instanceof Error ? value.message : 'Could not save context.');
-    } finally {
-      setContextSaving(false);
-    }
-  };
-  const switchTab = (next: 'general' | 'context') => {
-    setTab(next);
-    setConfirming(false);
-    if (next === 'context' && contextStatus === 'idle') void loadContext();
-  };
 
   return (
     <div className={embedded ? 'agent-settings-embedded' : 'modal-overlay'} onClick={embedded ? undefined : onClose}>
@@ -366,31 +313,7 @@ export function AgentSettingsModal({
           </div>
         )}
 
-        <div className="agent-settings-tabs" role="tablist" aria-label="Agent settings sections">
-          <button
-            id={`${tabsId}-general-tab`}
-            className={tab === 'general' ? 'agent-settings-tab active' : 'agent-settings-tab'}
-            role="tab"
-            aria-selected={tab === 'general'}
-            aria-controls={`${tabsId}-general-panel`}
-            onClick={() => switchTab('general')}
-          >
-            General
-          </button>
-          <button
-            id={`${tabsId}-context-tab`}
-            className={tab === 'context' ? 'agent-settings-tab active' : 'agent-settings-tab'}
-            role="tab"
-            aria-selected={tab === 'context'}
-            aria-controls={`${tabsId}-context-panel`}
-            onClick={() => switchTab('context')}
-          >
-            {t('modals.personalityInstructions', { defaultValue: 'Personality & instructions' })}
-          </button>
-        </div>
-
-        {tab === 'general' ? (
-          <div id={`${tabsId}-general-panel`} role="tabpanel" aria-labelledby={`${tabsId}-general-tab`}>
+        <div className="agent-settings-general">
             <p className="app-modal-sub">PATCH /agents/{'{id}'}/metadata · PATCH /agents-configs/{'{id}'}</p>
 
             <div className="modal-form">
@@ -464,74 +387,7 @@ export function AgentSettingsModal({
                 <button className="conn-btn primary" onClick={() => setConfirming(true)}>{t('common.save')}</button>
               </div>
             )}
-          </div>
-        ) : (
-          <div
-            id={`${tabsId}-context-panel`}
-            className="agent-settings-context"
-            role="tabpanel"
-            aria-labelledby={`${tabsId}-context-tab`}
-          >
-            {contextStatus === 'loading' ? (
-              <div className="context-status" role="status">Loading context…</div>
-            ) : contextStatus === 'error' ? (
-              <div className="context-error" role="alert">
-                <span>{contextError}</span>
-                <button className="conn-btn ghost" onClick={() => void loadContext()}>Try again</button>
-              </div>
-            ) : (
-              <>
-                {contextError && <div className="context-error" role="alert">{contextError}</div>}
-                {contextSaved && <div className="context-success" role="status">Context saved.</div>}
-
-                <label className="context-editor-field">
-                  <span>
-                    <strong>Agent personality <small>(SOUL.md)</small></strong>
-                  </span>
-                  <textarea
-                    aria-label="Agent personality"
-                    value={soul}
-                    disabled={contextSaving}
-                    onChange={(event) => {
-                      setSoul(event.target.value);
-                      setContextSaved(false);
-                    }}
-                    rows={7}
-                  />
-                  <small>Defines the agent’s identity, tone, and behavioral principles.</small>
-                </label>
-
-                <label className="context-editor-field">
-                  <span>
-                    <strong>Workspace instructions <small>(AGENTS.md)</small></strong>
-                  </span>
-                  <textarea
-                    aria-label="Workspace instructions"
-                    value={instructions}
-                    disabled={contextSaving}
-                    onChange={(event) => {
-                      setInstructions(event.target.value);
-                      setContextSaved(false);
-                    }}
-                    rows={7}
-                  />
-                  <small>Defines how the agent works with files and deliverables in its workspace.</small>
-                </label>
-
-                <div className="modal-actions">
-                  <button className="conn-btn ghost" disabled={contextSaving} onClick={onClose}>{t('common.cancel')}</button>
-                  <button
-                    className="conn-btn primary"
-                    disabled={!contextDirty || contextSaving}
-                    onClick={() => void saveContext()}
-                  >
-                    {contextSaving ? 'Saving…' : 'Save context'}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
