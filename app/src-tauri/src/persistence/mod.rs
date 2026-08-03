@@ -104,7 +104,7 @@ mod tests {
             schema_version: 1,
             release: "dev".to_owned(),
             port: 5152,
-            web_url: "http://localhost:5152".to_owned(),
+            web_url: "http://127.0.0.1:5152".to_owned(),
             compose_path: store.compose_path(),
             installed: true,
         };

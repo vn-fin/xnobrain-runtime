@@ -109,9 +109,9 @@ impl InstallerService {
         send_progress(progress, InstallPhase::Starting, 80, "Starting Brain4All", "Starting the Docker Web runtime")?;
         self.docker.up(&compose_path)?;
 
-        let web_url = format!("http://localhost:{}", request.port);
+        let web_url = format!("http://127.0.0.1:{}", request.port);
         let health_url = format!("{web_url}{}", self.manifest.health_path);
-        send_progress(progress, InstallPhase::HealthCheck, 92, "Checking health", format!("Waiting at localhost:{}", request.port))?;
+        send_progress(progress, InstallPhase::HealthCheck, 92, "Checking health", format!("Waiting at 127.0.0.1:{}", request.port))?;
         self.docker.wait_for_health(
             &health_url,
             Duration::from_secs(self.manifest.health_timeout_seconds),
@@ -147,7 +147,7 @@ impl InstallerService {
         let Some(state) = self.store.load()? else {
             return Ok(RuntimeOverview {
                 state: RuntimeState::NotInstalled,
-                web_url: format!("http://localhost:{}", self.manifest.default_host_port),
+                web_url: format!("http://127.0.0.1:{}", self.manifest.default_host_port),
                 port: self.manifest.default_host_port,
                 docker_version: docker.docker_version,
                 compose_version: docker.compose_version,

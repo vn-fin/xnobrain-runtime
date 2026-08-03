@@ -42,7 +42,7 @@ test('Windows existing-Docker journey installs on a custom Traefik port', async 
   await capture(page, '04-custom-port')
 
   await page.getByRole('button', { name: 'Review' }).click()
-  await expect(page.getByText('http://localhost:5252')).toBeVisible()
+  await expect(page.getByText('http://127.0.0.1:5252')).toBeVisible()
   await capture(page, '05-review')
 
   await page.getByRole('button', { name: /Install Brain4All/ }).click()
@@ -50,7 +50,7 @@ test('Windows existing-Docker journey installs on a custom Traefik port', async 
   await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', /\d+/)
   await capture(page, '06-installing')
   await expect(page.getByRole('heading', { name: 'Brain4All is ready' })).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByText('http://localhost:5252')).toBeVisible()
+  await expect(page.getByText('http://127.0.0.1:5252')).toBeVisible()
   await capture(page, '07-ready')
 
   await page.getByRole('button', { name: 'Manage Docker' }).click()
@@ -86,7 +86,7 @@ test('installed Windows app relaunches directly into management', async ({ page 
   })
   await page.goto('/?platform=windows')
   await expect(page.frameLocator('iframe[title="Brain4All Web application"]').getByRole('heading', { name: 'What can I help you build?' })).toBeVisible()
-  await expect(page.getByText('http://localhost:6252')).toBeVisible()
+  await expect(page.getByText('http://127.0.0.1:6252')).toBeVisible()
 })
 
 test('Windows Docker prerequisite failure is actionable', async ({ page }) => {

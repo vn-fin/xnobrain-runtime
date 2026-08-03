@@ -23,7 +23,7 @@ describe('installerReducer', () => {
   it('moves to ready only with an installation result', () => {
     const result = installerReducer(
       { ...initialInstallerState, step: 'installing' },
-      { type: 'installed', result: { port: 5152, webUrl: 'http://localhost:5152', composePath: '/state/compose.yaml' } },
+      { type: 'installed', result: { port: 5152, webUrl: 'http://127.0.0.1:5152', composePath: '/state/compose.yaml' } },
     )
     expect(result.step).toBe('ready')
     expect(result.result?.port).toBe(5152)

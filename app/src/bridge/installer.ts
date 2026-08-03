@@ -54,7 +54,7 @@ const createDemoBridge = (): InstallerBridge => ({
       installed: Boolean(storedPort),
       healthy: Boolean(storedPort),
       selectedPort: storedPort,
-      webUrl: storedPort ? `http://localhost:${storedPort}` : undefined,
+      webUrl: storedPort ? `http://127.0.0.1:${storedPort}` : undefined,
       checks: [
         {
           id: 'os',
@@ -106,7 +106,7 @@ const createDemoBridge = (): InstallerBridge => ({
       { phase: 'pulling', percent: 48, title: 'Downloading runtime', detail: 'Pulling verified Brain4All images' },
       { phase: 'creating', percent: 68, title: 'Creating services', detail: 'Configuring Traefik as the only local entrypoint' },
       { phase: 'starting', percent: 82, title: 'Starting Brain4All', detail: 'Starting the Web runtime' },
-      { phase: 'health_check', percent: 94, title: 'Checking health', detail: `Waiting at localhost:${request.port}` },
+      { phase: 'health_check', percent: 94, title: 'Checking health', detail: `Waiting at 127.0.0.1:${request.port}` },
       { phase: 'ready', percent: 100, title: 'Brain4All is ready', detail: 'The Web version is healthy' },
     ]
     for (const stage of stages) {
@@ -115,7 +115,7 @@ const createDemoBridge = (): InstallerBridge => ({
     }
     window.localStorage.setItem('brain4all-demo-port', String(request.port))
     window.localStorage.setItem('brain4all-demo-state', 'running')
-    return { port: request.port, webUrl: `http://localhost:${request.port}`, composePath: '/demo/brain4all-web/compose.yaml' }
+    return { port: request.port, webUrl: `http://127.0.0.1:${request.port}`, composePath: '/demo/brain4all-web/compose.yaml' }
   },
   async openWeb() {
     return Promise.resolve()
@@ -159,7 +159,7 @@ function demoRuntimeOverview(): RuntimeOverview {
   const running = window.localStorage.getItem('brain4all-demo-state') !== 'stopped'
   return {
     state: storedPort ? (running ? 'running' : 'stopped') : 'not_installed',
-    webUrl: `http://localhost:${port}`,
+    webUrl: `http://127.0.0.1:${port}`,
     port,
     dockerVersion: '29.6.2',
     composeVersion: '5.3.1',

@@ -181,7 +181,7 @@ export function ReviewScreen({ state, dispatch, runInstall }: ScreenProps) {
     <Screen title="Ready to install" subtitle="Review what Brain4All will add to this computer.">
       <div className="review-card">
         <ReviewRow label="Version" value="Web Version (Docker)" />
-        <ReviewRow label="Web address" value={`http://localhost:${state.port}`} mono />
+        <ReviewRow label="Web address" value={`http://127.0.0.1:${state.port}`} mono />
         <ReviewRow label="Network access" value="This computer only (127.0.0.1)" />
         <ReviewRow label="Published service" value="Traefik only" />
         <ReviewRow label="User data" value="Persistent Docker volume" />
@@ -225,7 +225,7 @@ export function InstallingScreen({ state }: ScreenProps) {
 }
 
 export function ReadyScreen({ state, bridge, dispatch }: ScreenProps) {
-  const url = state.result?.webUrl ?? state.inspection?.webUrl ?? `http://localhost:${state.port}`
+  const url = state.result?.webUrl ?? state.inspection?.webUrl ?? `http://127.0.0.1:${state.port}`
   return (
     <Screen title="Brain4All is ready" subtitle="Your private Web workspace is healthy and ready to open.">
       <div className="ready-hero">

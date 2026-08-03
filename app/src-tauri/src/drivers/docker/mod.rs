@@ -266,11 +266,7 @@ impl DockerDriver {
             .map_err(|_| InstallerError::retryable("health_client_failed", "Could not initialize the health check."))?;
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
-            if client
-                .get(url)
-                .send()
-                .is_ok_and(|response| response.status().is_success())
-            {
+            if client.get(url).send().is_ok_and(health_response_valid) {
                 return Ok(());
             }
             thread::sleep(Duration::from_secs(2));
@@ -288,7 +284,7 @@ impl DockerDriver {
             .build()
             .ok()
             .and_then(|client| client.get(url).send().ok())
-            .is_some_and(|response| response.status().is_success())
+            .is_some_and(health_response_valid)
     }
 
     fn verify_image(&self, image: &ImageManifest) -> InstallerResult<()> {
@@ -330,6 +326,19 @@ fn container_state(container_id: &str) -> Option<ServiceState> {
         "exited" | "created" | "paused" | "restarting" => ServiceState::Stopped,
         _ => ServiceState::Missing,
     })
+}
+
+fn health_response_valid(response: reqwest::blocking::Response) -> bool {
+    response.status().is_success()
+        && response
+            .json::<serde_json::Value>()
+            .ok()
+            .is_some_and(|payload| health_payload_valid(&payload))
+}
+
+fn health_payload_valid(payload: &serde_json::Value) -> bool {
+    payload.get("success").and_then(serde_json::Value::as_bool) == Some(true)
+        && payload.pointer("/data/status").and_then(serde_json::Value::as_str) == Some("ok")
 }
 
 fn redact_log_line(line: &str) -> String {
@@ -413,7 +422,7 @@ pub fn platform_label() -> &'static str {
 mod tests {
     use std::net::TcpListener;
 
-    use super::{DockerDriver, redact_log_line, validate_port};
+    use super::{DockerDriver, health_payload_valid, redact_log_line, validate_port};
 
     #[test]
     fn privileged_ports_are_rejected() {
@@ -434,5 +443,13 @@ mod tests {
     fn sensitive_log_lines_are_replaced() {
         assert_eq!(redact_log_line("authorization: bearer private"), "[REDACTED sensitive log line]");
         assert_eq!(redact_log_line("runtime ready"), "runtime ready");
+    }
+
+    #[test]
+    fn health_requires_the_runtime_json_contract() {
+        let healthy = serde_json::json!({"success": true, "data": {"status": "ok"}});
+        let frontend = serde_json::json!({"html": "Brain4All"});
+        assert!(health_payload_valid(&healthy));
+        assert!(!health_payload_valid(&frontend));
     }
 }
