@@ -1,4 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../i18n';
 import type { Agent, ConversationUsage } from '../types';
@@ -21,9 +23,12 @@ const usage = {
   limits: [],
 } satisfies ConversationUsage;
 
-describe('ContextGauge', () => {
-  afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  document.head.querySelectorAll('style[data-chat-area-test]').forEach((element) => element.remove());
+});
 
+describe('ContextGauge', () => {
   it('renders current conversation context as a model-window percentage', () => {
     render(<ContextGauge usage={usage} model="cx/gpt-5.6-luna" />);
 
@@ -40,6 +45,38 @@ describe('ContextGauge', () => {
       'aria-label',
       '10K context used; Auto model context limit is unavailable',
     );
+  });
+});
+
+describe('user message layout', () => {
+  it('wraps a long unbroken user message inside the chat viewport', () => {
+    const styles = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8');
+    const styleElement = document.createElement('style');
+    styleElement.dataset.chatAreaTest = '';
+    styleElement.textContent = styles.match(/\.user-bubble\s*\{[^}]*\}/)?.[0] ?? '';
+    document.head.append(styleElement);
+    const longPath = '/home/user/workspaces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/SCRATCHPAD.md';
+    const agent: Agent = {
+      id: 'agent-one', name: 'agent-one', title: 'Research', description: '', status: 'ready',
+      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [],
+    };
+    render(<ChatArea
+      agent={agent} agents={[agent]} activeConversation={undefined} providers={[]}
+      runs={[]} messages={[{ id: 'long-path', role: 'user', content: longPath, timestamp: 1 }]}
+      usage={null} chatStatus="ready" chatError="" streaming={false} canStop={false}
+      onSend={vi.fn()} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
+      onSelectModel={vi.fn()} onSelectAgent={vi.fn()} onTestAgent={vi.fn()}
+      onSelectConversation={vi.fn()} onCreateConversation={vi.fn()} onDeleteConversation={vi.fn()}
+      onRenameConversation={vi.fn()} onOpenFile={vi.fn()}
+    />);
+
+    const bubble = screen.getByText(longPath).closest('.user-bubble');
+    expect(bubble).not.toBeNull();
+    const style = getComputedStyle(bubble as Element);
+    expect(style.minWidth).toBe('0px');
+    expect(style.overflowWrap).toBe('anywhere');
+    expect(style.wordBreak).toBe('break-word');
   });
 });
 
