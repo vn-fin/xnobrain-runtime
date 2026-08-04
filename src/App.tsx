@@ -13,7 +13,7 @@ import { useWorkspace } from './hooks/useWorkspace';
 import { useTeams } from './hooks/useTeams';
 import { streamStore, type CompletionEvent } from './chat/streamStore';
 import { randomId } from './utils/id';
-import { Sidebar } from './components/Sidebar';
+import { MobileManageDrawer, Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { RightPanel } from './components/RightPanel';
 import { SkillsView } from './components/SkillsView';
@@ -89,6 +89,7 @@ export default function App() {
 
   // UI-only modal state
   const [createAgentOpen, setCreateAgentOpen] = useState(false);
+  const [mobileManageOpen, setMobileManageOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
@@ -345,6 +346,19 @@ export default function App() {
         onSignOut={async () => setLogoutConfirmOpen(true)}
       />
 
+      <MobileManageDrawer
+        open={mobileManageOpen}
+        centerView={centerView}
+        onOpen={() => setMobileManageOpen(true)}
+        onClose={() => setMobileManageOpen(false)}
+        onNavigate={router.setCenterView}
+        edition={auth.config.edition}
+        loginEnabled={auth.config.features.login && auth.config.auth.mode !== 'disabled'}
+        sessionActive={auth.sessionActive}
+        onOpenLogin={auth.openLogin}
+        onOpenAccount={() => setAccountOpen(true)}
+      />
+
       <main className={centerView === 'chat' ? 'chat-area' : 'chat-area sandbox-mode'}>
         {centerView === 'skills' ? (
           <SkillsView
@@ -502,6 +516,8 @@ export default function App() {
                 router.openChat(agent.id, rows[0]?.id ?? '');
               });
             }}
+            onNewAgent={() => setCreateAgentOpen(true)}
+            onOpenManage={() => setMobileManageOpen(true)}
             onSelectConversation={(id) => {
               router.setActiveConversationId(id);
             }}

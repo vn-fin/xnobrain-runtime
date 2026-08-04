@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../i18n';
 import type { Agent } from '../types';
-import { Sidebar } from './Sidebar';
+import { MobileManageDrawer, Sidebar } from './Sidebar';
 
 vi.mock('../theme', () => ({
   useTheme: () => ({ preference: 'dark', setPreference: vi.fn(), resolved: 'dark' }),
@@ -148,5 +148,61 @@ describe('Sidebar assistant actions', () => {
     fireEvent.click(within(container).getByRole('button', { name: 'Open in Library' }));
     expect(screen.getByRole('dialog', { name: 'Agent Library' })).toBeVisible();
     expect(screen.getAllByText('Big Brother')).toHaveLength(2);
+  });
+});
+
+describe('MobileManageDrawer', () => {
+  it('shows only manage destinations and closes after navigation', () => {
+    const navigate = vi.fn();
+    const close = vi.fn();
+    render(
+      <MobileManageDrawer
+        open
+        centerView="chat"
+        onOpen={vi.fn()}
+        onClose={close}
+        onNavigate={navigate}
+      />,
+    );
+
+    const drawer = screen.getByRole('dialog', { name: 'Manage' });
+    expect(within(drawer).queryByText('Research Lead')).not.toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Skills' }));
+    expect(navigate).toHaveBeenCalledWith('skills');
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('opens from a left-edge swipe and closes with Escape', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: true }),
+    });
+    const open = vi.fn();
+    const close = vi.fn();
+    const { rerender } = render(
+      <MobileManageDrawer
+        open={false}
+        centerView="chat"
+        onOpen={open}
+        onClose={close}
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    fireEvent.pointerDown(document, { clientX: 5, clientY: 100 });
+    fireEvent.pointerMove(document, { clientX: 85, clientY: 108 });
+    expect(open).toHaveBeenCalledOnce();
+
+    rerender(
+      <MobileManageDrawer
+        open
+        centerView="chat"
+        onOpen={open}
+        onClose={close}
+        onNavigate={vi.fn()}
+      />,
+    );
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(close).toHaveBeenCalledOnce();
   });
 });

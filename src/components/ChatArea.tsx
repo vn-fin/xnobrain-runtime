@@ -11,6 +11,7 @@ import {
   FileText,
   Gauge,
   LoaderCircle,
+  Menu,
   MessageSquarePlus,
   MoreHorizontal,
   Pencil,
@@ -106,6 +107,8 @@ export function ChatArea({
   onRetry,
   onSelectModel,
   onSelectAgent,
+  onNewAgent,
+  onOpenManage,
   onTestAgent,
   onSelectConversation,
   onCreateConversation,
@@ -140,6 +143,8 @@ export function ChatArea({
   onRetry: () => void;
   onSelectModel: (providerId: string, model: string) => void | Promise<void>;
   onSelectAgent: (agent: Agent) => void;
+  onNewAgent?: () => void;
+  onOpenManage?: () => void;
   onTestAgent: () => void;
   onSelectConversation: (id: string) => void;
   onCreateConversation: () => void;
@@ -499,6 +504,18 @@ export function ChatArea({
   return (
     <>
       <header className="top-bar">
+        <button
+          className="mobile-manage-trigger"
+          aria-label={t('nav.manage', { defaultValue: 'Manage' })}
+          onClick={() => {
+            setAgentPickerOpen(false);
+            setConversationPickerOpen(false);
+            setMobileActionsOpen(false);
+            onOpenManage?.();
+          }}
+        >
+          <Menu size={21} />
+        </button>
         <div className="agent-switch">
           <button
             aria-haspopup="listbox"
@@ -517,6 +534,18 @@ export function ChatArea({
             <>
               <div className="agent-switch-catcher" onClick={() => setAgentPickerOpen(false)} />
               <div className="agent-switch-popover">
+                <div className="agent-switch-popover-header">
+                  <strong>{t('agents.title')}</strong>
+                  <button
+                    className="agent-switch-new"
+                    onClick={() => {
+                      setAgentPickerOpen(false);
+                      onNewAgent?.();
+                    }}
+                  >
+                    <Plus size={15} /> {t('agents.new')}
+                  </button>
+                </div>
                 <div className="agent-switch-search">
                   <Search size={14} />
                   <input

@@ -63,17 +63,27 @@ describe('conversation picker', () => {
     };
     const onSelectConversation = vi.fn();
     const onCreateConversation = vi.fn();
+    const onNewAgent = vi.fn();
+    const onOpenManage = vi.fn();
     render(<ChatArea
       agent={agent} agents={[agent]} activeConversation={conversations[198]} providers={[]}
       runs={[]} messages={[]} usage={null} chatStatus="ready" chatError="" streaming={false} canStop={false}
       onSend={vi.fn()} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
       onSelectModel={vi.fn()} onOpenSettings={vi.fn()} onOpenRuntime={vi.fn()} onSelectAgent={vi.fn()}
+      onNewAgent={onNewAgent} onOpenManage={onOpenManage}
       onTestAgent={vi.fn()} onDeleteAgent={vi.fn()} onSelectConversation={onSelectConversation}
       onCreateConversation={onCreateConversation} onDeleteConversation={vi.fn()} onRenameConversation={vi.fn()}
       onOpenFile={vi.fn()}
     />);
 
     expect(screen.queryByText('Session 2')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Manage' }));
+    expect(onOpenManage).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole('button', { name: /Research/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'New agent' }));
+    expect(onNewAgent).toHaveBeenCalledOnce();
+
     fireEvent.click(screen.getByRole('button', { name: 'Show all sessions: Quarterly risk review' }));
     const list = screen.getByRole('listbox', { name: 'Show all sessions' });
     expect(list).toBeVisible();

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   BarChart3,
@@ -46,6 +46,109 @@ const navItems = [
   { id: 'analytics', label: 'analytics', icon: BarChart3 },
   { id: 'data', label: 'settings', icon: Settings },
 ] as const;
+
+export function MobileManageDrawer({
+  open,
+  centerView,
+  onOpen,
+  onClose,
+  onNavigate,
+  edition,
+  loginEnabled,
+  sessionActive,
+  onOpenLogin,
+  onOpenAccount,
+}: {
+  open: boolean;
+  centerView: CenterView;
+  onOpen: () => void;
+  onClose: () => void;
+  onNavigate: (view: CenterView) => void;
+  edition?: Brain4AllEdition;
+  loginEnabled?: boolean;
+  sessionActive?: boolean;
+  onOpenLogin?: () => void;
+  onOpenAccount?: () => void;
+}) {
+  const { t } = useTranslation();
+  const gestureStart = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (open && event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose, open]);
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (open || event.clientX > 28 || !window.matchMedia('(max-width: 760px)').matches) return;
+      gestureStart.current = { x: event.clientX, y: event.clientY };
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      const start = gestureStart.current;
+      if (!start) return;
+      const x = event.clientX - start.x;
+      const y = Math.abs(event.clientY - start.y);
+      if (x > 64 && x > y * 1.4) {
+        gestureStart.current = null;
+        onOpen();
+      } else if (x < -8 || y > 56) {
+        gestureStart.current = null;
+      }
+    };
+    const resetGesture = () => { gestureStart.current = null; };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', resetGesture);
+    document.addEventListener('pointercancel', resetGesture);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', resetGesture);
+      document.removeEventListener('pointercancel', resetGesture);
+    };
+  }, [onOpen, open]);
+
+  if (!open) return null;
+
+  const navigate = (view: CenterView) => {
+    onNavigate(view);
+    onClose();
+  };
+
+  return (
+    <div className="mobile-manage-layer">
+      <button className="mobile-manage-backdrop" aria-label={t('common.close')} onClick={onClose} />
+      <aside className="mobile-manage-drawer" role="dialog" aria-modal="true" aria-label={t('nav.manage', { defaultValue: 'Manage' })}>
+        <header className="mobile-manage-header">
+          <strong>Brain4All</strong>
+          <button className="icon-button" aria-label={t('common.close')} onClick={onClose}><X size={22} /></button>
+        </header>
+        <div className="mobile-manage-title">{t('nav.manage', { defaultValue: 'Manage' })}</div>
+        <nav className="mobile-manage-nav">
+          {loginEnabled && (
+            <button onClick={() => { onClose(); sessionActive ? onOpenAccount?.() : onOpenLogin?.(); }}>
+              <CircleUserRound size={22} />
+              <span>Account</span>
+              {sessionActive && <small className={`sidebar-edition ${edition ?? 'opensource'}`}>{edition ?? 'opensource'}</small>}
+            </button>
+          )}
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button key={item.id} className={item.id === centerView ? 'active' : ''} onClick={() => navigate(item.id as CenterView)}>
+                <Icon size={22} />
+                <span>{t(`nav.${item.label}`, { defaultValue: item.label[0].toUpperCase() + item.label.slice(1) })}</span>
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+    </div>
+  );
+}
 
 function readIds(key: string): string[] {
   try {
