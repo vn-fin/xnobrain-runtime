@@ -12557,3 +12557,55 @@ select option:checked {
   .cron-detail-header-actions { display: none; }
   .cron-graph-targets { grid-template-columns: 1fr; }
 }
+/* =========================================================
+   Prevent long file paths and URLs from overflowing chat UI
+   ========================================================= */
+
+/* Main chat: user message bubble */
+.user-bubble {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Main chat: assistant message container */
+.assistant-message {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Main chat: rendered message content */
+.message-content,
+.markdown-body {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Main chat: long paths or URLs inside inline code */
+.markdown-body code:not(pre code),
+.message-content code:not(pre code) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* Preserve horizontal scrolling for full code blocks and tables */
+.message-code-block,
+.message-table-wrap,
+.katex-display,
+.markdown-body pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Team chat already has general wrapping rules.
+   This handles long paths specifically inside inline code. */
+.team-conversation-canvas .markdown-body code:not(pre code),
+.team-conversation-canvas .message-content code:not(pre code) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
