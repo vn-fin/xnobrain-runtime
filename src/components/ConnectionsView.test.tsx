@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConnectionProvider } from '../types';
+import { mapConnectionProvider } from '../api/mappers/providers';
 import '../i18n';
 import { ConnectionsView } from './ConnectionsView';
 
@@ -22,6 +23,18 @@ function openCodeProvider(
     free_models_available: freeModelsAvailable,
     status: freeModelsAvailable ? 'available' : 'disconnected',
   };
+}
+
+function compatibleProvider(id: 'xai' | 'openrouter' | 'groq', displayName: string): ConnectionProvider {
+  return mapConnectionProvider({
+    id,
+    display_name: displayName,
+    description: `${displayName} through 9router`,
+    provider_type: id,
+    connection_mode: 'api-key',
+    connected: false,
+    status: 'disconnected',
+  });
 }
 
 describe('ConnectionsView OpenCode providers', () => {
@@ -61,5 +74,47 @@ describe('ConnectionsView OpenCode providers', () => {
     const options = within(providerSelect).getAllByRole('option');
     expect(options.map((option) => option.textContent)).toEqual(['OpenCode Zen']);
     expect(screen.getByText('Free models available without an API key.')).toBeInTheDocument();
+  });
+});
+
+describe('ConnectionsView OpenAI-compatible presets', () => {
+  it('shows xAI, OpenRouter, and Groq with their local brand icons', () => {
+    render(
+      <ConnectionsView
+        providers={[
+          compatibleProvider('xai', 'xAI'),
+          compatibleProvider('openrouter', 'OpenRouter'),
+          compatibleProvider('groq', 'Groq'),
+        ]}
+        keyProviderId="xai"
+        pendingId={null}
+        onSelectKeyProvider={noop}
+        onConnect={noop}
+        onDisconnect={noop}
+        onTest={noop}
+        onSaveKey={noop}
+        onClose={noop}
+        connectionsByProvider={{}}
+        usageByConnection={{}}
+        rowPendingId={null}
+        onLoadConnections={noop}
+        onAddAccount={noop}
+        onSetAccountActive={noop}
+        onReorderAccount={noop}
+        onTestAccount={noop}
+        onRemoveAccount={noop}
+        onLoadAccountUsage={noop}
+      />,
+    );
+
+    for (const [name, icon] of [
+      ['xAI', '/providers/xai.svg'],
+      ['OpenRouter', '/providers/openrouter.svg'],
+      ['Groq', '/providers/groq.svg'],
+    ]) {
+      const card = screen.getByText(name, { selector: '.conn-card-head > strong' }).closest('article');
+      expect(card).not.toBeNull();
+      expect(card?.querySelector('img')).toHaveAttribute('src', icon);
+    }
   });
 });

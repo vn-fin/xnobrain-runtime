@@ -41,6 +41,7 @@ class FakeRouter:
              "default_model": "", "test_status": "unknown", "last_error": ""},
         ]
         self.created_bodies: list[dict] = []
+        self.ensured_nodes: list[dict] = []
 
     async def list_connections(self):
         return {"connections": [dict(row) for row in self._rows]}
@@ -58,6 +59,17 @@ class FakeRouter:
         }
         self._rows.append(row)
         return {"object": "nine_router.provider", "connection": dict(row)}
+
+    async def ensure_openai_compatible_provider(
+        self, provider, *, display_name, base_url, router_prefix=None,
+    ):
+        self.ensured_nodes.append({
+            "provider": provider,
+            "display_name": display_name,
+            "base_url": base_url,
+            "router_prefix": router_prefix,
+        })
+        return f"openai-compatible-chat-{provider}1"
 
     async def update_connection(self, connection_id, *, active=None, priority=None):
         for row in self._rows:
@@ -219,6 +231,47 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         codex = next(item for item in providers if item["id"] == "codex")
         self.assertTrue(codex["connected"])          # one active of two
         self.assertEqual(codex["connection_count"], 2)
+
+    async def test_lists_xai_openrouter_and_groq_as_key_presets(self):
+        async with self.client() as client:
+            providers = (await client.get("/api/brain/v1/providers")).json()["data"]
+
+        presets = {item["id"]: item for item in providers if item["id"] in {
+            "xai", "openrouter", "groq",
+        }}
+        self.assertEqual(set(presets), {"xai", "openrouter", "groq"})
+        self.assertEqual(presets["xai"]["base_url"], "https://api.x.ai/v1")
+        self.assertEqual(presets["openrouter"]["base_url"], "https://openrouter.ai/api/v1")
+        self.assertEqual(presets["groq"]["base_url"], "https://api.groq.com/openai/v1")
+        self.assertTrue(all(item["connection_mode"] == "api-key" for item in presets.values()))
+
+    async def test_connections_ui_saves_xai_openrouter_and_groq_through_nine_router_nodes(self):
+        expected = {
+            "xai": ("xAI", "https://api.x.ai/v1"),
+            "openrouter": ("OpenRouter", "https://openrouter.ai/api/v1"),
+            "groq": ("Groq", "https://api.groq.com/openai/v1"),
+        }
+        async with self.client() as client:
+            for provider, _ in expected.items():
+                response = await client.patch(
+                    f"/api/brain/v1/providers/{provider}/update",
+                    json={"api_key": f"{provider}-secret"},
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+
+        self.assertEqual(
+            self.router.ensured_nodes,
+            [{
+                "provider": provider,
+                "display_name": display_name,
+                "base_url": base_url,
+                "router_prefix": None,
+            } for provider, (display_name, base_url) in expected.items()],
+        )
+        self.assertEqual(
+            [body["provider"] for body in self.router.created_bodies[-3:]],
+            [f"openai-compatible-chat-{provider}1" for provider in expected],
+        )
 
     async def test_connection_usage(self):
         async with self.client() as client:

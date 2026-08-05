@@ -45,6 +45,21 @@ from .workspace_upload import WorkspaceUploadError, WorkspaceUploadService
 
 
 OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS = {
+    "xai": {
+        "display_name": "xAI",
+        "description": "Grok models through xAI's OpenAI-compatible API.",
+        "base_url": "https://api.x.ai/v1",
+    },
+    "openrouter": {
+        "display_name": "OpenRouter",
+        "description": "Multiple model providers through OpenRouter's OpenAI-compatible API.",
+        "base_url": "https://openrouter.ai/api/v1",
+    },
+    "groq": {
+        "display_name": "Groq",
+        "description": "Fast inference through Groq's OpenAI-compatible API.",
+        "base_url": "https://api.groq.com/openai/v1",
+    },
     "deepseek": {
         "display_name": "DeepSeek",
         "description": "DeepSeek models through its OpenAI-compatible API.",

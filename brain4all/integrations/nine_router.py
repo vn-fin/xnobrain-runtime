@@ -33,7 +33,7 @@ API_KEY_ROUTER_PROVIDERS = frozenset({
     "openai", "anthropic", "gemini", "opencode-go",
 })
 OPENAI_COMPATIBLE_PROVIDERS = frozenset(
-    {"deepseek", "moonshot", "qwen", "openai-like"}
+    {"xai", "openrouter", "groq", "deepseek", "moonshot", "qwen", "openai-like"}
 )
 ROUTER_MODEL_ALIASES = {
     "claude": "cc",

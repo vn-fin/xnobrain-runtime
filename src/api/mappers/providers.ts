@@ -11,6 +11,8 @@ function connectionMode(value?: string): ConnectionMode {
 function providerBrand(dto: ProviderConnectorDTO): ProviderBrand {
   const value = `${dto.id ?? ''} ${dto.provider_type ?? ''}`.toLowerCase();
   if (value.includes('opencode')) return 'opencode';
+  if (value.includes('xai')) return 'xai';
+  if (value.includes('groq')) return 'groq';
   if (value.includes('deepseek')) return 'deepseek';
   if (value.includes('moonshot') || value.includes('kimi')) return 'moonshot';
   if (value.includes('qwen')) return 'qwen';

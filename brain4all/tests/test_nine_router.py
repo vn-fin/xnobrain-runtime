@@ -133,6 +133,29 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         rows = (await manager.list_connections())["connections"]
         self.assertEqual(rows[0]["provider"], "deepseek")
 
+    async def test_new_openai_compatible_nodes_are_exposed_as_logical_providers(self) -> None:
+        providers = ("xai", "openrouter", "groq")
+        nodes = [{
+            "id": f"openai-compatible-chat-{provider}1",
+            "prefix": provider,
+            "name": provider,
+            "type": "openai-compatible",
+            "apiType": "chat",
+            "baseUrl": f"https://{provider}.example/v1",
+        } for provider in providers]
+        manager = FakeNineRouterManager({
+            ("GET", "/api/provider-nodes"): {"nodes": nodes},
+            ("GET", "/api/providers"): {"connections": [{
+                "id": f"{provider}-account",
+                "provider": f"openai-compatible-chat-{provider}1",
+                "authType": "api-key",
+            } for provider in providers]},
+        })
+
+        rows = (await manager.list_connections())["connections"]
+
+        self.assertEqual([row["provider"] for row in rows], list(providers))
+
     async def test_models_are_filtered_and_auto_combo_is_created(self) -> None:
         manager = FakeNineRouterManager(
             {
@@ -186,7 +209,8 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         )
 
         connections = await manager.list_connections()
-        self.assertEqual(len(connections["connections"]), 2)
+        self.assertEqual(len(connections["connections"]), 3)
+        self.assertEqual(connections["connections"][2]["provider"], "openrouter")
         self.assertNotIn("api_key", connections["connections"][0])
         self.assertNotIn("apiKey", connections["connections"][0])
 

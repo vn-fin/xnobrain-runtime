@@ -5380,6 +5380,14 @@ body.col-resizing {
   background: #6467f2;
 }
 
+.brand-icon.xai {
+  background: #000;
+}
+
+.brand-icon.groq {
+  background: #f43d01;
+}
+
 .brand-icon.opencode {
   background: #f4f4f0;
   border: 1px solid #d4d4ce;
