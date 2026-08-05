@@ -8,8 +8,6 @@ import {
   ChevronRight,
   Clock,
   Columns3,
-  Coins,
-  Brain,
   ExternalLink,
   Link2,
   List,
@@ -25,7 +23,6 @@ import {
   Octagon,
   X,
 } from 'lucide-react';
-import { conversationsApi } from '../api/conversations';
 import { ARCHIVED_COLUMN, KANBAN_COLUMNS } from '../api/kanban';
 import type { Team } from '../api/teams';
 import type { useKanban } from '../hooks/useKanban';
@@ -33,48 +30,19 @@ import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 import type {
   Agent,
   AgentSkill,
-  ChatMessage,
-  ConversationUsage,
   KanbanBoard,
   KanbanColumnId,
   KanbanPriority,
   KanbanTask,
 } from '../types';
 import { formatKanbanEvent } from './kanbanEventFormat';
-import { Markdown } from './Markdown';
+import { SessionConversationModal } from './SessionConversationModal';
 
 type KanbanState = ReturnType<typeof useKanban>;
 
 const PRIORITY_LABEL: Record<KanbanPriority, string> = { high: 'High', medium: 'Medium', low: 'Low' };
 const ASSIGNEE_COLORS = ['#4f8cff', '#34d399', '#f8d66d', '#c084fc', '#fb923c', '#7dd3fc'];
 const BOARD_COLORS = ['#4f8cff', '#34d399', '#c084fc', '#fb923c', '#f8d66d', '#22d3ee'];
-type ConversationLoad = { messages: ChatMessage[]; usage?: ConversationUsage };
-const conversationLoads = new Map<string, Promise<ConversationLoad>>();
-
-function loadConversation(agentId: string, conversationId: string): Promise<ConversationLoad> {
-  const key = `${agentId}\0${conversationId}`;
-  const existing = conversationLoads.get(key);
-  if (existing) return existing;
-  const pending = Promise.allSettled([
-    conversationsApi.messages(agentId, conversationId),
-    conversationsApi.usage(agentId, conversationId),
-  ]).then(([messageResult, usageResult]) => {
-    if (messageResult.status === 'rejected') throw messageResult.reason;
-    return {
-      messages: messageResult.value,
-      usage: usageResult.status === 'fulfilled' ? usageResult.value : undefined,
-    };
-  });
-  conversationLoads.set(key, pending);
-  void pending.then(
-    () => window.setTimeout(() => {
-      if (conversationLoads.get(key) === pending) conversationLoads.delete(key);
-    }, 1_000),
-    () => conversationLoads.delete(key),
-  );
-  return pending;
-}
-
 function monogram(name: string): string {
   return name
     .split(/[\s-]+/)
@@ -593,115 +561,6 @@ function TaskCard({
   );
 }
 
-function KanbanConversationModal({
-  task,
-  agents,
-  onClose,
-}: {
-  task: KanbanTask;
-  agents: Agent[];
-  onClose: () => void;
-}) {
-  const link = task.conversation;
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [usage, setUsage] = useState<ConversationUsage>();
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [error, setError] = useState('');
-  const assignee = resolveAssignee(link?.agentId ?? task.assignees[0] ?? '', agents);
-
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', close);
-    return () => window.removeEventListener('keydown', close);
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!link) return undefined;
-    let active = true;
-    setStatus('loading');
-    setError('');
-    void loadConversation(link.agentId, link.id).then(
-      (result) => {
-        if (!active) return;
-        setMessages(result.messages);
-        setUsage(result.usage);
-        setStatus('ready');
-      },
-      (reason: unknown) => {
-        if (!active) return;
-        setError(reason instanceof Error ? reason.message : 'Could not load this session.');
-        setStatus('error');
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [link?.agentId, link?.id]);
-
-  const visibleMessages = messages.filter((message) =>
-    message.role === 'user'
-    || (message.role === 'assistant' && message.content.trim().length > 0),
-  );
-
-  return (
-    <div className="modal-overlay team-conversation-overlay" onClick={(event) => {
-      event.stopPropagation();
-      onClose();
-    }}>
-      <div
-        className="app-modal team-conversation-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="kanban-conversation-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="team-conversation-head">
-          <span className={`run-node-state ${task.nativeStatus}`}>
-            {task.nativeStatus === 'running' ? <Loader2 size={16} /> : <Check size={15} />}
-          </span>
-          <span>
-            <strong id="kanban-conversation-title">{task.title}</strong>
-            <small>{assignee.name} · {nativeStatusLabel(task.nativeStatus)}</small>
-          </span>
-          <button className="icon-button" onClick={onClose} aria-label="Close task session">
-            <X size={17} />
-          </button>
-        </header>
-        <section className="team-conversation-metrics" aria-label="Session metrics">
-          <span><Coins size={14} /><small>Tokens</small><strong>{usage ? usage.totalTokens.toLocaleString() : '—'}</strong></span>
-          <span><Brain size={14} /><small>Steps</small><strong>{usage?.steps != null ? usage.steps.toLocaleString() : '—'}</strong></span>
-          <span><Clock size={14} /><small>Execution time</small><strong>{usage?.executionSeconds != null ? `${usage.executionSeconds.toFixed(1)}s` : '—'}</strong></span>
-          <span><MessageSquare size={14} /><small>Messages</small><strong>{usage ? usage.messages.toLocaleString() : visibleMessages.length.toLocaleString()}</strong></span>
-        </section>
-        <div className="message-canvas team-conversation-canvas">
-          {status === 'loading' ? (
-            <div className="team-conversation-empty">
-              <Loader2 className="run-step-spin" size={22} />
-              <strong>Loading session…</strong>
-            </div>
-          ) : status === 'error' ? (
-            <div className="team-conversation-empty error">
-              <X size={22} /><strong>Session unavailable</strong><p>{error}</p>
-            </div>
-          ) : visibleMessages.length === 0 ? (
-            <div className="team-conversation-empty"><MessageSquare size={22} /><strong>No stored messages</strong></div>
-          ) : visibleMessages.map((message) => (
-            message.role === 'user'
-              ? <div className="user-bubble" key={message.id}><Markdown content={message.content} /></div>
-              : <article className="assistant-message" key={message.id}><div className="message-content"><Markdown content={message.content} /></div></article>
-          ))}
-        </div>
-        <footer className="team-conversation-foot">
-          {link && <a className="kb-conversation-link" href={link.url}>Open tracking URL <ExternalLink size={13} /></a>}
-          <button className="conn-btn" onClick={onClose}>Close</button>
-        </footer>
-      </div>
-    </div>
-  );
-}
-
 function TaskDrawer({
   task,
   agents,
@@ -740,6 +599,14 @@ function TaskDrawer({
   const scheduleCompleted = task.schedule?.recurrence === 'once'
     && task.schedule.occurrenceCount > 0
     && task.schedule.nextRunAt == null;
+  const conversation = task.conversation;
+  const conversationAgent = conversation
+    ? agents.find((agent) => agent.id === conversation.agentId)
+    : undefined;
+  const conversationAssignee = resolveAssignee(
+    conversation?.agentId ?? task.assignees[0] ?? '',
+    agents,
+  );
 
   useEffect(() => {
     if (editing) return;
@@ -1205,8 +1072,19 @@ function TaskDrawer({
           )}
         </div>}
       </div>
-      {conversationOpen && task.conversation && (
-        <KanbanConversationModal task={task} agents={agents} onClose={onCloseConversation} />
+      {conversationOpen && conversation && (
+        <SessionConversationModal
+          agent={conversationAgent}
+          conversationId={conversation.id}
+          title={task.title}
+          subtitle={`${conversationAssignee.name} · ${nativeStatusLabel(task.nativeStatus)}`}
+          statusTone={task.nativeStatus === 'running' ? 'running'
+            : task.nativeStatus === 'done' ? 'completed'
+            : task.nativeStatus === 'blocked' ? 'failed'
+            : 'idle'}
+          closeLabel="Close task session"
+          onClose={onCloseConversation}
+        />
       )}
     </div>
   );

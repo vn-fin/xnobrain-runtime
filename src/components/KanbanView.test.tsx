@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useKanban } from '../hooks/useKanban';
+import { streamStore } from '../chat/streamStore';
 import type { Team } from '../api/teams';
 import type { Agent } from '../types';
 import { KanbanView } from './KanbanView';
@@ -56,7 +57,10 @@ function TestBoard({
 }
 
 describe('KanbanView', () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   beforeEach(() => {
     window.localStorage.clear();
@@ -302,6 +306,7 @@ describe('KanbanView', () => {
   it('shows conversation tracking in task details and cancels a running task', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.mocked(fetch);
+    const sendSpy = vi.spyOn(streamStore, 'send').mockImplementation(() => undefined);
     render(<TestBoard agents={[researchAgent]} />);
 
     await user.click(await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' }));
@@ -316,7 +321,10 @@ describe('KanbanView', () => {
     })).toBeVisible();
 
     await user.click(within(drawer).getByRole('button', { name: 'View session' }));
-    expect(screen.getByRole('dialog', { name: 'Prepare the weekly report' })).toBeVisible();
+    const sessionDialog = screen.getByRole('dialog', { name: 'Prepare the weekly report' });
+    expect(sessionDialog).toBeVisible();
+    expect(within(sessionDialog).getByPlaceholderText('Message Research Agent…')).toBeEnabled();
+    expect(within(sessionDialog).getByRole('button', { name: 'Upload files' })).toBeEnabled();
     await waitFor(() => {
       expect(fetchMock.mock.calls.filter(([input]) => String(input).includes(
         '/sessions/20260727_140600_abcdef/messages?agent=research-agent',
@@ -325,11 +333,19 @@ describe('KanbanView', () => {
         '/sessions/20260727_140600_abcdef/usage?agent=research-agent',
       ))).toHaveLength(1);
     });
+    await user.type(within(sessionDialog).getByPlaceholderText('Message Research Agent…'), 'Continue from the task board');
+    await user.click(within(sessionDialog).getByRole('button', { name: 'Send message to Research Agent' }));
+    expect(sendSpy).toHaveBeenCalledWith(
+      'research-agent',
+      '20260727_140600_abcdef',
+      'Continue from the task board',
+      researchAgent.model,
+    );
     await user.click(screen.getByRole('button', { name: 'Close task session' }));
     await user.click(within(drawer).getByRole('button', { name: 'View session' }));
     expect(fetchMock.mock.calls.filter(([input]) => String(input).includes(
       '/sessions/20260727_140600_abcdef/messages?agent=research-agent',
-    ))).toHaveLength(1);
+    ))).toHaveLength(2);
     await user.click(screen.getByRole('button', { name: 'Close task session' }));
 
     await user.click(within(drawer).getByRole('button', { name: 'Cancel task' }));
