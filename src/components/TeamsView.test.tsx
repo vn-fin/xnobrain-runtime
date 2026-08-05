@@ -647,6 +647,8 @@ describe('TeamsView', () => {
     expect(dialog).toHaveTextContent('Messages');
     expect(dialog).toHaveTextContent('Research the launch options.');
     expect(dialog).toHaveTextContent('I found three viable launch plans.');
+    expect(screen.getByPlaceholderText('Message Researcher…')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Upload files' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: /Worked/i }));
     expect(dialog).toHaveTextContent('I compared the available evidence.');
     fireEvent.click(screen.getByRole('button', { name: 'Used skills' }));

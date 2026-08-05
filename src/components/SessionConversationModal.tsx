@@ -40,6 +40,7 @@ type SessionConversationModalProps = {
   fallback?: SessionConversationFallback;
   emptyTitle?: string;
   emptyDescription?: string;
+  closeLabel?: string;
   onClose: () => void;
 };
 
@@ -91,6 +92,7 @@ export function SessionConversationModal({
   fallback,
   emptyTitle = 'No session yet',
   emptyDescription = 'This session becomes available after Hermes starts the work.',
+  closeLabel = 'Close session',
   onClose,
 }: SessionConversationModalProps) {
   const agentId = agent?.id ?? '';
@@ -222,7 +224,7 @@ export function SessionConversationModal({
             <strong id="session-conversation-title">{title}</strong>
             <small>{subtitle}</small>
           </span>
-          <button className="icon-button" onClick={onClose} aria-label="Close session"><X size={17} /></button>
+          <button className="icon-button" onClick={onClose} aria-label={closeLabel}><X size={17} /></button>
         </header>
 
         <section className="team-conversation-metrics" aria-label="Session metrics">
