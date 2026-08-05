@@ -132,6 +132,14 @@ describe('SessionConversationModal', () => {
     expect(sendMessage).toHaveBeenCalledWith('Continue the analysis');
   });
 
+  it('keeps the transcript in its own grid row below session metrics', () => {
+    const { container } = renderModal();
+    const transcript = container.querySelector('.team-conversation-canvas');
+
+    expect(transcript).not.toBeNull();
+    expect((transcript as HTMLElement).style.gridRow).toBe('auto');
+  });
+
   it('stops an active response', async () => {
     const user = userEvent.setup();
     vi.mocked(useConversation).mockReturnValue(liveConversation({ streaming: true, canStop: true }));

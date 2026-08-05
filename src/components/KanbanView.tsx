@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Clock,
   Columns3,
-  ExternalLink,
   Link2,
   List,
   Loader2,
@@ -884,9 +883,6 @@ function TaskDrawer({
                   View session
                 </button>
               </div>
-              <a className="kb-conversation-link" href={task.conversation.url}>
-                {task.conversation.url} <ExternalLink size={13} />
-              </a>
               <code className="kb-conversation-id">{task.conversation.id}</code>
             </section>
           )}

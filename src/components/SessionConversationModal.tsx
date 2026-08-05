@@ -237,6 +237,7 @@ export function SessionConversationModal({
         <div
           ref={canvas}
           className={`message-canvas team-conversation-canvas ${fileDragOver ? 'file-drag-over' : ''}`}
+          style={{ gridRow: 'auto' }}
           onDragEnter={(event) => {
             if (!carriesOsFiles(event) || uploading) return;
             event.preventDefault();

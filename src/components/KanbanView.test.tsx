@@ -316,9 +316,9 @@ describe('KanbanView', () => {
     const runAgentTooltip = within(drawer).getByRole('tooltip');
     expect(runAgentTooltip).toHaveTextContent('Agent ID: research-agent');
     expect(runAgentTooltip).toHaveTextContent('Finds and writes useful information');
-    expect(within(drawer).getByRole('link', {
+    expect(within(drawer).queryByRole('link', {
       name: /agents\/research-agent\/sessions\/20260727_140600_abcdef/,
-    })).toBeVisible();
+    })).not.toBeInTheDocument();
 
     await user.click(within(drawer).getByRole('button', { name: 'View session' }));
     const sessionDialog = screen.getByRole('dialog', { name: 'Prepare the weekly report' });
