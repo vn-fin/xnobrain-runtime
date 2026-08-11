@@ -76,6 +76,7 @@ export function useAssistants(active = true) {
   const conversationPagesRef = useRef(conversationPages);
   const loadedSkills = useRef(new Set<string>());
   const skillRequests = useRef(new Map<string, Promise<AgentSkill[]>>());
+  const skillsOverviewRequest = useRef<Promise<AgentSkill[]> | null>(null);
   const libraryRequest = useRef<Promise<AgentSkill[]> | null>(null);
   const libraryLoaded = useRef(false);
   const libraryRef = useRef(library);
@@ -220,6 +221,27 @@ export function useAssistants(active = true) {
         if (libraryRequest.current === request) libraryRequest.current = null;
       });
     libraryRequest.current = request;
+    return request;
+  }, []);
+
+  const loadSkillsOverview = useCallback(async () => {
+    if (skillsOverviewRequest.current) return skillsOverviewRequest.current;
+    const request = skillsApi.listOverview()
+      .then((overview) => {
+        libraryLoaded.current = true;
+        setLibrary(overview.skills);
+        setAgents((current) => current.map((agent) => {
+          const skills = overview.agents[agent.id];
+          return skills ? { ...agent, skills } : agent;
+        }));
+        return overview.skills;
+      })
+      .finally(() => {
+        if (skillsOverviewRequest.current === request) {
+          skillsOverviewRequest.current = null;
+        }
+      });
+    skillsOverviewRequest.current = request;
     return request;
   }, []);
 
@@ -523,7 +545,7 @@ export function useAssistants(active = true) {
 
   return {
     agents, library, agentSkills, skillStates, agentSkillPages, conversationPages, defaultConfig, status, error, pending,
-    skillInstallPending, skillInstallError, refresh, loadConversations, loadMoreConversations, loadConversation, loadAgentSkills, loadLibrary, loadDefaultConfig,
+    skillInstallPending, skillInstallError, refresh, loadConversations, loadMoreConversations, loadConversation, loadAgentSkills, loadLibrary, loadSkillsOverview, loadDefaultConfig,
     createAgent, updateAgent, renameAgent, deleteAgent, testAgent, setDefaultModel, setWriteApprovals,
     createConversation, deleteConversation, renameConversation, setConversationTitle, touchConversation,
     toggleAgentSkill, setSkillEnabled, loadSkillsPage, installDefaultSkill, setDefaultSkillEnabled, installExistingSkill, applySkillsToAgents,

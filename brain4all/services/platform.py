@@ -577,6 +577,28 @@ class PlatformService:
             != (BIG_BROTHER_SKILL_CATEGORY,)
         ]
 
+    async def list_skills_overview(self) -> dict[str, Any]:
+        """Return one fresh skills snapshot for the library and every agent."""
+        agents = await self.list_agents_async()
+        agent_ids = [str(item.get("id") or "").strip() for item in agents]
+        agent_ids = [agent_id for agent_id in agent_ids if agent_id]
+        concurrency = asyncio.Semaphore(8)
+
+        async def agent_skills(agent_id: str) -> tuple[str, list[dict[str, Any]]]:
+            async with concurrency:
+                skills = await asyncio.to_thread(self.list_skills, agent_id)
+            return agent_id, skills
+
+        results = await asyncio.gather(
+            asyncio.to_thread(self.list_default_skills),
+            *(agent_skills(agent_id) for agent_id in agent_ids),
+        )
+        default_skills, *agent_results = results
+        return {
+            "skills": default_skills,
+            "agents": dict(agent_results),
+        }
+
     async def install_default_skill(self, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         """Install a URL, hub identifier, or local SKILL.md into the root profile."""
         return (

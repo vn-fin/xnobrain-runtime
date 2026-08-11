@@ -9,10 +9,14 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  clearTokenSession,
   clearLegacyXnoTokens,
   FIREBASE_REFRESH_TOKEN_KEY,
   setAccessToken as setStoredAccessToken,
+  setTokenSession,
   storedAccessToken,
+  storedAccessTokenExpiresAt,
+  storedRefreshToken,
 } from './authStorage';
 import { brain4AllRuntime, type RuntimeConfig } from './runtime';
 
@@ -56,6 +60,18 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+class AuthResponseError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = 'AuthResponseError';
+  }
+}
+
+function isRejectedCredential(error: unknown) {
+  return error instanceof AuthResponseError && [400, 401, 403].includes(error.status);
+}
+
 function normalizeUser(value: unknown): ActiveUser | null {
   if (!value || typeof value !== 'object') return null;
   const user = value as Record<string, unknown>;
@@ -92,7 +108,10 @@ function remoteURL(baseUrl: string, path: string) {
 async function jsonResponse(response: Response): Promise<Record<string, unknown>> {
   const body = await response.json().catch(() => undefined) as Record<string, unknown> | undefined;
   if (!response.ok) {
-    throw new Error(String(body?.message ?? body?.error ?? `Authentication failed (${response.status}).`));
+    throw new AuthResponseError(
+      response.status,
+      String(body?.message ?? body?.error ?? `Authentication failed (${response.status}).`),
+    );
   }
   const data = body?.data;
   return data && typeof data === 'object' ? data as Record<string, unknown> : body ?? {};
@@ -138,13 +157,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearXnoTokens = useCallback(() => {
     clearLegacyXnoTokens();
-    setStoredAccessToken(null);
+    clearTokenSession();
     setAccessToken(null);
   }, []);
 
-  const saveXnoAccessToken = useCallback((token: string) => {
-    setStoredAccessToken(token);
-    setAccessToken(token);
+  const saveXnoSession = useCallback((data: Record<string, unknown>, fallbackRefreshToken = '') => {
+    const nextAccessToken = String(data.access_token ?? '').trim();
+    const nextRefreshToken = String(data.refresh_token ?? fallbackRefreshToken).trim();
+    if (!nextAccessToken || !nextRefreshToken) {
+      throw new Error('The account API returned an incomplete token session.');
+    }
+    setTokenSession({
+      accessToken: nextAccessToken,
+      refreshToken: nextRefreshToken,
+      accessExpiresAt: data.access_expires_at,
+      refreshExpiresAt: data.refresh_expires_at,
+    });
+    setAccessToken(nextAccessToken);
+    return nextAccessToken;
   }, []);
 
   const loadXnoUser = useCallback(async (token: string) => {
@@ -158,10 +188,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await jsonResponse(response);
     const next = normalizeUser(data);
     if (!next) throw new Error('The account API returned no active user.');
-    saveXnoAccessToken(token);
     setUser(next);
     return next;
-  }, [config.auth.mePath, authBaseUrl, saveXnoAccessToken]);
+  }, [config.auth.mePath, authBaseUrl]);
 
   const verifyXnoAccount = useCallback((token: string): Promise<ActiveUser> => {
     if (accountUserRequest.current?.token === token) return accountUserRequest.current.request;
@@ -195,10 +224,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
     });
     const data = await jsonResponse(response);
-    const nextAccessToken = String(data.access_token ?? '').trim();
-    if (!nextAccessToken) throw new Error('The account API returned an empty access token.');
+    const nextAccessToken = saveXnoSession(data);
+    localStorage.removeItem(FIREBASE_REFRESH_TOKEN_KEY);
     return loadXnoUser(nextAccessToken);
-  }, [authBaseUrl, config.auth.tokenPath, loadXnoUser]);
+  }, [authBaseUrl, config.auth.tokenPath, loadXnoUser, saveXnoSession]);
+
+  const refreshXnoSession = useCallback(async () => {
+    const refreshToken = storedRefreshToken();
+    if (!refreshToken) throw new Error('No saved account session.');
+    const response = await fetch(remoteURL(authBaseUrl, config.auth.refreshPath), {
+      method: 'POST',
+      credentials: 'omit',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    try {
+      const data = await jsonResponse(response);
+      const nextAccessToken = saveXnoSession(data, refreshToken);
+      return loadXnoUser(nextAccessToken);
+    } catch (error) {
+      if (isRejectedCredential(error)) {
+        clearXnoTokens();
+        localStorage.removeItem(FIREBASE_REFRESH_TOKEN_KEY);
+      }
+      throw error;
+    }
+  }, [authBaseUrl, clearXnoTokens, config.auth.refreshPath, loadXnoUser, saveXnoSession]);
 
   const refreshFirebaseToken = useCallback(async () => {
     const refreshToken = localStorage.getItem(FIREBASE_REFRESH_TOKEN_KEY)?.trim();
@@ -207,12 +261,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const response = await fetch(
       `https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(config.auth.firebaseApiKey)}`,
       {
-      method: 'POST',
-      credentials: 'omit',
-      headers: {
-        Accept: 'application/json',
+        method: 'POST',
+        credentials: 'omit',
+        headers: {
+          Accept: 'application/json',
           'Content-Type': 'application/x-www-form-urlencoded',
-      },
+        },
         body: new URLSearchParams({
           grant_type: 'refresh_token',
           refresh_token: refreshToken,
@@ -221,8 +275,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
     const data = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (!response.ok) {
-      localStorage.removeItem(FIREBASE_REFRESH_TOKEN_KEY);
-      throw new Error(String(
+      if ([400, 401, 403].includes(response.status)) {
+        localStorage.removeItem(FIREBASE_REFRESH_TOKEN_KEY);
+      }
+      throw new AuthResponseError(response.status, String(
         (data.error as Record<string, unknown> | undefined)?.message
         ?? 'Firebase session refresh failed.',
       ));
@@ -237,8 +293,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const restoreXnoSession = useCallback((): Promise<ActiveUser | null> => {
     if (currentUserRequest.current) return currentUserRequest.current;
     const request = (async () => {
-      clearXnoTokens();
-      setUser(null);
+      const cachedAccessToken = storedAccessToken();
+      if (cachedAccessToken) {
+        try {
+          return await loadXnoUser(cachedAccessToken);
+        } catch (error) {
+          if (!isRejectedCredential(error)) throw error;
+          setStoredAccessToken(null);
+          setAccessToken(null);
+        }
+      }
+      if (storedRefreshToken()) return refreshXnoSession();
+      if (!localStorage.getItem(FIREBASE_REFRESH_TOKEN_KEY)) return null;
       const firebaseToken = await refreshFirebaseToken();
       return exchangeFirebaseToken(firebaseToken);
     })();
@@ -247,17 +313,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (currentUserRequest.current === request) currentUserRequest.current = null;
     }).catch(() => undefined);
     return request;
-  }, [clearXnoTokens, exchangeFirebaseToken, refreshFirebaseToken]);
+  }, [exchangeFirebaseToken, loadXnoUser, refreshFirebaseToken, refreshXnoSession]);
 
-  const loadCurrentUser = useCallback((): Promise<ActiveUser | null> => {
+  const loadCurrentUser = useCallback(async (): Promise<ActiveUser | null> => {
     if (config.auth.provider === 'gateway') return loadGatewaySession();
     const token = storedAccessToken();
-    if (token) return verifyXnoAccount(token);
-    if (!localStorage.getItem(FIREBASE_REFRESH_TOKEN_KEY)) return Promise.resolve(null);
-    return restoreXnoSession().then((next) => {
-      const refreshedToken = storedAccessToken();
-      return refreshedToken ? verifyXnoAccount(refreshedToken) : next;
-    });
+    if (token) {
+      try {
+        return await verifyXnoAccount(token);
+      } catch (error) {
+        if (!isRejectedCredential(error)) throw error;
+        setStoredAccessToken(null);
+        setAccessToken(null);
+      }
+    }
+    const next = await restoreXnoSession();
+    const refreshedToken = storedAccessToken();
+    return refreshedToken ? verifyXnoAccount(refreshedToken) : next;
   }, [
     config.auth.provider,
     loadGatewaySession,
@@ -269,14 +341,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let active = true;
     if (config.auth.provider === 'xno-firebase') {
       clearLegacyXnoTokens();
-      if (!localStorage.getItem(FIREBASE_REFRESH_TOKEN_KEY)) {
+      if (!storedAccessToken()
+        && !storedRefreshToken()
+        && !localStorage.getItem(FIREBASE_REFRESH_TOKEN_KEY)) {
         setLoading(false);
         return undefined;
       }
       void restoreXnoSession()
-        .catch(() => {
+        .catch((error) => {
           if (active) {
-            clearXnoTokens();
+            if (isRejectedCredential(error)) clearXnoTokens();
             setUser(null);
           }
         })
@@ -300,6 +374,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     restoreXnoSession,
   ]);
 
+  useEffect(() => {
+    if (config.auth.provider !== 'xno-firebase' || !accessToken) return undefined;
+    const expiresAt = storedAccessTokenExpiresAt();
+    if (!expiresAt) return undefined;
+    const refreshIn = Math.min(
+      Math.max(0, expiresAt - Date.now() - 30_000),
+      2_147_000_000,
+    );
+    const timer = window.setTimeout(() => {
+      void refreshXnoSession().catch((error) => {
+        if (isRejectedCredential(error)) setUser(null);
+      });
+    }, refreshIn);
+    return () => window.clearTimeout(timer);
+  }, [accessToken, config.auth.provider, refreshXnoSession]);
+
   const signIn = useCallback(async (input: LoginInput) => {
     if (config.auth.provider === 'xno-firebase') {
       if (!config.auth.firebaseApiKey) throw new Error('Firebase API key is not configured.');
@@ -322,11 +412,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(String(firebaseError?.message ?? 'Firebase sign in failed.'));
       }
       const firebaseToken = String(firebaseData.idToken ?? '').trim();
-      const firebaseRefreshToken = String(firebaseData.refreshToken ?? '').trim();
-      if (!firebaseToken || !firebaseRefreshToken) {
+      if (!firebaseToken) {
         throw new Error('Firebase returned an incomplete login session.');
       }
-      localStorage.setItem(FIREBASE_REFRESH_TOKEN_KEY, firebaseRefreshToken);
       try {
         await exchangeFirebaseToken(firebaseToken);
       } catch (error) {

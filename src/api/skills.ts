@@ -1,11 +1,17 @@
 import { request, requestWithMeta, type ResponsePagination } from './client';
-import type { AgentSkillDTO, AgentSkillInstallRequestDTO, AgentSkillListResponseDTO } from './contracts/agentGateway';
+import type {
+  AgentSkillDTO,
+  AgentSkillInstallRequestDTO,
+  AgentSkillListResponseDTO,
+  AgentSkillsOverviewResponseDTO,
+} from './contracts/agentGateway';
 import type { AgentSkill } from '../types';
 
 const ROOT = '/xnobrain/api/runtime/v1/agents-skills';
 const encoded = (value: string) => encodeURIComponent(value);
 
 export type SkillsPage = { skills: AgentSkill[]; pagination?: ResponsePagination };
+export type SkillsOverview = { skills: AgentSkill[]; agents: Record<string, AgentSkill[]> };
 
 function mapSkill(dto: AgentSkillDTO): AgentSkill {
   return {
@@ -26,6 +32,19 @@ function skills(data: AgentSkillListResponseDTO | AgentSkillDTO[] | undefined): 
 }
 
 export const skillsApi = {
+  async listOverview(): Promise<SkillsOverview> {
+    const data = await request<AgentSkillsOverviewResponseDTO>(`${ROOT}?include_agents=true`);
+    return {
+      skills: skills(data?.skills),
+      agents: Object.fromEntries(
+        Object.entries(data?.agents ?? {}).map(([agentId, agentSkills]) => [
+          agentId,
+          skills(agentSkills),
+        ]),
+      ),
+    };
+  },
+
   async listDefault(page?: number): Promise<SkillsPage> {
     const query = page != null ? `?page=${encodeURIComponent(String(page))}` : '';
     const { data, pagination } = await requestWithMeta<AgentSkillListResponseDTO | AgentSkillDTO[]>(

@@ -11,6 +11,11 @@ Operation = tuple[Callable[[], Any], str, int]
 def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Operation]:
     p, q, s = request.path_params, request.query_params, handler.service
     agent = lambda: str(q.get("agent") or "").strip() or (_ for _ in ()).throw(ValueError("agent is required"))
+    skills_catalog = (
+        s.list_skills_overview
+        if str(q.get("include_agents") or "").strip().lower() in {"1", "true", "yes"}
+        else s.list_default_skills
+    )
     return {
         "agents_list": (s.list_agents_async, "agents retrieved successfully", 200),
         "agents_create": (lambda: s.create_agent(body), "agent created successfully", 201),
@@ -22,7 +27,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         "config_global_get": (s.global_config, "global config retrieved successfully", 200),
         "config_global_patch": (lambda: s.update_global_config(body), "global config updated successfully", 200),
         "config_agent_patch": (lambda: s.update_agent_config(p["agent_id"], body), "agent config updated successfully", 200),
-        "skills_default_list": (s.list_default_skills, "default profile skills retrieved successfully", 200),
+        "skills_default_list": (skills_catalog, "skills retrieved successfully", 200),
         "skills_default_install": (lambda: s.install_default_skill(body), "skill installed into default profile", 201),
         "skills_default_patch": (lambda: s.set_default_skill_enabled(p["skill_id"], body), "default profile skill updated successfully", 200),
         "skills_list": (lambda: s.list_skills(p["agent_id"]), "skills retrieved successfully", 200),

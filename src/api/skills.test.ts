@@ -7,6 +7,28 @@ afterEach(() => {
 });
 
 describe('skillsApi', () => {
+  it('loads the skills page snapshot in one request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: {
+        skills: [{ skill_id: 'default-notes', name: 'default-notes', enabled: true }],
+        agents: {
+          'agent-one': [{ skill_id: 'agent-notes', name: 'agent-notes', enabled: false }],
+        },
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await skillsApi.listOverview();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `${window.location.origin}/xnobrain/api/runtime/v1/agents-skills?include_agents=true`,
+    );
+    expect(result.skills.map((skill) => skill.skill_id)).toEqual(['default-notes']);
+    expect(result.agents['agent-one'].map((skill) => skill.skill_id)).toEqual(['agent-notes']);
+  });
+
   it('loads the default profile catalog from the unscoped skills endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       success: true,

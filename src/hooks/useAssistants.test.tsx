@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   createConversation: vi.fn(),
   listSkills: vi.fn(),
   listDefaultSkills: vi.fn(),
+  listSkillsOverview: vi.fn(),
   getGlobalConfig: vi.fn(),
 }));
 
@@ -56,6 +57,7 @@ vi.mock('../api/skills', () => ({
   skillsApi: {
     list: mocks.listSkills,
     listDefault: mocks.listDefaultSkills,
+    listOverview: mocks.listSkillsOverview,
   },
 }));
 
@@ -110,6 +112,39 @@ describe('useAssistants lazy collections', () => {
 
     await act(() => result.current.loadLibrary(true));
     expect(mocks.listDefaultSkills).toHaveBeenCalledTimes(2);
+  });
+
+  it('hydrates the library and all agent skills from one overview request', async () => {
+    mocks.listAgents.mockResolvedValue(agents);
+    mocks.listSkillsOverview.mockResolvedValue({
+      skills: [{ skill_id: 'shared', name: 'Shared', enabled: true, installed: true }],
+      agents: {
+        'agent-one': [{ skill_id: 'shared', name: 'Shared', enabled: true, installed: true }],
+        'agent-two': [{ skill_id: 'worker', name: 'Worker', enabled: false, installed: true }],
+      },
+    });
+
+    const { result } = renderHook(() => useAssistants());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await act(() => result.current.loadSkillsOverview());
+
+    expect(mocks.listSkillsOverview).toHaveBeenCalledTimes(1);
+    expect(mocks.listDefaultSkills).not.toHaveBeenCalled();
+    expect(mocks.listSkills).not.toHaveBeenCalled();
+    expect(result.current.library.map((skill) => skill.skill_id)).toEqual(['shared']);
+    expect(result.current.agents[0].skills.map((skill) => skill.skill_id)).toEqual(['shared']);
+    expect(result.current.agents[1].skills.map((skill) => skill.skill_id)).toEqual(['worker']);
+
+    await act(() => result.current.loadSkillsOverview());
+    expect(mocks.listSkillsOverview).toHaveBeenCalledTimes(2);
+
+    mocks.listSkills.mockResolvedValue({
+      skills: [{ skill_id: 'runtime-added', name: 'Runtime added', enabled: true, installed: true }],
+      pagination: undefined,
+    });
+    await act(() => result.current.loadAgentSkills('agent-one'));
+    expect(mocks.listSkills).toHaveBeenCalledWith('agent-one');
+    expect(result.current.agents[0].skills.map((skill) => skill.skill_id)).toEqual(['runtime-added']);
   });
 
   it('keeps the populated workspace mounted during a background profile refresh', async () => {
