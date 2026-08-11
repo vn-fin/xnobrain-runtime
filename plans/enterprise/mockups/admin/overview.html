@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Overview — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a class="active" href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div><h1>Organization overview</h1><p>Everything the org runs, in one place. You're viewing as <b>org_admin</b> — full management + read-all.</p></div>
+      <div style="display:flex;gap:10px"><button class="btn ghost">Export usage CSV</button><a href="members.html"><button class="btn">Invite member</button></a></div>
+    </div>
+
+    <div class="cards">
+      <div class="card"><div class="lbl">Active members</div><div class="val">24</div><div class="delta up">+3 this month</div></div>
+      <div class="card"><div class="lbl">Tokens · 30d</div><div class="val mono">48.2M</div><div class="delta up">▲ 12%</div></div>
+      <div class="card"><div class="lbl">Spend · 30d</div><div class="val mono">$1,914</div><div class="delta up">of $3,000 cap</div></div>
+      <div class="card"><div class="lbl">Devices online</div><div class="val">28 <span style="font-size:15px;color:var(--muted-2)">/ 31</span></div><div class="delta down">3 offline</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph">
+        <h2>Usage across the organization</h2><div class="spacer"></div>
+        <div class="ctrl">Agents:
+          <span class="chip">All members <span class="x">▾</span></span>
+          <span class="chip">Contract Reviewer <span class="x">✕</span></span>
+          <span class="chip add">+ add</span>
+        </div>
+        <div class="ctrl">Range <span class="seg"><button>24h</button><button class="active">7d</button><button>30d</button><button>90d</button></span></div>
+        <div class="ctrl">Bucket <span class="fake-select">day ▾</span></div>
+        <div class="ctrl">Metric <span class="fake-select">cost ($) ▾</span></div>
+      </div>
+      <div class="chart">
+        <svg viewBox="0 0 720 210" preserveAspectRatio="none">
+          <g stroke="#1c1c1c" stroke-width="1"><line x1="0" y1="40" x2="720" y2="40"/><line x1="0" y1="90" x2="720" y2="90"/><line x1="0" y1="140" x2="720" y2="140"/><line x1="0" y1="190" x2="720" y2="190"/></g>
+          <path d="M0,150 L103,140 L206,120 L309,128 L412,95 L515,88 L618,70 L720,60 L720,190 L0,190 Z" fill="rgba(79,140,255,.18)"/>
+          <path d="M0,150 L103,140 L206,120 L309,128 L412,95 L515,88 L618,70 L720,60" fill="none" stroke="#4f8cff" stroke-width="2"/>
+          <path d="M0,175 L103,170 L206,165 L309,150 L412,158 L515,140 L618,150 L720,132" fill="none" stroke="#34d399" stroke-width="2"/>
+          <path d="M0,182 L103,180 L206,178 L309,181 L412,176 L515,178 L618,172 L720,170" fill="none" stroke="#f8d66d" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="legend">
+        <span><i style="background:#4f8cff"></i>Engineering (12)</span>
+        <span><i style="background:#34d399"></i>Legal (4)</span>
+        <span><i style="background:#f8d66d"></i>Support (8)</span>
+        <span style="margin-left:auto;color:var(--muted-2)">Snapshot-upsert accounting · updated 2 min ago · exactly-once</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel">
+        <div class="sub">Members · top spenders this period · <a href="members.html" style="color:var(--accent);text-transform:none;letter-spacing:0">view all →</a></div>
+        <table>
+          <thead><tr><th>Member</th><th>Role</th><th>Status</th><th>Tokens</th><th>Cost</th><th>Seat cap</th></tr></thead>
+          <tbody>
+            <tr><td><div class="who"><span class="av">MA</span><div><a href="member-detail.html">Mai Anh</a><br/><small>mai.anh@nimbus.io · Okta</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td class="mono">3.9M</td><td class="mono">$180</td><td><div class="barcell"><span class="track"><i style="width:60%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">60%</span></div></td></tr>
+            <tr><td><div class="who"><span class="av">DK</span><div>Duy Khanh<br/><small>duy.k@nimbus.io · Okta</small></div></div></td><td><span class="rp manager">org_manager</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td class="mono">3.1M</td><td class="mono">$142</td><td><div class="barcell"><span class="track"><i style="width:47%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">47%</span></div></td></tr>
+            <tr><td><div class="who"><span class="av">PH</span><div>Phuong Hoa<br/><small>p.hoa@nimbus.io · local</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st active"><span class="d"></span>Active</span></td><td class="mono">2.4M</td><td class="mono">$110</td><td><div class="barcell"><span class="track"><i style="width:37%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">37%</span></div></td></tr>
+            <tr><td><div class="who"><span class="av">TB</span><div>Tuan Bao<br/><small>t.bao@nimbus.io · Okta</small></div></div></td><td><span class="rp auditor">auditor</span></td><td><span class="st invited"><span class="d"></span>Invited</span></td><td class="mono">—</td><td class="mono">—</td><td><div class="barcell"><span class="track"><i style="width:0%"></i></span><span class="mono" style="font-size:12px;color:var(--muted-2)">—</span></div></td></tr>
+            <tr><td><div class="who"><span class="av">LM</span><div>Le Minh<br/><small>l.minh@nimbus.io · Okta</small></div></div></td><td><span class="rp member">member</span></td><td><span class="st suspended"><span class="d"></span>Suspended</span></td><td class="mono">0.8M</td><td class="mono">$36</td><td><div class="barcell"><span class="track"><i style="width:12%"></i></span><span class="mono" style="font-size:12px;color:var(--muted-2)">12%</span></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <div class="sub">Roles &amp; auth · <a href="roles-auth.html" style="color:var(--accent);text-transform:none;letter-spacing:0">auth.yaml →</a></div>
+        <div class="yaml">
+<pre class="code"><span class="c"># control-plane config — self-hosted, edited in Git</span>
+<span class="k">roles</span>:
+  <span class="k">org_admin</span>:   [ <span class="s">members.*</span>, <span class="s">policies.write</span>, <span class="s">usage.read_org</span>, <span class="s">audit.read</span> ]
+  <span class="k">org_manager</span>: [ <span class="s">usage.read_org</span>, <span class="s">devices.read</span>, <span class="s">audit.read</span> ]
+  <span class="k">member</span>:      [ <span class="s">usage.read_self</span> ]
+  <span class="k">auditor</span>:     [ <span class="s">audit.read</span> ]
+
+<span class="k">group_mappings</span>:            <span class="c"># IdP group → role</span>
+  <span class="s">"nimbus-eng-leads"</span>: <span class="k">org_manager</span>
+  <span class="s">"nimbus-it-admins"</span>: <span class="k">org_admin</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel audit">
+      <div class="sub">Audit log · latest · <a href="audit.html" style="color:var(--accent);text-transform:none;letter-spacing:0">full log →</a></div>
+      <div class="row"><span class="t mono">10:42:07</span><span class="ev"><b>role.assigned</b> — org_manager granted to Duy Khanh <span class="tagline">via group “nimbus-eng-leads”</span></span><span class="actor">system · SCIM</span></div>
+      <div class="row"><span class="t mono">10:31:55</span><span class="ev"><b>member.invited</b> — t.bao@nimbus.io as auditor</span><span class="actor">Thu Lan · org_admin</span></div>
+      <div class="row"><span class="t mono">09:40:11</span><span class="ev"><b>member.suspended</b> — Le Minh <span class="tagline">access revoked within token TTL</span></span><span class="actor">Thu Lan · org_admin</span></div>
+    </div>
+
+    <div class="acaption">MOCKUP · Admin <b>overview</b> — one usage database (Grafana-style controls mirror local analytics), members &amp; RBAC, config-file auth, audit. Conversation content never appears here by design — only counts and metadata.</div>
+  </main>
+</div>
+</body>
+</html>

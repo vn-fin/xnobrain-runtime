@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tauri App Development"
+  short_description: "Build the isolated Brain4All Tauri desktop app"
+  default_prompt: "Use $tauri-app-development to implement and validate a Brain4All desktop app change under app/."

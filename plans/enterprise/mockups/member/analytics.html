@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Member · Analytics — Brain4All Enterprise (mockup)</title>
+<!-- The REAL shipping stylesheet, then the thin enterprise layer. -->
+<link rel="stylesheet" href="../assets/app.css" />
+<link rel="stylesheet" href="../assets/ent.css" />
+<style>
+  /* Mockup-only: icon glyphs stand in for the app's lucide line icons. */
+  .mi { display:inline-grid; place-items:center; width:18px; height:18px; opacity:.85; font-size:15px; line-height:1; }
+</style>
+</head>
+<body>
+<div class="ent-shell">
+  <!-- Enterprise identity strip — the one always-on difference vs localhost -->
+  <div class="ent-strip">
+    <span class="org"><span class="logo">N</span> Nimbus Robotics</span>
+    <span class="pill plan">Enterprise</span>
+    <span class="pill">Region: eu-central</span>
+    <span class="spacer"></span>
+    <span class="budget"><span>Org budget</span><span class="ebar"><i style="width:62%"></i></span><span>$310 / $500</span></span>
+    <span class="who"><span class="avatar">MA</span><span>Mai Anh · Member</span></span>
+  </div>
+
+  <div class="app no-right">
+    <!-- LEFT PANEL — real .left-panel structure -->
+    <aside class="left-panel">
+      <div class="brand">
+        <span>Brain4All</span>
+        <button class="icon-button" title="Toggle sidebar"><span class="mi">‹‹</span></button>
+      </div>
+
+      <nav class="main-nav">
+        <a class="nav-row" href="kanban.html"><span class="mi">▦</span><span>Kanban</span></a>
+        <a class="nav-row" href="teams.html"><span class="mi">◑</span><span>Teams</span></a>
+        <a class="nav-row active" href="analytics.html"><span class="mi">▤</span><span>Analytics</span></a>
+        <a class="nav-row" href="settings.html"><span class="mi">⚙</span><span>Settings</span></a>
+      </nav>
+
+      <div class="history-section">
+        <div class="section-title agents-title"><span>Assistants</span>
+          <span class="agents-title-actions"><button class="icon-button" title="Search"><span class="mi">⌕</span></button><button class="icon-button" title="New"><span class="mi">＋</span></button></span>
+        </div>
+
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Research Copilot</strong><small>hermes-4-70b · blend: fast</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Contract Reviewer</strong><small>hermes-4-405b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot" style="background:var(--yellow)"></span><span><strong>Support Triage</strong><small>hermes-4-70b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Sales Assistant</strong><small>hermes-4-70b · blend: fast</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Data Analyst</strong><small>hermes-4-405b · blend: balanced</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Onboarding Bot</strong><small>hermes-4-70b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>QA Reviewer</strong><small>hermes-4-405b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+
+        <div class="section-title recent-title"><span class="mi">⟳</span> Recent</div>
+        <div class="history-row"><button class="history-row-main">Q3 supplier risk memo</button></div>
+        <div class="history-row"><button class="history-row-main">Rewrite onboarding email</button></div>
+        <div class="history-row"><button class="history-row-main">Summarize incident #4821</button></div>
+        <div class="history-row"><button class="history-row-main">Compare MSA redline v3 vs v4</button></div>
+        <div class="history-row"><button class="history-row-main">Draft SOC 2 evidence checklist</button></div>
+        <div class="history-row"><button class="history-row-main">Weekly finance channel digest</button></div>
+      </div>
+
+      <div class="left-footer">
+        <div class="theme-switcher" role="group">
+          <button class="active" title="Light"><span class="mi">☀</span></button>
+          <button title="Dark"><span class="mi">☾</span></button>
+          <button title="Auto"><span class="mi">▣</span></button>
+        </div>
+        <div class="lang-switcher"><span class="mi">🌐</span><select aria-label="Language"><option>English</option><option>Tiếng Việt</option></select></div>
+      </div>
+    </aside>
+
+    <!-- CENTER — real .chat-area shell hosting the AnalyticsView (inline `S` styles) -->
+    <main class="chat-area sandbox-mode">
+      <div style="display:flex; flex-direction:column; height:100%; overflow:auto; padding:16px 20px; gap:16px">
+
+        <!-- header (S.header) -->
+        <div style="display:flex; align-items:center; gap:10px; justify-content:space-between">
+          <div style="display:flex; align-items:center; gap:8px">
+            <span class="mi">▤</span>
+            <h2 style="margin:0; font-size:16px">Usage analytics</h2>
+            <span style="font-size:10px; padding:1px 6px; border-radius:6px; border:1px solid #2f6f62; color:#3f9d6d; opacity:0.9; margin-left:6px">advisory · read-only</span>
+            <span class="ent-tag blue">Reported to org</span>
+          </div>
+          <button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px" title="Close" aria-label="Close"><span class="mi" style="width:14px;height:14px">✕</span></button>
+        </div>
+
+        <!-- Grafana-style control bar (S.bar) -->
+        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:10px 12px; border:1px solid rgba(128,128,128,0.28); border-radius:10px; background:rgba(128,128,128,0.06)">
+          <button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">Agents: <strong>All 7 agents</strong> ▾</button>
+          <span style="opacity:0.4">|</span>
+          <button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">24h</button>
+          <button style="padding:5px 10px; border-radius:8px; border:1px solid #2f6f62; background:#2f6f62; color:#fff; cursor:pointer; font-size:12px">7d</button>
+          <button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">30d</button>
+          <button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">90d</button>
+          <input type="date" style="padding:4px 6px; border-radius:6px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; font-size:12px" value="2026-07-18" aria-label="From date" />
+          <span style="opacity:0.65; font-size:12px">→</span>
+          <input type="date" style="padding:4px 6px; border-radius:6px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; font-size:12px" value="2026-07-25" aria-label="To date" />
+          <span style="opacity:0.4">|</span>
+          <select style="padding:4px 6px; border-radius:6px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; font-size:12px" aria-label="Bucket">
+            <option>hour</option><option selected>day</option><option>week</option><option>month</option>
+          </select>
+          <button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px" title="Refresh"><span class="mi" style="width:13px;height:13px">↻</span></button>
+          <span style="opacity:0.65; font-size:12px">as of 14:32:07</span>
+        </div>
+
+        <!-- tiles (S.tiles) -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px">
+          <div style="border:1px solid rgba(128,128,128,0.24); border-radius:10px; padding:12px 14px; background:rgba(128,128,128,0.05)">
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; opacity:0.6">Total tokens</div>
+            <div style="font-size:22px; font-weight:600; margin-top:4px">1.42M</div>
+            <div style="opacity:0.65; font-size:12px">920k in · 500k out</div>
+          </div>
+          <div style="border:1px solid rgba(128,128,128,0.24); border-radius:10px; padding:12px 14px; background:rgba(128,128,128,0.05)">
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; opacity:0.6">Cost</div>
+            <div style="font-size:22px; font-weight:600; margin-top:4px">$23.40</div>
+            <div style="opacity:0.65; font-size:12px">estimated</div>
+          </div>
+          <div style="border:1px solid rgba(128,128,128,0.24); border-radius:10px; padding:12px 14px; background:rgba(128,128,128,0.05)">
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; opacity:0.6">Sessions</div>
+            <div style="font-size:22px; font-weight:600; margin-top:4px">118</div>
+            <div style="opacity:0.65; font-size:12px">412 API calls</div>
+          </div>
+          <div style="border:1px solid rgba(128,128,128,0.24); border-radius:10px; padding:12px 14px; background:rgba(128,128,128,0.05)">
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; opacity:0.6">Agents</div>
+            <div style="font-size:22px; font-weight:600; margin-top:4px">7</div>
+            <div style="opacity:0.65; font-size:12px">of 7 total</div>
+          </div>
+          <div style="border:1px solid rgba(128,128,128,0.24); border-radius:10px; padding:12px 14px; background:rgba(128,128,128,0.05)">
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; opacity:0.6">Quota (9router)</div>
+            <div style="font-size:22px; font-weight:600; margin-top:4px">78%</div>
+            <div style="opacity:0.65; font-size:12px">Anthropic</div>
+          </div>
+        </div>
+
+        <!-- Over time panel (S.panel + TimeChart) -->
+        <div style="border:1px solid rgba(128,128,128,0.24); border-radius:10px; background:rgba(128,128,128,0.05); padding:14px">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+            <strong style="font-size:13px">Over time (day)</strong>
+            <div style="display:flex; gap:6px">
+              <button style="padding:5px 10px; border-radius:8px; border:1px solid #2f6f62; background:#2f6f62; color:#fff; cursor:pointer; font-size:12px">Tokens</button>
+              <button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">Cost</button>
+            </div>
+          </div>
+          <svg viewBox="0 0 800 180" width="100%" role="img" aria-label="Usage tokens over time">
+            <line x1="24" y1="156" x2="776" y2="156" stroke="rgba(128,128,128,0.4)" stroke-width="1" />
+            <g><rect x="25" y="122" width="40" height="34" fill="#2f6f62" rx="1" /><text x="45.9" y="168" text-anchor="middle" font-size="8" fill="currentColor" opacity="0.55">07-08</text></g>
+            <g><rect x="66.8" y="114" width="40" height="42" fill="#2f6f62" rx="1" /></g>
+            <g><rect x="108.6" y="128" width="40" height="28" fill="#2f6f62" rx="1" /></g>
+            <g><rect x="150.3" y="101" width="40" height="55" fill="#2f6f62" rx="1" /><text x="170.2" y="168" text-anchor="middle" font-size="8" fill="currentColor" opacity="0.55">07-11</text></g>
+            <g><rect x="192.1" y="95" width="40" height="61" fill="#2f6f62" rx="1" /></g>
+            <g><rect x="233.9" y="108" width="40" height="48" fill="#2f6f62" rx="1" /></g>
+            <g><rect x="275.7" y="84" width="40" height="72" fill="#2f6f62" rx="1" /><text x="295.6" y="168" text-anchor="middle" font-size="8" fill="currentColor" opacity="0.55">07-14</text></g>
+            <g><rect x="317.4" y="90" width="40" height="66" fill="#2f6f62" rx="1" /></g>
+            <g><rect x="359.2" y="66" width="40" height="90" fill="#2f6f62" rx="1" /></g>
+            <g><rect x="401" y="72" width="40" height="84" fill="#2f6f62" rx="1" /><text x="420.9" y="168" text-anchor="middle" font-size="8" fill="currentColor" opacity="0.55">07-17</text></g>
+            <g><rect x="442.8" y="53" width="40" height="103" fill="#2f6f62" rx="1" /></g>
+            <g><rect x="484.6" y="79" width="40" height="77" fill="#2f6f62" rx="1" /></g>
+            <g><rect x="526.3" y="61" width="40" height="95" fill="#2f6f62" rx="1" /><text x="546.2" y="168" text-anchor="middle" font-size="8" fill="currentColor" opacity="0.55">07-20</text></g>
+            <g><rect x="568.1" y="44" width="40" height="112" fill="#2f6f62" rx="1" /></g>
+            <g><rect x="609.9" y="68" width="40" height="88" fill="#2f6f62" rx="1" /></g>
+            <g><rect x="651.7" y="30" width="40" height="126" fill="#2f6f62" rx="1" /><text x="671.6" y="168" text-anchor="middle" font-size="8" fill="currentColor" opacity="0.55">07-23</text></g>
+            <g><rect x="693.4" y="48" width="40" height="108" fill="#2f6f62" rx="1" /></g>
+            <g><rect x="735.2" y="86" width="40" height="70" fill="#2f6f62" rx="1" /></g>
+          </svg>
+        </div>
+
+        <!-- By model panel (S.panel + ModelBars) -->
+        <div style="border:1px solid rgba(128,128,128,0.24); border-radius:10px; background:rgba(128,128,128,0.05); padding:14px">
+          <strong style="font-size:13px">By model</strong>
+          <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px">
+            <div style="display:flex; align-items:center; gap:10px"><div style="width:160px; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">hermes-4-70b</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:100%; height:100%; background:#2f6f62"></div></div><div style="width:96px; text-align:right; font-size:12px">612k · $9.80</div></div>
+            <div style="display:flex; align-items:center; gap:10px"><div style="width:160px; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">hermes-4-405b</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:74%; height:100%; background:#2f6f62"></div></div><div style="width:96px; text-align:right; font-size:12px">452k · $7.20</div></div>
+            <div style="display:flex; align-items:center; gap:10px"><div style="width:160px; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">blend:fast</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:55%; height:100%; background:#2f6f62"></div></div><div style="width:96px; text-align:right; font-size:12px">338k · $3.10</div></div>
+            <div style="display:flex; align-items:center; gap:10px"><div style="width:160px; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">blend:balanced</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:40%; height:100%; background:#2f6f62"></div></div><div style="width:96px; text-align:right; font-size:12px">244k · $2.40</div></div>
+            <div style="display:flex; align-items:center; gap:10px"><div style="width:160px; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">hermes-3-70b</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:22%; height:100%; background:#2f6f62"></div></div><div style="width:96px; text-align:right; font-size:12px">134k · $0.90</div></div>
+            <div style="display:flex; align-items:center; gap:10px"><div style="width:160px; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">glm-4.6</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:12%; height:100%; background:#2f6f62"></div></div><div style="width:96px; text-align:right; font-size:12px">74k · $0.40</div></div>
+          </div>
+        </div>
+
+        <!-- Per-agent budgets panel (S.panel + BudgetRow) -->
+        <div style="border:1px solid rgba(128,128,128,0.24); border-radius:10px; background:rgba(128,128,128,0.05); padding:14px">
+          <strong style="font-size:13px">Per-agent budgets</strong>
+          <div style="opacity:0.65; font-size:12px; margin-bottom:8px">Soft warnings only — spend is never blocked locally.</div>
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid rgba(128,128,128,0.14)"><div style="width:160px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">Research Copilot</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:62%; height:100%; background:#3f9d6d"></div></div><div style="width:150px; text-align:right; font-size:12px">$6.20 / $10.00 (62%)</div><button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">Edit</button></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid rgba(128,128,128,0.14)"><div style="width:160px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">Contract Reviewer</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:94%; height:100%; background:#b8860b"></div></div><div style="width:150px; text-align:right; font-size:12px">$9.40 / $10.00 (94%)</div><button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">Edit</button></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid rgba(128,128,128,0.14)"><div style="width:160px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">Support Triage</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:38%; height:100%; background:#3f9d6d"></div></div><div style="width:150px; text-align:right; font-size:12px">$1.90 / $5.00 (38%)</div><button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">Edit</button></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid rgba(128,128,128,0.14)"><div style="width:160px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">Sales Assistant</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:55%; height:100%; background:#3f9d6d"></div></div><div style="width:150px; text-align:right; font-size:12px">$2.75 / $5.00 (55%)</div><button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">Edit</button></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid rgba(128,128,128,0.14)"><div style="width:160px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">Data Analyst</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:71%; height:100%; background:#3f9d6d"></div></div><div style="width:150px; text-align:right; font-size:12px">$5.70 / $8.00 (71%)</div><button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">Edit</button></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid rgba(128,128,128,0.14)"><div style="width:160px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">Onboarding Bot</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:24%; height:100%; background:#3f9d6d"></div></div><div style="width:150px; text-align:right; font-size:12px">$0.72 / $3.00 (24%)</div><button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">Edit</button></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid rgba(128,128,128,0.14)"><div style="width:160px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">QA Reviewer</div><div style="flex:1; height:14px; background:rgba(128,128,128,0.15); border-radius:4px; overflow:hidden"><div style="width:48%; height:100%; background:#3f9d6d"></div></div><div style="width:150px; text-align:right; font-size:12px">$2.40 / $5.00 (48%)</div><button style="padding:5px 10px; border-radius:8px; border:1px solid rgba(128,128,128,0.3); background:transparent; color:inherit; cursor:pointer; font-size:12px">Edit</button></div>
+        </div>
+
+        <!-- Enterprise addition: organization reporting -->
+        <div class="ent-card">
+          <div class="ent-card-head"><span class="dotb"></span><strong>Organization reporting</strong></div>
+          <div class="ent-kv"><span>Reporting to</span><b>Nimbus Robotics central DB</b></div>
+          <div class="ent-kv"><span>Cadence</span><b>snapshot push, ~2 min</b></div>
+          <div class="ent-kv"><span>Seat weekly cap</span><b>$12.00 (set by admin)</b></div>
+          <div class="ent-kv"><span>Scope</span><b>counts &amp; metadata only</b></div>
+          <p class="ent-note">Conversation content never leaves this machine — only token counts, cost estimates, and model metadata are reported to your organization.</p>
+          <span class="ent-badge">Reported ✓ · last sync 2 min ago</span>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <div class="mock-caption">MOCKUP · Member <b>analytics</b> — the real localhost AnalyticsView (inline <code>S</code> styles, green <code>#2f6f62</code> accent, real TimeChart SVG) plus the org strip, an org-reporting tag, and an Organization reporting card.</div>
+</div>
+</body>
+</html>

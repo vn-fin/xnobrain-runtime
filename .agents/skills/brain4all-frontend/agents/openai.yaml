@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain4All Frontend"
+  short_description: "Implement and verify React source changes"
+  default_prompt: "Use $brain4all-frontend to implement a focused React frontend change."

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Brain4All Enterprise — UI mockups</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  :root{ color-scheme:dark; --bg:#000; --panel:#0a0a0a; --panel-2:#101010; --border:#272727; --text:#f4f4f4; --muted:#a7a7a7; --muted-2:#757575; --accent:#4f8cff; --green:#34d399; --violet:#b79dff; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; min-height:100vh; background:radial-gradient(1200px 600px at 50% -10%,#0a1220,#000); color:var(--text); font-family:'IBM Plex Sans',system-ui,sans-serif; padding:56px 24px 80px; }
+  .wrap{ max-width:960px; margin:0 auto; }
+  .head{ display:flex; flex-direction:column; align-items:center; text-align:center; }
+  .logo{ width:44px; height:44px; border-radius:12px; background:var(--accent); color:#04122e; display:grid; place-items:center; font-weight:700; font-size:22px; margin-bottom:18px; }
+  h1{ margin:0; font-size:26px; } .sub{ color:var(--muted); margin:8px 0 0; font-size:14px; max-width:600px; line-height:1.6; }
+  .lane{ margin-top:42px; }
+  .lane-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:14px; }
+  .lane-head h2{ margin:0; font-size:17px; }
+  .lane-head .tag{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; padding:2px 9px; border-radius:999px; }
+  .tag.user{ color:var(--green); border:1px solid #1c3a34; background:#0a1613; }
+  .tag.admin{ color:var(--violet); border:1px solid #3a3350; background:#140f1f; }
+  .lane-head p{ margin:0; color:var(--muted-2); font-size:13px; }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:14px; }
+  a.card{ display:block; text-decoration:none; color:inherit; background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px; transition:border-color .15s, transform .15s; }
+  a.card:hover{ border-color:var(--accent); transform:translateY(-2px); }
+  a.card.primary{ border-color:#25406e; background:linear-gradient(160deg,#0c1626,#0a0a0a); }
+  .card h3{ margin:0 0 6px; font-size:15px; }
+  .card p{ margin:0; color:var(--muted); font-size:12.5px; line-height:1.55; }
+  .card .go{ margin-top:12px; color:var(--accent); font-size:12px; font-weight:600; }
+  .foot{ margin-top:52px; color:var(--muted-2); font-size:12px; text-align:center; line-height:1.7; }
+  code{ font-family:'IBM Plex Mono',monospace; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="logo">B</div>
+    <h1>Brain4All Enterprise — UI mockups</h1>
+    <p class="sub">Static design prototypes for the enterprise edition, sharing one stylesheet with the shipping app's look (IBM Plex, black canvas, <code>--accent #4f8cff</code>). Two surfaces: the member workspace — the current localhost app, near-unchanged — and the admin console for organization managers.</p>
+  </div>
+
+  <div class="lane">
+    <div class="lane-head">
+      <h2>Member workspace</h2><span class="tag user">Single user</span>
+      <p>The localhost app — same screens, plus org identity, org-set budget/policy, managed keys, voice.</p>
+    </div>
+    <div class="grid">
+      <a class="card primary" href="member/chat.html"><h3>Chat</h3><p>The main app with the org strip, managed keys, seat cap, and enabled voice.</p><div class="go">Open →</div></a>
+      <a class="card" href="member/analytics.html"><h3>Analytics</h3><p>Personal usage — green Grafana-style view, plus the “reported to org” note.</p><div class="go">Open →</div></a>
+      <a class="card" href="member/kanban.html"><h3>Kanban</h3><p>Task board — unchanged from localhost.</p><div class="go">Open →</div></a>
+      <a class="card" href="member/teams.html"><h3>Teams</h3><p>Multi-agent workflows — unchanged from localhost.</p><div class="go">Open →</div></a>
+      <a class="card" href="member/settings.html"><h3>Settings</h3><p>Profiles/runtime/connectors/blends, plus the org (read-only) card.</p><div class="go">Open →</div></a>
+    </div>
+  </div>
+
+  <div class="lane">
+    <div class="lane-head">
+      <h2>Admin console</h2><span class="tag admin">Admin / manager</span>
+      <p>Organization management for org_admin and org_manager.</p>
+    </div>
+    <div class="grid">
+      <a class="card primary" href="admin/overview.html"><h3>Overview</h3><p>Org KPIs, the one usage database, members, RBAC, audit — at a glance.</p><div class="go">Open →</div></a>
+      <a class="card" href="admin/members.html"><h3>Members</h3><p>Org-provisioned accounts, invitations, roles, suspend.</p><div class="go">Open →</div></a>
+      <a class="card" href="admin/member-detail.html"><h3>Member detail</h3><p>Drill-in: identity, usage, devices, activity for one member.</p><div class="go">Open →</div></a>
+      <a class="card" href="admin/usage.html"><h3>Usage &amp; cost</h3><p>The central database — group-by, range/bucket, breakdown, export.</p><div class="go">Open →</div></a>
+      <a class="card" href="admin/devices.html"><h3>Devices &amp; fleet</h3><p>Incus containers + installed PCs, heartbeats, staged rollout.</p><div class="go">Open →</div></a>
+      <a class="card" href="admin/voice.html"><h3>Voice</h3><p>Central gateway, org-managed keys, metered minutes.</p><div class="go">Open →</div></a>
+      <a class="card" href="admin/roles-auth.html"><h3>Roles &amp; Auth</h3><p>Pluggable backends + config-file RBAC (auth.yaml) + permission catalog.</p><div class="go">Open →</div></a>
+      <a class="card" href="admin/audit.html"><h3>Audit log</h3><p>Append-only trail of every auth, role, device and policy change.</p><div class="go">Open →</div></a>
+    </div>
+    <div class="lane-head" style="margin-top:22px">
+      <h2 style="font-size:15px">Workspaces</h2><span class="tag admin">View-only</span>
+      <p>Read-only oversight of members' work — scope to all users or one.</p>
+    </div>
+    <div class="grid">
+      <a class="card" href="admin/agents.html"><h3>Agents</h3><p>Every assistant across the org — owner, model, usage. Read-only.</p><div class="go">Open →</div></a>
+      <a class="card" href="admin/kanban.html"><h3>Kanban</h3><p>A member's task board, viewed read-only by an admin.</p><div class="go">Open →</div></a>
+      <a class="card" href="admin/teams.html"><h3>Teams</h3><p>Multi-agent teams and recent runs across the org. Read-only.</p><div class="go">Open →</div></a>
+    </div>
+    <div class="lane-head" style="margin-top:22px">
+      <h2 style="font-size:15px">Coordination</h2><span class="tag admin" style="color:var(--accent);border-color:#25406e;background:#0c1626">Managed · new</span>
+      <p>Org-owned work that spans accounts and agent teams.</p>
+    </div>
+    <div class="grid">
+      <a class="card primary" href="admin/enterprise-kanban.html"><h3>Enterprise boards</h3><p>Cross-account Kanban — assign tasks to any member, agent, or team; dispatched to their runtime and tracked centrally.</p><div class="go">Open →</div></a>
+    </div>
+  </div>
+
+  <p class="foot">Visual mockups only — no live data or backend. Shared styles in <code>assets/mockup.css</code>.<br/>These illustrate the E01–E05 plans in <code>plans/enterprise/</code>. Privacy boundary throughout: only counts &amp; metadata are collected centrally — never conversation content.</p>
+</div>
+</body>
+</html>

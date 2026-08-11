@@ -1,0 +1,4 @@
+interface:
+  display_name: "Big Brother Control"
+  short_description: "Coordinate agents, skills, usage, and Kanban work"
+  default_prompt: "Review platform activity and coordinate the next safe actions."

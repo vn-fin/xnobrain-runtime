@@ -1,0 +1,34 @@
+name: Publish XNOBrain Runtime — Staging
+
+on:
+  push:
+    branches: [staging]
+    paths: [.version]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-xnobrain-runtime-staging
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    uses: ./.github/workflows/publish-runtime-images.yml
+    with:
+      environment: staging
+      node_role: worker
+      frontend_build_args: |
+        API_BASE_URL=https://public.beta.xno.vn
+        API_CONTROL_BASE_URL=https://public.beta.xno.vn
+        AUTH_BASE_URL=https://api.beta.xnoquant.io
+        APP_NAME=XNOBrain
+        APP_DESCRIPTION=Your private AI workspace for agents, conversations, skills, and automation.
+        APP_EDITION=cloud
+        AUTH_MODE=required
+        AUTH_PROVIDER=xno-firebase
+        FIREBASE_API_KEY=AIzaSyD8AFSR1vg21WOwLNVhczWfWfi3YSmZ9NA
+    secrets:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}

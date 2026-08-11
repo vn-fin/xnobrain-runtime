@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brain4All UI Review"
+  short_description: "Review and refine Brain4All UI behavior"
+  default_prompt: "Use $brain4all-ui to review and refine a Brain4All UI flow."

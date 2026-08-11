@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Enterprise boards — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+<style>
+  /* Enterprise cross-account board — a few extra bits on top of the admin kb-* classes. */
+  .eb-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  .eb-assignee { display:inline-flex; align-items:center; gap:6px; }
+  .eb-assignee .av-mini { width:20px; height:20px; border-radius:50%; display:grid; place-items:center; font-size:9px; font-weight:700; color:#04122e; }
+  .eb-kind { font-size:10px; padding:1px 6px; border-radius:5px; border:1px solid var(--border-2); color:var(--muted); }
+  .eb-kind.team { color:var(--violet); border-color:#3a3350; background:#140f1f; }
+  .eb-kind.agent { color:var(--blue); border-color:#1f3350; background:#0a1420; }
+  .eb-kind.person { color:var(--muted); }
+  .eb-runs { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted-2); margin-top:8px; }
+  .eb-runs .d { width:6px; height:6px; border-radius:50%; background:var(--green); }
+  .eb-runs .d.off { background:var(--muted-2); }
+  .kb-prio { width:3px; align-self:stretch; border-radius:3px; margin-right:8px; }
+  .kb-prio.high { background:#ff7777; } .kb-prio.med { background:#f8d66d; } .kb-prio.low { background:#3f9d6d; }
+  .kb-card-top2 { display:flex; align-items:center; gap:8px; margin-bottom:2px; }
+  .eb-blocked { display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--yellow); margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a class="active" href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div>
+        <h1>Enterprise boards</h1>
+        <p>Cross-account Kanban owned by the organization. Assign tasks to any member, agent, or team — dispatched to their runtime and tracked centrally.</p>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn ghost">New board</button>
+        <button class="btn">New task</button>
+      </div>
+    </div>
+
+    <!-- board picker + scope -->
+    <div class="eb-toolbar">
+      <span class="scope"><span class="who-mini">🗂 Board: <b style="color:var(--text)">Q3 Vendor Consolidation</b></span> <span style="color:var(--muted-2)">▾</span></span>
+      <span class="ctrl">Assignee <span class="fake-select">everyone ▾</span></span>
+      <span class="ctrl">Team <span class="fake-select">all teams ▾</span></span>
+      <span class="ctrl">Priority <span class="fake-select">all ▾</span></span>
+      <span style="flex:1"></span>
+      <span class="chip">4 accounts</span>
+      <span class="chip">2 teams</span>
+      <span class="chip">9 agents</span>
+    </div>
+
+    <!-- cross-account summary -->
+    <div class="cards">
+      <div class="card"><div class="lbl">Total work</div><div class="val">28</div><div class="delta">across 4 accounts</div></div>
+      <div class="card"><div class="lbl">In progress</div><div class="val">7</div><div class="delta up">6 agents active</div></div>
+      <div class="card"><div class="lbl">Blocked</div><div class="val">2</div><div class="delta down">needs attention</div></div>
+      <div class="card"><div class="lbl">Completed</div><div class="val">61%</div><div class="delta">17 done</div></div>
+    </div>
+
+    <div class="viewonly" style="border-color:#25406e;background:#0c1626;color:var(--blue)">
+      <span>🗂</span>
+      <span><b>Managed board.</b> Tasks are assigned across accounts and dispatched to each member's runtime over the control plane (device-command-v1). Status &amp; progress flow back centrally — conversation content stays on each machine.</span>
+      <span class="spacer"></span>
+      <span class="chip">org-owned</span>
+    </div>
+
+    <!-- The cross-account board -->
+    <div class="kb-board">
+      <!-- Backlog -->
+      <div class="kb-col">
+        <h3>Backlog <span class="count">6</span></h3>
+        <div class="kb-list">
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio med"></span><span class="kb-id">VC-118</span></div>
+            <div class="kb-title">Collect W-9 &amp; ISO certs from 12 vendors</div>
+            <p class="kb-desc">Gather compliance docs before the consolidation review.</p>
+            <div class="kb-tags"><span class="kb-tag">#compliance</span><span class="kb-tag">#vendors</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#7dd3fc">PH</span><span class="eb-kind person">Phuong Hoa</span></span><span style="color:var(--muted-2);font-size:11px">2d</span></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio low"></span><span class="kb-id">VC-121</span></div>
+            <div class="kb-title">Draft consolidation comms for staff</div>
+            <p class="kb-desc">Internal announcement once vendors are picked.</p>
+            <div class="kb-tags"><span class="kb-tag">#comms</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#b79dff">CW</span><span class="eb-kind team">Comms Team</span></span><span style="color:var(--muted-2);font-size:11px">3d</span></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio med"></span><span class="kb-id">VC-125</span></div>
+            <div class="kb-title">Build spend baseline from last 4 quarters</div>
+            <p class="kb-desc">Pull historical invoices for the finance model.</p>
+            <div class="kb-tags"><span class="kb-tag">#finance</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#34d399">DA</span><span class="eb-kind agent">Data Analyst</span></span><span style="color:var(--muted-2);font-size:11px">4d</span></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio low"></span><span class="kb-id">VC-129</span></div>
+            <div class="kb-title">Shortlist alternate logistics providers</div>
+            <p class="kb-desc">Market scan for backup suppliers.</p>
+            <div class="kb-tags"><span class="kb-tag">#research</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#7dd3fc">TB</span><span class="eb-kind person">Tuan Bao</span></span><span style="color:var(--muted-2);font-size:11px">5d</span></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio low"></span><span class="kb-id">VC-131</span></div>
+            <div class="kb-title">Define KPI scorecard for finalists</div>
+            <p class="kb-desc">Weighting for price, SLA, risk.</p>
+            <div class="kb-tags"><span class="kb-tag">#scoring</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#34d399">RC</span><span class="eb-kind agent">Research Copilot</span></span><span style="color:var(--muted-2);font-size:11px">5d</span></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio med"></span><span class="kb-id">VC-134</span></div>
+            <div class="kb-title">Legal check on early-termination clauses</div>
+            <p class="kb-desc">Which current contracts can exit cleanly.</p>
+            <div class="kb-tags"><span class="kb-tag">#legal</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#b79dff">LG</span><span class="eb-kind team">Legal Team</span></span><span style="color:var(--muted-2);font-size:11px">6d</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Todo -->
+      <div class="kb-col">
+        <h3>Todo <span class="count">5</span></h3>
+        <div class="kb-list">
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio high"></span><span class="kb-id">VC-104</span></div>
+            <div class="kb-title">Normalize vendor list across 3 ERPs</div>
+            <p class="kb-desc">Dedup 340 supplier records into one master list.</p>
+            <div class="kb-tags"><span class="kb-tag">#data</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#34d399">DA</span><span class="eb-kind agent">Data Analyst</span></span><span style="color:var(--muted-2);font-size:11px">1d</span></div>
+            <div class="eb-runs"><span class="d"></span> runs on Mai Anh · container</div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio high"></span><span class="kb-id">VC-108</span></div>
+            <div class="kb-title">Send RFPs to 8 shortlisted vendors</div>
+            <p class="kb-desc">Standard template + our KPI scorecard.</p>
+            <div class="kb-tags"><span class="kb-tag">#procurement</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#7dd3fc">DK</span><span class="eb-kind person">Duy Khanh</span></span><span style="color:var(--muted-2);font-size:11px">1d</span></div>
+            <div class="eb-runs"><span class="d"></span> runs on Duy Khanh · PC</div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio med"></span><span class="kb-id">VC-112</span></div>
+            <div class="kb-title">Risk-score each finalist</div>
+            <p class="kb-desc">Financial + delivery + concentration risk.</p>
+            <div class="kb-tags"><span class="kb-tag">#risk</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#b79dff">RT</span><span class="eb-kind team">Risk Team</span></span><span style="color:var(--muted-2);font-size:11px">2d</span></div>
+            <div class="eb-runs"><span class="d"></span> team · 3 agents</div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio med"></span><span class="kb-id">VC-115</span></div>
+            <div class="kb-title">Model 3-year TCO for top 4</div>
+            <p class="kb-desc">Finance workbook with sensitivity ranges.</p>
+            <div class="kb-tags"><span class="kb-tag">#finance</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#7dd3fc">PH</span><span class="eb-kind person">Phuong Hoa</span></span><span style="color:var(--muted-2);font-size:11px">2d</span></div>
+            <div class="eb-runs"><span class="d"></span> runs on Phuong Hoa · PC</div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio low"></span><span class="kb-id">VC-119</span></div>
+            <div class="kb-title">Prepare vendor reference-call script</div>
+            <p class="kb-desc">Questions for existing customers.</p>
+            <div class="kb-tags"><span class="kb-tag">#diligence</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#34d399">OB</span><span class="eb-kind agent">Onboarding Bot</span></span><span style="color:var(--muted-2);font-size:11px">3d</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- In Progress -->
+      <div class="kb-col">
+        <h3>In Progress <span class="count">7</span></h3>
+        <div class="kb-list">
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio high"></span><span class="kb-id">VC-096</span></div>
+            <div class="kb-title">Review MSA redlines for 3 finalists</div>
+            <p class="kb-desc">Contract Reviewer marking risky clauses.</p>
+            <div class="kb-tags"><span class="kb-tag">#legal</span></div>
+            <div class="kb-track"><i style="width:72%"></i></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#34d399">CR</span><span class="eb-kind agent">Contract Reviewer</span></span><span style="color:var(--muted-2);font-size:11px">72% · 20m</span></div>
+            <div class="eb-runs"><span class="d"></span> runs on Mai Anh · container</div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio high"></span><span class="kb-id">VC-101</span></div>
+            <div class="kb-title">Consolidate RFP responses into matrix</div>
+            <p class="kb-desc">Side-by-side scoring across finalists.</p>
+            <div class="kb-tags"><span class="kb-tag">#procurement</span></div>
+            <div class="kb-track"><i style="width:48%"></i></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#b79dff">RT</span><span class="eb-kind team">Risk Team</span></span><span style="color:var(--muted-2);font-size:11px">48% · 1h</span></div>
+            <div class="eb-runs"><span class="d"></span> team · 3 agents · 2 accounts</div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio med"></span><span class="kb-id">VC-106</span></div>
+            <div class="kb-title">Draft negotiation brief for finance</div>
+            <p class="kb-desc">Leverage points and target pricing.</p>
+            <div class="kb-tags"><span class="kb-tag">#finance</span></div>
+            <div class="kb-track"><i style="width:30%"></i></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#34d399">RC</span><span class="eb-kind agent">Research Copilot</span></span><span style="color:var(--muted-2);font-size:11px">30% · 5m</span></div>
+            <div class="eb-runs"><span class="d"></span> runs on Duy Khanh · PC</div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio med"></span><span class="kb-id">VC-110</span></div>
+            <div class="kb-title">Summarize 6 vendor reference calls</div>
+            <p class="kb-desc">Themes, red flags, satisfaction.</p>
+            <div class="kb-tags"><span class="kb-tag">#diligence</span></div>
+            <div class="kb-track"><i style="width:84%"></i></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#7dd3fc">TB</span><span class="eb-kind person">Tuan Bao</span></span><span style="color:var(--muted-2);font-size:11px">84% · 3m</span></div>
+            <div class="eb-runs"><span class="d"></span> runs on Tuan Bao · PC</div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio med"></span><span class="kb-id">VC-113</span></div>
+            <div class="kb-title">Validate spend baseline vs GL</div>
+            <p class="kb-desc">Reconcile analyst numbers with ledger.</p>
+            <div class="kb-tags"><span class="kb-tag">#finance</span></div>
+            <div class="kb-track"><i style="width:55%"></i></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#7dd3fc">PH</span><span class="eb-kind person">Phuong Hoa</span></span><span style="color:var(--muted-2);font-size:11px">55% · 12m</span></div>
+            <div class="eb-runs"><span class="d"></span> runs on Phuong Hoa · PC</div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio low"></span><span class="kb-id">VC-116</span></div>
+            <div class="kb-title">Tag vendors by category &amp; region</div>
+            <p class="kb-desc">Enrich the master list for reporting.</p>
+            <div class="kb-tags"><span class="kb-tag">#data</span></div>
+            <div class="kb-track"><i style="width:22%"></i></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#34d399">DA</span><span class="eb-kind agent">Data Analyst</span></span><span style="color:var(--muted-2);font-size:11px">22% · 8m</span></div>
+            <div class="eb-runs"><span class="d"></span> runs on Mai Anh · container</div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio high"></span><span class="kb-id">VC-120</span></div>
+            <div class="kb-title">Blocked: awaiting vendor SOC 2 report</div>
+            <p class="kb-desc">Cannot finish risk score without it.</p>
+            <div class="kb-tags"><span class="kb-tag">#risk</span></div>
+            <div class="eb-blocked">⚠ Blocked · waiting on vendor upload</div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#b79dff">RT</span><span class="eb-kind team">Risk Team</span></span><span style="color:var(--muted-2);font-size:11px">1d</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Done -->
+      <div class="kb-col">
+        <h3>Done <span class="count">10</span></h3>
+        <div class="kb-list">
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio high"></span><span class="kb-id">VC-072</span></div>
+            <div class="kb-title">Map current vendor contracts &amp; renewals</div>
+            <div class="kb-tags"><span class="kb-tag">#legal</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#b79dff">LG</span><span class="eb-kind team">Legal Team</span></span><span style="color:var(--muted-2);font-size:11px">done · 2d</span></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio med"></span><span class="kb-id">VC-078</span></div>
+            <div class="kb-title">Baseline spend dashboard published</div>
+            <div class="kb-tags"><span class="kb-tag">#finance</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#34d399">DA</span><span class="eb-kind agent">Data Analyst</span></span><span style="color:var(--muted-2);font-size:11px">done · 3d</span></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio med"></span><span class="kb-id">VC-081</span></div>
+            <div class="kb-title">Vendor longlist (48) compiled</div>
+            <div class="kb-tags"><span class="kb-tag">#research</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#34d399">RC</span><span class="eb-kind agent">Research Copilot</span></span><span style="color:var(--muted-2);font-size:11px">done · 4d</span></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio low"></span><span class="kb-id">VC-084</span></div>
+            <div class="kb-title">Stakeholder kickoff notes circulated</div>
+            <div class="kb-tags"><span class="kb-tag">#comms</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#7dd3fc">DK</span><span class="eb-kind person">Duy Khanh</span></span><span style="color:var(--muted-2);font-size:11px">done · 5d</span></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio med"></span><span class="kb-id">VC-088</span></div>
+            <div class="kb-title">Scoring rubric approved by finance</div>
+            <div class="kb-tags"><span class="kb-tag">#scoring</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#7dd3fc">PH</span><span class="eb-kind person">Phuong Hoa</span></span><span style="color:var(--muted-2);font-size:11px">done · 6d</span></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top2"><span class="kb-prio low"></span><span class="kb-id">VC-090</span></div>
+            <div class="kb-title">Category taxonomy finalized</div>
+            <div class="kb-tags"><span class="kb-tag">#data</span></div>
+            <div class="kb-card-foot"><span class="eb-assignee"><span class="av-mini" style="background:#34d399">DA</span><span class="eb-kind agent">Data Analyst</span></span><span style="color:var(--muted-2);font-size:11px">done · 6d</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="acaption">MOCKUP · <b>Enterprise boards</b> — a NEW enterprise feature: one org-owned Kanban whose tasks span accounts, agents and agent-teams. The admin assigns work; the control plane dispatches each task to the owner's runtime (device-command-v1) and collects status/progress into the central DB. Distinct from <a href="kanban.html" style="color:var(--accent)">Workspaces · Kanban</a> (read-only mirror of a single member's own board). Only task metadata &amp; progress are central — conversation content stays on each machine.</div>
+  </main>
+</div>
+</body>
+</html>

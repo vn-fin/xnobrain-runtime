@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Member · Settings — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/app.css" />
+<link rel="stylesheet" href="../assets/ent.css" />
+<style>.mi{display:inline-grid;place-items:center;width:18px;height:18px;opacity:.85;font-size:15px;line-height:1;}</style>
+</head>
+<body>
+<div class="ent-shell">
+  <div class="ent-strip">
+    <span class="org"><span class="logo">N</span> Nimbus Robotics</span>
+    <span class="pill plan">Enterprise</span>
+    <span class="pill">Region: eu-central</span>
+    <span class="spacer"></span>
+    <span class="budget"><span>Org budget</span><span class="ebar"><i style="width:62%"></i></span><span>$310 / $500</span></span>
+    <span class="who"><span class="avatar">MA</span><span>Mai Anh · Member</span></span>
+  </div>
+
+  <div class="app no-right">
+    <aside class="left-panel">
+      <div class="brand"><span>Brain4All</span><button class="icon-button" title="Toggle sidebar"><span class="mi">‹‹</span></button></div>
+      <nav class="main-nav">
+        <a class="nav-row" href="kanban.html"><span class="mi">▦</span><span>Kanban</span></a>
+        <a class="nav-row" href="teams.html"><span class="mi">◑</span><span>Teams</span></a>
+        <a class="nav-row" href="analytics.html"><span class="mi">▤</span><span>Analytics</span></a>
+        <a class="nav-row active" href="settings.html"><span class="mi">⚙</span><span>Settings</span></a>
+      </nav>
+      <div class="history-section">
+        <div class="section-title agents-title"><span>Assistants</span><span class="agents-title-actions"><button class="icon-button"><span class="mi">⌕</span></button><button class="icon-button"><span class="mi">＋</span></button></span></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Research Copilot</strong><small>hermes-4-70b · blend: fast</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Contract Reviewer</strong><small>hermes-4-405b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot" style="background:var(--yellow)"></span><span><strong>Support Triage</strong><small>hermes-4-70b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Data Analyst</strong><small>hermes-4-405b · blend: balanced</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="section-title recent-title"><span class="mi">⟳</span> Recent</div>
+        <div class="history-row"><button class="history-row-main">Q3 supplier risk memo</button></div>
+        <div class="history-row"><button class="history-row-main">Weekly finance channel digest</button></div>
+      </div>
+      <div class="left-footer">
+        <div class="theme-switcher" role="group"><button class="active"><span class="mi">☀</span></button><button><span class="mi">☾</span></button><button><span class="mi">▣</span></button></div>
+        <div class="lang-switcher"><span class="mi">🌐</span><select><option>English</option><option>Tiếng Việt</option></select></div>
+      </div>
+    </aside>
+
+    <main class="chat-area sandbox-mode">
+      <div class="system-view">
+        <header class="conn-topbar">
+          <div><h1>Settings</h1><p>Local deployment, portable data, and advanced integrations.</p></div>
+          <button class="icon-button" title="Close"><span class="mi">✕</span></button>
+        </header>
+
+        <nav class="settings-tabs" role="tablist">
+          <button class="settings-tab active">Profiles</button>
+          <button class="settings-tab">Runtime</button>
+          <button class="settings-tab">Connectors</button>
+          <button class="settings-tab">Blends</button>
+        </nav>
+
+        <div class="system-scroll" role="tabpanel">
+          <!-- ENTERPRISE ADDITION: Organization card (read-only) -->
+          <div class="ent-card">
+            <div class="ent-card-head"><span class="dotb"></span><strong>Organization</strong> <span class="ent-badge muted" style="margin-left:6px">Read-only</span></div>
+            <div class="ent-kv"><span>Tenant</span><b>Nimbus Robotics</b></div>
+            <div class="ent-kv"><span>Signed in via</span><b>Okta SSO</b></div>
+            <div class="ent-kv"><span>Role</span><b>Member</b></div>
+            <div class="ent-kv"><span>Provider keys</span><b>Managed by org</b></div>
+            <div class="ent-kv"><span>Models &amp; budgets</span><b>Set by admin</b></div>
+            <div class="ent-kv"><span>Voice I/O</span><span class="ent-badge">On · Enterprise</span></div>
+            <p class="ent-note">Your organization controls provider keys, the model allowlist, and budgets. These are read-only here — contact your org admin to change them.</p>
+          </div>
+
+          <section class="system-card">
+            <div class="system-card-title"><span class="mi">🖥</span><div><strong>Deployment</strong><small>This installation runs locally and does not contact a managed service for chat.</small></div></div>
+            <div class="system-deployment"><span class="conn-badge ok">Local</span> <span style="color:var(--muted);font-size:13px">Runtime online · workspace mounted</span></div>
+          </section>
+
+          <section class="system-card">
+            <div class="system-card-title"><span class="mi">🗄</span><div><strong>Portable profiles</strong><small>Credentials, logs, host paths, and device identity are excluded.</small></div></div>
+            <div class="system-agent-list">
+              <label class="system-agent-config"><input type="checkbox" checked /> <span>Research Copilot</span></label>
+              <label class="system-agent-config"><input type="checkbox" checked /> <span>Contract Reviewer</span></label>
+              <label class="system-agent-config"><input type="checkbox" /> <span>Support Triage</span></label>
+              <label class="system-agent-config"><input type="checkbox" checked /> <span>Sales Assistant</span></label>
+              <label class="system-agent-config"><input type="checkbox" /> <span>Data Analyst</span></label>
+              <label class="system-agent-config"><input type="checkbox" /> <span>Onboarding Bot</span></label>
+              <label class="system-agent-config"><input type="checkbox" /> <span>QA Reviewer</span></label>
+            </div>
+            <button class="conn-btn primary"><span class="mi" style="width:15px;height:15px">⭳</span> Export selected</button>
+            <div class="system-import"><label class="system-file"><span class="mi">⭱</span><span>Choose a .zip profile archive</span><input type="file" /></label><button class="conn-btn ghost">Upload &amp; preview</button></div>
+          </section>
+
+          <section class="system-card system-advanced-card">
+            <div class="system-card-title"><span class="mi">◑</span><div><strong>MCP servers</strong><small>Advanced integration setup. Skills stay the recommended way to add reusable agent behavior.</small></div></div>
+            <p class="system-advanced-copy">MCP configuration is isolated per assistant in its profile. On enterprise, provider connections are org-managed (read-only).</p>
+            <div class="system-agent-list">
+              <div class="system-agent-config"><span>Research Copilot</span><code>profiles/research-copilot/mcp.json</code></div>
+              <div class="system-agent-config"><span>Contract Reviewer</span><code>profiles/contract-reviewer/mcp.json</code></div>
+              <div class="system-agent-config"><span>Data Analyst</span><code>profiles/data-analyst/mcp.json</code></div>
+              <div class="system-agent-config"><span>QA Reviewer</span><code>profiles/qa-reviewer/mcp.json</code></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="mock-caption">MOCKUP · Member <b>settings</b> — the real localhost SystemView (shipping <code>app.css</code>, real <code>system-*</code> DOM: tabs + cards) plus a read-only Organization card. Connectors are org-managed on enterprise.</div>
+</div>
+</body>
+</html>

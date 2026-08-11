@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Kanban — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a class="active" href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div><h1>Kanban</h1><p>Members' task boards — read-only.</p></div>
+      <div class="scope">Viewing: <span class="who-mini"><span class="av-mini">MA</span> Mai Anh</span> <span style="color:var(--muted-2)">▾</span></div>
+    </div>
+
+    <div class="viewonly">🔒 View-only — inspecting <b>Mai Anh</b>'s board. Admins cannot add, move or edit cards.<span class="spacer"></span><span class="scope">Viewing: <span class="who-mini"><span class="av-mini">MA</span> Mai Anh</span> <span style="color:var(--muted-2)">▾</span></span></div>
+
+    <div class="kb-board">
+      <div class="kb-col">
+        <h3>Backlog <span class="count">4</span></h3>
+        <div class="kb-list">
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-201</span></div>
+            <div class="kb-title">Evaluate hermes-4-405b for long-context retrieval</div>
+            <div class="kb-desc">Compare recall vs the 70b blend on 128k-token sensor logs; write up cost delta.</div>
+            <div class="kb-tags"><span class="kb-tag">#research</span> <span class="kb-tag">#models</span></div>
+            <div class="kb-foot"><span>Not started</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span></div></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-198</span></div>
+            <div class="kb-title">Draft ingestion spec for sensor fleet</div>
+            <div class="kb-desc">Define snapshot schema and per-device watermark for the new robotics telemetry stream.</div>
+            <div class="kb-tags"><span class="kb-tag">#spec</span></div>
+            <div class="kb-foot"><span>Due next week</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span><span class="kb-avatar" style="background:var(--green)">DK</span></div></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-205</span></div>
+            <div class="kb-title">Prototype vector cache eviction policy</div>
+            <div class="kb-desc">LRU vs TTL for the embedding cache on member devices; keep memory under 512MB.</div>
+            <div class="kb-tags"><span class="kb-tag">#perf</span></div>
+            <div class="kb-foot"><span>Not started</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span></div></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-210</span></div>
+            <div class="kb-title">RFC: offline outbox backpressure</div>
+            <div class="kb-desc">Bound the spool so a long-offline device does not exhaust disk before reconnect.</div>
+            <div class="kb-tags"><span class="kb-tag">#rfc</span> <span class="kb-tag">#reliability</span></div>
+            <div class="kb-foot"><span>Not started</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span><span class="kb-avatar" style="background:var(--yellow)">NP</span></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="kb-col">
+        <h3>In progress <span class="count">3</span></h3>
+        <div class="kb-list">
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-176</span></div>
+            <div class="kb-title">Research Copilot: multi-doc summarization skill</div>
+            <div class="kb-desc">Chain retrieval + map-reduce summary; wire the citation formatter output in.</div>
+            <div class="kb-tags"><span class="kb-tag">#agent</span> <span class="kb-tag">#skills</span></div>
+            <div class="kb-track"><i style="width:65%"></i></div>
+            <div class="kb-foot"><span>65%</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span></div></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-183</span></div>
+            <div class="kb-title">Benchmark retrieval latency across regions</div>
+            <div class="kb-desc">eu-central vs local vLLM; capture p50/p95 into the analytics view.</div>
+            <div class="kb-tags"><span class="kb-tag">#perf</span></div>
+            <div class="kb-track"><i style="width:40%"></i></div>
+            <div class="kb-foot"><span>40%</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span><span class="kb-avatar" style="background:var(--green)">QT</span></div></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-190</span></div>
+            <div class="kb-title">Telemetry for snapshot-upsert path</div>
+            <div class="kb-desc">Emit exactly-once counters so the usage DB and device agree on watermarks.</div>
+            <div class="kb-tags"><span class="kb-tag">#observability</span></div>
+            <div class="kb-track"><i style="width:80%"></i></div>
+            <div class="kb-foot"><span>80%</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="kb-col">
+        <h3>Review <span class="count">3</span></h3>
+        <div class="kb-list">
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-165</span></div>
+            <div class="kb-title">PR: dedupe watermark logic</div>
+            <div class="kb-desc">Fixes double-count on retry. Awaiting review from Duy Khanh.</div>
+            <div class="kb-tags"><span class="kb-tag">#pr</span> <span class="kb-tag">#reliability</span></div>
+            <div class="kb-foot"><span>In review</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span><span class="kb-avatar" style="background:var(--green)">DK</span></div></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-171</span></div>
+            <div class="kb-title">Skill: citation formatter</div>
+            <div class="kb-desc">Normalizes source spans into inline citations for the Research Copilot.</div>
+            <div class="kb-tags"><span class="kb-tag">#skills</span></div>
+            <div class="kb-foot"><span>In review</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span></div></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-158</span></div>
+            <div class="kb-title">Doc: privacy boundary diagram</div>
+            <div class="kb-desc">Shows counts/metadata leaving the device but content staying local.</div>
+            <div class="kb-tags"><span class="kb-tag">#docs</span></div>
+            <div class="kb-foot"><span>In review</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span><span class="kb-avatar" style="background:var(--violet,#b79dff)">TL</span></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="kb-col">
+        <h3>Done <span class="count">4</span></h3>
+        <div class="kb-list">
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-142</span></div>
+            <div class="kb-title">Migrate embeddings to pgvector</div>
+            <div class="kb-desc">Cut retrieval memory by 3×; shipped in v0.9.4.</div>
+            <div class="kb-tags"><span class="kb-tag">#done</span></div>
+            <div class="kb-track"><i style="width:100%"></i></div>
+            <div class="kb-foot"><span>Merged Jul 22</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span></div></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-137</span></div>
+            <div class="kb-title">Add hermes blend selector to Research Copilot</div>
+            <div class="kb-desc">fast / balanced / deep, exposed per conversation.</div>
+            <div class="kb-tags"><span class="kb-tag">#agent</span></div>
+            <div class="kb-track"><i style="width:100%"></i></div>
+            <div class="kb-foot"><span>Merged Jul 20</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span><span class="kb-avatar" style="background:var(--yellow)">NP</span></div></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-129</span></div>
+            <div class="kb-title">Fix outbox replay on reconnect</div>
+            <div class="kb-desc">No snapshots lost when MAI-LAPTOP comes back online.</div>
+            <div class="kb-tags"><span class="kb-tag">#reliability</span></div>
+            <div class="kb-track"><i style="width:100%"></i></div>
+            <div class="kb-foot"><span>Merged Jul 18</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span></div></div>
+          </div>
+          <div class="kb-card">
+            <div class="kb-card-top"><span class="kb-id">NR-120</span></div>
+            <div class="kb-title">Onboarding: claim MAI-MBP device</div>
+            <div class="kb-desc">Anonymous → account-claimed flow validated end to end.</div>
+            <div class="kb-tags"><span class="kb-tag">#done</span></div>
+            <div class="kb-track"><i style="width:100%"></i></div>
+            <div class="kb-foot"><span>Done Jul 16</span><div class="kb-assignees"><span class="kb-avatar" style="background:var(--accent)">MA</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="acaption">MOCKUP · Admin <b>Kanban</b> — read-only view of a single member's task board, scoped via the user picker. Task titles and cards are member workspace data surfaced for oversight; admins cannot edit. Switch the scope to inspect another member.</div>
+  </main>
+</div>
+</body>
+</html>

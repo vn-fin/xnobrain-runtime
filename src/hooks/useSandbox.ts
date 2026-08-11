@@ -1,0 +1,108 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { sandboxApi } from '../api/sandbox';
+import type { AsyncStatus, SandboxData } from '../types';
+
+export function useSandbox(active: boolean) {
+  const [data, setData] = useState<SandboxData | null>(null);
+  const [provisioned, setProvisioned] = useState(false);
+  const [status, setStatus] = useState<AsyncStatus>('loading');
+  const [error, setError] = useState('');
+  const [setupRunning, setSetupRunning] = useState(false);
+  const [setupProgress, setSetupProgress] = useState(0);
+  const [setupMessage, setSetupMessage] = useState('');
+  const refreshing = useRef(false);
+  const checked = useRef(false);
+
+  const refresh = useCallback(async (silent = false) => {
+    if (refreshing.current) return;
+    refreshing.current = true;
+    if (!silent) setStatus('loading');
+    setError('');
+    try {
+      const result = await sandboxApi.get();
+      setData(result.data);
+      setProvisioned(result.provisioned);
+      setStatus('ready');
+      checked.current = true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to load sandbox');
+      setStatus('error');
+    } finally {
+      refreshing.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!active) return undefined;
+    if (sandboxApi.managed) {
+      void refresh();
+      return undefined;
+    }
+    const controller = new AbortController();
+    let initialTimer: number | undefined;
+    let reconnectTimer: number | undefined;
+    let received = false;
+
+    const connect = async () => {
+      if (!received) setStatus('loading');
+      try {
+        await sandboxApi.stream((result) => {
+          checked.current = true;
+          received = true;
+          setData(result.data);
+          setProvisioned(result.provisioned);
+          setError('');
+          setStatus('ready');
+        }, controller.signal);
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        if (!received) {
+          setError(cause instanceof Error ? cause.message : 'Unable to stream sandbox statistics');
+          setStatus('error');
+        }
+      }
+      if (!controller.signal.aborted) reconnectTimer = window.setTimeout(() => void connect(), 1_000);
+    };
+
+    // Defer the initial connection so React StrictMode can complete its
+    // development-only setup/cleanup pass without opening an abandoned SSE
+    // request that the backend still has to accept.
+    initialTimer = window.setTimeout(() => void connect(), 0);
+    return () => {
+      controller.abort();
+      if (initialTimer !== undefined) window.clearTimeout(initialTimer);
+      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
+    };
+  }, [active, refresh]);
+
+  const createSandbox = async () => {
+    setSetupRunning(true);
+    setSetupProgress(0);
+    setSetupMessage('Initializing VM provisioning');
+    setError('');
+    try {
+      await sandboxApi.setupStream((progress) => {
+        setSetupProgress(progress.percent);
+        setSetupMessage(progress.message);
+      });
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to create sandbox');
+      setStatus('error');
+    } finally {
+      setSetupRunning(false);
+    }
+  };
+
+  return {
+    data,
+    provisioned,
+    status,
+    error,
+    setupRunning,
+    setupProgress,
+    setupMessage,
+    createSandbox,
+    refresh: () => refresh(false),
+  };
+}

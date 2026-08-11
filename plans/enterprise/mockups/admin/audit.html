@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Audit log — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a class="active" href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div><h1>Audit log</h1><p>Append-only. Every auth, role, device, policy and export event.</p></div>
+      <div style="display:flex;gap:10px"><button class="btn ghost">Export</button><button class="btn ghost" style="opacity:.55">Stream to SIEM <span style="font-size:11px;color:var(--muted-2)">soon</span></button></div>
+    </div>
+
+    <div class="panel audit">
+      <div class="ph"><h2>Events</h2><div class="spacer"></div>
+        <div class="ctrl">Actor <span class="fake-select">all ▾</span></div>
+        <div class="ctrl">Event type <span class="fake-select">all ▾</span></div>
+        <div class="ctrl">Range <span class="seg"><button>24h</button><button class="active">7d</button><button>30d</button></span></div>
+      </div>
+      <div class="row"><span class="t mono">11:04:52</span><span class="ev"><b>usage.snapshot</b> — 1,842 session snapshots upserted <span class="tagline">exactly-once · per-device watermark advanced</span></span><span class="actor">system · ingest</span></div>
+      <div class="row"><span class="t mono">10:58:19</span><span class="ev"><b>user.login</b> — Bao Chau signed in via OIDC (Okta) <span class="tagline">from 10.4.2.31 · MFA satisfied</span></span><span class="actor">Bao Chau · org_manager</span></div>
+      <div class="row"><span class="t mono">10:42:07</span><span class="ev"><b>user.login</b> — Mai Anh signed in via OIDC (Okta) <span class="tagline">from 10.4.2.19 · MFA satisfied</span></span><span class="actor">Mai Anh · member</span></div>
+      <div class="row"><span class="t mono">10:38:51</span><span class="ev"><b>user.login.failed</b> — invalid assertion for j.doe@nimbus.io <span class="tagline">IdP signature mismatch</span></span><span class="actor">system · OIDC</span></div>
+      <div class="row"><span class="t mono">10:31:22</span><span class="ev"><b>role.assigned</b> — org_manager granted to Duy Khanh <span class="tagline">via group “nimbus-eng-leads”</span></span><span class="actor">system · SCIM</span></div>
+      <div class="row"><span class="t mono">10:24:09</span><span class="ev"><b>member.invited</b> — t.bao@nimbus.io as auditor <span class="tagline">expires in 6 days</span></span><span class="actor">Thu Lan · org_admin</span></div>
+      <div class="row"><span class="t mono">10:07:44</span><span class="ev"><b>budget.threshold</b> — org spend crossed 60% of $3,000 cap <span class="tagline">advisory · no enforcement</span></span><span class="actor">system · accounting</span></div>
+      <div class="row"><span class="t mono">09:40:11</span><span class="ev"><b>member.suspended</b> — Le Minh <span class="tagline">access revoked within token TTL</span></span><span class="actor">Thu Lan · org_admin</span></div>
+      <div class="row"><span class="t mono">09:12:47</span><span class="ev"><b>policy.updated</b> — model allowlist changed <span class="tagline">+claude-opus-4 · −gpt-3.5</span></span><span class="actor">Thu Lan · org_admin</span></div>
+      <div class="row"><span class="t mono">08:55:30</span><span class="ev"><b>device.claimed</b> — MAI-LAPTOP <span class="tagline">anonymous → account-claimed by Mai Anh</span></span><span class="actor">Mai Anh · member</span></div>
+      <div class="row"><span class="t mono">08:40:18</span><span class="ev"><b>device.drained</b> — qtrung-box drained for v0.9.4 rollout <span class="tagline">outbox flushed · 0 snapshots lost</span></span><span class="actor">system · fleet</span></div>
+      <div class="row"><span class="t mono">08:33:02</span><span class="ev"><b>device.restarted</b> — bchau-box runtime restarted <span class="tagline">post-update health check passed</span></span><span class="actor">Thu Lan · org_admin</span></div>
+      <div class="row"><span class="t mono">08:02:59</span><span class="ev"><b>usage.exported</b> — CSV export · 30d · all members <span class="tagline">counts &amp; cost only</span></span><span class="actor">Duy Khanh · org_manager</span></div>
+      <div class="row"><span class="t mono">07:48:12</span><span class="ev"><b>session.revoked</b> — all sessions for Le Minh invalidated <span class="tagline">follows suspension</span></span><span class="actor">system · auth</span></div>
+      <div class="row"><span class="t mono">Jul 24 22:15</span><span class="ev"><b>auth.config.reloaded</b> — auth.yaml hot-reloaded <span class="tagline">roles + group_mappings, no restart</span></span><span class="actor">system · config</span></div>
+      <div class="row"><span class="t mono">Jul 24 21:03</span><span class="ev"><b>voice.keys.rotated</b> — org TTS/STT provider keys rotated <span class="tagline">held in vault · never distributed</span></span><span class="actor">Thu Lan · org_admin</span></div>
+      <div class="row"><span class="t mono">Jul 24 15:26</span><span class="ev"><b>report.scheduled</b> — weekly usage report scheduled <span class="tagline">Mondays 08:00 · emailed to org_admins</span></span><span class="actor">Duy Khanh · org_manager</span></div>
+      <div class="row"><span class="t mono">Jul 24 09:41</span><span class="ev"><b>break_glass.login</b> — local admin sign-in <span class="tagline">emergency access · SSO bypass</span></span><span class="actor">Thu Lan · local admin</span></div>
+      <div class="row"><span class="t mono">Jul 23 18:20</span><span class="ev"><b>scim.deprovision</b> — account for k.pham@nimbus.io deactivated <span class="tagline">removed from Okta directory</span></span><span class="actor">system · SCIM</span></div>
+      <div class="row"><span class="t mono">Jul 23 16:55</span><span class="ev"><b>policy.updated</b> — tool policy changed <span class="tagline">MCP server “shell” disabled fleet-wide</span></span><span class="actor">Thu Lan · org_admin</span></div>
+      <div class="row"><span class="t mono">Jul 23 14:07</span><span class="ev"><b>role.assigned</b> — auditor granted to Tuan Bao <span class="tagline">manual assignment</span></span><span class="actor">Thu Lan · org_admin</span></div>
+    </div>
+
+    <div class="panel" style="padding:14px 16px">
+      <span class="hint">Content of conversations is never in the audit log — only metadata about actions (who did what, when, from where). Prompts, responses, titles and memories stay on members' machines.</span>
+    </div>
+
+    <div class="acaption">MOCKUP · Admin <b>Audit log</b> — append-only record of auth, role, device, policy, voice and export events (E01/E05 foundation; SIEM streaming is a follow-on). Metadata only, never conversation content.</div>
+  </main>
+</div>
+</body>
+</html>
