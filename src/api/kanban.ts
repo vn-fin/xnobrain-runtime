@@ -61,6 +61,17 @@ function relativeTime(value: string | null | undefined): string {
 function taskFromApi(raw: RawTask): KanbanTask {
   const kanbanStatus = (raw.kanban_status ?? raw.status ?? 'todo') as KanbanColumnId;
   const nativeStatus = (raw.status ?? raw.hermes_status ?? 'todo') as KanbanNativeStatus;
+  const advertisedStatuses = Array.isArray(raw.allowed_kanban_statuses)
+    ? raw.allowed_kanban_statuses.map(String) as KanbanColumnId[]
+    : defaultAllowedStatuses(nativeStatus);
+  // Older/running runtime processes advertised no moves for completed tasks,
+  // although Hermes' archive endpoint supports done -> archived. Normalize
+  // that response during rolling upgrades so the valid action stays visible.
+  const allowedStatuses = nativeStatus === 'done'
+    && kanbanStatus !== 'archived'
+    && !advertisedStatuses.includes('archived')
+    ? [...advertisedStatuses, 'archived' as KanbanColumnId]
+    : advertisedStatuses;
   const parents = Array.isArray(raw.parents) ? raw.parents : [];
   const deps: KanbanDependency[] = parents.map((dep: any) => ({
     id: String(dep.id),
@@ -82,9 +93,7 @@ function taskFromApi(raw: RawTask): KanbanTask {
     description: String(raw.description ?? ''),
     status: kanbanStatus,
     nativeStatus,
-    allowedStatuses: Array.isArray(raw.allowed_kanban_statuses)
-      ? raw.allowed_kanban_statuses.map(String) as KanbanColumnId[]
-      : defaultAllowedStatuses(nativeStatus),
+    allowedStatuses,
     priority: raw.priority === 'high' || raw.priority === 'low' ? raw.priority : 'medium',
     assignees: Array.isArray(raw.assignees) ? raw.assignees.map(String) : raw.assignee ? [String(raw.assignee)] : [],
     tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],

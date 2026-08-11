@@ -139,6 +139,7 @@ describe('KanbanView', () => {
           title: providerTask ? 'Verify provider callback' : completedTask ? 'Publish release notes' : 'Prepare the weekly report',
           description: providerTask ? 'Check the callback.' : completedTask ? 'Release notes are complete.' : 'Prepare the report.',
           status: archived ? 'archived' : completedTask ? 'done' : 'running',
+          allowed_kanban_statuses: completedTask ? [] : undefined,
           priority: 'high',
           assignee: providerTask ? 'provider-agent' : 'research-agent',
           assignees: [providerTask ? 'provider-agent' : 'research-agent'],
@@ -169,7 +170,7 @@ describe('KanbanView', () => {
             { id: 't-1042', title: 'Prepare the weekly report', description: 'Prepare the report.', status: archivedTask ? 'archived' : 'running', priority: 'high', assignee: 'research-agent', assignees: ['research-agent'], parents: [], tags: ['report'], progress: archivedTask ? 100 : 50, updated_at: new Date().toISOString() },
             { id: 't-1051', title: 'Draft the report template', description: 'Draft a template.', status: 'todo', priority: 'low', assignee: 'research-agent', assignees: ['research-agent'], parents: [], tags: ['docs'], progress: 0, updated_at: new Date().toISOString() },
             { id: 't-blocked', title: 'Compute 1 + 1', description: 'Needs user input.', status: 'blocked', kanban_status: 'done', allowed_kanban_statuses: ['todo', 'archived'], state_detail: { kind: 'needs_input', label: 'Needs input', reason: 'Confirm the expected answer.' }, priority: 'medium', assignee: null, assignees: [], parents: [], tags: [], progress: 0, updated_at: new Date().toISOString() },
-            { id: 't-done', title: 'Publish release notes', description: 'Release notes are complete.', status: 'done', priority: 'medium', assignee: null, assignees: [], parents: [], tags: [], progress: 100, updated_at: new Date().toISOString() },
+            { id: 't-done', title: 'Publish release notes', description: 'Release notes are complete.', status: 'done', allowed_kanban_statuses: [], priority: 'medium', assignee: null, assignees: [], parents: [], tags: [], progress: 100, updated_at: new Date().toISOString() },
           ] },
           { id: 'provider-rollout', name: 'Provider rollout', description: 'Provider checks', color: '#34d399', tasks: [
             { id: 'p-201', title: 'Verify provider callback', description: 'Check the callback.', status: 'running', priority: 'high', assignee: 'provider-agent', assignees: ['provider-agent'], parents: [], tags: [], progress: 50, updated_at: new Date().toISOString() },
