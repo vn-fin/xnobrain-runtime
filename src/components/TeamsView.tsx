@@ -88,10 +88,10 @@ const FINISH_STAGE_ID = '__finish__';
 const DEFAULT_START_PROMPT = 'Plan the workflow and give every stage clear, actionable execution guidance.';
 const DEFAULT_FINISH_PROMPT = 'Synthesize all completed stage outputs into one clear, accurate final answer.';
 const COMMUNICATION_LEVELS = [
-  { value: 0, label: 'L0 · Isolated', description: 'Dependencies control order; results are not shared.' },
-  { value: 1, label: 'L1 · Result passing', description: 'Downstream stages receive upstream summaries.' },
-  { value: 2, label: 'L2 · Shared scratchpad', description: 'Agents also collaborate through a run workspace.' },
-  { value: 3, label: 'L3 · Team dialogue', description: 'Upstream agents review dependent drafts before completion.' },
+  { value: 0, label: 'Isolated', description: 'Dependencies control order; results are not shared.' },
+  { value: 1, label: 'Result passing', description: 'Downstream stages receive upstream summaries.' },
+  { value: 2, label: 'Shared scratchpad', description: 'Agents also collaborate through a run workspace.' },
+  { value: 3, label: 'Team dialogue', description: 'Upstream agents review dependent drafts before completion.' },
 ] as const;
 
 type RunGraphNode = { step: TeamRunStep; x: number; y: number };

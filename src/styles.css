@@ -9206,6 +9206,9 @@ body.col-resizing {
 :root:not([data-theme='light']) .team-builder-form input,
 :root:not([data-theme='light']) .team-builder-form select,
 :root:not([data-theme='light']) .team-builder-form textarea,
+:root:not([data-theme='light']) .team-policy-settings input,
+:root:not([data-theme='light']) .team-policy-settings select,
+:root:not([data-theme='light']) .team-policy-settings textarea,
 :root:not([data-theme='light']) .team-node-inspector input,
 :root:not([data-theme='light']) .team-node-inspector select,
 :root:not([data-theme='light']) .team-node-inspector textarea {
@@ -9217,6 +9220,9 @@ body.col-resizing {
 :root:not([data-theme='light']) .team-builder-form input:focus,
 :root:not([data-theme='light']) .team-builder-form select:focus,
 :root:not([data-theme='light']) .team-builder-form textarea:focus,
+:root:not([data-theme='light']) .team-policy-settings input:focus,
+:root:not([data-theme='light']) .team-policy-settings select:focus,
+:root:not([data-theme='light']) .team-policy-settings textarea:focus,
 :root:not([data-theme='light']) .team-node-inspector input:focus,
 :root:not([data-theme='light']) .team-node-inspector select:focus,
 :root:not([data-theme='light']) .team-node-inspector textarea:focus {
@@ -9233,10 +9239,21 @@ body.col-resizing {
 
 :root:not([data-theme='light']) .teams-back-button,
 :root:not([data-theme='light']) .team-builder-form label,
+:root:not([data-theme='light']) .team-policy-settings,
+:root:not([data-theme='light']) .team-policy-settings label,
+:root:not([data-theme='light']) .team-policy-settings summary,
 :root:not([data-theme='light']) .team-node-inspector label,
 :root:not([data-theme='light']) .team-palette-heading,
 :root:not([data-theme='light']) .team-inspector-section {
   color: var(--muted);
+}
+:root:not([data-theme='light']) .team-policy-settings small { color: var(--muted-2); }
+:root:not([data-theme='light']) .team-policy-settings select,
+:root:not([data-theme='light']) .team-policy-settings select option,
+:root:not([data-theme='light']) .team-policy-settings select optgroup {
+  color-scheme: dark;
+  color: var(--text);
+  background-color: var(--elevated-hi);
 }
 :root:not([data-theme='light']) .teams-back-button:hover,
 :root:not([data-theme='light']) .team-agent-option > svg,

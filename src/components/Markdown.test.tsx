@@ -103,3 +103,21 @@ describe('Markdown URL labels', () => {
     );
   });
 });
+
+describe('Markdown currency and math', () => {
+  afterEach(cleanup);
+
+  it('keeps two dollar-denominated amounts as readable prose', () => {
+    const content = "Strategy unveiled a $15B bitcoin-backed preferred stock plan and its CEO says they'll keep buying through the year; losses hit $361M (Yahoo, Fox, CoinDesk).";
+    const { container } = render(<Markdown content={content} />);
+
+    expect(container).toHaveTextContent(content);
+    expect(container.querySelector('.katex')).not.toBeInTheDocument();
+  });
+
+  it('continues to render genuine inline equations with KaTeX', () => {
+    const { container } = render(<Markdown content={'Einstein wrote $E = mc^2$ and $x^2 + y^2 = z^2$.'} />);
+
+    expect(container.querySelectorAll('.katex')).toHaveLength(2);
+  });
+});

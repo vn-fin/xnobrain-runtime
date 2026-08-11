@@ -57,6 +57,35 @@ function remarkKanbanTaskLinks() {
   };
 }
 
+/**
+ * remark-math treats two currency amounts in one paragraph as the opening and
+ * closing delimiters of a single equation (`$15B ... $361M`). Convert that
+ * accidental inline-math node back to literal prose before KaTeX sees it.
+ */
+function remarkCurrencyProse() {
+  return (tree: MarkdownNode) => {
+    const visit = (node: MarkdownNode) => {
+      if (!Array.isArray(node.children)) return;
+      node.children = node.children.map((child, index) => {
+        if (child.type !== 'inlineMath' || !child.value) {
+          visit(child);
+          return child;
+        }
+        const next = node.children?.[index + 1];
+        const startsWithAmount = /^\s*\d[\d,.]*(?:\s*[KMBT]|\s*(?:thousand|million|billion|trillion))?\b/i.test(child.value);
+        const nextStartsWithAmount = next?.type === 'text' && /^\d[\d,.]*(?:\s*[KMBT])?\b/i.test(next.value ?? '');
+        const proseWords = child.value.match(/\b[A-Za-z]{2,}\b/g)?.length ?? 0;
+        const hasMathSyntax = /[\\{}^_=<>]/.test(child.value);
+        if (startsWithAmount && !hasMathSyntax && (nextStartsWithAmount || proseWords >= 2)) {
+          return { type: 'text', value: `$${child.value}$` };
+        }
+        return child;
+      });
+    };
+    visit(tree);
+  };
+}
+
 /** A code span is a previewable file reference when it's a whitespace-free path ending in a known extension. */
 function isFileRef(text: string): boolean {
   const value = text.trim();
@@ -355,7 +384,7 @@ function MarkdownBase({ content, onOpenFile }: { content: string; onOpenFile?: (
     <>
       <div className="markdown-body">
         <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath, remarkKanbanTaskLinks]}
+          remarkPlugins={[remarkGfm, remarkMath, remarkCurrencyProse, remarkKanbanTaskLinks]}
           rehypePlugins={[rehypeKatex, [rehypeHighlight, { detect: true, ignoreMissing: true }]]}
           components={buildComponents(onOpenFile, setTaskId)}
         >
