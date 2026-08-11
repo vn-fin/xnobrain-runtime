@@ -35,6 +35,14 @@
 - `services/platform.py` only constructs and composes services.
 - `repositories/files.py` is a compatibility facade over grouped repositories.
 - Composition modules must not accumulate feature-specific implementation.
+- Large external-runtime adapters use a compatibility facade plus focused
+  capability mixins. Keep `integrations/hermes.py`, `integrations/config.py`,
+  `integrations/nine_router.py`, and `integrations/kanban.py` limited to public
+  compatibility exports and composition.
+- Shared integration support modules may own constants, errors, imports, and
+  pure validation helpers, but must not regain feature workflows. Put agent,
+  conversation, skill, provider, blend, Kanban task, and schedule behavior in
+  their named integration modules.
 
 ## MCP boundary
 

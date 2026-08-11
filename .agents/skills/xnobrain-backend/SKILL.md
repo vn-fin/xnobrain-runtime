@@ -18,5 +18,11 @@ Read `AGENTS.md`, `.agents/rules/01-start-here.md`,
 7. Never log secrets, headers, prompts, bodies, tool arguments, or tool output. Add only explicit metadata fields.
 8. Preserve profile isolation, snapshots, atomic writes, streaming, approvals, and graceful optional-dependency failure.
 9. Run narrow Python tests first, then `make test` or `make check` when practical.
+10. Keep external-runtime facades (`integrations/hermes.py`, `config.py`,
+    `nine_router.py`, and `kanban.py`) as compatibility composition only. Add
+    behavior to focused capability modules such as `agents.py`,
+    `conversations.py`, `skills.py`, `provider_models.py`, or
+    `kanban_tasks.py`; narrowly scoped runner, stream, schedule, profile, and
+    support helpers are acceptable when one group would otherwise become large.
 
 Do not edit `app/`, `dist/`, or `dist/assets/`. Do not move runtime code into a managed control-plane repository.
