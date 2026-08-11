@@ -200,6 +200,10 @@ select option {
   grid-template-columns: var(--sidebar) minmax(0, 1fr);
 }
 
+.app.sidebar-collapsed {
+  --sidebar: 52px;
+}
+
 .left-panel,
 .right-panel {
   min-width: 0;
@@ -262,6 +266,19 @@ body.col-resizing {
   padding: 0 16px;
   font-size: 18px;
   font-weight: 700;
+}
+
+.left-panel.collapsed .brand {
+  justify-content: center;
+  padding: 0 8px;
+}
+
+.left-panel.collapsed .brand > span,
+.left-panel.collapsed .history-section,
+.left-panel.collapsed .library-nav,
+.left-panel.collapsed .workspace-nav,
+.left-panel.collapsed .left-footer {
+  display: none;
 }
 
 .icon-button,
@@ -6905,8 +6922,23 @@ body.col-resizing {
   background: var(--hover);
 }
 
-/* --- community loading skeleton --- */
+/* --- skills loading skeleton --- */
+.skv-loading {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.skv-loading-stats .skv-stat { gap: 7px; }
+.skv-loading-controls { pointer-events: none; }
+.skv-skel-stat-value { width: 42px; height: 18px; }
+.skv-skel-stat-label { width: 64px; height: 9px; }
+.skv-skel-search { width: 280px; height: 36px; border-radius: 8px; }
+.skv-skel-filter { width: 160px; height: 36px; border-radius: 8px; }
+
 .skv-card-skeleton {
+  min-height: 132px;
   gap: 10px;
   cursor: default;
   pointer-events: none;

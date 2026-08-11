@@ -22,10 +22,42 @@ function StatsStrip({ stats }: { stats: Stat[] }) {
   );
 }
 
+function SkillsSkeleton() {
+  return (
+    <div className="skv-loading" role="status" aria-label="Loading skills">
+      <div className="skv-stats skv-loading-stats">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div className="skv-stat" key={index}>
+            <span className="skv-skel skv-skel-stat-value" />
+            <span className="skv-skel skv-skel-stat-label" />
+          </div>
+        ))}
+      </div>
+      <div className="skills-view-controls skv-loading-controls">
+        <span className="skv-skel skv-skel-search" />
+        <span className="skv-skel skv-skel-filter" />
+      </div>
+      <div className="skills-view-scroll">
+        <div className="skv-grid">
+          {Array.from({ length: 8 }, (_, index) => (
+            <article className="skv-card skv-card-skeleton" key={index}>
+              <span className="skv-skel skv-skel-title" />
+              <span className="skv-skel skv-skel-line" />
+              <span className="skv-skel skv-skel-line short" />
+              <span className="skv-skel skv-skel-foot" />
+            </article>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SkillsView({
   library,
   agents,
   agentSkills,
+  loading = false,
   search,
   onSearch,
   groupFilter,
@@ -41,6 +73,7 @@ export function SkillsView({
   library: AgentSkill[];
   agents: Agent[];
   agentSkills: AgentSkillMap;
+  loading?: boolean;
   search: string;
   onSearch: (value: string) => void;
   groupFilter: string;
@@ -125,9 +158,10 @@ export function SkillsView({
     await onSetDefaultEnabled(skill.skill_id, !skill.enabled);
     setTogglePendingId('');
   };
+  const initialLoading = loading && library.length === 0;
 
   return (
-    <div className="skills-view">
+    <div className="skills-view" aria-busy={loading}>
       <header className="skills-view-top">
         <div><h1>{t('skillsView.title')}</h1><p>{t('skillsView.subtitle')}</p></div>
         <div className="skills-view-actions">
@@ -147,6 +181,7 @@ export function SkillsView({
         </div>
       )}
 
+      {initialLoading ? <SkillsSkeleton /> : <>
       <StatsStrip stats={stats} />
       <div className="skills-view-controls">
         <div className="skv-search"><Search size={15} /><input value={search} onChange={(event) => onSearch(event.target.value)} placeholder={t('skillsView.searchPlaceholder')} /></div>
@@ -211,6 +246,7 @@ export function SkillsView({
           <button className="skv-apply-btn" disabled={applyAgentIds.length === 0} onClick={apply}><Check size={15} />{t('skillsView.applyToAgents', { count: applyAgentIds.length })}</button>
         </footer>
       )}
+      </>}
     </div>
   );
 }
