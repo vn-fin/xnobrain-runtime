@@ -11,6 +11,7 @@ import logging
 import os
 from pathlib import Path
 import re
+import threading
 import time
 from typing import Any, Mapping
 import uuid
@@ -167,6 +168,8 @@ class PlatformService:
         from .team_runs import TeamRunService
         self.team_runs = TeamRunService(repository, agents, self)
         self._oauth_attempts: dict[str, dict[str, str]] = {}
+        self._agents_cache: list[dict[str, Any]] | None = None
+        self._agents_cache_lock = threading.Lock()
         self._providers_cache: list[dict[str, Any]] | None = None
         self._providers_cache_lock = asyncio.Lock()
         self.config.ensure_write_approval_defaults()
@@ -252,7 +255,24 @@ class PlatformService:
         raise ServiceError("sandbox resource not found", status=404, code="not_found")
 
     def list_agents(self) -> list[dict[str, Any]]:
-        return [self._agent_dto(item) for item in self.agents.list_agents()["agents"]]
+        if self._agents_cache is not None:
+            return copy.deepcopy(self._agents_cache)
+        with self._agents_cache_lock:
+            if self._agents_cache is None:
+                self._agents_cache = [
+                    self._agent_dto(item)
+                    for item in self.agents.list_agents()["agents"]
+                ]
+            return copy.deepcopy(self._agents_cache)
+
+    def _invalidate_agents_cache(self) -> None:
+        with self._agents_cache_lock:
+            self._agents_cache = None
+
+    async def list_agents_async(self) -> list[dict[str, Any]]:
+        if self._agents_cache is not None:
+            return copy.deepcopy(self._agents_cache)
+        return await asyncio.to_thread(self.list_agents)
 
     async def ensure_default_agent(self) -> dict[str, Any]:
         """Expose and repair the root Hermes profile as Big Brother."""
@@ -328,6 +348,7 @@ class PlatformService:
             display_name=BIG_BROTHER_DISPLAY_NAME,
             description=BIG_BROTHER_DESCRIPTION,
         )
+        self._invalidate_agents_cache()
         return self.get_agent(BIG_BROTHER_AGENT_ID)
 
     def _migrate_big_brother_skill_category(self, profile: Path) -> None:
@@ -437,6 +458,7 @@ class PlatformService:
         if "description" in body:
             payload["description"] = body["description"]
         raw, _ = self.agents.create_agent(payload)
+        self._invalidate_agents_cache()
         return self._agent_dto(raw)
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
@@ -507,6 +529,7 @@ class PlatformService:
             display_name=str(current.get("display_name") or current.get("title") or ""),
             description=str(current.get("description") or ""),
         )
+        self._invalidate_agents_cache()
         return self.get_agent(agent_id)
 
     def delete_agent(self, agent_id: str) -> dict[str, Any]:
@@ -524,6 +547,7 @@ class PlatformService:
         deleted_tasks = self.kanban.delete_assignee_tasks(agent_id)
         self.repository.hard_delete_profile(agent_id)
         self.agents.sync_profiles_registry()
+        self._invalidate_agents_cache()
         return {
             "deleted": True,
             "recoverable": False,
@@ -534,19 +558,24 @@ class PlatformService:
         return self.config.get_config()
 
     def update_global_config(self, body: Mapping[str, Any]) -> dict[str, Any]:
-        return self.config.update_config(body)
+        result = self.config.update_config(body)
+        self._invalidate_agents_cache()
+        return result
 
     def update_agent_config(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         translated = dict(body)
         if "reasoning_effort" in translated:
             translated["effort"] = translated.pop("reasoning_effort")
         if self._is_big_brother(agent_id):
-            return self.config.update_config(translated)["config"]
-        profile = self.repository.profile_path(agent_id)
-        path = profile / "config.yaml"
-        if path.is_file():
-            self.repository.snapshot(agent_id, "config", "config", path.read_bytes())
-        return self.agents.update_config(agent_id, translated)["config"]
+            result = self.config.update_config(translated)["config"]
+        else:
+            profile = self.repository.profile_path(agent_id)
+            path = profile / "config.yaml"
+            if path.is_file():
+                self.repository.snapshot(agent_id, "config", "config", path.read_bytes())
+            result = self.agents.update_config(agent_id, translated)["config"]
+        self._invalidate_agents_cache()
+        return result
 
     def list_skills(self, agent_id: str) -> list[dict[str, Any]]:
         if self._is_big_brother(agent_id):
@@ -672,8 +701,11 @@ class PlatformService:
 
     def restore_snapshot(self, agent_id: str, snapshot_id: str) -> dict[str, Any]:
         if self._is_big_brother(agent_id):
-            return self._restore_root_snapshot(snapshot_id)
-        return self.repository.restore_snapshot(agent_id, snapshot_id)
+            result = self._restore_root_snapshot(snapshot_id)
+        else:
+            result = self.repository.restore_snapshot(agent_id, snapshot_id)
+        self._invalidate_agents_cache()
+        return result
 
     def list_workspace(self, agent_id: str, path: str = ".") -> dict[str, Any]:
         return self.agents.list_workspace(agent_id, {"path": path})
@@ -908,6 +940,7 @@ class PlatformService:
     def apply_bundle(self, payload: bytes) -> dict[str, Any]:
         result = self.portability.apply(payload)
         self.agents.sync_profiles_registry()
+        self._invalidate_agents_cache()
         return result
 
     def start_bundle_export(self, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -928,6 +961,7 @@ class PlatformService:
     def apply_bundle_upload(self, transfer_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         result = self.portability.apply_upload(transfer_id, body)
         self.agents.sync_profiles_registry()
+        self._invalidate_agents_cache()
         return result
 
     def delete_bundle_transfer(self, kind: str, transfer_id: str) -> dict[str, Any]:
@@ -1207,10 +1241,13 @@ class PlatformService:
             return copy.deepcopy(self._providers_cache)
         async with self._providers_cache_lock:
             if self._providers_cache is None:
-                self._providers_cache = await self._load_providers()
+                providers, router_available = await self._load_providers()
+                if router_available:
+                    self._providers_cache = providers
+                return copy.deepcopy(providers)
             return copy.deepcopy(self._providers_cache)
 
-    async def _load_providers(self) -> list[dict[str, Any]]:
+    async def _load_providers(self) -> tuple[list[dict[str, Any]], bool]:
         try:
             connections = (await self.router.list_connections())["connections"]
             models = (await self.router.list_models())["data"]
@@ -1247,8 +1284,8 @@ class PlatformService:
                 "requires_base_url": provider == "openai-like",
                 "connected": bool(active_rows),
                 "status": (
-                    "available" if no_auth and router_available
-                    else "unavailable" if no_auth
+                    "unavailable" if not router_available
+                    else "available" if no_auth
                     else "connected" if active_rows
                     else "available" if free_models_available
                     else "disconnected"
@@ -1259,7 +1296,7 @@ class PlatformService:
                 "connection_count": len(provider_rows),
                 "available_models": [item["id"] for item in models if item.get("provider") == provider],
             })
-        return result
+        return result, router_available
 
     async def _invalidate_providers_cache(self) -> None:
         async with self._providers_cache_lock:

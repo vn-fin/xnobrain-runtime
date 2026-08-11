@@ -18,7 +18,7 @@ from httpx import ASGITransport, AsyncClient
 import yaml
 
 from brain4all.app import Brain4AllApplication
-from brain4all.integrations import AgentManager, GlobalConfigManager
+from brain4all.integrations import AgentManager, GlobalConfigManager, NineRouterAPIError
 
 
 _ALLOWED_CONNECTION_KEYS = {
@@ -44,9 +44,13 @@ class FakeRouter:
         self.ensured_nodes: list[dict] = []
         self.list_connections_calls = 0
         self.list_models_calls = 0
+        self.list_connections_failures = 0
 
     async def list_connections(self):
         self.list_connections_calls += 1
+        if self.list_connections_failures > 0:
+            self.list_connections_failures -= 1
+            raise NineRouterAPIError("9router is starting")
         return {"connections": [dict(row) for row in self._rows]}
 
     async def list_models(self):
@@ -245,6 +249,24 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.status_code, 200)
         self.assertEqual(first.json()["data"], second.json()["data"])
         self.assertEqual(self.router.list_connections_calls, 1)
+        self.assertEqual(self.router.list_models_calls, 1)
+
+    async def test_transient_router_failure_is_not_cached(self):
+        self.router.list_connections_failures = 1
+        async with self.client() as client:
+            unavailable = await client.get("/xnobrain/api/runtime/v1/providers")
+            recovered = await client.get("/xnobrain/api/runtime/v1/providers")
+            cached = await client.get("/xnobrain/api/runtime/v1/providers")
+
+        self.assertTrue(all(
+            item["status"] == "unavailable" for item in unavailable.json()["data"]
+        ))
+        recovered_codex = next(
+            item for item in recovered.json()["data"] if item["id"] == "codex"
+        )
+        self.assertTrue(recovered_codex["connected"])
+        self.assertEqual(recovered.json()["data"], cached.json()["data"])
+        self.assertEqual(self.router.list_connections_calls, 2)
         self.assertEqual(self.router.list_models_calls, 1)
 
     async def test_provider_create_invalidates_the_cached_list(self):
