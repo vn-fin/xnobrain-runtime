@@ -1904,4 +1904,3 @@ i.e. the "twin-over-many-runtimes" company slot is **still open.**
 6. **Nous already monetizes hosting (Hermify).** Reinforces 03:
    don't compete on hosting; compete on certification.
 
-

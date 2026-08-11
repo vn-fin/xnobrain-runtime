@@ -122,19 +122,19 @@ COPY requirements.txt /opt/brain4all/requirements.txt
 RUN uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
       -r /opt/brain4all/requirements.txt
 
-COPY brain4all /opt/brain4all/brain4all
+COPY xnobrain /opt/brain4all/xnobrain
 COPY server.py /opt/brain4all/server.py
 COPY runtime/profile-templates /opt/brain4all/profile-templates
 COPY scripts/apply-profile-templates.sh /usr/local/bin/brain4all-apply-profile-templates
 COPY runtime/container-entrypoint.sh /usr/local/bin/brain4all-runtime
 COPY runtime/prepare-nine-router-auth.sh /usr/local/bin/brain4all-prepare-nine-router-auth
-RUN find /opt/brain4all/brain4all -type d -name __pycache__ -prune -exec rm -rf {} + \
-    && find /opt/brain4all/brain4all -type f -name '*.pyc' -delete \
+RUN find /opt/brain4all/xnobrain -type d -name __pycache__ -prune -exec rm -rf {} + \
+    && find /opt/brain4all/xnobrain -type f -name '*.pyc' -delete \
     && install -d -m 0700 /opt/data /opt/data/home /opt/data/home/.config \
     && chmod 0755 /usr/local/bin/brain4all-runtime /usr/local/bin/brain4all-prepare-nine-router-auth /usr/local/bin/brain4all-apply-profile-templates \
     && ln -sfn /usr/local/lib/hermes-agent/venv/bin/hermes /usr/local/bin/agent \
     && /usr/local/lib/hermes-agent/venv/bin/python -m compileall -q \
-      /opt/brain4all/brain4all /opt/brain4all/server.py \
+      /opt/brain4all/xnobrain /opt/brain4all/server.py \
     && apt-get update
 
 ENV PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr/local/bin:${PATH}" \

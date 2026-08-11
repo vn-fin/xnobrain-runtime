@@ -118,4 +118,4 @@ Full API in [plugins.md](plugins.md).
    plugin **hook**, not a core edit.
 3. **A new provider backend** → `backend`/`exclusive` plugin, not a hardcoded branch.
 4. **Only touch core files** when no extension point fits — and in this repo,
-   prefer extending from `brain4all/` per `AGENTS.md`.
+   prefer extending from `xnobrain/` per `AGENTS.md`.

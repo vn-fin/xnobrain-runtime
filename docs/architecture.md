@@ -13,7 +13,7 @@ Traefik -> React
              -> integrations -> 9router
 ```
 
-Brain4All route assembly is centralized in `brain4all/routes/setup.py`.
+Brain4All route assembly is centralized in `xnobrain/routes/setup.py`.
 Handlers translate HTTP and SSE, services coordinate business rules,
 repositories persist atomic files, and integrations isolate upstream APIs.
 Pydantic models are bound to routes and generate

@@ -67,6 +67,7 @@ export function RunActivityBar({ run, onViewActivity }: { run: ChatRun; onViewAc
         title={waiting ? 'Review activity' : 'View activity'}
         onClick={onViewActivity}
       >
+        <span>{waiting ? 'Review activity' : 'View activity'}</span>
         <ArrowUp size={13} />
       </button>
       <span className="sr-only" role="status">{waiting ? 'Agent approval is required.' : 'Agent is working.'}</span>
@@ -349,7 +350,7 @@ export function RunSteps({
           ? <Brain size={15} />
           : null}
         <span className="run-steps-label">{header}</span>
-        {toolCount > 0 && <span className="run-steps-count">{toolCount} {toolCount === 1 ? 'step' : 'steps'}</span>}
+        <span className="run-steps-count">{toolCount} {toolCount === 1 ? 'step' : 'steps'}</span>
         <ChevronDown className={expanded ? 'open' : ''} size={16} />
       </button>
       {expanded && (

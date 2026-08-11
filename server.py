@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from brain4all.server import app, main
+from xnobrain.server import app, main
 
 
 __all__ = ["app", "main"]

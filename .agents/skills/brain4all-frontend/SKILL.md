@@ -8,7 +8,7 @@ description: Implement, diagnose, or review the Brain4All React and TypeScript f
 Read `AGENTS.md`, `.agents/rules/01-start-here.md`, `.agents/rules/02-source-boundaries.md`, and `.agents/rules/03-trackable-ui-routes.md` first.
 
 1. Trace data from `src/api` through hooks into components before editing.
-2. Keep public runtime URLs aligned with `brain4all/routes/definition.py`; update contract tests with any path change.
+2. Keep public runtime URLs aligned with `xnobrain/routes/definition.py`; update contract tests with any path change.
 3. Reuse domain types and existing request/auth helpers. Do not bypass envelope parsing or token handling.
 4. Preserve loading, empty, error, streaming, mobile, keyboard, and screen-reader behavior.
 5. Route primary tabs and meaningful selected entities through `useRouter`; keep URL parsing, serialization, direct reload, and Back/Forward restoration symmetrical.

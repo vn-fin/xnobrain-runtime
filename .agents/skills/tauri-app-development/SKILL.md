@@ -21,7 +21,7 @@ Keep every implementation change under `app/`. Read `app/AGENTS.md` and
   loopback port and persist the selection.
 - Treat Full Managed as the app edition. Put its installer and management UI in
   `app/src/` and its Rust lifecycle implementation in `app/src-tauri/`.
-- Do not modify `src/`, `brain4all/`, `server.py`, Hermes, 9router, or existing
+- Do not modify `src/`, `xnobrain/`, `server.py`, Hermes, 9router, or existing
   API behavior for an app task. Consume released HTTP/SSE contracts only.
 - If a contract is missing, document the gap and stop that portion. Require a
   separately authorized core-contract change.

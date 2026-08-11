@@ -4,7 +4,7 @@ The numbered files in this directory document the retired Go/Fiber,
 PostgreSQL, multi-server implementation plan. They remain only as design and
 versioned-contract history.
 
-New work targets the single `brain4all` Python package described in
+New work targets the single `xnobrain` Python package described in
 `docs/architecture.md`:
 
 - one FastAPI process extending the original Hermes CLI application;

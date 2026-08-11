@@ -227,6 +227,7 @@ describe('live run activity', () => {
     render(<ChatArea
       agent={agent} agents={[agent]} activeConversation={conversation} providers={[]}
       runs={[activeRun]}
+      queuedMessages={[{ id: 'queued-1', content: 'Summarize the sources next' }]}
       messages={[{ id: 'assistant-live', role: 'assistant', content: activeRun.assistantContent, streaming: true }]}
       usage={null} chatStatus="ready" chatError="" streaming canStop
       onSend={vi.fn()} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
@@ -236,6 +237,10 @@ describe('live run activity', () => {
     />);
 
     expect(screen.getByLabelText('Agent is working for 15s, 2 steps')).toBeVisible();
+    expect(screen.getByText('View activity')).toBeVisible();
+    const activity = screen.getByLabelText('Agent is working for 15s, 2 steps');
+    const queue = screen.getByLabelText('1 queued message');
+    expect(activity.compareDocumentPosition(queue) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const workLog = screen.getByRole('button', { name: /Worked for 15s.*2 steps/ });
     expect(workLog).toHaveAttribute('aria-expanded', 'false');
 
