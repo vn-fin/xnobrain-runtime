@@ -36,6 +36,32 @@ describe('SkillsView default profile controls', () => {
     await i18n.changeLanguage('en');
   });
 
+  it('shows a card skeleton while the initial skills snapshot is loading', () => {
+    const { container } = render(
+      <SkillsView
+        library={[]}
+        agents={agents}
+        agentSkills={{}}
+        loading
+        search=""
+        onSearch={vi.fn()}
+        groupFilter="all"
+        onGroupFilter={vi.fn()}
+        onInstall={vi.fn().mockResolvedValue(true)}
+        onSetDefaultEnabled={vi.fn().mockResolvedValue(true)}
+        installPending={false}
+        installError=""
+        onInstallExisting={vi.fn()}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('status', { name: 'Loading skills' })).toBeVisible();
+    expect(container.querySelectorAll('.skv-card-skeleton')).toHaveLength(8);
+    expect(screen.queryByText('No skills found')).not.toBeInTheDocument();
+  });
+
   it('lets the user disable an installed default skill', async () => {
     const setDefaultEnabled = vi.fn().mockResolvedValue(true);
     render(

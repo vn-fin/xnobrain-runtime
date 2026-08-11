@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../i18n';
 import type { Agent } from '../types';
 import { MobileManageDrawer, Sidebar } from './Sidebar';
@@ -7,6 +7,8 @@ import { MobileManageDrawer, Sidebar } from './Sidebar';
 vi.mock('../theme', () => ({
   useTheme: () => ({ preference: 'dark', setPreference: vi.fn(), resolved: 'dark' }),
 }));
+
+afterEach(cleanup);
 
 const agent: Agent = {
   id: 'a1b2c3',
@@ -29,6 +31,32 @@ describe('Sidebar assistant actions', () => {
   beforeEach(async () => {
     localStorage.clear();
     await i18n.changeLanguage('en');
+  });
+
+  it('collapses and exposes an expand control', () => {
+    const toggle = vi.fn();
+    const props = {
+      agents: [agent],
+      activeAgent: agent,
+      centerView: 'chat' as const,
+      agentSearch: '',
+      onAgentSearch: vi.fn(),
+      onNavigate: vi.fn(),
+      onSelectAgent: vi.fn(),
+      onRenameAgent: vi.fn(),
+      onExportAgent: vi.fn(),
+      onRequestDeleteAgent: vi.fn(),
+      onNewAgent: vi.fn(),
+      onToggleCollapsed: toggle,
+    };
+    const { container, rerender } = render(<Sidebar {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    expect(toggle).toHaveBeenCalledOnce();
+
+    rerender(<Sidebar {...props} collapsed />);
+    expect(container.querySelector('.left-panel')).toHaveClass('collapsed');
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('shows simplified actions and requests delete from the three-dot menu', () => {

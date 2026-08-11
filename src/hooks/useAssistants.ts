@@ -69,6 +69,7 @@ export function useAssistants(active = true) {
   const [pending, setPending] = useState(false);
   const [skillInstallPending, setSkillInstallPending] = useState(false);
   const [skillInstallError, setSkillInstallError] = useState('');
+  const [skillsOverviewLoading, setSkillsOverviewLoading] = useState(false);
   const agentsRef = useRef(agents);
   const loadedConversations = useRef(new Set<string>());
   const conversationRequests = useRef(new Map<string, Promise<Agent['conversations']>>());
@@ -226,6 +227,7 @@ export function useAssistants(active = true) {
 
   const loadSkillsOverview = useCallback(async () => {
     if (skillsOverviewRequest.current) return skillsOverviewRequest.current;
+    setSkillsOverviewLoading(true);
     const request = skillsApi.listOverview()
       .then((overview) => {
         libraryLoaded.current = true;
@@ -240,6 +242,7 @@ export function useAssistants(active = true) {
         if (skillsOverviewRequest.current === request) {
           skillsOverviewRequest.current = null;
         }
+        setSkillsOverviewLoading(false);
       });
     skillsOverviewRequest.current = request;
     return request;
@@ -545,7 +548,7 @@ export function useAssistants(active = true) {
 
   return {
     agents, library, agentSkills, skillStates, agentSkillPages, conversationPages, defaultConfig, status, error, pending,
-    skillInstallPending, skillInstallError, refresh, loadConversations, loadMoreConversations, loadConversation, loadAgentSkills, loadLibrary, loadSkillsOverview, loadDefaultConfig,
+    skillInstallPending, skillInstallError, skillsOverviewLoading, refresh, loadConversations, loadMoreConversations, loadConversation, loadAgentSkills, loadLibrary, loadSkillsOverview, loadDefaultConfig,
     createAgent, updateAgent, renameAgent, deleteAgent, testAgent, setDefaultModel, setWriteApprovals,
     createConversation, deleteConversation, renameConversation, setConversationTitle, touchConversation,
     toggleAgentSkill, setSkillEnabled, loadSkillsPage, installDefaultSkill, setDefaultSkillEnabled, installExistingSkill, applySkillsToAgents,

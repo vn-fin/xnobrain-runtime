@@ -80,7 +80,13 @@ export default function App() {
     return Number.isFinite(stored) && stored >= RIGHT_MIN ? Math.min(stored, RIGHT_MAX) : 330;
   });
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem('leftSidebarCollapsed') === 'true',
+  );
   useEffect(() => { localStorage.setItem('rightPanelWidth', String(rightWidth)); }, [rightWidth]);
+  useEffect(() => {
+    localStorage.setItem('leftSidebarCollapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
   const clampRightWidth = (width: number) => Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, Math.min(width, Math.round(window.innerWidth * 0.6))));
 
   const activeConversation =
@@ -303,7 +309,7 @@ export default function App() {
 
   return (
     <div
-      className={centerView === 'chat' ? `app${rightPanelOpen ? ' inspector-open' : ' inspector-collapsed'}` : 'app no-right'}
+      className={`${centerView === 'chat' ? `app${rightPanelOpen ? ' inspector-open' : ' inspector-collapsed'}` : 'app no-right'}${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}
       style={centerView === 'chat' ? ({ '--right': `${rightPanelOpen ? rightWidth : 48}px` } as CSSProperties) : undefined}
     >
       <Sidebar
@@ -329,6 +335,8 @@ export default function App() {
         onOpenLogin={auth.openLogin}
         onOpenAccount={() => setAccountOpen(true)}
         onSignOut={async () => setLogoutConfirmOpen(true)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
       />
 
       <MobileManageDrawer
@@ -350,6 +358,7 @@ export default function App() {
             library={assistants.library}
             agents={assistants.agents}
             agentSkills={assistants.agentSkills}
+            loading={assistants.skillsOverviewLoading}
             search={router.skillsSearch}
             onSearch={router.setSkillsSearch}
             groupFilter={router.skillsGroupFilter}

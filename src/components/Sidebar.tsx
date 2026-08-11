@@ -17,6 +17,7 @@ import {
   MoreHorizontal,
   Network,
   PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Pin,
   PinOff,
@@ -179,6 +180,8 @@ export function Sidebar({
   onOpenLogin,
   onOpenAccount,
   onSignOut,
+  collapsed = false,
+  onToggleCollapsed,
 }: {
   agents: Agent[];
   activeAgent: Agent;
@@ -198,6 +201,8 @@ export function Sidebar({
   onOpenLogin?: () => void;
   onOpenAccount?: () => void;
   onSignOut?: () => Promise<void>;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const { preference: themePref, setPreference: setThemePref } = useTheme();
@@ -362,10 +367,18 @@ export function Sidebar({
   };
 
   return (
-    <aside className="left-panel">
+    <aside className={collapsed ? 'left-panel collapsed' : 'left-panel'}>
       <div className="brand">
         <span>{productName}</span>
-        <button className="icon-button" title="Toggle sidebar"><PanelLeftClose size={17} /></button>
+        <button
+          className="icon-button"
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
+          onClick={onToggleCollapsed}
+        >
+          {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+        </button>
       </div>
 
       <div className="history-section assistant-launcher">
