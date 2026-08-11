@@ -49,6 +49,9 @@ MAX_TEXT_CHARS = 200_000
 MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_CHAT_TIMEOUT_SECONDS = 3600
 DEFAULT_CHAT_TIMEOUT_SECONDS = 900
+TODO_STATUSES = {"pending", "in_progress", "completed", "cancelled"}
+MAX_TODO_ITEMS = 256
+MAX_TODO_CONTENT_CHARS = 4000
 GENERATED_AGENT_ID_LENGTH = 6
 GENERATED_AGENT_ID_FIRST_ALPHABET = string.ascii_lowercase
 GENERATED_AGENT_ID_ALPHABET = string.ascii_lowercase + string.digits
@@ -110,6 +113,42 @@ number or range. Never fabricate citations; distinguish inference clearly.""",
 def _new_conversation_id() -> str:
     """Use the native CLI session shape for API-created conversations."""
     return f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+
+
+def _todo_updated_event(result: Any) -> dict[str, Any] | None:
+    """Return only validated, user-facing data from a Hermes todo result."""
+    if isinstance(result, str):
+        if len(result) > 512_000:
+            return None
+        try:
+            value = json.loads(result)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    elif isinstance(result, Mapping):
+        value = result
+    else:
+        return None
+    raw_todos = value.get("todos")
+    if not isinstance(raw_todos, list):
+        return None
+
+    todos: list[dict[str, str]] = []
+    for raw in raw_todos[:MAX_TODO_ITEMS]:
+        if not isinstance(raw, Mapping):
+            continue
+        item_id = str(raw.get("id") or "").strip()[:256]
+        content = str(raw.get("content") or "").strip()[:MAX_TODO_CONTENT_CHARS]
+        status = str(raw.get("status") or "").strip().lower()
+        if not item_id or not content or status not in TODO_STATUSES:
+            continue
+        todos.append({"id": item_id, "content": content, "status": status})
+
+    summary = {status: sum(item["status"] == status for item in todos) for status in TODO_STATUSES}
+    return {
+        "event": "todo.updated",
+        "todos": todos,
+        "summary": {"total": len(todos), **summary},
+    }
 
 
 class AgentAPIError(ValueError):
@@ -1461,9 +1500,10 @@ class AgentManager:
                     "preview": preview or "",
                 })
             elif event_type == "tool.completed":
+                result = kwargs.get("result")
                 write_status = resolve_staged_write(
                     tool_name or "tool",
-                    kwargs.get("result"),
+                    result,
                 )
                 enqueue_event({
                     "event": "tool.completed",
@@ -1474,6 +1514,14 @@ class AgentManager:
                     "error": bool(kwargs.get("is_error", False))
                     or write_status in {"rejected", "failed"},
                 })
+                if tool_name == "todo" and not bool(kwargs.get("is_error", False)):
+                    todo_event = _todo_updated_event(result)
+                    if todo_event is not None:
+                        enqueue_event({
+                            **todo_event,
+                            "run_id": run_id,
+                            "timestamp": timestamp,
+                        })
             elif event_type == "tool.failed":
                 enqueue_event({
                     "event": "tool.failed",

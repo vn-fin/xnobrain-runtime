@@ -170,6 +170,14 @@ export type ChatRunUsage = {
   outputTokens?: number;
 };
 
+export type ChatTodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+
+export type ChatTodoItem = {
+  id: string;
+  content: string;
+  status: ChatTodoStatus;
+};
+
 /**
  * Ordered timeline of a run's activity: grouped reasoning text blocks
  * interleaved with grouped tool-step batches. `tools` items reference steps by
@@ -195,6 +203,8 @@ export type ChatRun = {
   reasoningStreaming?: boolean;
   /** Ordered, grouped view of reasoning + tool batches for rendering. */
   timeline?: RunTimelineItem[];
+  /** Latest authoritative session plan emitted by Hermes' todo tool. */
+  todos?: ChatTodoItem[];
   usage?: ChatRunUsage;
 };
 

@@ -1,8 +1,9 @@
 import type { SSEEvent } from '../api/stream';
-import type { ChatMessage, ChatRun, ChatRunStep, RunApprovalChoice, RunTimelineItem } from '../types';
+import type { ChatMessage, ChatRun, ChatRunStep, ChatTodoItem, ChatTodoStatus, RunApprovalChoice, RunTimelineItem } from '../types';
 
 type Data = Record<string, unknown>;
 const APPROVAL_CHOICES: RunApprovalChoice[] = ['once', 'always', 'deny'];
+const TODO_STATUSES: ChatTodoStatus[] = ['pending', 'in_progress', 'completed', 'cancelled'];
 
 function record(value: unknown): Data {
   return value && typeof value === 'object' ? value as Data : {};
@@ -25,6 +26,18 @@ function number(value: unknown): number | undefined {
 function parsed(value?: string): Data {
   if (!value) return {};
   try { return record(JSON.parse(value)); } catch { return {}; }
+}
+
+function todoItems(value: unknown): ChatTodoItem[] | undefined {
+  const data = typeof value === 'string' ? parsed(value) : record(value);
+  if (!Array.isArray(data.todos)) return undefined;
+  return data.todos.slice(0, 256).flatMap((item) => {
+    const todo = record(item);
+    const id = string(todo.id).trim().slice(0, 256);
+    const content = string(todo.content).trim().slice(0, 4000);
+    const status = string(todo.status) as ChatTodoStatus;
+    return id && content && TODO_STATUSES.includes(status) ? [{ id, content, status }] : [];
+  });
 }
 
 function basename(path: string): string {
@@ -121,6 +134,10 @@ export function reduceRunEvent(run: ChatRun | null, event: SSEEvent): ChatRun | 
   }
   if (type === 'approval.responded') {
     return { ...run, status: terminal(run.status) ? run.status : 'running', approval: undefined };
+  }
+  if (type === 'todo.updated') {
+    const todos = todoItems(data);
+    return todos === undefined ? run : { ...run, todos };
   }
   if (type === 'tool.started') {
     const toolName = toolNameOf(data) || 'tool';
@@ -437,6 +454,7 @@ export function historicalRuns(messages: ChatMessage[]): ChatRun[] {
   let stepByCallId = new Map<string, number>();
   let reasoning: string[] = [];
   let timeline: RunTimelineItem[] = [];
+  let todos: ChatTodoItem[] | undefined;
   let startedAt: number | undefined;
   let turnIndex = 0;
 
@@ -464,6 +482,7 @@ export function historicalRuns(messages: ChatMessage[]): ChatRun[] {
     stepByCallId = new Map();
     reasoning = [];
     timeline = [];
+    todos = undefined;
     startedAt = undefined;
   };
 
@@ -479,6 +498,7 @@ export function historicalRuns(messages: ChatMessage[]): ChatRun[] {
       assistantContent: '',
       ...(reasoning.length ? { reasoning } : {}),
       ...(timeline.length ? { timeline } : {}),
+      ...(todos !== undefined ? { todos } : {}),
       ...(startedAt !== undefined ? { startedAt } : {}),
       ...(endedAt !== undefined ? { endedAt } : {}),
       ...(finalMessageId !== undefined ? { insertBeforeMessageId: finalMessageId } : {}),
@@ -506,6 +526,10 @@ export function historicalRuns(messages: ChatMessage[]): ChatRun[] {
           ...(endedAt !== undefined ? { endedAt } : {}),
           ...(durationSec !== undefined && durationSec >= 0 ? { durationSec } : {}),
         };
+        if (step.toolName === 'todo') {
+          const snapshot = todoItems(message.content);
+          if (snapshot !== undefined) todos = snapshot;
+        }
       } else if (message.content) {
         // Orphan tool output with no matching call — keep it visible.
         addStep({

@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatRun } from '../types';
-import { RunSteps } from './RunSteps';
+import { RunActivityBar, RunSteps } from './RunSteps';
 
 function run(overrides: Partial<ChatRun> = {}): ChatRun {
   return {
@@ -62,6 +62,48 @@ describe('RunSteps', () => {
     })} />);
 
     expect(screen.getByRole('button', { name: /Worked.*2 steps/ })).toBeVisible();
+  });
+
+  it('shows the live agent plan and task progress', () => {
+    render(<RunSteps run={run({
+      status: 'running',
+      assistantContent: '',
+      todos: [
+        { id: 'one', content: 'Inspect the current implementation', status: 'completed' },
+        { id: 'two', content: 'Build the plan panel', status: 'in_progress' },
+        { id: 'three', content: 'Verify reload behavior', status: 'pending' },
+      ],
+    })} />);
+
+    expect(screen.getByRole('region', { name: 'Agent plan' })).toBeVisible();
+    expect(screen.getByText('Build the plan panel')).toBeVisible();
+    expect(screen.getByText('1 / 3')).toBeVisible();
+    expect(screen.getByText('Current')).toBeVisible();
+  });
+
+  it('collapses an entirely completed plan by default', () => {
+    render(<RunSteps run={run({
+      todos: [
+        { id: 'one', content: 'Inspect the implementation', status: 'completed' },
+        { id: 'two', content: 'Verify the result', status: 'completed' },
+      ],
+    })} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Worked/ }));
+    expect(screen.getByRole('button', { name: /Plan/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Inspect the implementation')).not.toBeInTheDocument();
+  });
+
+  it('adds todo progress to the persistent activity bar', () => {
+    render(<RunActivityBar run={run({
+      status: 'running',
+      todos: [
+        { id: 'one', content: 'Plan', status: 'completed' },
+        { id: 'two', content: 'Build', status: 'in_progress' },
+      ],
+    })} onViewActivity={() => undefined} />);
+
+    expect(screen.getByText('1/2 tasks')).toBeVisible();
   });
 
   it('shows reasoning deltas while the reasoning phase is streaming', () => {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ArrowUp,
   Brain,
+  Check,
   CheckCircle2,
   ChevronDown,
   CircleStop,
@@ -9,6 +10,9 @@ import {
   FileText,
   FolderTree,
   LoaderCircle,
+  ListChecks,
+  Minus,
+  Circle,
   Plug,
   Search,
   ShieldAlert,
@@ -18,7 +22,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { formatRunDuration, formatStepDuration, previewCode, stepLabel, toolGroupSummary, toolKind } from '../chat/runEvents';
-import type { ChatRun, ChatRunStep, RunApprovalChoice } from '../types';
+import type { ChatRun, ChatRunStep, ChatTodoItem, RunApprovalChoice } from '../types';
 import { ConfirmDialog } from './modals';
 import { Markdown } from './Markdown';
 
@@ -47,9 +51,12 @@ export function RunActivityBar({ run, onViewActivity }: { run: ChatRun; onViewAc
   const duration = formatRunDuration(run, run.status === 'running' ? now : undefined);
   const stepCount = run.steps.length;
   const stepLabel = `${stepCount} ${stepCount === 1 ? 'step' : 'steps'}`;
+  const todos = run.todos ?? [];
+  const todoDone = todos.filter((todo) => todo.status === 'completed' || todo.status === 'cancelled').length;
+  const todoLabel = todos.length > 0 ? `${todoDone}/${todos.length} tasks` : '';
   const activityLabel = waiting
-    ? `Approval needed, ${stepLabel}`
-    : `Agent is working${duration ? ` for ${duration}` : ''}, ${stepLabel}`;
+    ? `Approval needed${todoLabel ? `, ${todoLabel}` : ''}, ${stepLabel}`
+    : `Agent is working${duration ? ` for ${duration}` : ''}${todoLabel ? `, ${todoLabel}` : ''}, ${stepLabel}`;
 
   return (
     <div className={`live-run-activity ${waiting ? 'waiting' : 'running'}`} aria-label={activityLabel}>
@@ -59,6 +66,7 @@ export function RunActivityBar({ run, onViewActivity }: { run: ChatRun; onViewAc
           : <LoaderCircle className="run-step-spin" size={15} />}
         <strong>{waiting ? 'Approval needed' : `Working${duration ? ` for ${duration}` : ''}`}</strong>
       </span>
+      {todoLabel && <><span className="live-run-activity-separator" aria-hidden="true">·</span><span className="live-run-activity-count">{todoLabel}</span></>}
       <span className="live-run-activity-separator" aria-hidden="true">·</span>
       <span className="live-run-activity-count">{stepLabel}</span>
       <button
@@ -72,6 +80,66 @@ export function RunActivityBar({ run, onViewActivity }: { run: ChatRun; onViewAc
       </button>
       <span className="sr-only" role="status">{waiting ? 'Agent approval is required.' : 'Agent is working.'}</span>
     </div>
+  );
+}
+
+function TodoStatusIcon({ todo }: { todo: ChatTodoItem }) {
+  if (todo.status === 'completed') return <Check size={14} />;
+  if (todo.status === 'in_progress') return <LoaderCircle className="run-step-spin" size={14} />;
+  if (todo.status === 'cancelled') return <Minus size={14} />;
+  return <Circle size={12} />;
+}
+
+function RunPlan({ run }: { run: ChatRun }) {
+  const todos = run.todos ?? [];
+  const complete = todos.filter((todo) => todo.status === 'completed' || todo.status === 'cancelled').length;
+  const allDone = todos.length > 0 && complete === todos.length;
+  const [open, setOpen] = useState(() => !allDone);
+  const [showAll, setShowAll] = useState(false);
+  const touched = useRef(false);
+  const activeId = todos.find((todo) => todo.status === 'in_progress')?.id;
+  const visibleTodos = showAll ? todos : todos.slice(0, 5);
+
+  useEffect(() => {
+    if (!touched.current && run.status === 'running' && activeId) setOpen(true);
+    if (!touched.current && run.status !== 'running' && allDone) setOpen(false);
+  }, [activeId, allDone, run.status]);
+
+  if (todos.length === 0) return null;
+  return (
+    <section className={`run-plan ${allDone ? 'complete' : 'active'}`} aria-label="Agent plan">
+      <button
+        type="button"
+        className="run-plan-toggle"
+        aria-expanded={open}
+        title="Session plan — not Kanban tasks"
+        onClick={() => { touched.current = true; setOpen((value) => !value); }}
+      >
+        <ListChecks size={15} />
+        <span>Plan</span>
+        <span className="run-plan-count">{complete} / {todos.length}</span>
+        <ChevronDown className={open ? 'open' : ''} size={14} />
+      </button>
+      {open && (
+        <ol className="run-plan-items">
+          {visibleTodos.map((todo) => (
+            <li key={todo.id} className={`run-plan-item ${todo.status}`}>
+              <span className="run-plan-status" aria-hidden="true"><TodoStatusIcon todo={todo} /></span>
+              <span>{todo.content}</span>
+              {todo.status === 'in_progress' && <small>Current</small>}
+            </li>
+          ))}
+          {todos.length > 5 && (
+            <li className="run-plan-more-row">
+              <button type="button" onClick={() => setShowAll((value) => !value)}>
+                {showAll ? 'Show less' : `Show ${todos.length - 5} more`}
+              </button>
+            </li>
+          )}
+        </ol>
+      )}
+      <span className="sr-only" role="status">Agent plan: {complete} of {todos.length} tasks finished.</span>
+    </section>
   );
 }
 
@@ -316,7 +384,10 @@ export function RunSteps({
   const toolCount = run.steps.length;
   const hasReasoning = reasoningParts.length > 0;
   const hasAnswer = run.assistantContent.trim().length > 0;
-  const autoExpanded = run.status === 'waiting_for_approval' || (run.status === 'running' && !hasAnswer);
+  const hasIncompletePlan = Boolean(run.todos?.some((todo) => todo.status === 'pending' || todo.status === 'in_progress'));
+  const autoExpanded = run.status === 'waiting_for_approval'
+    || (run.status === 'running' && !hasAnswer)
+    || ((run.status === 'error' || run.status === 'cancelled' || run.status === 'interrupted') && hasIncompletePlan);
   const [expanded, setExpanded] = useState(autoExpanded);
   const now = useRunClock(run);
   useEffect(() => {
@@ -355,6 +426,7 @@ export function RunSteps({
       </button>
       {expanded && (
         <div className="run-step-list">
+          <RunPlan run={run} />
           {run.approval && <RunApprovalPrompt run={run} onResolveApproval={onResolveApproval} />}
           {timeline && timeline.length > 0 ? (
             (() => {

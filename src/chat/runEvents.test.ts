@@ -45,6 +45,27 @@ describe('reduceRunEvent (live API format)', () => {
     expect(formatStepDuration(step)).toBe('105ms');
   });
 
+  it('tracks authoritative todo snapshots without exposing generic tool output', () => {
+    const run = fold([
+      stream[0],
+      body({ event: 'tool.started', run_id: RUN_ID, tool: 'todo', preview: 'planning 2 task(s)' }),
+      body({ event: 'tool.completed', run_id: RUN_ID, tool: 'todo', error: false }),
+      body({
+        event: 'todo.updated',
+        run_id: RUN_ID,
+        todos: [
+          { id: 'research', content: 'Research the topic', status: 'completed' },
+          { id: 'summarize', content: 'Summarize the findings', status: 'in_progress' },
+        ],
+      }),
+    ]);
+
+    expect(run?.todos).toEqual([
+      { id: 'research', content: 'Research the topic', status: 'completed' },
+      { id: 'summarize', content: 'Summarize the findings', status: 'in_progress' },
+    ]);
+  });
+
   it('marks the tool step as errored when error is true', () => {
     const failing = [
       stream[0],
@@ -305,5 +326,32 @@ describe('historicalRuns', () => {
     expect(runs[0].status).toBe('completed');
     expect(runs[0].steps).toHaveLength(1);
     expect(runs[0].steps[0]).toMatchObject({ toolName: 'terminal', status: 'completed' });
+  });
+
+  it('restores the latest todo snapshot from paired persisted tool messages', () => {
+    const todoResult = JSON.stringify({
+      todos: [
+        { id: 'plan', content: 'Plan the work', status: 'completed' },
+        { id: 'build', content: 'Build the feature', status: 'in_progress' },
+      ],
+    });
+    const runs = historicalRuns([
+      { id: 1, role: 'user', content: 'Build it', timestamp: 10 },
+      {
+        id: 2,
+        role: 'assistant',
+        content: '',
+        toolCalls: JSON.stringify([{ id: 'todo-1', function: { name: 'todo', arguments: '{}' } }]),
+        finishReason: 'tool_calls',
+        timestamp: 11,
+      },
+      { id: 3, role: 'tool', content: todoResult, toolName: 'todo', toolCallId: 'todo-1', timestamp: 12 },
+      { id: 4, role: 'assistant', content: 'Still working.', finishReason: 'stop', timestamp: 13 },
+    ]);
+
+    expect(runs[0].todos).toEqual([
+      { id: 'plan', content: 'Plan the work', status: 'completed' },
+      { id: 'build', content: 'Build the feature', status: 'in_progress' },
+    ]);
   });
 });

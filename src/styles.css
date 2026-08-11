@@ -2522,6 +2522,79 @@ body.col-resizing {
 
 .run-step-list { padding: 13px 0 3px; }
 
+.run-plan {
+  margin: 0 0 15px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--elevated) 62%, transparent);
+  overflow: hidden;
+}
+
+.run-plan-toggle {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.run-plan-toggle:hover { background: var(--hover); }
+.run-plan-toggle > svg:first-child { color: var(--accent); }
+.run-plan-toggle .lucide-chevron-down { color: var(--muted); transition: transform 150ms ease; }
+.run-plan-toggle .lucide-chevron-down.open { transform: rotate(180deg); }
+.run-plan-count {
+  margin-left: auto;
+  color: var(--muted);
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.run-plan-items {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 3px 10px 9px;
+  list-style: none;
+}
+
+.run-plan-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 7px;
+  padding: 4px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.run-plan-item > span:nth-child(2) { overflow-wrap: anywhere; }
+.run-plan-status { display: grid; place-items: center; min-height: 17px; color: var(--muted-2); }
+.run-plan-item.in_progress { color: var(--text); }
+.run-plan-item.in_progress .run-plan-status { color: var(--accent); }
+.run-plan-item.in_progress small {
+  padding-top: 1px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+.run-plan-item.completed { color: var(--muted-2); }
+.run-plan-item.completed .run-plan-status { color: var(--green); }
+.run-plan-item.cancelled { color: var(--muted-2); text-decoration: line-through; }
+.run-plan-more-row { padding: 2px 2px 0 26px; }
+.run-plan-more-row button {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+.run-plan-more-row button:hover { text-decoration: underline; }
+
 .run-step {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
