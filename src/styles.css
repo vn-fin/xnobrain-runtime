@@ -2288,15 +2288,17 @@ body.col-resizing {
 }
 
 .live-run-activity {
-  min-height: 32px;
+  width: 100%;
+  min-height: 34px;
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0 auto 8px;
-  padding: 5px 2px 7px;
-  border-bottom: 1px solid var(--border);
+  padding: 5px 9px 5px 11px;
+  border: 1px solid var(--border-2);
+  border-radius: 11px;
   color: var(--muted);
-  background: transparent;
+  background: color-mix(in srgb, var(--panel-2) 88%, transparent);
   font-size: 12px;
 }
 
@@ -2325,11 +2327,12 @@ body.col-resizing {
 .live-run-activity-count { white-space: nowrap; }
 
 .live-run-activity > button {
+  margin-left: auto;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px;
+  padding: 4px 5px 4px 8px;
   border-radius: 6px;
   color: var(--muted);
   font-size: 11px;

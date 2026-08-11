@@ -35,7 +35,7 @@ sed -n '365,470p' $HERMES_SRC/tools/registry.py           # register() contract
 sed -n '339,600p' $HERMES_SRC/hermes_cli/plugins.py       # PluginContext (ctx) API
 ```
 
-Per this repo's `AGENTS.md`: **extend Hermes from `brain4all/`, do not fork or
+Per this repo's `AGENTS.md`: **extend Hermes from `xnobrain/`, do not fork or
 copy the core.** Prefer a plugin or a new tool module over editing core files.
 
 ## Decide what to build (route here first)

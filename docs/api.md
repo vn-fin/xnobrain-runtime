@@ -16,11 +16,11 @@ JSON responses use `{success,data,message,status_code}`. SSE sends structured
 Hermes lifecycle objects and terminates with `data: [DONE]`.
 
 The namespace and current version are defined once in
-`brain4all/routes/definition.py`. Each feature owns a route module in
-`brain4all/routes/` and a matching operation module in
-`brain4all/handlers/operations/`; `routes/setup.py` only assembles those
+`xnobrain/routes/definition.py`. Each feature owns a route module in
+`xnobrain/routes/` and a matching operation module in
+`xnobrain/handlers/operations/`; `routes/setup.py` only assembles those
 groups. Business logic remains in the feature services under
-`brain4all/services/`.
+`xnobrain/services/`.
 
 Runtime statistics are available as a snapshot at
 `/xnobrain/api/runtime/v1/sandboxes/detail` and as one-second SSE updates at

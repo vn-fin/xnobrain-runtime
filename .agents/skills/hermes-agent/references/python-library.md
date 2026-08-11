@@ -116,7 +116,7 @@ uv run python your_app.py
 
 ## How Brain4All uses this
 
-Brain4All embeds the `AIAgent` runtime and extends it from `brain4all/`
+Brain4All embeds the `AIAgent` runtime and extends it from `xnobrain/`
 (integrations adapt the Hermes CLI/runtime). When adding a Hermes-backed feature:
 
 - Instantiate with `quiet_mode=True` and scope toolsets to what the feature needs.

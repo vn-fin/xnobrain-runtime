@@ -16,7 +16,7 @@ App-owned paths:
 Read-only dependencies for app tasks:
 
 - `src/`: existing Web UI.
-- `brain4all/`, `server.py`: existing FastAPI/Hermes backend.
+- `xnobrain/`, `server.py`: existing FastAPI/Hermes backend.
 - `runtime/`, Dockerfiles, Compose files, and Hermes/9router integration.
 - `docs/contracts/`: released contracts the app may consume.
 

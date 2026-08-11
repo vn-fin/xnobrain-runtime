@@ -1,4 +1,0 @@
-interface:
-  display_name: "Brain4All Backend"
-  short_description: "Implement and verify runtime backend changes"
-  default_prompt: "Use $brain4all-backend to implement a focused FastAPI runtime change."

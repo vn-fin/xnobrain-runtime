@@ -18,12 +18,12 @@ src:
 	npm run dev:frontend
 
 test:
-	$(PYTHON_BIN) -m unittest discover -s brain4all/tests -t . -p 'test_*.py'
+	$(PYTHON_BIN) -m unittest discover -s xnobrain/tests -t . -p 'test_*.py'
 	npm test
 
 check:
-	$(PYTHON_BIN) -m unittest discover -s brain4all/tests -t . -p 'test_*.py'
-	$(PYTHON_BIN) -m compileall -q brain4all server.py
+	$(PYTHON_BIN) -m unittest discover -s xnobrain/tests -t . -p 'test_*.py'
+	$(PYTHON_BIN) -m compileall -q xnobrain server.py
 	npm test
 	npm run build
 

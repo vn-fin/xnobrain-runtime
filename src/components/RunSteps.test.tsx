@@ -44,13 +44,24 @@ describe('RunSteps', () => {
   it('keeps a restored completed run collapsed until the user opens it', () => {
     render(<RunSteps run={run({ reasoning: ['Inspect the available evidence first.'] })} />);
 
-    const toggle = screen.getByRole('button', { name: /Worked/ });
+    const toggle = screen.getByRole('button', { name: /Worked.*0 steps/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('button', { name: 'Reasoning' })).not.toBeInTheDocument();
 
     fireEvent.click(toggle);
     expect(screen.getByRole('button', { name: 'Reasoning' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('Inspect the available evidence first.')).toBeVisible();
+  });
+
+  it('keeps the total step count visible after completion', () => {
+    render(<RunSteps run={run({
+      steps: [
+        { id: 'tool-1', toolName: 'search_files', preview: '*.tsx', status: 'completed' },
+        { id: 'tool-2', toolName: 'terminal', preview: 'npm test', status: 'completed' },
+      ],
+    })} />);
+
+    expect(screen.getByRole('button', { name: /Worked.*2 steps/ })).toBeVisible();
   });
 
   it('shows reasoning deltas while the reasoning phase is streaming', () => {

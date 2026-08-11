@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SSEEvent } from '../api/stream';
-import { formatRunDuration, formatStepDuration, previewCode, reduceRunEvent, shortPreview, stepLabel, toolKind } from './runEvents';
+import { formatRunDuration, formatStepDuration, historicalRuns, previewCode, reduceRunEvent, shortPreview, stepLabel, toolKind } from './runEvents';
 import type { ChatRun, ChatRunStep } from '../types';
 
 /**
@@ -272,5 +272,38 @@ describe('formatRunDuration', () => {
 
   it('uses the supplied current time for an active run', () => {
     expect(formatRunDuration({ ...timedRun(0), endedAt: undefined, status: 'running' }, 125)).toBe('2m 5s');
+  });
+});
+
+describe('historicalRuns', () => {
+  it('restores the completed tool-step total from persisted session messages', () => {
+    const runs = historicalRuns([
+      { id: 1, role: 'user', content: 'Inspect the project', timestamp: 10 },
+      {
+        id: 2,
+        role: 'assistant',
+        content: '',
+        toolCalls: JSON.stringify([{
+          id: 'call-1',
+          function: { name: 'terminal', arguments: JSON.stringify({ command: 'npm test' }) },
+        }]),
+        finishReason: 'tool_calls',
+        timestamp: 11,
+      },
+      {
+        id: 3,
+        role: 'tool',
+        content: 'Tests passed',
+        toolName: 'terminal',
+        toolCallId: 'call-1',
+        timestamp: 12,
+      },
+      { id: 4, role: 'assistant', content: 'The tests pass.', finishReason: 'stop', timestamp: 13 },
+    ]);
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0].status).toBe('completed');
+    expect(runs[0].steps).toHaveLength(1);
+    expect(runs[0].steps[0]).toMatchObject({ toolName: 'terminal', status: 'completed' });
   });
 });

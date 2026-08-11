@@ -164,4 +164,3 @@ Implemented and verified 2026-07-25 (`make check` green; 20 new tests; live prob
 - [x] Pure proxy: Brain4All stores nothing; 503 when 9router is down surfaces the standard failure envelope + UI unavailable banner.
 - [ ] Manual E2E: create a fusion blend and observe multi-model fan-out + judge in 9router logs (needs ≥2 real connected models); backend fusion path is unit-tested, live observation pending.
 - [~] Docs (`docs/api.md`, `docs/architecture.md`) blend paragraphs not yet added.
-

@@ -58,10 +58,13 @@ Use `npm run build` for the final frontend type/build verification.
 - Do not add Go, PostgreSQL, an ORM, or another application API process.
 - Keep one FastAPI/Hermes process on port 8642 and one 9router process.
 - Preserve the original Hermes core and native FastAPI routes. Extend them from
-  `brain4all` instead of copying or forking Hermes.
-- `brain4all/routes/setup.py` is the only Brain4All route assembly point.
+  `xnobrain` instead of copying or forking Hermes.
+- `xnobrain/routes/setup.py` is the only Brain4All route assembly point.
 - Handlers own HTTP translation, services own rules, repositories own atomic
   files, integrations adapt Hermes CLI and 9router, and models are Pydantic.
+- Use one consistently named service-group file per backend layer. Keep
+  registries, `services/platform.py`, and repository facades limited to
+  composition. MCP is its own group and does not belong to workspace.
 - Local layers call each other directly rather than through HTTP.
 - Resolve user paths beneath their profile root and reject traversal and symlink
   escapes.

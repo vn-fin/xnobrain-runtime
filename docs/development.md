@@ -3,7 +3,7 @@
 The repository root is the Vite project root: application code is in `src/`,
 static assets are in `public/`, and the committed production build is emitted
 to `dist/`. Node dependencies are installed into the root `node_modules/`.
-The Python application remains in the separate `brain4all/` package.
+The Python application remains in the separate `xnobrain/` package.
 
 On Linux or macOS, install the local toolchain with `make install-local`. It
 creates `.tools/python` for the project, installs Hermes and the Python

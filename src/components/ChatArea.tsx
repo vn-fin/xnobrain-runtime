@@ -904,6 +904,9 @@ export function ChatArea({
 
       <footer className="composer-wrap">
         <div className="composer-stack">
+          {showLiveActivity && liveRun && (
+            <RunActivityBar run={liveRun} onViewActivity={revealLiveActivity} />
+          )}
           {queuedMessages.length > 0 && (
             <div className="queue-strip" aria-label={`${queuedMessages.length} queued message${queuedMessages.length === 1 ? '' : 's'}`}>
               {queuedMessages.map((message) => {
@@ -952,9 +955,6 @@ export function ChatArea({
                 );
               })}
             </div>
-          )}
-          {showLiveActivity && liveRun && (
-            <RunActivityBar run={liveRun} onViewActivity={revealLiveActivity} />
           )}
           <div
             className={dragOver ? 'composer drag-over' : 'composer'}

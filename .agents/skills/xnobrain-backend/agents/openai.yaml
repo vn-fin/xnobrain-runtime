@@ -1,0 +1,4 @@
+interface:
+  display_name: "XNOBrain Backend"
+  short_description: "Build grouped XNOBrain backend services"
+  default_prompt: "Use $xnobrain-backend to implement and verify a focused backend service-group change."
