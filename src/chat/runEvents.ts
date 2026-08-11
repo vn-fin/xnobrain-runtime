@@ -40,6 +40,14 @@ function todoItems(value: unknown): ChatTodoItem[] | undefined {
   });
 }
 
+function sameTodos(left: ChatTodoItem[] | undefined, right: ChatTodoItem[]): boolean {
+  if (!left || left.length !== right.length) return false;
+  return left.every((item, index) => {
+    const other = right[index];
+    return item.id === other?.id && item.content === other.content && item.status === other.status;
+  });
+}
+
 function basename(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? path;
 }
@@ -137,7 +145,12 @@ export function reduceRunEvent(run: ChatRun | null, event: SSEEvent): ChatRun | 
   }
   if (type === 'todo.updated') {
     const todos = todoItems(data);
-    return todos === undefined ? run : { ...run, todos };
+    if (todos === undefined) return run;
+    const timeline = [...(run.timeline ?? [])];
+    if (todos.length > 0 && !sameTodos(run.todos, todos)) {
+      timeline.push({ kind: 'todos', todos });
+    }
+    return { ...run, todos, timeline };
   }
   if (type === 'tool.started') {
     const toolName = toolNameOf(data) || 'tool';
@@ -528,7 +541,12 @@ export function historicalRuns(messages: ChatMessage[]): ChatRun[] {
         };
         if (step.toolName === 'todo') {
           const snapshot = todoItems(message.content);
-          if (snapshot !== undefined) todos = snapshot;
+          if (snapshot !== undefined) {
+            if (snapshot.length > 0 && !sameTodos(todos, snapshot)) {
+              timeline.push({ kind: 'todos', todos: snapshot });
+            }
+            todos = snapshot;
+          }
         }
       } else if (message.content) {
         // Orphan tool output with no matching call — keep it visible.

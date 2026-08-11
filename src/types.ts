@@ -179,14 +179,14 @@ export type ChatTodoItem = {
 };
 
 /**
- * Ordered timeline of a run's activity: grouped reasoning text blocks
- * interleaved with grouped tool-step batches. `tools` items reference steps by
- * id (the actual step data lives in `ChatRun.steps`, so status updates apply
- * without duplicating state).
+ * Ordered timeline of a run's activity: reasoning, tool batches, and immutable
+ * plan snapshots. `tools` items reference steps by id; todo snapshots retain
+ * each progress update at the point where Hermes emitted it.
  */
 export type RunTimelineItem =
   | { kind: 'reasoning'; text: string }
-  | { kind: 'tools'; stepIds: string[] };
+  | { kind: 'tools'; stepIds: string[] }
+  | { kind: 'todos'; todos: ChatTodoItem[] };
 
 export type ChatRun = {
   id: string;
