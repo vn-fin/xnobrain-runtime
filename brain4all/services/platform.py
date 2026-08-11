@@ -939,11 +939,21 @@ class PlatformService:
             context_limit = max(0, int(context.get("limit") or 0))
         except (TypeError, ValueError):
             context_limit = 0
+        try:
+            context_threshold = max(0, int(context.get("threshold") or 0))
+        except (TypeError, ValueError):
+            context_threshold = 0
         context_payload: dict[str, Any] = {"used": context_used}
         if context_limit:
             context_payload.update({
                 "limit": context_limit,
                 "percent": round(min(100.0, context_used / context_limit * 100), 2),
+            })
+        if context_threshold:
+            context_payload.update({
+                "threshold": context_threshold,
+                "pressure_percent": round(min(100.0, context_used / context_threshold * 100), 2),
+                "auto_compaction": bool(context.get("auto_compaction")),
             })
 
         return {

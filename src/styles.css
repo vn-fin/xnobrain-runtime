@@ -3268,20 +3268,28 @@ body.col-resizing {
   border-radius: 50%;
 }
 
-.context-gauge {
+.context-meter {
   --context-percent: 0%;
-  width: 13px;
-  height: 13px;
-  flex: 0 0 13px;
-  border-radius: 50%;
-  background: conic-gradient(var(--accent) var(--context-percent), #686868 0);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
-  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+  --context-color: #8b83ff;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  color: var(--muted);
 }
 
-.context-gauge.unknown {
-  background: #686868;
-}
+.context-meter.elevated { --context-color: #4db6ff; color: var(--text); }
+.context-meter.critical { --context-color: #ff8a5b; color: var(--text); }
+.context-meter-label { max-width: 68px; overflow: hidden; color: inherit; font-size: 10.5px; font-weight: 650; line-height: 1; white-space: nowrap; text-overflow: ellipsis; }
+.context-meter-track { width: 32px; height: 4px; flex: 0 0 32px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--muted-2) 30%, transparent); }
+.context-meter-track i { width: var(--context-percent); height: 100%; display: block; border-radius: inherit; background: var(--context-color); transition: width .25s ease, background .2s ease; }
+.context-meter.unknown .context-meter-track i { width: 0; }
+.context-meter-tooltip { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 15; width: max-content; max-width: 230px; display: grid; gap: 4px; padding: 9px 10px; border: 1px solid var(--border-2); border-radius: 9px; color: var(--muted); background: var(--elevated-hi); box-shadow: 0 10px 30px rgb(0 0 0 / 35%); font-size: 10px; line-height: 1.35; text-align: left; pointer-events: none; opacity: 0; transform: translateY(3px); transition: opacity .12s ease, transform .12s ease; }
+.context-meter-tooltip strong { color: var(--text); font-size: 11px; }
+.context-meter:hover .context-meter-tooltip, .composer-model-context:focus-visible .context-meter-tooltip { opacity: 1; transform: translateY(0); }
+.composer-model-context { gap: 5px; }
+.composer-context-divider { margin: 0 1px; color: var(--muted-2); font-size: 14px; line-height: 1; }
 
 .right-head {
   height: 58px;
@@ -8015,6 +8023,10 @@ body.col-resizing {
 
   .composer-wrap { padding-inline: 12px; }
   .live-run-activity { gap: 6px; }
+  .composer-row-right { gap: 5px; }
+  .context-meter { gap: 4px; }
+  .context-meter-label { max-width: 55px; }
+  .context-meter-track { width: 24px; flex-basis: 24px; }
 
   .composer-menu {
     display: none;

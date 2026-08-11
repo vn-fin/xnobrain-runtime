@@ -1339,6 +1339,8 @@ class AgentManager:
             compressor = getattr(agent, "context_compressor", None) if agent is not None else None
             context_used = int(getattr(compressor, "last_prompt_tokens", 0) or 0)
             context_limit = int(getattr(compressor, "context_length", 0) or 0)
+            context_threshold = int(getattr(compressor, "threshold_tokens", 0) or 0)
+            auto_compaction = bool(getattr(agent, "compression_enabled", False)) if agent is not None else False
             actual_model = str(
                 (result.get("model") if isinstance(result, Mapping) else "")
                 or getattr(agent, "model", "")
@@ -1349,9 +1351,12 @@ class AgentManager:
             # Do not report Hermes' generic fallback as a model-specific limit.
             if actual_model.lower() in {"", "auto", NINE_ROUTER_DEFAULT_MODEL.lower()}:
                 context_limit = 0
+                context_threshold = 0
             context = {
                 "used": max(0, context_used),
                 "limit": max(0, context_limit),
+                "threshold": max(0, context_threshold),
+                "auto_compaction": auto_compaction,
                 "model": actual_model,
             }
             usage.update({
@@ -3180,11 +3185,16 @@ class AgentManager:
                 model_config = {}
             if not isinstance(model_config, dict):
                 model_config = {}
-            model_config["brain4all_context"] = {
+            stored_context: dict[str, Any] = {
                 "used": max(0, int(context.get("used") or 0)),
                 "limit": max(0, int(context.get("limit") or 0)),
                 "model": str(context.get("model") or ""),
             }
+            threshold = max(0, int(context.get("threshold") or 0))
+            if threshold:
+                stored_context["threshold"] = threshold
+                stored_context["auto_compaction"] = bool(context.get("auto_compaction"))
+            model_config["brain4all_context"] = stored_context
             conn.execute(
                 "UPDATE sessions SET model_config = ? WHERE id = ?",
                 (json.dumps(model_config, separators=(",", ":")), session_id),

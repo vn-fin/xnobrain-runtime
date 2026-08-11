@@ -209,6 +209,9 @@ export type ConversationUsage = {
   contextUsed?: number;
   contextLimit?: number;
   contextPercent?: number;
+  contextThreshold?: number;
+  contextPressurePercent?: number;
+  contextAutoCompaction?: boolean;
   totalCostUsd: number;
   provider: string;
   plan: string;
