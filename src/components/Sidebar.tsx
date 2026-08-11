@@ -39,6 +39,7 @@ import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 import type { Agent, CenterView } from '../types';
 
 const PINNED_KEY = 'brain4all.pinnedAssistants';
+const ALWAYS_PINNED_AGENT_ID = 'big-brother';
 
 const navItems = [
   { id: 'skills', label: 'skills', icon: Puzzle },
@@ -155,9 +156,10 @@ export function MobileManageDrawer({
 function readIds(key: string): string[] {
   try {
     const value = JSON.parse(localStorage.getItem(key) ?? '[]');
-    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+    const stored = Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+    return [ALWAYS_PINNED_AGENT_ID, ...stored.filter((id) => id !== ALWAYS_PINNED_AGENT_ID)];
   } catch {
-    return [];
+    return [ALWAYS_PINNED_AGENT_ID];
   }
 }
 
@@ -248,8 +250,8 @@ export function Sidebar({
   const orderedAgents = useMemo(
     () => agents.map((agent, index) => ({ agent, index }))
       .sort((left, right) => (
-        Number(pinnedIds.includes(right.agent.id)) - Number(pinnedIds.includes(left.agent.id))
-        || Number(right.agent.id === 'big-brother') - Number(left.agent.id === 'big-brother')
+        Number(right.agent.id === ALWAYS_PINNED_AGENT_ID) - Number(left.agent.id === ALWAYS_PINNED_AGENT_ID)
+        || Number(pinnedIds.includes(right.agent.id)) - Number(pinnedIds.includes(left.agent.id))
         || left.index - right.index
       ))
       .map(({ agent }) => agent),
@@ -287,6 +289,10 @@ export function Sidebar({
   };
 
   const togglePinned = (agentId: string) => {
+    if (agentId === ALWAYS_PINNED_AGENT_ID) {
+      setAgentMenuId(null);
+      return;
+    }
     setPinnedIds((ids) => ids.includes(agentId) ? ids.filter((id) => id !== agentId) : [...ids, agentId]);
     setAgentMenuId(null);
   };
@@ -299,6 +305,8 @@ export function Sidebar({
 
   const renderAgent = (agent: Agent, library = false) => {
     const active = agent.id === activeAgent.id && centerView === 'chat';
+    const alwaysPinned = agent.id === ALWAYS_PINNED_AGENT_ID;
+    const pinned = alwaysPinned || pinnedIds.includes(agent.id);
     if (renamingAgentId === agent.id && !library) {
       return (
         <div key={agent.id} className={active ? 'agent-row active renaming' : 'agent-row renaming'}>
@@ -329,7 +337,7 @@ export function Sidebar({
         </button>
         {!library && (
           <>
-            {pinnedIds.includes(agent.id) && <Pin className="agent-pin" size={12} aria-label={t('agents.pinned')} />}
+            {pinned && <Pin className="agent-pin" size={12} aria-label={t('agents.pinned')} />}
             <button
               className="agent-row-more"
               title={t('agents.menu', { defaultValue: 'Agent options' })}
@@ -345,9 +353,14 @@ export function Sidebar({
             </button>
             {agentMenuId === agent.id && (
               <div className="row-menu" role="menu">
-                <button className="row-menu-item" role="menuitem" onClick={() => togglePinned(agent.id)}>
-                  {pinnedIds.includes(agent.id) ? <PinOff size={14} /> : <Pin size={14} />}
-                  {t(pinnedIds.includes(agent.id) ? 'agents.unpin' : 'agents.pin')}
+                <button
+                  className="row-menu-item"
+                  role="menuitem"
+                  disabled={alwaysPinned}
+                  onClick={() => togglePinned(agent.id)}
+                >
+                  {pinned && !alwaysPinned ? <PinOff size={14} /> : <Pin size={14} />}
+                  {t(alwaysPinned ? 'agents.pinned' : pinned ? 'agents.unpin' : 'agents.pin')}
                 </button>
                 <button className="row-menu-item" role="menuitem" disabled={exportingAgentId === agent.id} onClick={() => startAgentRename(agent)}>
                   <Pencil size={14} /> {t('agents.renameAction', { defaultValue: 'Rename' })}
