@@ -18,6 +18,36 @@ const KANBAN_TASK_ID = /\bt_[0-9a-f]{8}\b/gi;
 const KANBAN_TASK_LINK = '#kanban-task:';
 const ASSIGNEE_COLORS = ['#4f8cff', '#34d399', '#f8d66d', '#c084fc', '#fb923c', '#7dd3fc'];
 
+/**
+ * Models commonly emit display math as `$$formula$$` or attach the opening and
+ * closing delimiters to a multiline environment. remark-math requires the
+ * delimiters for multiline display math to occupy their own lines; otherwise
+ * it can consume every later Markdown section as one invalid KaTeX node.
+ * Normalize paired display delimiters while leaving fenced code untouched.
+ */
+function normalizeDisplayMath(content: string): string {
+  return content
+    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
+    .map((part, index) => {
+      if (index % 2 === 1) return part;
+      return part.replace(
+        /(^[\t ]*)?\$\$([\s\S]*?)\$\$/gm,
+        (match, leading: string | undefined, expression: string, offset: number, source: string) => {
+          const lineStart = source.lastIndexOf('\n', offset - 1) + 1;
+          const nextBreak = source.indexOf('\n', offset + match.length);
+          const lineEnd = nextBreak === -1 ? source.length : nextBreak;
+          const before = leading === undefined ? source.slice(lineStart, offset).trim() : '';
+          const after = source.slice(offset + match.length, lineEnd).trim();
+          const display = expression.includes('\n') || (!before && !after);
+          return display
+            ? `$$\n${expression.trim()}\n$$`
+            : `$${expression.trim()}$`;
+        },
+      );
+    })
+    .join('');
+}
+
 type MarkdownNode = {
   type?: string;
   value?: string;
@@ -380,6 +410,7 @@ function KanbanTaskPreview({ taskId, onClose }: { taskId: string; onClose: () =>
 
 function MarkdownBase({ content, onOpenFile }: { content: string; onOpenFile?: (path: string) => void }) {
   const [taskId, setTaskId] = useState('');
+  const normalizedContent = normalizeDisplayMath(content);
   return (
     <>
       <div className="markdown-body">
@@ -388,7 +419,7 @@ function MarkdownBase({ content, onOpenFile }: { content: string; onOpenFile?: (
           rehypePlugins={[rehypeKatex, [rehypeHighlight, { detect: true, ignoreMissing: true }]]}
           components={buildComponents(onOpenFile, setTaskId)}
         >
-          {content}
+          {normalizedContent}
         </ReactMarkdown>
       </div>
       {taskId && createPortal(

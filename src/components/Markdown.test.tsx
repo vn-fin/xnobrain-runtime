@@ -121,4 +121,57 @@ describe('Markdown currency and math', () => {
 
     expect(container.querySelectorAll('.katex')).toHaveLength(2);
   });
+
+  it('tolerates double-dollar inline math emitted inside prose', () => {
+    const { container } = render(
+      <Markdown content={'The definition gives $$1 := S(0)$$ and then the proof continues.'} />,
+    );
+
+    expect(container.querySelector('.katex-error')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('.katex')).toHaveLength(1);
+    expect(container.querySelector('.katex-display')).not.toBeInTheDocument();
+    expect(container).toHaveTextContent('and then the proof continues.');
+  });
+
+  it('renders an indented standalone double-dollar expression as display math', () => {
+    const { container } = render(<Markdown content={'  $$1 := S(0)$$\n\nFollowing prose.'} />);
+
+    expect(container.querySelector('.katex-error')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('.katex-display')).toHaveLength(1);
+    expect(container).toHaveTextContent('Following prose.');
+  });
+
+  it('renders compact multiline LaTeX without swallowing the following Markdown', () => {
+    const content = String.raw`## The Proof
+
+$$\begin{aligned}
+1 + 1 &= 1 + S(0) &&\text{(definition)} \\[4pt]
+      &= S(1) &&\text{(addition)}
+\end{aligned}$$
+
+$$\boxed{1 + 1 = 2} \qquad \blacksquare$$
+
+## Why Each Line Is Valid
+
+| Step | Rule |
+| --- | --- |
+| $1 + S(0)$ | Addition |
+
+This is the modern, compact version.`;
+    const { container } = render(<Markdown content={content} />);
+
+    expect(container.querySelector('.katex-error')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('.katex-display')).toHaveLength(2);
+    expect(screen.getByRole('heading', { name: 'Why Each Line Is Valid' })).toBeVisible();
+    expect(screen.getByRole('table')).toBeVisible();
+    expect(screen.getByText('This is the modern, compact version.')).toBeVisible();
+  });
+
+  it('does not rewrite display delimiters inside fenced code', () => {
+    const source = '```latex\n$$x + y$$\n```';
+    const { container } = render(<Markdown content={source} />);
+
+    expect(container.querySelector('.katex')).not.toBeInTheDocument();
+    expect(screen.getByText('$$x + y$$')).toBeVisible();
+  });
 });
