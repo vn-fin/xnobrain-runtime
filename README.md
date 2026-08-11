@@ -146,10 +146,13 @@ make smoke-api
 
 ### Versioned runtime releases
 
-`.version` is the release source of truth. A push to `main`, `staging`, or
-`prod` runs the matching release workflow only when `.version` changes; normal
-code pushes do not rebuild the frontend or backend VM. Manual dispatch remains
-available to retry the current version.
+`.version` is the dev image-version source of truth, and dev publishes from
+`main` only when that file changes. Staging and production publish on every
+push to their environment branch, so merging `main` into `staging` or `prod`
+deploys the merged runtime without requiring a separate `.version` change.
+Those environments derive an immutable version from the merge commit, such as
+`0.0.0-24ddb0f353e8`. Manual dispatch remains available to retry the same
+commit version.
 
 Each release publishes the common frontend to GHCR with immutable and moving
 tags:
@@ -168,10 +171,11 @@ backend in a temporary Ubuntu VM, and publishes this immutable Incus alias:
 xnobrain-runtime-dev-0.0.12
 ```
 
-Change `dev` to `staging` or `prod` for those branches. Re-running an existing
-environment/version skips the native VM build after verifying the alias
-property. The managed control plane selects a release by configuring the
-runtime image name and semantic version; it does not build runtime artifacts.
+Staging and production use their commit-derived version in place of `0.0.12`.
+Re-running an existing environment/version skips the native VM build after
+verifying the alias property. The managed control plane selects a release by
+configuring the runtime image name and semantic version; it does not build
+runtime artifacts.
 
 ## Data safety
 
