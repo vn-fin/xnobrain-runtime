@@ -174,6 +174,12 @@ describe('Sidebar assistant actions', () => {
       'Big BrotherNo description', 'Agent 1No description', 'Agent 2No description',
       'Agent 3No description', 'Agent 4No description', 'Agent 5No description',
     ]);
+    expect(within(container).getByLabelText('Pinned')).toBeVisible();
+
+    const menus = within(container).getAllByRole('button', { name: 'Agent options' });
+    fireEvent.click(menus[0]);
+    expect(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Pinned' })).toBeDisabled();
+    expect(localStorage.getItem('brain4all.pinnedAssistants')).toContain('big-brother');
 
     fireEvent.click(within(container).getByRole('button', { name: 'Open in Library' }));
     expect(screen.getByRole('dialog', { name: 'Agent Library' })).toBeVisible();
@@ -201,6 +207,39 @@ describe('Sidebar assistant actions', () => {
 
     const rows = within(container).getAllByRole('button').filter((button) => button.classList.contains('agent-row-main'));
     expect(rows[0]).toHaveTextContent('Pinned agentMonitors production incidents');
+  });
+
+  it('keeps Big Brother above other pinned agents', () => {
+    const bigBrother = {
+      ...agent,
+      id: 'big-brother',
+      name: 'big-brother',
+      title: 'Big Brother',
+    };
+    const pinned = { ...agent, id: 'pinned', title: 'Pinned agent' };
+    localStorage.setItem('brain4all.pinnedAssistants', JSON.stringify([pinned.id]));
+    const { container } = render(
+      <Sidebar
+        agents={[agent, pinned, bigBrother]}
+        activeAgent={agent}
+        centerView="chat"
+        agentSearch=""
+        onAgentSearch={vi.fn()}
+        onNavigate={vi.fn()}
+        onSelectAgent={vi.fn()}
+        onRenameAgent={vi.fn()}
+        onExportAgent={vi.fn()}
+        onRequestDeleteAgent={vi.fn()}
+        onNewAgent={vi.fn()}
+      />,
+    );
+
+    const rows = within(container).getAllByRole('button').filter((button) => button.classList.contains('agent-row-main'));
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'Big BrotherNo description',
+      'Pinned agentNo description',
+      'Research LeadNo description',
+    ]);
   });
 });
 
