@@ -3,6 +3,7 @@
 from .hermes_support import (
     AgentAPIError,
     Any,
+    BIG_BROTHER_AGENT_ID,
     DEFAULT_CHAT_TIMEOUT_SECONDS,
     MAX_CHAT_TIMEOUT_SECONDS,
     MAX_TEXT_CHARS,
@@ -71,6 +72,7 @@ class ConversationRunnerMixin:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
         self._ensure_router_profile(profile_dir, body.get("model"))
+        workspace_dir = self._ensure_agent_workspace(name, profile_dir)
         message = self._text_value(body.get("message"), field="message", max_chars=MAX_TEXT_CHARS)
         conversation_id = ""
         if body.get("conversation_id"):
@@ -87,7 +89,11 @@ class ConversationRunnerMixin:
                 status=404,
             )
         if conversation_id:
-            self._override_stored_runtime_help_guidance(profile_dir, conversation_id)
+            self._override_stored_runtime_help_guidance(
+                profile_dir,
+                conversation_id,
+                workspace_dir,
+            )
 
         provider = self._conversation_provider(profile_dir, body)
         model = self._conversation_model(profile_dir, body)
@@ -133,7 +139,7 @@ class ConversationRunnerMixin:
         return {
             "name": name,
             "profile_dir": profile_dir,
-            "workspace_dir": self._workspace_dir(name),
+            "workspace_dir": workspace_dir or self._workspace_dir(name),
             "conversation_id": conversation_id,
             "message": message,
             "provider": provider,
@@ -169,6 +175,12 @@ class ConversationRunnerMixin:
         from tools.approval import register_gateway_notify, unregister_gateway_notify
 
         profile_dir = Path(prepared["profile_dir"])
+        name = str(prepared["name"])
+        workspace_dir = (
+            Path(prepared["workspace_dir"]).resolve()
+            if name != BIG_BROTHER_AGENT_ID
+            else None
+        )
         conversation_id = str(prepared["conversation_id"])
         manager = self
 
@@ -191,7 +203,11 @@ class ConversationRunnerMixin:
 
             def _create_agent(self, *args: Any, **kwargs: Any) -> Any:
                 agent = super()._create_agent(*args, **kwargs)
-                manager._apply_runtime_help_guidance_override(agent, profile_dir)
+                manager._apply_runtime_help_guidance_override(
+                    agent,
+                    profile_dir,
+                    workspace_dir,
+                )
                 # Hermes exposes structured model thinking through its
                 # reasoning callback. The stock API-server adapter does not
                 # register one and instead reports assistant content through
@@ -206,6 +222,7 @@ class ConversationRunnerMixin:
                 run_conversation = agent.run_conversation
 
                 def run_with_memory_approval(*run_args: Any, **run_kwargs: Any) -> Any:
+                    from agent.runtime_cwd import clear_session_cwd, set_session_cwd
                     from tools import terminal_tool
                     from tools.approval import _await_gateway_decision
 
@@ -234,9 +251,19 @@ class ConversationRunnerMixin:
                         return "once" if choice == "always" else choice
 
                     terminal_tool.set_approval_callback(approve_memory)
+                    task_id = str(run_kwargs.get("task_id") or "")
+                    if workspace_dir is not None:
+                        set_session_cwd(str(workspace_dir))
+                        terminal_tool.register_task_env_overrides(
+                            task_id,
+                            {"cwd": str(workspace_dir)},
+                        )
                     try:
                         return run_conversation(*run_args, **run_kwargs)
                     finally:
+                        if workspace_dir is not None:
+                            terminal_tool.clear_task_env_overrides(task_id)
+                            clear_session_cwd()
                         terminal_tool.set_approval_callback(previous_callback)
 
                 agent.run_conversation = run_with_memory_approval
