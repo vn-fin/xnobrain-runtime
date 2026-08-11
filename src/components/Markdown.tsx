@@ -240,7 +240,7 @@ function ExpandableTaskText({ label, value, empty }: { label: string; value: str
           </button>
         )}
       </div>
-      <p className="kb-desc">{expanded ? text : preview}</p>
+      <p className="kb-desc kb-long-text">{expanded ? text : preview}</p>
     </section>
   );
 }

@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { conversationsApi } from '../api/conversations';
 import type { Team, TeamRunRecord } from '../api/teams';
@@ -112,14 +113,19 @@ describe('TeamsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Researcher.*Finds source material/i }));
     fireEvent.click(screen.getByRole('button', { name: /Reviewer.*Checks the findings/i }));
     expect(screen.getByRole('button', { name: 'Configure researcher stage' })).toHaveStyle({ left: '170px' });
-    expect(screen.getByRole('button', { name: 'Configure reviewer stage' })).toHaveStyle({ left: '430px' });
+    expect(screen.getByRole('button', { name: 'Configure reviewer stage' })).toHaveStyle({ left: '170px' });
     expect(screen.getByRole('button', { name: 'Arrange workflow' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Zoom out workflow' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Fit workflow to view' })).toHaveTextContent('100%');
+    fireEvent.wheel(screen.getByTitle('Hold Ctrl and scroll to zoom'), { deltaY: -100 });
+    expect(screen.getByRole('button', { name: 'Fit workflow to view' })).toHaveTextContent('100%');
     fireEvent.click(screen.getByRole('button', { name: 'Zoom out workflow' }));
     expect(screen.getByRole('button', { name: 'Fit workflow to view' })).toHaveTextContent('90%');
+    fireEvent.wheel(screen.getByTitle('Hold Ctrl and scroll to zoom'), { deltaY: -100, ctrlKey: true });
+    expect(screen.getByRole('button', { name: 'Fit workflow to view' })).toHaveTextContent('105%');
     fireEvent.click(screen.getByRole('button', { name: 'Connect from researcher' }));
     fireEvent.click(screen.getByRole('button', { name: 'Connect to reviewer' }));
+    expect(screen.getByRole('button', { name: 'Configure reviewer stage' })).toHaveStyle({ left: '430px' });
     fireEvent.click(screen.getByRole('button', { name: /Save team/i }));
 
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
@@ -565,7 +571,7 @@ describe('TeamsView', () => {
   });
 
   it('highlights active graph nodes, reveals returned output, and cancels the run', async () => {
-    vi.spyOn(conversationsApi, 'messages').mockResolvedValue([
+    const messagesRequest = vi.spyOn(conversationsApi, 'messages').mockResolvedValue([
       { id: 'user-1', role: 'user', content: 'Research the launch options.' },
       {
         id: 'assistant-tool',
@@ -581,7 +587,7 @@ describe('TeamsView', () => {
       { id: 'tool-1', role: 'tool', content: 'Skill instructions loaded.', toolName: 'skill_view', toolCallId: 'call-1' },
       { id: 'assistant-final', role: 'assistant', content: 'I found three viable launch plans.', finishReason: 'stop' },
     ]);
-    vi.spyOn(conversationsApi, 'usage').mockResolvedValue({
+    const usageRequest = vi.spyOn(conversationsApi, 'usage').mockResolvedValue({
       conversationId: 'conversation-1',
       messages: 4,
       steps: 1,
@@ -664,16 +670,22 @@ describe('TeamsView', () => {
     const onOpenChat = vi.fn();
     const state = teamState({ teams: [team], runs: [run], activeRun: run, runsStatus: 'ready', cancelRun });
     render(
-      <TeamsView
-        agents={agents}
-        state={state}
-        onConversationNavigate={onConversationNavigate}
-        onOpenChat={onOpenChat}
-        onClose={vi.fn()}
-      />,
+      <StrictMode>
+        <TeamsView
+          agents={agents}
+          state={state}
+          routeTeamId={team.id}
+          routeRunId={run.id}
+          onConversationNavigate={onConversationNavigate}
+          onOpenChat={onOpenChat}
+          onClose={vi.fn()}
+        />
+      </StrictMode>,
     );
 
     expect(await screen.findByRole('button', { name: 'Reviewer: running' })).toBeInTheDocument();
+    await waitFor(() => expect(messagesRequest).toHaveBeenCalledTimes(1));
+    expect(usageRequest).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('Live team workflow').querySelector('.run-dag-grid')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Zoom in workflow' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Fit workflow to view' })).toBeInTheDocument();

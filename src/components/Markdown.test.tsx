@@ -31,7 +31,7 @@ describe('Markdown Kanban task links', () => {
     mocks.getTask.mockResolvedValue({
       id: 't_70141301',
       title: 'Summarize the news',
-      description: `Collect the requested headlines and prepare a concise summary. ${'Detailed briefing context. '.repeat(12)}`,
+      description: `Collect the requested headlines and prepare a concise summary. ${'Detailed briefing context. '.repeat(12)} Artifact: /home/brain4all/${'nested-directory/'.repeat(20)}result.txt`,
       nativeStatus: 'blocked',
       priority: 'medium',
       assignees: ['big-brother'],
@@ -40,7 +40,7 @@ describe('Markdown Kanban task links', () => {
       runs: [{ startedAt: '2026-08-05T08:00:00Z', endedAt: '2026-08-05T08:02:00Z' }],
       schedule: null,
       team: null,
-      result: `Waiting for the requested topic and time window. ${'Additional result detail. '.repeat(12)}`,
+      result: `Waiting for the requested topic and time window. ${'Additional result detail. '.repeat(12)} ${'unbroken-result-token-'.repeat(30)}`,
     });
     render(<Markdown content="Work kanban task t_70141301 now." />);
 
@@ -63,6 +63,7 @@ describe('Markdown Kanban task links', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Show full task brief' }));
     expect(screen.getByText(/Collect the requested headlines/)).toHaveTextContent('Detailed briefing context.');
+    expect(screen.getByText(/Collect the requested headlines/)).toHaveClass('kb-long-text');
     fireEvent.click(screen.getByRole('button', { name: 'Show full results' }));
     expect(screen.getByText(/Waiting for the requested topic/)).toHaveTextContent('Additional result detail.');
     expect(screen.getByRole('link', { name: /Open in Kanban/ })).toHaveAttribute(
