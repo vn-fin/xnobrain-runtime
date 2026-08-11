@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import {
   ArrowLeft,
   Bot,
@@ -130,7 +130,9 @@ function GraphViewport({
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const userZoomedRef = useRef(false);
+  const panRef = useRef<{ pointerId: number; x: number; y: number; left: number; top: number }>();
   const [zoom, setZoom] = useState(1);
+  const [panning, setPanning] = useState(false);
 
   const changeZoom = (requested: number, anchorX?: number, anchorY?: number) => {
     const viewport = viewportRef.current;
@@ -172,11 +174,55 @@ function GraphViewport({
     return () => window.removeEventListener('resize', fitOnResize);
   }, [width, height]);
 
-  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-    if (!event.ctrlKey || (event.target as HTMLElement).closest('.graph-zoom-controls')) return;
+  const handleWheel = (event: WheelEvent) => {
     event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const rect = viewport.getBoundingClientRect();
     changeZoom(zoom * Math.exp(-event.deltaY * 0.0015), event.clientX - rect.left, event.clientY - rect.top);
+  };
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return undefined;
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', handleWheel);
+  }, [zoom]);
+
+  const beginPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest('button, a, input, textarea, select, [role="button"]')) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    panRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      left: viewport.scrollLeft,
+      top: viewport.scrollTop,
+    };
+    setPanning(true);
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    event.preventDefault();
+  };
+
+  const movePan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const pan = panRef.current;
+    const viewport = viewportRef.current;
+    if (!pan || !viewport || pan.pointerId !== event.pointerId) return;
+    viewport.scrollLeft = pan.left - (event.clientX - pan.x);
+    viewport.scrollTop = pan.top - (event.clientY - pan.y);
+  };
+
+  const endPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.pointerId !== event.pointerId) return;
+    panRef.current = undefined;
+    setPanning(false);
+    if (typeof event.currentTarget.hasPointerCapture === 'function'
+      && event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   return (
@@ -197,7 +243,15 @@ function GraphViewport({
           <Plus size={14} />
         </button>
       </div>
-      <div ref={viewportRef} className="graph-zoom-viewport" onWheel={handleWheel} title="Hold Ctrl and scroll to zoom">
+      <div
+        ref={viewportRef}
+        className={`graph-zoom-viewport${panning ? ' is-panning' : ''}`}
+        onPointerDown={beginPan}
+        onPointerMove={movePan}
+        onPointerUp={endPan}
+        onPointerCancel={endPan}
+        title="Scroll to zoom · drag the background to pan"
+      >
         <div className="graph-zoom-stage" style={{ width: width * zoom, height: height * zoom }}>
           <div className="graph-zoom-scene" style={{ width, height, transform: `translate(-50%, -50%) scale(${zoom})` }}>
             {children}
@@ -1460,7 +1514,7 @@ function TeamBuilder({
             <span className="teams-kicker">Visual workflow</span>
             <h2>{name.trim() || 'Untitled team'}</h2>
           </div>
-          <div className="team-toolbar-help"><MousePointer2 size={14} /> Drag to arrange · click ports to connect · Ctrl + scroll to zoom</div>
+          <div className="team-toolbar-help"><MousePointer2 size={14} /> Drag cards to arrange · drag background to pan · scroll to zoom</div>
           <button className="primary-button" disabled={state.pending} onClick={() => void save()}>
             <Save size={15} /> {state.pending ? 'Saving…' : initialTeam ? 'Save changes' : 'Save team'}
           </button>
