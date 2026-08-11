@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+generated/
+artifacts/
+.cache/
+.env
+.env.*
+!.env.example
+src-tauri/target/
+src-tauri/gen/
+local-state/
+downloads/
+*.key
+*.p12
+*.pfx
+*.mobileprovision

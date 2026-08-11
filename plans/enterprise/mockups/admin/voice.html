@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Voice I/O — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a class="active" href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div><h1>Voice I/O</h1><p>Central voice gateway with org-managed provider keys. Metered into the usage database.</p></div>
+      <div style="display:flex;gap:10px"><button class="btn">Manage keys</button></div>
+    </div>
+
+    <div class="cards">
+      <div class="card"><div class="lbl">Voice minutes · 30d</div><div class="val mono">1,240</div><div class="delta up">▲ 9%</div></div>
+      <div class="card"><div class="lbl">Cost · 30d</div><div class="val mono">$62</div><div class="delta">metered into usage DB</div></div>
+      <div class="card"><div class="lbl">Active users (voice)</div><div class="val">9</div><div class="delta">of 24 members</div></div>
+      <div class="card"><div class="lbl">Gateway status</div><div class="val" style="font-size:18px"><span class="st online"><span class="d"></span>Healthy</span></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Configuration</div>
+      <div style="padding:16px;max-width:640px">
+        <div class="form-row"><label>TTS provider</label><div>ElevenLabs <span class="chip" style="margin-left:6px">org key ✓</span></div></div>
+        <div class="form-row"><label>STT provider</label><div>Deepgram <span class="chip" style="margin-left:6px">org key ✓</span></div></div>
+        <div class="form-row"><label>Region</label><div>eu-central</div></div>
+        <div style="display:flex;gap:24px;margin:6px 0 14px">
+          <span class="toggle-pill"><span class="sw on"></span> Enabled for org</span>
+          <span class="toggle-pill"><span class="sw on"></span> Require entitlement</span>
+        </div>
+        <span class="hint">Provider keys are held centrally in the org's vault (E09 external secrets); members never see or configure them, and voice minutes meter into the same usage database (E02). Honest note: a self-hosted user who edits raw Hermes config on their own machine could wire up their own audio — enterprise value here is <b>key custody + zero key distribution + central metering</b>, not device-side DRM.</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Usage by member</div>
+      <table>
+        <thead><tr><th>Member</th><th>Minutes</th><th>Cost</th><th>Last used</th></tr></thead>
+        <tbody>
+          <tr><td><div class="who"><span class="av">MA</span><div>Mai Anh</div></div></td><td class="mono">312</td><td class="mono">$16</td><td>2h ago</td></tr>
+          <tr><td><div class="who"><span class="av">HN</span><div>Ha Nguyen</div></div></td><td class="mono">248</td><td class="mono">$12</td><td>1h ago</td></tr>
+          <tr><td><div class="who"><span class="av">PH</span><div>Phuong Hoa</div></div></td><td class="mono">190</td><td class="mono">$10</td><td>yesterday</td></tr>
+          <tr><td><div class="who"><span class="av">QT</span><div>Quang Trung</div></div></td><td class="mono">155</td><td class="mono">$8</td><td>3h ago</td></tr>
+          <tr><td><div class="who"><span class="av">BC</span><div>Bao Chau</div></div></td><td class="mono">124</td><td class="mono">$6</td><td>5h ago</td></tr>
+          <tr><td><div class="who"><span class="av">VT</span><div>Vy Tran</div></div></td><td class="mono">98</td><td class="mono">$5</td><td>today</td></tr>
+          <tr><td><div class="who"><span class="av">KN</span><div>Kim Ngan</div></div></td><td class="mono">72</td><td class="mono">$4</td><td>yesterday</td></tr>
+          <tr><td><div class="who"><span class="av">LD</span><div>Linh Dao</div></div></td><td class="mono">41</td><td class="mono">$2</td><td>2 days ago</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="acaption">MOCKUP · Admin <b>Voice I/O</b> — central gateway, org-held provider keys (never distributed to members), voice minutes metered into the one usage DB (E04 + E02). Entitlement-gated.</div>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Member · Kanban — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/app.css" />
+<link rel="stylesheet" href="../assets/ent.css" />
+<style>.mi{display:inline-grid;place-items:center;width:18px;height:18px;opacity:.85;font-size:15px;line-height:1;}</style>
+</head>
+<body>
+<div class="ent-shell">
+  <div class="ent-strip">
+    <span class="org"><span class="logo">N</span> Nimbus Robotics</span>
+    <span class="pill plan">Enterprise</span>
+    <span class="pill">Region: eu-central</span>
+    <span class="spacer"></span>
+    <span class="budget"><span>Org budget</span><span class="ebar"><i style="width:62%"></i></span><span>$310 / $500</span></span>
+    <span class="who"><span class="avatar">MA</span><span>Mai Anh · Member</span></span>
+  </div>
+
+  <div class="app no-right">
+    <aside class="left-panel">
+      <div class="brand"><span>Brain4All</span><button class="icon-button" title="Toggle sidebar"><span class="mi">‹‹</span></button></div>
+      <nav class="main-nav">
+        <a class="nav-row active" href="kanban.html"><span class="mi">▦</span><span>Kanban</span></a>
+        <a class="nav-row" href="teams.html"><span class="mi">◑</span><span>Teams</span></a>
+        <a class="nav-row" href="analytics.html"><span class="mi">▤</span><span>Analytics</span></a>
+        <a class="nav-row" href="settings.html"><span class="mi">⚙</span><span>Settings</span></a>
+      </nav>
+      <div class="history-section">
+        <div class="section-title agents-title"><span>Assistants</span><span class="agents-title-actions"><button class="icon-button"><span class="mi">⌕</span></button><button class="icon-button"><span class="mi">＋</span></button></span></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Research Copilot</strong><small>hermes-4-70b · blend: fast</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Contract Reviewer</strong><small>hermes-4-405b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot" style="background:var(--yellow)"></span><span><strong>Support Triage</strong><small>hermes-4-70b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Data Analyst</strong><small>hermes-4-405b · blend: balanced</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Onboarding Bot</strong><small>hermes-4-70b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="section-title recent-title"><span class="mi">⟳</span> Recent</div>
+        <div class="history-row"><button class="history-row-main">Q3 supplier risk memo</button></div>
+        <div class="history-row"><button class="history-row-main">Compare MSA redline v3 vs v4</button></div>
+        <div class="history-row"><button class="history-row-main">Weekly finance channel digest</button></div>
+      </div>
+      <div class="left-footer">
+        <div class="theme-switcher" role="group"><button class="active"><span class="mi">☀</span></button><button><span class="mi">☾</span></button><button><span class="mi">▣</span></button></div>
+        <div class="lang-switcher"><span class="mi">🌐</span><select><option>English</option><option>Tiếng Việt</option></select></div>
+      </div>
+    </aside>
+
+    <main class="chat-area sandbox-mode">
+      <section class="kanban-view">
+        <div class="kb-header">
+          <div class="kb-title-group">
+            <h1><span class="mi">▦</span> Task board</h1>
+            <span class="kb-sub">Your assistants' tasks — backlog to done.</span>
+          </div>
+          <div class="kb-header-actions">
+            <span class="ent-tag">Same as localhost</span>
+            <span class="kb-proto">Prototype</span>
+            <div class="kb-view-switch"><button class="active">Board</button><button>Table</button></div>
+            <button class="primary-button"><span class="mi" style="width:15px;height:15px">＋</span> New task</button>
+            <button class="icon-button" title="Close"><span class="mi">✕</span></button>
+          </div>
+        </div>
+
+        <div class="kb-command">
+          <label class="kb-search"><span class="mi" style="width:16px;height:16px">⌕</span><input type="search" placeholder="Search tasks, IDs, tags, or agents…" /></label>
+        </div>
+
+        <div class="kb-summary" aria-label="Board summary">
+          <div class="kb-metric"><span>Total work</span><strong>14</strong><small>tasks</small></div>
+          <div class="kb-metric active"><span>In Progress</span><strong>3</strong><small>2 active agents</small></div>
+          <div class="kb-metric attention"><span>Blocked</span><strong>1</strong><small>needs attention</small></div>
+          <div class="kb-metric complete"><span>Completed</span><strong>64%</strong><small>9 done</small></div>
+        </div>
+
+        <div class="kb-board">
+          <section class="kb-column col-backlog">
+            <div class="kb-column-head"><span class="kb-swatch"></span><strong>Backlog</strong><span class="kb-count">4</span></div>
+            <div class="kb-column-body">
+              <button class="kb-card col-backlog"><div class="kb-card-top"><span class="kb-id">TSK-141</span><span class="kb-column-state col-backlog">Backlog</span></div><span class="kb-title-line"><span class="kb-prio-bar medium"></span><span class="kb-title-text">Draft SOC 2 evidence checklist</span></span><p class="kb-card-desc">List controls and owners for the audit window.</p><div class="kb-tags"><span class="kb-tag">#compliance</span></div><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#34d399">RC</span></span><span class="kb-updated">2d ago</span></div></button>
+              <button class="kb-card col-backlog"><div class="kb-card-top"><span class="kb-id">TSK-138</span><span class="kb-column-state col-backlog">Backlog</span></div><span class="kb-title-line"><span class="kb-prio-bar low"></span><span class="kb-title-text">Research alt logistics vendors</span></span><p class="kb-card-desc">Backup suppliers for Q3 consolidation.</p><div class="kb-tags"><span class="kb-tag">#research</span></div><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#7dd3fc">DA</span></span><span class="kb-updated">3d ago</span></div></button>
+              <button class="kb-card col-backlog"><div class="kb-card-top"><span class="kb-id">TSK-136</span><span class="kb-column-state col-backlog">Backlog</span></div><span class="kb-title-line"><span class="kb-prio-bar low"></span><span class="kb-title-text">Outline onboarding email series</span></span><p class="kb-card-desc">5-step nurture for new hires.</p><div class="kb-tags"><span class="kb-tag">#comms</span></div><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#f8d66d">OB</span></span><span class="kb-updated">4d ago</span></div></button>
+              <button class="kb-card col-backlog"><div class="kb-card-top"><span class="kb-id">TSK-133</span><span class="kb-column-state col-backlog">Backlog</span></div><span class="kb-title-line"><span class="kb-prio-bar medium"></span><span class="kb-title-text">Define KPI scorecard for vendors</span></span><p class="kb-card-desc">Weight price, SLA, and risk.</p><div class="kb-tags"><span class="kb-tag">#scoring</span></div><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#34d399">RC</span></span><span class="kb-updated">5d ago</span></div></button>
+            </div>
+          </section>
+
+          <section class="kb-column col-todo">
+            <div class="kb-column-head"><span class="kb-swatch"></span><strong>Todo</strong><span class="kb-count">3</span></div>
+            <div class="kb-column-body">
+              <button class="kb-card col-todo"><div class="kb-card-top"><span class="kb-id">TSK-129</span><span class="kb-column-state col-todo">Todo</span><span class="kb-substate native-ready">Ready</span></div><span class="kb-title-line"><span class="kb-prio-bar high"></span><span class="kb-title-text">Normalize vendor list across ERPs</span></span><p class="kb-card-desc">Dedup 340 supplier records into one master list.</p><div class="kb-tags"><span class="kb-tag">#data</span></div><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#7dd3fc">DA</span></span><span class="kb-updated">1d ago</span></div></button>
+              <button class="kb-card col-todo"><div class="kb-card-top"><span class="kb-id">TSK-126</span><span class="kb-column-state col-todo">Todo</span><span class="kb-substate native-ready">Ready</span></div><span class="kb-title-line"><span class="kb-prio-bar medium"></span><span class="kb-title-text">Summarize incident #4821 postmortem</span></span><p class="kb-card-desc">Timeline, root cause, follow-ups.</p><div class="kb-tags"><span class="kb-tag">#ops</span></div><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#f8d66d">ST</span></span><span class="kb-updated">1d ago</span></div></button>
+              <button class="kb-card col-todo"><div class="kb-card-top"><span class="kb-id">TSK-124</span><span class="kb-column-state col-todo">Todo</span><span class="kb-substate native-scheduled">Scheduled</span></div><span class="kb-title-line"><span class="kb-prio-bar low"></span><span class="kb-title-text">Weekly finance channel digest</span></span><p class="kb-card-desc">Auto-runs Mondays 09:00.</p><div class="kb-tags"><span class="kb-tag">#recurring</span></div><div class="kb-signal scheduled"><span class="mi" style="width:13px;height:13px">⏱</span><span>Next: Mon 09:00</span></div><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#34d399">RC</span></span><span class="kb-updated">2d ago</span></div></button>
+            </div>
+          </section>
+
+          <section class="kb-column col-running">
+            <div class="kb-column-head"><span class="kb-swatch"></span><strong>In Progress</strong><span class="kb-count">3</span></div>
+            <div class="kb-column-body">
+              <button class="kb-card col-running status-running"><div class="kb-card-top"><span class="kb-id">TSK-118</span><span class="kb-column-state col-running">Running</span><span class="kb-substate native-running">Running</span></div><span class="kb-title-line"><span class="kb-prio-bar high"></span><span class="kb-title-text">Review MSA redlines v4</span></span><p class="kb-card-desc">Contract Reviewer flagging risky clauses.</p><div class="kb-tags"><span class="kb-tag">#legal</span></div><div class="kb-progress"><div class="kb-progress-label"><span><span class="mi" style="width:12px;height:12px">⏱</span> Running</span><span>72%</span></div><div class="kb-track"><span style="width:72%"></span></div></div><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#34d399">CR</span></span><span class="kb-updated">20m ago</span></div></button>
+              <button class="kb-card col-running status-running"><div class="kb-card-top"><span class="kb-id">TSK-115</span><span class="kb-column-state col-running">Running</span><span class="kb-substate native-running">Running</span></div><span class="kb-title-line"><span class="kb-prio-bar medium"></span><span class="kb-title-text">Build spend baseline dashboard</span></span><p class="kb-card-desc">Last 4 quarters of invoices.</p><div class="kb-tags"><span class="kb-tag">#finance</span></div><div class="kb-progress"><div class="kb-progress-label"><span><span class="mi" style="width:12px;height:12px">⏱</span> Running</span><span>45%</span></div><div class="kb-track"><span style="width:45%"></span></div></div><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#7dd3fc">DA</span></span><span class="kb-updated">12m ago</span></div></button>
+              <button class="kb-card col-running status-blocked"><div class="kb-card-top"><span class="kb-id">TSK-112</span><span class="kb-column-state col-running">Running</span><span class="kb-substate native-blocked">Blocked</span></div><span class="kb-title-line"><span class="kb-prio-bar high"></span><span class="kb-title-text">Risk-score finalist vendors</span></span><p class="kb-card-desc">Cannot finish without SOC 2 report.</p><div class="kb-tags"><span class="kb-tag">#risk</span></div><div class="kb-signal blocked"><span class="mi" style="width:13px;height:13px">⚠</span><span>Waiting on vendor SOC 2 upload</span></div><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#34d399">RC</span></span><span class="kb-updated">1d ago</span></div></button>
+            </div>
+          </section>
+
+          <section class="kb-column col-done">
+            <div class="kb-column-head"><span class="kb-swatch"></span><strong>Done</strong><span class="kb-count">4</span></div>
+            <div class="kb-column-body">
+              <button class="kb-card col-done"><div class="kb-card-top"><span class="kb-id">TSK-104</span><span class="kb-column-state col-done">Done</span><span class="kb-substate native-done">Done</span></div><span class="kb-title-line"><span class="kb-prio-bar high"></span><span class="kb-title-text">Q3 supplier risk memo</span></span><div class="kb-signal done"><span class="mi" style="width:13px;height:13px">✓</span><span>Delivered to finance channel.</span></div><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#34d399">RC</span></span><span class="kb-updated">2d ago</span></div></button>
+              <button class="kb-card col-done"><div class="kb-card-top"><span class="kb-id">TSK-099</span><span class="kb-column-state col-done">Done</span><span class="kb-substate native-done">Done</span></div><span class="kb-title-line"><span class="kb-prio-bar medium"></span><span class="kb-title-text">Rewrite onboarding email</span></span><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#f8d66d">OB</span></span><span class="kb-updated">3d ago</span></div></button>
+              <button class="kb-card col-done"><div class="kb-card-top"><span class="kb-id">TSK-095</span><span class="kb-column-state col-done">Done</span><span class="kb-substate native-done">Done</span></div><span class="kb-title-line"><span class="kb-prio-bar low"></span><span class="kb-title-text">Vendor longlist compiled</span></span><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#7dd3fc">DA</span></span><span class="kb-updated">4d ago</span></div></button>
+              <button class="kb-card col-done"><div class="kb-card-top"><span class="kb-id">TSK-090</span><span class="kb-column-state col-done">Done</span><span class="kb-substate native-done">Done</span></div><span class="kb-title-line"><span class="kb-prio-bar medium"></span><span class="kb-title-text">Scoring rubric approved</span></span><div class="kb-card-foot"><span class="kb-assignees"><span class="kb-avatar" style="background:#34d399">RC</span></span><span class="kb-updated">6d ago</span></div></button>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="mock-caption">MOCKUP · Member <b>kanban</b> — the real localhost KanbanView (shipping <code>app.css</code>, real <code>kb-*</code> DOM: summary metrics, columns, priority bars, progress). Unchanged from localhost; the enterprise cross-account board is a separate admin feature.</div>
+</div>
+</body>
+</html>

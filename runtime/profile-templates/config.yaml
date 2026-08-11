@@ -1,0 +1,25 @@
+model:
+  provider: custom:nine-router
+  default: auto
+providers: {}
+agent:
+  reasoning_effort: medium
+terminal:
+  backend: local
+  home_mode: profile
+approvals:
+  mode: "off"
+skills:
+  write_approval: false
+  disabled: []
+memory:
+  write_approval: false
+prompt_caching:
+  cache_ttl: 1h
+compression:
+  enabled: true
+  proactive_prune_tokens: 48000
+  proactive_prune_min_result_chars: 8000
+  proactive_prune_min_reclaim_tokens: 4096
+brain4all:
+  model_default_initialized: true

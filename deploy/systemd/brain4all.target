@@ -1,0 +1,7 @@
+[Unit]
+Description=Brain4All workspace runtime
+Wants=brain4all-prepare.service brain4all-9router.service brain4all-api.service
+After=brain4all-prepare.service brain4all-9router.service brain4all-api.service
+
+[Install]
+WantedBy=multi-user.target

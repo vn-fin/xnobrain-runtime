@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Devices &amp; fleet — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a class="active" href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div><h1>Devices &amp; fleet</h1><p>Per-user runtimes — Incus containers and installed PCs — reporting over outbound TLS.</p></div>
+      <div style="display:flex;gap:10px"><button class="btn ghost">Provision container</button><button class="btn">Stage rollout</button></div>
+    </div>
+
+    <div class="cards">
+      <div class="card"><div class="lbl">Total devices</div><div class="val">31</div><div class="delta">18 Incus · 13 PC</div></div>
+      <div class="card"><div class="lbl">Online</div><div class="val">28</div><div class="delta up">reporting now</div></div>
+      <div class="card"><div class="lbl">Offline</div><div class="val">3</div><div class="delta down">outbox spooled</div></div>
+      <div class="card"><div class="lbl">Runtime version</div><div class="val mono">v0.9.4</div><div class="delta down">7 pending update</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>Fleet</h2><div class="spacer"></div>
+        <div class="ctrl"><span class="fake-select">kind: all ▾</span></div>
+        <div class="ctrl"><span class="fake-select">status: all ▾</span></div>
+      </div>
+      <table>
+        <thead><tr><th>Device</th><th>Owner</th><th>Kind</th><th>Status</th><th>Version</th><th>Last heartbeat</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr><td>mai-anh-box <br/><small class="mono" style="color:var(--muted-2)">dev_7c1a4e</small></td><td><div class="who"><span class="av">MA</span><div>Mai Anh</div></div></td><td><span class="chip">Incus</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>12s ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>duy-k-box <br/><small class="mono" style="color:var(--muted-2)">dev_9a02bd</small></td><td><div class="who"><span class="av">DK</span><div>Duy Khanh</div></div></td><td><span class="chip">Incus</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>30s ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>PHOA-DESK <br/><small class="mono" style="color:var(--muted-2)">dev_1f7c30</small></td><td><div class="who"><span class="av">PH</span><div>Phuong Hoa</div></div></td><td><span class="chip">PC</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>1m ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>ha-n-box <br/><small class="mono" style="color:var(--muted-2)">dev_44b8e1</small></td><td><div class="who"><span class="av">HN</span><div>Ha Nguyen</div></div></td><td><span class="chip">Incus</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>44s ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>MAI-LAPTOP <br/><small class="mono" style="color:var(--muted-2)">dev_2f9d18</small></td><td><div class="who"><span class="av">MA</span><div>Mai Anh</div></div></td><td><span class="chip">PC</span></td><td><span class="st offline"><span class="d"></span>Offline</span></td><td class="mono">v0.9.3</td><td>6h ago · catching up (outbox spooled)</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>qtrung-box <br/><small class="mono" style="color:var(--muted-2)">dev_88a0c2</small></td><td><div class="who"><span class="av">QT</span><div>Quang Trung</div></div></td><td><span class="chip">Incus</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>18s ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>VYT-LAPTOP <br/><small class="mono" style="color:var(--muted-2)">dev_c31be9</small></td><td><div class="who"><span class="av">VT</span><div>Vy Tran</div></div></td><td><span class="chip">PC</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>2m ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>lminh-box <br/><small class="mono" style="color:var(--muted-2)">dev_57d4a0</small></td><td><div class="who"><span class="av">LM</span><div>Le Minh</div></div></td><td><span class="chip">Incus</span></td><td><span class="st offline"><span class="d"></span>Offline</span></td><td class="mono">v0.9.3</td><td>3d ago · suspended member</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>QT-DESK <br/><small class="mono" style="color:var(--muted-2)">dev_0be271</small></td><td><div class="who"><span class="av">QT</span><div>Quang Trung</div></div></td><td><span class="chip">PC</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>55s ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>vt-box <br/><small class="mono" style="color:var(--muted-2)">dev_e19f77</small></td><td><div class="who"><span class="av">VT</span><div>Vy Tran</div></div></td><td><span class="chip">Incus</span></td><td><span class="st offline"><span class="d"></span>Offline</span></td><td class="mono">v0.9.4</td><td>40m ago · catching up (outbox spooled)</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>bchau-box <br/><small class="mono" style="color:var(--muted-2)">dev_3d70af</small></td><td><div class="who"><span class="av">BC</span><div>Bao Chau</div></div></td><td><span class="chip">Incus</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>22s ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>KNGAN-DESK <br/><small class="mono" style="color:var(--muted-2)">dev_6a12d4</small></td><td><div class="who"><span class="av">KN</span><div>Kim Ngan</div></div></td><td><span class="chip">PC</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>1m ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>npham-box <br/><small class="mono" style="color:var(--muted-2)">dev_b2e845</small></td><td><div class="who"><span class="av">NP</span><div>Nghia Pham</div></div></td><td><span class="chip">Incus</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.3</td><td>3m ago · update pending</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>NPHAM-LAPTOP <br/><small class="mono" style="color:var(--muted-2)">dev_f09c56</small></td><td><div class="who"><span class="av">NP</span><div>Nghia Pham</div></div></td><td><span class="chip">PC</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>4m ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>ldao-box <br/><small class="mono" style="color:var(--muted-2)">dev_7712bc</small></td><td><div class="who"><span class="av">LD</span><div>Linh Dao</div></div></td><td><span class="chip">Incus</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>2m ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+          <tr><td>tl-box <br/><small class="mono" style="color:var(--muted-2)">dev_a5c308</small></td><td><div class="who"><span class="av">TL</span><div>Thu Lan</div></div></td><td><span class="chip">Incus</span></td><td><span class="st online"><span class="d"></span>Online</span></td><td class="mono">v0.9.4</td><td>10s ago</td><td style="color:var(--muted-2)">⋯</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Rollout · v0.9.4</div>
+      <div style="padding:16px">
+        <div class="barcell" style="margin-bottom:10px"><span class="track" style="max-width:none"><i style="width:77%"></i></span><span class="mono" style="font-size:12px;color:var(--muted)">v0.9.4 — 24/31 devices</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <span class="chip">canary 10% ✓</span>
+          <span class="chip">stable ring rolling</span>
+          <span class="chip">5 draining</span>
+          <span class="chip add">2 offline — apply on reconnect</span>
+        </div>
+        <span class="hint">Staged updates use <b>drain-then-replace</b>: a device is drained (finishes in-flight work, flushes its outbox) before its runtime is replaced, so no usage snapshots are lost. All commands are delivered over the device's <b>outbound-only</b> connection (device-command-v1) — the control plane never opens an inbound connection to a member's machine.</span>
+      </div>
+    </div>
+
+    <div class="acaption">MOCKUP · Admin <b>Devices &amp; fleet</b> — Incus containers (org-managed) and installed PCs in one fleet, outbound TLS heartbeats, staged rollouts, drain-then-replace. Offline devices spool an outbox and reconcile on reconnect.</div>
+  </main>
+</div>
+</body>
+</html>

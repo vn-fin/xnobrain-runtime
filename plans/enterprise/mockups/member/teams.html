@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Member · Teams — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/app.css" />
+<link rel="stylesheet" href="../assets/ent.css" />
+<style>.mi{display:inline-grid;place-items:center;width:18px;height:18px;opacity:.85;font-size:15px;line-height:1;}</style>
+</head>
+<body>
+<div class="ent-shell">
+  <div class="ent-strip">
+    <span class="org"><span class="logo">N</span> Nimbus Robotics</span>
+    <span class="pill plan">Enterprise</span>
+    <span class="pill">Region: eu-central</span>
+    <span class="spacer"></span>
+    <span class="budget"><span>Org budget</span><span class="ebar"><i style="width:62%"></i></span><span>$310 / $500</span></span>
+    <span class="who"><span class="avatar">MA</span><span>Mai Anh · Member</span></span>
+  </div>
+
+  <div class="app no-right">
+    <aside class="left-panel">
+      <div class="brand"><span>Brain4All</span><button class="icon-button" title="Toggle sidebar"><span class="mi">‹‹</span></button></div>
+      <nav class="main-nav">
+        <a class="nav-row" href="kanban.html"><span class="mi">▦</span><span>Kanban</span></a>
+        <a class="nav-row active" href="teams.html"><span class="mi">◑</span><span>Teams</span></a>
+        <a class="nav-row" href="analytics.html"><span class="mi">▤</span><span>Analytics</span></a>
+        <a class="nav-row" href="settings.html"><span class="mi">⚙</span><span>Settings</span></a>
+      </nav>
+      <div class="history-section">
+        <div class="section-title agents-title"><span>Assistants</span><span class="agents-title-actions"><button class="icon-button"><span class="mi">⌕</span></button><button class="icon-button"><span class="mi">＋</span></button></span></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Research Copilot</strong><small>hermes-4-70b · blend: fast</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Contract Reviewer</strong><small>hermes-4-405b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot" style="background:var(--yellow)"></span><span><strong>Support Triage</strong><small>hermes-4-70b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>Data Analyst</strong><small>hermes-4-405b · blend: balanced</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="agent-row"><button class="agent-row-main"><span class="status-dot"></span><span><strong>QA Reviewer</strong><small>hermes-4-405b</small></span></button><button class="agent-row-more"><span class="mi">⋯</span></button></div>
+        <div class="section-title recent-title"><span class="mi">⟳</span> Recent</div>
+        <div class="history-row"><button class="history-row-main">Q3 supplier risk memo</button></div>
+        <div class="history-row"><button class="history-row-main">Vendor diligence sweep</button></div>
+      </div>
+      <div class="left-footer">
+        <div class="theme-switcher" role="group"><button class="active"><span class="mi">☀</span></button><button><span class="mi">☾</span></button><button><span class="mi">▣</span></button></div>
+        <div class="lang-switcher"><span class="mi">🌐</span><select><option>English</option><option>Tiếng Việt</option></select></div>
+      </div>
+    </aside>
+
+    <main class="chat-area sandbox-mode">
+      <section class="teams-view">
+        <header class="teams-header">
+          <div>
+            <span class="eyebrow">Hermes multi-agent workflows</span>
+            <h1><span class="mi" style="width:24px;height:24px;font-size:20px">◑</span> Agent teams</h1>
+            <p>Run specialized profiles in parallel or as a dependency-aware workflow, then synthesize their results.</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="ent-tag">Same as localhost</span>
+            <button class="icon-button" aria-label="Close teams"><span class="mi">✕</span></button>
+          </div>
+        </header>
+
+        <div class="teams-grid">
+          <div class="teams-card">
+            <h2>Create team</h2>
+            <label>Team name<input type="text" value="Vendor diligence" /></label>
+            <label>Orchestrator<select><option>Research Copilot</option><option>Data Analyst</option></select></label>
+            <label>Add worker<select><option>Contract Reviewer</option><option>QA Reviewer</option><option>Data Analyst</option></select></label>
+            <button class="conn-btn ghost"><span class="mi" style="width:15px;height:15px">＋</span> Add worker</button>
+            <div class="team-policy">Contract Reviewer · reviewer <button class="icon-button"><span class="mi" style="width:13px;height:13px">✕</span></button></div>
+            <div class="team-policy">Data Analyst · researcher <button class="icon-button"><span class="mi" style="width:13px;height:13px">✕</span></button></div>
+            <div class="team-policy">Toolset: web · Parallel: 2 · Shared memory writes: blocked</div>
+            <button class="primary-button"><span class="mi" style="width:16px;height:16px">＋</span> Create</button>
+          </div>
+
+          <div class="teams-card team-list-card">
+            <h2>Saved teams <span>1/1</span></h2>
+            <button class="team-row active">Vendor diligence · 3 members</button>
+            <div class="team-run">
+              <label>Task<textarea placeholder="Investigate and summarize…">Diligence the 3 finalist vendors: contracts, risk, references. Synthesize a recommendation.</textarea></label>
+              <label>Workflow DAG <small>optional JSON</small><textarea>[{"id":"research","task":"Research each vendor","role":"researcher"},{"id":"review","task":"Review contracts","role":"reviewer","needs":["research"]}]</textarea></label>
+              <button class="primary-button"><span class="mi" style="width:16px;height:16px">▶</span> Run (async)</button>
+            </div>
+          </div>
+
+          <div class="teams-card team-runs">
+            <h2>Runs <span>6</span></h2>
+            <div class="run-history">
+              <button class="run-row active"><span class="run-id">a7f3c9d2</span><span class="run-status done">done</span></button>
+              <button class="run-row"><span class="run-id">b1e88a04</span><span class="run-status running">running</span></button>
+              <button class="run-row"><span class="run-id">c4d20f7a</span><span class="run-status done">done</span></button>
+              <button class="run-row"><span class="run-id">d9a1b6e5</span><span class="run-status cancelled">cancelled</span></button>
+              <button class="run-row"><span class="run-id">e2c7f0aa</span><span class="run-status failed">failed</span></button>
+              <button class="run-row"><span class="run-id">f5b3d81c</span><span class="run-status done">done</span></button>
+            </div>
+            <div class="run-detail">
+              <div class="run-detail-head"><span class="run-id">a7f3c9d2</span><button class="conn-btn ghost">Cancel</button></div>
+              <div class="run-chips">
+                <span class="kb-tag">3 workers</span><span class="kb-tag">parallel</span><span class="kb-tag">web</span><span class="kb-tag">42s</span><span class="kb-tag">18.4k tok</span><span class="kb-tag">$0.31</span>
+              </div>
+              <div class="team-result"><h3>Orchestrator summary</h3><p>All three finalists cleared compliance. Vendor B has the strongest SLA and lowest 3-year TCO but a concentration risk; Vendor A is safest but 11% costlier. Recommendation: shortlist B primary, A backup, and renegotiate B's termination clause flagged by Contract Reviewer.</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="mock-caption">MOCKUP · Member <b>teams</b> — the real localhost TeamsView (shipping <code>app.css</code>, real <code>teams-*</code> DOM). Unchanged from localhost; cross-account team coordination lives in the admin console.</div>
+</div>
+</body>
+</html>

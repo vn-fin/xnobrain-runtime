@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin · Roles &amp; authentication — Brain4All Enterprise (mockup)</title>
+<link rel="stylesheet" href="../assets/mockup.css" />
+</head>
+<body>
+<div class="aapp">
+  <div class="atop">
+    <div class="logo">B</div><div class="brand">Brain4All</div><span class="crumb">Enterprise · Admin</span>
+    <div class="org-switch"><span class="logo">N</span> Nimbus Robotics <span style="color:var(--muted-2)">▾</span></div>
+    <div class="spacer"></div>
+    <span class="env">● self-hosted · eu-central</span>
+    <div class="admin"><span class="avatar">TL</span><span>Thu Lan</span><span class="role-pill">org_admin</span></div>
+  </div>
+
+  <nav class="aside-nav">
+    <div class="navgrp">Organization</div>
+    <a href="overview.html"><span class="ic">▤</span> Overview</a>
+    <a href="members.html"><span class="ic">👤</span> Members <span class="badge">24</span></a>
+    <a href="members.html"><span class="ic">✉</span> Invitations <span class="badge">3</span></a>
+    <div class="navgrp">Workspaces · view-only</div>
+    <a href="agents.html"><span class="ic">🤖</span> Agents <span class="badge">63</span></a>
+    <a href="kanban.html"><span class="ic">▦</span> Kanban</a>
+    <a href="teams.html"><span class="ic">◑</span> Teams</a>
+    <div class="navgrp">Coordination · managed</div>
+    <a href="enterprise-kanban.html"><span class="ic">🗂</span> Enterprise boards <span class="badge">4</span></a>
+    <div class="navgrp">Accounting</div>
+    <a href="usage.html"><span class="ic">📊</span> Usage &amp; cost</a>
+    <a href="usage.html"><span class="ic">💳</span> Budgets</a>
+    <div class="navgrp">Fleet</div>
+    <a href="devices.html"><span class="ic">🖥</span> Devices <span class="badge">31</span></a>
+    <a href="voice.html"><span class="ic">🎙</span> Voice</a>
+    <div class="navgrp">Governance</div>
+    <a class="active" href="roles-auth.html"><span class="ic">🔑</span> Roles &amp; Auth</a>
+    <a href="roles-auth.html"><span class="ic">🛡</span> Model policy</a>
+    <a href="audit.html"><span class="ic">📜</span> Audit log</a>
+    <div class="grow"></div>
+    <div class="foot">Control plane v0.4 · Postgres OK<br/>Auth: Okta OIDC + local</div>
+  </nav>
+
+  <main class="amain">
+    <div class="page-head">
+      <div><h1>Roles &amp; authentication</h1><p>Pluggable auth. Roles defined in versioned config, assignments in the database.</p></div>
+      <div style="display:flex;gap:10px"><button class="btn ghost">Reload from disk</button><button class="btn">View permission catalog</button></div>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Auth backends</div>
+      <table>
+        <thead><tr><th>Backend</th><th>Kind</th><th>Status</th><th>Self-signup</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Okta</td><td>OIDC</td><td><span class="st online"><span class="d"></span>Connected</span></td><td class="mono">false</td><td>SCIM provisioning · group→role sync</td></tr>
+          <tr><td>Local</td><td>argon2id · break-glass</td><td><span class="st active"><span class="d"></span>Enabled</span></td><td class="mono">false</td><td>Emergency admin; also the air-gapped backend</td></tr>
+          <tr><td>LDAP</td><td>directory bind</td><td><span class="st suspended"><span class="d"></span>Disabled</span></td><td class="mono">—</td><td>Available; not configured</td></tr>
+        </tbody>
+      </table>
+      <div style="padding:12px 16px"><span class="hint">Self-hosted note: the same auth service is swappable — local accounts, OIDC/SAML SSO, LDAP, or a custom org auth service. A firm running air-gapped uses the local backend with zero external egress.</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Roles &amp; auth · defined in auth.yaml (versioned, hot-reload)</div>
+      <div class="yaml">
+<pre class="code"><span class="c"># auth.yaml — versioned in Git, hot-reloaded by the control plane</span>
+<span class="k">auth</span>:
+  <span class="k">backends</span>:
+    - <span class="k">kind</span>: <span class="s">oidc</span>          <span class="c"># Okta</span>
+      <span class="k">issuer</span>: <span class="s">"https://nimbus.okta.com"</span>
+      <span class="k">scim</span>: <span class="n">true</span>
+    - <span class="k">kind</span>: <span class="s">local</span>         <span class="c"># argon2id · break-glass admin · air-gapped</span>
+      <span class="k">enabled</span>: <span class="n">true</span>
+
+<span class="k">roles</span>:
+  <span class="k">org_admin</span>:                  <span class="c"># full management + read-all</span>
+    - <span class="s">members.*</span>
+    - <span class="s">policies.write</span>
+    - <span class="s">devices.manage</span>
+    - <span class="s">voice.manage</span>
+    - <span class="s">usage.read_org</span>
+    - <span class="s">audit.read</span>
+  <span class="k">org_manager</span>:                <span class="c"># read-all oversight, no member management</span>
+    - <span class="s">usage.read_org</span>
+    - <span class="s">devices.read</span>
+    - <span class="s">audit.read</span>
+  <span class="k">member</span>:                     <span class="c"># self-scope only</span>
+    - <span class="s">usage.read_self</span>
+  <span class="k">auditor</span>:                    <span class="c"># audit read only</span>
+    - <span class="s">audit.read</span>
+
+<span class="k">group_mappings</span>:               <span class="c"># IdP group → role</span>
+  <span class="s">"nimbus-it-admins"</span>: <span class="k">org_admin</span>
+  <span class="s">"nimbus-eng-leads"</span>: <span class="k">org_manager</span>
+  <span class="s">"nimbus-eng"</span>:        <span class="k">member</span>
+
+<span class="k">provisioning</span>:
+  <span class="k">scim</span>: <span class="n">true</span>
+  <span class="k">self_signup</span>: <span class="n">false</span>       <span class="c"># org-created accounts only</span></pre>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Roles</div>
+      <table>
+        <thead><tr><th>Role</th><th>Members</th><th>Key permissions</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td><span class="rp admin">org_admin</span></td><td>2</td><td class="mono" style="font-size:12px">members.*, policies.write, devices.manage, voice.manage, usage.read_org, audit.read</td><td class="mono" style="color:var(--muted-2)">auth.yaml</td></tr>
+          <tr><td><span class="rp manager">org_manager</span></td><td>3</td><td class="mono" style="font-size:12px">usage.read_org, devices.read, audit.read <span style="color:var(--muted-2)">— read-all, no member mgmt</span></td><td class="mono" style="color:var(--muted-2)">auth.yaml</td></tr>
+          <tr><td><span class="rp member">member</span></td><td>18</td><td class="mono" style="font-size:12px">usage.read_self <span style="color:var(--muted-2)">— self-scope</span></td><td class="mono" style="color:var(--muted-2)">auth.yaml</td></tr>
+          <tr><td><span class="rp auditor">auditor</span></td><td>1</td><td class="mono" style="font-size:12px">audit.read</td><td class="mono" style="color:var(--muted-2)">auth.yaml</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="sub">Permission catalog</div>
+      <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px 32px">
+        <div><code class="mono" style="color:var(--blue)">members.read</code><br/><span class="hint">List members and view their profiles.</span></div>
+        <div><code class="mono" style="color:var(--blue)">members.invite</code><br/><span class="hint">Send invitations and import accounts (CSV / SCIM).</span></div>
+        <div><code class="mono" style="color:var(--blue)">members.assign_role</code><br/><span class="hint">Change a member's role assignment.</span></div>
+        <div><code class="mono" style="color:var(--blue)">members.suspend</code><br/><span class="hint">Suspend or deprovision a member; revokes within token TTL.</span></div>
+        <div><code class="mono" style="color:var(--blue)">usage.read_org</code><br/><span class="hint">Read usage &amp; cost across every member in the org.</span></div>
+        <div><code class="mono" style="color:var(--blue)">usage.read_self</code><br/><span class="hint">Read only the signed-in member's own usage.</span></div>
+        <div><code class="mono" style="color:var(--blue)">usage.export</code><br/><span class="hint">Export usage/cost CSV; scheduled reports.</span></div>
+        <div><code class="mono" style="color:var(--blue)">devices.read</code><br/><span class="hint">View the fleet: devices, versions, heartbeats.</span></div>
+        <div><code class="mono" style="color:var(--blue)">devices.manage</code><br/><span class="hint">Provision, drain, restart, roll out runtime versions.</span></div>
+        <div><code class="mono" style="color:var(--blue)">policies.read</code><br/><span class="hint">View model allowlists and capability policy.</span></div>
+        <div><code class="mono" style="color:var(--blue)">policies.write</code><br/><span class="hint">Edit model allowlists and capability policy.</span></div>
+        <div><code class="mono" style="color:var(--blue)">audit.read</code><br/><span class="hint">Read the append-only audit log.</span></div>
+        <div><code class="mono" style="color:var(--blue)">audit.export</code><br/><span class="hint">Export audit evidence; stream to SIEM (follow-on).</span></div>
+        <div><code class="mono" style="color:var(--blue)">voice.manage</code><br/><span class="hint">Configure the voice gateway and org provider keys.</span></div>
+      </div>
+    </div>
+
+    <div class="panel" style="padding:14px 16px">
+      <span class="hint">This config-file-first design is exactly what lets the same control plane run <b>self-hosted</b> (including air-gapped with the local backend and zero external egress) or on our <b>managed cloud</b> — an ops team defines roles/permissions in versioned YAML without touching a database console.</span>
+    </div>
+
+    <div class="acaption">MOCKUP · Admin <b>Roles &amp; auth</b> — pluggable backends (OIDC / local / LDAP), config-file RBAC (roles in auth.yaml, assignments in Postgres), org_admin ⊇ management, org_manager = read-all oversight, member = self-scope, auditor = audit read.</div>
+  </main>
+</div>
+</body>
+</html>

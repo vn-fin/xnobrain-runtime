@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Twin Terminal · Dòng chảy toàn hệ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#ECEEE9; --surface:#F8F9F6; --ink:#17211F; --ink-soft:#4A5551; --muted:#7C857F;
+    --line:#C6CCC1; --petrol:#2B4A44; --brass-line:#D9C88F; --brass-strong:#7A6017;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:linear-gradient(180deg,#F1F3EE,var(--paper) 45%); color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif; -webkit-font-smoothing:antialiased}
+  .wrap{max-width:900px; margin:0 auto; padding:26px 16px 56px}
+  .brandrow{display:flex; align-items:baseline; justify-content:space-between; margin:0 4px 14px}
+  .brand{font-family:'Spectral',serif; font-weight:600; font-size:19px}
+  .brand small{font-family:'Inter',sans-serif; font-weight:500; font-size:11px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; margin-left:8px}
+  .note{font-size:12px; color:var(--muted)}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:12px 10px 6px;
+    box-shadow:0 20px 52px -32px rgba(23,33,31,.42)}
+  svg{width:100%; height:auto; display:block}
+  .cap{font-size:13px; line-height:1.65; color:var(--ink-soft); margin:16px 6px 0}
+  .cap b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brandrow">
+    <div class="brand">Twin Terminal <small>Dòng chảy toàn hệ</small></div>
+    <div class="note">đồng hồ cát · một nút thắt</div>
+  </div>
+
+  <div class="card">
+  <svg viewBox="0 0 880 646" role="img" aria-labelledby="nt nd">
+    <title id="nt">Dòng chảy của twin qua terminal — sơ đồ đồng hồ cát</title>
+    <desc id="nd">Chuyên gia từ nhiều ngành và nhiều nước hội tụ vào bên trái, mọi thứ đi qua terminal ở giữa gồm xưởng dạy nghề, cổng kiểm định, kệ, runtime và hội đồng, lớp thương mại, theo dõi trôi dạt; rồi toả ra bên phải tới khách hàng nhiều ngành nhiều nước. Vòng sống ở dưới mang log dùng thật về đo trôi dạt và tái kiểm định, đồng thời chảy royalty về chuyên gia.</desc>
+    <defs>
+      <marker id="n1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+        <path d="M1 1L8 5L1 9" fill="none" stroke="#4A5551" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+      <marker id="n2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+        <path d="M1 1L8 5L1 9" fill="none" stroke="#8F7320" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+
+    <!-- header -->
+    <text x="14" y="24" font-family="Spectral,serif" font-size="17" font-weight="600" fill="#17211F">Twin chảy từ chuyên gia khắp nơi → qua terminal → tới khách khắp nơi</text>
+    <text x="14" y="44" font-size="11" fill="#7C857F">Hình đồng hồ cát: nhiều-tới-nhiều, nhưng mọi thứ phải đi qua một nút thắt duy nhất — đó là vị thế cần giành.</text>
+
+    <!-- zone labels -->
+    <text x="138" y="72" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="9.5" letter-spacing=".08em" fill="#7A6017">PHÍA CUNG · CHUYÊN GIA</text>
+    <text x="440" y="72" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="9.5" letter-spacing=".08em" fill="#2B4A44">TERMINAL · NÚT THẮT</text>
+    <text x="742" y="72" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="9.5" letter-spacing=".08em" fill="#7C857F">PHÍA CẦU · KHÁCH</text>
+
+    <!-- zones -->
+    <rect x="14" y="82" width="248" height="250" rx="14" fill="#EFE7CE" opacity=".5"/>
+    <rect x="294" y="82" width="292" height="396" rx="14" fill="#E4EBE7"/>
+    <rect x="618" y="82" width="248" height="250" rx="14" fill="#F1F3ED"/>
+
+    <!-- ===== LEFT: experts ===== -->
+    <g>
+      <rect x="26" y="96" width="224" height="42" rx="9" fill="#F8F9F6" stroke="#D9C88F"/>
+      <text x="38" y="114" font-size="11.5" font-weight="600" fill="#17211F">Tài chính · VN</text>
+      <text x="38" y="129" font-size="9.5" fill="#4A5551">phán đoán cổ phiếu thép</text>
+
+      <rect x="26" y="146" width="224" height="42" rx="9" fill="#F8F9F6" stroke="#D9C88F"/>
+      <text x="38" y="164" font-size="11.5" font-weight="600" fill="#17211F">Tài chính · SG</text>
+      <text x="38" y="179" font-size="9.5" fill="#4A5551">vĩ mô khu vực</text>
+
+      <rect x="26" y="196" width="224" height="42" rx="9" fill="#F8F9F6" stroke="#D9C88F"/>
+      <text x="38" y="214" font-size="11.5" font-weight="600" fill="#17211F">Y tế · JP</text>
+      <text x="38" y="229" font-size="9.5" fill="#4A5551">đọc ảnh chẩn đoán</text>
+
+      <rect x="26" y="246" width="224" height="42" rx="9" fill="#F8F9F6" stroke="#D9C88F"/>
+      <text x="38" y="264" font-size="11.5" font-weight="600" fill="#17211F">Pháp lý · US</text>
+      <text x="38" y="279" font-size="9.5" fill="#4A5551">cấu trúc thương vụ M&amp;A</text>
+
+      <text x="138" y="308" text-anchor="middle" font-size="9.5" font-style="italic" fill="#7C857F">… mọi ngành, mọi nước</text>
+      <text x="138" y="323" text-anchor="middle" font-size="9" fill="#7A6017">dạy nghề: miễn phí</text>
+    </g>
+
+    <!-- ===== CENTER: terminal column ===== -->
+    <g>
+      <rect x="310" y="96" width="260" height="48" rx="10" fill="#F8F9F6" stroke="#C6CCC1"/>
+      <text x="440" y="116" text-anchor="middle" font-family="Spectral,serif" font-size="13" font-weight="600" fill="#17211F">Xưởng dạy nghề</text>
+      <text x="440" y="133" text-anchor="middle" font-size="9.5" fill="#4A5551">nháp–sửa–vì sao · đối chiếu ca · sổ nghề</text>
+
+      <rect x="310" y="158" width="260" height="54" rx="10" fill="#F8F9F6" stroke="#8F7320" stroke-width="2"/>
+      <text x="440" y="177" text-anchor="middle" font-family="Spectral,serif" font-size="13" font-weight="600" fill="#17211F">Cổng kiểm định</text>
+      <text x="440" y="191" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="8.5" letter-spacing=".06em" fill="#8F7320">★ LÕI — TRƯỢT THÌ KHÔNG LÊN KỆ</text>
+      <text x="440" y="205" text-anchor="middle" font-size="9.5" fill="#4A5551">xuất xứ người thật · độ trung thành · độ ổn định</text>
+
+      <rect x="310" y="226" width="260" height="48" rx="10" fill="#F8F9F6" stroke="#C6CCC1"/>
+      <text x="440" y="246" text-anchor="middle" font-family="Spectral,serif" font-size="13" font-weight="600" fill="#17211F">Kệ · Registry</text>
+      <text x="440" y="263" text-anchor="middle" font-size="9.5" fill="#4A5551">huy hiệu có hạn dùng · vùng phủ công khai</text>
+
+      <rect x="310" y="288" width="260" height="54" rx="10" fill="#F8F9F6" stroke="#C6CCC1"/>
+      <text x="440" y="307" text-anchor="middle" font-family="Spectral,serif" font-size="13" font-weight="600" fill="#17211F">Runtime + Hội đồng</text>
+      <text x="440" y="322" text-anchor="middle" font-size="9.5" fill="#4A5551">cài một chạm · chạy trên dữ liệu khách</text>
+      <text x="440" y="335" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2B4A44">một câu hỏi → ghép twin VN + SG + US</text>
+
+      <rect x="310" y="356" width="260" height="48" rx="10" fill="#F8F9F6" stroke="#C6CCC1"/>
+      <text x="440" y="376" text-anchor="middle" font-family="Spectral,serif" font-size="13" font-weight="600" fill="#17211F">Lớp thương mại</text>
+      <text x="440" y="393" text-anchor="middle" font-size="9.5" fill="#4A5551">phân quyền · đo mức dùng · lineage &amp; royalty</text>
+
+      <rect x="310" y="418" width="260" height="44" rx="10" fill="#F1F3ED" stroke="#C6CCC1" stroke-dasharray="4 3"/>
+      <text x="440" y="436" text-anchor="middle" font-size="11.5" font-weight="600" fill="#17211F">Theo dõi trôi dạt</text>
+      <text x="440" y="452" text-anchor="middle" font-size="9.5" fill="#4A5551">craft hỏng theo thời gian → hạ cờ, gọi tái kiểm</text>
+    </g>
+
+    <!-- ===== RIGHT: customers ===== -->
+    <g>
+      <rect x="630" y="96" width="224" height="42" rx="9" fill="#F8F9F6" stroke="#C6CCC1"/>
+      <text x="642" y="114" font-size="11.5" font-weight="600" fill="#17211F">CTCK · VN</text>
+      <text x="642" y="129" font-size="9.5" fill="#4A5551">môi giới → nhà đầu tư</text>
+
+      <rect x="630" y="146" width="224" height="42" rx="9" fill="#F8F9F6" stroke="#C6CCC1"/>
+      <text x="642" y="164" font-size="11.5" font-weight="600" fill="#17211F">Quỹ · SG</text>
+      <text x="642" y="179" font-size="9.5" fill="#4A5551">PM → nhà đầu tư tổ chức</text>
+
+      <rect x="630" y="196" width="224" height="42" rx="9" fill="#F8F9F6" stroke="#C6CCC1"/>
+      <text x="642" y="214" font-size="11.5" font-weight="600" fill="#17211F">Bệnh viện · JP</text>
+      <text x="642" y="229" font-size="9.5" fill="#4A5551">bác sĩ → bệnh nhân</text>
+
+      <rect x="630" y="246" width="224" height="42" rx="9" fill="#F8F9F6" stroke="#C6CCC1"/>
+      <text x="642" y="264" font-size="11.5" font-weight="600" fill="#17211F">Hãng luật · US</text>
+      <text x="642" y="279" font-size="9.5" fill="#4A5551">luật sư → doanh nghiệp</text>
+
+      <text x="742" y="308" text-anchor="middle" font-size="9.5" font-style="italic" fill="#7C857F">… mọi ngành, mọi nước</text>
+      <text x="742" y="323" text-anchor="middle" font-size="9" fill="#4A5551">trả: phí ghế + phí twin đã cài</text>
+    </g>
+
+    <!-- fan-in arrows -->
+    <line x1="254" y1="117" x2="306" y2="112" stroke="#4A5551" stroke-width="1.4" marker-end="url(#n1)"/>
+    <line x1="254" y1="167" x2="306" y2="118" stroke="#4A5551" stroke-width="1.4" marker-end="url(#n1)"/>
+    <line x1="254" y1="217" x2="306" y2="124" stroke="#4A5551" stroke-width="1.4" marker-end="url(#n1)"/>
+    <line x1="254" y1="267" x2="306" y2="130" stroke="#4A5551" stroke-width="1.4" marker-end="url(#n1)"/>
+
+    <!-- column arrows -->
+    <line x1="440" y1="144" x2="440" y2="155" stroke="#4A5551" stroke-width="1.5" marker-end="url(#n1)"/>
+    <line x1="440" y1="212" x2="440" y2="223" stroke="#4A5551" stroke-width="1.5" marker-end="url(#n1)"/>
+    <line x1="440" y1="274" x2="440" y2="285" stroke="#4A5551" stroke-width="1.5" marker-end="url(#n1)"/>
+    <line x1="440" y1="342" x2="440" y2="353" stroke="#4A5551" stroke-width="1.5" marker-end="url(#n1)"/>
+    <line x1="440" y1="404" x2="440" y2="415" stroke="#4A5551" stroke-width="1.5" marker-end="url(#n1)"/>
+
+    <!-- re-certification loop up the left of column -->
+    <path d="M310 440 L288 440 Q278 440 278 428 L278 197 Q278 185 290 185 L306 185"
+          fill="none" stroke="#8F7320" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#n2)"/>
+    <text transform="translate(272,318) rotate(-90)" text-anchor="middle" font-size="9" fill="#7A6017">tái kiểm định</text>
+
+    <!-- fan-out arrows -->
+    <line x1="574" y1="309" x2="626" y2="120" stroke="#4A5551" stroke-width="1.4" marker-end="url(#n1)"/>
+    <line x1="574" y1="312" x2="626" y2="170" stroke="#4A5551" stroke-width="1.4" marker-end="url(#n1)"/>
+    <line x1="574" y1="316" x2="626" y2="220" stroke="#4A5551" stroke-width="1.4" marker-end="url(#n1)"/>
+    <line x1="574" y1="320" x2="626" y2="270" stroke="#4A5551" stroke-width="1.4" marker-end="url(#n1)"/>
+
+    <!-- rented infra -->
+    <text x="440" y="490" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="9" letter-spacing=".08em" fill="#7C857F">HẠ TẦNG ĐI MƯỢN — KHÔNG XÂY</text>
+    <g font-size="9.5" fill="#4A5551">
+      <rect x="300" y="498" width="88" height="22" rx="7" fill="#F4F6F1" stroke="#C6CCC1"/><text x="344" y="513" text-anchor="middle">Model nền</text>
+      <rect x="396" y="498" width="88" height="22" rx="7" fill="#F4F6F1" stroke="#C6CCC1"/><text x="440" y="513" text-anchor="middle">MCP / A2A</text>
+      <rect x="492" y="498" width="88" height="22" rx="7" fill="#F4F6F1" stroke="#C6CCC1"/><text x="536" y="513" text-anchor="middle">Dữ liệu khách</text>
+    </g>
+
+    <!-- honest nodes -->
+    <rect x="26" y="418" width="180" height="58" rx="10" fill="#F0E1DD" stroke="#A24B3B" stroke-dasharray="4 3"/>
+    <text x="38" y="436" font-size="10.5" font-weight="600" fill="#A24B3B">Tổ chức chủ quản</text>
+    <text x="38" y="450" font-size="9" fill="#4A5551">Sở hữu craft? Ai bấm export?</text>
+    <text x="38" y="463" font-size="9" fill="#4A5551">— điều khoản phải chốt trước</text>
+
+    <rect x="674" y="418" width="180" height="58" rx="10" fill="#F0E1DD" stroke="#A24B3B" stroke-dasharray="4 3"/>
+    <text x="686" y="436" font-size="10.5" font-weight="600" fill="#A24B3B">Cơ quan quản lý</text>
+    <text x="686" y="450" font-size="9" fill="#4A5551">Giấy phép &amp; trách nhiệm nằm ở</text>
+    <text x="686" y="463" font-size="9" fill="#4A5551">tổ chức khách — không ở terminal</text>
+
+    <!-- living loop band -->
+    <rect x="26" y="548" width="828" height="52" rx="12" fill="#EFE7CE" stroke="#D9C88F" stroke-dasharray="5 4"/>
+    <text x="44" y="570" font-family="'IBM Plex Mono',monospace" font-size="9" letter-spacing=".08em" fill="#7A6017">VÒNG SỐNG</text>
+    <text x="44" y="588" font-size="11" fill="#4A5551">log dùng thật → đo trôi dạt → tái kiểm định huy hiệu &nbsp;·&nbsp; <tspan font-weight="600" fill="#17211F">royalty</tspan> chảy về chuyên gia &amp; tổ chức chủ quản &nbsp;·&nbsp; ca khó quay về nuôi vòng dạy</text>
+
+    <line x1="660" y1="338" x2="660" y2="544" stroke="#8F7320" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#n2)"/>
+    <line x1="220" y1="544" x2="220" y2="338" stroke="#8F7320" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#n2)"/>
+    <line x1="440" y1="544" x2="440" y2="470" stroke="#8F7320" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#n2)"/>
+    <text x="668" y="404" font-size="9" fill="#7A6017">log dùng</text>
+    <text x="228" y="404" font-size="9" fill="#7A6017">royalty</text>
+
+    <text x="14" y="624" font-size="10" font-style="italic" fill="#7C857F">Chuyên gia không bao giờ cầm cỗ máy — twin chạy trên terminal, nên mọi lượt dùng đều đếm được và mọi huy hiệu đều đo được.</text>
+  </svg>
+  </div>
+
+  <p class="cap"><b>Đọc theo hình đồng hồ cát.</b> Hai đầu rộng — chuyên gia mọi ngành mọi nước ở trái, khách mọi ngành mọi nước ở phải. Giữa là <b>một nút thắt duy nhất</b>, và giành được nút thắt đó chính là toàn bộ chiến lược. Trong nút thắt, <b>cổng kiểm định</b> là thứ duy nhất chưa ai làm: nó chỉ đo <i>bản sao có trung thành với người gốc không</i> — việc không cần biết ngành — nên cùng một cỗ máy dùng được cho analyst thép, bác sĩ, hay luật sư.</p>
+  <p class="cap"><b>Ba dòng chảy ngược</b> ở dải dưới mới là thứ giữ hệ sống: log dùng thật quay về đo trôi dạt và gọi tái kiểm định (craft tài chính hỏng theo thời gian), royalty chảy về chuyên gia và tổ chức chủ quản, ca khó quay về nuôi vòng dạy. Hai ô viền đỏ là hai câu chưa trả lời — <b>ai sở hữu craft</b> phía cung, và <b>giấy phép nằm ở đâu</b> phía cầu.</p>
+</div>
+</body>
+</html>

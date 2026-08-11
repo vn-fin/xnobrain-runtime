@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "installer",
+  "description": "Least-privilege capability for the Docker Web installer window",
+  "windows": ["installer"],
+  "permissions": ["core:default"]
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": 3,
+  "release": "0.1.0-test",
+  "default_host_port": 5152,
+  "minimum_disk_bytes": 8589934592,
+  "health_path": "/api/brain/v1/health",
+  "health_timeout_seconds": 180,
+  "web_build": {
+    "api_base_url": "https://public.dev.xno.vn",
+    "auth_base_url": "https://public.dev.xno.vn",
+    "brain_control_base_url": "https://public.dev.xno.vn",
+    "auth_mode": "required",
+    "auth_provider": "xno-firebase",
+    "firebase_api_key_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "docker_installers": {
+    "windows_amd64": { "url": "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe", "sha256": "3333333333333333333333333333333333333333333333333333333333333333" },
+    "macos_arm64": { "url": "https://desktop.docker.com/mac/main/arm64/Docker.dmg", "sha256": "4444444444444444444444444444444444444444444444444444444444444444" },
+    "macos_amd64": { "url": "https://desktop.docker.com/mac/main/amd64/Docker.dmg", "sha256": "5555555555555555555555555555555555555555555555555555555555555555" }
+  },
+  "images": {
+    "traefik": { "reference": "traefik@sha256:f79c88ed5252ae1e31c757a9796d751461ddb502437b8d8526db9e12605a82eb" },
+    "brain": { "reference": "example.invalid/xnobrain@sha256:1111111111111111111111111111111111111111111111111111111111111111" },
+    "runtime_api": { "reference": "example.invalid/xnobrain-runtime-api@sha256:2222222222222222222222222222222222222222222222222222222222222222" }
+  }
+}

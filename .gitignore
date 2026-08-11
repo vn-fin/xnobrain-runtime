@@ -1,0 +1,92 @@
+# ─── Native build artifacts ───────────────────────────────────────────────────
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test and coverage output
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# ─── React / Node ─────────────────────────────────────────────────────────────
+node_modules/
+node_modules*/
+.vite/
+.npm/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+storybook-static/
+
+# The production UI is copied into the frontend image and remains committed.
+/dist/
+!/dist/
+!/dist/**
+
+# ─── Environment & secrets ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+.env.local
+
+# ─── Data & runtime dirs ──────────────────────────────────────────────────────
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files
+*.log
+logs/
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.Python
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+*.egg-info/
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ─── Editors ──────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ─── Local toolchain ──────────────────────────────────────────────────────────
+.tools/
+
+# ─── Misc ─────────────────────────────────────────────────────────────────────
+*.pem
+*.key
+*.crt
+tmp/
+
+# Deliberate native release outputs. Linux ships first as one AppImage; native
+# Windows/macOS artifacts can be added here when built on their target hosts.
+!/binary/
+!/binary/**

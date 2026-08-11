@@ -1,0 +1,242 @@
+{
+  "language": {
+    "label": "Langue",
+    "en": "English",
+    "vi": "Tiếng Việt",
+    "es": "Español",
+    "fr": "Français",
+    "de": "Deutsch",
+    "ja": "日本語",
+    "zh": "中文"
+  },
+  "nav": {
+    "manage": "Gérer",
+    "sandbox": "Sandbox",
+    "connections": "Connexions",
+    "skills": "Compétences"
+  },
+  "theme": {
+    "label": "Thème",
+    "light": "Clair",
+    "dark": "Sombre",
+    "auto": "Système"
+  },
+  "login": {
+    "title": "Connexion",
+    "subtitle": "Connectez-vous à votre espace de travail pour continuer.",
+    "username": "E-mail",
+    "usernamePlaceholder": "vous@exemple.com",
+    "password": "Mot de passe",
+    "passwordPlaceholder": "Votre mot de passe",
+    "signIn": "Se connecter",
+    "signOut": "Se déconnecter",
+    "signingIn": "Connexion…",
+    "error": "Connexion impossible. Vérifiez vos identifiants et réessayez.",
+    "mockNote": "Cette installation locale ne nécessite pas de connexion à l’application."
+  },
+  "common": {
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "delete": "Supprimer",
+    "create": "Créer",
+    "apply": "Appliquer",
+    "test": "Tester",
+    "confirm": "Confirmer",
+    "close": "Fermer",
+    "install": "Installer",
+    "viewMore": "Voir plus",
+    "showLess": "Voir moins",
+    "search": "Rechercher"
+  },
+  "agents": {
+    "title": "Agents",
+    "recent": "Récents",
+    "searchPlaceholder": "Rechercher des agents…",
+    "new": "Nouvel agent",
+    "settings": "Paramètres de l'agent",
+    "runtimeConfig": "Configuration d'exécution",
+    "test": "Tester l'agent",
+    "renameAction": "Renommer",
+    "exportAction": "Exporter",
+    "delete": "Supprimer l'agent"
+  },
+  "chat": {
+    "placeholder": "Demander d'autres modifications",
+    "workLocally": "Travailler en local",
+    "ide": "Contexte de l'IDE",
+    "fullAccess": "Accès complet",
+    "createSession": "Créer une session",
+    "closeSession": "Fermer la session",
+    "emptyTitle": "Aucune session pour le moment",
+    "emptyDesc": "Démarrez une nouvelle session pour discuter avec {{name}}.",
+    "emptyReady": "Envoyez un message à {{name}} pour commencer.",
+    "newSession": "Nouvelle session"
+  },
+  "conversation": {
+    "share": "Partager",
+    "shareUnavailable": "Le partage n'est pas encore disponible",
+    "rename": "Renommer",
+    "delete": "Supprimer",
+    "deleteTitle": "Supprimer la session",
+    "deleteMessage": "Supprimer « {{name}} » ? Cette action supprime définitivement la session et ses messages. Elle est irréversible.",
+    "renameLabel": "Nom de la session",
+    "menu": "Options de session"
+  },
+  "controls": {
+    "title": "Contrôles de l'agent",
+    "workspace": "Espace de travail",
+    "skills": "Compétences",
+    "runtime": "Exécution",
+    "settings": "Paramètres",
+    "newFile": "Nouveau fichier",
+    "newFolder": "Nouveau dossier",
+    "upload": "Téléverser des fichiers (glisser-déposer pris en charge)",
+    "refresh": "Actualiser",
+    "cron": "Cron"
+  },
+  "skillsView": {
+    "title": "Compétences",
+    "subtitle": "Parcourez les compétences installées, installez-en de nouvelles et appliquez-les à vos agents.",
+    "installNew": "Installer",
+    "searchPlaceholder": "Rechercher des compétences…",
+    "all": "Toutes",
+    "installed": "installée",
+    "available": "disponible",
+    "installPlaceholder": "Nom de la compétence ou chemin du registre (ex. github.com/org/skill)",
+    "empty": "Aucune compétence ne correspond à votre recherche ou filtre.",
+    "selected_one": "{{count}} compétence sélectionnée",
+    "selected_other": "{{count}} compétences sélectionnées",
+    "applyToAgents_one": "Appliquer à {{count}} agent",
+    "applyToAgents_other": "Appliquer à {{count}} agents"
+  },
+  "agentSkills": {
+    "title": "Compétences de l'agent",
+    "add": "Ajouter une compétence",
+    "searchPlaceholder": "Rechercher des compétences à ajouter…",
+    "enabledFor_one": "{{count}} compétence activée pour {{name}}.",
+    "enabledFor_other": "{{count}} compétences activées pour {{name}}.",
+    "empty": "Aucune compétence activée. Utilisez “Ajouter une compétence” pour en rechercher et les appliquer.",
+    "noMatch": "Aucune compétence ne correspond à “{{query}}”.",
+    "enableHint": "Activer pour {{name}}",
+    "disableHint": "Désactiver pour {{name}}",
+    "enabledOf": "{{enabled}} sur {{total}} activées pour {{name}}.",
+    "totalSkills_one": "{{count}} compétence",
+    "totalSkills_other": "{{count}} compétences",
+    "filterPlaceholder": "Filtrer par nom, description ou chemin…",
+    "sortBy": "Trier les compétences",
+    "filter": { "all": "Toutes", "on": "Activées", "off": "Désactivées" },
+    "sort": { "name": "Nom", "category": "Catégorie", "status": "Statut" }
+  },
+  "connections": {
+    "title": "Connexions",
+    "subtitle": "Connectez des fournisseurs LLM (clé API ou authentification CLI) pour que vos agents puissent fonctionner.",
+    "notConnected": "non connecté",
+    "connected": "connecté",
+    "healthy": "opérationnel",
+    "authenticate": "S'authentifier",
+    "addApiKey": "Ajouter une clé API",
+    "disconnect": "Déconnecter",
+    "addKeyTitle": "Ajouter une clé API",
+    "addKeyDesc": "Choisissez un fournisseur et collez la clé API. La clé est stockée par le runtime local et n'est jamais renvoyée par Brain4All."
+  },
+  "auth": {
+    "connect": "Connecter {{name}}",
+    "openUrl": "Ouvrir l'URL de connexion",
+    "enterCode": "Saisissez ce code sur la page",
+    "submit": "Envoyer",
+    "pasteHint": "Collez l'URL de callback ou le code",
+    "pasteClipboard": "Coller le callback depuis le presse-papiers"
+  },
+  "sandbox": {
+    "title": "Sandbox",
+    "notProvisioned": "non provisionné",
+    "provisioning": "provisionnement…",
+    "noSandbox": "Pas encore de sandbox",
+    "noSandboxDesc": "Aucun runtime local n'est actif. Démarrez le conteneur local pour fournir espace de travail, terminal et calcul.",
+    "create": "Créer un sandbox",
+    "provisioningTitle": "Provisionnement du sandbox…",
+    "specs": "Provisionne via POST /xnobrain/api/runtime/v1/sandboxes/setup · 6 vCPU · 24 Gio · disque 80 Gio",
+    "refresh": "Actualiser"
+  },
+  "onboarding": {
+    "title": "Configurons tout",
+    "subtitle": "Quelques étapes rapides pour commencer avec votre agent.",
+    "checking": "Vérification…",
+    "vm": {
+      "title": "Préparer le runtime local",
+      "desc": "Préparez le runtime local avec espace de travail, terminal et calcul.",
+      "action": "Préparer le conteneur",
+      "provisioning": "Provisionnement… {{percent}} %",
+      "ready": "Sandbox prête."
+    },
+    "provider": {
+      "title": "Connecter un fournisseur",
+      "desc": "Connectez un fournisseur LLM (clé API ou auth CLI) et testez la connexion.",
+      "ready": "{{name}} connecté."
+    },
+    "model": {
+      "title": "Choisir un modèle par défaut",
+      "desc": "Choisissez le fournisseur et le modèle par défaut pour les nouveaux agents.",
+      "action": "Enregistrer par défaut",
+      "saving": "Enregistrement…",
+      "loading": "Chargement des modèles…",
+      "none": "Aucun modèle disponible",
+      "ready": "Modèle par défaut : {{model}}"
+    },
+    "agent": {
+      "title": "Créer un agent",
+      "desc": "Donnez-lui un nom et un objectif. Vous pourrez ensuite connecter un fournisseur et choisir un modèle.",
+      "action": "Créer un agent"
+    },
+    "conversation": {
+      "title": "Démarrer une session",
+      "desc": "Votre première session est créée automatiquement pour commencer à discuter tout de suite."
+    }
+  },
+  "modals": {
+    "createAgent": "Créer un agent",
+    "createAgentApi": "Correspond à POST /xnobrain/api/runtime/v1/agents",
+    "name": "Nom",
+    "namePlaceholder": "ex. Analyste de données",
+    "description": "Description",
+    "descPlaceholder": "Que doit faire cet agent ?",
+    "createAgentBtn": "Créer l'agent",
+    "agentSettings": "Paramètres de l'agent",
+    "settingsTitle": "Titre",
+    "provider": "Fournisseur",
+    "model": "Modèle",
+    "reasoningEffort": "Niveau de raisonnement",
+    "approvalMode": "Mode d'approbation",
+    "saveConfirm": "Enregistrer les modifications de “{{name}}” ?",
+    "back": "Retour",
+    "confirmSave": "Confirmer l'enregistrement",
+    "deleteAgentTitle": "Supprimer l'agent",
+    "deleteAgentMsg": "Supprimer « {{name}} » ? Les sessions, fichiers de l’espace de travail, configurations, compétences, mémoires et tâches Kanban assignées seront définitivement supprimés. Cette action est irréversible.",
+    "personalityInstructions": "Personnalité et instructions"
+  },
+  "cron": {
+    "title": "Tâches cron",
+    "new": "Nouveau cron",
+    "name": "Nom",
+    "namePlaceholder": "ex. Vérifier l'état du serveur",
+    "prompt": "Prompt",
+    "promptPlaceholder": "Que faut-il exécuter selon la planification ?",
+    "intervalLabel": "Toutes les (minutes)",
+    "forever": "Exécuter en continu",
+    "create": "Créer le cron",
+    "stop": "Arrêter",
+    "start": "Démarrer",
+    "delete": "Supprimer",
+    "empty": "Aucune tâche cron. Créez-en une pour exécuter un prompt planifié.",
+    "state": "État",
+    "schedule": "Planification",
+    "nextRun": "Prochaine exécution",
+    "id": "ID",
+    "every": "toutes les {{n}} min",
+    "foreverSuffix": "en continu",
+    "times": "{{n}} fois",
+    "scheduled": "planifié",
+    "stopped": "arrêté",
+    "running": "en cours"
+  }
+}
