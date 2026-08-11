@@ -54,6 +54,11 @@ export type AgentSkillListResponseDTO = {
   skills?: AgentSkillDTO[];
 };
 
+export type AgentSkillsOverviewResponseDTO = {
+  skills?: AgentSkillDTO[];
+  agents?: Record<string, AgentSkillDTO[]>;
+};
+
 export type AgentSkillInstallRequestDTO = {
   skill_id?: string;
   name?: string;

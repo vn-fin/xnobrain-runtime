@@ -181,7 +181,7 @@ export default function App() {
   useEffect(() => {
     const skillsViewActive = assistantsReady && !onboarding && router.centerView === 'skills';
     if (skillsViewActive && !skillsViewActiveRef.current) {
-      void assistants.loadLibrary(true);
+      void assistants.loadSkillsOverview();
     }
     skillsViewActiveRef.current = skillsViewActive;
 
@@ -199,25 +199,11 @@ export default function App() {
     assistants.loadAgentSkills,
     assistants.loadDefaultConfig,
     assistants.loadLibrary,
+    assistants.loadSkillsOverview,
     assistantsReady,
     onboarding,
     router.centerView,
     router.rightView,
-  ]);
-
-  // The agent list endpoint only returns summaries, so hydrate each agent's
-  // skills before rendering the library's per-agent usage indicators.
-  useEffect(() => {
-    if (!assistantsReady || onboarding || router.centerView !== 'skills') return;
-    void Promise.all(
-      assistants.agents.map((agent) => assistants.loadAgentSkills(agent.id)),
-    );
-  }, [
-    assistants.agents,
-    assistants.loadAgentSkills,
-    assistantsReady,
-    onboarding,
-    router.centerView,
   ]);
 
   const { centerView } = router;

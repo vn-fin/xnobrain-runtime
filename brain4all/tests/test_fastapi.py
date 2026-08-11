@@ -721,11 +721,16 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         async with self.client() as client:
             default_response = await client.get("/xnobrain/api/runtime/v1/agents-skills")
             agent_response = await client.get(f"/xnobrain/api/runtime/v1/agents-skills/{agent_id}")
+            overview_response = await client.get(
+                "/xnobrain/api/runtime/v1/agents-skills?include_agents=true"
+            )
 
         self.assertEqual(default_response.status_code, 200, default_response.text)
         self.assertEqual(agent_response.status_code, 200, agent_response.text)
+        self.assertEqual(overview_response.status_code, 200, overview_response.text)
         default_skills = default_response.json()["data"]
         agent_skills = agent_response.json()["data"]
+        overview = overview_response.json()["data"]
         self.assertEqual([item["skill_id"] for item in default_skills], ["default-notes"])
         self.assertEqual(default_skills[0]["category"], "office")
         self.assertEqual(
@@ -735,6 +740,39 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             next(item for item in agent_skills if item["skill_id"] == "agent-only")["category"],
             "custom",
+        )
+        self.assertEqual(
+            [item["skill_id"] for item in overview["skills"]],
+            ["default-notes"],
+        )
+        self.assertEqual(
+            {item["skill_id"] for item in overview["agents"][agent_id]},
+            {"default-notes", "agent-only"},
+        )
+
+        runtime_skill = (
+            self.profiles
+            / agent_id
+            / "skills"
+            / "custom"
+            / "runtime-added"
+            / "SKILL.md"
+        )
+        runtime_skill.parent.mkdir(parents=True)
+        runtime_skill.write_text(
+            "---\nname: runtime-added\ndescription: Added during a run\n---\n",
+            encoding="utf-8",
+        )
+        async with self.client() as client:
+            refreshed_overview = await client.get(
+                "/xnobrain/api/runtime/v1/agents-skills?include_agents=true"
+            )
+        self.assertIn(
+            "runtime-added",
+            {
+                item["skill_id"]
+                for item in refreshed_overview.json()["data"]["agents"][agent_id]
+            },
         )
 
     async def test_team_files_and_cron_kanban_database_persist(self):
