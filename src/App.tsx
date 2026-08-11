@@ -64,7 +64,10 @@ export default function App() {
   // Kanban's new-task modal also needs saved teams, so keep this lightweight
   // list loaded outside the dedicated Teams screen as well.
   const teams = useTeams(workspaceReady);
-  const kanban = useKanban(workspaceReady && (router.centerView === 'kanban' || router.centerView === 'analytics'));
+  const kanban = useKanban(
+    workspaceReady && (router.centerView === 'kanban' || router.centerView === 'analytics'),
+    router.kanbanBoardId,
+  );
   const analytics = useAnalytics(workspaceReady && router.centerView === 'analytics', assistants.agents);
   const blends = useBlends(workspaceReady && router.centerView === 'chat');
   const crons = useCrons(
@@ -445,7 +448,10 @@ export default function App() {
             routeTaskId={router.kanbanTaskId}
             routeAgentId={router.kanbanAgentId}
             routeConversationId={router.kanbanConversationId}
-            onNavigate={router.openKanbanTask}
+            onBoardNavigate={router.openKanbanBoard}
+            onNavigate={(taskId, agentId, conversationId) => {
+              router.openKanbanTask(taskId, agentId, conversationId, kanban.activeBoardId);
+            }}
             onOpenChat={router.openChat}
             onClose={() => router.setCenterView('chat')}
           />

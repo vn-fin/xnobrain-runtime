@@ -131,7 +131,10 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             all_tasks = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/tasks?include_archived=true")
             self.assertEqual(len(all_tasks.json()["data"]["tasks"]), 1)
             boards_with_archive = await client.get("/xnobrain/api/runtime/v1/kanban/boards?include_archived=true")
-            self.assertEqual(boards_with_archive.json()["data"][0]["tasks"][0]["kanban_status"], "archived")
+            self.assertNotIn("tasks", boards_with_archive.json()["data"][0])
+            stats = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/stats")
+            self.assertEqual(stats.json()["data"]["archived"], 1)
+            self.assertEqual(stats.json()["data"]["total"], 1)
 
     async def test_saved_team_expands_to_grouped_native_dag_and_can_cancel(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
@@ -445,6 +448,39 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             events = await client.get(f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{child_id}/events")
             self.assertEqual(events.status_code, 200, events.text)
             self.assertNotIn("workspace_path", events.text)
+
+    async def test_board_list_is_lightweight_and_selected_board_has_stats(self):
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            for index in range(3):
+                created = await client.post(
+                    "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
+                    json={
+                        "title": f"Paged task {index}",
+                        "description": "Exercise progressive board loading.",
+                        "status": "backlog",
+                    },
+                )
+                self.assertEqual(created.status_code, 201, created.text)
+
+            boards = await client.get("/xnobrain/api/runtime/v1/kanban/boards")
+            self.assertEqual(boards.status_code, 200, boards.text)
+            self.assertNotIn("tasks", boards.json()["data"][0])
+
+            stats = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/stats")
+            self.assertEqual(stats.status_code, 200, stats.text)
+            self.assertEqual(stats.json()["data"]["current"], 3)
+            self.assertEqual(stats.json()["data"]["by_status"]["backlog"], 3)
+
+            first = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/tasks?limit=2&offset=0")
+            second = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/tasks?limit=2&offset=2")
+            self.assertEqual(first.json()["data"]["total"], 3)
+            self.assertEqual(len(first.json()["data"]["tasks"]), 2)
+            self.assertEqual(len(second.json()["data"]["tasks"]), 1)
+
+    def test_completed_tasks_allow_archive_transition(self):
+        from brain4all.services.kanban import _allowed_moves
+
+        self.assertEqual(_allowed_moves("done"), ["archived"])
 
     async def test_pre_run_edit_skills_comments_activity_and_conversation_link(self):
         from hermes_cli import kanban_db

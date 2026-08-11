@@ -133,11 +133,12 @@ describe('KanbanView', () => {
         const archived = path.endsWith('/archive') || (archivedTask && path.includes('/t-1042'));
         if (path.endsWith('/archive')) archivedTask = true;
         const providerTask = path.includes('/provider-rollout/');
+        const completedTask = path.includes('/t-done');
         return new Response(JSON.stringify({ success: true, data: {
-          id: providerTask ? 'p-201' : 't-1042',
-          title: providerTask ? 'Verify provider callback' : 'Prepare the weekly report',
-          description: providerTask ? 'Check the callback.' : 'Prepare the report.',
-          status: archived ? 'archived' : 'running',
+          id: providerTask ? 'p-201' : completedTask ? 't-done' : 't-1042',
+          title: providerTask ? 'Verify provider callback' : completedTask ? 'Publish release notes' : 'Prepare the weekly report',
+          description: providerTask ? 'Check the callback.' : completedTask ? 'Release notes are complete.' : 'Prepare the report.',
+          status: archived ? 'archived' : completedTask ? 'done' : 'running',
           priority: 'high',
           assignee: providerTask ? 'provider-agent' : 'research-agent',
           assignees: [providerTask ? 'provider-agent' : 'research-agent'],
@@ -165,9 +166,10 @@ describe('KanbanView', () => {
       if (path.includes('/kanban/boards')) {
         return new Response(JSON.stringify({ success: true, data: [
           { id: 'default', name: 'Task board', description: 'Real API fixture', color: '#4f8cff', tasks: [
-            { id: 't-1042', title: 'Prepare the weekly report', description: 'Prepare the report.', status: 'running', priority: 'high', assignee: 'research-agent', assignees: ['research-agent'], parents: [], tags: ['report'], progress: 50, updated_at: new Date().toISOString() },
+            { id: 't-1042', title: 'Prepare the weekly report', description: 'Prepare the report.', status: archivedTask ? 'archived' : 'running', priority: 'high', assignee: 'research-agent', assignees: ['research-agent'], parents: [], tags: ['report'], progress: archivedTask ? 100 : 50, updated_at: new Date().toISOString() },
             { id: 't-1051', title: 'Draft the report template', description: 'Draft a template.', status: 'todo', priority: 'low', assignee: 'research-agent', assignees: ['research-agent'], parents: [], tags: ['docs'], progress: 0, updated_at: new Date().toISOString() },
             { id: 't-blocked', title: 'Compute 1 + 1', description: 'Needs user input.', status: 'blocked', kanban_status: 'done', allowed_kanban_statuses: ['todo', 'archived'], state_detail: { kind: 'needs_input', label: 'Needs input', reason: 'Confirm the expected answer.' }, priority: 'medium', assignee: null, assignees: [], parents: [], tags: [], progress: 0, updated_at: new Date().toISOString() },
+            { id: 't-done', title: 'Publish release notes', description: 'Release notes are complete.', status: 'done', priority: 'medium', assignee: null, assignees: [], parents: [], tags: [], progress: 100, updated_at: new Date().toISOString() },
           ] },
           { id: 'provider-rollout', name: 'Provider rollout', description: 'Provider checks', color: '#34d399', tasks: [
             { id: 'p-201', title: 'Verify provider callback', description: 'Check the callback.', status: 'running', priority: 'high', assignee: 'provider-agent', assignees: ['provider-agent'], parents: [], tags: [], progress: 50, updated_at: new Date().toISOString() },
@@ -297,6 +299,16 @@ describe('KanbanView', () => {
 
     await user.click(screen.getByRole('tab', { name: /Archived/ }));
     expect(screen.getByRole('button', { name: 'Open t-1042: Prepare the weekly report' })).toBeVisible();
+  });
+
+  it('allows a completed task to be archived', async () => {
+    const user = userEvent.setup();
+    render(<TestBoard />);
+
+    await user.click(await screen.findByRole('button', { name: 'Open t-done: Publish release notes' }));
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getByText('Done', { selector: '.kb-substate' })).toBeVisible();
+    expect(within(drawer).getByRole('button', { name: 'Archive task' })).toBeEnabled();
   });
 
   it('disables invalid backward moves for an active task', async () => {

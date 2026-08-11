@@ -13,6 +13,7 @@ export type RouteState = {
   teamCreate: boolean;
   teamAgentId: string;
   teamConversationId: string;
+  kanbanBoardId: string;
   kanbanTaskId: string;
   kanbanAgentId: string;
   kanbanConversationId: string;
@@ -36,6 +37,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
   let teamAgentId = '';
   let teamConversationId = '';
   let kanbanTaskId = '';
+  let kanbanBoardId = '';
   let kanbanAgentId = '';
   let kanbanConversationId = '';
   let cronJobId = '';
@@ -69,7 +71,10 @@ export function parseRoute(pathname: string, search: string): RouteState {
   }
   else if (seg[0] === 'kanban' || seg[0] === 'board') {
     centerView = 'kanban';
-    if (seg[1] === 'tasks') kanbanTaskId = seg[2] ?? '';
+    if (seg[1] === 'boards') {
+      kanbanBoardId = seg[2] ?? '';
+      if (seg[3] === 'tasks') kanbanTaskId = seg[4] ?? '';
+    } else if (seg[1] === 'tasks') kanbanTaskId = seg[2] ?? '';
     kanbanAgentId = sp.get('agent') ?? '';
     kanbanConversationId = sp.get('conversation') ?? '';
   }
@@ -102,6 +107,7 @@ export function parseRoute(pathname: string, search: string): RouteState {
     teamCreate,
     teamAgentId,
     teamConversationId,
+    kanbanBoardId,
     kanbanTaskId,
     kanbanAgentId,
     kanbanConversationId,
@@ -136,8 +142,15 @@ export function computeUrl(state: RouteState): string {
     return `${path}${params.size ? `?${params}` : ''}`;
   }
   if (state.centerView === 'kanban') {
-    if (!state.kanbanTaskId) return '/kanban';
-    const path = `/kanban/tasks/${encodeURIComponent(state.kanbanTaskId)}`;
+    if (!state.kanbanBoardId) {
+      if (!state.kanbanTaskId) return '/kanban';
+      const path = `/kanban/tasks/${encodeURIComponent(state.kanbanTaskId)}`;
+      if (state.kanbanAgentId) params.set('agent', state.kanbanAgentId);
+      if (state.kanbanConversationId) params.set('conversation', state.kanbanConversationId);
+      return `${path}${params.size ? `?${params}` : ''}`;
+    }
+    let path = `/kanban/boards/${encodeURIComponent(state.kanbanBoardId)}`;
+    if (state.kanbanTaskId) path += `/tasks/${encodeURIComponent(state.kanbanTaskId)}`;
     if (state.kanbanAgentId) params.set('agent', state.kanbanAgentId);
     if (state.kanbanConversationId) params.set('conversation', state.kanbanConversationId);
     return `${path}${params.size ? `?${params}` : ''}`;
@@ -180,6 +193,7 @@ export function useRouter() {
   const [teamAgentId, setTeamAgentId] = useState(bootRoute.teamAgentId);
   const [teamConversationId, setTeamConversationId] = useState(bootRoute.teamConversationId);
   const [kanbanTaskId, setKanbanTaskId] = useState(bootRoute.kanbanTaskId);
+  const [kanbanBoardId, setKanbanBoardId] = useState(bootRoute.kanbanBoardId);
   const [kanbanAgentId, setKanbanAgentId] = useState(bootRoute.kanbanAgentId);
   const [kanbanConversationId, setKanbanConversationId] = useState(bootRoute.kanbanConversationId);
   const [cronJobId, setCronJobId] = useState(bootRoute.cronJobId);
@@ -192,7 +206,7 @@ export function useRouter() {
     const url = computeUrl({
       centerView, settingsSection, agentId: activeAgentId, conversationId: activeConversationId,
       teamId: activeTeamId, teamRunId: activeTeamRunId, teamCreate, teamAgentId, teamConversationId, rightView,
-      kanbanTaskId, kanbanAgentId, kanbanConversationId,
+      kanbanBoardId, kanbanTaskId, kanbanAgentId, kanbanConversationId,
       cronJobId, cronAgentId,
       agentSearch, skillsSearch, skillsGroupFilter,
     });
@@ -202,7 +216,7 @@ export function useRouter() {
     else window.history.replaceState(null, '', url);
   }, [
     centerView, settingsSection, activeAgentId, activeConversationId, activeTeamId, activeTeamRunId,
-    teamCreate, teamAgentId, teamConversationId, kanbanTaskId, kanbanAgentId, kanbanConversationId,
+    teamCreate, teamAgentId, teamConversationId, kanbanBoardId, kanbanTaskId, kanbanAgentId, kanbanConversationId,
     cronJobId, cronAgentId,
     rightView, agentSearch, skillsSearch, skillsGroupFilter,
   ]);
@@ -219,6 +233,7 @@ export function useRouter() {
       setTeamCreate(state.teamCreate);
       setTeamAgentId(state.teamAgentId);
       setTeamConversationId(state.teamConversationId);
+      setKanbanBoardId(state.kanbanBoardId);
       setKanbanTaskId(state.kanbanTaskId);
       setKanbanAgentId(state.kanbanAgentId);
       setKanbanConversationId(state.kanbanConversationId);
@@ -275,7 +290,16 @@ export function useRouter() {
     setCenterView('teams');
   }, []);
 
-  const openKanbanTask = useCallback((taskId = '', agentId = '', conversationId = '') => {
+  const openKanbanBoard = useCallback((boardId = '') => {
+    setKanbanBoardId(boardId);
+    setKanbanTaskId('');
+    setKanbanAgentId('');
+    setKanbanConversationId('');
+    setCenterView('kanban');
+  }, []);
+
+  const openKanbanTask = useCallback((taskId = '', agentId = '', conversationId = '', boardId?: string) => {
+    if (boardId !== undefined) setKanbanBoardId(boardId);
     setKanbanTaskId(taskId);
     setKanbanAgentId(taskId ? agentId : '');
     setKanbanConversationId(taskId ? conversationId : '');
@@ -295,14 +319,14 @@ export function useRouter() {
     const currentState: RouteState = {
       centerView, settingsSection, agentId: next.agentId, conversationId: next.conversationId,
       teamId: activeTeamId, teamRunId: activeTeamRunId, teamCreate, teamAgentId, teamConversationId, rightView,
-      kanbanTaskId, kanbanAgentId, kanbanConversationId,
+      kanbanBoardId, kanbanTaskId, kanbanAgentId, kanbanConversationId,
       cronJobId, cronAgentId,
       agentSearch, skillsSearch, skillsGroupFilter,
     };
     window.history.replaceState(null, '', computeUrl(currentState));
   }, [
     activeAgentId, activeConversationId, activeTeamId, activeTeamRunId, teamCreate, teamAgentId, teamConversationId,
-    kanbanTaskId, kanbanAgentId, kanbanConversationId,
+    kanbanBoardId, kanbanTaskId, kanbanAgentId, kanbanConversationId,
     cronJobId, cronAgentId,
     centerView, settingsSection, rightView, agentSearch, skillsSearch, skillsGroupFilter,
   ]);
@@ -311,7 +335,7 @@ export function useRouter() {
     centerView, setCenterView, settingsSection, setSettingsSection, rightView, setRightView,
     activeAgentId, setActiveAgentId, activeConversationId, setActiveConversationId,
     activeTeamId, activeTeamRunId, teamCreate, teamAgentId, teamConversationId, openTeam, openTeamConversation, createTeam, editTeam,
-    kanbanTaskId, kanbanAgentId, kanbanConversationId, openKanbanTask,
+    kanbanBoardId, kanbanTaskId, kanbanAgentId, kanbanConversationId, openKanbanBoard, openKanbanTask,
     cronJobId, cronAgentId, openCronJob,
     agentSearch, setAgentSearch, skillsSearch, setSkillsSearch,
     skillsGroupFilter, setSkillsGroupFilter,

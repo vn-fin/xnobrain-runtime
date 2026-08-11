@@ -3,6 +3,7 @@ import { kanbanApi } from '../api/kanban';
 import type {
   AsyncStatus,
   KanbanBoard,
+  KanbanBoardStats,
   KanbanColumnId,
   KanbanEvent,
   KanbanNativeStatus,
@@ -20,7 +21,7 @@ const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
  * Manages the real Hermes-backed Kanban board and exposes small optimistic
  * mutations for moving and creating tasks.
  */
-export function useKanban(active = true) {
+export function useKanban(active = true, requestedBoardId = '') {
   const [boards, setBoards] = useState<KanbanBoard[]>([]);
   const [activeBoardId, setActiveBoardIdState] = useState(
     () => window.localStorage.getItem('brain4all-kanban-board') ?? '',
@@ -33,9 +34,17 @@ export function useKanban(active = true) {
   const [events, setEvents] = useState<KanbanEvent[]>([]);
   const [notice, setNotice] = useState<KanbanNotice | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [boardStats, setBoardStats] = useState<KanbanBoardStats | null>(null);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [taskLoadProgress, setTaskLoadProgress] = useState({ loaded: 0, total: 0 });
+  const [archivedLoadedBoardId, setArchivedLoadedBoardId] = useState('');
   const [requestedTaskId, setRequestedTaskId] = useState<string | null>(null);
   const noticeId = useRef(0);
   const boardLoadActive = useRef(false);
+  const taskLoadGeneration = useRef({ current: 0, archived: 0 });
+  const taskLoadInFlight = useRef({ current: '', archived: '' });
+  const statsLoadInFlight = useRef('');
 
   const notify = useCallback((kind: KanbanNotice['kind'], message: string) => {
     noticeId.current += 1;
@@ -51,7 +60,7 @@ export function useKanban(active = true) {
         if (!cachedBoard) return nextBoard;
         return {
           ...nextBoard,
-          tasks: nextBoard.tasks.map((task) => {
+          tasks: (nextBoard.tasks.length ? nextBoard.tasks : cachedBoard.tasks).map((task) => {
             const cached = cachedBoard.tasks.find((item) => item.id === task.id);
             if (!cached) return task;
             return {
@@ -66,7 +75,9 @@ export function useKanban(active = true) {
         };
       }));
       setActiveBoardIdState((current) =>
-        loaded.some((board) => board.id === current) ? current : loaded[0]?.id ?? '',
+        requestedBoardId && loaded.some((board) => board.id === requestedBoardId)
+          ? requestedBoardId
+          : loaded.some((board) => board.id === current) ? current : loaded[0]?.id ?? '',
       );
       setStatus('ready');
       setError('');
@@ -74,7 +85,7 @@ export function useKanban(active = true) {
       setError(cause instanceof Error ? cause.message : 'Could not load the board.');
       setStatus('error');
     }
-  }, []);
+  }, [requestedBoardId]);
 
   useEffect(() => {
     if (!active) {
@@ -86,18 +97,102 @@ export function useKanban(active = true) {
     void load();
   }, [active, load]);
   const activeRef = useRef(active);
-  const loadRef = useRef(load);
   activeRef.current = active;
-  loadRef.current = load;
 
   const board = useMemo(
     () => boards.find((item) => item.id === activeBoardId) ?? boards[0] ?? null,
     [activeBoardId, boards],
   );
 
+  useEffect(() => {
+    if (!requestedBoardId || !boards.some((item) => item.id === requestedBoardId)) return;
+    setActiveBoardIdState(requestedBoardId);
+    window.localStorage.setItem('brain4all-kanban-board', requestedBoardId);
+  }, [boards, requestedBoardId]);
+
+  const loadTaskScope = useCallback(async (boardId: string, archived: boolean) => {
+    const scope = archived ? 'archived' : 'current';
+    if (taskLoadInFlight.current[scope] === boardId) return;
+    taskLoadInFlight.current[scope] = boardId;
+    const generation = ++taskLoadGeneration.current[scope];
+    if (archived) setArchivedLoading(true);
+    else {
+      setTasksLoading(true);
+      setTaskLoadProgress({ loaded: 0, total: 0 });
+    }
+    try {
+      const collected: KanbanBoard['tasks'] = [];
+      let offset = 0;
+      let total = 0;
+      const batchSize = 100;
+      do {
+        const page = await kanbanApi.getTasks(boardId, { offset, limit: batchSize, archived });
+        if (taskLoadGeneration.current[scope] !== generation) return;
+        total = page.total;
+        collected.push(...page.tasks);
+        offset = collected.length;
+        setBoards((current) => current.map((item) => item.id === boardId
+          ? {
+              ...item,
+              tasks: archived
+                ? [...item.tasks.filter((task) => task.status !== 'archived'), ...collected]
+                : [...collected, ...item.tasks.filter((task) => task.status === 'archived')],
+              taskCount: archived ? item.taskCount : total,
+            }
+          : item));
+        if (!archived) setTaskLoadProgress({ loaded: collected.length, total });
+        if (page.tasks.length === 0) break;
+      } while (collected.length < total);
+      if (archived) setArchivedLoadedBoardId(boardId);
+    } catch (cause) {
+      if (taskLoadGeneration.current[scope] !== generation) return;
+      setError(cause instanceof Error ? cause.message : 'Could not load board tasks.');
+    } finally {
+      if (taskLoadGeneration.current[scope] === generation) {
+        taskLoadInFlight.current[scope] = '';
+        if (archived) setArchivedLoading(false);
+        else setTasksLoading(false);
+      }
+    }
+  }, []);
+
+  const loadStats = useCallback(async (boardId: string) => {
+    if (statsLoadInFlight.current === boardId) return;
+    statsLoadInFlight.current = boardId;
+    try {
+      const next = await kanbanApi.getBoardStats(boardId);
+      if (activeBoardId === boardId) setBoardStats(next);
+      setBoards((current) => current.map((item) => item.id === boardId
+        ? { ...item, taskCount: next.total }
+        : item));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not load board statistics.');
+    } finally {
+      if (statsLoadInFlight.current === boardId) statsLoadInFlight.current = '';
+    }
+  }, [activeBoardId]);
+
+  useEffect(() => {
+    if (!active || !activeBoardId || status !== 'ready') return;
+    setArchivedLoadedBoardId('');
+    setBoardStats(null);
+    void loadStats(activeBoardId);
+    void loadTaskScope(activeBoardId, false);
+  }, [active, activeBoardId, loadStats, loadTaskScope, status]);
+
+  const loadArchivedTasks = useCallback(async () => {
+    if (!board || archivedLoadedBoardId === board.id || archivedLoading) return;
+    await loadTaskScope(board.id, true);
+  }, [archivedLoadedBoardId, archivedLoading, board, loadTaskScope]);
+
   const replaceTask = useCallback((boardId: string, taskId: string, updated: KanbanBoard['tasks'][number]) => {
     setBoards((current) => current.map((item) => item.id === boardId
-      ? { ...item, tasks: item.tasks.map((task) => task.id === taskId ? updated : task) }
+      ? {
+          ...item,
+          tasks: item.tasks.some((task) => task.id === taskId)
+            ? item.tasks.map((task) => task.id === taskId ? updated : task)
+            : [updated, ...item.tasks],
+        }
       : item));
   }, []);
 
@@ -176,11 +271,12 @@ export function useKanban(active = true) {
         void refreshTask(taskId, false);
       }
       notify('success', `Moved “${title}” to ${label}.`);
+      void loadStats(board.id);
     } catch (cause) {
       setBoards(previous);
       notify('error', cause instanceof Error ? cause.message : 'The task could not be moved.');
     }
-  }, [board, boards, notify, refreshTask, replaceTask]);
+  }, [board, boards, loadStats, notify, refreshTask, replaceTask]);
 
   const assignTask = useCallback(async (taskId: string, assignee: string | null) => {
     if (!board) return;
@@ -248,8 +344,9 @@ export function useKanban(active = true) {
     setBoards((current) =>
       current.map((item) => (item.id === board.id ? { ...item, tasks: [task, ...item.tasks] } : item)),
     );
+    void loadStats(board.id);
     return task;
-  }, [board]);
+  }, [board, loadStats]);
 
   const cancelTeamTask = useCallback(async (taskId: string) => {
     if (!board) return null;
@@ -376,7 +473,10 @@ export function useKanban(active = true) {
             setLiveStatus('live');
             if (connection.refreshTimer !== undefined) window.clearTimeout(connection.refreshTimer);
             if (activeRef.current) {
-              connection.refreshTimer = window.setTimeout(() => void loadRef.current(false), 120);
+              connection.refreshTimer = window.setTimeout(() => {
+                void loadTaskScope(streamBoardId, false);
+                void loadStats(streamBoardId);
+              }, 120);
             }
           }, connection.controller.signal, connection.cursor);
         } catch {
@@ -405,7 +505,7 @@ export function useKanban(active = true) {
         streamStopTimer.current = undefined;
       }, 0);
     };
-  }, [active]);
+  }, [active, loadStats, loadTaskScope]);
 
   // Tasks filtered by the search box, sorted by priority within their group.
   const visibleTasks = useMemo(() => {
@@ -443,12 +543,23 @@ export function useKanban(active = true) {
     addComment,
     refreshTask,
     detailLoading,
+    boardStats,
+    tasksLoading,
+    archivedLoading,
+    taskLoadProgress,
+    archivedLoaded: archivedLoadedBoardId === board?.id,
+    loadArchivedTasks,
     createBoard,
     createTask,
     cancelTask,
     cancelTeamTask,
     addStatus,
-    refresh: () => load(),
+    refresh: async () => {
+      await load();
+      if (activeBoardId) {
+        await Promise.all([loadStats(activeBoardId), loadTaskScope(activeBoardId, false)]);
+      }
+    },
     liveStatus,
     events,
     requestedTaskId,

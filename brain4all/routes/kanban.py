@@ -7,6 +7,7 @@ ROUTES = (
     route("GET", "/kanban/boards", "kanban_boards", tags=("Kanban",)),
     route("POST", "/kanban/boards", "kanban_board_create", KanbanBoardCreate, tags=("Kanban",)),
     route("GET", "/kanban/boards/{board_slug}", "kanban_board_get", tags=("Kanban",)),
+    route("GET", "/kanban/boards/{board_slug}/stats", "kanban_board_stats", tags=("Kanban",)),
     route("PATCH", "/kanban/boards/{board_slug}", "kanban_board_patch", GenericObject, tags=("Kanban",)),
     route("POST", "/kanban/boards/{board_slug}/select", "kanban_board_select", tags=("Kanban",)),
     route("DELETE", "/kanban/boards/{board_slug}", "kanban_board_delete", tags=("Kanban",)),

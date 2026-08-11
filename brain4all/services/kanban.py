@@ -98,7 +98,7 @@ def _allowed_moves(
     if raw == "review":
         return ["running", "archived"]
     if raw == "done":
-        return []
+        return ["archived"]
     return []
 
 
@@ -553,23 +553,53 @@ class KanbanService:
         except (KanbanUnavailable, ValueError) as exc:
             raise ServiceError(str(exc), status=503, code="kanban_not_ready") from exc
         current = kb_adapter.current_board()
-        output = []
-        for item in boards:
-            slug = str(item.get("slug") or "default")
-            with kb_adapter.connection(slug) as conn:
-                tasks = self._list_task_dtos(conn, slug, include_archived=include_archived)
-            output.append({**{key: value for key, value in item.items() if key != "db_path"}, "id": slug, "current": slug == current, "tasks": tasks, "task_count": len(tasks)})
-        return output
+        return [
+            {
+                **self._public_board(item),
+                "id": str(item.get("slug") or "default"),
+                "current": str(item.get("slug") or "default") == current,
+            }
+            for item in boards
+        ]
 
     def get_board(self, slug: str, *, include_archived: bool = False) -> dict[str, Any]:
         normalized = self._board(slug)
-        board = next((item for item in self.list_boards(include_archived=True) if item["id"] == normalized), None)
+        try:
+            boards = kb_adapter.list_boards(include_archived=True)
+        except (KanbanUnavailable, ValueError) as exc:
+            raise ServiceError(str(exc), status=503, code="kanban_not_ready") from exc
+        item = next((item for item in boards if str(item.get("slug") or "default") == normalized), None)
+        board = ({**self._public_board(item), "id": normalized} if item is not None else None)
         if board is None or (board.get("archived") and not include_archived):
             raise ServiceError("board not found", status=404, code="board_not_found")
-        if not include_archived:
-            board["tasks"] = [item for item in board["tasks"] if not item["archived"]]
-            board["task_count"] = len(board["tasks"])
         return board
+
+    def board_stats(self, board: str) -> dict[str, Any]:
+        normalized = self._board(board)
+        kb = self._ready()
+        with kb_adapter.connection(normalized) as conn:
+            member_ids = kb_adapter.team_member_task_ids(conn)
+            rows = kb.list_tasks(conn, include_archived=True)
+            counts = {status: 0 for status in PRODUCT_STATUSES}
+            blocked = 0
+            for task in rows:
+                if str(task.id) in member_ids:
+                    continue
+                product_status = _status(str(task.status))
+                counts[product_status] += 1
+                if str(task.status) == "blocked":
+                    blocked += 1
+        current = sum(counts[status] for status in PRODUCT_STATUSES if status != "archived")
+        return {
+            "board_slug": normalized,
+            "total": current + counts["archived"],
+            "current": current,
+            "completed": max(0, counts["done"] - blocked),
+            "archived": counts["archived"],
+            "running": counts["running"],
+            "blocked": blocked,
+            "by_status": counts,
+        }
 
     def _list_task_dtos(self, conn: Any, board: str, *, include_archived: bool = False, assignee: str | None = None, status: str | None = None, search: str | None = None) -> list[dict[str, Any]]:
         kb = self._ready()
@@ -593,15 +623,41 @@ class KanbanService:
 
     def list_tasks(self, board: str, query: Mapping[str, Any]) -> dict[str, Any]:
         normalized = self._board(board)
-        with kb_adapter.connection(normalized) as conn:
-            tasks = self._list_task_dtos(conn, normalized, include_archived=str(query.get("include_archived", "false")).lower() == "true", assignee=query.get("assignee"), status=query.get("status"), search=query.get("search"))
-        total = len(tasks)
         try:
             offset = max(0, int(query.get("offset") or 0))
             limit = min(200, max(1, int(query.get("limit") or 200)))
         except (TypeError, ValueError) as exc:
             raise ServiceError("limit and offset must be integers", code="invalid_request") from exc
-        return {"board_slug": normalized, "tasks": tasks[offset:offset + limit], "total": total, "offset": offset, "limit": limit}
+        status = str(query.get("status") or "").strip() or None
+        if status and status not in PRODUCT_STATUSES:
+            raise ServiceError("invalid Kanban status", code="invalid_request")
+        include_archived = str(query.get("include_archived", "false")).lower() == "true"
+        # The progressive UI requests either current work or the archived tab.
+        # Other status filters retain the exact product projection path.
+        if status not in {None, "archived"}:
+            with kb_adapter.connection(normalized) as conn:
+                tasks = self._list_task_dtos(
+                    conn,
+                    normalized,
+                    include_archived=include_archived,
+                    assignee=query.get("assignee"),
+                    status=status,
+                    search=query.get("search"),
+                )
+            total = len(tasks)
+            return {"board_slug": normalized, "tasks": tasks[offset:offset + limit], "total": total, "offset": offset, "limit": limit}
+        with kb_adapter.connection(normalized) as conn:
+            raw, total = kb_adapter.task_page(
+                conn,
+                include_archived=include_archived,
+                archived_only=status == "archived",
+                assignee=str(query.get("assignee") or "").strip() or None,
+                search=str(query.get("search") or "").strip() or None,
+                offset=offset,
+                limit=limit,
+            )
+            tasks = [self._task_dto(conn, task, board=normalized) for task in raw]
+        return {"board_slug": normalized, "tasks": tasks, "total": total, "offset": offset, "limit": limit}
 
     def get_task(self, board: str, task_id: str) -> dict[str, Any]:
         normalized = self._board(board)

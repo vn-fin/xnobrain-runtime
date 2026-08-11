@@ -473,6 +473,19 @@ export type KanbanBoard = {
   /** Ordered status vocabulary for this board (table grouping + column map). */
   statuses: KanbanStatusDef[];
   tasks: KanbanTask[];
+  /** Lightweight count supplied independently from task pages. */
+  taskCount?: number;
+};
+
+export type KanbanBoardStats = {
+  boardSlug: string;
+  total: number;
+  current: number;
+  completed: number;
+  archived: number;
+  running: number;
+  blocked: number;
+  byStatus: Record<KanbanColumnId, number>;
 };
 
 export type KanbanViewMode = 'board' | 'table';
