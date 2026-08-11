@@ -11,7 +11,6 @@ import logging
 import os
 from pathlib import Path
 import re
-import threading
 import time
 from typing import Any, Mapping
 import uuid
@@ -42,6 +41,7 @@ from ..integrations import (
 from ..repositories import FileRepository, StoreError
 from .portability import PortabilityService
 from .cron import CronService, CronServiceError
+from .helpers import MemoryCache, cached_method
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError, WorkspacePreviewService
 from .workspace_upload import WorkspaceUploadError, WorkspaceUploadService
 
@@ -168,10 +168,7 @@ class PlatformService:
         from .team_runs import TeamRunService
         self.team_runs = TeamRunService(repository, agents, self)
         self._oauth_attempts: dict[str, dict[str, str]] = {}
-        self._agents_cache: list[dict[str, Any]] | None = None
-        self._agents_cache_lock = threading.Lock()
-        self._providers_cache: list[dict[str, Any]] | None = None
-        self._providers_cache_lock = asyncio.Lock()
+        self._cache = MemoryCache()
         self.config.ensure_write_approval_defaults()
         self._ensure_existing_write_approval_defaults()
 
@@ -254,24 +251,13 @@ class PlatformService:
             return {"metrics": detail["metrics"], "system": detail["system"]}
         raise ServiceError("sandbox resource not found", status=404, code="not_found")
 
+    @cached_method("agents")
     def list_agents(self) -> list[dict[str, Any]]:
-        if self._agents_cache is not None:
-            return copy.deepcopy(self._agents_cache)
-        with self._agents_cache_lock:
-            if self._agents_cache is None:
-                self._agents_cache = [
-                    self._agent_dto(item)
-                    for item in self.agents.list_agents()["agents"]
-                ]
-            return copy.deepcopy(self._agents_cache)
-
-    def _invalidate_agents_cache(self) -> None:
-        with self._agents_cache_lock:
-            self._agents_cache = None
+        return [self._agent_dto(item) for item in self.agents.list_agents()["agents"]]
 
     async def list_agents_async(self) -> list[dict[str, Any]]:
-        if self._agents_cache is not None:
-            return copy.deepcopy(self._agents_cache)
+        if self._cache.contains("agents"):
+            return self.list_agents()
         return await asyncio.to_thread(self.list_agents)
 
     async def ensure_default_agent(self) -> dict[str, Any]:
@@ -348,7 +334,7 @@ class PlatformService:
             display_name=BIG_BROTHER_DISPLAY_NAME,
             description=BIG_BROTHER_DESCRIPTION,
         )
-        self._invalidate_agents_cache()
+        self._cache.invalidate("agents")
         return self.get_agent(BIG_BROTHER_AGENT_ID)
 
     def _migrate_big_brother_skill_category(self, profile: Path) -> None:
@@ -458,7 +444,7 @@ class PlatformService:
         if "description" in body:
             payload["description"] = body["description"]
         raw, _ = self.agents.create_agent(payload)
-        self._invalidate_agents_cache()
+        self._cache.invalidate("agents")
         return self._agent_dto(raw)
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
@@ -529,7 +515,7 @@ class PlatformService:
             display_name=str(current.get("display_name") or current.get("title") or ""),
             description=str(current.get("description") or ""),
         )
-        self._invalidate_agents_cache()
+        self._cache.invalidate("agents")
         return self.get_agent(agent_id)
 
     def delete_agent(self, agent_id: str) -> dict[str, Any]:
@@ -547,7 +533,7 @@ class PlatformService:
         deleted_tasks = self.kanban.delete_assignee_tasks(agent_id)
         self.repository.hard_delete_profile(agent_id)
         self.agents.sync_profiles_registry()
-        self._invalidate_agents_cache()
+        self._cache.invalidate("agents")
         return {
             "deleted": True,
             "recoverable": False,
@@ -559,7 +545,7 @@ class PlatformService:
 
     def update_global_config(self, body: Mapping[str, Any]) -> dict[str, Any]:
         result = self.config.update_config(body)
-        self._invalidate_agents_cache()
+        self._cache.invalidate("agents")
         return result
 
     def update_agent_config(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -574,7 +560,7 @@ class PlatformService:
             if path.is_file():
                 self.repository.snapshot(agent_id, "config", "config", path.read_bytes())
             result = self.agents.update_config(agent_id, translated)["config"]
-        self._invalidate_agents_cache()
+        self._cache.invalidate("agents")
         return result
 
     def list_skills(self, agent_id: str) -> list[dict[str, Any]]:
@@ -704,7 +690,7 @@ class PlatformService:
             result = self._restore_root_snapshot(snapshot_id)
         else:
             result = self.repository.restore_snapshot(agent_id, snapshot_id)
-        self._invalidate_agents_cache()
+        self._cache.invalidate("agents")
         return result
 
     def list_workspace(self, agent_id: str, path: str = ".") -> dict[str, Any]:
@@ -940,7 +926,7 @@ class PlatformService:
     def apply_bundle(self, payload: bytes) -> dict[str, Any]:
         result = self.portability.apply(payload)
         self.agents.sync_profiles_registry()
-        self._invalidate_agents_cache()
+        self._cache.invalidate("agents")
         return result
 
     def start_bundle_export(self, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -961,7 +947,7 @@ class PlatformService:
     def apply_bundle_upload(self, transfer_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         result = self.portability.apply_upload(transfer_id, body)
         self.agents.sync_profiles_registry()
-        self._invalidate_agents_cache()
+        self._cache.invalidate("agents")
         return result
 
     def delete_bundle_transfer(self, kind: str, transfer_id: str) -> dict[str, Any]:
@@ -1237,16 +1223,10 @@ class PlatformService:
         return item
 
     async def providers(self) -> list[dict[str, Any]]:
-        if self._providers_cache is not None:
-            return copy.deepcopy(self._providers_cache)
-        async with self._providers_cache_lock:
-            if self._providers_cache is None:
-                providers, router_available = await self._load_providers()
-                if router_available:
-                    self._providers_cache = providers
-                return copy.deepcopy(providers)
-            return copy.deepcopy(self._providers_cache)
+        providers, _router_available = await self._load_providers()
+        return providers
 
+    @cached_method("providers", cache_when=lambda result: result[1])
     async def _load_providers(self) -> tuple[list[dict[str, Any]], bool]:
         try:
             connections = (await self.router.list_connections())["connections"]
@@ -1297,10 +1277,6 @@ class PlatformService:
                 "available_models": [item["id"] for item in models if item.get("provider") == provider],
             })
         return result, router_available
-
-    async def _invalidate_providers_cache(self) -> None:
-        async with self._providers_cache_lock:
-            self._providers_cache = None
 
     async def provider_status(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
@@ -1365,7 +1341,7 @@ class PlatformService:
                     else body.get("default_model")
                 ),
             })
-            await self._invalidate_providers_cache()
+            self._cache.invalidate("providers")
             return {**self._api_key_info(provider), "connected": True, "status": "connected"}
         from urllib.parse import parse_qs, urlparse
         attempt = self._oauth_attempts.get(provider)
@@ -1381,7 +1357,7 @@ class PlatformService:
         if not payload.get("success"):
             raise ServiceError("provider authorization was not accepted", status=422, code="provider_auth_failed")
         self._oauth_attempts.pop(provider, None)
-        await self._invalidate_providers_cache()
+        self._cache.invalidate("providers")
         return {"provider_id": provider, "connection_mode": "cli", "connected": True, "status": "connected"}
 
     async def update_provider(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -1410,7 +1386,7 @@ class PlatformService:
                 "deepseek-v4-flash-free" if provider == "opencode" else None
             ),
         })
-        await self._invalidate_providers_cache()
+        self._cache.invalidate("providers")
         return {"provider_id": provider, "connected": True, "status": "connected", "connection": result}
 
     async def disconnect_provider(self, provider: str) -> dict[str, Any]:
@@ -1421,7 +1397,7 @@ class PlatformService:
             if item.get("provider") == provider:
                 await self.router.delete_connection(item["id"])
         self._oauth_attempts.pop(provider, None)
-        await self._invalidate_providers_cache()
+        self._cache.invalidate("providers")
         return {"provider_id": provider, "connected": False, "status": "disconnected"}
 
     async def test_provider(self, provider: str) -> dict[str, Any]:
@@ -1435,7 +1411,7 @@ class PlatformService:
         if not current:
             return {"provider_id": provider, "healthy": False, "status": "not_connected", "message": "Provider is not connected"}
         result = await self.router.test_connection(current["id"])
-        await self._invalidate_providers_cache()
+        self._cache.invalidate("providers")
         return {"provider_id": provider, "healthy": bool(result.get("valid")), "status": "healthy" if result.get("valid") else "unhealthy", "message": result.get("error") or ""}
 
     async def list_provider_connections(self, provider: str) -> dict[str, Any]:
@@ -1469,7 +1445,7 @@ class PlatformService:
                 "deepseek-v4-flash-free" if provider == "opencode" else None
             ),
         })
-        await self._invalidate_providers_cache()
+        self._cache.invalidate("providers")
         return {"provider_id": provider, "connected": True, "connection": result["connection"]}
 
     async def patch_provider_connection(self, provider: str, connection_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -1481,7 +1457,7 @@ class PlatformService:
         if priority is not None:
             priority = max(0, min(999, int(priority)))
         await self.router.update_connection(connection_id, active=active, priority=priority)
-        await self._invalidate_providers_cache()
+        self._cache.invalidate("providers")
         # 9router owns priority normalization, so return the stored row, not the request.
         refreshed = await self._owned_connection(provider, connection_id)
         return {"provider_id": provider, "connection": refreshed}
@@ -1489,7 +1465,7 @@ class PlatformService:
     async def test_provider_connection(self, provider: str, connection_id: str) -> dict[str, Any]:
         await self._owned_connection(provider, connection_id)
         result = await self.router.test_connection(connection_id)
-        await self._invalidate_providers_cache()
+        self._cache.invalidate("providers")
         healthy = bool(result.get("valid"))
         return {
             "provider_id": provider, "connection_id": connection_id,
@@ -1500,7 +1476,7 @@ class PlatformService:
     async def delete_provider_connection(self, provider: str, connection_id: str) -> dict[str, Any]:
         await self._owned_connection(provider, connection_id)
         await self.router.delete_connection(connection_id)
-        await self._invalidate_providers_cache()
+        self._cache.invalidate("providers")
         remaining = await self._provider_connections(provider)
         return {
             "provider_id": provider, "connection_id": connection_id, "deleted": True,
