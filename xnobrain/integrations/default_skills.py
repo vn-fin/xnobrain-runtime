@@ -8,17 +8,23 @@ import time
 from pathlib import Path
 
 
-DEFAULT_SKILLS_POLICY_REVISION = 1
-
-# Keep the default prompt index focused on capabilities that are broadly useful
-# in XNOBrain. Every other bundled skill remains installed and can be enabled
-# from the Skills page. User-installed skills are never changed by this policy.
+# Keep the default prompt index focused on broadly useful document, research,
+# planning, and engineering workflows. Browser automation, computer use,
+# memory, todo planning, and self-improvement remain powerful without entries
+# here: Hermes exposes them as native availability-gated tools and injects
+# their guidance directly into the system prompt. Every other bundled skill
+# remains installed and can be enabled from the Skills page. User-installed
+# skills are never changed by this policy.
 DEFAULT_ENABLED_BUNDLED_SKILLS = frozenset({
     "docx",
     "grounded-citations",
     "ocr-and-documents",
     "pdf",
+    "plan",
     "powerpoint",
+    "requesting-code-review",
+    "systematic-debugging",
+    "test-driven-development",
     "xlsx",
 })
 
@@ -35,11 +41,7 @@ class DefaultSkillsMixin:
         if not isinstance(managed, dict):
             managed = {}
             config["xnobrain"] = managed
-        try:
-            revision = int(managed.get("default_skills_revision") or 0)
-        except (TypeError, ValueError):
-            revision = 0
-        if revision >= DEFAULT_SKILLS_POLICY_REVISION:
+        if managed.get("default_skills_initialized") is True:
             return False
 
         bundled = self._bundled_skill_names(manifest)
@@ -57,9 +59,12 @@ class DefaultSkillsMixin:
             for item in raw_disabled
             if str(item).strip()
         }
+        # This is initialization, not a migration: choose the current defaults
+        # for bundled skills while preserving unrelated user-installed skills.
+        disabled.difference_update(bundled)
         disabled.update(bundled - DEFAULT_ENABLED_BUNDLED_SKILLS)
         skills["disabled"] = sorted(disabled)
-        managed["default_skills_revision"] = DEFAULT_SKILLS_POLICY_REVISION
+        managed["default_skills_initialized"] = True
 
         self._snapshot_policy_config(profile_dir)
         self._write_yaml_atomic(profile_dir / "config.yaml", config)
