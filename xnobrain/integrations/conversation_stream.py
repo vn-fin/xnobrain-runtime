@@ -3,7 +3,6 @@
 from .hermes_support import (
     AgentAPIError,
     Any,
-    MANAGED_RUNTIME_HELP_GUIDANCE,
     Mapping,
     NINE_ROUTER_DEFAULT_MODEL,
     NineRouterAPIError,
@@ -13,7 +12,6 @@ from .hermes_support import (
     asyncio,
     json,
     re,
-    sqlite3,
     time,
     uuid,
 )
@@ -554,71 +552,3 @@ class ConversationStreamMixin:
     def _sse_data(self, payload: Mapping[str, Any]) -> bytes:
         raw = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
         return f"data: {raw}\n\n".encode("utf-8")
-
-
-    @staticmethod
-    def _upstream_runtime_help_guidance() -> str:
-        try:
-            from agent.prompt_builder import HERMES_AGENT_HELP_GUIDANCE
-        except (ImportError, AttributeError):
-            return ""
-        return str(HERMES_AGENT_HELP_GUIDANCE or "").strip()
-
-
-    def _replace_runtime_help_guidance(self, prompt: Any) -> str:
-        rendered = str(prompt or "")
-        upstream = self._upstream_runtime_help_guidance()
-        if not upstream or upstream not in rendered:
-            return rendered
-        return rendered.replace(upstream, MANAGED_RUNTIME_HELP_GUIDANCE)
-
-
-    def _apply_runtime_help_guidance_override(self, agent: Any, profile_dir: Path) -> None:
-        """Replace Hermes' built-in product identity while preserving its prompt."""
-        original_build = getattr(agent, "_build_system_prompt", None)
-        if callable(original_build):
-            def build_system_prompt(system_message: Any = None) -> str:
-                return self._replace_runtime_help_guidance(
-                    original_build(system_message),
-                )
-
-            agent._build_system_prompt = build_system_prompt
-        for attribute in ("_cached_system_prompt", "_cached_system_prompt_static"):
-            cached = getattr(agent, attribute, None)
-            if isinstance(cached, str) and cached:
-                setattr(
-                    agent,
-                    attribute,
-                    self._replace_runtime_help_guidance(cached),
-                )
-
-
-    def _override_stored_runtime_help_guidance(
-        self,
-        profile_dir: Path,
-        session_id: str,
-    ) -> None:
-        """Migrate a resumed session whose cached prompt contains upstream branding."""
-        db_path = profile_dir / "state.db"
-        upstream = self._upstream_runtime_help_guidance()
-        if not db_path.is_file() or not upstream:
-            return
-        conn = sqlite3.connect(db_path, timeout=1.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            row = conn.execute(
-                "SELECT system_prompt FROM sessions WHERE id = ?",
-                (session_id,),
-            ).fetchone()
-            stored = str(row["system_prompt"] or "") if row else ""
-            replacement = self._replace_runtime_help_guidance(stored)
-            if row and replacement != stored:
-                conn.execute(
-                    "UPDATE sessions SET system_prompt = ? WHERE id = ?",
-                    (replacement, session_id),
-                )
-                conn.commit()
-        except sqlite3.Error:
-            pass
-        finally:
-            conn.close()
