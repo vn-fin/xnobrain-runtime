@@ -8,7 +8,7 @@ from .api import (
     ConversationRename, CronBlueprintInstantiate, CronCreate,
     CronDeliveryTargetCreate, EnabledPatch,
     GenericObject, MCPConfig, MemoryPatch, ProviderCredential, RunApproval,
-    SkillInstall, TeamCreate, TeamRun, TeamRunRecord, TeamRunStepRecord,
+    SkillInstall, SkillSyncRequest, TeamCreate, TeamRun, TeamRunRecord, TeamRunStepRecord,
     WorkspaceCreate, WorkspacePath, WorkspaceWrite,
     KanbanAssign, KanbanBoardCreate, KanbanComment, KanbanLink, KanbanMove,
     KanbanScheduleAction, KanbanTaskCreate, KanbanTaskPatch, KanbanTaskSchedule,

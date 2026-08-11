@@ -471,6 +471,88 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile_config["skills"]["disabled"], [])
         self.assertEqual(len(list((self.root / "snapshots" / "config").glob("*.yaml"))), 1)
 
+    async def test_common_skill_sync_previews_and_applies_full_directories_safely(self):
+        enabled = self.root / "skills" / "office" / "shared"
+        disabled = self.root / "skills" / "office" / "retired"
+        enabled.mkdir(parents=True)
+        disabled.mkdir(parents=True)
+        (enabled / "SKILL.md").write_text(
+            "---\nname: shared\ndescription: Common source\n---\n",
+            encoding="utf-8",
+        )
+        (enabled / "assets").mkdir()
+        (enabled / "assets" / "template.txt").write_text("full payload", encoding="utf-8")
+        (disabled / "SKILL.md").write_text("---\nname: retired\n---\n", encoding="utf-8")
+
+        async with self.client() as client:
+            toggle = await client.patch(
+                "/xnobrain/api/runtime/v1/agents-skills/retired",
+                json={"enabled": False},
+            )
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/agents",
+                json={"name": "Sync Target"},
+            )
+        self.assertEqual(toggle.status_code, 200, toggle.text)
+        agent_id = created.json()["data"]["id"]
+        profile = self.profiles / agent_id
+
+        shared_copy = profile / "skills" / "office" / "shared"
+        (shared_copy / "SKILL.md").write_text(
+            "---\nname: shared\ndescription: Outdated copy\n---\n",
+            encoding="utf-8",
+        )
+        private = profile / "skills" / "custom" / "private-tool"
+        private.mkdir(parents=True)
+        (private / "SKILL.md").write_text("---\nname: private-tool\n---\n", encoding="utf-8")
+        retired_copy = profile / "skills" / "custom" / "retired"
+        retired_copy.mkdir(parents=True)
+        (retired_copy / "SKILL.md").write_text("---\nname: retired\n---\n", encoding="utf-8")
+        profile_config = yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))
+        profile_config.setdefault("skills", {})["disabled"] = ["private-tool"]
+        (profile / "config.yaml").write_text(yaml.safe_dump(profile_config), encoding="utf-8")
+
+        async with self.client() as client:
+            preview_response = await client.post(
+                "/xnobrain/api/runtime/v1/agents-skills/sync/preview",
+                json={"agent_ids": [agent_id]},
+            )
+        self.assertEqual(preview_response.status_code, 200, preview_response.text)
+        preview = preview_response.json()["data"]
+        plan = preview["agents"][0]
+        self.assertEqual(plan["updated"], ["shared"])
+        self.assertEqual(plan["removed"], ["retired"])
+        self.assertEqual(plan["preserved"], ["private-tool"])
+
+        async with self.client() as client:
+            applied_response = await client.post(
+                "/xnobrain/api/runtime/v1/agents-skills/sync",
+                json={
+                    "agent_ids": [agent_id],
+                    "expected_source_revision": preview["source_revision"],
+                },
+            )
+        self.assertEqual(applied_response.status_code, 200, applied_response.text)
+        applied = applied_response.json()["data"]
+        self.assertEqual(applied["status"], "completed")
+        self.assertEqual((shared_copy / "assets" / "template.txt").read_text(), "full payload")
+        self.assertTrue((private / "SKILL.md").is_file())
+        self.assertFalse(retired_copy.exists())
+        synced_config = yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(synced_config["skills"]["disabled"], ["private-tool"])
+
+        (enabled / "assets" / "template.txt").write_text("changed", encoding="utf-8")
+        async with self.client() as client:
+            stale = await client.post(
+                "/xnobrain/api/runtime/v1/agents-skills/sync",
+                json={
+                    "agent_ids": [agent_id],
+                    "expected_source_revision": preview["source_revision"],
+                },
+            )
+        self.assertEqual(stale.status_code, 409, stale.text)
+        self.assertEqual(stale.json()["error"]["code"], "skills_sync_stale")
+
     async def test_profile_registry_uses_generated_ids_and_display_names(self):
         async with self.client() as client:
             created = await client.post("/xnobrain/api/runtime/v1/agents", json={

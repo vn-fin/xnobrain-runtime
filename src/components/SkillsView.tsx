@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, ChevronDown, Plus, Search, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, Loader2, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { groupSkillsByCategory, skillCategoryOrder } from '../utils/skills';
 import type { Agent, AgentSkill, AgentSkillMap } from '../types';
+import type { SkillSyncPreview, SkillSyncResult } from '../api/skills';
 
 const INITIAL_VISIBLE = 24;
 const VIEW_MORE_STEP = 24;
@@ -68,6 +69,8 @@ export function SkillsView({
   installError,
   onInstallExisting,
   onApply,
+  onPreviewSync,
+  onSync,
   onClose,
 }: {
   library: AgentSkill[];
@@ -84,6 +87,8 @@ export function SkillsView({
   installError: string;
   onInstallExisting: (id: string, agentIds: string[]) => void;
   onApply: (skillIds: string[], agentIds: string[]) => void;
+  onPreviewSync?: (agentIds: string[]) => Promise<SkillSyncPreview>;
+  onSync?: (agentIds: string[], sourceRevision: string) => Promise<SkillSyncResult>;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -93,6 +98,13 @@ export function SkillsView({
   const [applyAgentIds, setApplyAgentIds] = useState<string[]>([]);
   const [visible, setVisible] = useState(INITIAL_VISIBLE);
   const [togglePendingId, setTogglePendingId] = useState('');
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncAgentIds, setSyncAgentIds] = useState<string[]>([]);
+  const [syncSearch, setSyncSearch] = useState('');
+  const [syncPreview, setSyncPreview] = useState<SkillSyncPreview | null>(null);
+  const [syncResult, setSyncResult] = useState<SkillSyncResult | null>(null);
+  const [syncPending, setSyncPending] = useState(false);
+  const [syncError, setSyncError] = useState('');
   const query = search.trim().toLowerCase();
   const eligibleAgents = useMemo(
     () => agents.filter((agent) => selectedSkillIds.some(
@@ -100,6 +112,16 @@ export function SkillsView({
     )),
     [agentSkills, agents, selectedSkillIds],
   );
+  const syncEligibleAgents = useMemo(
+    () => agents.filter((agent) => agent.id !== 'big-brother'),
+    [agents],
+  );
+  const visibleSyncAgents = useMemo(() => {
+    const value = syncSearch.trim().toLowerCase();
+    return value
+      ? syncEligibleAgents.filter((agent) => `${agent.title} ${agent.id}`.toLowerCase().includes(value))
+      : syncEligibleAgents;
+  }, [syncEligibleAgents, syncSearch]);
 
   const filteredLibrary = useMemo(() => library.filter((skill) => {
     if (groupFilter !== 'all' && skill.category !== groupFilter) return false;
@@ -158,6 +180,67 @@ export function SkillsView({
     await onSetDefaultEnabled(skill.skill_id, !skill.enabled);
     setTogglePendingId('');
   };
+  const closeSync = () => {
+    if (syncPending) return;
+    setSyncOpen(false);
+    setSyncAgentIds([]);
+    setSyncSearch('');
+    setSyncPreview(null);
+    setSyncResult(null);
+    setSyncError('');
+  };
+  const openSync = () => {
+    setSyncAgentIds([]);
+    setSyncPreview(null);
+    setSyncResult(null);
+    setSyncError('');
+    setSyncOpen(true);
+  };
+  const toggleSyncAgent = (agentId: string) => setSyncAgentIds((current) =>
+    current.includes(agentId) ? current.filter((id) => id !== agentId) : [...current, agentId]);
+  const reviewSync = async () => {
+    if (!onPreviewSync || syncAgentIds.length === 0) return;
+    setSyncPending(true);
+    setSyncError('');
+    try {
+      setSyncPreview(await onPreviewSync(syncAgentIds));
+    } catch (value) {
+      setSyncError(value instanceof Error ? value.message : 'Could not preview the skill sync.');
+    } finally {
+      setSyncPending(false);
+    }
+  };
+  const confirmSync = async () => {
+    if (!onSync || !syncPreview) return;
+    setSyncPending(true);
+    setSyncError('');
+    try {
+      setSyncResult(await onSync(syncAgentIds, syncPreview.source_revision));
+    } catch (value) {
+      setSyncError(value instanceof Error ? value.message : 'Could not synchronize skills.');
+    } finally {
+      setSyncPending(false);
+    }
+  };
+  const retryFailed = () => {
+    const failed = syncResult?.agents.filter((item) => item.status === 'failed').map((item) => item.agent_id) ?? [];
+    setSyncAgentIds(failed);
+    setSyncResult(null);
+    setSyncPreview(null);
+    setSyncError('');
+    void reviewSyncFor(failed);
+  };
+  const reviewSyncFor = async (agentIds: string[]) => {
+    if (!onPreviewSync || agentIds.length === 0) return;
+    setSyncPending(true);
+    try {
+      setSyncPreview(await onPreviewSync(agentIds));
+    } catch (value) {
+      setSyncError(value instanceof Error ? value.message : 'Could not preview the skill sync.');
+    } finally {
+      setSyncPending(false);
+    }
+  };
   const initialLoading = loading && library.length === 0;
 
   return (
@@ -165,6 +248,7 @@ export function SkillsView({
       <header className="skills-view-top">
         <div><h1>{t('skillsView.title')}</h1><p>{t('skillsView.subtitle')}</p></div>
         <div className="skills-view-actions">
+          {onPreviewSync && onSync && <button className="skv-install-btn" disabled={syncEligibleAgents.length === 0} onClick={openSync}><RefreshCw size={15} />Sync agents</button>}
           <button className={installOpen ? 'skv-install-btn open' : 'skv-install-btn'} onClick={() => setInstallOpen((current) => !current)}><Plus size={15} />{t('skillsView.installNew')}</button>
           <button className="icon-button" title={t('common.close')} onClick={onClose}><X size={17} /></button>
         </div>
@@ -247,6 +331,86 @@ export function SkillsView({
         </footer>
       )}
       </>}
+
+      {syncOpen && (
+        <div className="skv-sync-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeSync()}>
+          <section className="skv-sync-dialog" role="dialog" aria-modal="true" aria-labelledby="skill-sync-title">
+            <header className="skv-sync-header">
+              <div>
+                <h2 id="skill-sync-title">{syncResult ? 'Sync complete' : syncPreview ? 'Confirm skill sync' : 'Sync common skills'}</h2>
+                <p>{syncResult ? 'Review the result for each agent.' : syncPreview ? 'Common skills replace matching agent copies. Private skills are preserved.' : 'Choose agents that should receive the enabled common skills.'}</p>
+              </div>
+              <button className="icon-button" aria-label="Close" disabled={syncPending} onClick={closeSync}><X size={17} /></button>
+            </header>
+
+            {!syncPreview && !syncResult && (
+              <div className="skv-sync-body">
+                <div className="skv-sync-note"><Check size={16} /><span><strong>{library.filter((skill) => skill.enabled).length} enabled common skills</strong> will be synchronized. Disabled common skills are removed from selected agents.</span></div>
+                <div className="skv-sync-toolbar">
+                  <div className="skv-search"><Search size={15} /><input value={syncSearch} onChange={(event) => setSyncSearch(event.target.value)} placeholder="Search agents" autoFocus /></div>
+                  <button onClick={() => setSyncAgentIds(syncAgentIds.length === syncEligibleAgents.length ? [] : syncEligibleAgents.map((agent) => agent.id))}>{syncAgentIds.length === syncEligibleAgents.length ? 'Clear all' : 'Select all'}</button>
+                </div>
+                <div className="skv-sync-agent-list">
+                  {visibleSyncAgents.map((agent) => {
+                    const installed = Object.keys(agentSkills[agent.id] ?? {}).length;
+                    const enabled = Object.values(agentSkills[agent.id] ?? {}).filter(Boolean).length;
+                    return <label className={syncAgentIds.includes(agent.id) ? 'selected' : ''} key={agent.id}>
+                      <input type="checkbox" checked={syncAgentIds.includes(agent.id)} onChange={() => toggleSyncAgent(agent.id)} />
+                      <span><strong>{agent.title}</strong><small>{agent.id}</small></span>
+                      <em>{enabled}/{installed} enabled</em>
+                    </label>;
+                  })}
+                </div>
+              </div>
+            )}
+
+            {syncPreview && !syncResult && (
+              <div className="skv-sync-body">
+                <div className="skv-sync-summary">
+                  <span className="add">+{syncPreview.totals.added} added</span>
+                  <span className="update">{syncPreview.totals.updated} updated</span>
+                  <span className="remove">−{syncPreview.totals.removed} removed</span>
+                  <span>{syncPreview.totals.preserved} private preserved</span>
+                </div>
+                {syncPreview.totals.removed > 0 && <div className="skv-sync-warning"><AlertTriangle size={16} />Disabled common skill copies listed below will be removed.</div>}
+                <div className="skv-sync-plans">
+                  {syncPreview.agents.map((plan) => <details key={plan.agent_id} open={syncPreview.agents.length <= 3}>
+                    <summary><strong>{agents.find((agent) => agent.id === plan.agent_id)?.title ?? plan.agent_id}</strong><span>+{plan.added.length} · {plan.updated.length} updated · −{plan.removed.length}</span></summary>
+                    <div>
+                      <SkillChangeList label="Add" values={plan.added} />
+                      <SkillChangeList label="Update" values={plan.updated} />
+                      <SkillChangeList label="Remove" values={plan.removed} danger />
+                      <SkillChangeList label="Preserve private" values={plan.preserved} />
+                      {!plan.added.length && !plan.updated.length && !plan.removed.length && <p>No common skill changes.</p>}
+                    </div>
+                  </details>)}
+                </div>
+              </div>
+            )}
+
+            {syncResult && (
+              <div className="skv-sync-body">
+                <div className={syncResult.failed ? 'skv-sync-warning' : 'skv-sync-note'}>{syncResult.failed ? <AlertTriangle size={16} /> : <Check size={16} />}<span><strong>{syncResult.completed} agents synchronized.</strong>{syncResult.failed ? ` ${syncResult.failed} failed.` : ' All selected agents are up to date.'}</span></div>
+                <div className="skv-sync-results">{syncResult.agents.map((result) => <div className={result.status} key={result.agent_id}><Check size={15} /><span><strong>{agents.find((agent) => agent.id === result.agent_id)?.title ?? result.agent_id}</strong>{result.error && <small>{result.error}</small>}</span><em>{result.status}</em></div>)}</div>
+              </div>
+            )}
+
+            {syncError && <p className="skv-sync-error" role="alert">{syncError}</p>}
+            <footer className="skv-sync-footer">
+              {syncPreview && !syncResult && <button disabled={syncPending} onClick={() => { setSyncPreview(null); setSyncError(''); }}>Back</button>}
+              <span />
+              {!syncPreview && !syncResult && <button className="primary" disabled={syncPending || syncAgentIds.length === 0} onClick={() => void reviewSync()}>{syncPending && <Loader2 className="spin" size={15} />}Review changes ({syncAgentIds.length})</button>}
+              {syncPreview && !syncResult && <button className="primary" disabled={syncPending} onClick={() => void confirmSync()}>{syncPending && <Loader2 className="spin" size={15} />}Confirm sync</button>}
+              {syncResult?.failed ? <button className="primary" onClick={retryFailed}>Retry failed</button> : syncResult ? <button className="primary" onClick={closeSync}>Done</button> : null}
+            </footer>
+          </section>
+        </div>
+      )}
     </div>
   );
+}
+
+function SkillChangeList({ label, values, danger = false }: { label: string; values: string[]; danger?: boolean }) {
+  if (!values.length) return null;
+  return <p className={danger ? 'danger' : ''}><strong>{label}:</strong> {values.join(', ')}</p>;
 }

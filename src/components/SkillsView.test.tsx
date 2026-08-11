@@ -117,4 +117,60 @@ describe('SkillsView default profile controls', () => {
     expect(container.querySelector('[role="tooltip"]')).toHaveTextContent('Writes documents');
     expect(screen.queryByText('/skills/writer')).not.toBeInTheDocument();
   });
+
+  it('previews changes before confirming a multi-agent skill sync', async () => {
+    const preview = vi.fn().mockResolvedValue({
+      source_revision: 'revision-1',
+      common: { enabled: 1, disabled: 0 },
+      totals: { added: 1, updated: 0, removed: 0, preserved: 1, unchanged: 0 },
+      agents: [{
+        agent_id: 'one',
+        added: ['writer'],
+        updated: [],
+        removed: [],
+        preserved: ['private-skill'],
+        unchanged: [],
+      }],
+    });
+    const sync = vi.fn().mockResolvedValue({
+      source_revision: 'revision-1',
+      status: 'completed',
+      agents: [{
+        agent_id: 'one', status: 'completed', added: ['writer'], updated: [], removed: [], preserved: ['private-skill'], unchanged: [],
+      }],
+      completed: 1,
+      failed: 0,
+    });
+    render(
+      <SkillsView
+        library={[skill]}
+        agents={agents}
+        agentSkills={{}}
+        search=""
+        onSearch={vi.fn()}
+        groupFilter="all"
+        onGroupFilter={vi.fn()}
+        onInstall={vi.fn().mockResolvedValue(true)}
+        onSetDefaultEnabled={vi.fn().mockResolvedValue(true)}
+        installPending={false}
+        installError=""
+        onInstallExisting={vi.fn()}
+        onApply={vi.fn()}
+        onPreviewSync={preview}
+        onSync={sync}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sync agents' }));
+    fireEvent.click(screen.getAllByText('one')[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Review changes (1)' }));
+    await screen.findByText('+1 added');
+    expect(sync).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm sync' }));
+    await screen.findByText('1 agents synchronized.');
+    expect(preview).toHaveBeenCalledWith(['one']);
+    expect(sync).toHaveBeenCalledWith(['one'], 'revision-1');
+  });
 });

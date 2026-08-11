@@ -138,6 +138,11 @@ class SkillInstall(BaseModel):
     source: str | None = Field(default=None, max_length=512)
 
 
+class SkillSyncRequest(BaseModel):
+    agent_ids: list[str] = Field(min_length=1, max_length=100)
+    expected_source_revision: str | None = Field(default=None, max_length=128)
+
+
 class EnabledPatch(BaseModel):
     enabled: bool
 

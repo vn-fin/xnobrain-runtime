@@ -613,6 +613,65 @@ class PlatformService:
             "agents": skills_by_agent,
         }
 
+    async def preview_skill_sync(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        agent_ids = await self._skill_sync_agent_ids(body)
+        return await asyncio.to_thread(self.agents.preview_common_skill_sync, agent_ids)
+
+    async def sync_skills(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        agent_ids = await self._skill_sync_agent_ids(body)
+        revision = str(body.get("expected_source_revision") or "").strip()
+        if not revision:
+            raise ServiceError(
+                "expected_source_revision is required",
+                status=422,
+                code="skills_sync_revision_required",
+            )
+        preview = await asyncio.to_thread(self.agents.preview_common_skill_sync, agent_ids)
+        if preview["source_revision"] != revision:
+            raise ServiceError(
+                "Common skills changed after the preview. Review the sync again.",
+                status=409,
+                code="skills_sync_stale",
+            )
+        for plan in preview["agents"]:
+            agent_id = plan["agent_id"]
+            profile_dir = self.agents.profile_path(agent_id)
+            current = {
+                str(item.get("skill_id") or ""): item
+                for item in self.agents.list_skills(agent_id)["skills"]
+            }
+            for skill_id in [*plan["updated"], *plan["removed"]]:
+                relative_path = str(current.get(skill_id, {}).get("path") or "")
+                skill_file = profile_dir / "skills" / relative_path / "SKILL.md"
+                if skill_file.is_file():
+                    self.repository.snapshot(agent_id, "skills", skill_id, skill_file.read_bytes())
+        result = await asyncio.to_thread(
+            self.agents.sync_common_skills,
+            agent_ids,
+            revision,
+        )
+        return result
+
+    async def _skill_sync_agent_ids(self, body: Mapping[str, Any]) -> list[str]:
+        requested = body.get("agent_ids")
+        if not isinstance(requested, list):
+            raise ServiceError("agent_ids is required", status=422, code="invalid_agent_ids")
+        agent_ids = list(dict.fromkeys(str(value).strip() for value in requested if str(value).strip()))
+        if not agent_ids:
+            raise ServiceError("select at least one agent", status=422, code="invalid_agent_ids")
+        known = {
+            str(item.get("id") or "").strip()
+            for item in await self.list_agents_async()
+        }
+        invalid = [agent_id for agent_id in agent_ids if agent_id not in known or self._is_big_brother(agent_id)]
+        if invalid:
+            raise ServiceError(
+                f"agents cannot be synchronized: {', '.join(invalid)}",
+                status=422,
+                code="invalid_agent_ids",
+            )
+        return agent_ids
+
     async def install_default_skill(self, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         """Install a URL, hub identifier, or local SKILL.md into the root profile."""
         return (

@@ -12,6 +12,27 @@ const encoded = (value: string) => encodeURIComponent(value);
 
 export type SkillsPage = { skills: AgentSkill[]; pagination?: ResponsePagination };
 export type SkillsOverview = { skills: AgentSkill[]; agents: Record<string, AgentSkill[]> };
+export type SkillSyncAgentPlan = {
+  agent_id: string;
+  added: string[];
+  updated: string[];
+  removed: string[];
+  preserved: string[];
+  unchanged: string[];
+};
+export type SkillSyncPreview = {
+  source_revision: string;
+  common: { enabled: number; disabled: number };
+  agents: SkillSyncAgentPlan[];
+  totals: Record<'added' | 'updated' | 'removed' | 'preserved' | 'unchanged', number>;
+};
+export type SkillSyncResult = {
+  source_revision: string;
+  status: 'completed' | 'partial';
+  agents: Array<SkillSyncAgentPlan & { status: 'completed' | 'failed'; error?: string }>;
+  completed: number;
+  failed: number;
+};
 
 function mapSkill(dto: AgentSkillDTO): AgentSkill {
   return {
@@ -43,6 +64,23 @@ export const skillsApi = {
         ]),
       ),
     };
+  },
+
+  async previewSync(agentIds: string[]): Promise<SkillSyncPreview> {
+    return request<SkillSyncPreview>(`${ROOT}/sync/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ agent_ids: agentIds }),
+    });
+  },
+
+  async sync(agentIds: string[], expectedSourceRevision: string): Promise<SkillSyncResult> {
+    return request<SkillSyncResult>(`${ROOT}/sync`, {
+      method: 'POST',
+      body: JSON.stringify({
+        agent_ids: agentIds,
+        expected_source_revision: expectedSourceRevision,
+      }),
+    });
   },
 
   async listDefault(page?: number): Promise<SkillsPage> {
