@@ -234,6 +234,24 @@ class AgentProfilesMixin:
         self._write_yaml_atomic(profile_dir / "config.yaml", config)
 
 
+    def _ensure_agent_workspace(self, name: str, profile_dir: Path) -> Path | None:
+        """Prepare the private workspace used by an ordinary agent session.
+
+        Big Brother intentionally uses the unrestricted root Hermes profile and
+        must not inherit the per-agent workspace policy.
+        """
+        if name == BIG_BROTHER_AGENT_ID:
+            return None
+        workspace_dir = self._workspace_dir_for_profile(name, profile_dir)
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+        config = self._read_config(profile_dir)
+        configured_cwd = str(self._get_nested(config, ("terminal", "cwd"), "") or "")
+        if configured_cwd != str(workspace_dir):
+            self._write_workspace_cwd(profile_dir, workspace_dir)
+        self._ensure_workspace_agents(profile_dir, workspace_dir)
+        return workspace_dir.resolve()
+
+
     def _initialize_state_db(self, profile_dir: Path) -> None:
         conn = sqlite3.connect(profile_dir / "state.db", timeout=1.0)
         try:

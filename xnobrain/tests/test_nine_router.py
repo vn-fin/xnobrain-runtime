@@ -17,7 +17,10 @@ import yaml
 
 from xnobrain.integrations.hermes import AgentAPIError, AgentManager
 from xnobrain.integrations.config import GlobalConfigManager
-from xnobrain.integrations.conversation_prompt import MARKDOWN_RESPONSE_GUIDANCE
+from xnobrain.integrations.conversation_prompt import (
+    AGENT_WORKSPACE_GUIDANCE,
+    MARKDOWN_RESPONSE_GUIDANCE,
+)
 from xnobrain.integrations.nine_router import (
     NINE_ROUTER_API_BASE_URL,
     NINE_ROUTER_PROVIDER,
@@ -153,6 +156,80 @@ class NineRouterConfigTests(unittest.TestCase):
                 ).fetchone()[0]
             self.assertNotIn("Hermes Agent", stored)
             self.assertIn(MARKDOWN_RESPONSE_GUIDANCE, stored)
+
+    def test_ordinary_agent_session_is_pinned_to_its_profile_workspace(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            manager.create_agent({"name": "writer"})
+            profile = manager._profile_dir("writer")
+            workspace = manager._workspace_dir("writer").resolve()
+
+            config_path = profile / "config.yaml"
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            config["terminal"]["cwd"] = str(root / "wrong-directory")
+            config_path.write_text(
+                yaml.safe_dump(config, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            prepared = manager._prepare_chat_command(
+                "writer",
+                {"message": "write hello.txt"},
+                require_conversation=False,
+            )
+            repaired = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            fake_agent = SimpleNamespace(
+                _build_system_prompt=lambda _message=None: "Identity",
+                _cached_system_prompt="Identity",
+                _cached_system_prompt_static="Identity",
+            )
+            manager._apply_runtime_help_guidance_override(
+                fake_agent,
+                profile,
+                workspace,
+            )
+
+        self.assertEqual(Path(prepared["workspace_dir"]), workspace)
+        self.assertEqual(repaired["terminal"]["cwd"], str(workspace))
+        expected_guidance = AGENT_WORKSPACE_GUIDANCE.format(workspace=str(workspace))
+        self.assertIn(expected_guidance, fake_agent._build_system_prompt(None))
+        self.assertIn(expected_guidance, fake_agent._cached_system_prompt)
+        self.assertNotIn("# Agent workspace", fake_agent._cached_system_prompt_static)
+
+    def test_big_brother_does_not_receive_agent_workspace_policy(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            root_profile = root / "root"
+            root_profile.mkdir()
+            (root_profile / "config.yaml").write_text("model: {}\n", encoding="utf-8")
+            manager = AgentManager(
+                root_profile=root_profile,
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            fake_agent = SimpleNamespace(
+                _build_system_prompt=lambda _message=None: "Identity",
+                _cached_system_prompt="Identity",
+                _cached_system_prompt_static="Identity",
+            )
+
+            manager._apply_runtime_help_guidance_override(
+                fake_agent,
+                root_profile,
+                root_profile / "workspace",
+            )
+            manager.update_config("big-brother", {"language": "English"})
+            config = yaml.safe_load(
+                (root_profile / "config.yaml").read_text(encoding="utf-8")
+            )
+
+        self.assertNotIn("# Agent workspace", fake_agent._build_system_prompt(None))
+        self.assertNotIn("cwd", config.get("terminal", {}))
 
     def test_default_skill_policy_disables_only_niche_bundled_skills_once(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -1163,9 +1240,12 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             approvals: list[dict[str, Any]] = []
 
             class FakeAgent:
-                def run_conversation(self, **_kwargs):
+                def run_conversation(self, **run_kwargs):
                     from tools import terminal_tool
 
+                    task_id = str(run_kwargs["task_id"])
+                    observed["session_cwd"] = terminal_tool.get_session_cwd(task_id)
+                    observed["task_cwd"] = terminal_tool.resolve_task_overrides(task_id).get("cwd")
                     callback = terminal_tool._get_approval_callback()
                     observed["choice"] = callback(
                         "Use concise summaries",
@@ -1191,9 +1271,13 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                         agent = self._create_agent(
                             stream_delta_callback=kwargs["stream_delta_callback"],
                         )
-                        result = agent.run_conversation()
+                        result = agent.run_conversation(task_id=kwargs["session_id"])
                         observed["callback_restored"] = (
                             terminal_tool._get_approval_callback() is None
+                        )
+                        observed["workspace_scope_cleared"] = (
+                            terminal_tool.get_session_cwd(kwargs["session_id"]) is None
+                            and not terminal_tool.resolve_task_overrides(kwargs["session_id"])
                         )
                         return result
 
@@ -1228,6 +1312,9 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(observed["choice"], "once")
             self.assertTrue(observed["callback_restored"])
+            self.assertEqual(observed["session_cwd"], str(prepared["workspace_dir"]))
+            self.assertEqual(observed["task_cwd"], str(prepared["workspace_dir"]))
+            self.assertTrue(observed["workspace_scope_cleared"])
             self.assertEqual(approvals[0]["subsystem"], "memory")
             self.assertEqual(result["final_response"], "Saved.")
 

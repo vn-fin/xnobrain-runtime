@@ -554,8 +554,9 @@ class AgentOperationsMixin:
             self._set_nested(config, ("agent", "language"), language)
         if "stream_output" in body:
             self._set_nested(config, ("agent", "stream_output"), self._coerce_bool(body["stream_output"]))
-        self._set_nested(config, ("terminal", "backend"), self._get_nested(config, ("terminal", "backend"), "local"))
-        self._set_nested(config, ("terminal", "cwd"), str(self._workspace_dir(name)))
+        if name != BIG_BROTHER_AGENT_ID:
+            self._set_nested(config, ("terminal", "backend"), self._get_nested(config, ("terminal", "backend"), "local"))
+            self._set_nested(config, ("terminal", "cwd"), str(self._workspace_dir(name)))
         self._normalize_agent_skill_config(config)
         normalize_nine_router_config(
             config,
