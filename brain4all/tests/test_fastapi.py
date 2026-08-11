@@ -721,9 +721,15 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         async with self.client() as client:
             default_response = await client.get("/xnobrain/api/runtime/v1/agents-skills")
             agent_response = await client.get(f"/xnobrain/api/runtime/v1/agents-skills/{agent_id}")
-            overview_response = await client.get(
-                "/xnobrain/api/runtime/v1/agents-skills?include_agents=true"
-            )
+            with patch.object(
+                self.composition.service.config,
+                "list_skills",
+                wraps=self.composition.service.config.list_skills,
+            ) as root_skill_scan:
+                overview_response = await client.get(
+                    "/xnobrain/api/runtime/v1/agents-skills?include_agents=true"
+                )
+                self.assertEqual(root_skill_scan.call_count, 1)
 
         self.assertEqual(default_response.status_code, 200, default_response.text)
         self.assertEqual(agent_response.status_code, 200, agent_response.text)
