@@ -44,4 +44,32 @@ describe('conversationsApi usage', () => {
     expect(usage.contextPressurePercent).toBe(10);
     expect(usage.contextAutoCompaction).toBe(true);
   });
+
+  it('compacts a session through a dedicated action without sending a chat command', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: {
+        conversation_id: 'session-one',
+        before_tokens: 84_000,
+        after_tokens: 29_000,
+        messages_before: 18,
+        messages_after: 6,
+        in_place: true,
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await conversationsApi.compact('agent-one', 'session-one', 'API decisions');
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/sessions/session-one/compact?agent=agent-one');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({ focus: 'API decisions' });
+    expect(result).toEqual({
+      conversationId: 'session-one',
+      beforeTokens: 84_000,
+      afterTokens: 29_000,
+      messagesBefore: 18,
+      messagesAfter: 6,
+    });
+  });
 });

@@ -175,6 +175,18 @@ class ConversationsServiceMixin:
         payload = self.agents.update_conversation(agent_id, conversation_id, {"title": body.get("title")})
         return self._conversation_dto(agent_id, payload["conversation"])
 
+    async def compact_conversation(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        body: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return await self.agents.compact_conversation(
+            agent_id,
+            conversation_id,
+            focus=str(body.get("focus") or "").strip(),
+        )
+
     def delete_conversation(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
         return self.agents.delete_conversation(agent_id, conversation_id)
 
@@ -211,5 +223,4 @@ class ConversationsServiceMixin:
     @staticmethod
     def _conversation_dto(agent_id: str, item: Mapping[str, Any]) -> dict[str, Any]:
         return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Session"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tool_call_count") or item.get("tools") or 0), "created_at": item.get("created_at") or item.get("started_at"), "updated_at": item.get("last_active_at") or item.get("updated_at") or item.get("ended_at") or item.get("started_at") or item.get("created_at")}
-
 

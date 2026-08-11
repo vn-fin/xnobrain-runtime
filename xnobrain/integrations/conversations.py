@@ -138,6 +138,194 @@ class ConversationsMixin:
         }
 
 
+    async def compact_conversation(
+        self,
+        raw_name: Any,
+        raw_session_id: Any,
+        *,
+        focus: str = "",
+    ) -> dict[str, Any]:
+        """Compact one persisted session in place without adding a chat message."""
+        name = self._agent_name(raw_name)
+        profile_dir = self._require_profile(name)
+        session_id = self._session_id(raw_session_id)
+        session = self._session(profile_dir, session_id)
+        if session is None:
+            raise AgentAPIError(
+                f"Conversation not found: {session_id}",
+                code="conversation_not_found",
+                status=404,
+            )
+
+        compact_key = f"{name}:{session_id}"
+        with self._registry_lock:
+            if compact_key in self._compacting_sessions:
+                raise AgentAPIError(
+                    "conversation context is already being compacted",
+                    code="conversation_compacting",
+                    status=409,
+                )
+            if any(
+                state.get("agent") == name
+                and state.get("conversation_id") == session_id
+                for state in self._active_runs.values()
+            ):
+                raise AgentAPIError(
+                    "wait for the active response to finish before compacting context",
+                    code="conversation_running",
+                    status=409,
+                )
+            self._compacting_sessions.add(compact_key)
+
+        try:
+            result = await asyncio.to_thread(
+                self._compact_conversation_sync,
+                name,
+                profile_dir,
+                session_id,
+                str(session.get("model") or ""),
+                focus[:500],
+            )
+            self._persist_conversation_context(
+                profile_dir,
+                session_id,
+                {
+                    "used": result["after_tokens"],
+                    "limit": result["context_limit"],
+                    "threshold": result["context_threshold"],
+                    "auto_compaction": result["auto_compaction"],
+                    "model": result["model"],
+                },
+            )
+            return result
+        finally:
+            with self._registry_lock:
+                self._compacting_sessions.discard(compact_key)
+
+
+    def _compact_conversation_sync(
+        self,
+        name: str,
+        profile_dir: Path,
+        session_id: str,
+        selected_model: str,
+        focus: str,
+    ) -> dict[str, Any]:
+        from agent.model_metadata import estimate_request_tokens_rough
+        from gateway.config import PlatformConfig
+        from gateway.platforms.api_server import APIServerAdapter, _api_request_profile
+        from gateway.run import _profile_runtime_scope
+        from gateway.session_context import clear_session_vars
+
+        session_db = self._session_db(profile_dir)
+        adapter = APIServerAdapter(PlatformConfig(enabled=True))
+        adapter._session_db = session_db
+        adapter._profile_scope = lambda _profile: _profile_runtime_scope(profile_dir)
+        profile_token = _api_request_profile.set(name)
+        session_tokens = adapter._bind_api_server_session(
+            chat_id=session_id,
+            session_key=session_id,
+            session_id=session_id,
+        )
+        agent = None
+        try:
+            history = session_db.get_messages_as_conversation(session_id)
+            if len(history) < 4:
+                raise AgentAPIError(
+                    "there is not enough conversation history to compact",
+                    code="compact_not_enough_history",
+                    status=422,
+                )
+            route = {"model": selected_model} if selected_model else None
+            with _profile_runtime_scope(profile_dir):
+                agent = adapter._create_agent(
+                    session_id=session_id,
+                    gateway_session_key=session_id,
+                    route=route,
+                )
+                agent._end_session_on_close = False
+                # Browser sessions retain one durable route and ID for life.
+                agent.compression_in_place = True
+                agent._print_fn = lambda *args, **kwargs: None
+                compressor = getattr(agent, "context_compressor", None)
+                if compressor is None or not compressor.has_content_to_compress(history):
+                    raise AgentAPIError(
+                        "there is not enough compressible context yet",
+                        code="compact_nothing_to_do",
+                        status=422,
+                    )
+                system_prompt = getattr(agent, "_cached_system_prompt", "") or ""
+                tools = getattr(agent, "tools", None) or None
+                before_tokens = estimate_request_tokens_rough(
+                    history,
+                    system_prompt=system_prompt,
+                    tools=tools,
+                )
+                compressed, _ = agent._compress_context(
+                    history,
+                    system_prompt,
+                    approx_tokens=before_tokens,
+                    focus_topic=focus or None,
+                    task_id=session_id,
+                    force=True,
+                )
+                if getattr(agent, "_compression_skipped_due_to_lock", None):
+                    raise AgentAPIError(
+                        "conversation context is already being compacted",
+                        code="conversation_compacting",
+                        status=409,
+                    )
+                if bool(getattr(compressor, "_last_compress_aborted", False)):
+                    raise AgentAPIError(
+                        "the context summary could not be generated; no messages were changed",
+                        code="compact_summary_failed",
+                        status=502,
+                    )
+                if not bool(getattr(agent, "_last_compaction_in_place", False)):
+                    raise AgentAPIError(
+                        "context compaction made no changes",
+                        code="compact_nothing_to_do",
+                        status=422,
+                    )
+                after_tokens = estimate_request_tokens_rough(
+                    compressed,
+                    system_prompt=getattr(agent, "_cached_system_prompt", "") or system_prompt,
+                    tools=getattr(agent, "tools", None) or tools,
+                )
+                return {
+                    "conversation_id": session_id,
+                    "before_tokens": max(0, int(before_tokens)),
+                    "after_tokens": max(0, int(after_tokens)),
+                    "messages_before": len(history),
+                    "messages_after": len(compressed),
+                    "focus": focus,
+                    "in_place": True,
+                    "model": str(getattr(agent, "model", "") or selected_model),
+                    "context_limit": max(0, int(getattr(compressor, "context_length", 0) or 0)),
+                    "context_threshold": max(0, int(getattr(compressor, "threshold_tokens", 0) or 0)),
+                    "auto_compaction": bool(getattr(agent, "compression_enabled", False)),
+                }
+        except AgentAPIError:
+            raise
+        except Exception as exc:
+            raise AgentAPIError(
+                "context compaction failed; no chat message was added",
+                code="compact_failed",
+                status=502,
+            ) from exc
+        finally:
+            if agent is not None:
+                try:
+                    agent.close()
+                except Exception:
+                    pass
+            clear_session_vars(session_tokens)
+            _api_request_profile.reset(profile_token)
+            close = getattr(session_db, "close", None)
+            if callable(close):
+                close()
+
+
     def _conversation_title(self, body: Mapping[str, Any]) -> str | None:
         if "name" in body:
             return self._nullable_text(body["name"], field="name", max_chars=256)

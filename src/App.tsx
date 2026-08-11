@@ -513,6 +513,10 @@ export default function App() {
             chatError={conversation.error}
             streaming={conversation.streaming}
             canStop={conversation.canStop}
+            compacting={conversation.compacting}
+            compactError={conversation.compactError}
+            compactResult={conversation.compactResult}
+            onCompactContext={conversation.compactContext}
             onSend={(input) => {
               assistants.touchConversation(activeAgent.id, activeConversation?.id ?? '');
               return conversation.sendMessage(input);

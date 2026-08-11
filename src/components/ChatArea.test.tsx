@@ -76,6 +76,50 @@ describe('ContextGauge', () => {
   });
 });
 
+describe('manual context compaction', () => {
+  it('confirms an in-place session action with optional preservation guidance', async () => {
+    const user = userEvent.setup();
+    const conversation: Conversation = {
+      id: 'session-one', title: 'Research', preview: '', model: 'auto', messages: 4, tools: 0,
+    };
+    const agent: Agent = {
+      id: 'agent-one', name: 'agent-one', title: 'Research', description: '', status: 'ready',
+      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [conversation],
+    };
+    const onCompactContext = vi.fn().mockResolvedValue({
+      conversationId: 'session-one', beforeTokens: 84_000, afterTokens: 29_000,
+      messagesBefore: 4, messagesAfter: 2,
+    });
+    render(<ChatArea
+      agent={agent} agents={[agent]} activeConversation={conversation} providers={[]}
+      runs={[]} messages={[
+        { id: 1, role: 'user', content: 'one' },
+        { id: 2, role: 'assistant', content: 'two' },
+        { id: 3, role: 'user', content: 'three' },
+        { id: 4, role: 'assistant', content: 'four' },
+      ]}
+      usage={{ ...usage, messages: 4, contextThreshold: 100_000, contextPressurePercent: 10 }}
+      chatStatus="ready" chatError="" streaming={false} canStop={false}
+      onCompactContext={onCompactContext}
+      onSend={vi.fn()} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
+      onSelectModel={vi.fn()} onSelectAgent={vi.fn()} onTestAgent={vi.fn()}
+      onSelectConversation={vi.fn()} onCreateConversation={vi.fn()} onDeleteConversation={vi.fn()}
+      onRenameConversation={vi.fn()} onOpenFile={vi.fn()}
+    />);
+
+    await user.click(screen.getByRole('button', { name: /Session context.*10K tokens used/ }));
+    expect(screen.getByRole('dialog', { name: 'Session context' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Compact context' }));
+    expect(screen.getByText('Compact session context?')).toBeVisible();
+    await user.type(screen.getByLabelText(/Preserve specific details/), 'API decisions and unresolved bugs');
+    await user.click(screen.getByRole('button', { name: 'Compact context' }));
+
+    expect(onCompactContext).toHaveBeenCalledWith('API decisions and unresolved bugs');
+    expect(screen.queryByRole('dialog', { name: 'Session context' })).not.toBeInTheDocument();
+  });
+});
+
 describe('user message layout', () => {
   it('collapses and expands a long user prompt', async () => {
     const user = userEvent.setup();

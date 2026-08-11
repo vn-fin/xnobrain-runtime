@@ -72,6 +72,34 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     def client(self):
         return AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test")
 
+    async def test_session_compaction_is_a_dedicated_action(self):
+        result = {
+            "conversation_id": "session-one",
+            "before_tokens": 84_000,
+            "after_tokens": 29_000,
+            "messages_before": 18,
+            "messages_after": 6,
+            "in_place": True,
+        }
+        with patch.object(
+            self.composition.service.agents,
+            "compact_conversation",
+            new=AsyncMock(return_value=result),
+        ) as compact:
+            async with self.client() as client:
+                response = await client.post(
+                    "/xnobrain/api/runtime/v1/sessions/session-one/compact?agent=big-brother",
+                    json={"focus": "API decisions"},
+                )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["data"], result)
+        compact.assert_awaited_once_with(
+            "big-brother",
+            "session-one",
+            focus="API decisions",
+        )
+
     async def test_big_brother_bootstrap_aliases_root_profile_and_is_idempotent(self):
         enabled = self.root / "skills" / "enabled-default" / "SKILL.md"
         disabled = self.root / "skills" / "disabled-default" / "SKILL.md"

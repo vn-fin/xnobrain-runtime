@@ -1,6 +1,7 @@
 import { request, requestRaw } from './client';
 import type {
   ConversationListResponseDTO,
+  ConversationCompactResponseDTO,
   ConversationMessageDTO,
   ConversationMessagesResponseDTO,
   ConversationSummaryDTO,
@@ -22,6 +23,14 @@ export type ResolveRunApprovalResponse = {
 export type ConversationPage = {
   conversations: Conversation[];
   pagination: { page: number; limit: number; hasMore: boolean };
+};
+
+export type ConversationCompactResult = {
+  conversationId: string;
+  beforeTokens: number;
+  afterTokens: number;
+  messagesBefore: number;
+  messagesAfter: number;
 };
 
 function pathWithAgent(path: string, agentId: string, extra?: Record<string, string | number | undefined>) {
@@ -107,6 +116,24 @@ export const conversationsApi = {
     return mapUsage(
       signal ? await request<ConversationUsageDTO>(path, { signal }) : await request<ConversationUsageDTO>(path),
     );
+  },
+
+  async compact(agentId: string, conversationId: string, focus?: string): Promise<ConversationCompactResult> {
+    const cleanFocus = focus?.trim();
+    const data = await request<ConversationCompactResponseDTO>(pathWithAgent(
+      `${ROOT}/${encoded(conversationId)}/compact`,
+      agentId,
+    ), {
+      method: 'POST',
+      body: JSON.stringify(cleanFocus ? { focus: cleanFocus } : {}),
+    });
+    return {
+      conversationId: data.conversation_id ?? conversationId,
+      beforeTokens: data.before_tokens ?? 0,
+      afterTokens: data.after_tokens ?? 0,
+      messagesBefore: data.messages_before ?? 0,
+      messagesAfter: data.messages_after ?? 0,
+    };
   },
 
   async rename(agentId: string, conversationId: string, title: string): Promise<Conversation> {

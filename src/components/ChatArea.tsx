@@ -33,6 +33,7 @@ import { Markdown } from './Markdown';
 import { UserMessage } from './UserMessage';
 import { WORKSPACE_FILE_MIME, readDroppedEntries } from './WorkspacePanel';
 import { workspaceApi } from '../api/workspace';
+import type { ConversationCompactResult } from '../api/conversations';
 import type {
   Agent,
   AsyncStatus,
@@ -143,6 +144,10 @@ export function ChatArea({
   chatError,
   streaming,
   canStop,
+  compacting = false,
+  compactError = '',
+  compactResult = null,
+  onCompactContext,
   onSend,
   onStop,
   onResolveRunApproval,
@@ -179,6 +184,10 @@ export function ChatArea({
   chatError: string;
   streaming: boolean;
   canStop: boolean;
+  compacting?: boolean;
+  compactError?: string;
+  compactResult?: ConversationCompactResult | null;
+  onCompactContext?: (focus?: string) => void | Promise<ConversationCompactResult | void>;
   onSend: (input: string) => void | Promise<void>;
   onStop: () => void;
   onResolveRunApproval: (runId: string, choice: RunApprovalChoice) => void | Promise<void>;
@@ -202,6 +211,9 @@ export function ChatArea({
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [modelOpen, setModelOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextConfirming, setContextConfirming] = useState(false);
+  const [contextFocus, setContextFocus] = useState('');
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [agentPickerSearch, setAgentPickerSearch] = useState('');
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
@@ -232,6 +244,12 @@ export function ChatArea({
   const [mentionLoading, setMentionLoading] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
   const modelPickerRef = useDismissibleLayer<HTMLDivElement>(modelOpen, () => setModelOpen(false));
+  const contextPopoverRef = useDismissibleLayer<HTMLDivElement>(contextOpen, () => {
+    if (compacting) return;
+    setContextOpen(false);
+    setContextConfirming(false);
+    setContextFocus('');
+  });
   const conversationPickerRef = useDismissibleLayer<HTMLDivElement>(conversationPickerOpen, () => {
     setConversationPickerOpen(false);
     setConversationSearch('');
@@ -260,7 +278,16 @@ export function ChatArea({
     setMobileActionsOpen(false);
     setConversationPickerOpen(false);
     setConversationSearch('');
+    setContextOpen(false);
+    setContextConfirming(false);
+    setContextFocus('');
   }, [agent.id]);
+
+  useEffect(() => {
+    setContextOpen(false);
+    setContextConfirming(false);
+    setContextFocus('');
+  }, [activeConversation?.id]);
 
   useEffect(() => {
     if (!conversationPickerOpen || conversationQuery) return;
@@ -294,6 +321,26 @@ export function ChatArea({
   const liveRun = [...runs].reverse().find((run) =>
     run.status === 'running' || run.status === 'waiting_for_approval');
   const showLiveActivity = Boolean(liveRun && (streaming || liveRun.status === 'waiting_for_approval'));
+  const contextMessageCount = usage?.messages ?? messages.length;
+  const canCompactContext = Boolean(
+    activeConversation
+    && contextMessageCount >= 4
+    && !streaming
+    && !compacting
+    && onCompactContext,
+  );
+
+  const confirmContextCompaction = async () => {
+    if (!canCompactContext || !onCompactContext) return;
+    try {
+      await onCompactContext(contextFocus.trim() || undefined);
+      setContextOpen(false);
+      setContextConfirming(false);
+      setContextFocus('');
+    } catch {
+      // The hook exposes a sanitized inline error inside the context popover.
+    }
+  };
 
   useEffect(() => {
     followLatestRef.current = true;
@@ -331,6 +378,7 @@ export function ChatArea({
   };
 
   const submit = () => {
+    if (compacting) return;
     const value = input.trim();
     if (!value && attachments.length === 0) return;
     const refs = attachments.map((path) => `\`${path}\``).join('\n');
@@ -907,6 +955,24 @@ export function ChatArea({
           {showLiveActivity && liveRun && (
             <RunActivityBar run={liveRun} onViewActivity={revealLiveActivity} />
           )}
+          {(compacting || compactError || compactResult) && (
+            <div
+              className={`context-compact-status${compactError ? ' error' : compactResult ? ' success' : ''}`}
+              role={compactError ? 'alert' : 'status'}
+              aria-live="polite"
+            >
+              {compacting ? <>
+                <LoaderCircle className="run-step-spin" size={14} />
+                <span>Compacting session context…</span>
+              </> : compactError ? <>
+                <X size={14} />
+                <span>{compactError}</span>
+              </> : compactResult ? <>
+                <Check size={14} />
+                <span>Context compacted · {compactTokens(compactResult.beforeTokens)} → {compactTokens(compactResult.afterTokens)}</span>
+              </> : null}
+            </div>
+          )}
           {queuedMessages.length > 0 && (
             <div className="queue-strip" aria-label={`${queuedMessages.length} queued message${queuedMessages.length === 1 ? '' : 's'}`}>
               {queuedMessages.map((message) => {
@@ -1012,16 +1078,15 @@ export function ChatArea({
               onChange={onInputChange}
               onKeyDown={onComposerKeyDown}
               onBlur={() => window.setTimeout(() => setMentionOpen(false), 120)}
-              disabled={!activeConversation}
+              disabled={!activeConversation || compacting}
             />
             <div className="composer-row">
               <div className="composer-row-right">
-                <div className="composer-model-control" ref={modelPickerRef}>
-                  <button className="composer-model composer-model-context" title="Model, reasoning, and context" onClick={() => setModelOpen((open) => !open)}>
+                <div className="composer-model-context">
+                  <div className="composer-model-control" ref={modelPickerRef}>
+                  <button className="composer-model" title="Select model" onClick={() => setModelOpen((open) => !open)}>
                     {currentModelLabel}
                     <ChevronDown size={14} />
-                    <span className="composer-context-divider" aria-hidden="true">·</span>
-                    <ContextGauge usage={usage} model={currentModelLabel} />
                   </button>
                   {modelOpen && (
                     <div className="model-picker" role="menu">
@@ -1071,6 +1136,88 @@ export function ChatArea({
                       )}
                     </div>
                   )}
+                  </div>
+                  <div className="composer-context-control" ref={contextPopoverRef}>
+                    <button
+                      className="composer-context-button"
+                      title="Session context"
+                      aria-label={`Session context. ${usage?.contextUsed ? `${compactTokens(usage.contextUsed)} tokens used.` : 'Usage unavailable.'}`}
+                      aria-haspopup="dialog"
+                      aria-expanded={contextOpen}
+                      onClick={() => {
+                        setModelOpen(false);
+                        setContextOpen((open) => !open);
+                        if (contextOpen) {
+                          setContextConfirming(false);
+                          setContextFocus('');
+                        }
+                      }}
+                    >
+                      <span className="composer-context-divider" aria-hidden="true">·</span>
+                      <ContextGauge usage={usage} model={currentModelLabel} />
+                    </button>
+                    {contextOpen && (
+                      <div className="context-popover" role="dialog" aria-label="Session context">
+                        <div className="context-popover-head">
+                          <span className="context-popover-icon"><Gauge size={15} /></span>
+                          <div>
+                            <strong>Session context</strong>
+                            <span>{usage?.contextUsed ? `${compactTokens(usage.contextUsed)} tokens currently used` : 'Available after the first response'}</span>
+                          </div>
+                        </div>
+                        <div className="context-popover-meter" aria-hidden="true">
+                          <i style={{ width: `${Math.max(0, Math.min(100, usage?.contextPressurePercent ?? usage?.contextPercent ?? 0))}%` }} />
+                        </div>
+                        {usage?.contextThreshold ? (
+                          <div className="context-popover-detail">
+                            <span>{compactTokens(usage.contextUsed ?? 0)} / {compactTokens(usage.contextThreshold)} to compaction</span>
+                            <span>{Math.round(usage.contextPressurePercent ?? 0)}%</span>
+                          </div>
+                        ) : usage?.contextLimit ? (
+                          <div className="context-popover-detail">
+                            <span>{compactTokens(usage.contextUsed ?? 0)} / {compactTokens(usage.contextLimit)} model context</span>
+                            <span>{Math.round(usage.contextPercent ?? 0)}%</span>
+                          </div>
+                        ) : null}
+                        {!contextConfirming ? <>
+                          <p>Summarize older turns while preserving recent messages and this session.</p>
+                          <button
+                            className="context-compact-primary"
+                            disabled={!canCompactContext}
+                            onClick={() => setContextConfirming(true)}
+                          >
+                            {compacting ? <LoaderCircle className="run-step-spin" size={14} /> : null}
+                            Compact context
+                          </button>
+                          {!activeConversation ? <small>Select a session first.</small>
+                            : streaming ? <small>Wait for the active response to finish.</small>
+                              : contextMessageCount < 4 ? <small>More conversation history is needed.</small>
+                                : null}
+                        </> : <div className="context-confirm">
+                          <strong>Compact session context?</strong>
+                          <p>Older turns will be summarized. Recent messages and recoverable history stay available.</p>
+                          <label htmlFor="context-compact-focus">Preserve specific details <span>Optional</span></label>
+                          <textarea
+                            id="context-compact-focus"
+                            rows={2}
+                            maxLength={500}
+                            placeholder="e.g. API decisions and unresolved bugs"
+                            value={contextFocus}
+                            onChange={(event) => setContextFocus(event.target.value)}
+                            disabled={compacting}
+                          />
+                          {compactError && <div className="context-confirm-error" role="alert">{compactError}</div>}
+                          <div className="context-confirm-actions">
+                            <button disabled={compacting} onClick={() => setContextConfirming(false)}>Cancel</button>
+                            <button className="context-compact-primary" disabled={!canCompactContext} onClick={() => void confirmContextCompaction()}>
+                              {compacting && <LoaderCircle className="run-step-spin" size={14} />}
+                              Compact context
+                            </button>
+                          </div>
+                        </div>}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <span className="composer-divider" />
                 {streaming ? (
@@ -1088,7 +1235,7 @@ export function ChatArea({
                     className="send-round"
                     title="Send"
                     aria-label="Send"
-                    disabled={!activeConversation || (!input.trim() && attachments.length === 0)}
+                    disabled={compacting || !activeConversation || (!input.trim() && attachments.length === 0)}
                     onClick={submit}
                   >
                     <ArrowUp size={16} />
