@@ -1,6 +1,6 @@
 """Agents API route declarations."""
 
-from ..models import AgentCreate, AgentMetadataPatch, ConfigPatch, EnabledPatch, MemoryPatch, SkillInstall
+from ..models import AgentCreate, AgentMetadataPatch, ConfigPatch, EnabledPatch, MemoryPatch, SkillInstall, SkillSyncRequest
 from .definition import route
 
 ROUTES = (
@@ -17,6 +17,8 @@ ROUTES = (
     route("PATCH", "/agents-configs/{agent_id}", "config_agent_patch", ConfigPatch, tags=("Config",)),
     route("GET", "/agents-skills", "skills_default_list", tags=("Skills",)),
     route("POST", "/agents-skills", "skills_default_install", SkillInstall, tags=("Skills",)),
+    route("POST", "/agents-skills/sync/preview", "skills_sync_preview", SkillSyncRequest, tags=("Skills",)),
+    route("POST", "/agents-skills/sync", "skills_sync", SkillSyncRequest, tags=("Skills",)),
     route("PATCH", "/agents-skills/{skill_id}", "skills_default_patch", EnabledPatch, tags=("Skills",)),
     route("GET", "/agents-skills/{agent_id}", "skills_list", tags=("Skills",)),
     route("POST", "/agents-skills/{agent_id}", "skills_install", SkillInstall, tags=("Skills",)),

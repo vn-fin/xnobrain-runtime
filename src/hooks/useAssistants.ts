@@ -546,12 +546,20 @@ export function useAssistants(active = true) {
     return results;
   };
 
+  const previewSkillSync = (agentIds: string[]) => skillsApi.previewSync(agentIds);
+
+  const syncAgentSkills = async (agentIds: string[], sourceRevision: string) => {
+    const result = await skillsApi.sync(agentIds, sourceRevision);
+    await loadSkillsOverview();
+    return result;
+  };
+
   return {
     agents, library, agentSkills, skillStates, agentSkillPages, conversationPages, defaultConfig, status, error, pending,
     skillInstallPending, skillInstallError, skillsOverviewLoading, refresh, loadConversations, loadMoreConversations, loadConversation, loadAgentSkills, loadLibrary, loadSkillsOverview, loadDefaultConfig,
     createAgent, updateAgent, renameAgent, deleteAgent, testAgent, setDefaultModel, setWriteApprovals,
     createConversation, deleteConversation, renameConversation, setConversationTitle, touchConversation,
-    toggleAgentSkill, setSkillEnabled, loadSkillsPage, installDefaultSkill, setDefaultSkillEnabled, installExistingSkill, applySkillsToAgents,
+    toggleAgentSkill, setSkillEnabled, loadSkillsPage, installDefaultSkill, setDefaultSkillEnabled, installExistingSkill, applySkillsToAgents, previewSkillSync, syncAgentSkills,
   };
 }
 

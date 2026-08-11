@@ -372,6 +372,8 @@ export default function App() {
             installError={assistants.skillInstallError}
             onInstallExisting={assistants.installExistingSkill}
             onApply={assistants.applySkillsToAgents}
+            onPreviewSync={assistants.previewSkillSync}
+            onSync={assistants.syncAgentSkills}
             onClose={() => router.setCenterView('chat')}
           />
         ) : centerView === 'data' ? (

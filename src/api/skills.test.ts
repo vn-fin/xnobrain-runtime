@@ -68,4 +68,28 @@ describe('skillsApi', () => {
     });
     expect(result[0].skill_id).toBe('pdf');
   });
+
+  it('passes the preview revision back when applying a skill sync', async () => {
+    const preview = {
+      source_revision: 'revision-1',
+      common: { enabled: 2, disabled: 1 },
+      agents: [],
+      totals: { added: 0, updated: 0, removed: 0, preserved: 0, unchanged: 0 },
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: preview }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: {
+        source_revision: 'revision-1', status: 'completed', agents: [], completed: 0, failed: 0,
+      } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await skillsApi.previewSync(['one', 'two']);
+    await skillsApi.sync(['one', 'two'], 'revision-1');
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({ agent_ids: ['one', 'two'] });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toEqual({
+      agent_ids: ['one', 'two'],
+      expected_source_revision: 'revision-1',
+    });
+  });
 });

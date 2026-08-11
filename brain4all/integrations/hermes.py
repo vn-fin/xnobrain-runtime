@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
+import hashlib
 import json
 import os
 import re
@@ -165,6 +166,7 @@ class AgentManager:
         self._stopped_runs: set[str] = set()
         self._registry_lock = threading.RLock()
         self._conversation_lock = threading.RLock()
+        self._skill_sync_lock = threading.RLock()
         self.sync_profiles_registry()
 
     def list_agents(self) -> dict[str, Any]:
@@ -778,6 +780,216 @@ class AgentManager:
             "object": "hermes.agent_skills",
             "agent": name,
             "skills": sorted(skills, key=lambda item: (item["category"], item["name"])),
+        }
+
+    def preview_common_skill_sync(self, raw_names: list[str]) -> dict[str, Any]:
+        """Describe how enabled root-profile skills would change each agent."""
+        with self._skill_sync_lock:
+            common = self._skill_sync_inventory(self.root_profile, exclude_control=True)
+            revision = self._skill_sync_revision(common)
+            plans = [self._skill_sync_plan(name, common) for name in raw_names]
+            return {
+                "source_revision": revision,
+                "common": {
+                    "enabled": sum(item["enabled"] for item in common.values()),
+                    "disabled": sum(not item["enabled"] for item in common.values()),
+                },
+                "agents": plans,
+                "totals": self._skill_sync_totals(plans),
+            }
+
+    def sync_common_skills(
+        self,
+        raw_names: list[str],
+        expected_source_revision: str,
+    ) -> dict[str, Any]:
+        """Apply the common skill catalog, atomically for each selected profile."""
+        with self._skill_sync_lock:
+            common = self._skill_sync_inventory(self.root_profile, exclude_control=True)
+            revision = self._skill_sync_revision(common)
+            if revision != expected_source_revision:
+                raise AgentAPIError(
+                    "Common skills changed after the preview. Review the sync again.",
+                    code="skills_sync_stale",
+                    status=409,
+                )
+            results: list[dict[str, Any]] = []
+            for raw_name in raw_names:
+                plan = self._skill_sync_plan(raw_name, common)
+                try:
+                    self._apply_skill_sync(raw_name, common)
+                    results.append({**plan, "status": "completed"})
+                except (OSError, AgentAPIError) as exc:
+                    results.append({
+                        **plan,
+                        "status": "failed",
+                        "error": str(exc),
+                    })
+            completed = sum(item["status"] == "completed" for item in results)
+            return {
+                "source_revision": revision,
+                "status": "completed" if completed == len(results) else "partial",
+                "agents": results,
+                "completed": completed,
+                "failed": len(results) - completed,
+            }
+
+    def _skill_sync_plan(
+        self,
+        raw_name: str,
+        common: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        name = self._agent_name(raw_name)
+        target = self._skill_sync_inventory(self._require_profile(name))
+        enabled_common = {key: value for key, value in common.items() if value["enabled"]}
+        added = sorted(key for key in enabled_common if key not in target)
+        updated = sorted(
+            key for key, source in enabled_common.items()
+            if key in target and (
+                not target[key]["enabled"]
+                or target[key]["digest"] != source["digest"]
+                or target[key]["relative_path"] != source["relative_path"]
+            )
+        )
+        removed = sorted(key for key, source in common.items() if not source["enabled"] and key in target)
+        preserved = sorted(key for key in target if key not in common)
+        unchanged = sorted(
+            key for key, source in enabled_common.items()
+            if key in target
+            and target[key]["enabled"]
+            and target[key]["digest"] == source["digest"]
+            and target[key]["relative_path"] == source["relative_path"]
+        )
+        return {
+            "agent_id": name,
+            "added": added,
+            "updated": updated,
+            "removed": removed,
+            "preserved": preserved,
+            "unchanged": unchanged,
+        }
+
+    def _apply_skill_sync(
+        self,
+        raw_name: str,
+        common: dict[str, dict[str, Any]],
+    ) -> None:
+        name = self._agent_name(raw_name)
+        profile_dir = self._require_profile(name)
+        target = self._skill_sync_inventory(profile_dir)
+        skills_root = profile_dir / "skills"
+        temporary = profile_dir / f".skills-sync-{uuid.uuid4().hex}"
+        backup = profile_dir / f".skills-backup-{uuid.uuid4().hex}"
+        private_disabled: set[str] = set()
+        committed = False
+        try:
+            temporary.mkdir(parents=True)
+            for skill_id, item in target.items():
+                if skill_id in common:
+                    continue
+                self._copy_skill_directory(item, temporary)
+                if not item["enabled"]:
+                    private_disabled.add(skill_id)
+            for item in common.values():
+                if item["enabled"]:
+                    self._copy_skill_directory(item, temporary, overwrite=True)
+
+            had_skills = skills_root.exists()
+            if had_skills:
+                os.replace(skills_root, backup)
+            try:
+                os.replace(temporary, skills_root)
+                config = self._read_config(profile_dir)
+                self._write_disabled_skills(profile_dir, config, private_disabled)
+                committed = True
+            except Exception:
+                if skills_root.exists():
+                    shutil.rmtree(skills_root)
+                if had_skills and backup.exists():
+                    os.replace(backup, skills_root)
+                raise
+            if committed and backup.exists():
+                shutil.rmtree(backup)
+        finally:
+            if temporary.exists():
+                shutil.rmtree(temporary)
+            if committed and backup.exists():
+                shutil.rmtree(backup)
+
+    @staticmethod
+    def _copy_skill_directory(
+        item: Mapping[str, Any],
+        destination_root: Path,
+        *,
+        overwrite: bool = False,
+    ) -> None:
+        destination = destination_root / str(item["relative_path"])
+        if overwrite and destination.exists():
+            shutil.rmtree(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(Path(str(item["source"])), destination, symlinks=True)
+
+    def _skill_sync_inventory(
+        self,
+        profile_dir: Path,
+        *,
+        exclude_control: bool = False,
+    ) -> dict[str, dict[str, Any]]:
+        root = profile_dir / "skills"
+        disabled = self._disabled_skills(self._read_config(profile_dir))
+        inventory: dict[str, dict[str, Any]] = {}
+        if not root.is_dir():
+            return inventory
+        for skill_file in sorted(root.rglob("SKILL.md")):
+            source = skill_file.parent
+            relative = source.relative_to(root)
+            if exclude_control and relative.parts[:1] == (BIG_BROTHER_SKILL_CATEGORY,):
+                continue
+            frontmatter = self._read_skill_frontmatter(skill_file)
+            skill_id = str(frontmatter.get("name") or source.name).strip()
+            if not skill_id or skill_id in inventory:
+                continue
+            inventory[skill_id] = {
+                "source": source,
+                "relative_path": relative.as_posix(),
+                "enabled": skill_id not in disabled,
+                "digest": self._skill_directory_digest(source),
+            }
+        return inventory
+
+    @staticmethod
+    def _skill_directory_digest(root: Path) -> str:
+        digest = hashlib.sha256()
+        for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
+            relative = path.relative_to(root).as_posix()
+            digest.update(relative.encode("utf-8"))
+            if path.is_symlink():
+                digest.update(b"L")
+                digest.update(os.readlink(path).encode("utf-8"))
+            elif path.is_file():
+                digest.update(b"F")
+                digest.update(path.read_bytes())
+            elif path.is_dir():
+                digest.update(b"D")
+        return digest.hexdigest()
+
+    @staticmethod
+    def _skill_sync_revision(inventory: Mapping[str, Mapping[str, Any]]) -> str:
+        digest = hashlib.sha256()
+        for skill_id, item in sorted(inventory.items()):
+            digest.update(json.dumps({
+                "id": skill_id,
+                "relative_path": item["relative_path"],
+                "enabled": item["enabled"],
+                "digest": item["digest"],
+            }, sort_keys=True).encode("utf-8"))
+        return digest.hexdigest()
+
+    @staticmethod
+    def _skill_sync_totals(plans: list[dict[str, Any]]) -> dict[str, int]:
+        return {
+            key: sum(len(plan[key]) for plan in plans)
+            for key in ("added", "updated", "removed", "preserved", "unchanged")
         }
 
     async def install_skill(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -2199,8 +2411,7 @@ class AgentManager:
         self._set_nested(config, ("terminal", "cwd"), str(workspace_dir))
         self._normalize_agent_skill_config(config)
         normalize_nine_router_config(config)
-        with (profile_dir / "config.yaml").open("w", encoding="utf-8") as file:
-            yaml.safe_dump(config, file, sort_keys=False, allow_unicode=False)
+        self._write_yaml_atomic(profile_dir / "config.yaml", config)
 
     def _initialize_state_db(self, profile_dir: Path) -> None:
         conn = sqlite3.connect(profile_dir / "state.db", timeout=1.0)
