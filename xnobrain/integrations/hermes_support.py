@@ -84,7 +84,6 @@ PROFILE_STATE_DIRS = (
     "plugins",
     "home",
 )
-MANAGED_RUNTIME_HELP_GUIDANCE = ""
 LEGACY_MANAGED_AGENT_GUIDANCE = (
     """You are an AI agent. If asked who or what you are, describe yourself only
 as an AI agent and summarize relevant capabilities. Do not identify the application,

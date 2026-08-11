@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../i18n';
 import type { Agent, AgentSkill } from '../types';
@@ -86,6 +86,35 @@ describe('SkillsView default profile controls', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Use writer in the default profile' }));
 
     await waitFor(() => expect(setDefaultEnabled).toHaveBeenCalledWith('writer', false));
+  });
+
+  it('shows total and active skill counts instead of duplicate install counts', () => {
+    const disabled = { ...skill, skill_id: 'reader', name: 'reader', enabled: false };
+    const { container } = render(
+      <SkillsView
+        library={[skill, disabled]}
+        agents={[]}
+        agentSkills={{}}
+        search=""
+        onSearch={vi.fn()}
+        groupFilter="all"
+        onGroupFilter={vi.fn()}
+        onInstall={vi.fn().mockResolvedValue(true)}
+        onSetDefaultEnabled={vi.fn().mockResolvedValue(true)}
+        installPending={false}
+        installError=""
+        onInstallExisting={vi.fn()}
+        onApply={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const stats = [...container.querySelectorAll('.skv-stat')];
+    expect(within(stats[0] as HTMLElement).getByText('Total skills')).toBeVisible();
+    expect(within(stats[0] as HTMLElement).getByText('2')).toBeVisible();
+    expect(within(stats[1] as HTMLElement).getByText('Active skills')).toBeVisible();
+    expect(within(stats[1] as HTMLElement).getByText('1')).toBeVisible();
+    expect(screen.queryByText('Installed')).not.toBeInTheDocument();
   });
 
   it('shows enabled agents over the total agent count for each skill', () => {

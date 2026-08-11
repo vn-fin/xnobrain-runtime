@@ -141,11 +141,11 @@ export function SkillsView({
   useEffect(() => setVisible(INITIAL_VISIBLE), [groupFilter, query]);
 
   const stats = useMemo<Stat[]>(() => {
-    const installed = library.filter((skill) => skill.installed).length;
+    const active = library.filter((skill) => skill.enabled).length;
     const inUse = agents.filter((agent) => Object.values(agentSkills[agent.id] ?? {}).some(Boolean)).length;
     return [
-      { label: t('skillsView.statSkills', { defaultValue: 'Skills' }), value: String(library.length) },
-      { label: t('skillsView.statInstalled', { defaultValue: 'Installed' }), value: String(installed) },
+      { label: t('skillsView.statTotalSkills', { defaultValue: 'Total skills' }), value: String(library.length) },
+      { label: t('skillsView.statActiveSkills', { defaultValue: 'Active skills' }), value: String(active) },
       { label: t('skillsView.statCategories', { defaultValue: 'Categories' }), value: String(new Set(library.map((skill) => skill.category)).size) },
       { label: t('skillsView.statInUse', { defaultValue: 'In use' }), value: `${inUse}/${agents.length}` },
     ];

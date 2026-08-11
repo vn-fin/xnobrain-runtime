@@ -6,8 +6,10 @@ from .agent_profiles import AgentProfilesMixin
 from .agent_skills import AgentSkillsMixin
 from .agents import AgentOperationsMixin
 from .conversation_runner import ConversationRunnerMixin
+from .conversation_prompt import ConversationPromptMixin
 from .conversation_stream import ConversationStreamMixin
 from .conversations import ConversationsMixin
+from .default_skills import DefaultSkillsMixin
 from .hermes_commands import HermesCommandsMixin
 from .hermes_support import *  # noqa: F401,F403
 from .hermes_support import (
@@ -29,7 +31,9 @@ class AgentManager(
     AgentOperationsMixin,
     MCPIntegrationMixin,
     AgentSkillsMixin,
+    DefaultSkillsMixin,
     ConversationRunnerMixin,
+    ConversationPromptMixin,
     ConversationStreamMixin,
     ConversationsMixin,
     WorkspacesMixin,
@@ -80,6 +84,11 @@ class AgentManager(
         self._conversation_lock = threading.RLock()
         self._skill_sync_lock = threading.RLock()
         self.sync_profiles_registry()
+        self._apply_default_skills_policy(self.root_profile)
+        if self.profiles_root.is_dir():
+            for profile_dir in self.profiles_root.iterdir():
+                if profile_dir.is_dir():
+                    self._apply_default_skills_policy(profile_dir)
 
 
 

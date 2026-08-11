@@ -17,6 +17,8 @@ import yaml
 
 from xnobrain.integrations.hermes import AgentAPIError, AgentManager
 from xnobrain.integrations.config import GlobalConfigManager
+from xnobrain.integrations.conversation_prompt import MARKDOWN_RESPONSE_GUIDANCE
+from xnobrain.integrations.default_skills import DEFAULT_SKILLS_POLICY_REVISION
 from xnobrain.integrations.nine_router import (
     NINE_ROUTER_API_BASE_URL,
     NINE_ROUTER_PROVIDER,
@@ -133,6 +135,9 @@ class NineRouterConfigTests(unittest.TestCase):
             self.assertNotIn("Hermes Agent", fake_agent._build_system_prompt(None))
             self.assertNotIn("Hermes Agent", fake_agent._cached_system_prompt)
             self.assertNotIn("Hermes Agent", fake_agent._cached_system_prompt_static)
+            self.assertIn(MARKDOWN_RESPONSE_GUIDANCE, fake_agent._build_system_prompt(None))
+            self.assertIn(MARKDOWN_RESPONSE_GUIDANCE, fake_agent._cached_system_prompt)
+            self.assertNotIn(MARKDOWN_RESPONSE_GUIDANCE, fake_agent._cached_system_prompt_static)
 
             session = manager.create_conversation("news", {"title": "Stored prompt"})
             session_id = session["conversation"]["id"]
@@ -148,6 +153,52 @@ class NineRouterConfigTests(unittest.TestCase):
                     (session_id,),
                 ).fetchone()[0]
             self.assertNotIn("Hermes Agent", stored)
+            self.assertIn(MARKDOWN_RESPONSE_GUIDANCE, stored)
+
+    def test_default_skill_policy_disables_only_niche_bundled_skills_once(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "root"
+            skills = root / "skills"
+            skills.mkdir(parents=True)
+            (skills / ".bundled_manifest").write_text(
+                "pdf:abc\ngithub-pr-workflow:def\napple-notes:ghi\nhermes-agent:jkl\n",
+                encoding="utf-8",
+            )
+            (root / "config.yaml").write_text(
+                "skills:\n  disabled: [user-disabled]\n",
+                encoding="utf-8",
+            )
+
+            manager = AgentManager(
+                root_profile=root,
+                profiles_root=Path(temp_dir) / "profiles",
+                legacy_agents_root=Path(temp_dir) / "legacy",
+            )
+            config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
+
+            self.assertEqual(
+                config["skills"]["disabled"],
+                ["apple-notes", "github-pr-workflow", "hermes-agent", "user-disabled"],
+            )
+            self.assertEqual(
+                config["xnobrain"]["default_skills_revision"],
+                DEFAULT_SKILLS_POLICY_REVISION,
+            )
+            self.assertTrue(any((root / "snapshots" / "config").glob("*.yaml")))
+
+            # A later user choice survives future manager starts.
+            config["skills"]["disabled"].remove("github-pr-workflow")
+            (root / "config.yaml").write_text(
+                yaml.safe_dump(config, sort_keys=False),
+                encoding="utf-8",
+            )
+            manager = AgentManager(
+                root_profile=root,
+                profiles_root=Path(temp_dir) / "profiles",
+                legacy_agents_root=Path(temp_dir) / "legacy",
+            )
+            config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
+            self.assertNotIn("github-pr-workflow", config["skills"]["disabled"])
 
     def test_global_catalog_includes_skills_bundled_with_hermes(self) -> None:
         with TemporaryDirectory() as temp_dir:

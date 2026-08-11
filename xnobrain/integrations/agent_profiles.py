@@ -295,6 +295,7 @@ class AgentProfilesMixin:
 
 
     def _ensure_router_profile(self, profile_dir: Path, model: Any = None) -> None:
+        self._apply_default_skills_policy(profile_dir)
         config = self._read_config(profile_dir)
         selected_model = None
         if model is not None:
