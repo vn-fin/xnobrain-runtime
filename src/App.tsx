@@ -428,7 +428,8 @@ export default function App() {
             routeAgentId={router.teamAgentId}
             routeConversationId={router.teamConversationId}
             onNavigate={(teamId, runId, create, replace) => {
-              if (create) router.createTeam();
+              if (create && teamId) router.editTeam(teamId);
+              else if (create) router.createTeam();
               else router.openTeam(teamId, runId, replace);
             }}
             onConversationNavigate={router.openTeamConversation}

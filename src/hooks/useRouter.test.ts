@@ -58,6 +58,7 @@ describe('Team routes', () => {
     ['/teams', { teamId: '', teamRunId: '', teamCreate: false }],
     ['/teams/new', { teamId: '', teamRunId: '', teamCreate: true }],
     ['/teams/team-01', { teamId: 'team-01', teamRunId: '', teamCreate: false }],
+    ['/teams/team-01/edit', { teamId: 'team-01', teamRunId: '', teamCreate: true }],
     ['/teams/team-01/runs/tr_123', { teamId: 'team-01', teamRunId: 'tr_123', teamCreate: false }],
   ] as const)('parses and rebuilds %s', (path, expected) => {
     const route = parseRoute(path, '');
@@ -86,6 +87,9 @@ describe('Team routes', () => {
 
     act(() => result.current.createTeam());
     await waitFor(() => expect(window.location.pathname).toBe('/teams/new'));
+
+    act(() => result.current.editTeam('team-01'));
+    await waitFor(() => expect(window.location.pathname).toBe('/teams/team-01/edit'));
 
     act(() => {
       window.history.replaceState(null, '', '/teams/team-01/runs/tr_123');

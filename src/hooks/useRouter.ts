@@ -58,7 +58,9 @@ export function parseRoute(pathname: string, search: string): RouteState {
       teamCreate = true;
     } else {
       teamId = seg[1] ?? '';
-      if (seg[2] === 'runs') {
+      if (teamId && seg[2] === 'edit') {
+        teamCreate = true;
+      } else if (seg[2] === 'runs') {
         teamRunId = seg[3] ?? '';
         teamAgentId = teamRunId ? sp.get('agent') ?? '' : '';
         teamConversationId = teamRunId ? sp.get('conversation') ?? '' : '';
@@ -123,7 +125,9 @@ export function computeUrl(state: RouteState): string {
   const params = new URLSearchParams();
   if (state.centerView === 'data') return `/settings/${state.settingsSection}`;
   if (state.centerView === 'teams') {
-    if (state.teamCreate) return '/teams/new';
+    if (state.teamCreate) return state.teamId
+      ? `/teams/${encodeURIComponent(state.teamId)}/edit`
+      : '/teams/new';
     if (!state.teamId) return '/teams';
     let path = `/teams/${encodeURIComponent(state.teamId)}`;
     if (state.teamRunId) path += `/runs/${encodeURIComponent(state.teamRunId)}`;
@@ -262,6 +266,15 @@ export function useRouter() {
     setCenterView('teams');
   }, []);
 
+  const editTeam = useCallback((teamId: string) => {
+    setActiveTeamId(teamId);
+    setActiveTeamRunId('');
+    setTeamCreate(true);
+    setTeamAgentId('');
+    setTeamConversationId('');
+    setCenterView('teams');
+  }, []);
+
   const openKanbanTask = useCallback((taskId = '', agentId = '', conversationId = '') => {
     setKanbanTaskId(taskId);
     setKanbanAgentId(taskId ? agentId : '');
@@ -297,7 +310,7 @@ export function useRouter() {
   return {
     centerView, setCenterView, settingsSection, setSettingsSection, rightView, setRightView,
     activeAgentId, setActiveAgentId, activeConversationId, setActiveConversationId,
-    activeTeamId, activeTeamRunId, teamCreate, teamAgentId, teamConversationId, openTeam, openTeamConversation, createTeam,
+    activeTeamId, activeTeamRunId, teamCreate, teamAgentId, teamConversationId, openTeam, openTeamConversation, createTeam, editTeam,
     kanbanTaskId, kanbanAgentId, kanbanConversationId, openKanbanTask,
     cronJobId, cronAgentId, openCronJob,
     agentSearch, setAgentSearch, skillsSearch, setSkillsSearch,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react';
 import {
   ArrowLeft,
   Bot,
@@ -13,7 +13,9 @@ import {
   GitBranch,
   List,
   Loader2,
+  Maximize2,
   MessageSquare,
+  Minus,
   MoreHorizontal,
   MousePointer2,
   Network,
@@ -104,6 +106,103 @@ const RUN_NODE_GAP_X = 280;
 const RUN_NODE_GAP_Y = 140;
 const RUN_START_X = 20;
 const RUN_WORKER_START_X = RUN_START_X + RUN_NODE_WIDTH + 120;
+const MIN_GRAPH_ZOOM = 0.35;
+const MAX_GRAPH_ZOOM = 1.5;
+
+function boundedZoom(value: number) {
+  return Math.min(MAX_GRAPH_ZOOM, Math.max(MIN_GRAPH_ZOOM, Math.round(value * 100) / 100));
+}
+
+function GraphViewport({
+  width,
+  height,
+  className,
+  children,
+  onArrange,
+}: {
+  width: number;
+  height: number;
+  className: string;
+  children: ReactNode;
+  onArrange?: () => void;
+}) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const userZoomedRef = useRef(false);
+  const [zoom, setZoom] = useState(1);
+
+  const changeZoom = (requested: number, anchorX?: number, anchorY?: number) => {
+    const viewport = viewportRef.current;
+    const next = boundedZoom(requested);
+    if (!viewport || next === zoom) return;
+    const x = anchorX ?? viewport.clientWidth / 2;
+    const y = anchorY ?? viewport.clientHeight / 2;
+    const logicalX = (viewport.scrollLeft + x) / zoom;
+    const logicalY = (viewport.scrollTop + y) / zoom;
+    userZoomedRef.current = true;
+    setZoom(next);
+    requestAnimationFrame(() => {
+      viewport.scrollLeft = logicalX * next - x;
+      viewport.scrollTop = logicalY * next - y;
+    });
+  };
+
+  const fit = () => {
+    const viewport = viewportRef.current;
+    if (!viewport?.clientWidth || !viewport.clientHeight) return;
+    userZoomedRef.current = false;
+    const next = boundedZoom(Math.min(1, (viewport.clientWidth - 32) / width, (viewport.clientHeight - 32) / height));
+    setZoom(next);
+    requestAnimationFrame(() => {
+      viewport.scrollLeft = Math.max(0, (width * next - viewport.clientWidth) / 2);
+      viewport.scrollTop = Math.max(0, (height * next - viewport.clientHeight) / 2);
+    });
+  };
+
+  useEffect(() => {
+    if (!userZoomedRef.current) requestAnimationFrame(fit);
+  }, [width, height]);
+
+  useEffect(() => {
+    const fitOnResize = () => {
+      if (!userZoomedRef.current) fit();
+    };
+    window.addEventListener('resize', fitOnResize);
+    return () => window.removeEventListener('resize', fitOnResize);
+  }, [width, height]);
+
+  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('.graph-zoom-controls')) return;
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    changeZoom(zoom * Math.exp(-event.deltaY * 0.0015), event.clientX - rect.left, event.clientY - rect.top);
+  };
+
+  return (
+    <div ref={viewportRef} className={`graph-zoom-viewport ${className}`} onWheel={handleWheel}>
+      <div className="graph-zoom-controls" aria-label="Workflow zoom controls">
+        {onArrange && (
+          <button type="button" onClick={onArrange} aria-label="Arrange workflow" title="Arrange workflow">
+            <Network size={14} />
+          </button>
+        )}
+        <button type="button" onClick={() => changeZoom(zoom - .1)} aria-label="Zoom out workflow" title="Zoom out">
+          <Minus size={14} />
+        </button>
+        <button type="button" className="graph-zoom-value" onClick={fit} aria-label="Fit workflow to view" title="Fit to view">
+          <Maximize2 size={13} /><span>{Math.round(zoom * 100)}%</span>
+        </button>
+        <button type="button" onClick={() => changeZoom(zoom + .1)} aria-label="Zoom in workflow" title="Zoom in">
+          <Plus size={14} />
+        </button>
+      </div>
+      <div className="graph-zoom-stage" style={{ width: width * zoom, height: height * zoom }}>
+        <div className="graph-zoom-scene" style={{ width, height, transform: `scale(${zoom})` }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function conversationInsight(messages: ChatMessage[], usage?: ConversationUsage): NodeConversationInsight {
   const runs = historicalRuns(messages);
@@ -223,7 +322,7 @@ function LiveRunGraph({
   const coordinatorMessages = coordinatorAgent?.conversations.reduce((total, session) => total + session.messages, 0) ?? 0;
 
   return (
-    <div className="run-live-layout">
+    <GraphViewport className="run-live-layout" width={layout.width} height={layout.height}>
       <div className="run-dag" style={{ width: layout.width, height: layout.height }} aria-label="Live team workflow">
         <div className="run-dag-grid" aria-hidden="true" />
         <svg viewBox={`0 0 ${layout.width} ${layout.height}`} aria-hidden="true">
@@ -351,7 +450,7 @@ function LiveRunGraph({
           </button>
         </div>
       </div>
-    </div>
+    </GraphViewport>
   );
 }
 
@@ -874,20 +973,38 @@ function curve(fromX: number, fromY: number, toX: number, toY: number) {
   return `M ${fromX} ${fromY} C ${fromX + bend} ${fromY}, ${toX - bend} ${toY}, ${toX} ${toY}`;
 }
 
-function WorkflowEdges({ nodes }: { nodes: DraftNode[] }) {
+function draftCanvasHeight(nodeCount: number) {
+  return Math.max(CANVAS_HEIGHT, 80 + Math.ceil(nodeCount / 2) * 165);
+}
+
+function arrangeDraftNodes(nodes: DraftNode[]) {
+  const rows = Math.max(1, Math.ceil(nodes.length / 2));
+  const height = draftCanvasHeight(nodes.length);
+  const rowGap = rows === 1 ? 0 : Math.min(165, (height - NODE_HEIGHT - 110) / (rows - 1));
+  const blockHeight = (rows - 1) * rowGap;
+  const firstY = (height - NODE_HEIGHT - blockHeight) / 2;
+  return nodes.map((node, index) => ({
+    ...node,
+    x: 170 + Math.floor(index / rows) * 260,
+    y: firstY + (index % rows) * rowGap,
+  }));
+}
+
+function WorkflowEdges({ nodes, height }: { nodes: DraftNode[]; height: number }) {
   const ids = new Set(nodes.map((node) => node.id));
   const roots = nodes.filter((node) => !node.needs?.some((need) => ids.has(need)));
   const used = new Set(nodes.flatMap((node) => node.needs ?? []));
   const leaves = nodes.filter((node) => !used.has(node.id));
+  const terminalY = height / 2;
   return (
-    <svg className="team-canvas-edges" viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} aria-hidden="true">
+    <svg className="team-canvas-edges" viewBox={`0 0 ${CANVAS_WIDTH} ${height}`} aria-hidden="true">
       <defs>
         <marker id="team-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" />
         </marker>
       </defs>
       {roots.map((node) => (
-        <path key={`start-${node.id}`} className="team-edge virtual" d={curve(116, 310, node.x, node.y + NODE_HEIGHT / 2)} />
+        <path key={`start-${node.id}`} className="team-edge virtual" d={curve(116, terminalY, node.x, node.y + NODE_HEIGHT / 2)} />
       ))}
       {nodes.flatMap((node) => (node.needs ?? []).map((need) => {
         const parent = nodes.find((candidate) => candidate.id === need);
@@ -901,7 +1018,7 @@ function WorkflowEdges({ nodes }: { nodes: DraftNode[] }) {
         );
       }))}
       {leaves.map((node) => (
-        <path key={`${node.id}-finish`} className="team-edge virtual" d={curve(node.x + NODE_WIDTH, node.y + NODE_HEIGHT / 2, 796, 310)} />
+        <path key={`${node.id}-finish`} className="team-edge virtual" d={curve(node.x + NODE_WIDTH, node.y + NODE_HEIGHT / 2, 796, terminalY)} />
       ))}
     </svg>
   );
@@ -939,16 +1056,16 @@ function TeamBuilder({
   const [name, setName] = useState(initialTeam?.name ?? '');
   const [description, setDescription] = useState(initialTeam?.description ?? '');
   const [orchestratorId, setOrchestratorId] = useState(initialTeam?.orchestrator_id ?? agents[0]?.id ?? '');
-  const [nodes, setNodes] = useState<DraftNode[]>(() => initialWorkflow.map((step, index) => ({
+  const [nodes, setNodes] = useState<DraftNode[]>(() => arrangeDraftNodes(initialWorkflow.map((step) => ({
     ...step,
     agent_id: step.agent_id ?? '',
     role: step.role ?? step.id,
     needs: step.needs ?? [],
     allowed_tools: step.allowed_tools ?? [...ESSENTIAL_TEAM_TOOLSETS],
     skills: step.skills ?? enabledSkillIds(step.agent_id ?? ''),
-    x: 170 + (index % 2) * 260,
-    y: 95 + Math.floor(index / 2) * 165,
-  })));
+    x: 0,
+    y: 0,
+  }))));
   const [selectedNodeId, setSelectedNodeId] = useState(START_STAGE_ID);
   const [connectFrom, setConnectFrom] = useState('');
   const [message, setMessage] = useState('');
@@ -980,6 +1097,7 @@ function TeamBuilder({
   );
   const [drag, setDrag] = useState<{ id: string; pointerId: number; dx: number; dy: number }>();
   const canvasRef = useRef<HTMLDivElement>(null);
+  const canvasHeight = draftCanvasHeight(nodes.length);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const startSelected = selectedNodeId === START_STAGE_ID;
   const finishSelected = selectedNodeId === FINISH_STAGE_ID;
@@ -1012,7 +1130,6 @@ function TeamBuilder({
     let id = baseId;
     let suffix = 2;
     while (nodes.some((node) => node.id === id)) id = `${baseId}-${suffix++}`;
-    const index = nodes.length;
     const next: DraftNode = {
       id,
       agent_id: agent.id,
@@ -1021,10 +1138,10 @@ function TeamBuilder({
       needs: [],
       allowed_tools: [...ESSENTIAL_TEAM_TOOLSETS],
       skills: enabledSkillIds(agent.id),
-      x: 170 + (index % 2) * 260,
-      y: 95 + Math.floor(index / 2) * 165,
+      x: 0,
+      y: 0,
     };
-    setNodes((current) => [...current, next]);
+    setNodes((current) => arrangeDraftNodes([...current, next]));
     setSelectedNodeId(id);
     setMessage('');
   };
@@ -1075,9 +1192,9 @@ function TeamBuilder({
   };
 
   const removeNode = (id: string) => {
-    setNodes((current) => current
+    setNodes((current) => arrangeDraftNodes(current
       .filter((node) => node.id !== id)
-      .map((node) => ({ ...node, needs: (node.needs ?? []).filter((need) => need !== id) })));
+      .map((node) => ({ ...node, needs: (node.needs ?? []).filter((need) => need !== id) }))));
     setSelectedNodeId((current) => current === id ? '' : current);
     setConnectFrom((current) => current === id ? '' : current);
   };
@@ -1117,7 +1234,7 @@ function TeamBuilder({
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const scaleX = CANVAS_WIDTH / rect.width;
-    const scaleY = CANVAS_HEIGHT / rect.height;
+    const scaleY = canvasHeight / rect.height;
     setDrag({
       id: node.id,
       pointerId: event.pointerId,
@@ -1132,10 +1249,10 @@ function TeamBuilder({
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = (event.clientX - rect.left) * (CANVAS_WIDTH / rect.width) - drag.dx;
-    const y = (event.clientY - rect.top) * (CANVAS_HEIGHT / rect.height) - drag.dy;
+    const y = (event.clientY - rect.top) * (canvasHeight / rect.height) - drag.dy;
     updateNode(drag.id, {
       x: Math.max(130, Math.min(540, x)),
-      y: Math.max(28, Math.min(CANVAS_HEIGHT - NODE_HEIGHT - 28, y)),
+      y: Math.max(28, Math.min(canvasHeight - NODE_HEIGHT - 28, y)),
     });
   };
 
@@ -1297,20 +1414,26 @@ function TeamBuilder({
           </button>
         </div>
         {message && <div className="teams-inline-message" role="alert">{message}</div>}
-        <div className="team-canvas-wrap">
+        <GraphViewport
+          className="team-canvas-wrap"
+          width={CANVAS_WIDTH}
+          height={canvasHeight}
+          onArrange={() => setNodes((current) => arrangeDraftNodes(current))}
+        >
           <div
             ref={canvasRef}
             className={`team-canvas ${connectFrom ? 'is-connecting' : ''}`}
+            style={{ height: canvasHeight }}
             onPointerMove={moveDrag}
             onPointerUp={() => setDrag(undefined)}
             onPointerCancel={() => setDrag(undefined)}
           >
             <div className="team-canvas-grid" />
-            <WorkflowEdges nodes={nodes} />
+            <WorkflowEdges nodes={nodes} height={canvasHeight} />
             <button
               type="button"
               className={`team-terminal-node start ${startSelected ? 'selected' : ''}`}
-              style={{ left: 32, top: 270 }}
+              style={{ left: 32, top: canvasHeight / 2 - 40 }}
               onClick={() => setSelectedNodeId(START_STAGE_ID)}
               aria-label="Configure Start stage"
             >
@@ -1366,7 +1489,7 @@ function TeamBuilder({
             <button
               type="button"
               className={`team-terminal-node finish ${finishSelected ? 'selected' : ''}`}
-              style={{ left: 794, top: 270 }}
+              style={{ left: 794, top: canvasHeight / 2 - 40 }}
               onClick={() => setSelectedNodeId(FINISH_STAGE_ID)}
               aria-label="Configure Finish stage"
             >
@@ -1382,7 +1505,7 @@ function TeamBuilder({
               </div>
             )}
           </div>
-        </div>
+        </GraphViewport>
       </main>
 
       <aside className={`team-node-inspector ${selectedStageExists ? 'open' : ''}`}>
@@ -1886,7 +2009,9 @@ export function TeamsView({
   const [mode, setMode] = useState<TeamsMode>(routeCreate ? 'builder' : 'library');
   const [selectedTeamId, setSelectedTeamId] = useState(routeTeamId);
   const [selectedRunId, setSelectedRunId] = useState(routeRunId);
-  const [editingTeam, setEditingTeam] = useState<Team>();
+  const [editingTeam, setEditingTeam] = useState<Team | undefined>(() => (
+    routeCreate && routeTeamId ? state.teams.find((team) => team.id === routeTeamId) : undefined
+  ));
   const [importOpen, setImportOpen] = useState(false);
   const routeReady = useRef(false);
 
@@ -1896,10 +2021,18 @@ export function TeamsView({
       return;
     }
     setMode(routeCreate ? 'builder' : 'library');
-    setEditingTeam(undefined);
+    setEditingTeam((current) => (
+      routeCreate && routeTeamId && current?.id === routeTeamId ? current : undefined
+    ));
     setSelectedTeamId(routeTeamId);
     setSelectedRunId(routeRunId);
   }, [routeCreate, routeRunId, routeTeamId]);
+
+  useEffect(() => {
+    if (!routeCreate || !routeTeamId || editingTeam?.id === routeTeamId) return;
+    const routedTeam = state.teams.find((team) => team.id === routeTeamId);
+    if (routedTeam) setEditingTeam(routedTeam);
+  }, [editingTeam?.id, routeCreate, routeTeamId, state.teams]);
 
   const navigateLibrary = (teamId = selectedTeamId, runId = '', replace = false) => {
     setEditingTeam(undefined);
@@ -1921,6 +2054,7 @@ export function TeamsView({
     setMode('builder');
     setSelectedTeamId(team.id);
     setSelectedRunId('');
+    onNavigate?.(team.id, '', true);
   };
 
   const saved = (team: Team) => {
@@ -1943,7 +2077,16 @@ export function TeamsView({
       </header>
       {state.error && <div className="teams-error">{state.error}</div>}
       {mode === 'builder'
-        ? (
+        ? routeCreate && routeTeamId && !editingTeam
+          ? (
+            <div className="team-detail-empty">
+              <Network size={28} />
+              <h2>{state.status === 'loading' ? 'Loading workflow…' : 'Team not found'}</h2>
+              <p>{state.status === 'loading' ? 'Restoring the team editor from this URL.' : 'This saved team is no longer available.'}</p>
+              {state.status !== 'loading' && <button className="secondary-button" onClick={() => navigateLibrary('')}>Back to teams</button>}
+            </div>
+          )
+          : (
           <TeamBuilder
             key={editingTeam?.id ?? 'new'}
             agents={agents}
@@ -1952,7 +2095,7 @@ export function TeamsView({
             onSaved={saved}
             onBack={() => navigateLibrary()}
           />
-        )
+          )
         : (
           <TeamLibrary
             agents={agents}
