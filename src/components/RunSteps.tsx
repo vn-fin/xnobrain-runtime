@@ -90,8 +90,7 @@ function TodoStatusIcon({ todo }: { todo: ChatTodoItem }) {
   return <Circle size={12} />;
 }
 
-function RunPlan({ run }: { run: ChatRun }) {
-  const todos = run.todos ?? [];
+function RunPlan({ todos, runStatus }: { todos: ChatTodoItem[]; runStatus: ChatRun['status'] }) {
   const complete = todos.filter((todo) => todo.status === 'completed' || todo.status === 'cancelled').length;
   const allDone = todos.length > 0 && complete === todos.length;
   const [open, setOpen] = useState(() => !allDone);
@@ -101,9 +100,9 @@ function RunPlan({ run }: { run: ChatRun }) {
   const visibleTodos = showAll ? todos : todos.slice(0, 5);
 
   useEffect(() => {
-    if (!touched.current && run.status === 'running' && activeId) setOpen(true);
-    if (!touched.current && run.status !== 'running' && allDone) setOpen(false);
-  }, [activeId, allDone, run.status]);
+    if (!touched.current && runStatus === 'running' && activeId) setOpen(true);
+    if (!touched.current && runStatus !== 'running' && allDone) setOpen(false);
+  }, [activeId, allDone, runStatus]);
 
   if (todos.length === 0) return null;
   return (
@@ -381,6 +380,7 @@ export function RunSteps({
     .map((part) => part.trim())
     .filter((part) => part.length > 0 && !repeatsAnswer(part));
   const timeline = run.timeline?.filter((item) => item.kind !== 'reasoning' || !repeatsAnswer(item.text));
+  const timelineHasPlans = Boolean(timeline?.some((item) => item.kind === 'todos'));
   const toolCount = run.steps.length;
   const hasReasoning = reasoningParts.length > 0;
   const hasAnswer = run.assistantContent.trim().length > 0;
@@ -426,7 +426,7 @@ export function RunSteps({
       </button>
       {expanded && (
         <div className="run-step-list">
-          <RunPlan run={run} />
+          {!timelineHasPlans && run.todos && <RunPlan todos={run.todos} runStatus={run.status} />}
           {run.approval && <RunApprovalPrompt run={run} onResolveApproval={onResolveApproval} />}
           {timeline && timeline.length > 0 ? (
             (() => {
@@ -444,6 +444,9 @@ export function RunSteps({
                       streaming={Boolean(run.reasoningStreaming && index === lastReasoningIndex)}
                     />
                   );
+                }
+                if (item.kind === 'todos') {
+                  return <RunPlan key={`plan-${index}`} todos={item.todos} runStatus={run.status} />;
                 }
                 const groupSteps = item.stepIds.map((id) => byId.get(id)).filter((step): step is ChatRunStep => Boolean(step));
                 return <ToolGroup key={`tools-${index}`} steps={groupSteps} />;

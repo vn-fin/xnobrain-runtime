@@ -106,6 +106,33 @@ describe('RunSteps', () => {
     expect(screen.getByText('1/2 tasks')).toBeVisible();
   });
 
+  it('renders repeated plan updates in chronological activity order', () => {
+    const first = [
+      { id: 'one', content: 'First snapshot current task', status: 'in_progress' as const },
+      { id: 'two', content: 'Prepare the answer', status: 'pending' as const },
+    ];
+    const second = [
+      { id: 'one', content: 'First snapshot current task', status: 'completed' as const },
+      { id: 'two', content: 'Second snapshot current task', status: 'in_progress' as const },
+    ];
+    const { container } = render(<RunSteps run={run({
+      status: 'running',
+      assistantContent: '',
+      todos: second,
+      reasoning: ['Research finished; moving to the answer.'],
+      timeline: [
+        { kind: 'todos', todos: first },
+        { kind: 'reasoning', text: 'Research finished; moving to the answer.' },
+        { kind: 'todos', todos: second },
+      ],
+    })} />);
+
+    expect(screen.getAllByRole('region', { name: 'Agent plan' })).toHaveLength(2);
+    const text = container.textContent ?? '';
+    expect(text.indexOf('First snapshot current task')).toBeLessThan(text.indexOf('Research finished; moving to the answer.'));
+    expect(text.indexOf('Research finished; moving to the answer.')).toBeLessThan(text.indexOf('Second snapshot current task'));
+  });
+
   it('shows reasoning deltas while the reasoning phase is streaming', () => {
     const { rerender } = render(<RunSteps run={run({
       status: 'running',

@@ -64,6 +64,35 @@ describe('reduceRunEvent (live API format)', () => {
       { id: 'research', content: 'Research the topic', status: 'completed' },
       { id: 'summarize', content: 'Summarize the findings', status: 'in_progress' },
     ]);
+    expect(run?.timeline).toEqual([
+      { kind: 'tools', stepIds: [`${RUN_ID}-0-todo`] },
+      { kind: 'todos', todos: run?.todos },
+    ]);
+  });
+
+  it('inserts every changed todo snapshot into the activity timeline', () => {
+    const first = [
+      { id: 'research', content: 'Research sources', status: 'in_progress' },
+      { id: 'write', content: 'Write the answer', status: 'pending' },
+    ];
+    const second = [
+      { id: 'research', content: 'Research sources', status: 'completed' },
+      { id: 'write', content: 'Write the answer', status: 'in_progress' },
+    ];
+    const run = fold([
+      stream[0],
+      body({ event: 'tool.started', run_id: RUN_ID, tool: 'todo' }),
+      body({ event: 'tool.completed', run_id: RUN_ID, tool: 'todo' }),
+      body({ event: 'todo.updated', run_id: RUN_ID, todos: first }),
+      body({ event: 'reasoning.delta', run_id: RUN_ID, delta: 'I found the sources.' }),
+      body({ event: 'tool.started', run_id: RUN_ID, tool: 'todo' }),
+      body({ event: 'tool.completed', run_id: RUN_ID, tool: 'todo' }),
+      body({ event: 'todo.updated', run_id: RUN_ID, todos: second }),
+    ]);
+
+    expect(run?.timeline?.map((item) => item.kind)).toEqual(['tools', 'todos', 'reasoning', 'tools', 'todos']);
+    expect(run?.timeline?.filter((item) => item.kind === 'todos')).toHaveLength(2);
+    expect(run?.todos).toEqual(second);
   });
 
   it('marks the tool step as errored when error is true', () => {
@@ -329,6 +358,12 @@ describe('historicalRuns', () => {
   });
 
   it('restores the latest todo snapshot from paired persisted tool messages', () => {
+    const firstTodoResult = JSON.stringify({
+      todos: [
+        { id: 'plan', content: 'Plan the work', status: 'in_progress' },
+        { id: 'build', content: 'Build the feature', status: 'pending' },
+      ],
+    });
     const todoResult = JSON.stringify({
       todos: [
         { id: 'plan', content: 'Plan the work', status: 'completed' },
@@ -345,13 +380,24 @@ describe('historicalRuns', () => {
         finishReason: 'tool_calls',
         timestamp: 11,
       },
-      { id: 3, role: 'tool', content: todoResult, toolName: 'todo', toolCallId: 'todo-1', timestamp: 12 },
-      { id: 4, role: 'assistant', content: 'Still working.', finishReason: 'stop', timestamp: 13 },
+      { id: 3, role: 'tool', content: firstTodoResult, toolName: 'todo', toolCallId: 'todo-1', timestamp: 12 },
+      {
+        id: 4,
+        role: 'assistant',
+        content: 'Planning is complete; starting implementation.',
+        toolCalls: JSON.stringify([{ id: 'todo-2', function: { name: 'todo', arguments: '{}' } }]),
+        finishReason: 'tool_calls',
+        timestamp: 13,
+      },
+      { id: 5, role: 'tool', content: todoResult, toolName: 'todo', toolCallId: 'todo-2', timestamp: 14 },
+      { id: 6, role: 'assistant', content: 'Still working.', finishReason: 'stop', timestamp: 15 },
     ]);
 
     expect(runs[0].todos).toEqual([
       { id: 'plan', content: 'Plan the work', status: 'completed' },
       { id: 'build', content: 'Build the feature', status: 'in_progress' },
     ]);
+    expect(runs[0].timeline?.map((item) => item.kind)).toEqual(['tools', 'todos', 'reasoning', 'tools', 'todos']);
+    expect(runs[0].timeline?.filter((item) => item.kind === 'todos')).toHaveLength(2);
   });
 });
