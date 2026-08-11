@@ -18,7 +18,6 @@ import yaml
 from xnobrain.integrations.hermes import AgentAPIError, AgentManager
 from xnobrain.integrations.config import GlobalConfigManager
 from xnobrain.integrations.conversation_prompt import MARKDOWN_RESPONSE_GUIDANCE
-from xnobrain.integrations.default_skills import DEFAULT_SKILLS_POLICY_REVISION
 from xnobrain.integrations.nine_router import (
     NINE_ROUTER_API_BASE_URL,
     NINE_ROUTER_PROVIDER,
@@ -161,7 +160,8 @@ class NineRouterConfigTests(unittest.TestCase):
             skills = root / "skills"
             skills.mkdir(parents=True)
             (skills / ".bundled_manifest").write_text(
-                "pdf:abc\ngithub-pr-workflow:def\napple-notes:ghi\nhermes-agent:jkl\n",
+                "pdf:abc\nplan:bcd\ncomputer-use:cde\n"
+                "github-pr-workflow:def\napple-notes:ghi\nhermes-agent:jkl\n",
                 encoding="utf-8",
             )
             (root / "config.yaml").write_text(
@@ -178,12 +178,17 @@ class NineRouterConfigTests(unittest.TestCase):
 
             self.assertEqual(
                 config["skills"]["disabled"],
-                ["apple-notes", "github-pr-workflow", "hermes-agent", "user-disabled"],
+                [
+                    "apple-notes",
+                    "computer-use",
+                    "github-pr-workflow",
+                    "hermes-agent",
+                    "user-disabled",
+                ],
             )
-            self.assertEqual(
-                config["xnobrain"]["default_skills_revision"],
-                DEFAULT_SKILLS_POLICY_REVISION,
-            )
+            self.assertNotIn("pdf", config["skills"]["disabled"])
+            self.assertNotIn("plan", config["skills"]["disabled"])
+            self.assertTrue(config["xnobrain"]["default_skills_initialized"])
             self.assertTrue(any((root / "snapshots" / "config").glob("*.yaml")))
 
             # A later user choice survives future manager starts.
