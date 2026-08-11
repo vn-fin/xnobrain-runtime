@@ -170,7 +170,7 @@ describe('KanbanView', () => {
             { id: 't-1042', title: 'Prepare the weekly report', description: 'Prepare the report.', status: archivedTask ? 'archived' : 'running', priority: 'high', assignee: 'research-agent', assignees: ['research-agent'], parents: [], tags: ['report'], progress: archivedTask ? 100 : 50, updated_at: new Date().toISOString() },
             { id: 't-1051', title: 'Draft the report template', description: 'Draft a template.', status: 'todo', priority: 'low', assignee: 'research-agent', assignees: ['research-agent'], parents: [], tags: ['docs'], progress: 0, updated_at: new Date().toISOString() },
             { id: 't-blocked', title: 'Compute 1 + 1', description: 'Needs user input.', status: 'blocked', kanban_status: 'done', allowed_kanban_statuses: ['todo', 'archived'], state_detail: { kind: 'needs_input', label: 'Needs input', reason: 'Confirm the expected answer.' }, priority: 'medium', assignee: null, assignees: [], parents: [], tags: [], progress: 0, updated_at: new Date().toISOString() },
-            { id: 't-done', title: 'Publish release notes', description: 'Release notes are complete.', status: 'done', allowed_kanban_statuses: [], priority: 'medium', assignee: null, assignees: [], parents: [], tags: [], progress: 100, updated_at: new Date().toISOString() },
+            { id: 't-done', title: 'Publish release notes', description: 'Release notes are complete and include a deliberately long input preview that must stay inside the compact card.', summary: 'Completed a deliberately long result with paths, verification details, and additional context that must be clamped on the board while remaining available in task details.', status: 'done', allowed_kanban_statuses: [], priority: 'medium', assignee: null, assignees: [], parents: [], tags: [], progress: 100, updated_at: new Date().toISOString() },
           ] },
           { id: 'provider-rollout', name: 'Provider rollout', description: 'Provider checks', color: '#34d399', tasks: [
             { id: 'p-201', title: 'Verify provider callback', description: 'Check the callback.', status: 'running', priority: 'high', assignee: 'provider-agent', assignees: ['provider-agent'], parents: [], tags: [], progress: 50, updated_at: new Date().toISOString() },
@@ -310,6 +310,18 @@ describe('KanbanView', () => {
     const drawer = screen.getByRole('dialog');
     expect(within(drawer).getByText('Done', { selector: '.kb-substate' })).toBeVisible();
     expect(within(drawer).getByRole('button', { name: 'Archive task' })).toBeEnabled();
+  });
+
+  it('marks long task input and result as compact card previews', async () => {
+    render(<TestBoard />);
+
+    const card = await screen.findByRole('button', { name: 'Open t-done: Publish release notes' });
+    const input = within(card).getByText(/Release notes are complete and include/);
+    const result = within(card).getByText(/Completed a deliberately long result/);
+    expect(input).toHaveClass('kb-card-preview', 'input');
+    expect(result).toHaveClass('kb-card-preview', 'result');
+    expect(input).toHaveAttribute('title', input.textContent);
+    expect(result).toHaveAttribute('title', result.textContent);
   });
 
   it('disables invalid backward moves for an active task', async () => {

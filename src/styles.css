@@ -10675,6 +10675,7 @@ body.col-resizing {
 
 .kb-card {
   gap: 8px;
+  min-width: 0;
   padding: 11px;
   border-radius: 9px;
   background: var(--elevated);
@@ -10702,6 +10703,25 @@ body.col-resizing {
   font-size: 11px;
   line-height: 1.45;
   -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: 3;
+}
+
+.kb-card-preview {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.kb-card-preview.result {
+  display: -webkit-box;
+  flex: 1 1 auto;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: normal;
+  -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
@@ -10712,7 +10732,15 @@ body.col-resizing {
 }
 
 .kb-title-text {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 13px;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .kb-tags {
@@ -10728,6 +10756,8 @@ body.col-resizing {
 
 .kb-signal,
 .kb-progress {
+  min-width: 0;
+  max-width: 100%;
   margin-left: 11px;
 }
 
