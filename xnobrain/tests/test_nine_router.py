@@ -718,6 +718,50 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("--oneshot", command)
             self.assertNotIn("-z", command)
 
+    async def test_manual_compaction_updates_context_without_changing_session_id(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            manager.create_agent({"name": "news"})
+            conversation = manager.create_conversation("news", {"title": "Research"})
+            conversation_id = conversation["conversation"]["id"]
+            compacted = {
+                "conversation_id": conversation_id,
+                "before_tokens": 84_000,
+                "after_tokens": 29_000,
+                "messages_before": 18,
+                "messages_after": 6,
+                "focus": "API decisions",
+                "in_place": True,
+                "model": "cx/gpt-5.6-luna",
+                "context_limit": 200_000,
+                "context_threshold": 100_000,
+                "auto_compaction": True,
+            }
+
+            with patch.object(manager, "_compact_conversation_sync", return_value=compacted) as worker:
+                result = await manager.compact_conversation(
+                    "news",
+                    conversation_id,
+                    focus="API decisions",
+                )
+
+            self.assertEqual(result, compacted)
+            worker.assert_called_once()
+            stored = manager.get_conversation("news", conversation_id)["conversation"]
+            self.assertEqual(stored["id"], conversation_id)
+            self.assertEqual(stored["model_config"]["brain4all_context"], {
+                "used": 29_000,
+                "limit": 200_000,
+                "threshold": 100_000,
+                "auto_compaction": True,
+                "model": "cx/gpt-5.6-luna",
+            })
+
     def test_default_conversation_titles_continue_without_duplicates(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

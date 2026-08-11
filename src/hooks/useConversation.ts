@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { conversationsApi } from '../api/conversations';
+import { conversationsApi, type ConversationCompactResult } from '../api/conversations';
 import { historicalRuns } from '../chat/runEvents';
 import { streamStore } from '../chat/streamStore';
 import type { AsyncStatus, ChatMessage, ChatRun, ConversationUsage, RunApprovalChoice } from '../types';
@@ -54,6 +54,9 @@ export function useConversation(agentId: string, conversationId: string, model =
   const [usageError, setUsageError] = useState('');
   const [status, setStatus] = useState<AsyncStatus>('idle');
   const [error, setError] = useState('');
+  const [compacting, setCompacting] = useState(false);
+  const [compactError, setCompactError] = useState('');
+  const [compactResult, setCompactResult] = useState<ConversationCompactResult | null>(null);
   const [loadSignal, setLoadSignal] = useState<AbortSignal>();
   const loadController = useRef<AbortController>();
   const loadKey = useRef<string | null>(null);
@@ -135,6 +138,9 @@ export function useConversation(agentId: string, conversationId: string, model =
     if (loadKey.current !== key) {
       loadKey.current = key;
       generation.current += 1;
+      setCompacting(false);
+      setCompactError('');
+      setCompactResult(null);
       void refresh();
       void requestUsage(generation.current);
     }
@@ -163,6 +169,25 @@ export function useConversation(agentId: string, conversationId: string, model =
 
   const stopStream = async () => {
     await streamStore.stop(agentId, conversationId);
+  };
+
+  const compactContext = async (focus?: string) => {
+    if (!agentId || !conversationId || session.runActive || compacting) return;
+    setCompacting(true);
+    setCompactError('');
+    setCompactResult(null);
+    try {
+      const result = await conversationsApi.compact(agentId, conversationId, focus);
+      setCompactResult(result);
+      await refresh();
+      await requestUsage();
+      return result;
+    } catch (value) {
+      setCompactError(value instanceof Error ? value.message : 'Could not compact session context.');
+      throw value;
+    } finally {
+      setCompacting(false);
+    }
   };
 
   const resolveRunApproval = async (runId: string, choice: RunApprovalChoice) => {
@@ -194,7 +219,8 @@ export function useConversation(agentId: string, conversationId: string, model =
     runs,
     loadSignal,
     canStop: session.runActive,
-    refresh, requestUsage, sendMessage, stopStream, resolveRunApproval,
+    compacting, compactError, compactResult,
+    refresh, requestUsage, sendMessage, stopStream, compactContext, resolveRunApproval,
     removeQueuedMessage: (id: string) => streamStore.removeQueued(agentId, conversationId, id),
     editQueuedMessage: (id: string, content: string) => streamStore.editQueued(agentId, conversationId, id, content),
     moveQueuedMessage: (id: string, direction: 'up' | 'down') => streamStore.moveQueued(agentId, conversationId, id, direction),

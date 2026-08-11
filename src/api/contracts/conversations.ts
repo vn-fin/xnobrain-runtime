@@ -36,6 +36,16 @@ export type ConversationMessageDTO = {
 
 export type ConversationMessagesResponseDTO = { messages?: ConversationMessageDTO[] };
 
+export type ConversationCompactResponseDTO = {
+  conversation_id?: string;
+  before_tokens?: number;
+  after_tokens?: number;
+  messages_before?: number;
+  messages_after?: number;
+  focus?: string;
+  in_place?: boolean;
+};
+
 export type ConversationUsageDTO = {
   conversation_id?: string;
   api_calls?: number;

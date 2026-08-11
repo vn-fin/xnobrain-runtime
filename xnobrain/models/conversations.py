@@ -13,6 +13,10 @@ class ConversationRename(BaseModel):
     title: str = Field(min_length=1, max_length=200)
 
 
+class ConversationCompact(BaseModel):
+    focus: str | None = Field(default=None, max_length=500)
+
+
 class ChatRequest(BaseModel):
     input: str = Field(min_length=1)
     model: str | None = None

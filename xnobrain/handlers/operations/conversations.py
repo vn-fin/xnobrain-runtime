@@ -21,6 +21,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         "conversations_get": (lambda: s.get_conversation(agent(), p["conversation_id"]), "conversation retrieved successfully", 200),
         "messages_list": (lambda: {"messages": s.get_conversation(agent(), p["conversation_id"])["messages"]}, "messages retrieved successfully", 200),
         "conversations_usage": (lambda: s.conversation_usage(agent(), p["conversation_id"]), "usage retrieved successfully", 200),
+        "conversations_compact": (lambda: s.compact_conversation(agent(), p["conversation_id"], body), "conversation context compacted successfully", 200),
         "conversations_rename": (lambda: s.rename_conversation(agent(), p["conversation_id"], body), "conversation renamed successfully", 200),
         "conversations_delete": (lambda: s.delete_conversation(agent(), p["conversation_id"]), "conversation deleted successfully", 200),
         "run_stop": (lambda: s.stop_run(p["run_id"]), "run stopped successfully", 200),

@@ -82,6 +82,7 @@ class AgentManager(
         self._stopped_runs: set[str] = set()
         self._registry_lock = threading.RLock()
         self._conversation_lock = threading.RLock()
+        self._compacting_sessions: set[str] = set()
         self._skill_sync_lock = threading.RLock()
         self.sync_profiles_registry()
         self._apply_default_skills_policy(self.root_profile)

@@ -47,6 +47,8 @@ class ConversationStreamMixin:
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
         state: dict[str, Any] = {
+            "agent": str(prepared.get("name") or ""),
+            "conversation_id": conversation_id,
             "agent_ref": None,
             "stop_requested": False,
             "approval_session": run_id,

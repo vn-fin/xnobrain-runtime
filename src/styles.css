@@ -3361,11 +3361,59 @@ body.col-resizing {
 .context-meter-track { width: 32px; height: 4px; flex: 0 0 32px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--muted-2) 30%, transparent); }
 .context-meter-track i { width: var(--context-percent); height: 100%; display: block; border-radius: inherit; background: var(--context-color); transition: width .25s ease, background .2s ease; }
 .context-meter.unknown .context-meter-track i { width: 0; }
-.context-meter-tooltip { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 15; width: max-content; max-width: 230px; display: grid; gap: 4px; padding: 9px 10px; border: 1px solid var(--border-2); border-radius: 9px; color: var(--muted); background: var(--elevated-hi); box-shadow: 0 10px 30px rgb(0 0 0 / 35%); font-size: 10px; line-height: 1.35; text-align: left; pointer-events: none; opacity: 0; transform: translateY(3px); transition: opacity .12s ease, transform .12s ease; }
+.context-meter-tooltip { display: none; }
 .context-meter-tooltip strong { color: var(--text); font-size: 11px; }
-.context-meter:hover .context-meter-tooltip, .composer-model-context:focus-visible .context-meter-tooltip { opacity: 1; transform: translateY(0); }
-.composer-model-context { gap: 5px; }
+.composer-model-context { display: inline-flex; align-items: center; min-width: 0; }
+.composer-model-context .composer-model { border-radius: 8px 0 0 8px; padding-right: 5px; }
+.composer-context-control { position: relative; }
+.composer-context-button { height: 30px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px 0 1px; border-radius: 0 8px 8px 0; color: var(--muted); }
+.composer-context-button:hover, .composer-context-button[aria-expanded='true'] { color: var(--text); background: #333; }
 .composer-context-divider { margin: 0 1px; color: var(--muted-2); font-size: 14px; line-height: 1; }
+
+.context-popover {
+  position: absolute;
+  right: 0;
+  bottom: 38px;
+  z-index: 14;
+  width: min(320px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--border-2);
+  border-radius: 13px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--elevated-hi) 97%, transparent);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 42%), 0 2px 8px rgb(0 0 0 / 24%);
+  text-align: left;
+}
+.context-popover-head { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.context-popover-icon { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent); }
+.context-popover-head > div { min-width: 0; display: grid; gap: 2px; }
+.context-popover-head strong, .context-confirm > strong { font-size: 13px; }
+.context-popover-head span, .context-popover p, .context-popover small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.context-popover p { margin: 0; }
+.context-popover small { display: block; }
+.context-popover-meter { height: 5px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--muted-2) 28%, transparent); }
+.context-popover-meter i { height: 100%; display: block; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
+.context-popover-detail { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 10.5px; }
+.context-compact-primary { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; border-radius: 8px; color: #fff; background: var(--accent); font-size: 12px; font-weight: 650; }
+.context-compact-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, white); }
+.context-compact-primary:disabled { opacity: .45; cursor: not-allowed; }
+.context-confirm { display: grid; gap: 9px; }
+.context-confirm label { color: var(--text); font-size: 11px; font-weight: 600; }
+.context-confirm label span { margin-left: 4px; color: var(--muted-2); font-weight: 400; }
+.context-confirm textarea { width: 100%; min-height: 58px; padding: 8px 9px; border: 1px solid var(--border-2); border-radius: 8px; color: var(--text); background: var(--input); resize: vertical; font: inherit; font-size: 11px; line-height: 1.4; }
+.context-confirm textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; }
+.context-confirm-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.context-confirm-actions > button:not(.context-compact-primary) { min-height: 32px; padding: 0 10px; border-radius: 8px; color: var(--muted); font-size: 12px; }
+.context-confirm-actions > button:not(.context-compact-primary):hover { color: var(--text); background: var(--hover); }
+.context-confirm-error { padding: 7px 8px; border-radius: 7px; color: #ff9d85; background: color-mix(in srgb, #ff6b52 10%, transparent); font-size: 10.5px; line-height: 1.4; }
+.context-compact-status { min-height: 34px; display: flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); background: color-mix(in srgb, var(--elevated) 84%, transparent); font-size: 12px; }
+.context-compact-status.success { color: var(--green); }
+.context-compact-status.error { color: #ff9d85; }
+
+:root[data-theme='light'] .composer-context-button:hover,
+:root[data-theme='light'] .composer-context-button[aria-expanded='true'] { background: var(--hover); }
 
 .right-head {
   height: 58px;
