@@ -111,6 +111,13 @@ describe('TeamsView', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /Researcher.*Finds source material/i }));
     fireEvent.click(screen.getByRole('button', { name: /Reviewer.*Checks the findings/i }));
+    expect(screen.getByRole('button', { name: 'Configure researcher stage' })).toHaveStyle({ left: '170px' });
+    expect(screen.getByRole('button', { name: 'Configure reviewer stage' })).toHaveStyle({ left: '430px' });
+    expect(screen.getByRole('button', { name: 'Arrange workflow' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Zoom out workflow' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fit workflow to view' })).toHaveTextContent('100%');
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom out workflow' }));
+    expect(screen.getByRole('button', { name: 'Fit workflow to view' })).toHaveTextContent('90%');
     fireEvent.click(screen.getByRole('button', { name: 'Connect from researcher' }));
     fireEvent.click(screen.getByRole('button', { name: 'Connect to reviewer' }));
     fireEvent.click(screen.getByRole('button', { name: /Save team/i }));
@@ -190,11 +197,13 @@ describe('TeamsView', () => {
       enabled: true,
     };
     const update = vi.fn(async (input) => input);
+    const onNavigate = vi.fn();
     const state = teamState({ teams: [team], update });
-    render(<TeamsView agents={agents} state={state} routeTeamId={team.id} onClose={vi.fn()} />);
+    render(<TeamsView agents={agents} state={state} routeTeamId={team.id} onNavigate={onNavigate} onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Editable team options' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Edit workflow' }));
+    expect(onNavigate).toHaveBeenLastCalledWith(team.id, '', true);
     expect(screen.getByDisplayValue('Editable team')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Configure researcher stage' }));
     expect(screen.getByRole('checkbox', { name: 'Web search' })).toBeChecked();
@@ -315,6 +324,18 @@ describe('TeamsView', () => {
       />,
     );
     expect(screen.getByPlaceholderText('Product launch team')).toBeVisible();
+
+    view.rerender(
+      <TeamsView
+        agents={agents}
+        state={state}
+        routeTeamId={team.id}
+        routeCreate
+        onNavigate={onNavigate}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(await screen.findByDisplayValue('Routed Team')).toBeVisible();
 
     view.rerender(
       <TeamsView
@@ -654,6 +675,8 @@ describe('TeamsView', () => {
 
     expect(await screen.findByRole('button', { name: 'Reviewer: running' })).toBeInTheDocument();
     expect(screen.getByLabelText('Live team workflow').querySelector('.run-dag-grid')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Zoom in workflow' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fit workflow to view' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Start coordinator: completed' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Coordinator: pending' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'View Team Lead session' })).toHaveLength(2);
