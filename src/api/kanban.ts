@@ -2,6 +2,7 @@ import { request, requestRaw } from './client';
 import { readSSE, type SSEEvent } from './stream';
 import type {
   KanbanBoard,
+  KanbanBoardStats,
   KanbanColumnId,
   KanbanDependency,
   KanbanNativeStatus,
@@ -40,7 +41,7 @@ function defaultAllowedStatuses(nativeStatus: KanbanNativeStatus): KanbanColumnI
   if (nativeStatus === 'scheduled') return ['archived'];
   if (nativeStatus === 'blocked') return ['todo', 'archived'];
   if (nativeStatus === 'review') return ['running', 'archived'];
-  if (nativeStatus === 'done') return [];
+  if (nativeStatus === 'done') return ['archived'];
   return [];
 }
 
@@ -169,13 +170,104 @@ function boardFromApi(raw: any): KanbanBoard {
     color: String(raw.color || '#4f8cff'),
     statuses: STATUS_DEFS.map((status) => ({ ...status })),
     tasks: Array.isArray(raw.tasks) ? raw.tasks.map(taskFromApi) : [],
+    taskCount: raw.task_count == null ? undefined : Number(raw.task_count),
   };
 }
 
+export type KanbanTaskPage = {
+  boardId: string;
+  tasks: KanbanTask[];
+  total: number;
+  offset: number;
+  limit: number;
+};
+
 export const kanbanApi = {
   async getBoards(): Promise<KanbanBoard[]> {
-    const data = await request<any[]>('/xnobrain/api/runtime/v1/kanban/boards?include_archived=true');
+    const data = await request<any[]>('/xnobrain/api/runtime/v1/kanban/boards');
     return (data ?? []).map(boardFromApi);
+  },
+
+  async getBoardStats(boardId: string): Promise<KanbanBoardStats> {
+    let raw = await request<any>(`/xnobrain/api/runtime/v1/kanban/boards/${encodeURIComponent(boardId)}/stats`);
+    // Accept the previous eager-board shape during rolling upgrades and in
+    // environments where the frontend updates before the runtime process.
+    if (Array.isArray(raw)) {
+      const legacy = raw.find((item) => String(item.id ?? item.slug) === boardId);
+      const tasks = Array.isArray(legacy?.tasks) ? legacy.tasks : [];
+      const byStatus = { backlog: 0, todo: 0, running: 0, done: 0, archived: 0 };
+      for (const task of tasks) {
+        const status = String(task.kanban_status ?? task.status ?? 'todo') as KanbanColumnId;
+        if (status in byStatus) byStatus[status] += 1;
+      }
+      raw = {
+        board_slug: boardId,
+        total: tasks.length,
+        current: tasks.length - byStatus.archived,
+        completed: byStatus.done,
+        archived: byStatus.archived,
+        running: byStatus.running,
+        blocked: tasks.filter((task: RawTask) => task.status === 'blocked').length,
+        by_status: byStatus,
+      };
+    }
+    const counts = raw.by_status && typeof raw.by_status === 'object' ? raw.by_status : {};
+    return {
+      boardSlug: String(raw.board_slug ?? boardId),
+      total: Number(raw.total ?? 0),
+      current: Number(raw.current ?? 0),
+      completed: Number(raw.completed ?? 0),
+      archived: Number(raw.archived ?? 0),
+      running: Number(raw.running ?? 0),
+      blocked: Number(raw.blocked ?? 0),
+      byStatus: {
+        backlog: Number(counts.backlog ?? 0),
+        todo: Number(counts.todo ?? 0),
+        running: Number(counts.running ?? 0),
+        done: Number(counts.done ?? 0),
+        archived: Number(counts.archived ?? 0),
+      },
+    };
+  },
+
+  async getTasks(
+    boardId: string,
+    options: { offset?: number; limit?: number; archived?: boolean } = {},
+  ): Promise<KanbanTaskPage> {
+    const params = new URLSearchParams({
+      offset: String(options.offset ?? 0),
+      limit: String(options.limit ?? 100),
+    });
+    if (options.archived) {
+      params.set('include_archived', 'true');
+      params.set('status', 'archived');
+    }
+    const raw = await request<any>(
+      `/xnobrain/api/runtime/v1/kanban/boards/${encodeURIComponent(boardId)}/tasks?${params}`,
+    );
+    if (Array.isArray(raw)) {
+      const legacy = raw.find((item) => String(item.id ?? item.slug) === boardId);
+      const all = (Array.isArray(legacy?.tasks) ? legacy.tasks : []).filter((task: RawTask) =>
+        options.archived
+          ? String(task.kanban_status ?? task.status) === 'archived'
+          : String(task.kanban_status ?? task.status) !== 'archived');
+      const offset = options.offset ?? 0;
+      const limit = options.limit ?? 100;
+      return {
+        boardId,
+        tasks: all.slice(offset, offset + limit).map(taskFromApi),
+        total: all.length,
+        offset,
+        limit,
+      };
+    }
+    return {
+      boardId: String(raw.board_slug ?? boardId),
+      tasks: Array.isArray(raw.tasks) ? raw.tasks.map(taskFromApi) : [],
+      total: Number(raw.total ?? 0),
+      offset: Number(raw.offset ?? 0),
+      limit: Number(raw.limit ?? options.limit ?? 100),
+    };
   },
 
   async createBoard(input: NewKanbanBoardInput): Promise<KanbanBoard> {

@@ -15,6 +15,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         "kanban_boards": (lambda: s.kanban.list_boards(include_archived=str(q.get("include_archived", "false")).lower() == "true"), "Kanban boards retrieved successfully", 200),
         "kanban_board_create": (lambda: s.kanban.create_board(body), "Kanban board created successfully", 201),
         "kanban_board_get": (lambda: s.kanban.get_board(p["board_slug"], include_archived=str(q.get("include_archived", "false")).lower() == "true"), "Kanban board retrieved successfully", 200),
+        "kanban_board_stats": (lambda: s.kanban.board_stats(p["board_slug"]), "Kanban board statistics retrieved successfully", 200),
         "kanban_board_patch": (lambda: s.kanban.patch_board(p["board_slug"], body), "Kanban board updated successfully", 200),
         "kanban_board_select": (lambda: s.kanban.select_board(p["board_slug"]), "Kanban board selected", 200),
         "kanban_board_delete": (lambda: s.kanban.delete_board(p["board_slug"]), "Kanban board archived", 200),

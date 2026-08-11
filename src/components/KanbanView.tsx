@@ -197,7 +197,7 @@ function BoardPicker({
                   <strong>{item.name}</strong>
                   <small>{item.description || `board/${item.id}`}</small>
                 </span>
-                <span className="kb-board-task-count">{item.tasks.length}</span>
+                <span className="kb-board-task-count">{item.taskCount ?? item.tasks.length}</span>
                 {item.id === selected?.id && <Check size={14} />}
               </button>
             ))}
@@ -1550,6 +1550,7 @@ export function KanbanView({
   routeAgentId,
   routeConversationId,
   onNavigate,
+  onBoardNavigate,
   onOpenChat,
   onClose,
 }: {
@@ -1561,6 +1562,7 @@ export function KanbanView({
   routeAgentId?: string;
   routeConversationId?: string;
   onNavigate?: (taskId: string, agentId?: string, conversationId?: string) => void;
+  onBoardNavigate?: (boardId: string) => void;
   onOpenChat?: (agentId: string, conversationId: string) => void;
   onClose: () => void;
 }) {
@@ -1591,7 +1593,14 @@ export function KanbanView({
       return;
     }
     const requested = board.tasks.find((task) => task.id === routeTaskId);
-    if (!requested) return;
+    if (!requested) {
+      void state.refreshTask(routeTaskId).then((loaded) => {
+        if (!loaded) return;
+        setTaskScope(loaded.status === 'archived' ? 'archived' : 'current');
+        setOpenTaskId(loaded.id);
+      });
+      return;
+    }
     setTaskScope(requested.status === 'archived' ? 'archived' : 'current');
     setOpenTaskId(requested.id);
     void state.refreshTask(requested.id);
@@ -1668,15 +1677,18 @@ export function KanbanView({
     const completed = tasks.filter(
       (task) => columnOf(task.status) === 'done' && !task.block,
     );
+    const stats = state.boardStats;
+    const currentTotal = stats?.current ?? tasks.length;
+    const completedTotal = stats?.completed ?? completed.length;
     return {
-      total: tasks.length,
-      running: running.length,
+      total: currentTotal,
+      running: stats?.running ?? running.length,
       activeAgents: new Set(running.flatMap((task) => task.assignees)).size,
-      blocked: blocked.length,
-      completed: completed.length,
-      completion: tasks.length ? Math.round((completed.length / tasks.length) * 100) : 0,
+      blocked: stats?.blocked ?? blocked.length,
+      completed: completedTotal,
+      completion: currentTotal ? Math.round((completedTotal / currentTotal) * 100) : 0,
     };
-  }, [board, columnOf]);
+  }, [board, columnOf, state.boardStats]);
 
   const filtersActive =
     Boolean(search.trim()) || agentFilter !== 'all' || priorityFilter !== 'all' || columnFilter !== 'all';
@@ -1694,6 +1706,7 @@ export function KanbanView({
     setPriorityFilter('all');
     setColumnFilter('all');
     closeTask();
+    onBoardNavigate?.(boardId);
   };
 
   const moveTask = (taskId: string, status: KanbanColumnId) => {
@@ -1711,8 +1724,12 @@ export function KanbanView({
     setArchiveTask(null);
   };
 
-  const currentCount = board?.tasks.filter((task) => task.status !== 'archived').length ?? 0;
-  const archivedCount = board?.tasks.filter((task) => task.status === 'archived').length ?? 0;
+  const currentCount = state.boardStats?.current
+    ?? board?.tasks.filter((task) => task.status !== 'archived').length
+    ?? 0;
+  const archivedCount = state.boardStats?.archived
+    ?? board?.tasks.filter((task) => task.status === 'archived').length
+    ?? 0;
 
   return (
     <section className="kanban-view">
@@ -1760,6 +1777,7 @@ export function KanbanView({
                 setTaskScope('archived');
                 setColumnFilter('all');
                 closeTask();
+                void state.loadArchivedTasks();
               }}
             >
               Archived <span>{archivedCount}</span>
@@ -1887,6 +1905,13 @@ export function KanbanView({
 
       {state.status === 'loading' && <div className="kb-empty">Loading board…</div>}
       {state.status === 'error' && <div className="kb-error">{state.error}</div>}
+      {state.status === 'ready' && state.tasksLoading && (
+        <div className="kb-progressive-load" role="status">
+          <span className="kb-loading-dot" />
+          Loading tasks {state.taskLoadProgress.loaded}
+          {state.taskLoadProgress.total > 0 ? ` of ${state.taskLoadProgress.total}` : '…'}
+        </div>
+      )}
 
       {board && state.status === 'ready' && taskScope === 'current' && (
         <div className="kb-summary" aria-label="Board summary">
@@ -1917,7 +1942,8 @@ export function KanbanView({
         <div className="kb-board">
           {KANBAN_COLUMNS.map((column) => {
             const items = filteredTasks.filter((task) => columnOf(task.status) === column.id);
-            const total = board.tasks.filter((task) => columnOf(task.status) === column.id).length;
+            const total = state.boardStats?.byStatus[column.id]
+              ?? board.tasks.filter((task) => columnOf(task.status) === column.id).length;
             const initialStatus = board.statuses.find((status) => status.column === column.id)?.id;
             return (
               <section
@@ -2005,7 +2031,13 @@ export function KanbanView({
             </div>
             <span className="kb-count">{filteredTasks.length}</span>
           </header>
-          {filteredTasks.length === 0 ? (
+          {state.archivedLoading ? (
+            <div className="kb-archive-empty" role="status">
+              <span className="kb-loading-dot" />
+              <strong>Loading archived tasks…</strong>
+              <span>Older work is loaded separately so the current board stays fast.</span>
+            </div>
+          ) : filteredTasks.length === 0 ? (
             <div className="kb-archive-empty">
               <Archive size={24} />
               <strong>No archived tasks</strong>

@@ -130,6 +130,68 @@ def task_runs(conn: Any, task_id: str) -> list[Any]:
     return list(_module().list_runs(conn, task_id))
 
 
+def team_member_task_ids(conn: Any) -> set[str]:
+    """Return internal team-stage task IDs without hydrating every task DTO."""
+    rows = conn.execute(
+        "SELECT body FROM task_comments WHERE body LIKE ?",
+        ("[brain4all:team] %",),
+    ).fetchall()
+    task_ids: set[str] = set()
+    for row in rows:
+        body = str(row["body"] or "")
+        try:
+            metadata = json.loads(body[len("[brain4all:team] "):])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        for node in metadata.get("nodes") or []:
+            if isinstance(node, dict) and node.get("task_id"):
+                task_ids.add(str(node["task_id"]))
+        if metadata.get("synthesis_task_id"):
+            task_ids.add(str(metadata["synthesis_task_id"]))
+    return task_ids
+
+
+def task_page(
+    conn: Any,
+    *,
+    include_archived: bool,
+    archived_only: bool,
+    assignee: str | None,
+    search: str | None,
+    offset: int,
+    limit: int,
+) -> tuple[list[Any], int]:
+    """Read one top-level task page in SQLite instead of hydrating the board."""
+    kb = _module()
+    clauses = ["1=1"]
+    params: list[Any] = []
+    member_ids = sorted(team_member_task_ids(conn))
+    if member_ids:
+        clauses.append(f"id NOT IN ({','.join('?' for _ in member_ids)})")
+        params.extend(member_ids)
+    if archived_only:
+        clauses.append("status = 'archived'")
+    elif not include_archived:
+        clauses.append("status != 'archived'")
+    if assignee:
+        clauses.append("assignee = ?")
+        params.append(str(assignee))
+    query = str(search or "").strip().lower()
+    if query:
+        clauses.append("(lower(id) LIKE ? OR lower(title) LIKE ? OR lower(COALESCE(body, '')) LIKE ? OR lower(COALESCE(assignee, '')) LIKE ?)")
+        needle = f"%{query}%"
+        params.extend([needle, needle, needle, needle])
+    where = " AND ".join(clauses)
+    total = int(conn.execute(f"SELECT COUNT(*) FROM tasks WHERE {where}", params).fetchone()[0])
+    rows = conn.execute(
+        f"SELECT * FROM tasks WHERE {where} ORDER BY started_at DESC NULLS LAST, created_at DESC LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    ).fetchall()
+    return [kb.Task.from_row(row) for row in rows], total
+
+
 def return_failed_task_to_triage(
     conn: Any,
     task_id: str,

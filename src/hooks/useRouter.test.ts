@@ -12,6 +12,7 @@ const state = (settingsSection: RouteState['settingsSection']): RouteState => ({
   teamCreate: false,
   teamAgentId: '',
   teamConversationId: '',
+  kanbanBoardId: '',
   kanbanTaskId: '',
   kanbanAgentId: '',
   kanbanConversationId: '',
@@ -132,6 +133,17 @@ describe('Kanban routes', () => {
       kanbanTaskId: 'task-01',
       kanbanAgentId: 'agent-01',
       kanbanConversationId: 'conversation-01',
+    });
+    expect(computeUrl({ ...state('profiles'), ...route })).toBe(path);
+  });
+
+  it('tracks the selected board and its task in the URL', () => {
+    const path = '/kanban/boards/product/tasks/task-01';
+    const route = parseRoute(path, '');
+    expect(route).toMatchObject({
+      centerView: 'kanban',
+      kanbanBoardId: 'product',
+      kanbanTaskId: 'task-01',
     });
     expect(computeUrl({ ...state('profiles'), ...route })).toBe(path);
   });
