@@ -147,7 +147,15 @@ function ReasoningBlock({ text, streaming }: { text: string; streaming?: boolean
         <span>{streaming ? 'Thinking…' : 'Reasoning'}</span>
         <ChevronDown className={open ? 'open' : ''} size={15} />
       </button>
-      {open && !streaming && <div className="run-reasoning-body"><Markdown content={text} /></div>}
+      {open && (
+        <div
+          className="run-reasoning-body"
+          aria-live={streaming ? 'polite' : undefined}
+          aria-atomic={streaming ? 'false' : undefined}
+        >
+          {streaming ? text : <Markdown content={text} />}
+        </div>
+      )}
     </div>
   );
 }
