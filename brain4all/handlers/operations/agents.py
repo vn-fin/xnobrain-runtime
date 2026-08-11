@@ -12,7 +12,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
     p, q, s = request.path_params, request.query_params, handler.service
     agent = lambda: str(q.get("agent") or "").strip() or (_ for _ in ()).throw(ValueError("agent is required"))
     return {
-        "agents_list": (s.list_agents, "agents retrieved successfully", 200),
+        "agents_list": (s.list_agents_async, "agents retrieved successfully", 200),
         "agents_create": (lambda: s.create_agent(body), "agent created successfully", 201),
         "profiles_list": (s.list_profiles, "profiles retrieved successfully", 200),
         "agents_get": (lambda: s.get_agent(p["agent_id"]), "agent retrieved successfully", 200),

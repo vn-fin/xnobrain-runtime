@@ -34,7 +34,6 @@ import { agentsApi } from './api/agents';
 import { sandboxApi } from './api/sandbox';
 import { workspaceApi } from './api/workspace';
 import type { Agent } from './types';
-import { hasUsableProvider } from './utils/providers';
 
 export default function App() {
   const { t } = useTranslation();
@@ -52,7 +51,7 @@ export default function App() {
   const connections = useConnections(assistantsReady);
   const onboarding = assistantsReady
     && connections.status === 'ready'
-    && !hasUsableProvider(connections.connections);
+    && !activeAgent;
   const conversation = useConversation(
     router.centerView === 'chat' ? router.activeAgentId : '',
     router.centerView === 'chat' ? router.activeConversationId : '',
@@ -298,7 +297,7 @@ export default function App() {
       <div className="empty-app">
         <Onboarding
           sandboxStatus={sandbox.status}
-          sandboxProvisioned={sandbox.provisioned}
+          sandboxProvisioned={workspaceReady}
           setupRunning={sandbox.setupRunning}
           setupProgress={sandbox.setupProgress}
           setupMessage={sandbox.setupMessage}

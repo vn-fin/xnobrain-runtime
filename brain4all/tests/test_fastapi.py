@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -516,6 +517,50 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             listed = await client.get("/xnobrain/api/runtime/v1/agents")
         listed_profile = next(item for item in listed.json()["data"] if item["id"] == profile["id"])
         self.assertEqual(listed_profile["display_name"], "Registry Name")
+
+    async def test_agents_list_is_cached_and_invalidated_by_agent_mutations(self):
+        list_agents = self.composition.service.agents.list_agents
+        with patch.object(
+            self.composition.service.agents,
+            "list_agents",
+            wraps=list_agents,
+        ) as upstream_list:
+            async with self.client() as client:
+                first, cached = await asyncio.gather(
+                    client.get("/xnobrain/api/runtime/v1/agents"),
+                    client.get("/xnobrain/api/runtime/v1/agents"),
+                )
+                created = await client.post(
+                    "/xnobrain/api/runtime/v1/agents",
+                    json={"display_name": "Cached Agent"},
+                )
+                after_create = await client.get("/xnobrain/api/runtime/v1/agents")
+                agent_id = created.json()["data"]["id"]
+                updated = await client.patch(
+                    f"/xnobrain/api/runtime/v1/agents/{agent_id}/metadata",
+                    json={"display_name": "Updated Cached Agent"},
+                )
+                after_update = await client.get("/xnobrain/api/runtime/v1/agents")
+                deleted = await client.delete(
+                    f"/xnobrain/api/runtime/v1/agents/{agent_id}/delete",
+                )
+                after_delete = await client.get("/xnobrain/api/runtime/v1/agents")
+
+        self.assertEqual(first.json()["data"], cached.json()["data"])
+        self.assertEqual(upstream_list.call_count, 4)
+        self.assertEqual(created.status_code, 201)
+        self.assertTrue(any(
+            item["id"] == agent_id for item in after_create.json()["data"]
+        ))
+        self.assertEqual(updated.status_code, 200)
+        updated_row = next(
+            item for item in after_update.json()["data"] if item["id"] == agent_id
+        )
+        self.assertEqual(updated_row["display_name"], "Updated Cached Agent")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertFalse(any(
+            item["id"] == agent_id for item in after_delete.json()["data"]
+        ))
 
     async def test_write_approvals_default_off_and_allow_always_disables_the_selected_gate(self):
         async with self.client() as client:
