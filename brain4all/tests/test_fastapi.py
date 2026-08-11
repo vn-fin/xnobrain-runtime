@@ -1462,7 +1462,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                     (
                         "test/model", 100.0, 103.25, 3, 1, 1_000, 200,
                         100, 20, 50, 2, 0.25, "estimated",
-                        json.dumps({"brain4all_context": {"used": 10_000, "limit": 200_000}}),
+                        json.dumps({"brain4all_context": {
+                            "used": 10_000,
+                            "limit": 200_000,
+                            "threshold": 100_000,
+                            "auto_compaction": True,
+                        }}),
                         conversation_id,
                     ),
                 )
@@ -1506,6 +1511,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             "used": 10_000,
             "limit": 200_000,
             "percent": 5.0,
+            "threshold": 100_000,
+            "pressure_percent": 10.0,
+            "auto_compaction": True,
         })
 
 

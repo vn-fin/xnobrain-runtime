@@ -56,7 +56,14 @@ export type ConversationUsageDTO = {
     total?: number;
   };
   cost?: { source?: string; status?: string; total_usd?: number };
-  context?: { limit?: number; percent?: number; used?: number };
+  context?: {
+    auto_compaction?: boolean;
+    limit?: number;
+    percent?: number;
+    pressure_percent?: number;
+    threshold?: number;
+    used?: number;
+  };
   account?: {
     provider?: string;
     plan?: string;

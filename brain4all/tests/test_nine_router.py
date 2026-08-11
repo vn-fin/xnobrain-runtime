@@ -943,7 +943,9 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                         "context_compressor": type("FakeCompressor", (), {
                             "last_prompt_tokens": 10_000,
                             "context_length": 200_000,
+                            "threshold_tokens": 100_000,
                         })(),
+                        "compression_enabled": True,
                         "run_conversation": lambda self, *_args, **_kwargs: {},
                     })()
 
@@ -1026,6 +1028,8 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "used": 10_000,
                     "limit": 200_000,
+                    "threshold": 100_000,
+                    "auto_compaction": True,
                     "model": "cx/gpt-5.6-luna",
                 },
             )

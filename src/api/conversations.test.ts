@@ -23,7 +23,14 @@ describe('conversationsApi usage', () => {
         conversation_id: 'session-one',
         model: 'cx/gpt-5.6-luna',
         tokens: { total: 42_000 },
-        context: { used: 10_000, limit: 200_000, percent: 5 },
+        context: {
+          used: 10_000,
+          limit: 200_000,
+          percent: 5,
+          threshold: 100_000,
+          pressure_percent: 10,
+          auto_compaction: true,
+        },
       },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
 
@@ -33,5 +40,8 @@ describe('conversationsApi usage', () => {
     expect(usage.contextUsed).toBe(10_000);
     expect(usage.contextLimit).toBe(200_000);
     expect(usage.contextPercent).toBe(5);
+    expect(usage.contextThreshold).toBe(100_000);
+    expect(usage.contextPressurePercent).toBe(10);
+    expect(usage.contextAutoCompaction).toBe(true);
   });
 });

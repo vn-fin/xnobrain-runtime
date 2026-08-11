@@ -76,24 +76,54 @@ function conversationTime(conversation: Conversation): string {
 export function ContextGauge({ usage, model }: { usage: ConversationUsage | null; model: string }) {
   const used = Math.max(0, usage?.contextUsed ?? 0);
   const limit = Math.max(0, usage?.contextLimit ?? 0);
-  const known = used > 0 && limit > 0;
+  const threshold = Math.max(0, usage?.contextThreshold ?? 0);
+  const denominator = threshold || limit;
+  const known = used > 0 && denominator > 0;
   const percent = known
-    ? Math.max(0, Math.min(100, usage?.contextPercent ?? used / limit * 100))
+    ? Math.max(0, Math.min(100, threshold
+      ? usage?.contextPressurePercent ?? used / threshold * 100
+      : usage?.contextPercent ?? used / limit * 100))
     : 0;
   const modelLabel = model.toLowerCase() === 'auto' ? 'Auto model' : model || 'Selected model';
-  const title = known
-    ? `${compactTokens(used)} / ${compactTokens(limit)} context (${Number(percent.toFixed(1))}%)`
+  const roundedPercent = Math.round(percent);
+  const level = threshold && percent >= 85 ? 'critical' : threshold && percent >= 60 ? 'elevated' : 'normal';
+  const label = used <= 0
+    ? '—'
+    : threshold && percent >= 100
+      ? 'Due'
+      : threshold && percent >= 85
+        ? `${roundedPercent}% · Soon`
+        : threshold && percent >= 60
+          ? `${roundedPercent}%`
+          : compactTokens(used);
+  const title = threshold && known
+    ? `${compactTokens(used)} / ${compactTokens(threshold)} context (${Number(percent.toFixed(1))}% to compaction)${limit ? `; ${compactTokens(limit)} model window` : ''}; auto-compaction ${usage?.contextAutoCompaction ? 'enabled' : 'disabled'}`
+    : known
+      ? `${compactTokens(used)} / ${compactTokens(limit)} model context (${Number(percent.toFixed(1))}%)`
     : used > 0
       ? `${compactTokens(used)} context used; ${modelLabel} context limit is unavailable`
       : `${modelLabel} context usage is unavailable`;
   return (
     <span
-      className={`context-gauge${known ? '' : ' unknown'}`}
+      className={`context-meter ${level}${known ? '' : ' unknown'}`}
       style={known ? { '--context-percent': `${percent}%` } as CSSProperties : undefined}
       role="img"
       aria-label={title}
-      title={title}
-    />
+    >
+      <span className="context-meter-label">{label}</span>
+      <span className="context-meter-track"><i /></span>
+      <span className="context-meter-tooltip" aria-hidden="true">
+        <strong>Context usage</strong>
+        {threshold && known ? <>
+          <span>{compactTokens(used)} / {compactTokens(threshold)} to compaction</span>
+          <span>{roundedPercent}% · Auto-compaction {usage?.contextAutoCompaction ? 'on' : 'off'}</span>
+          {limit > 0 && <span>Model window {compactTokens(limit)}</span>}
+        </> : known ? <>
+          <span>{compactTokens(used)} / {compactTokens(limit)} model context</span>
+          <span>{roundedPercent}% of model window</span>
+        </> : <span>{used > 0 ? `${compactTokens(used)} used · limit unavailable` : 'Available after the first response'}</span>}
+      </span>
+    </span>
   );
 }
 
@@ -987,10 +1017,11 @@ export function ChatArea({
             <div className="composer-row">
               <div className="composer-row-right">
                 <div className="composer-model-control" ref={modelPickerRef}>
-                  <button className="composer-model" title="Model and reasoning" onClick={() => setModelOpen((open) => !open)}>
-                    <ContextGauge usage={usage} model={currentModelLabel} />
+                  <button className="composer-model composer-model-context" title="Model, reasoning, and context" onClick={() => setModelOpen((open) => !open)}>
                     {currentModelLabel}
                     <ChevronDown size={14} />
+                    <span className="composer-context-divider" aria-hidden="true">·</span>
+                    <ContextGauge usage={usage} model={currentModelLabel} />
                   </button>
                   {modelOpen && (
                     <div className="model-picker" role="menu">

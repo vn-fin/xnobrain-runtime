@@ -35,16 +35,41 @@ describe('ContextGauge', () => {
   it('renders current conversation context as a model-window percentage', () => {
     render(<ContextGauge usage={usage} model="cx/gpt-5.6-luna" />);
 
-    const gauge = screen.getByRole('img', { name: '10K / 200K context (5%)' });
+    const gauge = screen.getByRole('button', { name: '10K / 200K model context (5%)' });
     expect(gauge).toHaveStyle({ '--context-percent': '5%' });
     expect(gauge).not.toHaveClass('unknown');
+    expect(gauge).toHaveTextContent('Ctx 10K');
+  });
+
+  it('adapts its compact label and color as compaction approaches', () => {
+    const { rerender } = render(<ContextGauge usage={{
+      ...usage,
+      contextUsed: 67_000,
+      contextThreshold: 100_000,
+      contextPressurePercent: 67,
+      contextAutoCompaction: true,
+    }} model="cx/gpt-5.6-luna" />);
+
+    expect(screen.getByRole('button')).toHaveClass('elevated');
+    expect(screen.getByRole('button')).toHaveTextContent('Ctx 67%');
+    expect(screen.getByText('67K / 100K to compaction')).toBeInTheDocument();
+
+    rerender(<ContextGauge usage={{
+      ...usage,
+      contextUsed: 88_000,
+      contextThreshold: 100_000,
+      contextPressurePercent: 88,
+      contextAutoCompaction: true,
+    }} model="cx/gpt-5.6-luna" />);
+    expect(screen.getByRole('button')).toHaveClass('critical');
+    expect(screen.getByRole('button')).toHaveTextContent('88% · Soon');
   });
 
   it('does not invent a context limit for Auto', () => {
     render(<ContextGauge usage={{ ...usage, contextLimit: undefined, contextPercent: undefined }} model="auto" />);
 
-    expect(screen.getByRole('img')).toHaveClass('unknown');
-    expect(screen.getByRole('img')).toHaveAttribute(
+    expect(screen.getByRole('button')).toHaveClass('unknown');
+    expect(screen.getByRole('button')).toHaveAttribute(
       'aria-label',
       '10K context used; Auto model context limit is unavailable',
     );
