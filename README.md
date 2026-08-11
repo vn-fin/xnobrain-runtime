@@ -146,19 +146,17 @@ make smoke-api
 
 ### Versioned runtime releases
 
-`.version` is the dev image-version source of truth, and dev publishes from
-`main` only when that file changes. Staging and production publish on every
-push to their environment branch, so merging `main` into `staging` or `prod`
-deploys the merged runtime without requiring a separate `.version` change.
-Those environments derive an immutable version from the merge commit, such as
-`0.0.0-24ddb0f353e8`. Manual dispatch remains available to retry the same
-commit version.
+`.version` is the image-version source of truth for every environment. Dev
+publishes from `main` only when that file changes. Staging and production
+publish on every push to their environment branch, so merging `main` into
+`staging` or `prod` deploys the version recorded in the merged `.version`.
+Manual dispatch remains available to retry the same version.
 
 Each release publishes the common frontend to GHCR with immutable and moving
 tags:
 
 ```text
-ghcr.io/vn-fin/xnobrain-runtime/xnobrain-frontend:dev-0.0.12
+ghcr.io/vn-fin/xnobrain-runtime/xnobrain-frontend:dev-0.0.13
 ghcr.io/vn-fin/xnobrain-runtime/xnobrain-frontend:dev-latest
 ```
 
@@ -168,13 +166,13 @@ cloning it with a repository token, installs and health-checks the native
 backend in a temporary Ubuntu VM, and publishes this immutable Incus alias:
 
 ```text
-xnobrain-runtime-dev-0.0.12
+xnobrain-runtime-dev-0.0.13
 ```
 
-Staging and production use their commit-derived version in place of `0.0.12`.
-Re-running an existing environment/version skips the native VM build after
-verifying the alias property. The managed control plane selects a release by
-configuring the runtime image name and semantic version; it does not build
+Staging and production use the same `.version` value with their own environment
+prefix. Re-running an existing environment/version skips the native VM build
+after verifying the alias property. The managed control plane selects a release
+by configuring the runtime image name and semantic version; it does not build
 runtime artifacts.
 
 ## Data safety
