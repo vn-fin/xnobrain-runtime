@@ -396,9 +396,19 @@ class AgentsServiceMixin:
         return [
             item
             for item in skills
-            if Path(str(item.get("relative_path") or "")).parts[:1]
+            if str(item.get("skill_id") or "") != BIG_BROTHER_SKILL_ID
+            and Path(str(item.get("relative_path") or "")).parts[:1]
             != (BIG_BROTHER_SKILL_CATEGORY,)
         ]
+
+    @staticmethod
+    def _reject_control_skill(skill_id: str) -> None:
+        if str(skill_id).strip() == BIG_BROTHER_SKILL_ID:
+            raise ServiceError(
+                "Big Brother control skill is restricted to Big Brother",
+                status=403,
+                code="protected_skill",
+            )
 
     async def list_skills_overview(self) -> dict[str, Any]:
         """Return one fresh skills snapshot for the library and every agent."""
@@ -493,20 +503,28 @@ class AgentsServiceMixin:
 
     async def install_default_skill(self, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         """Install a URL, hub identifier, or local SKILL.md into the root profile."""
-        return (
-            await self.config.install_skill({
-                **dict(body),
-                "category": CUSTOM_SKILL_CATEGORY,
-                "enable": False,
-            })
-        )["skills"]
+        requested_id = str(body.get("skill_id") or body.get("name") or "").strip()
+        self._reject_control_skill(requested_id)
+        result = await self.config.install_skill({
+            **dict(body),
+            "category": CUSTOM_SKILL_CATEGORY,
+            "enable": False,
+        })
+        return self._default_skills(result["skills"])
 
     def set_default_skill_enabled(self, skill_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         """Change whether new profiles inherit a default-profile skill."""
-        return self.config.set_skill_enabled(skill_id, body)["skills"]
+        self._reject_control_skill(skill_id)
+        result = self.config.set_skill_enabled(skill_id, body)
+        return self._default_skills(result["skills"])
 
     async def install_skill(self, agent_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         install_body = dict(body)
+        requested_id = str(
+            install_body.get("skill_id") or install_body.get("name") or ""
+        ).strip()
+        if not self._is_big_brother(agent_id):
+            self._reject_control_skill(requested_id)
         has_payload = "content" in install_body or bool(
             str(install_body.get("source") or "").strip()
         )
@@ -571,6 +589,7 @@ class AgentsServiceMixin:
     def set_skill_enabled(self, agent_id: str, skill_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         if self._is_big_brother(agent_id):
             return self.config.set_skill_enabled(skill_id, body)["skills"]
+        self._reject_control_skill(skill_id)
         payload = self.agents.set_skill_enabled(agent_id, skill_id, body)
         path = self.repository.profile_path(agent_id) / "skills" / skill_id / "SKILL.md"
         if path.is_file():
@@ -580,6 +599,7 @@ class AgentsServiceMixin:
     def remove_skill(self, agent_id: str, skill_id: str) -> list[dict[str, Any]]:
         if self._is_big_brother(agent_id):
             return self.config.delete_skill(skill_id)["skills"]
+        self._reject_control_skill(skill_id)
         path = self.repository.profile_path(agent_id) / "skills" / skill_id / "SKILL.md"
         if path.is_file():
             self.repository.snapshot(agent_id, "skills", skill_id, path.read_bytes())
@@ -695,5 +715,4 @@ class AgentsServiceMixin:
         if include_soul:
             result["soul"] = str(item.get("soul") or "")
         return result
-
 

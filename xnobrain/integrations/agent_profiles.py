@@ -6,6 +6,7 @@ from .hermes_support import (
     Any,
     BIG_BROTHER_AGENT_ID,
     BIG_BROTHER_SKILL_CATEGORY,
+    BIG_BROTHER_SKILL_ID,
     CREDENTIAL_FILES,
     GENERATED_AGENT_ID_ALPHABET,
     GENERATED_AGENT_ID_FIRST_ALPHABET,
@@ -204,10 +205,13 @@ class AgentProfilesMixin:
         for skill_file in sorted(skills_root.rglob("SKILL.md")):
             source = skill_file.parent
             rel_parent = source.relative_to(skills_root)
-            if rel_parent.parts[:1] == (BIG_BROTHER_SKILL_CATEGORY,):
-                continue
             frontmatter = self._read_skill_frontmatter(skill_file)
             skill_id = str(frontmatter.get("name") or source.name).strip()
+            if (
+                skill_id == BIG_BROTHER_SKILL_ID
+                or rel_parent.parts[:1] == (BIG_BROTHER_SKILL_CATEGORY,)
+            ):
+                continue
             if skill_id in disabled:
                 continue
             destination = target_root / rel_parent

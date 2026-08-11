@@ -29,6 +29,7 @@ from ..defaults import (
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
     BIG_BROTHER_SKILL_CATEGORY,
+    BIG_BROTHER_SKILL_ID,
     CUSTOM_SKILL_CATEGORY,
     honcho_memory_enabled,
 )
