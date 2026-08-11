@@ -24,6 +24,8 @@ from xnobrain.defaults import (
     BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_MODEL_DEFAULT_MARKER,
     BIG_BROTHER_NATIVE_TOOLSETS,
+    BIG_BROTHER_SKILL_CATEGORY,
+    BIG_BROTHER_SKILL_ID,
 )
 from xnobrain.integrations import AgentManager, GlobalConfigManager
 from xnobrain.services import ServiceError
@@ -412,6 +414,15 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_default_profile_installs_skill_from_url_without_returning_command_output(self):
         source = "https://example.com/office-helper/SKILL.md"
+        control = (
+            self.root / "skills" / BIG_BROTHER_SKILL_CATEGORY
+            / BIG_BROTHER_SKILL_ID / "SKILL.md"
+        )
+        control.parent.mkdir(parents=True)
+        control.write_text(
+            f"---\nname: {BIG_BROTHER_SKILL_ID}\ndescription: Private control\n---\n",
+            encoding="utf-8",
+        )
 
         async def install_from_url(_command, *, timeout_seconds):
             self.assertGreater(timeout_seconds, 0)
@@ -441,6 +452,15 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(snapshots), 1)
 
     async def test_default_skill_toggle_controls_which_skills_new_profiles_copy(self):
+        control = (
+            self.root / "skills" / BIG_BROTHER_SKILL_CATEGORY
+            / BIG_BROTHER_SKILL_ID / "SKILL.md"
+        )
+        control.parent.mkdir(parents=True)
+        control.write_text(
+            f"---\nname: {BIG_BROTHER_SKILL_ID}\ndescription: Private control\n---\n",
+            encoding="utf-8",
+        )
         for skill_id in ("enabled-skill", "disabled-skill"):
             skill = self.root / "skills" / skill_id / "SKILL.md"
             skill.parent.mkdir(parents=True, exist_ok=True)
@@ -454,6 +474,10 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 "/xnobrain/api/runtime/v1/agents-skills/disabled-skill",
                 json={"enabled": False},
             )
+            protected = await client.patch(
+                f"/xnobrain/api/runtime/v1/agents-skills/{BIG_BROTHER_SKILL_ID}",
+                json={"enabled": False},
+            )
             created = await client.post(
                 "/xnobrain/api/runtime/v1/agents",
                 json={"display_name": "Enabled Skills Only"},
@@ -462,11 +486,17 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(toggled.status_code, 200, toggled.text)
         states = {item["skill_id"]: item["enabled"] for item in toggled.json()["data"]}
         self.assertEqual(states, {"disabled-skill": False, "enabled-skill": True})
+        self.assertEqual(protected.status_code, 403, protected.text)
         self.assertEqual(created.status_code, 201, created.text)
         agent_id = created.json()["data"]["id"]
         profile_skills = self.profiles / agent_id / "skills"
         self.assertTrue((profile_skills / "enabled-skill" / "SKILL.md").is_file())
         self.assertFalse((profile_skills / "disabled-skill").exists())
+        self.assertFalse((profile_skills / BIG_BROTHER_SKILL_CATEGORY).exists())
+        self.assertFalse(any(
+            path.parent.name == BIG_BROTHER_SKILL_ID
+            for path in profile_skills.rglob("SKILL.md")
+        ))
         profile_config = yaml.safe_load((self.profiles / agent_id / "config.yaml").read_text(encoding="utf-8"))
         self.assertEqual(profile_config["skills"]["disabled"], [])
         self.assertEqual(len(list((self.root / "snapshots" / "config").glob("*.yaml"))), 1)

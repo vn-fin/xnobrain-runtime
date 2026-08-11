@@ -4,6 +4,7 @@ from .hermes_support import (
     AgentAPIError,
     Any,
     BIG_BROTHER_SKILL_CATEGORY,
+    BIG_BROTHER_SKILL_ID,
     CUSTOM_SKILL_CATEGORY,
     MAX_TEXT_CHARS,
     Mapping,
@@ -93,7 +94,10 @@ class AgentSkillsMixin:
         common: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
         name = self._agent_name(raw_name)
-        target = self._skill_sync_inventory(self._require_profile(name))
+        target = self._skill_sync_inventory(
+            self._require_profile(name),
+            exclude_control=True,
+        )
         enabled_common = {key: value for key, value in common.items() if value["enabled"]}
         added = sorted(key for key in enabled_common if key not in target)
         updated = sorted(
@@ -130,7 +134,7 @@ class AgentSkillsMixin:
     ) -> None:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
-        target = self._skill_sync_inventory(profile_dir)
+        target = self._skill_sync_inventory(profile_dir, exclude_control=True)
         skills_root = profile_dir / "skills"
         temporary = profile_dir / f".skills-sync-{uuid.uuid4().hex}"
         backup = profile_dir / f".skills-backup-{uuid.uuid4().hex}"
@@ -199,10 +203,13 @@ class AgentSkillsMixin:
         for skill_file in sorted(root.rglob("SKILL.md")):
             source = skill_file.parent
             relative = source.relative_to(root)
-            if exclude_control and relative.parts[:1] == (BIG_BROTHER_SKILL_CATEGORY,):
-                continue
             frontmatter = self._read_skill_frontmatter(skill_file)
             skill_id = str(frontmatter.get("name") or source.name).strip()
+            if exclude_control and (
+                skill_id == BIG_BROTHER_SKILL_ID
+                or relative.parts[:1] == (BIG_BROTHER_SKILL_CATEGORY,)
+            ):
+                continue
             if not skill_id or skill_id in inventory:
                 continue
             inventory[skill_id] = {
@@ -257,6 +264,13 @@ class AgentSkillsMixin:
         profile_dir = self._require_profile(name)
         if not isinstance(body, Mapping):
             raise AgentAPIError("request body must be an object", code="invalid_skill_request")
+        requested_id = str(body.get("skill_id") or body.get("name") or "").strip()
+        if requested_id == BIG_BROTHER_SKILL_ID:
+            raise AgentAPIError(
+                "Big Brother control skill is restricted to Big Brother",
+                code="protected_skill",
+                status=403,
+            )
         target_profile = profile_dir
         enable = bool(body.get("enable", False))
         if "content" in body:
@@ -314,6 +328,12 @@ class AgentSkillsMixin:
         if not isinstance(body, Mapping):
             raise AgentAPIError("request body must be an object", code="invalid_skill_request")
         skill_id = self._skill_id(raw_skill_id)
+        if skill_id == BIG_BROTHER_SKILL_ID:
+            raise AgentAPIError(
+                "Big Brother control skill is restricted to Big Brother",
+                code="protected_skill",
+                status=403,
+            )
         if self._find_agent_skill(profile_dir, skill_id) is None:
             raise AgentAPIError(
                 f"Skill not found: {skill_id}", code="skill_not_found", status=404
@@ -328,6 +348,12 @@ class AgentSkillsMixin:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
         skill_id = self._skill_id(raw_skill_id)
+        if skill_id == BIG_BROTHER_SKILL_ID:
+            raise AgentAPIError(
+                "Big Brother control skill is restricted to Big Brother",
+                code="protected_skill",
+                status=403,
+            )
         skills_root = profile_dir / "skills"
         removed = False
         if skills_root.is_dir():
@@ -467,6 +493,11 @@ class AgentSkillsMixin:
             name_value = str(frontmatter.get("name") or skill_id).strip()
             if name_value:
                 skill_id = name_value
+            if (
+                skill_id == BIG_BROTHER_SKILL_ID
+                or rel_parent.parts[:1] == (BIG_BROTHER_SKILL_CATEGORY,)
+            ):
+                continue
             if skill_id in seen:
                 continue
             seen.add(skill_id)
