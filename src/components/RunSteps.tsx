@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ArrowUp,
   Brain,
   CheckCircle2,
   ChevronDown,
@@ -27,6 +28,51 @@ const APPROVAL_LABELS: Record<RunApprovalChoice, string> = {
   always: 'Always allow',
   deny: 'Deny',
 };
+
+function useRunClock(run: ChatRun): number {
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    if (run.status !== 'running') return;
+    const update = () => setNow(Date.now() / 1000);
+    update();
+    const timer = window.setInterval(update, 1_000);
+    return () => window.clearInterval(timer);
+  }, [run.id, run.status]);
+  return now;
+}
+
+export function RunActivityBar({ run, onViewActivity }: { run: ChatRun; onViewActivity: () => void }) {
+  const now = useRunClock(run);
+  const waiting = run.status === 'waiting_for_approval';
+  const duration = formatRunDuration(run, run.status === 'running' ? now : undefined);
+  const stepCount = run.steps.length;
+  const stepLabel = `${stepCount} ${stepCount === 1 ? 'step' : 'steps'}`;
+  const activityLabel = waiting
+    ? `Approval needed, ${stepLabel}`
+    : `Agent is working${duration ? ` for ${duration}` : ''}, ${stepLabel}`;
+
+  return (
+    <div className={`live-run-activity ${waiting ? 'waiting' : 'running'}`} aria-label={activityLabel}>
+      <span className="live-run-activity-state">
+        {waiting
+          ? <ShieldAlert className="run-step-waiting" size={15} />
+          : <LoaderCircle className="run-step-spin" size={15} />}
+        <strong>{waiting ? 'Approval needed' : `Working${duration ? ` for ${duration}` : ''}`}</strong>
+      </span>
+      <span className="live-run-activity-separator" aria-hidden="true">·</span>
+      <span className="live-run-activity-count">{stepLabel}</span>
+      <button
+        type="button"
+        aria-label={waiting ? 'Review agent activity' : 'View agent activity'}
+        title={waiting ? 'Review activity' : 'View activity'}
+        onClick={onViewActivity}
+      >
+        <ArrowUp size={13} />
+      </button>
+      <span className="sr-only" role="status">{waiting ? 'Agent approval is required.' : 'Agent is working.'}</span>
+    </div>
+  );
+}
 
 function formatted(value: unknown): string {
   if (value === undefined || value === null || value === '') return '';
@@ -239,10 +285,12 @@ export function RunSteps({
   run,
   onResolveApproval,
   answerContent,
+  expandSignal = 0,
 }: {
   run: ChatRun;
   onResolveApproval?: (runId: string, choice: RunApprovalChoice) => void | Promise<void>;
   answerContent?: string;
+  expandSignal?: number;
 }) {
   const normalizedAnswer = answerContent?.trim().replace(/\s+/g, ' ') ?? '';
   const repeatsAnswer = (part: string) => {
@@ -261,19 +309,15 @@ export function RunSteps({
   const hasAnswer = run.assistantContent.trim().length > 0;
   const autoExpanded = run.status === 'waiting_for_approval' || (run.status === 'running' && !hasAnswer);
   const [expanded, setExpanded] = useState(autoExpanded);
-  const [now, setNow] = useState(() => Date.now() / 1000);
+  const now = useRunClock(run);
   useEffect(() => {
     // Keep live activity visible while the model is working, then collapse the
     // work log when answer text starts. Restored/completed runs start collapsed.
     setExpanded(autoExpanded);
   }, [autoExpanded]);
   useEffect(() => {
-    if (run.status !== 'running') return;
-    const update = () => setNow(Date.now() / 1000);
-    update();
-    const timer = window.setInterval(update, 1_000);
-    return () => window.clearInterval(timer);
-  }, [run.id, run.status]);
+    if (expandSignal > 0) setExpanded(true);
+  }, [expandSignal]);
   const duration = formatRunDuration(run, run.status === 'running' ? now : undefined);
   const header = run.status === 'running'
     ? `Worked${duration ? ` for ${duration}` : ''}`
@@ -289,14 +333,14 @@ export function RunSteps({
   const showReasoning = reasoningParts.length > 0;
 
   return (
-    <section className={`run-steps ${run.status}`}>
+    <section className={`run-steps ${run.status}`} data-run-id={run.id}>
       <button className="run-steps-toggle" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
         {run.status === 'running' ? <LoaderCircle className="run-step-spin" size={16} /> : null}
         {run.status === 'waiting_for_approval' ? <ShieldAlert className="run-step-waiting" size={16} /> : null}
         {run.status !== 'running' && run.status !== 'waiting_for_approval' && toolCount === 0 && hasReasoning
           ? <Brain size={15} />
           : null}
-        <span>{header}</span>
+        <span className="run-steps-label">{header}</span>
         {toolCount > 0 && <span className="run-steps-count">{toolCount} {toolCount === 1 ? 'step' : 'steps'}</span>}
         <ChevronDown className={expanded ? 'open' : ''} size={16} />
       </button>

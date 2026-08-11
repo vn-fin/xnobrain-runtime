@@ -28,7 +28,7 @@ import { TreeIcon } from './common';
 import { useStreamingConversations } from '../hooks/useConversation';
 import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 import { AsyncState } from './AsyncState';
-import { RunSteps, RunUsage } from './RunSteps';
+import { RunActivityBar, RunSteps, RunUsage } from './RunSteps';
 import { Markdown } from './Markdown';
 import { UserMessage } from './UserMessage';
 import { WORKSPACE_FILE_MIME, readDroppedEntries } from './WorkspacePanel';
@@ -191,6 +191,8 @@ export function ChatArea({
   const conversationPickerButtonRef = useRef<HTMLButtonElement>(null);
   const activeConversationOptionRef = useRef<HTMLButtonElement>(null);
   const messageCanvasRef = useRef<HTMLDivElement>(null);
+  const followLatestRef = useRef(true);
+  const [activityExpandSignal, setActivityExpandSignal] = useState(0);
   const pendingCaret = useRef<number | null>(null);
   const mentionCache = useRef<Map<string, WorkspaceEntry[]>>(new Map());
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -259,10 +261,44 @@ export function ChatArea({
     ...runs.filter((run) => run.insertBeforeMessageId === message.id),
     ...(fallbackRuns.get(message.id) ?? []),
   ] : [];
+  const liveRun = [...runs].reverse().find((run) =>
+    run.status === 'running' || run.status === 'waiting_for_approval');
+  const showLiveActivity = Boolean(liveRun && (streaming || liveRun.status === 'waiting_for_approval'));
+
   useEffect(() => {
+    followLatestRef.current = true;
     const canvas = messageCanvasRef.current;
     if (canvas) canvas.scrollTop = canvas.scrollHeight;
+  }, [agent.id, activeConversation?.id]);
+
+  useEffect(() => {
+    const canvas = messageCanvasRef.current;
+    if (canvas && followLatestRef.current) canvas.scrollTop = canvas.scrollHeight;
   }, [messages, queuedMessages, runs, chatError]);
+
+  const onTranscriptScroll = () => {
+    const canvas = messageCanvasRef.current;
+    if (!canvas) return;
+    followLatestRef.current = canvas.scrollHeight - canvas.scrollTop - canvas.clientHeight <= 80;
+  };
+
+  const revealLiveActivity = () => {
+    if (!liveRun) return;
+    setActivityExpandSignal((value) => value + 1);
+    followLatestRef.current = true;
+    window.setTimeout(() => {
+      const canvas = messageCanvasRef.current;
+      const target = canvas
+        ? Array.from(canvas.querySelectorAll<HTMLElement>('.run-steps'))
+          .find((element) => element.dataset.runId === liveRun.id)
+        : undefined;
+      if (target && typeof target.scrollIntoView === 'function') {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else if (canvas) {
+        canvas.scrollTop = canvas.scrollHeight;
+      }
+    }, 0);
+  };
 
   const submit = () => {
     const value = input.trim();
@@ -764,6 +800,7 @@ export function ChatArea({
         onDragOver={onCanvasDragOver}
         onDragLeave={onCanvasDragLeave}
         onDrop={onCanvasDrop}
+        onScroll={onTranscriptScroll}
       >
         {fileDragOver && (
           <div className="chat-dropzone">
@@ -802,6 +839,7 @@ export function ChatArea({
                     run={run}
                     answerContent={message.content}
                     onResolveApproval={onResolveRunApproval}
+                    expandSignal={liveRun?.id === run.id ? activityExpandSignal : 0}
                   />
                 ))}
                 <div className="message-content">
@@ -824,7 +862,12 @@ export function ChatArea({
           </Fragment>
         ))}
         {lastAssistantId === undefined && unpositionedRuns.map((run) => (
-          <RunSteps key={run.id} run={run} onResolveApproval={onResolveRunApproval} />
+          <RunSteps
+            key={run.id}
+            run={run}
+            onResolveApproval={onResolveRunApproval}
+            expandSignal={liveRun?.id === run.id ? activityExpandSignal : 0}
+          />
         ))}
         {chatError && messages.length > 0 && <div className="chat-inline-error" role="alert">{chatError}</div>}
       </div>
@@ -879,6 +922,9 @@ export function ChatArea({
                 );
               })}
             </div>
+          )}
+          {showLiveActivity && liveRun && (
+            <RunActivityBar run={liveRun} onViewActivity={revealLiveActivity} />
           )}
           <div
             className={dragOver ? 'composer drag-over' : 'composer'}

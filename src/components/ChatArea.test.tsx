@@ -1,10 +1,10 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../i18n';
-import type { Agent, ConversationUsage } from '../types';
+import type { Agent, ChatRun, Conversation, ConversationUsage } from '../types';
 import { ChatArea, ContextGauge } from './ChatArea';
 import { UserMessage } from './UserMessage';
 
@@ -27,6 +27,7 @@ const usage = {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   document.head.querySelectorAll('style[data-chat-area-test]').forEach((element) => element.remove());
 });
 
@@ -160,5 +161,66 @@ describe('conversation picker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create session' }));
     expect(onCreateConversation).toHaveBeenCalledOnce();
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+});
+
+describe('live run activity', () => {
+  it('keeps elapsed time and step count above the composer and reveals the active work log', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_015_000);
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const conversation: Conversation = {
+      id: 'session-one',
+      title: 'Live session',
+      preview: '',
+      startedAt: '2026-08-11T09:08:27Z',
+      model: 'auto',
+      messages: 1,
+      tools: 2,
+    };
+    const agent: Agent = {
+      id: 'agent-one', name: 'agent-one', title: 'Research', description: '', status: 'ready',
+      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [conversation],
+    };
+    const activeRun: ChatRun = {
+      id: 'run-live',
+      insertBeforeMessageId: 'assistant-live',
+      status: 'running',
+      startedAt: 1_000,
+      steps: [
+        { id: 'step-1', toolName: 'search_files', preview: '*.tsx', status: 'completed' },
+        { id: 'step-2', toolName: 'terminal', preview: 'npm test', status: 'running' },
+      ],
+      assistantContent: 'I found the relevant component.',
+    };
+
+    render(<ChatArea
+      agent={agent} agents={[agent]} activeConversation={conversation} providers={[]}
+      runs={[activeRun]}
+      messages={[{ id: 'assistant-live', role: 'assistant', content: activeRun.assistantContent, streaming: true }]}
+      usage={null} chatStatus="ready" chatError="" streaming canStop
+      onSend={vi.fn()} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
+      onSelectModel={vi.fn()} onSelectAgent={vi.fn()} onTestAgent={vi.fn()}
+      onSelectConversation={vi.fn()} onCreateConversation={vi.fn()} onDeleteConversation={vi.fn()}
+      onRenameConversation={vi.fn()} onOpenFile={vi.fn()}
+    />);
+
+    expect(screen.getByLabelText('Agent is working for 15s, 2 steps')).toBeVisible();
+    const workLog = screen.getByRole('button', { name: /Worked for 15s.*2 steps/ });
+    expect(workLog).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'View agent activity' }));
+    act(() => vi.advanceTimersByTime(0));
+
+    expect(workLog).toHaveAttribute('aria-expanded', 'true');
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(screen.getByLabelText('Agent is working for 16s, 2 steps')).toBeVisible();
   });
 });

@@ -2270,6 +2270,60 @@ body.col-resizing {
   resize: none;
 }
 
+.live-run-activity {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 auto 8px;
+  padding: 5px 2px 7px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  background: transparent;
+  font-size: 12px;
+}
+
+.live-run-activity.waiting {
+  border-color: color-mix(in srgb, var(--yellow) 42%, var(--border));
+}
+
+.live-run-activity-state {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.live-run-activity-state strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-run-activity.waiting .live-run-activity-state strong { color: var(--yellow); }
+.live-run-activity-separator { color: var(--muted-2); }
+.live-run-activity-count { white-space: nowrap; }
+
+.live-run-activity > button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.live-run-activity > button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
 .assistant-message {
   max-width: 680px;
   margin: 0 auto;
@@ -2442,7 +2496,7 @@ body.col-resizing {
   text-align: left;
 }
 
-.run-steps-toggle span { flex: 1; }
+.run-steps-label { flex: 0 1 auto; }
 .run-steps-toggle .lucide-chevron-down { transition: transform 150ms ease; }
 .run-steps-toggle .lucide-chevron-down.open { transform: rotate(180deg); }
 
@@ -2632,12 +2686,11 @@ body.col-resizing {
 
 .run-steps-count {
   flex: 0 0 auto;
-  margin-right: 4px;
-  padding: 1px 8px;
-  border-radius: 999px;
+  margin-right: 0;
+  padding: 0;
   color: var(--muted);
-  background: var(--elevated);
-  font-size: 11px;
+  background: transparent;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -7900,6 +7953,9 @@ body.col-resizing {
   .message-canvas {
     padding: 22px 16px;
   }
+
+  .composer-wrap { padding-inline: 12px; }
+  .live-run-activity { gap: 6px; }
 
   .composer-menu {
     display: none;
