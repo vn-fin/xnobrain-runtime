@@ -507,7 +507,7 @@ function TaskCard({
           <strong>{task.team.nodes.filter((node) => node.status === 'running').length} active</strong>
         </div>
       )}
-      <p className="kb-card-desc">{task.description}</p>
+      <p className="kb-card-desc kb-card-preview input" title={task.description}>{task.description}</p>
       {task.tags.length > 0 && (
         <div className="kb-tags">
           {task.tags.map((tag) => (
@@ -529,12 +529,12 @@ function TaskCard({
       ) : task.block ? (
         <div className="kb-signal blocked">
           <AlertTriangle size={13} />
-          <span>{task.block}</span>
+          <span className="kb-card-preview result" title={task.block}>{task.block}</span>
         </div>
       ) : task.summary ? (
         <div className="kb-signal done">
           <Check size={13} />
-          <span>{task.summary}</span>
+          <span className="kb-card-preview result" title={task.summary}>{task.summary}</span>
         </div>
       ) : column === 'running' ? (
         <div className="kb-progress">
