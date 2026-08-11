@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -166,6 +167,8 @@ class PlatformService:
         from .team_runs import TeamRunService
         self.team_runs = TeamRunService(repository, agents, self)
         self._oauth_attempts: dict[str, dict[str, str]] = {}
+        self._providers_cache: list[dict[str, Any]] | None = None
+        self._providers_cache_lock = asyncio.Lock()
         self.config.ensure_write_approval_defaults()
         self._ensure_existing_write_approval_defaults()
 
@@ -1200,6 +1203,14 @@ class PlatformService:
         return item
 
     async def providers(self) -> list[dict[str, Any]]:
+        if self._providers_cache is not None:
+            return copy.deepcopy(self._providers_cache)
+        async with self._providers_cache_lock:
+            if self._providers_cache is None:
+                self._providers_cache = await self._load_providers()
+            return copy.deepcopy(self._providers_cache)
+
+    async def _load_providers(self) -> list[dict[str, Any]]:
         try:
             connections = (await self.router.list_connections())["connections"]
             models = (await self.router.list_models())["data"]
@@ -1249,6 +1260,10 @@ class PlatformService:
                 "available_models": [item["id"] for item in models if item.get("provider") == provider],
             })
         return result
+
+    async def _invalidate_providers_cache(self) -> None:
+        async with self._providers_cache_lock:
+            self._providers_cache = None
 
     async def provider_status(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
@@ -1313,6 +1328,7 @@ class PlatformService:
                     else body.get("default_model")
                 ),
             })
+            await self._invalidate_providers_cache()
             return {**self._api_key_info(provider), "connected": True, "status": "connected"}
         from urllib.parse import parse_qs, urlparse
         attempt = self._oauth_attempts.get(provider)
@@ -1328,6 +1344,7 @@ class PlatformService:
         if not payload.get("success"):
             raise ServiceError("provider authorization was not accepted", status=422, code="provider_auth_failed")
         self._oauth_attempts.pop(provider, None)
+        await self._invalidate_providers_cache()
         return {"provider_id": provider, "connection_mode": "cli", "connected": True, "status": "connected"}
 
     async def update_provider(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -1356,6 +1373,7 @@ class PlatformService:
                 "deepseek-v4-flash-free" if provider == "opencode" else None
             ),
         })
+        await self._invalidate_providers_cache()
         return {"provider_id": provider, "connected": True, "status": "connected", "connection": result}
 
     async def disconnect_provider(self, provider: str) -> dict[str, Any]:
@@ -1366,6 +1384,7 @@ class PlatformService:
             if item.get("provider") == provider:
                 await self.router.delete_connection(item["id"])
         self._oauth_attempts.pop(provider, None)
+        await self._invalidate_providers_cache()
         return {"provider_id": provider, "connected": False, "status": "disconnected"}
 
     async def test_provider(self, provider: str) -> dict[str, Any]:
@@ -1379,6 +1398,7 @@ class PlatformService:
         if not current:
             return {"provider_id": provider, "healthy": False, "status": "not_connected", "message": "Provider is not connected"}
         result = await self.router.test_connection(current["id"])
+        await self._invalidate_providers_cache()
         return {"provider_id": provider, "healthy": bool(result.get("valid")), "status": "healthy" if result.get("valid") else "unhealthy", "message": result.get("error") or ""}
 
     async def list_provider_connections(self, provider: str) -> dict[str, Any]:
@@ -1412,6 +1432,7 @@ class PlatformService:
                 "deepseek-v4-flash-free" if provider == "opencode" else None
             ),
         })
+        await self._invalidate_providers_cache()
         return {"provider_id": provider, "connected": True, "connection": result["connection"]}
 
     async def patch_provider_connection(self, provider: str, connection_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -1423,6 +1444,7 @@ class PlatformService:
         if priority is not None:
             priority = max(0, min(999, int(priority)))
         await self.router.update_connection(connection_id, active=active, priority=priority)
+        await self._invalidate_providers_cache()
         # 9router owns priority normalization, so return the stored row, not the request.
         refreshed = await self._owned_connection(provider, connection_id)
         return {"provider_id": provider, "connection": refreshed}
@@ -1430,6 +1452,7 @@ class PlatformService:
     async def test_provider_connection(self, provider: str, connection_id: str) -> dict[str, Any]:
         await self._owned_connection(provider, connection_id)
         result = await self.router.test_connection(connection_id)
+        await self._invalidate_providers_cache()
         healthy = bool(result.get("valid"))
         return {
             "provider_id": provider, "connection_id": connection_id,
@@ -1440,6 +1463,7 @@ class PlatformService:
     async def delete_provider_connection(self, provider: str, connection_id: str) -> dict[str, Any]:
         await self._owned_connection(provider, connection_id)
         await self.router.delete_connection(connection_id)
+        await self._invalidate_providers_cache()
         remaining = await self._provider_connections(provider)
         return {
             "provider_id": provider, "connection_id": connection_id, "deleted": True,

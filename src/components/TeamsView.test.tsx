@@ -125,7 +125,7 @@ describe('TeamsView', () => {
     ]));
   });
 
-  it('configures dependencies, tools, skills, and L-level team communication', async () => {
+  it('configures dependencies, tools, skills, and named communication levels', async () => {
     const create = vi.fn(async (input) => ({ id: 'team-capable', ...input }));
     const state = teamState({ create });
     render(<TeamsView agents={agents} state={state} onClose={vi.fn()} />);
@@ -142,7 +142,14 @@ describe('TeamsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Reviewer.*Checks the findings/i }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'researcher' }));
     fireEvent.click(screen.getByText('Execution & communication'));
-    fireEvent.change(screen.getByLabelText('Communication level'), { target: { value: '2' } });
+    const communicationSelect = screen.getByLabelText('Communication level');
+    expect(Array.from(communicationSelect.querySelectorAll('option')).map((option) => option.textContent)).toEqual([
+      'Isolated',
+      'Result passing',
+      'Shared scratchpad',
+      'Team dialogue',
+    ]);
+    fireEvent.change(communicationSelect, { target: { value: '2' } });
     fireEvent.change(screen.getByLabelText('Parallel agents'), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: /Save team/i }));
 

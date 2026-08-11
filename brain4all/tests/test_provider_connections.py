@@ -42,11 +42,15 @@ class FakeRouter:
         ]
         self.created_bodies: list[dict] = []
         self.ensured_nodes: list[dict] = []
+        self.list_connections_calls = 0
+        self.list_models_calls = 0
 
     async def list_connections(self):
+        self.list_connections_calls += 1
         return {"connections": [dict(row) for row in self._rows]}
 
     async def list_models(self):
+        self.list_models_calls += 1
         return {"data": []}
 
     async def create_api_key_connection(self, body):
@@ -231,6 +235,57 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         codex = next(item for item in providers if item["id"] == "codex")
         self.assertTrue(codex["connected"])          # one active of two
         self.assertEqual(codex["connection_count"], 2)
+
+    async def test_providers_are_loaded_once_and_returned_from_memory(self):
+        async with self.client() as client:
+            first = await client.get("/xnobrain/api/runtime/v1/providers")
+            second = await client.get("/xnobrain/api/runtime/v1/providers")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.json()["data"], second.json()["data"])
+        self.assertEqual(self.router.list_connections_calls, 1)
+        self.assertEqual(self.router.list_models_calls, 1)
+
+    async def test_provider_create_invalidates_the_cached_list(self):
+        async with self.client() as client:
+            await client.get("/xnobrain/api/runtime/v1/providers")
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/providers/openai/connections",
+                json={"api_key": "sk-secret123", "name": "second"},
+            )
+            refreshed = await client.get("/xnobrain/api/runtime/v1/providers")
+
+        self.assertEqual(created.status_code, 201)
+        openai = next(item for item in refreshed.json()["data"] if item["id"] == "openai")
+        self.assertTrue(openai["connected"])
+        self.assertEqual(openai["connection_count"], 1)
+        self.assertEqual(self.router.list_models_calls, 2)
+
+    async def test_provider_update_and_delete_invalidate_the_cached_list(self):
+        async with self.client() as client:
+            await client.get("/xnobrain/api/runtime/v1/providers")
+            updated = await client.patch(
+                "/xnobrain/api/runtime/v1/providers/codex/connections/codex-2",
+                json={"active": True},
+            )
+            after_update = await client.get("/xnobrain/api/runtime/v1/providers")
+            deleted = await client.delete(
+                "/xnobrain/api/runtime/v1/providers/codex/connections/codex-2",
+            )
+            after_delete = await client.get("/xnobrain/api/runtime/v1/providers")
+
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(deleted.status_code, 200)
+        codex_after_update = next(
+            item for item in after_update.json()["data"] if item["id"] == "codex"
+        )
+        codex_after_delete = next(
+            item for item in after_delete.json()["data"] if item["id"] == "codex"
+        )
+        self.assertEqual(codex_after_update["connection_count"], 2)
+        self.assertEqual(codex_after_delete["connection_count"], 1)
+        self.assertEqual(self.router.list_models_calls, 3)
 
     async def test_lists_xai_openrouter_and_groq_as_key_presets(self):
         async with self.client() as client:
