@@ -839,6 +839,27 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                     is_error=False,
                     result="private tool output",
                 )
+                tool_progress_callback(
+                    "tool.started",
+                    "todo",
+                    "planning 2 task(s)",
+                    {"todos": [{"id": "private-args", "content": "not streamed"}]},
+                )
+                tool_progress_callback(
+                    "tool.completed",
+                    "todo",
+                    None,
+                    None,
+                    duration=0.01,
+                    is_error=False,
+                    result=json.dumps({
+                        "todos": [
+                            {"id": "research", "content": "Research sources", "status": "completed"},
+                            {"id": "summary", "content": "Summarize findings", "status": "in_progress"},
+                        ],
+                        "summary": {"total": 2},
+                    }),
+                )
                 approval_notify_callback({
                     "command": "rm -rf ./cache",
                     "description": "Delete the cache directory",
@@ -882,7 +903,11 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(b'"event":"tool.completed"', payload)
             self.assertIn(b'"duration":0.125', payload)
             self.assertNotIn(b"private tool output", payload)
+            self.assertNotIn(b"private-args", payload)
             self.assertNotIn(b'"args"', payload)
+            self.assertIn(b'"event":"todo.updated"', payload)
+            self.assertIn(b'"content":"Summarize findings"', payload)
+            self.assertIn(b'"in_progress":1', payload)
             self.assertIn(b'"event":"approval.request"', payload)
             self.assertIn(b'"description":"Delete the cache directory"', payload)
             self.assertIn(b'"allow_permanent":false', payload)
