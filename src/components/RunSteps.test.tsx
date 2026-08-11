@@ -53,8 +53,19 @@ describe('RunSteps', () => {
     expect(screen.getByText('Inspect the available evidence first.')).toBeVisible();
   });
 
-  it('waits for the reasoning phase to complete before showing its large text', () => {
+  it('shows reasoning deltas while the reasoning phase is streaming', () => {
     const { rerender } = render(<RunSteps run={run({
+      status: 'running',
+      assistantContent: '',
+      reasoning: ['DuckDuckGo returned'],
+      reasoningStreaming: true,
+      timeline: [{ kind: 'reasoning', text: 'DuckDuckGo returned' }],
+    })} />);
+
+    expect(screen.getByRole('button', { name: 'Thinking…' })).toBeInTheDocument();
+    expect(screen.getByText('DuckDuckGo returned')).toBeVisible();
+
+    rerender(<RunSteps run={run({
       status: 'running',
       assistantContent: '',
       reasoning: ['DuckDuckGo returned a challenge page. Try another source.'],
@@ -62,8 +73,7 @@ describe('RunSteps', () => {
       timeline: [{ kind: 'reasoning', text: 'DuckDuckGo returned a challenge page. Try another source.' }],
     })} />);
 
-    expect(screen.getByRole('button', { name: 'Thinking…' })).toBeInTheDocument();
-    expect(screen.queryByText(/DuckDuckGo returned/)).not.toBeInTheDocument();
+    expect(screen.getByText('DuckDuckGo returned a challenge page. Try another source.')).toBeVisible();
 
     rerender(<RunSteps run={run({
       status: 'running',
