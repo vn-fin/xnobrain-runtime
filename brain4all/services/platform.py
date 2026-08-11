@@ -570,9 +570,13 @@ class PlatformService:
 
     def list_default_skills(self) -> list[dict[str, Any]]:
         """List only the skills installed in the default Hermes profile."""
+        return self._default_skills(self.config.list_skills()["skills"])
+
+    @staticmethod
+    def _default_skills(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [
             item
-            for item in self.config.list_skills()["skills"]
+            for item in skills
             if Path(str(item.get("relative_path") or "")).parts[:1]
             != (BIG_BROTHER_SKILL_CATEGORY,)
         ]
@@ -582,6 +586,11 @@ class PlatformService:
         agents = await self.list_agents_async()
         agent_ids = [str(item.get("id") or "").strip() for item in agents]
         agent_ids = [agent_id for agent_id in agent_ids if agent_id]
+        profile_agent_ids = [
+            agent_id
+            for agent_id in agent_ids
+            if not self._is_big_brother(agent_id)
+        ]
         concurrency = asyncio.Semaphore(8)
 
         async def agent_skills(agent_id: str) -> tuple[str, list[dict[str, Any]]]:
@@ -590,13 +599,18 @@ class PlatformService:
             return agent_id, skills
 
         results = await asyncio.gather(
-            asyncio.to_thread(self.list_default_skills),
-            *(agent_skills(agent_id) for agent_id in agent_ids),
+            asyncio.to_thread(self.config.list_skills),
+            *(agent_skills(agent_id) for agent_id in profile_agent_ids),
         )
-        default_skills, *agent_results = results
+        root_payload, *agent_results = results
+        root_skills = root_payload["skills"]
+        skills_by_agent = dict(agent_results)
+        for agent_id in agent_ids:
+            if self._is_big_brother(agent_id):
+                skills_by_agent[agent_id] = root_skills
         return {
-            "skills": default_skills,
-            "agents": dict(agent_results),
+            "skills": self._default_skills(root_skills),
+            "agents": skills_by_agent,
         }
 
     async def install_default_skill(self, body: Mapping[str, Any]) -> list[dict[str, Any]]:
