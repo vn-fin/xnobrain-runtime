@@ -12,6 +12,11 @@ on:
         required: false
         default: worker
         type: string
+      version_from_commit:
+        description: Derive an immutable runtime version from the commit instead of .version
+        required: false
+        default: false
+        type: boolean
       frontend_build_args:
         description: Newline-separated frontend Docker build arguments
         required: true
@@ -34,12 +39,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Read and validate .version
+      - name: Resolve and validate runtime version
         id: version
         run: |
-          version="$(tr -d '[:space:]' < .version)"
+          if [[ "${{ inputs.version_from_commit }}" == "true" ]]; then
+            version="0.0.0-${GITHUB_SHA:0:12}"
+          else
+            version="$(tr -d '[:space:]' < .version)"
+          fi
           if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
-            echo "Invalid runtime version in .version: $version" >&2
+            echo "Invalid runtime version: $version" >&2
             exit 1
           fi
           echo "value=$version" >> "$GITHUB_OUTPUT"

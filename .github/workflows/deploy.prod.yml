@@ -3,7 +3,6 @@ name: Publish XNOBrain Runtime — Production
 on:
   push:
     branches: [prod]
-    paths: [.version]
   workflow_dispatch:
 
 permissions:
@@ -20,6 +19,7 @@ jobs:
     with:
       environment: prod
       node_role: worker
+      version_from_commit: true
       frontend_build_args: |
         API_BASE_URL=https://public.xno.vn
         API_CONTROL_BASE_URL=https://public.xno.vn

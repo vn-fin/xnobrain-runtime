@@ -3,7 +3,6 @@ name: Publish XNOBrain Runtime — Staging
 on:
   push:
     branches: [staging]
-    paths: [.version]
   workflow_dispatch:
 
 permissions:
@@ -20,6 +19,7 @@ jobs:
     with:
       environment: staging
       node_role: worker
+      version_from_commit: true
       frontend_build_args: |
         API_BASE_URL=https://public.beta.xno.vn
         API_CONTROL_BASE_URL=https://public.beta.xno.vn
