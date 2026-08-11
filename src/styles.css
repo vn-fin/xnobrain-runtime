@@ -6159,14 +6159,33 @@ body.col-resizing {
 }
 
 .app-modal.confirm-modal.kanban-task-preview {
-  width: min(480px, 100%);
+  width: min(640px, 100%);
+  min-width: 0;
   max-height: calc(100vh - 40px);
   display: flex;
   flex-direction: column;
 }
 
+.kanban-task-preview .app-modal-head > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.kanban-task-preview .app-modal-head > .icon-button {
+  flex: 0 0 auto;
+}
+
+.kanban-task-preview .app-modal-sub {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .kanban-task-preview-body {
+  width: 100%;
   min-height: 0;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
   overflow-y: auto;
   display: grid;
   gap: 10px;
@@ -6181,17 +6200,25 @@ body.col-resizing {
 }
 
 .kanban-task-preview-title strong {
+  display: block;
   min-width: 0;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .kanban-task-preview-body .kb-detail-section {
+  min-width: 0;
   padding: 11px 12px;
 }
 
+.kb-long-text,
 .kanban-task-preview-body .kb-desc {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   white-space: pre-wrap;
 }
 
@@ -8666,22 +8693,22 @@ body.col-resizing {
 .team-builder-toolbar { min-height: 65px; display: flex; align-items: center; gap: 18px; padding: 0 18px; border-bottom: 1px solid #e5eaf0; background: #fff; }
 .team-builder-toolbar h2 { margin: 4px 0 0; font-size: 14px; }
 .team-toolbar-help { margin-left: auto; display: flex; align-items: center; gap: 6px; color: #8a94a5; font-size: 10px; }
-.team-builder-shell.has-inspector .team-builder-toolbar { padding-right: 268px; }
+.team-builder-shell.has-inspector .team-builder-main { margin-right: 250px; }
 .team-builder-shell.has-inspector .team-toolbar-help { display: none; }
 .team-builder-shell.has-inspector .team-builder-toolbar .primary-button { margin-left: auto; }
-.graph-zoom-viewport { position: relative; overflow: auto; overscroll-behavior: contain; }
-.graph-zoom-stage { position: relative; margin: 16px; }
-.graph-zoom-scene { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.graph-zoom-frame { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.graph-zoom-viewport { width: 100%; height: 100%; overflow: auto; overscroll-behavior: contain; background-image: radial-gradient(var(--border-2) 1px, transparent 1px); background-size: 18px 18px; }
+.graph-zoom-stage { position: relative; min-width: calc(100% - 32px); min-height: calc(100% - 32px); margin: 16px; }
+.graph-zoom-scene { position: absolute; left: 50%; top: 50%; transform-origin: center; }
 .graph-zoom-controls {
-  position: sticky;
+  position: absolute;
   z-index: 20;
   top: 10px;
-  left: calc(100% - 170px);
+  right: 10px;
   width: max-content;
   height: 30px;
   display: flex;
   align-items: center;
-  margin: 10px 10px -40px auto;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -8693,9 +8720,9 @@ body.col-resizing {
 .graph-zoom-controls button:last-child { border-right: 0; }
 .graph-zoom-controls button:hover { color: var(--text); background: var(--hover); }
 .graph-zoom-controls .graph-zoom-value { width: auto; grid-template-columns: auto auto; gap: 5px; padding: 0 8px; font-size: 9px; font-weight: 650; }
-.team-canvas-wrap { flex: 1; min-height: 0; }
-.team-canvas { position: relative; width: 900px; height: 620px; overflow: hidden; border: 1px solid #e0e5eb; border-radius: 12px; background: #fff; box-shadow: 0 8px 24px rgb(16 24 40 / 5%); touch-action: none; }
-.team-canvas-grid { position: absolute; inset: 0; background-image: radial-gradient(#d9dee6 1px, transparent 1px); background-size: 20px 20px; opacity: .7; }
+.team-canvas-wrap { flex: 1; min-height: 0; margin: 16px; border: 1px solid #e0e5eb; border-radius: 12px; background-color: #fff; box-shadow: 0 8px 24px rgb(16 24 40 / 5%); }
+.team-canvas { position: relative; width: 900px; height: 620px; overflow: hidden; touch-action: none; }
+.team-canvas-grid { display: none; }
 .team-canvas-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .team-edge { fill: none; stroke: #8b5cf6; stroke-width: 2; marker-end: url(#team-arrow); }
 .team-edge.virtual { stroke: #b8c0cc; stroke-dasharray: 4 4; }
@@ -8935,7 +8962,7 @@ body.col-resizing {
 .run-live-layout { height: clamp(270px, 55vh, 620px); min-height: 270px; border: 1px solid var(--border); border-radius: 11px; background: var(--panel); }
 .run-dag-scroll { min-width: 0; overflow: auto; }
 .run-dag { position: relative; min-height: 250px; overflow: hidden; }
-.run-dag-grid { position: absolute; inset: 0; background-image: radial-gradient(var(--border-2) 1px, transparent 1px); background-size: 18px 18px; opacity: .62; pointer-events: none; }
+.run-dag-grid { display: none; }
 .run-dag > svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .run-dag-edge { fill: none; stroke: var(--border-2); stroke-width: 1.5; marker-end: url(#run-arrow); transition: stroke .2s ease, stroke-width .2s ease; }
 .run-dag-edge.running { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; animation: run-edge-flow .8s linear infinite; }
@@ -9331,7 +9358,7 @@ body.col-resizing {
 :root:not([data-theme='light']) .team-builder-main {
   background: var(--bg);
 }
-:root:not([data-theme='light']) .team-canvas {
+:root:not([data-theme='light']) .team-canvas-wrap {
   border-color: var(--border);
   background: var(--panel);
   box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
@@ -9462,6 +9489,7 @@ body.col-resizing {
   .team-builder-shell { height: auto; grid-template-columns: 1fr; overflow: visible; }
   .team-builder-sidebar { overflow: visible; border-right: 0; border-bottom: 1px solid #e5eaf0; }
   .team-builder-main { min-height: 680px; }
+  .team-builder-shell.has-inspector .team-builder-main { margin-right: 0; }
   .team-toolbar-help { display: none; }
 }
 .system-scroll { overflow: auto; padding: 24px 32px 40px; display: grid; gap: 18px; width: 100%; box-sizing: border-box; }
@@ -9725,11 +9753,11 @@ body.col-resizing {
 }
 .kb-drawer-head { display: flex; align-items: flex-start; gap: 10px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
 .kb-drawer-head > div { flex: 1; min-width: 0; display: grid; gap: 4px; }
-.kb-drawer-head h2 { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.3; }
-.kb-drawer-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px; display: grid; gap: 20px; }
+.kb-drawer-head h2 { min-width: 0; margin: 0; overflow-wrap: anywhere; word-break: break-word; font-size: 17px; font-weight: 700; line-height: 1.3; }
+.kb-drawer-body { flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 16px 18px; display: grid; gap: 20px; }
 .kb-drawer-body section { display: grid; gap: 9px; }
 .kb-label { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
-.kb-desc { margin: 0; color: var(--text); font-size: 14px; line-height: 1.55; }
+.kb-desc { min-width: 0; max-width: 100%; margin: 0; overflow-wrap: anywhere; word-break: break-word; color: var(--text); font-size: 14px; line-height: 1.55; }
 .kb-drawer-assignees { display: flex; flex-wrap: wrap; gap: 10px; }
 .kb-assignee-select {
   width: 100%;
@@ -10807,6 +10835,7 @@ body.col-resizing {
 }
 
 .kb-detail-section {
+  min-width: 0;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -11160,10 +11189,23 @@ body.col-resizing {
 }
 
 .kb-result {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   color: var(--text);
   font-size: 13px;
   line-height: 1.65;
   white-space: pre-wrap;
+}
+
+.kb-signal > span,
+.kb-comment p,
+.kb-team-node p,
+.kb-dep {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .kb-conversation-id {

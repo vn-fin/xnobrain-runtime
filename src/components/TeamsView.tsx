@@ -100,6 +100,8 @@ type RunGraphNode = { step: TeamRunStep; x: number; y: number };
 type NodeConversationInsight = SessionConversationFallback & { reasoningSteps: number };
 type RunGraphRecord = Pick<TeamRunRecord, 'status' | 'steps' | 'coordinator_conversation_id' | 'synthesis_conversation_id'>;
 
+const insightRequests = new Map<string, Promise<NodeConversationInsight>>();
+
 const RUN_NODE_WIDTH = 236;
 const RUN_NODE_HEIGHT = 116;
 const RUN_NODE_GAP_X = 280;
@@ -171,14 +173,14 @@ function GraphViewport({
   }, [width, height]);
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest('.graph-zoom-controls')) return;
+    if (!event.ctrlKey || (event.target as HTMLElement).closest('.graph-zoom-controls')) return;
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     changeZoom(zoom * Math.exp(-event.deltaY * 0.0015), event.clientX - rect.left, event.clientY - rect.top);
   };
 
   return (
-    <div ref={viewportRef} className={`graph-zoom-viewport ${className}`} onWheel={handleWheel}>
+    <div className={`graph-zoom-frame ${className}`}>
       <div className="graph-zoom-controls" aria-label="Workflow zoom controls">
         {onArrange && (
           <button type="button" onClick={onArrange} aria-label="Arrange workflow" title="Arrange workflow">
@@ -195,9 +197,11 @@ function GraphViewport({
           <Plus size={14} />
         </button>
       </div>
-      <div className="graph-zoom-stage" style={{ width: width * zoom, height: height * zoom }}>
-        <div className="graph-zoom-scene" style={{ width, height, transform: `scale(${zoom})` }}>
-          {children}
+      <div ref={viewportRef} className="graph-zoom-viewport" onWheel={handleWheel} title="Hold Ctrl and scroll to zoom">
+        <div className="graph-zoom-stage" style={{ width: width * zoom, height: height * zoom }}>
+          <div className="graph-zoom-scene" style={{ width, height, transform: `translate(-50%, -50%) scale(${zoom})` }}>
+            {children}
+          </div>
         </div>
       </div>
     </div>
@@ -213,6 +217,34 @@ function conversationInsight(messages: ChatMessage[], usage?: ConversationUsage)
     runs,
     reasoningSteps: runs.reduce((total, run) => total + run.steps.length, 0),
   };
+}
+
+function loadConversationInsight(agentId: string, conversationId: string, revision: number) {
+  const key = `${agentId}:${conversationId}:${revision}`;
+  const pending = insightRequests.get(key);
+  if (pending) return pending;
+  const request: Promise<NodeConversationInsight> = Promise.allSettled([
+    conversationsApi.messages(agentId, conversationId),
+    conversationsApi.usage(agentId, conversationId),
+  ]).then(([messagesResult, usageResult]): NodeConversationInsight => {
+    if (messagesResult.status === 'rejected') {
+      return {
+        status: 'error',
+        messages: [],
+        runs: [],
+        reasoningSteps: 0,
+        error: messagesResult.reason instanceof Error ? messagesResult.reason.message : 'Could not load this session.',
+      };
+    }
+    return conversationInsight(
+      messagesResult.value,
+      usageResult.status === 'fulfilled' ? usageResult.value : undefined,
+    );
+  }).finally(() => {
+    if (insightRequests.get(key) === request) insightRequests.delete(key);
+  });
+  insightRequests.set(key, request);
+  return request;
 }
 
 function compactNumber(value: number | undefined) {
@@ -609,36 +641,19 @@ function TeamRunsPanel({
   useEffect(() => {
     const targets = run?.steps.filter((step) => step.conversation_id) ?? [];
     if (!targets.length) return undefined;
-    const controller = new AbortController();
+    let active = true;
     targets.forEach((step) => {
       const conversationId = step.conversation_id as string;
       setInsights((current) => ({
         ...current,
         [conversationId]: { ...(current[conversationId] ?? conversationInsight([])), status: 'loading' },
       }));
-      void Promise.allSettled([
-        conversationsApi.messages(step.agent_id, conversationId, controller.signal),
-        conversationsApi.usage(step.agent_id, conversationId, controller.signal),
-      ]).then(([messagesResult, usageResult]) => {
-        if (controller.signal.aborted) return;
-        if (messagesResult.status === 'rejected') {
-          setInsights((current) => ({
-            ...current,
-            [conversationId]: {
-              status: 'error',
-              messages: [],
-              runs: [],
-              reasoningSteps: 0,
-              error: messagesResult.reason instanceof Error ? messagesResult.reason.message : 'Could not load this session.',
-            },
-          }));
-          return;
-        }
-        const usage = usageResult.status === 'fulfilled' ? usageResult.value : undefined;
-        setInsights((current) => ({ ...current, [conversationId]: conversationInsight(messagesResult.value, usage) }));
+      void loadConversationInsight(step.agent_id, conversationId, run?.revision ?? 0).then((insight) => {
+        if (!active) return;
+        setInsights((current) => ({ ...current, [conversationId]: insight }));
       });
     });
-    return () => controller.abort();
+    return () => { active = false; };
   }, [run?.id, run?.revision]);
 
   const cancel = async () => {
@@ -973,31 +988,63 @@ function curve(fromX: number, fromY: number, toX: number, toY: number) {
   return `M ${fromX} ${fromY} C ${fromX + bend} ${fromY}, ${toX - bend} ${toY}, ${toX} ${toY}`;
 }
 
-function draftCanvasHeight(nodeCount: number) {
-  return Math.max(CANVAS_HEIGHT, 80 + Math.ceil(nodeCount / 2) * 165);
+function draftNodeLevels(nodes: DraftNode[]) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const levels = new Map<string, number>();
+  const levelOf = (id: string, visiting = new Set<string>()): number => {
+    if (levels.has(id)) return levels.get(id) as number;
+    if (visiting.has(id)) return 0;
+    visiting.add(id);
+    const node = byId.get(id);
+    const dependencies = (node?.needs ?? []).filter((need) => byId.has(need));
+    const level = dependencies.length
+      ? Math.max(...dependencies.map((need) => levelOf(need, visiting))) + 1
+      : 0;
+    visiting.delete(id);
+    levels.set(id, level);
+    return level;
+  };
+  nodes.forEach((node) => levelOf(node.id));
+  return levels;
+}
+
+function draftCanvasLayout(nodes: DraftNode[]) {
+  const levels = draftNodeLevels(nodes);
+  const maxLevel = Math.max(0, ...levels.values());
+  const grouped = new Map<number, DraftNode[]>();
+  nodes.forEach((node) => {
+    const level = levels.get(node.id) ?? 0;
+    grouped.set(level, [...(grouped.get(level) ?? []), node]);
+  });
+  const maxRows = Math.max(1, ...[...grouped.values()].map((group) => group.length));
+  const height = Math.max(CANVAS_HEIGHT, 80 + maxRows * 165);
+  const finishX = Math.max(794, 170 + (maxLevel + 1) * 260 + 104);
+  const width = Math.max(CANVAS_WIDTH, finishX + 106);
+  return { levels, grouped, width, height, finishX };
 }
 
 function arrangeDraftNodes(nodes: DraftNode[]) {
-  const rows = Math.max(1, Math.ceil(nodes.length / 2));
-  const height = draftCanvasHeight(nodes.length);
-  const rowGap = rows === 1 ? 0 : Math.min(165, (height - NODE_HEIGHT - 110) / (rows - 1));
-  const blockHeight = (rows - 1) * rowGap;
-  const firstY = (height - NODE_HEIGHT - blockHeight) / 2;
-  return nodes.map((node, index) => ({
-    ...node,
-    x: 170 + Math.floor(index / rows) * 260,
-    y: firstY + (index % rows) * rowGap,
-  }));
+  const layout = draftCanvasLayout(nodes);
+  const positions = new Map<string, { x: number; y: number }>();
+  layout.grouped.forEach((group, level) => {
+    const blockHeight = (group.length - 1) * 165;
+    const firstY = (layout.height - NODE_HEIGHT - blockHeight) / 2;
+    group.forEach((node, row) => positions.set(node.id, {
+      x: 170 + level * 260,
+      y: firstY + row * 165,
+    }));
+  });
+  return nodes.map((node) => ({ ...node, ...positions.get(node.id) }));
 }
 
-function WorkflowEdges({ nodes, height }: { nodes: DraftNode[]; height: number }) {
+function WorkflowEdges({ nodes, width, height, finishX }: { nodes: DraftNode[]; width: number; height: number; finishX: number }) {
   const ids = new Set(nodes.map((node) => node.id));
   const roots = nodes.filter((node) => !node.needs?.some((need) => ids.has(need)));
   const used = new Set(nodes.flatMap((node) => node.needs ?? []));
   const leaves = nodes.filter((node) => !used.has(node.id));
   const terminalY = height / 2;
   return (
-    <svg className="team-canvas-edges" viewBox={`0 0 ${CANVAS_WIDTH} ${height}`} aria-hidden="true">
+    <svg className="team-canvas-edges" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
       <defs>
         <marker id="team-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" />
@@ -1018,7 +1065,7 @@ function WorkflowEdges({ nodes, height }: { nodes: DraftNode[]; height: number }
         );
       }))}
       {leaves.map((node) => (
-        <path key={`${node.id}-finish`} className="team-edge virtual" d={curve(node.x + NODE_WIDTH, node.y + NODE_HEIGHT / 2, 796, terminalY)} />
+        <path key={`${node.id}-finish`} className="team-edge virtual" d={curve(node.x + NODE_WIDTH, node.y + NODE_HEIGHT / 2, finishX + 2, terminalY)} />
       ))}
     </svg>
   );
@@ -1097,7 +1144,8 @@ function TeamBuilder({
   );
   const [drag, setDrag] = useState<{ id: string; pointerId: number; dx: number; dy: number }>();
   const canvasRef = useRef<HTMLDivElement>(null);
-  const canvasHeight = draftCanvasHeight(nodes.length);
+  const canvasLayout = draftCanvasLayout(nodes);
+  const { width: canvasWidth, height: canvasHeight, finishX } = canvasLayout;
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const startSelected = selectedNodeId === START_STAGE_ID;
   const finishSelected = selectedNodeId === FINISH_STAGE_ID;
@@ -1206,9 +1254,9 @@ function TeamBuilder({
       setConnectFrom('');
       return;
     }
-    setNodes((current) => current.map((node) => node.id === to
+    setNodes((current) => arrangeDraftNodes(current.map((node) => node.id === to
       ? { ...node, needs: [...new Set([...(node.needs ?? []), connectFrom])] }
-      : node));
+      : node)));
     setConnectFrom('');
     setMessage('');
   };
@@ -1217,7 +1265,9 @@ function TeamBuilder({
     const node = nodes.find((item) => item.id === nodeId);
     if (!node) return;
     if (node.needs?.includes(dependencyId)) {
-      updateNode(nodeId, { needs: node.needs.filter((id) => id !== dependencyId) });
+      setNodes((current) => arrangeDraftNodes(current.map((item) => item.id === nodeId
+        ? { ...item, needs: (item.needs ?? []).filter((id) => id !== dependencyId) }
+        : item)));
       setMessage('');
       return;
     }
@@ -1225,7 +1275,9 @@ function TeamBuilder({
       setMessage('That dependency would create a cycle.');
       return;
     }
-    updateNode(nodeId, { needs: [...new Set([...(node.needs ?? []), dependencyId])] });
+    setNodes((current) => arrangeDraftNodes(current.map((item) => item.id === nodeId
+      ? { ...item, needs: [...new Set([...(item.needs ?? []), dependencyId])] }
+      : item)));
     setMessage('');
   };
 
@@ -1233,7 +1285,7 @@ function TeamBuilder({
     if ((event.target as HTMLElement).closest('button, input, textarea')) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const scaleX = CANVAS_WIDTH / rect.width;
+    const scaleX = canvasWidth / rect.width;
     const scaleY = canvasHeight / rect.height;
     setDrag({
       id: node.id,
@@ -1248,10 +1300,10 @@ function TeamBuilder({
     if (!drag || event.pointerId !== drag.pointerId) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const x = (event.clientX - rect.left) * (CANVAS_WIDTH / rect.width) - drag.dx;
+    const x = (event.clientX - rect.left) * (canvasWidth / rect.width) - drag.dx;
     const y = (event.clientY - rect.top) * (canvasHeight / rect.height) - drag.dy;
     updateNode(drag.id, {
-      x: Math.max(130, Math.min(540, x)),
+      x: Math.max(130, Math.min(finishX - NODE_WIDTH - 34, x)),
       y: Math.max(28, Math.min(canvasHeight - NODE_HEIGHT - 28, y)),
     });
   };
@@ -1408,7 +1460,7 @@ function TeamBuilder({
             <span className="teams-kicker">Visual workflow</span>
             <h2>{name.trim() || 'Untitled team'}</h2>
           </div>
-          <div className="team-toolbar-help"><MousePointer2 size={14} /> Drag cards to arrange · click ports to connect</div>
+          <div className="team-toolbar-help"><MousePointer2 size={14} /> Drag to arrange · click ports to connect · Ctrl + scroll to zoom</div>
           <button className="primary-button" disabled={state.pending} onClick={() => void save()}>
             <Save size={15} /> {state.pending ? 'Saving…' : initialTeam ? 'Save changes' : 'Save team'}
           </button>
@@ -1416,20 +1468,20 @@ function TeamBuilder({
         {message && <div className="teams-inline-message" role="alert">{message}</div>}
         <GraphViewport
           className="team-canvas-wrap"
-          width={CANVAS_WIDTH}
+          width={canvasWidth}
           height={canvasHeight}
           onArrange={() => setNodes((current) => arrangeDraftNodes(current))}
         >
           <div
             ref={canvasRef}
             className={`team-canvas ${connectFrom ? 'is-connecting' : ''}`}
-            style={{ height: canvasHeight }}
+            style={{ width: canvasWidth, height: canvasHeight }}
             onPointerMove={moveDrag}
             onPointerUp={() => setDrag(undefined)}
             onPointerCancel={() => setDrag(undefined)}
           >
             <div className="team-canvas-grid" />
-            <WorkflowEdges nodes={nodes} height={canvasHeight} />
+            <WorkflowEdges nodes={nodes} width={canvasWidth} height={canvasHeight} finishX={finishX} />
             <button
               type="button"
               className={`team-terminal-node start ${startSelected ? 'selected' : ''}`}
@@ -1489,7 +1541,7 @@ function TeamBuilder({
             <button
               type="button"
               className={`team-terminal-node finish ${finishSelected ? 'selected' : ''}`}
-              style={{ left: 794, top: canvasHeight / 2 - 40 }}
+              style={{ left: finishX, top: canvasHeight / 2 - 40 }}
               onClick={() => setSelectedNodeId(FINISH_STAGE_ID)}
               aria-label="Configure Finish stage"
             >
