@@ -53,6 +53,66 @@ class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
                                  "duo": {"fallbackStrategy": "round-robin"}}},
         ), manager.requests)
 
+    async def test_set_smart_route_keeps_upstream_fallback_and_stores_policy(self):
+        policy = {
+            "quick": [{"model": "cx/a", "reasoning": "auto"}],
+            "normal": [{"model": "cx/b", "reasoning": "medium"}],
+            "difficult": [{"model": "cx/c", "reasoning": "high"}],
+            "uncertainTier": "difficult",
+        }
+        manager = FakeNineRouterManager({
+            ("GET", "/api/settings"): {"comboStrategies": {}},
+            ("PATCH", "/api/settings"): {},
+        })
+        await manager.set_combo_strategy("smart", strategy="smart-route", smart_route=policy)
+        patch_body = next(
+            body for method, path, body in manager.requests
+            if method == "PATCH" and path == "/api/settings"
+        )
+        self.assertEqual(
+            patch_body["comboStrategies"]["smart"]["fallbackStrategy"], "fallback"
+        )
+        self.assertEqual(patch_body["comboStrategies"]["smart"]["smartRoute"], policy)
+
+    async def test_resolve_smart_route_classifies_and_applies_reasoning(self):
+        policy = {
+            "quick": [{"model": "cx/a", "reasoning": "auto", "context_length": 32_000}],
+            "normal": [{"model": "cx/b", "reasoning": "auto", "context_length": 128_000}],
+            "difficult": [{
+                "model": "cx/c", "reasoning": "auto", "context_length": 200_000,
+                "reasoning_levels": ["medium", "high"],
+            }],
+            "uncertainTier": "difficult",
+        }
+        manager = FakeNineRouterManager({
+            ("GET", "/api/settings"): {"comboStrategies": {"smart": {"smartRoute": policy}}},
+            ("POST", "/v1/chat/completions"): {
+                "choices": [{"message": {"content": "difficult"}}]
+            },
+        })
+        route = await manager.resolve_smart_route("smart", "Design a distributed system")
+        self.assertEqual(route, {
+            "model": "cx/c", "reasoning": "high", "tier": "difficult", "route": "smart",
+        })
+
+    async def test_resolve_smart_route_skips_models_with_too_little_context(self):
+        policy = {
+            "quick": [{"model": "cx/a", "context_length": 8_000}],
+            "normal": [{"model": "cx/b", "context_length": 16_000}],
+            "difficult": [{"model": "cx/c", "context_length": 128_000}],
+        }
+        manager = FakeNineRouterManager({
+            ("GET", "/api/settings"): {"comboStrategies": {"smart": {"smartRoute": policy}}},
+            ("POST", "/v1/chat/completions"): {
+                "choices": [{"message": {"content": "quick"}}]
+            },
+        })
+        route = await manager.resolve_smart_route(
+            "smart", "Summarize this", required_context_tokens=64_000
+        )
+        self.assertEqual(route["model"], "cx/c")
+        self.assertEqual(route["tier"], "difficult")
+
     async def test_combo_settings_whitelists_three_keys(self):
         manager = FakeNineRouterManager({
             ("GET", "/api/settings"): {
@@ -123,13 +183,17 @@ class FakeBlendRouter:
         strategies = {k: dict(v) for k, v in self._settings["combo_strategies"].items()}
         return {**self._settings, "combo_strategies": strategies}
 
-    async def set_combo_strategy(self, name, *, strategy, judge_model=None, fusion_tuning=None):
+    async def set_combo_strategy(
+        self, name, *, strategy, judge_model=None, fusion_tuning=None, smart_route=None,
+    ):
         self.calls.append(("set_strategy", name, strategy, judge_model))
         if self.fail_settings:
             raise NineRouterAPIError("settings write failed", status=502)
-        entry = {"fallbackStrategy": strategy}
+        entry = {"fallbackStrategy": "fallback" if smart_route is not None else strategy}
         if judge_model is not None:
             entry["judgeModel"] = judge_model
+        if smart_route is not None:
+            entry["smartRoute"] = dict(smart_route)
         self._settings["combo_strategies"][name] = entry
 
     async def clear_combo_strategy(self, name):
@@ -145,14 +209,25 @@ class FakeBlendRouter:
         for combo in self._combos:
             data.append({"id": combo["name"], "provider": "blend", "name": combo["name"]})
         for model in self._models:
-            data.append({"id": model["id"], "provider": model.get("provider", "codex"), "name": model["id"]})
+            data.append({
+                "id": model["id"],
+                "provider": model.get("provider", "codex"),
+                "name": model["id"],
+                "context_length": model.get("context_length"),
+                "reasoning_levels": model.get("reasoning_levels", []),
+            })
         return {"data": data}
 
 
 def _service(fail_settings=False):
     router = FakeBlendRouter(
         combos=[{"id": "cmb_auto", "name": "auto", "kind": "", "models": ["cx/a"], "created_at": "", "updated_at": ""}],
-        models=[{"id": "cx/a"}, {"id": "cx/b"}, {"id": "cx/c"}, {"id": "plainmodel"}],
+        models=[
+            {"id": "cx/a", "context_length": 32_000, "reasoning_levels": ["low", "medium"]},
+            {"id": "cx/b", "context_length": 128_000, "reasoning_levels": ["low", "medium", "high"]},
+            {"id": "cx/c", "context_length": 200_000, "reasoning_levels": ["medium", "high"]},
+            {"id": "plainmodel"},
+        ],
     )
     router.fail_settings = fail_settings
     return BlendService(router), router
@@ -242,6 +317,47 @@ class BlendServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("duo", ids)
         self.assertIn("cx/a", ids)
 
+    async def test_create_smart_route_groups_models_and_reports_context(self):
+        service, router = _service()
+        smart_route = {
+            "quick": [{"model": "cx/a", "reasoning": "low"}],
+            "normal": [{"model": "cx/b", "reasoning": "auto"}],
+            "difficult": [{"model": "cx/c", "reasoning": "high"}],
+            "uncertain_tier": "difficult",
+        }
+        dto = await service.create_blend({
+            "name": "smart", "strategy": "smart-route", "smart_route": smart_route,
+        })
+        self.assertEqual(dto["strategy"], "smart-route")
+        self.assertEqual(dto["models"], ["cx/a", "cx/b", "cx/c"])
+        self.assertEqual(dto["guaranteed_context"], 32_000)
+        self.assertEqual(dto["maximum_context"], 200_000)
+        self.assertEqual(dto["smart_route"]["uncertain_tier"], "difficult")
+        entry = router._settings["combo_strategies"]["smart"]
+        self.assertEqual(entry["fallbackStrategy"], "fallback")
+        self.assertIn("smartRoute", entry)
+
+    async def test_smart_route_requires_every_group_and_unique_models(self):
+        service, _ = _service()
+        with self.assertRaises(ServiceError):
+            await service.create_blend({
+                "name": "smart", "strategy": "smart-route",
+                "smart_route": {
+                    "quick": [{"model": "cx/a"}],
+                    "normal": [],
+                    "difficult": [{"model": "cx/c"}],
+                },
+            })
+        with self.assertRaises(ServiceError):
+            await service.create_blend({
+                "name": "smart", "strategy": "smart-route",
+                "smart_route": {
+                    "quick": [{"model": "cx/a"}],
+                    "normal": [{"model": "cx/a"}],
+                    "difficult": [{"model": "cx/c"}],
+                },
+            })
+
 
 # --- ASGI route integration --------------------------------------------------
 
@@ -265,7 +381,7 @@ class BlendRouteTests(unittest.IsolatedAsyncioTestCase):
         self.environment.start()
         self.router = FakeBlendRouter(
             combos=[{"id": "cmb_auto", "name": "auto", "kind": "", "models": ["cx/a"], "created_at": "", "updated_at": ""}],
-            models=[{"id": "cx/a"}, {"id": "cx/b"}])
+            models=[{"id": "cx/a"}, {"id": "cx/b"}, {"id": "cx/c"}])
         app = FastAPI()
         Brain4AllApplication(
             AgentManager(root_profile=root, profiles_root=profiles, legacy_agents_root=base / "legacy"),
@@ -306,6 +422,35 @@ class BlendRouteTests(unittest.IsolatedAsyncioTestCase):
         self.router.list_combos = lambda: boom()
         async with self.client() as client:
             self.assertEqual((await client.get("/xnobrain/api/runtime/v1/blends")).status_code, 503)
+
+    async def test_smart_route_contract_round_trips(self):
+        smart_route = {
+            "quick": [{"model": "cx/a", "reasoning": "low"}],
+            "normal": [{"model": "cx/b", "reasoning": "medium"}],
+            "difficult": [{"model": "cx/a", "reasoning": "high"}],
+            "uncertain_tier": "difficult",
+        }
+        # The same model cannot be put in two task groups.
+        async with self.client() as client:
+            invalid = await client.post("/xnobrain/api/runtime/v1/blends", json={
+                "name": "smart-invalid",
+                "models": ["cx/a", "cx/b"],
+                "strategy": "smart-route",
+                "smart_route": smart_route,
+            })
+            self.assertEqual(invalid.status_code, 400)
+
+            smart_route["difficult"] = [{"model": "cx/c", "reasoning": "high"}]
+            created = await client.post("/xnobrain/api/runtime/v1/blends", json={
+                "name": "smart-valid",
+                "models": ["cx/a", "cx/b", "cx/c"],
+                "strategy": "smart-route",
+                "smart_route": smart_route,
+            })
+            self.assertEqual(created.status_code, 201)
+            data = created.json()["data"]
+            self.assertEqual(data["strategy"], "smart-route")
+            self.assertEqual(data["smart_route"]["uncertain_tier"], "difficult")
 
 
 if __name__ == "__main__":

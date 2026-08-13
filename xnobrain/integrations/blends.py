@@ -1,5 +1,7 @@
 """Grouped BlendsIntegration behavior for 9router."""
 
+import re
+
 from .nine_router_support import (
     Any,
     Mapping,
@@ -144,17 +146,156 @@ class BlendsIntegrationMixin:
         self, name: str, *, strategy: str,
         judge_model: str | None = None,
         fusion_tuning: Mapping[str, Any] | None = None,
+        smart_route: Mapping[str, Any] | None = None,
     ) -> None:
         # 9router replaces the whole comboStrategies map on PATCH, so read then
         # merge then write the entire map (findings.md §6).
         strategies = dict((await self.combo_settings())["combo_strategies"])
-        entry: dict[str, Any] = {"fallbackStrategy": strategy}
+        # Smart Route is a Brain4All strategy. Keep upstream 9router on its
+        # safe ordered-fallback behavior if a request bypasses Brain4All, and
+        # persist the routing policy as an ignored per-combo extension.
+        entry: dict[str, Any] = {
+            "fallbackStrategy": "fallback" if smart_route is not None else strategy,
+        }
         if judge_model is not None:
             entry["judgeModel"] = judge_model
         if fusion_tuning is not None:
             entry["fusionTuning"] = dict(fusion_tuning)
+        if smart_route is not None:
+            entry["smartRoute"] = dict(smart_route)
         strategies[name] = entry
         await self._request("PATCH", "/api/settings", {"comboStrategies": strategies})
+
+
+    async def resolve_smart_route(
+        self,
+        name: str,
+        message: str,
+        *,
+        required_context_tokens: int = 0,
+    ) -> dict[str, Any] | None:
+        """Resolve a Brain4All Smart Route blend to one concrete model."""
+        settings = await self.combo_settings()
+        strategies = settings.get("combo_strategies") or {}
+        entry = strategies.get(name) if isinstance(strategies, Mapping) else None
+        smart = entry.get("smartRoute") if isinstance(entry, Mapping) else None
+        if not isinstance(smart, Mapping):
+            return None
+
+        groups = {
+            tier: self._eligible_smart_models(
+                smart.get(tier), required_context_tokens=required_context_tokens
+            )
+            for tier in ("quick", "normal", "difficult")
+        }
+        available_tiers = [tier for tier, rows in groups.items() if rows]
+        if not available_tiers:
+            raise NineRouterAPIError(
+                "no Smart Route model can fit this conversation",
+                code="smart_route_context_unavailable",
+                status=409,
+            )
+
+        uncertain = str(smart.get("uncertainTier") or "difficult")
+        if uncertain not in {"normal", "difficult"}:
+            uncertain = "difficult"
+        tier = available_tiers[0] if len(available_tiers) == 1 else uncertain
+        classifier = next(
+            (rows[0]["model"] for candidate in ("quick", "normal", "difficult")
+             if (rows := groups[candidate])),
+            "",
+        )
+        if classifier:
+            try:
+                tier = await self._classify_smart_route(message, classifier)
+            except NineRouterAPIError:
+                tier = uncertain
+
+        escalation = {
+            "quick": ("quick", "normal", "difficult"),
+            "normal": ("normal", "difficult", "quick"),
+            "difficult": ("difficult", "normal", "quick"),
+        }[tier]
+        selected_tier = next(candidate for candidate in escalation if groups[candidate])
+        selected = groups[selected_tier][0]
+        reasoning = str(selected.get("reasoning") or "auto")
+        if reasoning == "auto":
+            reasoning = {"quick": "low", "normal": "medium", "difficult": "high"}[selected_tier]
+            supported = selected.get("reasoning_levels") or []
+            if supported and reasoning not in supported:
+                preference = {
+                    "quick": ("low", "medium", "high"),
+                    "normal": ("medium", "low", "high"),
+                    "difficult": ("high", "medium", "low"),
+                }[selected_tier]
+                reasoning = next(level for level in preference if level in supported)
+        return {
+            "model": route_nine_router_model(selected["model"]),
+            "reasoning": reasoning,
+            "tier": selected_tier,
+            "route": name,
+        }
+
+
+    @staticmethod
+    def _eligible_smart_models(
+        raw: Any,
+        *,
+        required_context_tokens: int,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for item in raw if isinstance(raw, list) else []:
+            if not isinstance(item, Mapping):
+                continue
+            model = str(item.get("model") or "").strip()
+            if not model:
+                continue
+            context = item.get("context_length")
+            context_length = int(context) if isinstance(context, (int, float)) and context > 0 else None
+            if context_length is not None and required_context_tokens > context_length:
+                continue
+            rows.append({
+                "model": model,
+                "reasoning": str(item.get("reasoning") or "auto"),
+                "context_length": context_length,
+                "reasoning_levels": [
+                    str(level) for level in (item.get("reasoning_levels") or [])
+                    if str(level) in {"low", "medium", "high"}
+                ],
+            })
+        return rows
+
+
+    async def _classify_smart_route(self, message: str, classifier_model: str) -> str:
+        payload = await self._request(
+            "POST",
+            "/v1/chat/completions",
+            {
+                "model": route_nine_router_model(classifier_model),
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Classify the user's task as quick, normal, or difficult. "
+                            "Quick means formatting, summarizing, lookup, or a short direct answer. "
+                            "Normal means ordinary analysis, writing, or contained coding. "
+                            "Difficult means architecture, security, multi-file coding, advanced math, "
+                            "or long multi-step reasoning. Return exactly one word: quick, normal, or difficult."
+                        ),
+                    },
+                    {"role": "user", "content": str(message)[:6000]},
+                ],
+                "max_tokens": 8,
+                "stream": False,
+            },
+        )
+        choices = payload.get("choices")
+        response = choices[0].get("message") if isinstance(choices, list) and choices and isinstance(choices[0], Mapping) else None
+        content = str(response.get("content") or "") if isinstance(response, Mapping) else ""
+        match = re.search(r"\b(quick|normal|difficult)\b", content.lower())
+        if match is None:
+            raise NineRouterAPIError("Smart Route classifier returned an invalid result")
+        return match.group(1)
 
 
     async def clear_combo_strategy(self, name: str) -> None:

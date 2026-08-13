@@ -732,6 +732,10 @@ class ConversationsMixin:
                 "limit": max(0, int(context.get("limit") or 0)),
                 "model": str(context.get("model") or ""),
             }
+            if context.get("route"):
+                stored_context["route"] = str(context["route"])
+                stored_context["route_tier"] = str(context.get("route_tier") or "")
+                stored_context["reasoning"] = str(context.get("reasoning") or "")
             threshold = max(0, int(context.get("threshold") or 0))
             if threshold:
                 stored_context["threshold"] = threshold

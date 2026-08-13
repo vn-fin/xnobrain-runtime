@@ -35,6 +35,14 @@ class ConversationStreamMixin:
                 yield self._chat_sse_error(str(exc))
                 yield self._chat_sse_done(chat_id, created, model, conversation_id)
                 return
+        else:
+            try:
+                await self._resolve_prepared_smart_route(prepared)
+                model = str(prepared.get("model") or model)
+            except NineRouterAPIError as exc:
+                yield self._chat_sse_error(str(exc))
+                yield self._chat_sse_done(chat_id, created, model, conversation_id)
+                return
 
         title_task: asyncio.Task[str] | None = None
         if self._conversation_has_default_title(profile_dir, conversation_id):

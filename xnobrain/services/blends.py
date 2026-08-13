@@ -22,7 +22,9 @@ class BlendService:
     RESERVED = NINE_ROUTER_DEFAULT_MODEL  # "auto"
     NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
     MAX_MODELS = 24
-    STRATEGIES = ("fallback", "round-robin", "fusion")
+    STRATEGIES = ("fallback", "round-robin", "fusion", "smart-route")
+    SMART_TIERS = ("quick", "normal", "difficult")
+    REASONING_LEVELS = ("auto", "low", "medium", "high")
 
     def __init__(self, router: Any):
         self.router = router
@@ -39,8 +41,13 @@ class BlendService:
     async def available_models(self) -> dict[str, Any]:
         data = (await self.router.list_models())["data"]
         models = [
-            {"id": item["id"], "provider": item.get("provider", ""),
-             "name": item.get("name", item["id"])}
+            {
+                "id": item["id"],
+                "provider": item.get("provider", ""),
+                "name": item.get("name", item["id"]),
+                "context_length": item.get("context_length"),
+                "reasoning_levels": list(item.get("reasoning_levels") or []),
+            }
             for item in data
             if item.get("provider") not in {"blend", NINE_ROUTER_PROVIDER_KEY}
             and item.get("id") != NINE_ROUTER_DEFAULT_MODEL
@@ -53,19 +60,32 @@ class BlendService:
         strategy = str(body.get("strategy") or "fallback")
         judge = body.get("judge_model")
         sticky = body.get("sticky_limit")
+        smart = body.get("smart_route")
 
         self._validate_name(name)
-        available = await self._available_ids()
+        available_models = (await self.available_models())["data"]
+        available = {item["id"] for item in available_models}
+        available_by_id = {item["id"]: item for item in available_models}
         self._check_name_free(name, [combo["name"] for combo in await self.router.list_combos()], available)
+        if smart is not None and strategy != "smart-route":
+            raise ServiceError(
+                "smart_route applies only to the Smart route strategy",
+                status=400,
+                code="invalid_blend",
+            )
+        normalized_smart = self._normalize_smart_route(smart, available_by_id) if strategy == "smart-route" else None
+        if normalized_smart is not None:
+            models = self._smart_route_models(normalized_smart)
         self._validate_models(models, available)
-        self._validate_strategy(strategy, models, judge, sticky, available)
+        self._validate_strategy(strategy, models, judge, sticky, available, normalized_smart)
 
         combo = await self.router.create_combo(name, models)
         try:
             if strategy != "fallback":
                 await self.router.set_combo_strategy(
                     name, strategy=strategy,
-                    judge_model=judge if strategy == "fusion" else None)
+                    judge_model=judge if strategy == "fusion" else None,
+                    smart_route=normalized_smart if strategy == "smart-route" else None)
             if strategy == "round-robin" and sticky is not None:
                 await self.router.set_combo_sticky_limit(int(sticky))
         except Exception:
@@ -91,22 +111,42 @@ class BlendService:
         strategy = body.get("strategy")
         judge = body.get("judge_model")
         sticky = body.get("sticky_limit")
+        smart = body.get("smart_route")
 
-        available = await self._available_ids()
+        available_models = (await self.available_models())["data"]
+        available = {item["id"] for item in available_models}
+        available_by_id = {item["id"]: item for item in available_models}
         settings = await self.router.combo_settings()
         current = self._dto(combo, settings)
         eff_strategy = str(strategy) if strategy is not None else current["strategy"]
         eff_judge = judge if judge is not None else current["judge_model"]
+        eff_smart = (
+            self._normalize_smart_route(smart, available_by_id)
+            if smart is not None
+            else current.get("smart_route")
+        )
 
         if new_name is not None and new_name != old_name:
             self._validate_name(new_name)
             self._check_name_free(
                 new_name, [c["name"] for c in combos if c["id"] != blend_id], available)
+        if eff_strategy == "smart-route":
+            eff_smart = self._normalize_smart_route(eff_smart, available_by_id)
+            new_models = self._smart_route_models(eff_smart)
+        elif smart is not None:
+            raise ServiceError(
+                "smart_route applies only to the Smart route strategy",
+                status=400,
+                code="invalid_blend",
+            )
+        else:
+            eff_smart = None
         if new_models is not None:
             self._validate_models(new_models, available)
         target_models = new_models if new_models is not None else combo["models"]
-        if strategy is not None or judge is not None or sticky is not None:
-            self._validate_strategy(eff_strategy, target_models, eff_judge, sticky, available)
+        if strategy is not None or judge is not None or sticky is not None or smart is not None:
+            self._validate_strategy(
+                eff_strategy, target_models, eff_judge, sticky, available, eff_smart)
 
         if new_name is not None or new_models is not None:
             combo = await self.router.update_combo(blend_id, name=new_name, models=new_models)
@@ -114,13 +154,15 @@ class BlendService:
 
         if new_name is not None and new_name != old_name:
             await self.router.clear_combo_strategy(old_name)
-        if strategy is not None or judge is not None or (new_name is not None and new_name != old_name):
+        if (strategy is not None or judge is not None or smart is not None
+                or (new_name is not None and new_name != old_name)):
             if eff_strategy == "fallback":
                 await self.router.clear_combo_strategy(final_name)
             else:
                 await self.router.set_combo_strategy(
                     final_name, strategy=eff_strategy,
-                    judge_model=eff_judge if eff_strategy == "fusion" else None)
+                    judge_model=eff_judge if eff_strategy == "fusion" else None,
+                    smart_route=eff_smart if eff_strategy == "smart-route" else None)
         if sticky is not None and eff_strategy == "round-robin":
             await self.router.set_combo_sticky_limit(int(sticky))
 
@@ -148,9 +190,22 @@ class BlendService:
         strategies = settings.get("combo_strategies") or {}
         entry = strategies.get(name) if isinstance(strategies, Mapping) else None
         entry = entry if isinstance(entry, Mapping) else {}
-        strategy = str(entry.get("fallbackStrategy") or settings.get("combo_strategy") or "fallback")
+        smart = entry.get("smartRoute") if isinstance(entry.get("smartRoute"), Mapping) else None
+        strategy = "smart-route" if smart is not None else str(
+            entry.get("fallbackStrategy") or settings.get("combo_strategy") or "fallback")
         if strategy not in self.STRATEGIES:
             strategy = "fallback"
+        smart_dto = self._smart_route_dto(smart) if smart is not None else None
+        smart_rows = [
+            row
+            for tier in self.SMART_TIERS
+            for row in (smart_dto or {}).get(tier, [])
+        ]
+        contexts = [
+            int(row["context_length"])
+            for row in smart_rows
+            if isinstance(row.get("context_length"), int) and row["context_length"] > 0
+        ]
         return {
             "id": str(combo.get("id") or ""),
             "name": name,
@@ -162,12 +217,97 @@ class BlendService:
             "judge_model": entry.get("judgeModel") if strategy == "fusion" else None,
             "sticky_limit": settings.get("combo_sticky_limit") if strategy == "round-robin" else None,
             "sticky_limit_scope": "global",
+            "smart_route": smart_dto,
+            "guaranteed_context": min(contexts) if len(contexts) == len(smart_rows) and contexts else None,
+            "maximum_context": max(contexts) if contexts else None,
             "created_at": str(combo.get("created_at") or ""),
             "updated_at": str(combo.get("updated_at") or ""),
         }
 
     async def _available_ids(self) -> set[str]:
         return {item["id"] for item in (await self.available_models())["data"]}
+
+    def _normalize_smart_route(
+        self,
+        raw: Any,
+        available: Mapping[str, Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        if not isinstance(raw, Mapping):
+            raise ServiceError(
+                "Smart route needs Quick, Normal, and Difficult model groups",
+                status=400,
+                code="invalid_blend",
+            )
+        normalized: dict[str, Any] = {}
+        seen: set[str] = set()
+        total = 0
+        for tier in self.SMART_TIERS:
+            source = raw.get(tier)
+            if not isinstance(source, list) or not source:
+                raise ServiceError(
+                    f"Smart route needs at least one {tier} model",
+                    status=400,
+                    code="invalid_blend",
+                )
+            rows: list[dict[str, Any]] = []
+            for item in source:
+                if not isinstance(item, Mapping):
+                    raise ServiceError("invalid Smart route model", status=400, code="invalid_blend")
+                model = str(item.get("model") or "").strip()
+                reasoning = str(item.get("reasoning") or "auto").strip().lower()
+                if model not in available:
+                    raise ServiceError(f"unknown model: {model}", status=400, code="invalid_blend")
+                if model in seen:
+                    raise ServiceError(
+                        "a model can appear in only one Smart route group",
+                        status=400,
+                        code="invalid_blend",
+                    )
+                if reasoning not in self.REASONING_LEVELS:
+                    raise ServiceError("unknown reasoning level", status=400, code="invalid_blend")
+                supported = list(available[model].get("reasoning_levels") or [])
+                if reasoning != "auto" and supported and reasoning not in supported:
+                    raise ServiceError(
+                        f"{model} does not support {reasoning} reasoning",
+                        status=400,
+                        code="invalid_blend",
+                    )
+                seen.add(model)
+                total += 1
+                rows.append({
+                    "model": model,
+                    "reasoning": reasoning,
+                    "context_length": available[model].get("context_length"),
+                    "reasoning_levels": supported,
+                })
+            normalized[tier] = rows
+        if total > self.MAX_MODELS:
+            raise ServiceError(
+                f"a blend supports at most {self.MAX_MODELS} models",
+                status=400,
+                code="invalid_blend",
+            )
+        uncertain = str(raw.get("uncertain_tier") or raw.get("uncertainTier") or "difficult")
+        if uncertain not in {"normal", "difficult"}:
+            raise ServiceError("invalid uncertain-task group", status=400, code="invalid_blend")
+        normalized["uncertainTier"] = uncertain
+        return normalized
+
+    def _smart_route_dto(self, raw: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            **{
+                tier: [dict(row) for row in raw.get(tier, []) if isinstance(row, Mapping)]
+                for tier in self.SMART_TIERS
+            },
+            "uncertain_tier": str(raw.get("uncertainTier") or "difficult"),
+        }
+
+    def _smart_route_models(self, smart: Mapping[str, Any]) -> list[str]:
+        return [
+            str(row["model"])
+            for tier in self.SMART_TIERS
+            for row in smart.get(tier, [])
+        ]
 
     def _reject_reserved(self, name: str) -> None:
         if name == self.RESERVED:
@@ -204,7 +344,8 @@ class BlendService:
                 f"unknown model(s): {', '.join(unknown)}", status=400, code="invalid_blend")
 
     def _validate_strategy(
-        self, strategy: str, models: list[str], judge: Any, sticky: Any, available: set[str],
+        self, strategy: str, models: list[str], judge: Any, sticky: Any,
+        available: set[str], smart_route: Mapping[str, Any] | None = None,
     ) -> None:
         if strategy not in self.STRATEGIES:
             raise ServiceError("unknown blend strategy", status=400, code="invalid_blend")
@@ -218,6 +359,14 @@ class BlendService:
         elif judge:
             raise ServiceError(
                 "judge model applies only to fusion", status=400, code="invalid_blend")
+        if strategy == "smart-route" and smart_route is None:
+            raise ServiceError("Smart route configuration is required", status=400, code="invalid_blend")
+        if strategy != "smart-route" and smart_route is not None:
+            raise ServiceError(
+                "smart_route applies only to the Smart route strategy",
+                status=400,
+                code="invalid_blend",
+            )
         if sticky is not None and strategy != "round-robin":
             raise ServiceError(
                 "sticky limit applies only to round-robin", status=400, code="invalid_blend")

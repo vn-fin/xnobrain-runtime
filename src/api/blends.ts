@@ -1,6 +1,21 @@
 import { request } from './client';
 
-export type BlendStrategy = 'fallback' | 'round-robin' | 'fusion';
+export type BlendStrategy = 'fallback' | 'round-robin' | 'fusion' | 'smart-route';
+export type ReasoningLevel = 'auto' | 'low' | 'medium' | 'high';
+
+export type SmartRouteModel = {
+  model: string;
+  reasoning: ReasoningLevel;
+  context_length?: number | null;
+  reasoning_levels?: ReasoningLevel[];
+};
+
+export type SmartRouteConfig = {
+  quick: SmartRouteModel[];
+  normal: SmartRouteModel[];
+  difficult: SmartRouteModel[];
+  uncertain_tier: 'normal' | 'difficult';
+};
 
 export type Blend = {
   id: string;
@@ -13,11 +28,20 @@ export type Blend = {
   judge_model: string | null;
   sticky_limit: number | null;
   sticky_limit_scope: string;
+  smart_route: SmartRouteConfig | null;
+  guaranteed_context: number | null;
+  maximum_context: number | null;
   created_at: string;
   updated_at: string;
 };
 
-export type BlendModel = { id: string; provider: string; name: string };
+export type BlendModel = {
+  id: string;
+  provider: string;
+  name: string;
+  context_length?: number | null;
+  reasoning_levels?: ReasoningLevel[];
+};
 
 export type BlendCreateInput = {
   name: string;
@@ -25,6 +49,7 @@ export type BlendCreateInput = {
   strategy?: BlendStrategy;
   judge_model?: string | null;
   sticky_limit?: number | null;
+  smart_route?: SmartRouteConfig | null;
 };
 
 export type BlendPatchInput = {
@@ -33,6 +58,7 @@ export type BlendPatchInput = {
   strategy?: BlendStrategy;
   judge_model?: string | null;
   sticky_limit?: number | null;
+  smart_route?: SmartRouteConfig | null;
 };
 
 const ROOT = '/xnobrain/api/runtime/v1/blends';

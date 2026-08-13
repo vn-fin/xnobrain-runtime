@@ -68,13 +68,18 @@ class ProviderModelsMixin:
                 ),
                 ROUTER_PROVIDER_BY_MODEL_OWNER.get(owner, owner),
             )
-            models.append(
-                {
-                    "id": public_model_id,
-                    "provider": provider,
-                    "name": str(item.get("name") or public_model_id),
-                }
-            )
+            model: dict[str, Any] = {
+                "id": public_model_id,
+                "provider": provider,
+                "name": str(item.get("name") or public_model_id),
+            }
+            context_length = self._model_context_length(item)
+            if context_length is not None:
+                model["context_length"] = context_length
+            reasoning_levels = self._model_reasoning_levels(item)
+            if reasoning_levels:
+                model["reasoning_levels"] = reasoning_levels
+            models.append(model)
         if ensure_auto:
             await self._ensure_auto_combo(models)
         models.extend(await self._opencode_free_models(seen))
@@ -92,6 +97,24 @@ class ProviderModelsMixin:
                 *models,
             ],
         }
+
+
+    @staticmethod
+    def _model_context_length(item: Mapping[str, Any]) -> int | None:
+        for key in ("context_length", "context_window", "max_input_tokens"):
+            value = item.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                return int(value)
+        return None
+
+
+    @staticmethod
+    def _model_reasoning_levels(item: Mapping[str, Any]) -> list[str]:
+        raw = item.get("reasoning_levels") or item.get("supported_reasoning")
+        if not isinstance(raw, list):
+            return []
+        allowed = {"low", "medium", "high"}
+        return [str(level) for level in raw if str(level) in allowed]
 
 
     async def _opencode_free_models(self, seen: set[str]) -> list[dict[str, str]]:

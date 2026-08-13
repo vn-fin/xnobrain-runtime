@@ -10,6 +10,7 @@ from .hermes_support import (
     Mapping,
     NINE_ROUTER_DEFAULT_MODEL,
     Path,
+    json,
     route_nine_router_model,
     time,
 )
@@ -20,6 +21,8 @@ class ConversationRunnerMixin:
         prepared = self._prepare_chat_command(raw_name, body, require_conversation=False)
         if prepared["model"] == NINE_ROUTER_DEFAULT_MODEL:
             await self.nine_router.ensure_auto_combo()
+        else:
+            await self._resolve_prepared_smart_route(prepared)
         name = prepared["name"]
         profile_dir = prepared["profile_dir"]
         before = self._latest_session_ids(profile_dir)
@@ -155,6 +158,55 @@ class ConversationRunnerMixin:
         }
 
 
+    async def _resolve_prepared_smart_route(self, prepared: dict[str, Any]) -> None:
+        route_name = str(prepared.get("model") or "").strip()
+        # Blend names cannot contain '/', while routed provider model IDs do.
+        # Avoid a settings lookup on every ordinary model request.
+        if not route_name or route_name == NINE_ROUTER_DEFAULT_MODEL or "/" in route_name:
+            return
+        decision = await self.nine_router.resolve_smart_route(
+            route_name,
+            str(prepared.get("message") or ""),
+            required_context_tokens=self._estimated_route_context(prepared),
+        )
+        if decision is None:
+            return
+        selected_model = str(decision["model"])
+        prepared["model"] = selected_model
+        prepared["requested_model"] = selected_model
+        prepared["smart_route"] = route_name
+        prepared["smart_route_tier"] = str(decision.get("tier") or "")
+        prepared["route_reasoning"] = str(decision.get("reasoning") or "")
+        command = list(prepared.get("command") or [])
+        if "--model" in command:
+            index = command.index("--model")
+            if index + 1 < len(command):
+                command[index + 1] = selected_model
+        elif command:
+            command[1:1] = ["--model", selected_model]
+        prepared["command"] = command
+
+
+    def _estimated_route_context(self, prepared: Mapping[str, Any]) -> int:
+        # Reserve output/tool space, then add the last measured prompt size
+        # when this is an existing conversation. Unknown measurements remain
+        # conservative without preventing models whose metadata is unavailable.
+        estimated = 8_192 + max(1, len(str(prepared.get("message") or "")) // 4)
+        session_id = str(prepared.get("conversation_id") or "")
+        if not session_id:
+            return estimated
+        session = self._session(Path(prepared["profile_dir"]), session_id) or {}
+        raw_config = session.get("model_config")
+        try:
+            config = json.loads(raw_config) if isinstance(raw_config, str) else raw_config
+        except (TypeError, ValueError, json.JSONDecodeError):
+            config = {}
+        context = config.get("brain4all_context") if isinstance(config, Mapping) else None
+        if isinstance(context, Mapping):
+            estimated += max(0, int(context.get("used") or 0))
+        return estimated
+
+
     async def _run_session_agent(
         self,
         prepared: Mapping[str, Any],
@@ -203,6 +255,12 @@ class ConversationRunnerMixin:
 
             def _create_agent(self, *args: Any, **kwargs: Any) -> Any:
                 agent = super()._create_agent(*args, **kwargs)
+                route_reasoning = str(prepared.get("route_reasoning") or "")
+                if route_reasoning in {"low", "medium", "high"}:
+                    agent.reasoning_config = {
+                        "enabled": True,
+                        "effort": route_reasoning,
+                    }
                 manager._apply_runtime_help_guidance_override(
                     agent,
                     profile_dir,
@@ -320,6 +378,9 @@ class ConversationRunnerMixin:
                 "threshold": max(0, context_threshold),
                 "auto_compaction": auto_compaction,
                 "model": actual_model,
+                "route": str(prepared.get("smart_route") or ""),
+                "route_tier": str(prepared.get("smart_route_tier") or ""),
+                "reasoning": str(prepared.get("route_reasoning") or ""),
             }
             usage.update({
                 "context_used": context["used"],

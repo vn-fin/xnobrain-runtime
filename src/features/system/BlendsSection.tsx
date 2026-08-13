@@ -32,7 +32,7 @@ export function BlendsSection() {
       </div>
       <p style={{ ...S.muted, marginTop: 0 }}>
         A blend is a named group of models that behaves as one model — the runtime routes
-        each request through it (fallback, round-robin, or fusion).
+        each request through it (fallback, round-robin, fusion, or Smart route).
       </p>
 
       {state.unavailable && <div style={S.banner}>The provider runtime is not reachable. Blends are unavailable.</div>}
@@ -47,7 +47,7 @@ export function BlendsSection() {
           <strong style={{ fontSize: 13.5 }}>{blend.display_name}</strong>
           {blend.system
             ? <span style={S.system}>System</span>
-            : <span style={S.chip}>{blend.strategy}</span>}
+            : <span style={S.chip}>{blend.strategy === 'smart-route' ? 'Smart route' : blend.strategy}</span>}
           <span style={S.muted}>{blend.models.length} model{blend.models.length === 1 ? '' : 's'}</span>
           <span style={{ flex: 1 }} />
           <button style={S.iconbtn} disabled={blend.read_only} title="Edit" onClick={() => setEditing(blend)}>
