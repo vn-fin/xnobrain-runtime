@@ -199,17 +199,25 @@ class BlendsIntegrationMixin:
         uncertain = str(smart.get("uncertainTier") or "difficult")
         if uncertain not in {"normal", "difficult"}:
             uncertain = "difficult"
-        tier = available_tiers[0] if len(available_tiers) == 1 else uncertain
-        classifier = next(
-            (rows[0]["model"] for candidate in ("quick", "normal", "difficult")
-             if (rows := groups[candidate])),
-            "",
-        )
-        if classifier:
-            try:
-                tier = await self._classify_smart_route(message, classifier)
-            except NineRouterAPIError:
-                tier = uncertain
+        tier = self._obvious_smart_route_tier(message)
+        if tier is None:
+            tier = available_tiers[0] if len(available_tiers) == 1 else uncertain
+            # A reasoning model can fail to produce the one-word classifier
+            # response, or one provider can be temporarily unavailable. Try
+            # the configured models in increasing task-cost order before
+            # falling back to the user's uncertain-task group.
+            classifiers: list[str] = []
+            for candidate in ("quick", "normal", "difficult"):
+                for row in groups[candidate]:
+                    model = str(row["model"])
+                    if model not in classifiers:
+                        classifiers.append(model)
+            for classifier in classifiers:
+                try:
+                    tier = await self._classify_smart_route(message, classifier)
+                    break
+                except NineRouterAPIError:
+                    continue
 
         escalation = {
             "quick": ("quick", "normal", "difficult"),
@@ -285,7 +293,11 @@ class BlendsIntegrationMixin:
                     },
                     {"role": "user", "content": str(message)[:6000]},
                 ],
-                "max_tokens": 8,
+                # Some reasoning models spend completion tokens before
+                # emitting visible content. Eight tokens can therefore return
+                # an empty answer with finish_reason=length.
+                "max_tokens": 32,
+                "reasoning_effort": "low",
                 "stream": False,
             },
         )
@@ -296,6 +308,24 @@ class BlendsIntegrationMixin:
         if match is None:
             raise NineRouterAPIError("Smart Route classifier returned an invalid result")
         return match.group(1)
+
+
+    @staticmethod
+    def _obvious_smart_route_tier(message: str) -> str | None:
+        """Avoid a model call for greetings and other unambiguous pleasantries."""
+        normalized = re.sub(r"[^\w\s]", " ", str(message).lower(), flags=re.UNICODE)
+        words = normalized.split()
+        if not words or len(words) > 6:
+            return None
+        greetings = {
+            "hi", "hello", "hey", "yo", "thanks", "thank", "bye",
+            "chao", "chào", "xin", "cam", "cảm", "ơn", "on",
+        }
+        if words[0] in greetings:
+            return "quick"
+        if words[:2] in (["good", "morning"], ["good", "afternoon"], ["good", "evening"]):
+            return "quick"
+        return None
 
 
     async def clear_combo_strategy(self, name: str) -> None:

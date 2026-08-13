@@ -94,6 +94,42 @@ class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(route, {
             "model": "cx/c", "reasoning": "high", "tier": "difficult", "route": "smart",
         })
+        classifier_body = next(
+            body for method, path, body in manager.requests
+            if method == "POST" and path == "/v1/chat/completions"
+        )
+        self.assertEqual(classifier_body["max_tokens"], 32)
+        self.assertEqual(classifier_body["reasoning_effort"], "low")
+
+    async def test_resolve_smart_route_sends_obvious_greeting_to_quick_without_classifier(self):
+        policy = {
+            "quick": [{"model": "cx/a", "reasoning": "low"}],
+            "normal": [{"model": "cx/b", "reasoning": "medium"}],
+            "difficult": [{"model": "cx/c", "reasoning": "high"}],
+        }
+        manager = FakeNineRouterManager({
+            ("GET", "/api/settings"): {"comboStrategies": {"smart": {"smartRoute": policy}}},
+        })
+        route = await manager.resolve_smart_route("smart", "hi em")
+        self.assertEqual(route["model"], "cx/a")
+        self.assertEqual(route["tier"], "quick")
+        self.assertFalse(any(path == "/v1/chat/completions" for _, path, _ in manager.requests))
+
+    async def test_model_metadata_reads_nine_router_capabilities(self):
+        manager = FakeNineRouterManager({
+            ("GET", "/api/providers"): {"connections": [
+                {"id": "codex-1", "provider": "codex", "authType": "oauth"},
+            ]},
+            ("GET", "/v1/models?kind=llm"): {"data": [{
+                "id": "cx/gpt", "owned_by": "cx",
+                "capabilities": {"contextWindow": 372_000, "reasoning": True},
+            }]},
+            ("GET", "/api/combos"): {"combos": []},
+            ("POST", "/api/combos"): {},
+        })
+        model = next(row for row in (await manager.list_models())["data"] if row["id"] == "cx/gpt")
+        self.assertEqual(model["context_length"], 372_000)
+        self.assertEqual(model["reasoning_levels"], ["low", "medium", "high"])
 
     async def test_resolve_smart_route_skips_models_with_too_little_context(self):
         policy = {

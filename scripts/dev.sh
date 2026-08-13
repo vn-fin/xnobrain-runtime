@@ -7,14 +7,16 @@ for candidate in \
   "$project_dir/.tools/python/bin/python" \
   "$HOME/.local/lib/hermes-agent/venv/bin/python" \
   "$(command -v python3 2>/dev/null || true)"; do
-  if [[ -x "$candidate" ]] && "$candidate" -c 'import hermes_cli' >/dev/null 2>&1; then
+  if [[ -x "$candidate" ]] \
+      && "$candidate" -c 'import hermes_cli, jlogger' >/dev/null 2>&1; then
     python_bin="$candidate"
     break
   fi
 done
 
-if ! "$python_bin" -c 'import hermes_cli' >/dev/null 2>&1; then
-  echo "Hermes is not installed for this project. Run ./scripts/install-linux.sh first." >&2
+if ! "$python_bin" -c 'import hermes_cli, jlogger' >/dev/null 2>&1; then
+  echo "The project Python environment is incomplete (Hermes or Brain4All dependencies are missing)." >&2
+  echo "Run ./scripts/install-linux.sh to repair the local toolchain." >&2
   exit 1
 fi
 

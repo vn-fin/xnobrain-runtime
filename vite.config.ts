@@ -23,7 +23,10 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       watch: {
-        ignored: ['**/app/**'],
+        // The repository-local Python, Node, browser, and office toolchains
+        // contain tens of thousands of files and are never frontend sources.
+        // Watching them can exhaust Linux's inotify limit during `make dev`.
+        ignored: ['**/app/**', '**/.tools/**', '**/dist/**'],
       },
       proxy: {
         '/api': `http://127.0.0.1:${backendPort}`,
