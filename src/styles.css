@@ -2753,32 +2753,10 @@ body.col-resizing {
   transition: width 180ms ease;
 }
 
-.live-run-durable {
-  color: var(--green, #35d39a);
+.live-run-deadline {
+  color: var(--warning, #e3a84b);
   font-size: 11px;
   white-space: nowrap;
-}
-
-.run-durable-note {
-  margin: 8px 12px;
-  padding: 9px 11px;
-  border: 1px solid color-mix(in srgb, var(--green, #35d39a) 35%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--green, #35d39a) 7%, transparent);
-  font-family: var(--font-mono);
-}
-
-.run-durable-note span {
-  color: var(--green, #35d39a);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .08em;
-}
-
-.run-durable-note p {
-  margin: 4px 0 0;
-  color: var(--text-muted);
-  font-size: 11px;
 }
 
 .delegation-workers {

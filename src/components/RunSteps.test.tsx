@@ -206,6 +206,44 @@ describe('RunSteps', () => {
     expect(screen.getByText('1/2 tasks')).toBeVisible();
   });
 
+  it('only warns about the run limit while a running task has under five minutes left', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const { rerender } = render(<RunActivityBar run={run({
+      status: 'running',
+      durable: true,
+      deadlineAt: 1_301,
+    })} onViewActivity={() => undefined} />);
+
+    expect(screen.queryByText(/limit remaining/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Safe to close/)).not.toBeInTheDocument();
+
+    rerender(<RunActivityBar run={run({
+      status: 'running',
+      durable: true,
+      deadlineAt: 1_299,
+    })} onViewActivity={() => undefined} />);
+    expect(screen.getByText('4m 59s limit remaining')).toBeVisible();
+
+    rerender(<RunActivityBar run={run({
+      status: 'completed',
+      durable: true,
+      deadlineAt: 1_100,
+    })} onViewActivity={() => undefined} />);
+    expect(screen.queryByText(/limit remaining/)).not.toBeInTheDocument();
+  });
+
+  it('does not show the background-run notice in the expanded work log', () => {
+    render(<RunSteps run={run({
+      status: 'running',
+      durable: true,
+      assistantContent: '',
+    })} />);
+
+    expect(screen.queryByText('BACKGROUND RUN')).not.toBeInTheDocument();
+    expect(screen.queryByText(/continues if you reload/)).not.toBeInTheDocument();
+  });
+
   it('renders repeated plan updates in chronological activity order', () => {
     const first = [
       { id: 'one', content: 'First snapshot current task', status: 'in_progress' as const },

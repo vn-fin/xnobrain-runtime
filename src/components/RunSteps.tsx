@@ -63,6 +63,9 @@ export function RunActivityBar({ run, onViewActivity }: { run: ChatRun; onViewAc
   const deadlineLabel = deadlineRemaining !== undefined
     ? formatRunDuration({ ...run, startedAt: 0, endedAt: deadlineRemaining })
     : '';
+  const showDeadlineWarning = run.status === 'running'
+    && deadlineRemaining !== undefined
+    && deadlineRemaining < 5 * 60;
 
   return (
     <div className={`live-run-activity ${waiting ? 'waiting' : 'running'}`} aria-label={activityLabel}>
@@ -75,7 +78,7 @@ export function RunActivityBar({ run, onViewActivity }: { run: ChatRun; onViewAc
       {todoLabel && <><span className="live-run-activity-separator" aria-hidden="true">·</span><span className="live-run-activity-count">{todoLabel}</span></>}
       <span className="live-run-activity-separator" aria-hidden="true">·</span>
       <span className="live-run-activity-count">{stepLabel}</span>
-      {run.durable && <><span className="live-run-activity-separator" aria-hidden="true">·</span><span className="live-run-durable">Safe to close this page{deadlineLabel ? ` · ${deadlineLabel} limit remaining` : ''}</span></>}
+      {showDeadlineWarning && deadlineLabel && <><span className="live-run-activity-separator" aria-hidden="true">·</span><span className="live-run-deadline">{deadlineLabel} limit remaining</span></>}
       <button
         type="button"
         aria-label={waiting ? 'Review agent activity' : 'View agent activity'}
@@ -707,12 +710,6 @@ export function RunSteps({
       </button>
       {expanded && (
         <div className="run-step-list">
-          {run.durable && run.status === 'running' && (
-            <div className="run-durable-note">
-              <span>BACKGROUND RUN</span>
-              <p>This work continues if you reload or close the page.</p>
-            </div>
-          )}
           {!timelineHasPlans && run.todos && <RunPlan todos={run.todos} runStatus={run.status} />}
           {run.approval && <RunApprovalPrompt run={run} onResolveApproval={onResolveApproval} />}
           {timeline && timeline.length > 0 ? (
