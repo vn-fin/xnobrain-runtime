@@ -115,6 +115,33 @@ class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(route["tier"], "quick")
         self.assertFalse(any(path == "/v1/chat/completions" for _, path, _ in manager.requests))
 
+    async def test_resolve_smart_route_applies_tier_policy_to_reused_model(self):
+        policy = {
+            "quick": [{"model": "cx/shared", "reasoning": "low"}],
+            "normal": [{"model": "cx/shared", "reasoning": "medium"}],
+            "difficult": [{"model": "cx/deep", "reasoning": "high"}],
+        }
+        manager = FakeNineRouterManager({
+            ("GET", "/api/settings"): {
+                "comboStrategies": {"smart": {"smartRoute": policy}},
+            },
+            ("POST", "/v1/chat/completions"): {
+                "choices": [{"message": {"content": "normal"}}],
+            },
+        })
+
+        quick = await manager.resolve_smart_route("smart", "hello")
+        normal = await manager.resolve_smart_route("smart", "Write a short project plan")
+
+        self.assertEqual(
+            (quick["model"], quick["tier"], quick["reasoning"]),
+            ("cx/shared", "quick", "low"),
+        )
+        self.assertEqual(
+            (normal["model"], normal["tier"], normal["reasoning"]),
+            ("cx/shared", "normal", "medium"),
+        )
+
     async def test_model_metadata_reads_nine_router_capabilities(self):
         manager = FakeNineRouterManager({
             ("GET", "/api/providers"): {"connections": [
@@ -373,7 +400,7 @@ class BlendServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entry["fallbackStrategy"], "fallback")
         self.assertIn("smartRoute", entry)
 
-    async def test_smart_route_requires_every_group_and_unique_models(self):
+    async def test_smart_route_requires_every_group(self):
         service, _ = _service()
         with self.assertRaises(ServiceError):
             await service.create_blend({
@@ -384,12 +411,28 @@ class BlendServiceTests(unittest.IsolatedAsyncioTestCase):
                     "difficult": [{"model": "cx/c"}],
                 },
             })
+
+    async def test_smart_route_reuses_model_across_tiers_but_not_within_one_tier(self):
+        service, router = _service()
+        dto = await service.create_blend({
+            "name": "smart", "strategy": "smart-route",
+            "smart_route": {
+                "quick": [{"model": "cx/a", "reasoning": "low"}],
+                "normal": [{"model": "cx/a", "reasoning": "medium"}],
+                "difficult": [{"model": "cx/c", "reasoning": "high"}],
+            },
+        })
+        self.assertEqual(dto["models"], ["cx/a", "cx/c"])
+        self.assertEqual(dto["smart_route"]["quick"][0]["reasoning"], "low")
+        self.assertEqual(dto["smart_route"]["normal"][0]["reasoning"], "medium")
+        self.assertEqual(router._combos[-1]["models"], ["cx/a", "cx/c"])
+
         with self.assertRaises(ServiceError):
             await service.create_blend({
-                "name": "smart", "strategy": "smart-route",
+                "name": "duplicate-in-tier", "strategy": "smart-route",
                 "smart_route": {
-                    "quick": [{"model": "cx/a"}],
-                    "normal": [{"model": "cx/a"}],
+                    "quick": [{"model": "cx/a"}, {"model": "cx/a"}],
+                    "normal": [{"model": "cx/b"}],
                     "difficult": [{"model": "cx/c"}],
                 },
             })
@@ -466,15 +509,24 @@ class BlendRouteTests(unittest.IsolatedAsyncioTestCase):
             "difficult": [{"model": "cx/a", "reasoning": "high"}],
             "uncertain_tier": "difficult",
         }
-        # The same model cannot be put in two task groups.
+        # One model may serve multiple task groups with tier-specific reasoning.
         async with self.client() as client:
-            invalid = await client.post("/xnobrain/api/runtime/v1/blends", json={
-                "name": "smart-invalid",
+            reused = await client.post("/xnobrain/api/runtime/v1/blends", json={
+                "name": "smart-reused",
                 "models": ["cx/a", "cx/b"],
                 "strategy": "smart-route",
                 "smart_route": smart_route,
             })
-            self.assertEqual(invalid.status_code, 400)
+            self.assertEqual(reused.status_code, 201)
+            reused_data = reused.json()["data"]
+            self.assertEqual(reused_data["models"], ["cx/a", "cx/b"])
+            self.assertEqual(
+                reused_data["smart_route"]["difficult"],
+                [{
+                    "model": "cx/a", "reasoning": "high",
+                    "context_length": None, "reasoning_levels": [],
+                }],
+            )
 
             smart_route["difficult"] = [{"model": "cx/c", "reasoning": "high"}]
             created = await client.post("/xnobrain/api/runtime/v1/blends", json={

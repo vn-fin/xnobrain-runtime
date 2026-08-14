@@ -69,4 +69,42 @@ describe('BlendEditorDialog Smart route', () => {
       },
     });
   });
+
+  it('allows one model in different task tiers and submits unique combo models', async () => {
+    const save = vi.fn(async () => undefined);
+    render(
+      <BlendEditorDialog
+        blend={blend}
+        loadModels={async () => [
+          { id: 'cx/fast', provider: 'codex', name: 'Fast', context_length: 32_000, reasoning_levels: ['low', 'medium'] },
+          { id: 'cx/normal', provider: 'codex', name: 'Normal', context_length: 128_000, reasoning_levels: ['low', 'medium', 'high'] },
+          { id: 'cx/deep', provider: 'codex', name: 'Deep', context_length: 200_000, reasoning_levels: ['medium', 'high'] },
+          { id: 'cx/deeper', provider: 'codex', name: 'Deeper', context_length: 256_000, reasoning_levels: ['low', 'medium', 'high'] },
+        ]}
+        onSave={save}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(await screen.findByLabelText('Add model to normal tasks'), {
+      target: { value: 'cx/fast' },
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add' })[1]);
+    fireEvent.change(screen.getAllByLabelText('cx/fast thinking')[1], {
+      target: { value: 'medium' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][0].models).toEqual([
+      'cx/fast', 'cx/normal', 'cx/deep', 'cx/deeper',
+    ]);
+    expect(save.mock.calls[0][0].smart_route).toMatchObject({
+      quick: [{ model: 'cx/fast', reasoning: 'low' }],
+      normal: [
+        { model: 'cx/normal', reasoning: 'auto' },
+        { model: 'cx/fast', reasoning: 'medium' },
+      ],
+    });
+  });
 });

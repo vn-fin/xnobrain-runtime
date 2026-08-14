@@ -146,9 +146,12 @@ export function BlendEditorDialog({
     setBusy(true); setError(null);
     try {
       const smart = strategy === 'smart-route' ? smartRoute() : null;
+      const selectedModels = smart
+        ? [...new Set(TIERS.flatMap((tier) => smart[tier].map((row) => row.model)))]
+        : models;
       await onSave({
         name,
-        models: smart ? TIERS.flatMap((tier) => smart[tier].map((row) => row.model)) : models,
+        models: selectedModels,
         strategy,
         judge_model: strategy === 'fusion' ? (judge || null) : null,
         sticky_limit: strategy === 'round-robin' && sticky.trim() ? Number(sticky) : null,
@@ -191,7 +194,8 @@ export function BlendEditorDialog({
             </div>
             {TIERS.map((tier) => {
               const copy = TIER_COPY[tier];
-              const choices = available.filter((model) => !routedIds.includes(model.id));
+              const tierIds = new Set(groups[tier].map((row) => row.model));
+              const choices = available.filter((model) => !tierIds.has(model.id));
               return (
                 <div style={S.tier} key={tier}>
                   <div style={{ padding: '8px 10px', borderLeft: `4px solid ${copy.tone}`, background: 'rgba(128,128,128,0.06)' }}>
@@ -230,6 +234,7 @@ export function BlendEditorDialog({
                     })}
                     <div style={{ ...S.row, marginTop: 5 }}>
                       <select style={{ ...S.input, flex: 1 }} value={tierPicks[tier]}
+                        aria-label={`Add model to ${tier} tasks`}
                         onChange={(event) => setTierPicks((current) => ({ ...current, [tier]: event.target.value }))}>
                         <option value="">Add a model…</option>
                         {choices.map((model) => <option key={model.id} value={model.id}>{model.id}</option>)}

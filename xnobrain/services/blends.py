@@ -239,7 +239,6 @@ class BlendService:
                 code="invalid_blend",
             )
         normalized: dict[str, Any] = {}
-        seen: set[str] = set()
         total = 0
         for tier in self.SMART_TIERS:
             source = raw.get(tier)
@@ -250,6 +249,7 @@ class BlendService:
                     code="invalid_blend",
                 )
             rows: list[dict[str, Any]] = []
+            seen_in_tier: set[str] = set()
             for item in source:
                 if not isinstance(item, Mapping):
                     raise ServiceError("invalid Smart route model", status=400, code="invalid_blend")
@@ -257,9 +257,9 @@ class BlendService:
                 reasoning = str(item.get("reasoning") or "auto").strip().lower()
                 if model not in available:
                     raise ServiceError(f"unknown model: {model}", status=400, code="invalid_blend")
-                if model in seen:
+                if model in seen_in_tier:
                     raise ServiceError(
-                        "a model can appear in only one Smart route group",
+                        f"a model can appear only once in the {tier} Smart route group",
                         status=400,
                         code="invalid_blend",
                     )
@@ -272,7 +272,7 @@ class BlendService:
                         status=400,
                         code="invalid_blend",
                     )
-                seen.add(model)
+                seen_in_tier.add(model)
                 total += 1
                 rows.append({
                     "model": model,
@@ -303,11 +303,13 @@ class BlendService:
         }
 
     def _smart_route_models(self, smart: Mapping[str, Any]) -> list[str]:
-        return [
+        # 9router combo membership is unique, while XNOBrain's policy may use
+        # the same model in multiple difficulty tiers with different reasoning.
+        return list(dict.fromkeys(
             str(row["model"])
             for tier in self.SMART_TIERS
             for row in smart.get(tier, [])
-        ]
+        ))
 
     def _reject_reserved(self, name: str) -> None:
         if name == self.RESERVED:
