@@ -12,6 +12,7 @@ from .hermes_support import (
     Path,
     json,
     route_nine_router_model,
+    re,
     time,
 )
 
@@ -61,7 +62,16 @@ class ConversationRunnerMixin:
 
 
     def chat_stream(self, raw_name: Any, body: Mapping[str, Any]):
-        prepared = self._prepare_chat_command(raw_name, body, require_conversation=True)
+        payload = dict(body)
+        if "message" not in payload and "input" in payload:
+            payload["message"] = payload.pop("input")
+        prepared = self._prepare_chat_command(raw_name, payload, require_conversation=True)
+        requested_run_id = str(payload.get("run_id") or "")
+        if requested_run_id:
+            if not re.fullmatch(r"run_[0-9a-f]{32}", requested_run_id):
+                raise AgentAPIError("invalid run id", code="invalid_run")
+            prepared["run_id"] = requested_run_id
+        prepared["run_mode"] = str(payload.get("run_mode") or "interactive")
         return self._chat_stream_events(prepared)
 
 

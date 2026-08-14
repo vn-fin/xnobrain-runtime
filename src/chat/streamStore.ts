@@ -40,6 +40,8 @@ type Runtime = {
   cancelled: boolean;
   processing: boolean;
   conversationTitle?: string;
+  lastSequence?: number;
+  restoring?: boolean;
 };
 
 const EMPTY: SessionSnapshot = {
@@ -151,6 +153,94 @@ function runtimeFor(key: string, agentId: string, conversationId: string): Runti
   return runtime;
 }
 
+function updateAssistant(key: string, assistantId: string, map: (message: ChatMessage) => ChatMessage) {
+  const snap = getSnapshot(key);
+  patch(key, { localMessages: snap.localMessages.map((message) => (
+    message.id === assistantId ? map(message) : message
+  )) });
+}
+
+function runEventHandler(key: string, runtime: Runtime, assistantId: string) {
+  return (event: SSEEvent) => {
+    if (event.data === '[DONE]') return;
+    const sequence = Number(event.id);
+    if (Number.isFinite(sequence)) runtime.lastSequence = Math.max(runtime.lastSequence ?? 0, sequence);
+    const data = event.data && typeof event.data === 'object' ? event.data as Record<string, unknown> : {};
+    const type = typeof data.event === 'string' && data.event ? data.event : event.event;
+
+    if (type === 'run.started' && typeof data.run_id === 'string') {
+      patch(key, { runId: data.run_id as string, runActive: true });
+    }
+    const snap = getSnapshot(key);
+    patch(key, { events: [...snap.events, event] });
+
+    const runsSnap = getSnapshot(key).runs;
+    if (type === 'run.started') {
+      const next = reduceRunEvent(null, event);
+      if (next && !runsSnap.some((run) => run.id === next.id)) {
+        patch(key, { runs: [...runsSnap, { ...next, insertBeforeMessageId: assistantId }] });
+      }
+    } else if (runsSnap.length > 0) {
+      const index = runsSnap.findIndex((run) => run.id === (typeof data.run_id === 'string' ? data.run_id : getSnapshot(key).runId));
+      const target = index >= 0 ? index : runsSnap.length - 1;
+      const next = reduceRunEvent(runsSnap[target], event);
+      if (next) patch(key, { runs: runsSnap.map((run, runIndex) => (runIndex === target ? next : run)) });
+    }
+
+    if (type === 'error' || type === 'run.failed') {
+      patch(key, { error: streamErrorMessage(event.data) });
+      return;
+    }
+    if (type === 'run.cancelled') {
+      runtime.cancelled = true;
+      return;
+    }
+    if (type === 'assistant.completed' || type === 'message.completed') {
+      if (typeof data.content === 'string') updateAssistant(key, assistantId, (message) => ({ ...message, content: data.content as string }));
+      return;
+    }
+    if (type === 'tool.started') {
+      updateAssistant(key, assistantId, (message) => ({ ...message, content: '' }));
+      return;
+    }
+    if (type === 'run.completed') {
+      if (typeof data.conversation_title === 'string' && data.conversation_title.trim()) {
+        runtime.conversationTitle = data.conversation_title.trim();
+      }
+      if (typeof data.output === 'string' && data.output) {
+        updateAssistant(key, assistantId, (message) => ({ ...message, content: data.output as string }));
+      }
+      return;
+    }
+    const delta = streamText(event);
+    if (delta) updateAssistant(key, assistantId, (message) => ({ ...message, content: message.content + delta }));
+  };
+}
+
+async function followRun(key: string, runtime: Runtime, runId: string, assistantId: string, controller: AbortController) {
+  const handleEvent = runEventHandler(key, runtime, assistantId);
+  for (;;) {
+    try {
+      await conversationsApi.watchRun(
+        runtime.agentId,
+        runtime.conversationId,
+        runId,
+        handleEvent,
+        controller.signal,
+        runtime.lastSequence ?? 0,
+      );
+      if (controller.signal.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+      const record = await conversationsApi.run(runtime.agentId, runtime.conversationId, runId);
+      if (['completed', 'failed', 'timed_out', 'cancelled'].includes(record.status)) return;
+    } catch (value) {
+      if (abortError(value) || controller.signal.aborted) throw value;
+      // The backend owns execution. Retry a dropped observer connection from
+      // the last persisted event instead of failing or cancelling the run.
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+  }
+}
+
 async function execute(key: string, text: string, model: string) {
   const runtime = runtimes.get(key);
   if (!runtime) return;
@@ -174,79 +264,74 @@ async function execute(key: string, text: string, model: string) {
     ],
   });
 
-  const updateAssistant = (map: (message: ChatMessage) => ChatMessage) => {
-    const snap = getSnapshot(key);
-    patch(key, { localMessages: snap.localMessages.map((m) => (m.id === assistantId ? map(m) : m)) });
-  };
-
-  const handleEvent = (event: SSEEvent) => {
-    const data = event.data && typeof event.data === 'object' ? event.data as Record<string, unknown> : {};
-    const type = typeof data.event === 'string' && data.event ? data.event : event.event;
-
-    if (type === 'run.started' && typeof data.run_id === 'string') {
-      patch(key, { runId: data.run_id as string, runActive: true });
-    }
-
-    const snap = getSnapshot(key);
-    patch(key, { events: [...snap.events, event] });
-
-    // Runs
-    const runsSnap = getSnapshot(key).runs;
-    if (type === 'run.started') {
-      const next = reduceRunEvent(null, event);
-      if (next && !runsSnap.some((run) => run.id === next.id)) {
-        patch(key, { runs: [...runsSnap, { ...next, insertBeforeMessageId: assistantId }] });
-      }
-    } else if (runsSnap.length > 0) {
-      const last = runsSnap[runsSnap.length - 1];
-      const next = reduceRunEvent(last, event);
-      if (next) patch(key, { runs: [...runsSnap.slice(0, -1), next] });
-    }
-
-    if (type === 'error' || type === 'run.failed') {
-      const message = streamErrorMessage(event.data);
-      patch(key, { error: message });
-      return;
-    }
-    if (type === 'run.cancelled') {
-      runtime.cancelled = true;
-      return;
-    }
-    if (type === 'assistant.completed' || type === 'message.completed') {
-      if (typeof data.content === 'string') updateAssistant((m) => ({ ...m, content: data.content as string }));
-      return;
-    }
-    if (type === 'tool.started') {
-      // Any text received before this boundary belongs to the intermediate
-      // tool-call message, not the final assistant response. The run reducer
-      // keeps it in the work log; remove it from the provisional answer bubble.
-      updateAssistant((m) => ({ ...m, content: '' }));
-      return;
-    }
-    if (type === 'run.completed') {
-      if (typeof data.conversation_title === 'string' && data.conversation_title.trim()) {
-        runtime.conversationTitle = data.conversation_title.trim();
-      }
-      if (typeof data.output === 'string' && data.output) {
-        // Completion output is authoritative and may repair a missing final
-        // delta; intermediate tool-call text was already cleared above.
-        updateAssistant((m) => ({ ...m, content: data.output as string }));
-      }
-      return;
-    }
-    const delta = streamText(event);
-    if (delta) updateAssistant((m) => ({ ...m, content: m.content + delta }));
-  };
-
   try {
-    await conversationsApi.stream(agentId, conversationId, text, model, handleEvent, controller.signal);
-    updateAssistant((m) => ({ ...m, streaming: false }));
+    runtime.lastSequence = 0;
+    const record = await conversationsApi.startRun(agentId, conversationId, text, model, 'auto', controller.signal);
+    if (runtime.cancelled || controller.signal.aborted) {
+      await conversationsApi.stopRun(agentId, conversationId, record.id).catch(() => undefined);
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+    patch(key, { runId: record.id, runActive: true });
+    await followRun(key, runtime, record.id, assistantId, controller);
+    updateAssistant(key, assistantId, (message) => ({ ...message, streaming: false }));
   } catch (value) {
     if (!abortError(value)) patch(key, { error: streamErrorMessage(value instanceof Error ? value.message : value) });
-    updateAssistant((m) => ({ ...m, streaming: false }));
+    updateAssistant(key, assistantId, (message) => ({ ...message, streaming: false }));
   } finally {
     if (runtime.controller === controller) runtime.controller = undefined;
     patch(key, { runActive: false, runId: null });
+  }
+}
+
+async function resume(key: string, agentId: string, conversationId: string) {
+  const runtime = runtimeFor(key, agentId, conversationId);
+  if (runtime.processing || runtime.restoring || getSnapshot(key).streaming) return;
+  runtime.restoring = true;
+  try {
+    let record;
+    try {
+      record = await conversationsApi.activeRun(agentId, conversationId);
+    } catch {
+      return;
+    }
+    if (!record) return;
+    runtime.processing = true;
+    runtime.cancelled = false;
+    runtime.lastSequence = 0;
+    const controller = new AbortController();
+    runtime.controller = controller;
+    const assistantId = `local-assistant-${randomId()}`;
+    const base = getSnapshot(key);
+    patch(key, {
+      streaming: true,
+      status: 'streaming',
+      runActive: true,
+      runId: record.id,
+      error: '',
+      events: [],
+      localMessages: [
+        ...base.localMessages,
+        { id: assistantId, role: 'assistant', content: '', streaming: true, timestamp: record.started_at ?? record.created_at },
+      ],
+    });
+    try {
+      await followRun(key, runtime, record.id, assistantId, controller);
+      updateAssistant(key, assistantId, (message) => ({ ...message, streaming: false }));
+    } catch (value) {
+      if (!abortError(value)) patch(key, { error: streamErrorMessage(value instanceof Error ? value.message : value) });
+      updateAssistant(key, assistantId, (message) => ({ ...message, streaming: false }));
+    } finally {
+      if (runtime.controller === controller) runtime.controller = undefined;
+      runtime.processing = false;
+      const snap = getSnapshot(key);
+      const status: 'done' | 'error' | 'cancelled' = runtime.cancelled ? 'cancelled' : snap.error ? 'error' : 'done';
+      patch(key, { streaming: false, runActive: false, runId: null, status });
+      completionListeners.forEach((listener) => listener({
+        key, agentId, conversationId, status, active: activeKey === key, conversationTitle: runtime.conversationTitle,
+      }));
+    }
+  } finally {
+    runtime.restoring = false;
   }
 }
 
@@ -324,6 +409,11 @@ export const streamStore = {
     return getSnapshot(keyOf(agentId, conversationId)).streaming;
   },
 
+  resume(agentId: string, conversationId: string) {
+    if (!agentId || !conversationId) return Promise.resolve();
+    return resume(keyOf(agentId, conversationId), agentId, conversationId);
+  },
+
   send(agentId: string, conversationId: string, text: string, model = '') {
     const clean = text.trim();
     if (!clean || !agentId || !conversationId) return;
@@ -379,9 +469,17 @@ export const streamStore = {
     }
     markCancelled(key, runId);
     patch(key, { runActive: false, runId: null });
-    if (!runId) return;
+    let durableRunId = runId;
+    if (!durableRunId) {
+      try {
+        durableRunId = (await conversationsApi.activeRun(agentId, conversationId))?.id ?? null;
+      } catch {
+        durableRunId = null;
+      }
+    }
+    if (!durableRunId) return;
     try {
-      await conversationsApi.stopRun(agentId, conversationId, runId);
+      await conversationsApi.stopRun(agentId, conversationId, durableRunId);
     } catch (value) {
       patch(key, { error: value instanceof Error ? value.message : 'Could not stop run.' });
     }

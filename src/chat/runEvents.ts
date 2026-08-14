@@ -211,6 +211,12 @@ function initialRun(data: Data): ChatRun {
     startedAt: ts(data),
     steps: [],
     assistantContent: '',
+    durable: data.durable === true,
+    ...(string(data.run_mode) === 'background' || string(data.run_mode) === 'interactive'
+      ? { runMode: string(data.run_mode) as 'background' | 'interactive' }
+      : {}),
+    ...(number(data.timeout_seconds) !== undefined ? { timeoutSeconds: number(data.timeout_seconds) } : {}),
+    ...(number(data.deadline_at) !== undefined ? { deadlineAt: number(data.deadline_at) } : {}),
   };
 }
 

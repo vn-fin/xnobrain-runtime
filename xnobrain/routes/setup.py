@@ -68,6 +68,9 @@ def _endpoint(handlers: Any, route: Route):
     elif route.special == "team_run_stream":
         async def endpoint(request: Request) -> Response:
             return await handlers.team_run_event_stream(request)
+    elif route.special == "conversation_run_stream":
+        async def endpoint(request: Request) -> Response:
+            return await handlers.conversation_run_event_stream(request)
     elif route.body is not None:
         async def endpoint(request: Request, body=Body(...)) -> Response:
             return await handlers.dispatch(request, body.model_dump(exclude_unset=True))
@@ -82,7 +85,7 @@ def _endpoint(handlers: Any, route: Route):
 
 def setup_routes(app: Any, handlers: Any) -> None:
     for route in ROUTES:
-        raw_response = route.special in {"stream", "workspace_upload", "workspace_upload_chunk", "workspace_file", "workspace_preview", "workspace_workbook", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "kanban_stream", "team_run_stream"}
+        raw_response = route.special in {"stream", "workspace_upload", "workspace_upload_chunk", "workspace_file", "workspace_preview", "workspace_workbook", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "kanban_stream", "team_run_stream", "conversation_run_stream"}
         app.add_api_route(
             route.path,
             _endpoint(handlers, route),

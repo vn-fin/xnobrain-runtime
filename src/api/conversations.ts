@@ -6,6 +6,8 @@ import type {
   ConversationMessagesResponseDTO,
   ConversationSummaryDTO,
   ConversationUsageDTO,
+  ConversationRunDTO,
+  ActiveConversationRunDTO,
 } from './contracts/conversations';
 import { mapConversation, mapMessage } from './mappers/conversations';
 import { readSSE, type SSEEvent } from './stream';
@@ -19,6 +21,8 @@ export type ResolveRunApprovalResponse = {
   choice?: RunApprovalChoice;
   resolved?: number;
 };
+
+export type ConversationRunMode = 'auto' | 'interactive' | 'background';
 
 export type ConversationPage = {
   conversations: Conversation[];
@@ -162,6 +166,48 @@ export const conversationsApi = {
       body: JSON.stringify({ input, model }),
       signal,
     });
+    await readSSE(response, onEvent, signal);
+  },
+
+  async startRun(
+    agentId: string,
+    conversationId: string,
+    input: string,
+    model: string,
+    runMode: ConversationRunMode = 'auto',
+    signal?: AbortSignal,
+  ): Promise<ConversationRunDTO> {
+    return request<ConversationRunDTO>(pathWithAgent(`${ROOT}/${encoded(conversationId)}/runs`, agentId), {
+      method: 'POST',
+      body: JSON.stringify({ input, model, run_mode: runMode }),
+      signal,
+    });
+  },
+
+  async activeRun(agentId: string, conversationId: string): Promise<ConversationRunDTO | null> {
+    const data = await request<ActiveConversationRunDTO>(pathWithAgent(
+      `${ROOT}/${encoded(conversationId)}/runs/active`, agentId,
+    ));
+    return data.run ?? null;
+  },
+
+  async run(agentId: string, conversationId: string, runId: string): Promise<ConversationRunDTO> {
+    return request<ConversationRunDTO>(pathWithAgent(
+      `${ROOT}/${encoded(conversationId)}/runs/${encoded(runId)}`, agentId,
+    ));
+  },
+
+  async watchRun(
+    agentId: string,
+    conversationId: string,
+    runId: string,
+    onEvent: (event: SSEEvent) => void,
+    signal?: AbortSignal,
+    after = 0,
+  ): Promise<void> {
+    const response = await requestRaw(pathWithAgent(
+      `${ROOT}/${encoded(conversationId)}/runs/${encoded(runId)}/events`, agentId, { after },
+    ), { headers: { Accept: 'text/event-stream' }, signal });
     await readSSE(response, onEvent, signal);
   },
 

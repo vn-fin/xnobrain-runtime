@@ -36,6 +36,24 @@ export type ConversationMessageDTO = {
 
 export type ConversationMessagesResponseDTO = { messages?: ConversationMessageDTO[] };
 
+export type ConversationRunDTO = {
+  id: string;
+  agent_id: string;
+  conversation_id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'timed_out' | 'cancelled';
+  mode: 'interactive' | 'background';
+  timeout_seconds: number;
+  created_at: number;
+  started_at?: number | null;
+  ended_at?: number | null;
+  last_activity_at?: number | null;
+  deadline_at?: number | null;
+  revision: number;
+  error?: string | null;
+};
+
+export type ActiveConversationRunDTO = { run?: ConversationRunDTO | null };
+
 export type ConversationCompactResponseDTO = {
   conversation_id?: string;
   before_tokens?: number;

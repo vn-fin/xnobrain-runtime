@@ -26,7 +26,7 @@ class ConversationStreamMixin:
         skill_ids_before_run = self._skill_ids_for_profile(profile_dir)
         created = int(time.time())
         chat_id = "chatcmpl-" + (conversation_id or uuid.uuid4().hex)
-        run_id = "run_" + uuid.uuid4().hex
+        run_id = str(prepared.get("run_id") or ("run_" + uuid.uuid4().hex))
 
         if model == NINE_ROUTER_DEFAULT_MODEL:
             try:

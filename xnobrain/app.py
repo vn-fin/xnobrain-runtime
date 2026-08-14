@@ -80,6 +80,8 @@ class XNOBrainApplication:
                     for task in tuple(cron_tasks.values()):
                         task.cancel()
                     with suppress(Exception):
+                        await self.service.conversation_runs.shutdown()
+                    with suppress(Exception):
                         await self.service.team_runs.shutdown()
                     if dispatcher is not None:
                         dispatcher.cancel()

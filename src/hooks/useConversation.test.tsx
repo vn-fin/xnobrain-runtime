@@ -39,6 +39,7 @@ vi.mock('../chat/streamStore', () => ({
   streamStore: {
     subscribe: () => () => undefined,
     getSnapshot: () => mocks.snapshot,
+    resume: vi.fn(async () => undefined),
     setActive: vi.fn(),
     onComplete: (listener: NonNullable<typeof mocks.complete>) => {
       mocks.complete = listener;

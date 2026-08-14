@@ -138,3 +138,39 @@ class StreamingHandlers:
                     "X-Accel-Buffering": "no",
                 },
             )
+
+    async def conversation_run_event_stream(self, request: Request) -> StreamingResponse:
+            """Replay persisted chat events, then follow the detached run live."""
+            agent_id = str(request.query_params.get("agent") or "").strip()
+            conversation_id = request.path_params["conversation_id"]
+            run_id = request.path_params["run_id"]
+            raw_cursor = request.headers.get("Last-Event-ID") or request.query_params.get("after")
+            try:
+                cursor = max(0, int(raw_cursor)) if raw_cursor else 0
+            except (TypeError, ValueError):
+                cursor = 0
+
+            async def events():
+                try:
+                    async for item in self.service.conversation_runs.events(
+                        agent_id, conversation_id, run_id, cursor,
+                    ):
+                        if await request.is_disconnected():
+                            return
+                        sequence = int(item.get("sequence") or 0)
+                        name = str(item.get("event") or "message")
+                        payload = json.dumps(item.get("data"), ensure_ascii=False, separators=(",", ":"))
+                        yield f"id: {sequence}\nevent: {name}\ndata: {payload}\n\n".encode()
+                    yield b"data: [DONE]\n\n"
+                except EXPECTED_ERRORS as error:
+                    yield f"event: error\ndata: {json.dumps({'message': str(error)})}\n\n".encode()
+
+            return StreamingResponse(
+                events(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache, no-transform",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                },
+            )

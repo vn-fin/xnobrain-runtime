@@ -38,7 +38,8 @@ export function mergeConversationMessages(server: ChatMessage[], local: ChatMess
 /** Replace a partially persisted current run with its live, updating version. */
 export function mergeConversationRuns(server: ChatRun[], local: ChatRun[], localMessages: ChatMessage[]) {
   if (!local.length) return server;
-  const sentAt = localMessages.find((message) => message.role === 'user')?.timestamp;
+  const sentAt = localMessages.find((message) => message.role === 'user')?.timestamp
+    ?? local.find((run) => run.status === 'running' || run.status === 'waiting_for_approval')?.startedAt;
   const historical = sentAt === undefined
     ? server.filter((run) => !local.some((live) => live.id === run.id))
     : server.filter((run) => run.startedAt === undefined || run.startedAt < sentAt - 1);
@@ -141,8 +142,12 @@ export function useConversation(agentId: string, conversationId: string, model =
       setCompacting(false);
       setCompactError('');
       setCompactResult(null);
-      void refresh();
-      void requestUsage(generation.current);
+      const currentGeneration = generation.current;
+      void (async () => {
+        await refresh();
+        await streamStore.resume(agentId, conversationId);
+        await requestUsage(currentGeneration);
+      })();
     }
     // No stream teardown here: streams intentionally keep running in the
     // background when switching conversations.

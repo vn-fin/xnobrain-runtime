@@ -23,6 +23,7 @@ class ChatRequest(BaseModel):
     skills: list[str] | None = None
     toolsets: list[str] | None = None
     timeout_seconds: int | None = Field(default=None, gt=0)
+    run_mode: Literal["auto", "interactive", "background"] = "auto"
 
 
 class RunApproval(BaseModel):

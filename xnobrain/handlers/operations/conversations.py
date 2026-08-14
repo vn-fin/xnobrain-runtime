@@ -24,6 +24,9 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         "conversations_compact": (lambda: s.compact_conversation(agent(), p["conversation_id"], body), "conversation context compacted successfully", 200),
         "conversations_rename": (lambda: s.rename_conversation(agent(), p["conversation_id"], body), "conversation renamed successfully", 200),
         "conversations_delete": (lambda: s.delete_conversation(agent(), p["conversation_id"]), "conversation deleted successfully", 200),
-        "run_stop": (lambda: s.stop_run(p["run_id"]), "run stopped successfully", 200),
+        "conversation_runs_start": (lambda: s.start_conversation_run(agent(), p["conversation_id"], body), "conversation run started", 202),
+        "conversation_runs_active": (lambda: s.active_conversation_run(agent(), p["conversation_id"]), "active conversation run retrieved", 200),
+        "conversation_runs_get": (lambda: s.get_conversation_run(agent(), p["conversation_id"], p["run_id"]), "conversation run retrieved", 200),
+        "run_stop": (lambda: s.stop_run(agent(), p["conversation_id"], p["run_id"]), "run stopped successfully", 200),
         "run_approval": (lambda: s.resolve_approval(p["run_id"], body, agent()), "approval resolved successfully", 200),
     }

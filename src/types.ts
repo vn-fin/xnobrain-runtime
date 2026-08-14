@@ -242,6 +242,10 @@ export type ChatRun = {
   /** Latest authoritative session plan emitted by Hermes' todo tool. */
   todos?: ChatTodoItem[];
   usage?: ChatRunUsage;
+  durable?: boolean;
+  runMode?: 'interactive' | 'background';
+  timeoutSeconds?: number;
+  deadlineAt?: number;
 };
 
 export type ConversationUsage = {

@@ -2,11 +2,19 @@ import { describe, expect, it, vi } from 'vitest';
 import type { SSEEvent } from '../api/stream';
 import { streamErrorMessage, streamStore } from './streamStore';
 
-const mocks = vi.hoisted(() => ({ stream: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  startRun: vi.fn(async () => ({ id: 'run-test' })),
+  watchRun: vi.fn(),
+  run: vi.fn(async () => ({ status: 'completed' })),
+  activeRun: vi.fn(async () => null),
+}));
 
 vi.mock('../api/conversations', () => ({
   conversationsApi: {
-    stream: mocks.stream,
+    startRun: mocks.startRun,
+    watchRun: mocks.watchRun,
+    run: mocks.run,
+    activeRun: mocks.activeRun,
   },
 }));
 
@@ -24,11 +32,10 @@ describe('streamErrorMessage', () => {
   });
 
   it('forwards the persisted title from the existing completion stream', async () => {
-    mocks.stream.mockImplementationOnce(async (
+    mocks.watchRun.mockImplementationOnce(async (
       _agentId: string,
       _conversationId: string,
-      _text: string,
-      _model: string,
+      _runId: string,
       onEvent: (event: SSEEvent) => void,
     ) => {
       onEvent({ event: 'message', data: { event: 'run.completed', output: 'Done', conversation_title: 'Quarterly risk review' } });
@@ -47,15 +54,14 @@ describe('streamErrorMessage', () => {
       status: 'done',
       conversationTitle: 'Quarterly risk review',
     });
-    expect(mocks.stream).toHaveBeenCalledTimes(1);
+    expect(mocks.watchRun).toHaveBeenCalledTimes(1);
   });
 
   it('removes provisional tool-call text and streams only the final answer', async () => {
-    mocks.stream.mockImplementationOnce(async (
+    mocks.watchRun.mockImplementationOnce(async (
       _agentId: string,
       _conversationId: string,
-      _text: string,
-      _model: string,
+      _runId: string,
       onEvent: (event: SSEEvent) => void,
     ) => {
       const frame = (data: Record<string, unknown>): SSEEvent => ({ event: 'message', data });
@@ -88,5 +94,45 @@ describe('streamErrorMessage', () => {
       'DuckDuckGo showed a challenge page.',
       'The second source has the result.',
     ]);
+  });
+
+  it('rehydrates an active durable run and replays its events after reload', async () => {
+    mocks.activeRun.mockResolvedValueOnce({
+      id: 'run-restored',
+      status: 'running',
+      mode: 'background',
+      timeout_seconds: 3600,
+      created_at: 10,
+      started_at: 11,
+    });
+    mocks.watchRun.mockImplementationOnce(async (
+      _agentId: string,
+      _conversationId: string,
+      _runId: string,
+      onEvent: (event: SSEEvent) => void,
+    ) => {
+      onEvent({ id: '1', event: 'message', data: {
+        event: 'run.started', run_id: 'run-restored', timestamp: 11,
+        durable: true, run_mode: 'background', timeout_seconds: 3600, deadline_at: 3611,
+      } });
+      onEvent({ id: '2', event: 'message', data: {
+        event: 'tool.started', run_id: 'run-restored', timestamp: 12, tool: 'pdf_create',
+      } });
+      onEvent({ id: '3', event: 'message', data: {
+        event: 'run.completed', run_id: 'run-restored', timestamp: 13, output: 'PDF ready',
+      } });
+    });
+
+    await streamStore.resume('agent-restored', 'session-restored');
+
+    const snapshot = streamStore.getSnapshot('agent-restored::session-restored');
+    expect(snapshot.status).toBe('done');
+    expect(snapshot.runs[0]).toMatchObject({
+      id: 'run-restored', status: 'completed', durable: true, runMode: 'background', timeoutSeconds: 3600,
+    });
+    expect(snapshot.localMessages.find((message) => message.role === 'assistant')?.content).toBe('PDF ready');
+    expect(mocks.watchRun).toHaveBeenCalledWith(
+      'agent-restored', 'session-restored', 'run-restored', expect.any(Function), expect.any(AbortSignal), 0,
+    );
   });
 });

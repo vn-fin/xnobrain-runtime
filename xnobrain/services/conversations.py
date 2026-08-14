@@ -188,17 +188,46 @@ class ConversationsServiceMixin:
         )
 
     def delete_conversation(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
-        return self.agents.delete_conversation(agent_id, conversation_id)
+        if self.conversation_runs.active_run(agent_id, conversation_id) is not None:
+            raise ServiceError(
+                "cancel the active response before deleting this conversation",
+                status=409,
+                code="conversation_running",
+            )
+        result = self.agents.delete_conversation(agent_id, conversation_id)
+        self.repository.delete_conversation_runs(agent_id, conversation_id)
+        return result
 
     async def stream_conversation(self, agent_id: str, conversation_id: str, body: Mapping[str, Any]):
-        payload = dict(body)
-        payload["message"] = payload.pop("input", "")
-        payload["conversation_id"] = conversation_id
-        async for event in self.agents.chat_stream(agent_id, payload):
+        async for event in self.conversation_runs.legacy_stream(agent_id, conversation_id, body):
             yield event
 
-    async def stop_run(self, run_id: str) -> dict[str, Any]:
-        return await self.agents.stop_run(run_id)
+    async def start_conversation_run(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        body: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return await self.conversation_runs.start_run(agent_id, conversation_id, body)
+
+    def active_conversation_run(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
+        return {"run": self.conversation_runs.active_run(agent_id, conversation_id)}
+
+    def get_conversation_run(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        run_id: str,
+    ) -> dict[str, Any]:
+        return self.conversation_runs.get_run(agent_id, conversation_id, run_id)
+
+    async def stop_run(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        run_id: str,
+    ) -> dict[str, Any]:
+        return await self.conversation_runs.cancel_run(agent_id, conversation_id, run_id)
 
     def resolve_approval(
         self,
@@ -223,4 +252,3 @@ class ConversationsServiceMixin:
     @staticmethod
     def _conversation_dto(agent_id: str, item: Mapping[str, Any]) -> dict[str, Any]:
         return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Session"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tool_call_count") or item.get("tools") or 0), "created_at": item.get("created_at") or item.get("started_at"), "updated_at": item.get("last_active_at") or item.get("updated_at") or item.get("ended_at") or item.get("started_at") or item.get("created_at")}
-

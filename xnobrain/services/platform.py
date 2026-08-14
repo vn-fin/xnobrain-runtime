@@ -25,6 +25,7 @@ from .automation import AutomationServiceMixin
 from .base import ServiceError
 from .blends import BlendService
 from .conversations import ConversationsServiceMixin
+from .conversation_runs import ConversationRunService
 from .cron import CronService, CronServiceError
 from .helpers import MemoryCache
 from .kanban import KanbanService
@@ -76,6 +77,7 @@ class PlatformService(
         self.analytics = AnalyticsService(agents, router, repository)
         from .blends import BlendService
         self.blends = BlendService(router)
+        self.conversation_runs = ConversationRunService(repository, agents)
         from .team_runs import TeamRunService
         self.team_runs = TeamRunService(repository, agents, self)
         self._oauth_attempts: dict[str, dict[str, str]] = {}
@@ -135,4 +137,3 @@ class PlatformService(
             if changed:
                 self.repository.snapshot(profile.name, "config", "config", path.read_bytes())
                 self.repository.atomic_yaml(path, config)
-
