@@ -8,6 +8,17 @@ const EXPIRY_SKEW_MS = 30_000;
 
 let accessToken: string | null = null;
 let accessExpiresAt: number | null = null;
+const AUTH_CHANNEL_NAME = 'xnobrain.auth-session.v1';
+type TokenSessionMessage = {
+  type: 'request' | 'session';
+  requestId: string;
+  accessToken?: string;
+  refreshToken?: string;
+  accessExpiresAt?: number | null;
+  refreshExpiresAt?: number | null;
+};
+const pendingSessionRequests = new Map<string, (message?: TokenSessionMessage) => void>();
+const authChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(AUTH_CHANNEL_NAME) : null;
 
 function storedValue(key: string): string | null {
   try {
@@ -64,6 +75,20 @@ export function storedAccessTokenExpiresAt() {
   return accessExpiresAt ?? expiryMilliseconds(storedValue(XNO_ACCESS_EXPIRES_AT_KEY));
 }
 
+function currentTokenSession(): TokenSessionMessage | null {
+  const currentAccessToken = storedAccessToken();
+  const currentRefreshToken = storedRefreshToken();
+  if (!currentAccessToken || !currentRefreshToken) return null;
+  return {
+    type: 'session',
+    requestId: '',
+    accessToken: currentAccessToken,
+    refreshToken: currentRefreshToken,
+    accessExpiresAt: storedAccessTokenExpiresAt(),
+    refreshExpiresAt: expiryMilliseconds(storedValue(XNO_REFRESH_EXPIRES_AT_KEY)),
+  };
+}
+
 export function setAccessToken(value: string | null, expiresAt?: unknown) {
   accessToken = value?.trim() || null;
   accessExpiresAt = expiryMilliseconds(expiresAt);
@@ -94,4 +119,44 @@ export function clearTokenSession() {
 export function clearLegacyXnoTokens() {
   localStorage.removeItem(XNO_ACCESS_TOKEN_KEY);
   localStorage.removeItem(XNO_REFRESH_TOKEN_KEY);
+}
+
+if (authChannel) {
+  authChannel.addEventListener('message', (event: MessageEvent<TokenSessionMessage>) => {
+    const message = event.data;
+    if (!message || typeof message.requestId !== 'string') return;
+    if (message.type === 'request') {
+      const session = currentTokenSession();
+      if (session) authChannel.postMessage({ ...session, requestId: message.requestId });
+      return;
+    }
+    if (message.type === 'session') pendingSessionRequests.get(message.requestId)?.(message);
+  });
+}
+
+/** Securely bootstrap a same-origin new tab without putting tokens in URLs. */
+export function requestCrossTabTokenSession(timeoutMs = 600): Promise<boolean> {
+  if (storedAccessToken() && storedRefreshToken()) return Promise.resolve(true);
+  if (!authChannel) return Promise.resolve(false);
+  const requestId = typeof crypto?.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return new Promise((resolve) => {
+    const finish = (message?: TokenSessionMessage) => {
+      pendingSessionRequests.delete(requestId);
+      window.clearTimeout(timer);
+      if (message?.accessToken && message.refreshToken) {
+        setTokenSession({
+          accessToken: message.accessToken,
+          refreshToken: message.refreshToken,
+          accessExpiresAt: message.accessExpiresAt,
+          refreshExpiresAt: message.refreshExpiresAt,
+        });
+        resolve(true);
+      } else resolve(false);
+    };
+    const timer = window.setTimeout(() => finish(), timeoutMs);
+    pendingSessionRequests.set(requestId, finish);
+    authChannel.postMessage({ type: 'request', requestId } satisfies TokenSessionMessage);
+  });
 }

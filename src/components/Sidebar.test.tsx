@@ -82,6 +82,35 @@ describe('Sidebar assistant actions', () => {
     expect(within(container).getByRole('status', { name: 'Idle agent: Idle' })).toHaveClass('idle');
   });
 
+  it('ignores initial browser autofill in the agent filter', () => {
+    const onAgentSearch = vi.fn();
+    render(
+      <Sidebar
+        agents={[agent]}
+        activeAgent={agent}
+        centerView="chat"
+        agentSearch=""
+        onAgentSearch={onAgentSearch}
+        onNavigate={vi.fn()}
+        onSelectAgent={vi.fn()}
+        onRenameAgent={vi.fn()}
+        onExportAgent={vi.fn()}
+        onRequestDeleteAgent={vi.fn()}
+        onNewAgent={vi.fn()}
+      />,
+    );
+
+    const search = screen.getByRole('searchbox', { name: '' });
+    expect(search).toHaveAttribute('name', 'agent-filter-query');
+    expect(search).toHaveAttribute('autocomplete', 'off');
+    fireEvent.change(search, { target: { value: 'account@example.com' } });
+    expect(onAgentSearch).not.toHaveBeenCalled();
+
+    fireEvent.focus(search);
+    fireEvent.change(search, { target: { value: 'research' } });
+    expect(onAgentSearch).toHaveBeenCalledWith('research');
+  });
+
   it('shows simplified actions and requests delete from the three-dot menu', () => {
     const requestDelete = vi.fn();
     render(

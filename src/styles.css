@@ -7016,6 +7016,18 @@ body.col-resizing {
   font-size: 13px;
 }
 
+.modal-field-error,
+.conn-field-error {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.conn-key-field {
+  display: grid;
+  gap: 4px;
+}
+
 /* Skills center view */
 .skills-view {
   min-height: 0;
@@ -10097,10 +10109,10 @@ body.col-resizing {
 }
 .kb-error { color: var(--danger); }
 
-/* ---- Board (four current workflow columns; archive is a separate view) ---- */
+/* ---- Board (current workflow columns; archive is a separate view) ---- */
 .kb-board {
   flex: 1; min-height: 0; overflow: auto;
-  display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 12px;
+  display: grid; grid-template-columns: repeat(5, minmax(210px, 1fr)); gap: 12px;
   padding: 18px 24px 28px;
 }
 .kb-column {
@@ -10111,6 +10123,7 @@ body.col-resizing {
 .kb-column-head strong { font-size: 13px; font-weight: 700; }
 .kb-swatch { width: 9px; height: 9px; border-radius: 3px; background: var(--muted); }
 .kb-column.col-todo .kb-swatch { background: var(--muted); }
+.kb-column.col-scheduled .kb-swatch { background: var(--yellow); }
 .kb-column.col-running .kb-swatch { background: var(--blue); }
 .kb-column.col-done .kb-swatch { background: var(--green); }
 .kb-column.col-archived .kb-swatch { background: var(--muted-2); }

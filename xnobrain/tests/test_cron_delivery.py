@@ -205,10 +205,11 @@ class CronDeliveryAPITests(unittest.IsolatedAsyncioTestCase):
             email = await client.post(f"/xnobrain/api/runtime/v1/cron/jobs/{job_id}/delivery-targets", json={
                 "target_type": "email", "destination": "owner@example.test",
             })
-            self.assertEqual(email.status_code, 201, email.text)
+            self.assertEqual(email.status_code, 422, email.text)
+            self.assertEqual(email.json()["error"]["code"], "delivery_target_unavailable")
             detail = await client.get(f"/xnobrain/api/runtime/v1/cron/jobs/{job_id}")
             self.assertEqual(detail.status_code, 200, detail.text)
-            self.assertIn("email:owner@example.test", detail.json()["data"]["job"]["deliver"])
+            self.assertNotIn("email:owner@example.test", detail.json()["data"]["job"]["deliver"])
 
             kanban = await client.post(f"/xnobrain/api/runtime/v1/cron/jobs/{job_id}/delivery-targets", json={
                 "target_type": "kanban", "destination": "default",
@@ -225,6 +226,75 @@ class CronDeliveryAPITests(unittest.IsolatedAsyncioTestCase):
                 "target_type": "webhook", "destination": "https://example.test",
             })
             self.assertEqual(invalid.status_code, 422, invalid.text)
+
+    async def test_output_artifacts_reconcile_without_executions_database(self):
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            created = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Artifact Cron"})
+            agent_id = created.json()["data"]["id"]
+            cron = await client.post("/xnobrain/api/runtime/v1/cron/jobs", json={
+                "agent_id": agent_id,
+                "name": "Artifact delivery",
+                "prompt": "Write a report",
+                "interval_minutes": 60,
+            })
+            job_id = cron.json()["data"]["id"]
+            target = await client.post(
+                f"/xnobrain/api/runtime/v1/cron/jobs/{job_id}/delivery-targets?agent_id={agent_id}",
+                json={"target_type": "file", "destination": "reports/artifact.md"},
+            )
+            self.assertEqual(target.status_code, 201, target.text)
+            target_id = target.json()["data"]["id"]
+
+            profile = self.profiles / agent_id
+            output_dir = profile / "cron" / "output" / job_id
+            output_dir.mkdir(parents=True)
+            (output_dir / "2026-08-14_12-00-00.md").write_text(
+                "# Cron\n\n## Response\nArtifact-backed result", encoding="utf-8"
+            )
+            self.assertFalse((profile / "cron" / "executions.db").exists())
+
+            detail = await client.get(
+                f"/xnobrain/api/runtime/v1/cron/jobs/{job_id}?agent_id={agent_id}"
+            )
+            self.assertEqual(detail.status_code, 200, detail.text)
+            self.assertEqual(
+                (profile / "workspace" / "reports" / "artifact.md").read_text(encoding="utf-8"),
+                "Artifact-backed result",
+            )
+            run = detail.json()["data"]["runs"][0]
+            self.assertEqual(run["state"], "success")
+            self.assertEqual(run["deliveries"], [{
+                "target_id": target_id,
+                "target_type": "file",
+                "status": "delivered",
+                "at": run["deliveries"][0]["at"],
+                "reason": None,
+            }])
+
+    async def test_delete_snapshots_output_before_native_cleanup(self):
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            created = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Archived Cron"})
+            agent_id = created.json()["data"]["id"]
+            cron = await client.post("/xnobrain/api/runtime/v1/cron/jobs", json={
+                "agent_id": agent_id,
+                "name": "Archive before delete",
+                "prompt": "Write a report",
+                "interval_minutes": 60,
+            })
+            job_id = cron.json()["data"]["id"]
+            profile = self.profiles / agent_id
+            output_dir = profile / "cron" / "output" / job_id
+            output_dir.mkdir(parents=True)
+            (output_dir / "run.md").write_text("retained output", encoding="utf-8")
+
+            deleted = await client.delete(
+                f"/xnobrain/api/runtime/v1/cron/jobs/{job_id}?agent_id={agent_id}"
+            )
+            self.assertEqual(deleted.status_code, 200, deleted.text)
+            self.assertFalse(output_dir.exists())
+            snapshots = list((profile / "snapshots" / "cron" / "output" / job_id).glob("*/run.md"))
+            self.assertEqual(len(snapshots), 1)
+            self.assertEqual(snapshots[0].read_text(encoding="utf-8"), "retained output")
 
     async def test_run_now_dispatches_the_selected_agent_profile(self):
         with patch.object(self.composition.service.cron, "fire_due", return_value=True) as fire_due:

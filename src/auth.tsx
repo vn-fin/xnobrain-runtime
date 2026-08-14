@@ -12,6 +12,7 @@ import {
   clearTokenSession,
   clearLegacyXnoTokens,
   FIREBASE_REFRESH_TOKEN_KEY,
+  requestCrossTabTokenSession,
   setAccessToken as setStoredAccessToken,
   setTokenSession,
   storedAccessToken,
@@ -304,6 +305,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       if (storedRefreshToken()) return refreshXnoSession();
+      if (await requestCrossTabTokenSession()) {
+        const sharedToken = storedAccessToken();
+        if (sharedToken) return loadXnoUser(sharedToken);
+      }
       if (!localStorage.getItem(FIREBASE_REFRESH_TOKEN_KEY)) return null;
       const firebaseToken = await refreshFirebaseToken();
       return exchangeFirebaseToken(firebaseToken);

@@ -320,9 +320,12 @@ class CronService:
             with cron_jobs.use_cron_store(home):
                 provider = resolve_cron_scheduler()
                 fired = bool(provider.fire_due(job_id, adapters=None, loop=None))
-                if fired:
+            if fired:
+                try:
                     self.reconcile_deliveries([(profile, self._native(profile, "list_jobs", True))])
-                return fired
+                except Exception:
+                    LOGGER.warning("Could not reconcile cron deliveries for job %s", job_id)
+            return fired
         finally:
             reset_hermes_home_override(token)
 
@@ -382,6 +385,10 @@ class CronService:
                     self._native(profile, "update_job", str(job["id"]), {
                         "xnobrain_delivery_records": records[-500:],
                     })
+                    # Keep the request's loaded job in sync with the durable
+                    # update so detail/run responses publish delivery state
+                    # immediately, without requiring a second refresh.
+                    job["xnobrain_delivery_records"] = records[-500:]
 
     def _deliver_execution(
         self,

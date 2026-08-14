@@ -46,6 +46,47 @@ describe('CronView', () => {
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent-1', intervalMinutes: 60 })));
   });
 
+  it('explains every invalid cron field and focuses the first error', async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    render(<CronView agents={[agent]} crons={[]} status="ready" error="" pendingId="" onCreate={onCreate} onToggle={vi.fn()} onRun={vi.fn()} onDelete={vi.fn()} />);
+    fireEvent.click(screen.getAllByRole('button', { name: /new cron/i })[0]);
+    const name = screen.getByPlaceholderText(/check server status/i);
+    const prompt = screen.getByPlaceholderText(/what should run/i);
+    fireEvent.change(name, { target: { value: '   ' } });
+    fireEvent.change(prompt, { target: { value: '\t' } });
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: /create cron/i }));
+
+    expect(await screen.findByText('Name is required.')).toBeInTheDocument();
+    expect(screen.getByText('Prompt is required.')).toBeInTheDocument();
+    expect(screen.getByText('Interval must be at least 1 minute.')).toBeInTheDocument();
+    expect(name).toHaveFocus();
+    expect(name).toHaveAttribute('aria-invalid', 'true');
+    expect(prompt).toHaveAttribute('aria-invalid', 'true');
+    expect(onCreate).not.toHaveBeenCalled();
+
+    fireEvent.change(name, { target: { value: 'Weekly report' } });
+    fireEvent.change(prompt, { target: { value: 'Summarize updates' } });
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '15' } });
+    fireEvent.click(screen.getByRole('button', { name: /create cron/i }));
+    await waitFor(() => expect(onCreate).toHaveBeenCalledOnce());
+  });
+
+  it('does not delete an automation until its named confirmation is accepted', async () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    render(<CronView agents={[agent]} crons={[job]} status="ready" error="" pendingId="" onCreate={vi.fn()} onToggle={vi.fn()} onRun={vi.fn()} onDelete={onDelete} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: 'Delete Morning summary?' })).toHaveTextContent('run history');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onDelete).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete automation' }));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith('job-1', 'agent-1'));
+  });
+
   it('opens a job detail view and shows the latest result', () => {
     const onLoadDetail = vi.fn().mockResolvedValue(undefined);
     render(<CronView agents={[agent]} crons={[job]} status="ready" error="" pendingId="" detail={{ job, run: { id: 'run-1', state: 'success', triggeredAt: '2026-07-29T12:00:00Z', completedAt: '2026-07-29T12:01:00Z', output: 'HPG report ready', error: '' } }} onCreate={vi.fn()} onToggle={vi.fn()} onRun={vi.fn()} onDelete={vi.fn()} onLoadDetail={onLoadDetail} onCloseDetail={vi.fn()} />);
@@ -53,6 +94,34 @@ describe('CronView', () => {
     expect(onLoadDetail).toHaveBeenCalledWith('job-1', 'agent-1');
     expect(screen.getByRole('dialog', { name: /scheduled task details/i })).toBeInTheDocument();
     expect(screen.getByText('HPG report ready')).toBeInTheDocument();
+  });
+
+  it('rejects unavailable destinations and confirms delivery-target removal', async () => {
+    const onAddTarget = vi.fn().mockResolvedValue(undefined);
+    const onRemoveTarget = vi.fn().mockResolvedValue(undefined);
+    const detail = {
+      job,
+      run: null,
+      targets: [{ id: 'target-1', targetType: 'file' as const, destination: 'reports/daily.md', available: true }],
+    };
+    render(<CronView
+      agents={[agent]} crons={[job]} status="ready" error="" pendingId="" detail={detail}
+      deliveryOptions={[{ targetType: 'email', id: 'email', name: 'Email', available: false, degradedReason: 'Not configured' }]}
+      onCreate={vi.fn()} onToggle={vi.fn()} onRun={vi.fn()} onDelete={vi.fn()}
+      onLoadDetail={vi.fn()} onAddTarget={onAddTarget} onRemoveTarget={onRemoveTarget}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: /morning summary/i }));
+    fireEvent.click(screen.getByRole('button', { name: /manage delivery targets/i }));
+    const composerSelects = screen.getAllByRole('combobox');
+    fireEvent.change(composerSelects[composerSelects.length - 1], { target: { value: 'email' } });
+    expect(screen.getByRole('button', { name: /add destination/i })).toBeDisabled();
+    expect(onAddTarget).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove file target' }));
+    expect(onRemoveTarget).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: /remove delivery from morning summary/i })).toHaveTextContent('reports/daily.md');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove destination' }));
+    await waitFor(() => expect(onRemoveTarget).toHaveBeenCalledWith('job-1', 'target-1', 'agent-1'));
   });
 
   it('opens and closes a routed job through URL navigation state', async () => {

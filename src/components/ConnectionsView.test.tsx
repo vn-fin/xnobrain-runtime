@@ -1,11 +1,13 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectionProvider } from '../types';
 import { mapConnectionProvider } from '../api/mappers/providers';
 import '../i18n';
 import { ConnectionsView } from './ConnectionsView';
 
 const noop = () => undefined;
+
+afterEach(cleanup);
 
 function openCodeProvider(
   id: 'opencode-go' | 'opencode',
@@ -116,5 +118,65 @@ describe('ConnectionsView OpenAI-compatible presets', () => {
       expect(card).not.toBeNull();
       expect(card?.querySelector('img')).toHaveAttribute('src', icon);
     }
+  });
+
+  it('rejects malformed custom base URLs and only accepts deliberately entered keys', () => {
+    const onSaveKey = vi.fn();
+    const custom: ConnectionProvider = {
+      id: 'openai-like',
+      display_name: 'OpenAI-compatible',
+      description: 'Custom endpoint',
+      provider_type: 'openai-like',
+      connection_mode: 'api-key',
+      brand: 'openai',
+      connected: false,
+      status: 'disconnected',
+      requires_base_url: true,
+      base_url: '',
+    };
+    render(
+      <ConnectionsView
+        providers={[custom]}
+        keyProviderId="openai-like"
+        pendingId={null}
+        onSelectKeyProvider={noop}
+        onConnect={noop}
+        onDisconnect={noop}
+        onTest={noop}
+        onSaveKey={onSaveKey}
+        onClose={noop}
+        connectionsByProvider={{}}
+        usageByConnection={{}}
+        rowPendingId={null}
+        onLoadConnections={noop}
+        onAddAccount={noop}
+        onSetAccountActive={noop}
+        onReorderAccount={noop}
+        onTestAccount={noop}
+        onRemoveAccount={noop}
+        onLoadAccountUsage={noop}
+      />,
+    );
+
+    const key = screen.getByLabelText('Provider API key');
+    const baseUrl = screen.getByLabelText('Provider base URL');
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(key).toHaveAttribute('autocomplete', 'new-password');
+
+    fireEvent.change(key, { target: { value: 'browser-filled-login-password' } });
+    expect(save).toBeDisabled();
+
+    fireEvent.pointerDown(key);
+    fireEvent.change(key, { target: { value: 'qa-key' } });
+    fireEvent.change(baseUrl, { target: { value: 'not-a-valid-url' } });
+    fireEvent.blur(baseUrl);
+    expect(screen.getByRole('alert')).toHaveTextContent('absolute HTTP(S) base URL');
+    expect(baseUrl).toHaveAttribute('aria-invalid', 'true');
+    expect(save).toBeDisabled();
+
+    fireEvent.change(baseUrl, { target: { value: 'http://localhost:11434/v1' } });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    expect(onSaveKey).toHaveBeenCalledWith('openai-like', 'qa-key', 'http://localhost:11434/v1');
   });
 });

@@ -59,11 +59,7 @@ def _detail(task: Any, *, has_schedule: bool = False) -> dict[str, Any]:
         "triage": ("triage", "Needs clarification"),
         "todo": ("todo", "Todo"),
         "ready": ("ready", "Ready"),
-        "scheduled": (
-            ("scheduled", "Scheduled")
-            if has_schedule
-            else ("todo", "Todo")
-        ),
+        "scheduled": ("scheduled", "Scheduled"),
         "running": ("running", "Running"),
         "review": ("review_required", "Review required"),
         "blocked": (str(getattr(task, "block_kind", None) or "needs_input"), "Needs input"),
@@ -159,6 +155,40 @@ class KanbanService:
             for item in skills
             if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
         })
+
+    def _validate_agent_skills(self, agent_id: Any, requested: Any) -> list[str] | None:
+        if requested is None:
+            return None
+        selected = list(dict.fromkeys(
+            str(item or "").strip() for item in requested if str(item or "").strip()
+        ))
+        if not selected:
+            return []
+        assignee = str(agent_id or "").strip()
+        if not assignee:
+            raise ServiceError(
+                "Choose an assignee before selecting skills",
+                code="invalid_skills",
+            )
+        if self.agents is None:
+            raise ServiceError("Agent skills are unavailable", status=503, code="skills_unavailable")
+        try:
+            inventory = self.agents.list_skills(assignee).get("skills", [])
+        except (AgentAPIError, StoreError) as exc:
+            raise ServiceError(str(exc), status=404, code="agent_not_found") from exc
+        enabled = {
+            str(item.get("skill_id") or "").strip()
+            for item in inventory
+            if item.get("installed", True) and item.get("enabled", True)
+        }
+        unavailable = [skill for skill in selected if skill not in enabled]
+        if unavailable:
+            raise ServiceError(
+                "Selected skills are not enabled for this assignee: " + ", ".join(unavailable),
+                status=409,
+                code="skill_not_enabled",
+            )
+        return selected
 
     @staticmethod
     def _team_metadata(comments: list[Any]) -> tuple[dict[str, Any] | None, bool]:
@@ -707,6 +737,14 @@ class KanbanService:
         team_id = str(body.get("team_id") or "").strip()
         if team_id and body.get("assignee"):
             raise ServiceError("choose either an agent or a team", code="invalid_request")
+        if team_id and status == "scheduled":
+            raise ServiceError(
+                "Scheduled tasks must use one agent",
+                code="invalid_schedule",
+            )
+        selected_skills = (
+            None if team_id else self._validate_agent_skills(body.get("assignee"), body.get("skills"))
+        )
         try:
             workspace_kind, workspace_path = self._workspace_for_assignee(
                 body.get("assignee"),
@@ -740,7 +778,7 @@ class KanbanService:
                 idempotency_key=body.get("idempotency_key"),
                 workspace_kind=workspace_kind,
                 workspace_path=workspace_path,
-                skills=body.get("skills"),
+                skills=selected_skills,
                 model_override=body.get("model_override"),
                 provider_override=body.get("provider_override"),
                 goal_mode=bool(body.get("goal_mode", False)),
@@ -1068,6 +1106,9 @@ class KanbanService:
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             try:
+                selected_skills = self._validate_agent_skills(
+                    getattr(task, "assignee", None), body.get("skills")
+                )
                 ok = kb_adapter.update_task_fields(
                     conn,
                     task_id,
@@ -1078,7 +1119,7 @@ class KanbanService:
                         if body.get("priority") is not None
                         else None
                     ),
-                    skills=body.get("skills"),
+                    skills=selected_skills,
                 )
             except ValueError as exc:
                 raise ServiceError(str(exc), code="invalid_request") from exc

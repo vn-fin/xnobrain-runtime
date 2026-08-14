@@ -316,6 +316,10 @@ class TeamRunLifecycleTests(_TeamRunBase):
         reviewer_call = next(body for agent_id, body in calls if agent_id == ids[2] and "Task: Review the findings" in body["message"])
         self.assertIn("[research] research result", reviewer_call["message"])
         self.assertIn("Shared team scratchpad:", reviewer_call["message"])
+        revision_call = next(body for _agent_id, body in calls if "Revise your draft" in body["message"])
+        self.assertEqual(revision_call["toolsets"], ["todo"])
+        self.assertNotIn("skills", revision_call)
+        self.assertIn("do not repeat file, workspace, network", revision_call["message"])
         scratchpads = list((self.data_dir / "teams" / "workspaces" / team_id).glob("*/SCRATCHPAD.md"))
         self.assertEqual(len(scratchpads), 1)
         self.assertIn("reviewed result", scratchpads[0].read_text(encoding="utf-8"))
@@ -325,6 +329,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
         )
         self.assertEqual(synthesis_call["skills"], ["final-writing"])
         self.assertEqual(synthesis_call["toolsets"], ["file"])
+        self.assertIn("re-read their current contents", synthesis_call["message"])
 
     async def test_completed_run_can_be_deleted(self):
         async with self.client() as client:

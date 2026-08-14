@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../i18n';
 import type { Agent, AgentSkill } from '../types';
-import { SkillsView } from './SkillsView';
+import { SkillsView, skillSourceError } from './SkillsView';
 
 const skill: AgentSkill = {
   skill_id: 'writer',
@@ -34,6 +34,13 @@ const agents: Agent[] = ['one', 'two', 'three', 'four'].map((id) => ({
 describe('SkillsView default profile controls', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
+  });
+
+  it('validates skill URLs and hub identifiers', () => {
+    expect(skillSourceError('')).toContain('required');
+    expect(skillSourceError('not a valid skill identifier ???')).toContain('HTTP(S)');
+    expect(skillSourceError('skills-sh/anthropics/skills/pdf')).toBe('');
+    expect(skillSourceError('https://example.com/SKILL.md')).toBe('');
   });
 
   it('shows a card skeleton while the initial skills snapshot is loading', () => {

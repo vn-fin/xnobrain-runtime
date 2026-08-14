@@ -12,7 +12,7 @@ dev:
 	bash ./scripts/dev.sh
 
 backend:
-	$(PYTHON_BIN) server.py
+	HERMES_SERVE_HEADLESS=1 BROWSER=/bin/false DISPLAY= WAYLAND_DISPLAY= $(PYTHON_BIN) server.py
 
 src:
 	npm run dev:frontend

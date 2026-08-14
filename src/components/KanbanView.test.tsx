@@ -95,7 +95,7 @@ describe('KanbanView', () => {
           id: 't-created',
           ...requested,
           status: requested.status === 'backlog' ? 'triage' : requested.status === 'scheduled' ? 'scheduled' : 'todo',
-          kanban_status: requested.status === 'scheduled' ? 'todo' : requested.status,
+          kanban_status: requested.status,
           schedule: requestedSchedule ? {
             recurrence: requestedSchedule.recurrence,
             next_run_at: requestedSchedule.scheduled_at,
@@ -221,6 +221,39 @@ describe('KanbanView', () => {
     expect(screen.getByText('board/launch-planning')).toBeVisible();
   });
 
+  it('shows the canonical board ID before creating a manually edited board', async () => {
+    const user = userEvent.setup();
+    render(<TestBoard />);
+
+    await user.click(await screen.findByLabelText('Select task board'));
+    await user.click(screen.getByRole('button', { name: /Create board/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Create task board' });
+    await user.type(within(dialog).getByLabelText('Board name'), 'QA board');
+    const boardId = within(dialog).getByLabelText('Board ID');
+    await user.clear(boardId);
+    await user.type(boardId, 'BAD ID');
+    expect(boardId).toHaveValue('bad-id');
+  });
+
+  it('explains blank required task fields and focuses the first invalid field', async () => {
+    const user = userEvent.setup();
+    render(<TestBoard />);
+
+    await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
+    await user.click(screen.getByRole('button', { name: /New task/ }));
+    const modal = screen.getByRole('dialog', { name: 'New task' });
+    const create = within(modal).getByRole('button', { name: 'Create task' });
+    expect(create).toBeEnabled();
+    await user.click(create);
+    expect(within(modal).getAllByRole('alert').map((item) => item.textContent)).toEqual([
+      'Enter a title.',
+      'Enter a description.',
+    ]);
+    expect(within(modal).getByLabelText('Title')).toHaveFocus();
+    expect(within(modal).getByLabelText('Title')).toHaveAttribute('aria-invalid', 'true');
+    expect(within(modal).getByLabelText('Description')).toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('filters tasks and keeps task details available in the board', async () => {
     const user = userEvent.setup();
     render(<TestBoard />);
@@ -277,13 +310,13 @@ describe('KanbanView', () => {
     expect(screen.getByText(/grouped by Kanban status/)).toBeVisible();
   });
 
-  it('shows four current columns and archives through the matching confirmation dialog', async () => {
+  it('shows five current columns and archives through the matching confirmation dialog', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.mocked(fetch);
     render(<TestBoard />);
 
     const card = await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
-    expect(screen.getAllByRole('region', { name: / column$/ })).toHaveLength(4);
+    expect(screen.getAllByRole('region', { name: / column$/ })).toHaveLength(5);
     expect(screen.queryByRole('region', { name: 'Archived column' })).toBeNull();
 
     await user.click(card);
@@ -420,11 +453,11 @@ describe('KanbanView', () => {
     expect(writing).toBeChecked();
     expect(webResearch).toBeChecked();
     expect(disabledSkill).not.toBeChecked();
+    expect(disabledSkill).toBeDisabled();
     expect(modal.querySelector('.kb-skill-picker-head > span')).toHaveTextContent('2 of 3 enabled');
     expect(within(modal).getByText('disabled', { selector: '.kb-skill-name em' })).toBeVisible();
 
     await user.click(webResearch);
-    await user.click(disabledSkill);
     await user.type(within(modal).getByLabelText('Title'), 'Create a short brief');
     await user.type(within(modal).getByLabelText(/Description/), 'Write a concise brief for the user.');
     await user.click(within(modal).getByRole('button', { name: /Create task/ }));
@@ -434,7 +467,7 @@ describe('KanbanView', () => {
         String(input).endsWith('/kanban/boards/default/tasks') && init?.method === 'POST'
       );
       expect(request).toBeDefined();
-      expect(JSON.parse(String(request?.[1]?.body)).skills).toEqual(['writing', 'disabled-skill']);
+      expect(JSON.parse(String(request?.[1]?.body)).skills).toEqual(['writing']);
     });
   });
 

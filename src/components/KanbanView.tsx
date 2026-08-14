@@ -36,6 +36,7 @@ import type {
 } from '../types';
 import { formatKanbanEvent } from './kanbanEventFormat';
 import { SessionConversationModal } from './SessionConversationModal';
+import { ConfirmDialog } from './modals';
 
 type KanbanState = ReturnType<typeof useKanban>;
 
@@ -381,7 +382,9 @@ function SkillPicker({
   loading?: boolean;
 }) {
   const [search, setSearch] = useState('');
-  const enabledCount = skills.filter((skill) => skill.enabled).length;
+  const enabledSkills = skills.filter((skill) => skill.enabled);
+  const enabledCount = enabledSkills.length;
+  const allEnabledSelected = enabledSkills.every((skill) => selected.includes(skill.skill_id));
   const filteredSkills = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     if (!query) return skills;
@@ -403,10 +406,10 @@ function SkillPicker({
             <button
               type="button"
               onClick={() => onChange(
-                selected.length === skills.length ? [] : skills.map((skill) => skill.skill_id),
+                allEnabledSelected ? [] : enabledSkills.map((skill) => skill.skill_id),
               )}
             >
-              {selected.length === skills.length ? 'Clear all' : 'Select all'}
+              {allEnabledSelected ? 'Clear all' : 'Select all enabled'}
             </button>
           </div>
           <label className="kb-skill-search">
@@ -423,10 +426,11 @@ function SkillPicker({
             {filteredSkills.map((skill) => {
               const checked = selected.includes(skill.skill_id);
               return (
-                <label className={checked ? 'selected' : ''} key={skill.skill_id}>
+                <label className={`${checked ? 'selected ' : ''}${skill.enabled ? '' : 'unavailable'}`.trim()} key={skill.skill_id}>
                   <input
                     type="checkbox"
                     checked={checked}
+                    disabled={!skill.enabled}
                     onChange={() => onChange(
                       checked
                         ? selected.filter((item) => item !== skill.skill_id)
@@ -598,6 +602,7 @@ function TaskDrawer({
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [confirmTeamCancel, setConfirmTeamCancel] = useState(false);
   const movableStatuses = task.allowedStatuses.filter((status) => status !== 'archived');
   const scheduleCompleted = task.schedule?.recurrence === 'once'
     && task.schedule.occurrenceCount > 0
@@ -647,6 +652,17 @@ function TaskDrawer({
     setCancelling(true);
     try {
       await state.cancelTask(task.id);
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const cancelTeam = async () => {
+    if (cancelling) return;
+    setCancelling(true);
+    try {
+      const updated = await state.cancelTeamTask(task.id);
+      if (updated) setConfirmTeamCancel(false);
     } finally {
       setCancelling(false);
     }
@@ -843,7 +859,7 @@ function TaskDrawer({
                 })}
               </div>
               {!task.team.cancelled && !['done', 'cancelled'].includes(task.team.status) && (
-                <button className="conn-btn danger-solid kb-team-cancel" onClick={() => void state.cancelTeamTask(task.id)}>
+                <button className="conn-btn danger-solid kb-team-cancel" onClick={() => setConfirmTeamCancel(true)}>
                   <Octagon size={14} /> Cancel team run
                 </button>
               )}
@@ -1106,6 +1122,18 @@ function TaskDrawer({
           onClose={onCloseConversation}
         />
       )}
+      {confirmTeamCancel && task.team && (
+        <div onClick={(event) => event.stopPropagation()}>
+          <ConfirmDialog
+            title={task.team.status === 'todo' ? 'Cancel this scheduled team workflow?' : 'Cancel this team run?'}
+            message={`“${task.title}” and ${task.team.nodes.length} workflow stage${task.team.nodes.length === 1 ? '' : 's'} will be cancelled and archived.`}
+            confirmLabel={cancelling ? 'Cancelling…' : 'Cancel team run'}
+            danger
+            onConfirm={() => void cancelTeam()}
+            onCancel={() => { if (!cancelling) setConfirmTeamCancel(false); }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1116,6 +1144,15 @@ function boardSlug(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
+}
+
+function boardSlugInput(value: string): string {
+  return value
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+/, '')
     .slice(0, 64);
 }
 
@@ -1191,7 +1228,7 @@ function NewBoardModal({
                 maxLength={64}
                 onChange={(event) => {
                   setSlugTouched(true);
-                  setSlug(boardSlug(event.target.value));
+                  setSlug(boardSlugInput(event.target.value));
                 }}
               />
             </div>
@@ -1274,6 +1311,8 @@ function NewTaskModal({
   const [invalid, setInvalid] = useState(false);
   const [createError, setCreateError] = useState('');
   const [pending, setPending] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
   const formatCreateError = (cause: unknown) =>
     cause instanceof Error && cause.message ? cause.message : 'The task could not be created.';
@@ -1298,6 +1337,12 @@ function NewTaskModal({
     });
     return () => { cancelled = true; };
   }, [assignee, onLoadAgentSkills]);
+
+  useEffect(() => {
+    if (!invalid) return;
+    if (!title.trim()) titleRef.current?.focus();
+    else if (!description.trim()) descriptionRef.current?.focus();
+  }, [description, invalid, title]);
 
   if (!board) return null;
 
@@ -1344,13 +1389,18 @@ function NewTaskModal({
         </div>
         <div className="kb-modal-body">
           <label className={invalid && !title.trim() ? 'kb-field invalid' : 'kb-field'}>
-            Title
+            Title <span className="kb-required" aria-hidden="true">*</span>
             <input
+              ref={titleRef}
               value={title}
+              aria-label="Title"
               autoFocus
               placeholder="Describe the task…"
+              aria-invalid={invalid && !title.trim()}
+              aria-describedby={invalid && !title.trim() ? 'new-task-title-error' : undefined}
               onChange={(event) => setTitle(event.target.value)}
             />
+            {invalid && !title.trim() && <small id="new-task-title-error" role="alert">Enter a title.</small>}
           </label>
           <div className="kb-field-row">
             <label className="kb-field">
@@ -1379,7 +1429,14 @@ function NewTaskModal({
               <button type="button" className={assignmentType === 'agent' ? 'active' : ''} onClick={() => setAssignmentType('agent')}>
                 One agent
               </button>
-              <button type="button" className={assignmentType === 'team' ? 'active' : ''} onClick={() => setAssignmentType('team')}>
+              <button
+                type="button"
+                className={assignmentType === 'team' ? 'active' : ''}
+                onClick={() => {
+                  setAssignmentType('team');
+                  if (status === 'scheduled') setStatus('todo');
+                }}
+              >
                 Agent team
               </button>
             </div>
@@ -1423,12 +1480,17 @@ function NewTaskModal({
             );
           })()}
           <label className={invalid && !description.trim() ? 'kb-field invalid' : 'kb-field'}>
-            Description <span className="kb-required">Required</span>
+            Description <span className="kb-required" aria-hidden="true">*</span>
             <textarea
+              ref={descriptionRef}
               value={description}
+              aria-label="Description"
               placeholder="Define the expected outcome, source material, and constraints the agent should follow…"
+              aria-invalid={invalid && !description.trim()}
+              aria-describedby={invalid && !description.trim() ? 'new-task-description-error' : undefined}
               onChange={(event) => setDescription(event.target.value)}
             />
+            {invalid && !description.trim() && <small id="new-task-description-error" role="alert">Enter a description.</small>}
             <small className="kb-field-help">The assigned agent uses this as its working brief.</small>
           </label>
           {assignmentType === 'agent' && status === 'scheduled' && (
@@ -1492,7 +1554,7 @@ function NewTaskModal({
           <button className="conn-btn ghost" disabled={pending} onClick={onClose}>Cancel</button>
           <button
             className="primary-button"
-            disabled={pending || !title.trim() || !description.trim() || (assignmentType === 'team' && !teamId) || (status === 'scheduled' && !scheduledAt)}
+            disabled={pending}
             onClick={() => void submit()}
           >
             {pending ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}

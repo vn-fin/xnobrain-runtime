@@ -444,13 +444,15 @@ class TeamRunService:
                             revision_prompt = (
                                 f"Role: {step['role']}\n"
                                 "Revise your draft using the upstream agents' feedback. "
-                                "Return only the improved final summary.\n\n"
+                                "This is a review-only pass: do not repeat file, workspace, "
+                                "network, or other external side effects. Return only the "
+                                "improved final summary.\n\n"
                                 f"Task: {step['task']}\n\nDraft:\n{summary}\n\n"
                                 "Team feedback:\n" + "\n\n".join(feedback)
                             )
                             result = await self.agents.chat(
                                 str(step["agent_id"]),
-                                request_for(step, revision_prompt),
+                                {"message": revision_prompt, "toolsets": ["todo"]},
                             )
                             summary = str(result.get("response") or summary)
                     await append_scratchpad(step, summary)
@@ -490,9 +492,15 @@ class TeamRunService:
                 pending.pop(result["id"], None)
 
         results = [completed[str(step["id"])] for step in workflow]
-        synthesis = record["synthesis_instruction"] + "\n\n" + "\n\n".join(
+        synthesis = (
+            record["synthesis_instruction"]
+            + "\n\nBefore making exact claims about shared artifacts, re-read their current "
+              "contents with the configured read tools; do not infer final state only from stage summaries."
+            + "\n\n"
+            + "\n\n".join(
             f"[{item['id']}] {item['role']}: {item.get('summary') or item.get('error', 'worker_failed')}"
             for item in results
+            )
         )
         try:
             synthesis_request: dict[str, Any] = {"message": synthesis}

@@ -8,6 +8,17 @@ import type { SkillSyncPreview, SkillSyncResult } from '../api/skills';
 const INITIAL_VISIBLE = 24;
 const VIEW_MORE_STEP = 24;
 
+export function skillSourceError(source: string): string {
+  const value = source.trim();
+  if (!value) return 'Skill source is required.';
+  try {
+    const url = new URL(value);
+    if (['http:', 'https:'].includes(url.protocol) && url.hostname && !/\s/.test(value)) return '';
+  } catch { /* try a hub/repository identifier below */ }
+  if (/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+$/.test(value)) return '';
+  return 'Enter a direct HTTP(S) SKILL.md URL or an identifier such as owner/repository/skill.';
+}
+
 type Stat = { label: string; value: string };
 
 function StatsStrip({ stats }: { stats: Stat[] }) {
@@ -94,6 +105,7 @@ export function SkillsView({
   const { t } = useTranslation();
   const [installOpen, setInstallOpen] = useState(false);
   const [installName, setInstallName] = useState('');
+  const [installValidation, setInstallValidation] = useState('');
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [applyAgentIds, setApplyAgentIds] = useState<string[]>([]);
   const [visible, setVisible] = useState(INITIAL_VISIBLE);
@@ -156,7 +168,10 @@ export function SkillsView({
   const toggleSkill = (id: string) => setSelectedSkillIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   const toggleAgent = (id: string) => setApplyAgentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   const confirmInstall = async () => {
-    if (!installName.trim() || installPending) return;
+    if (installPending) return;
+    const issue = skillSourceError(installName);
+    if (issue) { setInstallValidation(issue); return; }
+    setInstallValidation('');
     if (await onInstall(installName.trim())) {
       setInstallName('');
       setInstallOpen(false);
@@ -256,11 +271,13 @@ export function SkillsView({
 
       {installOpen && (
         <div className="skv-install-panel">
+          <label htmlFor="skill-install-source">SKILL.md URL or hub identifier *</label>
           <div className="skv-install-row">
-            <input value={installName} onChange={(event) => setInstallName(event.target.value)} placeholder={t('skillsView.installPlaceholder')} onKeyDown={(event) => event.key === 'Enter' && void confirmInstall()} autoFocus />
-            <button className="skv-install-confirm" disabled={!installName.trim() || installPending} onClick={() => void confirmInstall()}><Check size={15} />{installPending ? t('common.loading', { defaultValue: 'Installing…' }) : t('common.install')}</button>
+            <input id="skill-install-source" value={installName} aria-invalid={!!installValidation} aria-describedby="skill-install-help skill-install-error" onChange={(event) => { setInstallName(event.target.value); setInstallValidation(''); }} placeholder={t('skillsView.installPlaceholder')} onKeyDown={(event) => event.key === 'Enter' && void confirmInstall()} autoFocus />
+            <button className="skv-install-confirm" disabled={installPending} onClick={() => void confirmInstall()}><Check size={15} />{installPending ? t('common.loading', { defaultValue: 'Installing…' }) : t('common.install')}</button>
           </div>
-          <p className="skv-install-hint">{t('skillsView.installHint')}</p>
+          <p id="skill-install-help" className="skv-install-hint">{t('skillsView.installHint')}</p>
+          {installValidation && <p id="skill-install-error" className="skv-install-error" role="alert">{installValidation}</p>}
           {installError && <p className="skv-install-error" role="alert">{installError}</p>}
         </div>
       )}

@@ -1,5 +1,41 @@
 """Conversation SSE lifecycle and approval methods for the Hermes adapter."""
 
+
+def _commit_resolved_write_result(agent, tool_name, pending_id, applied) -> bool:
+    """Replace a staged tool row before Hermes sends it back to the model."""
+    if agent is None or not isinstance(applied, Mapping):
+        return False
+    committed = dict(applied)
+    committed.pop("pending_id", None)
+    committed["staged"] = False
+    committed["disposition"] = str(committed.get("disposition") or "applied")
+    messages = getattr(agent, "_db_flush_scan_prefix", None)
+    if not isinstance(messages, list):
+        messages = getattr(agent, "_session_messages", None)
+    if not isinstance(messages, list):
+        return False
+    replacement = json.dumps(committed, ensure_ascii=False, default=str)
+    changed = False
+    for message in reversed(messages):
+        if not isinstance(message, dict) or message.get("role") != "tool":
+            continue
+        if str(message.get("name") or "") != str(tool_name):
+            continue
+        if pending_id not in str(message.get("content") or ""):
+            continue
+        message["content"] = replacement
+        changed = True
+        break
+    if not changed:
+        return False
+    session_db = getattr(agent, "_session_db", None)
+    session_id = str(getattr(agent, "session_id", "") or "")
+    if session_db is not None and session_id:
+        # The staged row was flushed immediately before the progress callback.
+        # Rewrite the live transcript atomically so reload cannot resurrect it.
+        session_db.replace_messages(session_id, messages, active_only=True)
+    return True
+
 from .hermes_support import (
     AgentAPIError,
     Any,
@@ -404,6 +440,20 @@ class ConversationStreamMixin:
                     success = False
                 if success:
                     write_approval.discard_pending(subsystem, pending_id)
+                    _commit_resolved_write_result(
+                        agent_ref[0],
+                        tool_name,
+                        pending_id,
+                        applied,
+                    )
+                    if isinstance(raw_result, dict):
+                        raw_result.clear()
+                        raw_result.update(dict(applied))
+                        raw_result.pop("pending_id", None)
+                        raw_result["staged"] = False
+                        raw_result["disposition"] = str(
+                            raw_result.get("disposition") or "applied"
+                        )
                     status = "applied"
                 else:
                     status = "failed"

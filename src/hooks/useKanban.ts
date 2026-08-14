@@ -45,6 +45,7 @@ export function useKanban(active = true, requestedBoardId = '') {
   const taskLoadGeneration = useRef({ current: 0, archived: 0 });
   const taskLoadInFlight = useRef({ current: '', archived: '' });
   const statsLoadInFlight = useRef('');
+  const loadedTaskDetails = useRef(new Map<string, KanbanBoard['tasks'][number]>());
 
   const notify = useCallback((kind: KanbanNotice['kind'], message: string) => {
     noticeId.current += 1;
@@ -129,7 +130,10 @@ export function useKanban(active = true, requestedBoardId = '') {
         const page = await kanbanApi.getTasks(boardId, { offset, limit: batchSize, archived });
         if (taskLoadGeneration.current[scope] !== generation) return;
         total = page.total;
-        collected.push(...page.tasks);
+        collected.push(...page.tasks.map((task) => {
+          const detail = loadedTaskDetails.current.get(`${boardId}:${task.id}`);
+          return detail ? { ...task, ...detail } : task;
+        }));
         offset = collected.length;
         setBoards((current) => current.map((item) => item.id === boardId
           ? {
@@ -201,6 +205,7 @@ export function useKanban(active = true, requestedBoardId = '') {
     if (showLoading) setDetailLoading(true);
     try {
       const updated = await kanbanApi.getTask(board.id, taskId);
+      loadedTaskDetails.current.set(`${board.id}:${taskId}`, updated);
       replaceTask(board.id, taskId, updated);
       return updated;
     } catch (cause) {

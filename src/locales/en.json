@@ -37,6 +37,7 @@
     "signOut": "Sign out",
     "signingIn": "Signing in…",
     "error": "Could not sign in. Check your credentials and try again.",
+    "invalidCredentials": "Email or password is incorrect. Try again.",
     "mockNote": "This local installation does not require an application sign-in."
   },
   "common": {

@@ -400,8 +400,7 @@ export function ConnectionsView({
               <ChevronDown size={15} />
             </div>
             {showBaseUrl && (
-              <label className="conn-key-field">
-                <span className="sr-only">Provider base URL</span>
+              <div className="conn-key-field">
                 <input
                   value={selectedBaseUrl}
                   onChange={(e) => { setBaseUrl(e.target.value); setBaseUrlTouched(true); }}
@@ -415,7 +414,7 @@ export function ConnectionsView({
                   aria-describedby={baseUrlTouched && baseUrlError ? 'provider-base-url-error' : undefined}
                 />
                 {baseUrlTouched && baseUrlError && <span id="provider-base-url-error" className="conn-field-error" role="alert">{baseUrlError}</span>}
-              </label>
+              </div>
             )}
             <input
               ref={keyInputRef}

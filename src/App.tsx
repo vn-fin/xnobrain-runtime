@@ -90,6 +90,11 @@ export default function App() {
   );
   useEffect(() => { localStorage.setItem('rightPanelWidth', String(rightWidth)); }, [rightWidth]);
   useEffect(() => {
+    if (router.centerView === 'chat' && router.rightView !== 'workspace') {
+      setRightPanelOpen(true);
+    }
+  }, [router.centerView, router.rightView]);
+  useEffect(() => {
     localStorage.setItem('leftSidebarCollapsed', String(sidebarCollapsed));
   }, [sidebarCollapsed]);
   const clampRightWidth = (width: number) => Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, Math.min(width, Math.round(window.innerWidth * 0.6))));

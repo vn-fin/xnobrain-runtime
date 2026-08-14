@@ -34,11 +34,11 @@ class _Router:
 
 
 class KanbanProjectionTests(unittest.TestCase):
-    def test_native_states_map_to_the_five_product_columns(self):
+    def test_native_states_map_to_product_columns(self):
         expected = {
             "triage": "backlog",
             "todo": "todo",
-            "scheduled": "todo",
+            "scheduled": "scheduled",
             "ready": "running",
             "running": "running",
             "review": "running",
@@ -236,7 +236,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(tasks.status_code, 200, tasks.text)
             self.assertEqual(tasks.json()["data"]["tasks"][0]["title"], "Morning review")
             self.assertEqual(tasks.json()["data"]["tasks"][0]["status"], "scheduled")
-            self.assertEqual(tasks.json()["data"]["tasks"][0]["kanban_status"], "todo")
+            self.assertEqual(tasks.json()["data"]["tasks"][0]["kanban_status"], "scheduled")
             self.assertIsNotNone(tasks.json()["data"]["tasks"][0]["schedule"])
 
     async def test_deleting_agent_hard_deletes_profile_and_assigned_tasks_on_every_board(self):
@@ -376,6 +376,56 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(assignment_conflict.status_code, 409, assignment_conflict.text)
             self.assertEqual(assignment_conflict.json()["message"], "A task can only be assigned before it starts")
+
+    async def test_unscheduled_task_moves_between_backlog_and_todo_without_becoming_scheduled(self):
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
+                json={
+                    "title": "Manual triage task",
+                    "description": "Keep board placement independent from scheduling.",
+                    "status": "backlog",
+                },
+            )
+            task_id = created.json()["data"]["id"]
+            todo = await client.post(
+                f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}/move",
+                json={"status": "todo"},
+            )
+            self.assertEqual(todo.status_code, 200, todo.text)
+            self.assertEqual(todo.json()["data"]["status"], "todo")
+            self.assertEqual(todo.json()["data"]["kanban_status"], "todo")
+            self.assertIsNone(todo.json()["data"]["schedule"])
+
+            backlog = await client.post(
+                f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}/move",
+                json={"status": "backlog"},
+            )
+            self.assertEqual(backlog.status_code, 200, backlog.text)
+            self.assertEqual(backlog.json()["data"]["status"], "triage")
+            self.assertEqual(backlog.json()["data"]["kanban_status"], "backlog")
+
+    async def test_disabled_assignee_skill_is_rejected_server_side(self):
+        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+            agent = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Policy worker"})
+            agent_id = agent.json()["data"]["id"]
+            with patch.object(
+                self.composition.service.agents,
+                "list_skills",
+                return_value={"skills": [{"skill_id": "disabled-skill", "installed": True, "enabled": False}]},
+            ):
+                rejected = await client.post(
+                    "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
+                    json={
+                        "title": "Impossible skill request",
+                        "description": "The API must enforce the assignee's effective skill policy.",
+                        "status": "backlog",
+                        "assignee": agent_id,
+                        "skills": ["disabled-skill"],
+                    },
+                )
+            self.assertEqual(rejected.status_code, 409, rejected.text)
+            self.assertEqual(rejected.json()["error"]["code"], "skill_not_enabled")
 
     async def test_board_event_feed_uses_safe_public_shapes(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
@@ -626,7 +676,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             task = created.json()["data"]
             task_id = task["id"]
             self.assertEqual(task["status"], "scheduled")
-            self.assertEqual(task["kanban_status"], "todo")
+            self.assertEqual(task["kanban_status"], "scheduled")
             self.assertEqual(task["allowed_kanban_statuses"], ["archived"])
             self.assertEqual(task["schedule"]["recurrence"], "once")
             self.assertTrue(task["schedule"]["enabled"])

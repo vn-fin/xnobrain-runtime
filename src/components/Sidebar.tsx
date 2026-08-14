@@ -414,6 +414,7 @@ export function Sidebar({
           <input
             value={agentSearch}
             onFocus={() => { agentSearchEngaged.current = true; }}
+            onBlur={() => { agentSearchEngaged.current = false; }}
             onChange={(event) => {
               if (agentSearchEngaged.current) onAgentSearch(event.target.value);
             }}

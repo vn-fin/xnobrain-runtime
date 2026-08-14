@@ -107,16 +107,74 @@ class LocalRuntimeManager:
 
     @staticmethod
     def _memory_usage() -> tuple[int, int]:
+        host_used, host_total = LocalRuntimeManager._host_memory_usage()
+        candidates: list[tuple[Path, Path]] = []
         try:
-            used = int(Path("/sys/fs/cgroup/memory.current").read_text(encoding="utf-8").strip())
-            raw_limit = Path("/sys/fs/cgroup/memory.max").read_text(encoding="utf-8").strip()
-            if raw_limit != "max":
-                return used, int(raw_limit)
+            for line in Path("/proc/self/cgroup").read_text(encoding="utf-8").splitlines():
+                hierarchy, controllers, relative = line.split(":", 2)
+                relative_path = relative.lstrip("/")
+                if hierarchy == "0" and not controllers:
+                    root = Path("/sys/fs/cgroup") / relative_path
+                    candidates.append((root / "memory.current", root / "memory.max"))
+                elif "memory" in controllers.split(","):
+                    root = Path("/sys/fs/cgroup/memory") / relative_path
+                    candidates.append((root / "memory.usage_in_bytes", root / "memory.limit_in_bytes"))
         except (OSError, ValueError):
-            used = 0
-        page_size = os.sysconf("SC_PAGE_SIZE")
-        total = page_size * os.sysconf("SC_PHYS_PAGES")
-        return used, total
+            pass
+        candidates.extend([
+            (Path("/sys/fs/cgroup/memory.current"), Path("/sys/fs/cgroup/memory.max")),
+            (
+                Path("/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+                Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+            ),
+        ])
+        seen: set[tuple[Path, Path]] = set()
+        for current_path, limit_path in candidates:
+            if (current_path, limit_path) in seen:
+                continue
+            seen.add((current_path, limit_path))
+            try:
+                used = max(0, int(current_path.read_text(encoding="utf-8").strip()))
+                raw_limit = limit_path.read_text(encoding="utf-8").strip()
+                if raw_limit == "max":
+                    return host_used, host_total
+                limit = int(raw_limit)
+                # Cgroup v1 represents an unlimited hierarchy with a very large
+                # sentinel value rather than the v2 "max" token.
+                if limit <= 0 or limit > host_total * 16:
+                    return host_used, host_total
+                return min(used, limit), limit
+            except (OSError, ValueError):
+                continue
+        return host_used, host_total
+
+    @staticmethod
+    def _host_memory_usage() -> tuple[int, int]:
+        values: dict[str, int] = {}
+        try:
+            for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+                key, raw = line.split(":", 1)
+                amount = raw.strip().split()
+                if amount:
+                    values[key] = int(amount[0]) * 1024
+        except (OSError, ValueError):
+            values = {}
+        total = values.get("MemTotal", 0)
+        if not total:
+            total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        available = values.get("MemAvailable")
+        if available is None:
+            # Older kernels omit MemAvailable. This is the conventional procps
+            # approximation, with reclaimable slab adjusted for shared memory.
+            available = (
+                values.get("MemFree", 0)
+                + values.get("Buffers", 0)
+                + values.get("Cached", 0)
+                + values.get("SReclaimable", 0)
+                - values.get("Shmem", 0)
+            )
+        available = max(0, min(total, available))
+        return max(0, total - available), total
 
     @staticmethod
     def _network_usage() -> tuple[int, int]:

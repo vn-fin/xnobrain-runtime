@@ -20,9 +20,6 @@ import type { Agent, AgentSkill, AgentSkillMap, CronJob, GlobalRuntimeConfig, Ri
 const AGENT_ACTIONS = [
   { id: 'create', label: 'Create' },
   { id: 'settings', label: 'Agent settings' },
-  { id: 'runtime', label: 'Runtime' },
-  { id: 'memory', label: 'Memory' },
-  { id: 'test', label: 'Test' },
   { id: 'delete', label: 'Delete' },
 ] as const;
 type WriteApprovalPatch = Partial<Pick<GlobalRuntimeConfig, 'skillsWriteApproval' | 'memoryWriteApproval'>>;
@@ -425,7 +422,7 @@ export function RightPanel({
             {approvalError && <p className="runtime-approval-error">{approvalError}</p>}
           </div>
           <div className="button-grid">
-            {AGENT_ACTIONS.filter((action) => ['create', 'settings', 'delete'].includes(action.id)).map((action) => (
+            {AGENT_ACTIONS.map((action) => (
               <button
                 key={action.id}
                 onClick={() => {
