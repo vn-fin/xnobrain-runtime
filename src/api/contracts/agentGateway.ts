@@ -14,6 +14,7 @@ export type AgentConfigDTO = {
   skills_write_approval?: boolean;
   system_prompt?: string;
   checkpoints_enabled?: boolean;
+  goal_max_turns?: number;
 };
 
 export type AgentDTO = {

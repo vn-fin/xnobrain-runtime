@@ -505,6 +505,7 @@ class AgentOperationsMixin:
             "skills_write_approval",
             "memory_write_approval",
             "checkpoints_enabled",
+            "goal_max_turns",
             "system_prompt",
             "language",
             "stream_output",
@@ -563,6 +564,14 @@ class AgentOperationsMixin:
                 ("checkpoints", "enabled"),
                 self._coerce_bool(body["checkpoints_enabled"]),
             )
+        if "goal_max_turns" in body:
+            goal_max_turns = int(body["goal_max_turns"])
+            if goal_max_turns not in {10, 15, 20, 25, 30}:
+                raise AgentAPIError(
+                    "goal_max_turns must be one of: 10, 15, 20, 25, 30",
+                    code="invalid_agent_config",
+                )
+            self._set_nested(config, ("goals", "max_turns"), goal_max_turns)
         if "system_prompt" in body:
             prompt = self._text_value(body["system_prompt"], field="system_prompt", max_chars=20_000)
             self._set_nested(config, ("agent", "system_prompt"), prompt)

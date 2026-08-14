@@ -158,6 +158,50 @@ describe('agent feature shortcuts', () => {
 
     expect(onCreateGoal).toHaveBeenCalledWith('Fix every authentication test', 20, { verification: '' });
   });
+
+  it('shows the persistent goal above live work activity with inline controls', async () => {
+    const user = userEvent.setup();
+    const conversation: Conversation = {
+      id: 'session-one', title: 'Goal work', preview: '', model: 'auto', messages: 1, tools: 0,
+    };
+    const agent: Agent = {
+      id: 'agent-one', name: 'agent-one', title: 'Research', description: '', status: 'ready',
+      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [conversation],
+    };
+    const onPauseGoal = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(<ChatArea
+      agent={agent} agents={[agent]} activeConversation={conversation} providers={[]}
+      goal={{
+        objective: 'Say hello in 10 languages', status: 'active', turnsUsed: 3, maxTurns: 20,
+        waiting: false, lastReason: 'Six languages completed', subgoals: ['Include Vietnamese'],
+        contract: { outcome: '', verification: 'Count ten distinct languages', constraints: '', boundaries: '', stopWhen: '' },
+      }}
+      runs={[{ id: 'run-one', status: 'running', startedAt: Date.now() / 1000, steps: [], assistantContent: '' }]}
+      messages={[]} usage={null} chatStatus="ready" chatError="" streaming canStop
+      onPauseGoal={onPauseGoal}
+      onSend={vi.fn()} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
+      onSelectModel={vi.fn()} onSelectAgent={vi.fn()} onTestAgent={vi.fn()}
+      onSelectConversation={vi.fn()} onCreateConversation={vi.fn()} onDeleteConversation={vi.fn()}
+      onRenameConversation={vi.fn()} onOpenFile={vi.fn()}
+    />);
+
+    const goalBar = container.querySelector('.goal-status-bar');
+    const activityBar = container.querySelector('.live-run-activity');
+    expect(goalBar).not.toBeNull();
+    expect(activityBar).not.toBeNull();
+    expect(goalBar?.compareDocumentPosition(activityBar as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(goalBar as HTMLElement).getByText('Pursuing goal')).toBeVisible();
+    expect(within(goalBar as HTMLElement).getByText('Say hello in 10 languages')).toBeVisible();
+    expect(within(goalBar as HTMLElement).getByText('Turn 3/20')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Show goal details' }));
+    expect(within(goalBar as HTMLElement).getByText('Six languages completed')).toBeVisible();
+    expect(within(goalBar as HTMLElement).getByText('Count ten distinct languages')).toBeVisible();
+    expect(within(goalBar as HTMLElement).getByText('Include Vietnamese')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Pause goal' }));
+    expect(onPauseGoal).toHaveBeenCalledOnce();
+  });
 });
 
 describe('user message layout', () => {

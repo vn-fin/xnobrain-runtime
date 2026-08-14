@@ -735,6 +735,7 @@ class AgentsServiceMixin:
                 "skills_write_approval": bool(config.get("skills_write_approval", False)),
                 "memory_write_approval": bool(config.get("memory_write_approval", False)),
                 "checkpoints_enabled": bool(config.get("checkpoints_enabled", False)),
+                "goal_max_turns": int(config.get("goal_max_turns") or 20),
             },
             "created_at": metadata.get("created_at"),
             "updated_at": metadata.get("updated_at"),

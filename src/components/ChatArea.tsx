@@ -5,6 +5,7 @@ import {
   Bot,
   Check,
   ChevronDown,
+  ChevronUp,
   Clock,
   Copy,
   FileText,
@@ -158,14 +159,15 @@ export function ChatArea({
   goal = null,
   goalPending = false,
   goalError = '',
+  goalMaxTurns = 20,
   onCompactContext,
-  onCreateGoal = async () => undefined,
   onUpdateGoal = async () => undefined,
   onPauseGoal = async () => undefined,
   onResumeGoal = async () => undefined,
   onDeleteGoal = async () => undefined,
   onAddSubgoal = async () => undefined,
   onDeleteSubgoal = async () => undefined,
+  onGoalMaxTurnsChange = async () => undefined,
   onSend,
   onStop,
   onResolveRunApproval,
@@ -209,14 +211,15 @@ export function ChatArea({
   goal?: ConversationGoal | null;
   goalPending?: boolean;
   goalError?: string;
+  goalMaxTurns?: number;
   onCompactContext?: (focus?: string) => void | Promise<ConversationCompactResult | void>;
-  onCreateGoal?: (objective: string, maxTurns?: number, contract?: { verification?: string }) => void | Promise<unknown>;
-  onUpdateGoal?: (objective: string, maxTurns?: number, contract?: { verification?: string }) => void | Promise<unknown>;
+  onUpdateGoal?: (objective: string, maxTurns?: number, contract?: ConversationGoal['contract']) => void | Promise<unknown>;
   onPauseGoal?: () => void | Promise<unknown>;
   onResumeGoal?: () => void | Promise<unknown>;
   onDeleteGoal?: () => void | Promise<unknown>;
   onAddSubgoal?: (text: string) => void | Promise<unknown>;
   onDeleteSubgoal?: (index: number) => void | Promise<unknown>;
+  onGoalMaxTurnsChange?: (turns: number) => void | Promise<unknown>;
   onSend: (input: string, feature?: ComposerFeature) => void | Promise<void>;
   onStop: () => void;
   onResolveRunApproval: (runId: string, choice: RunApprovalChoice) => void | Promise<void>;
@@ -249,11 +252,12 @@ export function ChatArea({
   const [goalOpen, setGoalOpen] = useState(false);
   const [goalEditing, setGoalEditing] = useState(false);
   const [goalDraft, setGoalDraft] = useState('');
-  const [goalVerification, setGoalVerification] = useState('');
-  const [goalMaxTurns, setGoalMaxTurns] = useState(20);
+  const [goalConfigPending, setGoalConfigPending] = useState(false);
+  const [goalConfigError, setGoalConfigError] = useState('');
   const [subgoalDraft, setSubgoalDraft] = useState('');
   const [subgoalAdding, setSubgoalAdding] = useState(false);
   const [goalDeleteConfirm, setGoalDeleteConfirm] = useState(false);
+  const [goalBarExpanded, setGoalBarExpanded] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [agentPickerSearch, setAgentPickerSearch] = useState('');
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
@@ -339,6 +343,7 @@ export function ChatArea({
     setGoalOpen(false);
     setGoalEditing(false);
     setSubgoalAdding(false);
+    setGoalBarExpanded(false);
   }, [agent.id]);
 
   useEffect(() => {
@@ -350,6 +355,7 @@ export function ChatArea({
     setGoalOpen(false);
     setGoalEditing(false);
     setSubgoalAdding(false);
+    setGoalBarExpanded(false);
   }, [activeConversation?.id]);
 
   useEffect(() => {
@@ -466,11 +472,9 @@ export function ChatArea({
     setSelectedFeature(undefined);
   };
 
-  const openGoalEditor = (editing: boolean) => {
-    setGoalDraft(editing ? goal?.objective ?? '' : input.trim());
-    setGoalVerification(editing ? goal?.contract.verification ?? '' : '');
-    setGoalMaxTurns(editing ? goal?.maxTurns ?? 20 : 20);
-    setGoalEditing(editing);
+  const openGoalEditor = () => {
+    setGoalDraft(goal?.objective ?? '');
+    setGoalEditing(true);
     setSubgoalAdding(false);
     setGoalOpen(true);
   };
@@ -478,11 +482,22 @@ export function ChatArea({
   const saveGoal = async () => {
     const objective = goalDraft.trim();
     if (!objective || goalPending) return;
-    const action = goalEditing ? onUpdateGoal : onCreateGoal;
-    await action(objective, goalMaxTurns, { verification: goalVerification.trim() });
-    setInput('');
+    await onUpdateGoal(objective, goal?.maxTurns, goal?.contract);
     setGoalOpen(false);
     setGoalEditing(false);
+  };
+
+  const updateGoalMaxTurns = async (turns: number) => {
+    if (goalConfigPending || turns === goalMaxTurns) return;
+    setGoalConfigPending(true);
+    setGoalConfigError('');
+    try {
+      await onGoalMaxTurnsChange(turns);
+    } catch (value) {
+      setGoalConfigError(value instanceof Error ? value.message : 'Could not save goal configuration.');
+    } finally {
+      setGoalConfigPending(false);
+    }
   };
 
   const saveSubgoal = async () => {
@@ -1166,6 +1181,72 @@ export function ChatArea({
 
       <footer className="composer-wrap">
         <div className="composer-stack">
+          {goal && (
+            <section className={`goal-status-bar ${goal.waiting ? 'waiting' : goal.status}${goalBarExpanded ? ' expanded' : ''}`} aria-label={`Goal ${goal.waiting ? 'waiting' : goal.status}`}>
+              <div className="goal-status-row">
+                <button
+                  type="button"
+                  className="goal-status-summary"
+                  aria-expanded={goalBarExpanded}
+                  onClick={() => setGoalBarExpanded((expanded) => !expanded)}
+                >
+                  <span className="goal-status-state" aria-hidden="true">
+                    {goal.status === 'active'
+                      ? <LoaderCircle className={goal.waiting ? '' : 'run-step-spin'} size={15} />
+                      : goal.status === 'paused' ? <Pause size={14} /> : <Check size={15} />}
+                  </span>
+                  <strong>{goal.waiting ? 'Goal waiting' : goal.status === 'active' ? 'Pursuing goal' : goal.status === 'paused' ? 'Goal paused' : 'Goal achieved'}</strong>
+                  <span className="goal-status-separator" aria-hidden="true">·</span>
+                  <span className="goal-status-objective">{goal.objective}</span>
+                  <span className="goal-status-separator goal-status-turn-separator" aria-hidden="true">·</span>
+                  <span className="goal-status-turns">{goal.status === 'done' ? `Completed in ${goal.turnsUsed} turns` : `Turn ${goal.turnsUsed}/${goal.maxTurns}`}</span>
+                </button>
+                <div className="goal-status-actions">
+                  <button type="button" title="Edit goal" aria-label="Edit goal" disabled={goalPending} onClick={openGoalEditor}>
+                    <Pencil size={13} />
+                  </button>
+                  {goal.status === 'active' && !goal.waiting ? (
+                    <button type="button" title="Pause goal" aria-label="Pause goal" disabled={goalPending} onClick={() => void onPauseGoal()}>
+                      <Pause size={13} />
+                    </button>
+                  ) : (
+                    <button type="button" title={goal.status === 'done' ? 'Restart goal' : 'Resume goal'} aria-label={goal.status === 'done' ? 'Restart goal' : 'Resume goal'} disabled={goalPending} onClick={() => void onResumeGoal()}>
+                      {goal.status === 'done' ? <RefreshCw size={13} /> : <Play size={13} />}
+                    </button>
+                  )}
+                  <button type="button" className="danger" title="Delete goal" aria-label="Delete goal" disabled={goalPending} onClick={() => setGoalDeleteConfirm(true)}>
+                    <Trash2 size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    title={goalBarExpanded ? 'Hide goal details' : 'Show goal details'}
+                    aria-label={goalBarExpanded ? 'Hide goal details' : 'Show goal details'}
+                    aria-expanded={goalBarExpanded}
+                    onClick={() => setGoalBarExpanded((expanded) => !expanded)}
+                  >
+                    {goalBarExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  </button>
+                </div>
+              </div>
+              {goalBarExpanded && (
+                <div className="goal-status-details">
+                  <p><strong>Objective</strong><span>{goal.objective}</span></p>
+                  {(goal.waitingReason || goal.pausedReason || goal.lastReason) && (
+                    <p><strong>Latest check</strong><span>{goal.waitingReason || goal.pausedReason || goal.lastReason}</span></p>
+                  )}
+                  {goal.contract.verification && (
+                    <p><strong>Verification</strong><span>{goal.contract.verification}</span></p>
+                  )}
+                  {goal.subgoals.length > 0 && (
+                    <div className="goal-status-subgoals">
+                      <strong>Subgoals</strong>
+                      <ol>{goal.subgoals.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ol>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
           {showLiveActivity && liveRun && (
             <RunActivityBar run={liveRun} onViewActivity={revealLiveActivity} />
           )}
@@ -1287,7 +1368,7 @@ export function ChatArea({
               ref={textareaRef}
               className="composer-input"
               rows={1}
-              placeholder={t('chat.placeholder')}
+              placeholder={selectedFeature === 'goal' ? 'Describe the goal, then send' : t('chat.placeholder')}
               value={input}
               onChange={onInputChange}
               onKeyDown={onComposerKeyDown}
@@ -1316,7 +1397,15 @@ export function ChatArea({
                       <button role="menuitem" onClick={() => { setSelectedFeature('delegate'); setFeatureMenuOpen(false); textareaRef.current?.focus(); }}>
                         <Users size={15} /><span><strong>Sub-agents</strong><small>Delegate independent work</small></span>
                       </button>
-                      <button role="menuitem" onClick={() => { setFeatureMenuOpen(false); openGoalEditor(Boolean(goal)); }}>
+                      <button role="menuitem" onClick={() => {
+                        setFeatureMenuOpen(false);
+                        if (goal) setGoalOpen(true);
+                        else {
+                          setSelectedFeature('goal');
+                          setGoalOpen(false);
+                          textareaRef.current?.focus();
+                        }
+                      }}>
                         <Target size={15} /><span><strong>Goal</strong><small>{goal ? 'View or edit persistent goal' : 'Run until the outcome is met'}</small></span>
                       </button>
                       <button
@@ -1332,24 +1421,27 @@ export function ChatArea({
                     </div>
                   )}
                 </div>
-                {selectedFeature && (
+                {selectedFeature && selectedFeature !== 'goal' && (
                   <button className="composer-feature-chip" onClick={() => setSelectedFeature(undefined)} title="Remove mode">
                     {selectedFeature === 'todo' ? <ListTodo size={14} /> : selectedFeature === 'delegate' ? <Users size={14} /> : <GraduationCap size={14} />}
                     {selectedFeature === 'todo' ? 'Todo list' : selectedFeature === 'delegate' ? 'Sub-agents' : 'Learn'}
                     <X size={12} />
                   </button>
                 )}
-                <div className={`goal-control${goalOpen ? ' open' : ''}`} ref={goalControlRef}>
+                <div className={`goal-control${goalOpen ? ' open' : ''}${selectedFeature === 'goal' ? ' selected' : ''}`} ref={goalControlRef}>
                   <button
-                    className={`goal-chip ${goal?.status ?? 'idle'}`}
+                    className={`goal-chip ${goal?.status ?? 'idle'}${selectedFeature === 'goal' ? ' selected' : ''}`}
                     title={goal?.objective ?? 'Create a persistent goal'}
                     aria-haspopup="dialog"
                     aria-expanded={goalOpen}
                     disabled={!activeConversation}
                     onClick={() => {
                       setFeatureMenuOpen(false);
-                      if (!goal) openGoalEditor(false);
-                      else setGoalOpen((open) => !open);
+                      if (!goal) {
+                        setSelectedFeature((feature) => feature === 'goal' ? undefined : 'goal');
+                        setGoalOpen(false);
+                        textareaRef.current?.focus();
+                      } else setGoalOpen((open) => !open);
                     }}
                   >
                     {goal?.status === 'active' ? <LoaderCircle className={goal.waiting ? '' : 'run-step-spin'} size={14} />
@@ -1360,24 +1452,42 @@ export function ChatArea({
                       : goal?.status === 'paused' ? `Goal paused · ${goal.turnsUsed}/${goal.maxTurns}`
                         : goal?.status === 'done' ? 'Goal achieved' : 'Goal'}</span>
                   </button>
-                  {(goalOpen || goal) && (
-                    <div className="goal-popover" role="dialog" aria-label={goal ? 'Goal details' : 'Create goal'}>
-                      {(goalEditing || !goal) ? (
+                  {(goalOpen || goal || selectedFeature === 'goal') && (
+                    <div className="goal-popover" role="dialog" aria-label={goal ? 'Goal details' : 'Goal configuration'}>
+                      {goalEditing && goal ? (
                         <div className="goal-editor">
-                          <div className="goal-popover-title"><Target size={15} /><strong>{goalEditing ? 'Edit goal' : 'New goal'}</strong></div>
+                          <div className="goal-popover-title"><Target size={15} /><strong>Edit goal</strong></div>
                           <label>Objective</label>
                           <textarea autoFocus rows={3} value={goalDraft} onChange={(event) => setGoalDraft(event.target.value)} placeholder="What outcome should the agent keep working toward?" />
-                          <label>Verification <span>Optional</span></label>
-                          <input value={goalVerification} onChange={(event) => setGoalVerification(event.target.value)} placeholder="e.g. all authentication tests pass" />
-                          <label>Turn budget</label>
-                          <input type="number" min={1} max={100} value={goalMaxTurns} onChange={(event) => setGoalMaxTurns(Math.max(1, Math.min(100, Number(event.target.value) || 1)))} />
                           {goalError && <div className="goal-error" role="alert">{goalError}</div>}
                           <div className="goal-actions">
                             <button onClick={() => { setGoalOpen(false); setGoalEditing(false); }}>Cancel</button>
                             <button className="primary" disabled={!goalDraft.trim() || goalPending} onClick={() => void saveGoal()}>
-                              {goalPending && <LoaderCircle className="run-step-spin" size={13} />}{goalEditing ? 'Save' : 'Start goal'}
+                              {goalPending && <LoaderCircle className="run-step-spin" size={13} />}Save
                             </button>
                           </div>
+                        </div>
+                      ) : !goal ? (
+                        <div className="goal-config">
+                          <div className="goal-popover-title"><Target size={15} /><span><strong>Goal mode</strong><small>Send the objective like a normal message</small></span></div>
+                          <p>Type only the goal in the chat box. The agent will keep working until it succeeds or reaches its turn budget.</p>
+                          <div className="goal-config-heading"><strong>Maximum turns</strong><span>Saved for {agent.title}</span></div>
+                          <div className="goal-turn-presets" role="radiogroup" aria-label="Maximum goal turns">
+                            {[10, 15, 20, 25, 30].map((turns) => (
+                              <button
+                                key={turns}
+                                type="button"
+                                role="radio"
+                                aria-checked={goalMaxTurns === turns}
+                                className={goalMaxTurns === turns ? 'active' : ''}
+                                disabled={goalConfigPending}
+                                onClick={() => void updateGoalMaxTurns(turns)}
+                              >
+                                {turns}
+                              </button>
+                            ))}
+                          </div>
+                          {goalConfigError && <div className="goal-error" role="alert">{goalConfigError}</div>}
                         </div>
                       ) : (
                         <div className="goal-details">
@@ -1400,7 +1510,7 @@ export function ChatArea({
                             {goal.status === 'active' && !goal.waiting
                               ? <button disabled={goalPending} onClick={() => void onPauseGoal()}><Pause size={13} /> Pause</button>
                               : <button disabled={goalPending} onClick={() => void onResumeGoal()}><Play size={13} /> Resume</button>}
-                            <button disabled={goalPending} onClick={() => openGoalEditor(true)}><Pencil size={13} /> Edit</button>
+                            <button disabled={goalPending} onClick={openGoalEditor}><Pencil size={13} /> Edit</button>
                             <button className="danger" disabled={goalPending} onClick={() => setGoalDeleteConfirm(true)}><Trash2 size={13} /> Delete</button>
                           </div>
                         </div>

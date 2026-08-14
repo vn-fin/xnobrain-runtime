@@ -186,7 +186,7 @@ class ConversationRunnerMixin:
 
         timeout_seconds = session_timeout_seconds(body.get("timeout_seconds"))
         feature = str(body.get("feature") or "").strip().lower()
-        if feature and feature not in self._FEATURE_PROMPTS:
+        if feature and feature not in {*self._FEATURE_PROMPTS, "goal"}:
             raise AgentAPIError("invalid composer feature", code="invalid_feature")
         return {
             "name": name,
@@ -586,6 +586,12 @@ class ConversationRunnerMixin:
                     goal=_goal_payload(state),
                 )
 
+            if str(prepared.get("feature") or "") == "goal":
+                with _profile_runtime_scope(profile_dir):
+                    GoalManager(conversation_id).set(
+                        str(prepared["message"]),
+                        max_turns=self._goal_max_turns(profile_dir),
+                    )
             initial_goal = read_goal()
             if initial_goal is not None:
                 emit_goal(initial_goal)

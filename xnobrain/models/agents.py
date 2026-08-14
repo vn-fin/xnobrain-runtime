@@ -24,6 +24,7 @@ class ConfigPatch(BaseModel):
     skills_write_approval: bool | None = None
     memory_write_approval: bool | None = None
     checkpoints_enabled: bool | None = None
+    goal_max_turns: int | None = Field(default=None, ge=10, le=30)
     system_prompt: str | None = None
 
 

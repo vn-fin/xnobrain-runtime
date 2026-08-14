@@ -528,17 +528,18 @@ export default function App() {
             goal={conversation.goal}
             goalPending={conversation.goalPending}
             goalError={conversation.goalError}
+            goalMaxTurns={activeAgent.goalMaxTurns ?? 20}
             onCompactContext={conversation.compactContext}
-            onCreateGoal={conversation.createGoal}
             onUpdateGoal={conversation.updateGoal}
             onPauseGoal={conversation.pauseGoal}
             onResumeGoal={conversation.resumeGoal}
             onDeleteGoal={conversation.deleteGoal}
             onAddSubgoal={conversation.addSubgoal}
             onDeleteSubgoal={conversation.deleteSubgoal}
-            onSend={(input) => {
+            onGoalMaxTurnsChange={(turns) => assistants.updateAgent(activeAgent.id, { goalMaxTurns: turns })}
+            onSend={(input, feature) => {
               assistants.touchConversation(activeAgent.id, activeConversation?.id ?? '');
-              return conversation.sendMessage(input);
+              return conversation.sendMessage(input, feature);
             }}
             onStop={conversation.stopStream}
             onResolveRunApproval={conversation.resolveRunApproval}

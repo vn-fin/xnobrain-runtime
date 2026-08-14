@@ -47,6 +47,18 @@ def _goal_payload(state: Any) -> dict[str, Any] | None:
 
 
 class ConversationGoalsMixin:
+    def _goal_max_turns(self, profile_dir: Path) -> int:
+        configured = self._get_nested(
+            self._read_config(profile_dir),
+            ("goals", "max_turns"),
+            20,
+        )
+        try:
+            value = int(configured or 20)
+        except (TypeError, ValueError):
+            value = 20
+        return value if value in {10, 15, 20, 25, 30} else 20
+
     def _goal_manager(self, raw_name: Any, conversation_id: Any):
         from hermes_cli.goals import GoalManager
 
@@ -76,7 +88,7 @@ class ConversationGoalsMixin:
 
         profile_dir, session_id, scope, manager_type = self._goal_manager(raw_name, conversation_id)
         objective = self._text_value(body.get("objective"), field="objective", max_chars=10_000)
-        max_turns = int(body.get("max_turns") or 20)
+        max_turns = int(body.get("max_turns") or self._goal_max_turns(Path(profile_dir)))
         if max_turns < 1 or max_turns > 100:
             raise AgentAPIError("max_turns must be between 1 and 100", code="invalid_goal_budget")
         contract = GoalContract.from_dict(dict(body.get("contract") or {}))

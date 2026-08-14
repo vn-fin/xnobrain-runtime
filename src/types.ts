@@ -121,7 +121,7 @@ export type Conversation = {
   tools: number;
 };
 
-export type ComposerFeature = 'todo' | 'delegate' | 'learn';
+export type ComposerFeature = 'todo' | 'delegate' | 'goal' | 'learn';
 
 export type GoalContract = {
   outcome: string;
@@ -316,6 +316,7 @@ export type GlobalRuntimeConfig = {
   skillsWriteApproval: boolean;
   memoryWriteApproval: boolean;
   checkpointsEnabled?: boolean;
+  goalMaxTurns?: number;
 };
 
 // Assistants / agents (agent-gateway agents)

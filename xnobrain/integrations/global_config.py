@@ -70,6 +70,7 @@ class GlobalConfigMixin:
             "approval_mode",
             "skills_write_approval",
             "memory_write_approval",
+            "goal_max_turns",
             "system_prompt",
             "soul",
             "config",
@@ -131,6 +132,15 @@ class GlobalConfigMixin:
                 self._coerce_bool(body["memory_write_approval"], field="memory_write_approval"),
             )
             touched = True
+        if "goal_max_turns" in body:
+            try:
+                goal_max_turns = int(body["goal_max_turns"])
+            except (TypeError, ValueError) as error:
+                raise ConfigAPIError("goal_max_turns must be an integer") from error
+            if goal_max_turns not in {10, 15, 20, 25, 30}:
+                raise ConfigAPIError("goal_max_turns must be one of: 10, 15, 20, 25, 30")
+            self._set_nested(config, ("goals", "max_turns"), goal_max_turns)
+            touched = True
         soul = body.get("soul", body.get("system_prompt", _MISSING))
         if soul is not _MISSING:
             self._write_text(self.root_profile / "SOUL.md", soul, field="soul")
@@ -190,6 +200,9 @@ class GlobalConfigMixin:
             "memory_write_approval": self._coerce_bool(
                 self._get_nested(config, ("memory", "write_approval"), False),
                 field="memory.write_approval",
+            ),
+            "goal_max_turns": int(
+                self._get_nested(config, ("goals", "max_turns"), 20) or 20
             ),
             "system_prompt": soul,
             "soul": soul,

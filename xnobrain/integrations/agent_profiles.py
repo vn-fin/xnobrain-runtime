@@ -393,6 +393,9 @@ class AgentProfilesMixin:
             "checkpoints_enabled": self._coerce_bool(
                 self._get_nested(config, ("checkpoints", "enabled"), False)
             ),
+            "goal_max_turns": int(
+                self._get_nested(config, ("goals", "max_turns"), 20) or 20
+            ),
             "system_prompt": self._get_nested(config, ("agent", "system_prompt"), ""),
         }
 

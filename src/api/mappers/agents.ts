@@ -19,6 +19,7 @@ export function mapAgent(dto: AgentDTO): Agent {
     skillsWriteApproval: config?.skills_write_approval ?? false,
     memoryWriteApproval: config?.memory_write_approval ?? false,
     checkpointsEnabled: config?.checkpoints_enabled ?? false,
+    goalMaxTurns: config?.goal_max_turns ?? 20,
     workspace: dto.id ? `${dto.id}/workspace` : '',
     skills: [],
     conversations: [],
