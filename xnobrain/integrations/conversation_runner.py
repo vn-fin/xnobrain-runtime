@@ -207,6 +207,19 @@ class ConversationRunnerMixin:
         return estimated
 
 
+    @staticmethod
+    def _apply_provider_runtime_compatibility(agent: Any, model: str) -> None:
+        """Apply narrow workarounds for known router/provider wire defects."""
+        owner = str(model or "").strip().split("/", 1)[0]
+        if owner in {"oc", "ocg", "ocz"}:
+            # OpenCode currently terminates otherwise-valid SSE responses with
+            # [DONE] but no OpenAI finish_reason. Hermes correctly treats that
+            # shape as a dropped stream and requests continuations, duplicating
+            # the answer. The blocking response is complete, so use it until
+            # 9router normalizes OpenCode's terminal event.
+            agent._disable_streaming = True
+
+
     async def _run_session_agent(
         self,
         prepared: Mapping[str, Any],
@@ -255,6 +268,10 @@ class ConversationRunnerMixin:
 
             def _create_agent(self, *args: Any, **kwargs: Any) -> Any:
                 agent = super()._create_agent(*args, **kwargs)
+                manager._apply_provider_runtime_compatibility(
+                    agent,
+                    str(prepared.get("model") or ""),
+                )
                 route_reasoning = str(prepared.get("route_reasoning") or "")
                 if route_reasoning in {"low", "medium", "high"}:
                     agent.reasoning_config = {

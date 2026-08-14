@@ -128,6 +128,9 @@ trap cleanup EXIT INT TERM
 cd "$project_dir"
 if [[ -n "$router_bin" ]]; then
   prepare_router_auth
+  NINE_ROUTER_API_KEY="$(< "$router_data_dir/auth/cli-token")"
+  : "${NINE_ROUTER_API_KEY:?9router CLI token is empty}"
+  export NINE_ROUTER_API_KEY
   DATA_DIR="$router_data_dir" \
     PORT="$router_port" \
     HOSTNAME=0.0.0.0 \

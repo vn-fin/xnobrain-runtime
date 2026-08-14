@@ -26,7 +26,8 @@ if [[ "$HERMES_PROFILES_ROOT" != "$HERMES_HOME/profiles" && ! -e "$HERMES_HOME/p
   ln -s "$HERMES_PROFILES_ROOT" "$HERMES_HOME/profiles"
 fi
 /usr/local/bin/xnobrain-prepare-nine-router-auth
-IFS= read -r NINE_ROUTER_API_KEY <"$NINE_ROUTER_DATA_DIR/auth/cli-token"
+NINE_ROUTER_API_KEY="$(< "$NINE_ROUTER_DATA_DIR/auth/cli-token")"
+: "${NINE_ROUTER_API_KEY:?9router CLI token is empty}"
 export NINE_ROUTER_API_KEY
 touch "$HERMES_HOME/.env"
 chmod 700 "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$NINE_ROUTER_DATA_DIR"

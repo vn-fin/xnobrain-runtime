@@ -47,6 +47,78 @@ class FakeNineRouterManager(NineRouterManager):
 
 
 class NineRouterConfigTests(unittest.TestCase):
+    def test_agent_manager_loads_private_router_key_from_prepared_token(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            router_data = root / "nine-router"
+            (router_data / "auth").mkdir(parents=True)
+            (router_data / "auth" / "cli-token").write_text(
+                "private-router-token\n", encoding="utf-8"
+            )
+            with patch.dict(
+                os.environ,
+                {"NINE_ROUTER_DATA_DIR": str(router_data)},
+                clear=False,
+            ):
+                os.environ.pop("NINE_ROUTER_API_KEY", None)
+                manager = AgentManager(
+                    root_profile=root / "root",
+                    profiles_root=root / "profiles",
+                    legacy_agents_root=root / "legacy",
+                )
+
+                self.assertEqual(
+                    os.environ.get("NINE_ROUTER_API_KEY"),
+                    "private-router-token",
+                )
+                self.assertEqual(
+                    manager._command_env(root / "root", "hermes").get(
+                        "NINE_ROUTER_API_KEY"
+                    ),
+                    "private-router-token",
+                )
+
+    def test_explicit_router_key_takes_precedence_over_token_file(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            router_data = root / "nine-router"
+            (router_data / "auth").mkdir(parents=True)
+            (router_data / "auth" / "cli-token").write_text(
+                "file-token\n", encoding="utf-8"
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "NINE_ROUTER_DATA_DIR": str(router_data),
+                    "NINE_ROUTER_API_KEY": "configured-token",
+                },
+                clear=False,
+            ):
+                AgentManager(
+                    root_profile=root / "root",
+                    profiles_root=root / "profiles",
+                    legacy_agents_root=root / "legacy",
+                )
+
+                self.assertEqual(
+                    os.environ.get("NINE_ROUTER_API_KEY"),
+                    "configured-token",
+                )
+
+    def test_opencode_models_use_blocking_provider_response(self) -> None:
+        for model in (
+            "oc/big-pickle",
+            "ocg/gpt-5.6-luna",
+            "ocz/gpt-5.6-luna",
+        ):
+            agent = SimpleNamespace(_disable_streaming=False)
+            AgentManager._apply_provider_runtime_compatibility(agent, model)
+            self.assertTrue(agent._disable_streaming, model)
+
+        codex = SimpleNamespace(_disable_streaming=False)
+        AgentManager._apply_provider_runtime_compatibility(codex, "cx/gpt-5.6-luna")
+        self.assertFalse(codex._disable_streaming)
+
     def test_global_config_defaults_to_automatic_execution(self) -> None:
         with patch.dict(os.environ, {"HONCHO_MEMORY_ENABLE": ""}):
             with TemporaryDirectory() as temp_dir:

@@ -35,6 +35,7 @@ from ..defaults import (
 )
 from .nine_router import (
     NINE_ROUTER_DEFAULT_MODEL,
+    NINE_ROUTER_KEY_ENV,
     NINE_ROUTER_PROVIDER,
     NineRouterAPIError,
     NineRouterManager,
@@ -73,7 +74,7 @@ DEFAULT_CONVERSATION_TITLE_RE = re.compile(
 METADATA_FILE = "agent.json"
 PROFILES_REGISTRY_FILE = "profiles.yaml"
 CREDENTIAL_FILES = (".env", "auth.json")
-AGENT_CREDENTIAL_ENV_KEYS = ("NINE_ROUTER_API_KEY",)
+AGENT_CREDENTIAL_ENV_KEYS = (NINE_ROUTER_KEY_ENV,)
 TEMPLATE_FILES = ("config.yaml", "SOUL.md", "AGENTS.md", "mcp.json")
 TEMPLATE_DIRS = ("memories", "plugins")
 PROFILE_STATE_DIRS = (

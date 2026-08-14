@@ -73,6 +73,20 @@ class NineRouterPinTests(unittest.TestCase):
             installer.index('"$project_python" -m pip install -r "$project_dir/requirements.txt"'),
         )
 
+    def test_launchers_accept_router_token_without_trailing_newline(self):
+        expected = {
+            "scripts/dev.sh": (
+                'NINE_ROUTER_API_KEY="$(< "$router_data_dir/auth/cli-token")"'
+            ),
+            "runtime/container-entrypoint.sh": (
+                'NINE_ROUTER_API_KEY="$(< "$NINE_ROUTER_DATA_DIR/auth/cli-token")"'
+            ),
+        }
+        for relative_path, assignment in expected.items():
+            launcher = (_REPO / relative_path).read_text(encoding="utf-8")
+            self.assertIn(assignment, launcher)
+            self.assertNotIn("IFS= read -r NINE_ROUTER_API_KEY", launcher)
+
     def test_runtime_packages_the_local_honcho_client_and_services(self):
         dockerfile = (_REPO / "Dockerfile.backend").read_text(encoding="utf-8")
         compose = (_REPO / "docker-compose.yaml").read_text(encoding="utf-8")

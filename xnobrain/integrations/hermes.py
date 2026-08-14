@@ -65,6 +65,10 @@ class AgentManager(
             or os.environ.get("HERMES_AGENTS_ROOT")
             or self.root_profile.parent / "legacy-agents"
         )
+        # The embedded streaming runner uses this process environment directly,
+        # while one-shot commands inherit it in _command_env(). Native launchers
+        # may prepare 9router's token file without exporting it first.
+        self._ensure_router_api_key()
         configured_template = (
             profile_template
             or os.environ.get("XNOBRAIN_PROFILE_TEMPLATE")

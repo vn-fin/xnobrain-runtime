@@ -5,6 +5,7 @@ from .hermes_support import (
     AgentAPIError,
     Any,
     Mapping,
+    NINE_ROUTER_KEY_ENV,
     NINE_ROUTER_PROVIDER,
     Path,
     asyncio,
@@ -78,12 +79,31 @@ class HermesCommandsMixin:
 
 
     def _command_env(self, hermes_home: Path, engine: str) -> dict[str, str]:
+        self._ensure_router_api_key()
         env = os.environ.copy()
         env["HERMES_HOME"] = str(hermes_home)
         env.setdefault("HOME", str(Path.home()))
         env.setdefault("HERMES_ACCEPT_HOOKS", "1")
         self._load_agent_credentials(env)
         return env
+
+
+    @staticmethod
+    def _ensure_router_api_key() -> None:
+        """Load the private local-router credential when launchers omit it."""
+        if os.environ.get(NINE_ROUTER_KEY_ENV):
+            return
+        data_dir = str(os.environ.get("NINE_ROUTER_DATA_DIR") or "").strip()
+        if not data_dir:
+            return
+        try:
+            api_key = (Path(data_dir) / "auth" / "cli-token").read_text(
+                encoding="utf-8"
+            ).strip()
+        except OSError:
+            return
+        if api_key:
+            os.environ[NINE_ROUTER_KEY_ENV] = api_key
 
 
     def _hermes_binary(self) -> str:
