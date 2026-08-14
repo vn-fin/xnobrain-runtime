@@ -563,6 +563,22 @@ class KanbanService:
             for item in boards
         ]
 
+    def active_agent_ids(self) -> set[str]:
+        """Return assignees whose Hermes task is currently being executed."""
+        kb = self._ready()
+        active: set[str] = set()
+        for board in self.list_boards(include_archived=False):
+            with kb_adapter.connection(str(board["id"])) as conn:
+                for task in kb.list_tasks(conn, include_archived=False):
+                    # Product ``running`` also includes ready/review tasks. Only
+                    # Hermes' raw running state means a worker owns the task now.
+                    if str(getattr(task, "status", "")) != "running":
+                        continue
+                    assignee = str(getattr(task, "assignee", "") or "").strip()
+                    if assignee:
+                        active.add(assignee)
+        return active
+
     def get_board(self, slug: str, *, include_archived: bool = False) -> dict[str, Any]:
         normalized = self._board(slug)
         try:

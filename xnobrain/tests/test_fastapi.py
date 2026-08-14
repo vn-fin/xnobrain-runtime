@@ -702,6 +702,28 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             item["id"] == agent_id for item in after_delete.json()["data"]
         ))
 
+    async def test_agent_activity_reports_only_real_runtime_execution(self):
+        created = self.composition.service.create_agent({"display_name": "Active Worker"})
+        agent_id = created["id"]
+        task_agent = self.composition.service.create_agent({"display_name": "Task Worker"})["id"]
+        self.composition.service.agents._mark_agent_active(agent_id)
+        try:
+            with patch.object(
+                self.composition.service.kanban,
+                "active_agent_ids",
+                return_value={task_agent},
+            ):
+                async with self.client() as client:
+                    response = await client.get("/xnobrain/api/runtime/v1/agents/activity")
+        finally:
+            self.composition.service.agents._mark_agent_idle(agent_id)
+
+        self.assertEqual(response.status_code, 200, response.text)
+        activity = response.json()["data"]["agents"]
+        self.assertEqual(activity[agent_id], "running")
+        self.assertEqual(activity[task_agent], "running")
+        self.assertEqual(activity[BIG_BROTHER_AGENT_ID], "idle")
+
     async def test_write_approvals_default_off_and_allow_always_disables_the_selected_gate(self):
         async with self.client() as client:
             created = await client.post("/xnobrain/api/runtime/v1/agents", json={"display_name": "Safe Writer"})

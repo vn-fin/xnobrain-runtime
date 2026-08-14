@@ -446,6 +446,7 @@ class ConversationStreamMixin:
         task = asyncio.create_task(run_agent())
         state["task"] = task
         self._active_runs[run_id] = state
+        self._mark_agent_active(str(state["agent"]))
         yield self._sse_data({
             "event": "run.started", "run_id": run_id,
             "session_id": conversation_id, "status": "started",
@@ -578,6 +579,7 @@ class ConversationStreamMixin:
             if title_task is not None and not title_task.done():
                 title_task.cancel()
             self._active_runs.pop(run_id, None)
+            self._mark_agent_idle(str(state["agent"]))
             self._stopped_runs.discard(run_id)
 
 

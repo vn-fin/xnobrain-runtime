@@ -2,6 +2,7 @@ import { request } from './client';
 import type {
   AgentConfigDTO,
   AgentConfigUpdateRequestDTO,
+  AgentActivityResponseDTO,
   AgentCreateRequestDTO,
   AgentDTO,
   AgentMetadataUpdateRequestDTO,
@@ -24,6 +25,11 @@ export const agentsApi = {
   async list(): Promise<Agent[]> {
     const data = await request<AgentDTO[]>(`${ROOT}/agents`);
     return (Array.isArray(data) ? data : []).map(mapAgent);
+  },
+
+  async activity(): Promise<Record<string, 'running' | 'idle'>> {
+    const data = await request<AgentActivityResponseDTO>(`${ROOT}/agents/activity`);
+    return data.agents ?? {};
   },
 
   async detail(id: string): Promise<Agent> {

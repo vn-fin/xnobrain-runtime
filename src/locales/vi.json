@@ -75,6 +75,8 @@
     "title": "Agent",
     "recent": "Gần đây",
     "pinned": "Đã ghim",
+    "running": "Đang chạy",
+    "idle": "Đang nghỉ",
     "pin": "Ghim Agent",
     "unpin": "Bỏ ghim Agent",
     "switch": "Chuyển Agent",

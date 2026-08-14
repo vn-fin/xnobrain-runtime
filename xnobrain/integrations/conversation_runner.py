@@ -17,6 +17,23 @@ from xnobrain.runtime_limits import max_parallel_agents, session_timeout_seconds
 
 
 class ConversationRunnerMixin:
+    def _mark_agent_active(self, name: str) -> None:
+        with self._registry_lock:
+            self._active_agent_counts[name] = self._active_agent_counts.get(name, 0) + 1
+
+    def _mark_agent_idle(self, name: str) -> None:
+        with self._registry_lock:
+            remaining = self._active_agent_counts.get(name, 0) - 1
+            if remaining > 0:
+                self._active_agent_counts[name] = remaining
+            else:
+                self._active_agent_counts.pop(name, None)
+
+    def active_agent_ids(self) -> set[str]:
+        """Return profiles with at least one model execution in progress."""
+        with self._registry_lock:
+            return {name for name, count in self._active_agent_counts.items() if count > 0}
+
     async def chat(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         prepared = self._prepare_chat_command(raw_name, body, require_conversation=False)
         if prepared["model"] == NINE_ROUTER_DEFAULT_MODEL:
@@ -28,12 +45,16 @@ class ConversationRunnerMixin:
         before = self._latest_session_ids(profile_dir)
 
         started = time.time()
-        result = await self._run_profile_command(
-            name,
-            prepared["command"],
-            engine=str(prepared.get("engine") or "hermes"),
-            timeout_seconds=prepared["timeout_seconds"],
-        )
+        self._mark_agent_active(name)
+        try:
+            result = await self._run_profile_command(
+                name,
+                prepared["command"],
+                engine=str(prepared.get("engine") or "hermes"),
+                timeout_seconds=prepared["timeout_seconds"],
+            )
+        finally:
+            self._mark_agent_idle(name)
         provider_error = self._provider_error(result["stdout"])
         if result["exit_code"] != 0 or provider_error:
             raise AgentAPIError(

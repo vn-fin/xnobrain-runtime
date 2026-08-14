@@ -1697,8 +1697,15 @@ body.col-resizing {
   height: 8px;
   flex: 0 0 8px;
   border-radius: 50%;
-  background: var(--green);
+  background: var(--muted-2);
 }
+
+.status-dot.running {
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 16%, transparent);
+}
+
+.status-dot.idle { opacity: 0.6; }
 
 .provider-row {
   min-height: 46px;

@@ -79,6 +79,22 @@ class AgentsServiceMixin:
             return self.list_agents()
         return await asyncio.to_thread(self.list_agents)
 
+    def agent_activity(self) -> dict[str, Any]:
+        """Report real executions, not the profile's configured enabled state."""
+        active = self.agents.active_agent_ids()
+        try:
+            active.update(self.kanban.active_agent_ids())
+        except ServiceError:
+            # Conversation activity remains useful while Kanban is unavailable.
+            pass
+        return {
+            "agents": {
+                item["id"]: "running" if item["id"] in active else "idle"
+                for item in self.list_agents()
+            },
+            "updated_at": time.time(),
+        }
+
     async def ensure_default_agent(self) -> dict[str, Any]:
         """Expose and repair the root Hermes profile as Big Brother."""
         profile = self.config.root_profile
@@ -715,4 +731,3 @@ class AgentsServiceMixin:
         if include_soul:
             result["soul"] = str(item.get("soul") or "")
         return result
-

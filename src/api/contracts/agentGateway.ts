@@ -36,6 +36,10 @@ export type AgentCreateRequestDTO = { display_name: string; description: string 
 export type AgentMetadataUpdateRequestDTO = { display_name?: string; title?: string; description?: string; metadata?: AgentDTO['metadata'] };
 export type AgentConfigUpdateRequestDTO = AgentConfigDTO;
 export type AgentTestResponseDTO = { agent_id?: string; healthy?: boolean; message?: string; status?: string };
+export type AgentActivityResponseDTO = {
+  agents?: Record<string, 'running' | 'idle'>;
+  updated_at?: number;
+};
 
 export type AgentSkillDTO = {
   skill_id?: string;

@@ -71,6 +71,7 @@ export function useAssistants(active = true) {
   const [skillInstallError, setSkillInstallError] = useState('');
   const [skillsOverviewLoading, setSkillsOverviewLoading] = useState(false);
   const agentsRef = useRef(agents);
+  const agentActivityRef = useRef<Record<string, 'running' | 'idle'>>({});
   const loadedConversations = useRef(new Set<string>());
   const conversationRequests = useRef(new Map<string, Promise<Agent['conversations']>>());
   const conversationPageRequests = useRef(new Map<string, Promise<Agent['conversations']>>());
@@ -100,6 +101,7 @@ export function useAssistants(active = true) {
         const cached = current.find((item) => item.id === agent.id);
         return {
           ...agent,
+          runtimeStatus: agentActivityRef.current[agent.id] ?? cached?.runtimeStatus ?? 'idle',
           conversations: cached?.conversations ?? [],
           skills: cached?.skills ?? [],
         };
@@ -116,6 +118,33 @@ export function useAssistants(active = true) {
     initialLoadStarted.current = true;
     void refresh();
   }, [active, refresh]);
+
+  useEffect(() => {
+    if (!active) return undefined;
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const activity = await agentsApi.activity();
+        if (!cancelled) {
+          agentActivityRef.current = activity;
+          setAgents((current) => current.map((agent) => ({
+            ...agent,
+            runtimeStatus: activity[agent.id] ?? 'idle',
+          })));
+        }
+      } catch {
+        // Keep the most recent status during a transient local API failure.
+      } finally {
+        if (!cancelled) timer = window.setTimeout(poll, 2_000);
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [active]);
 
   const loadConversations = useCallback(async (agentId: string, force = false) => {
     if (!agentId) return [];

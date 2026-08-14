@@ -59,6 +59,29 @@ describe('Sidebar assistant actions', () => {
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('shows green only for agents with a real execution in progress', () => {
+    const running = { ...agent, runtimeStatus: 'running' as const };
+    const idle = { ...agent, id: 'idle-agent', title: 'Idle agent', runtimeStatus: 'idle' as const };
+    const { container } = render(
+      <Sidebar
+        agents={[running, idle]}
+        activeAgent={running}
+        centerView="chat"
+        agentSearch=""
+        onAgentSearch={vi.fn()}
+        onNavigate={vi.fn()}
+        onSelectAgent={vi.fn()}
+        onRenameAgent={vi.fn()}
+        onExportAgent={vi.fn()}
+        onRequestDeleteAgent={vi.fn()}
+        onNewAgent={vi.fn()}
+      />,
+    );
+
+    expect(within(container).getByRole('status', { name: 'Research Lead: Running' })).toHaveClass('running');
+    expect(within(container).getByRole('status', { name: 'Idle agent: Idle' })).toHaveClass('idle');
+  });
+
   it('shows simplified actions and requests delete from the three-dot menu', () => {
     const requestDelete = vi.fn();
     render(

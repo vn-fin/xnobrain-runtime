@@ -83,6 +83,7 @@ class AgentManager(
         )
         self.nine_router = NineRouterManager()
         self._active_runs: dict[str, dict[str, Any]] = {}
+        self._active_agent_counts: dict[str, int] = {}
         self._stopped_runs: set[str] = set()
         self._registry_lock = threading.RLock()
         self._conversation_lock = threading.RLock()

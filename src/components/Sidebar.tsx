@@ -305,6 +305,10 @@ export function Sidebar({
 
   const renderAgent = (agent: Agent, library = false) => {
     const active = agent.id === activeAgent.id && centerView === 'chat';
+    const running = agent.runtimeStatus === 'running';
+    const activityLabel = running
+      ? t('agents.running', { defaultValue: 'Running' })
+      : t('agents.idle', { defaultValue: 'Idle' });
     const alwaysPinned = agent.id === ALWAYS_PINNED_AGENT_ID;
     const pinned = alwaysPinned || pinnedIds.includes(agent.id);
     if (renamingAgentId === agent.id && !library) {
@@ -329,7 +333,12 @@ export function Sidebar({
     return (
       <div data-agent-row-id={agent.id} key={agent.id} className={`${active ? 'agent-row active' : 'agent-row'}${library ? ' library-agent-row' : ''}`}>
         <button className="agent-row-main" onClick={() => selectAgent(agent)} onDoubleClick={() => !library && startAgentRename(agent)} title={agent.title}>
-          <span className="status-dot" />
+          <span
+            className={`status-dot ${running ? 'running' : 'idle'}`}
+            role="status"
+            aria-label={`${agent.title}: ${activityLabel}`}
+            title={activityLabel}
+          />
           <span>
             <strong>{agent.title}</strong>
             <small>{agent.description || t('agents.noDescription', { defaultValue: 'No description' })}</small>

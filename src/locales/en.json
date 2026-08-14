@@ -75,6 +75,8 @@
     "title": "Agents",
     "recent": "Recent",
     "pinned": "Pinned",
+    "running": "Running",
+    "idle": "Idle",
     "pin": "Pin agent",
     "unpin": "Unpin agent",
     "switch": "Switch agent",

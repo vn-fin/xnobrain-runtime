@@ -298,6 +298,7 @@ export type Agent = {
   description: string;
   soul: string;
   status: string;
+  runtimeStatus?: 'running' | 'idle';
   provider: string;
   model: string;
   reasoningEffort: string;

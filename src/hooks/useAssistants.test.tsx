@@ -24,6 +24,7 @@ const agents: Agent[] = ['agent-one', 'agent-two'].map((id) => ({
 
 const mocks = vi.hoisted(() => ({
   listAgents: vi.fn(),
+  agentActivity: vi.fn(),
   listConversations: vi.fn(),
   getConversation: vi.fn(),
   createConversation: vi.fn(),
@@ -41,6 +42,7 @@ const conversationPage = (conversations: unknown[], page = 1, hasMore = false) =
 vi.mock('../api/agents', () => ({
   agentsApi: {
     list: mocks.listAgents,
+    activity: mocks.agentActivity,
     getGlobalConfig: mocks.getGlobalConfig,
   },
 }));
@@ -63,6 +65,17 @@ vi.mock('../api/skills', () => ({
 
 describe('useAssistants lazy collections', () => {
   afterEach(() => vi.clearAllMocks());
+
+  it('updates agent runtime activity independently from profile status', async () => {
+    mocks.listAgents.mockResolvedValue(agents);
+    mocks.agentActivity.mockResolvedValue({ 'agent-one': 'running', 'agent-two': 'idle' });
+
+    const { result } = renderHook(() => useAssistants());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await waitFor(() => expect(result.current.agents[0].runtimeStatus).toBe('running'));
+
+    expect(result.current.agents[1].runtimeStatus).toBe('idle');
+  });
 
   it('loads agent summaries once under StrictMode and fetches selected collections on demand', async () => {
     mocks.listAgents.mockResolvedValue(agents);

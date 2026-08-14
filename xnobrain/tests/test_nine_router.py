@@ -1106,6 +1106,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 approval_notify_callback,
                 agent_ref,
             ):
+                self.assertIn("news", manager.active_agent_ids())
                 self.assertRegex(run_id, r"^run_[0-9a-f]{32}$")
                 child = SimpleNamespace(
                     _subagent_id="sa-test",
@@ -1269,6 +1270,8 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                     event
                     async for event in manager._chat_stream_events(prepared)
                 ]
+
+            self.assertNotIn("news", manager.active_agent_ids())
 
             payload = b"".join(chunks)
             self.assertEqual(payload.count(b'"event":"message.delta"'), 2)
