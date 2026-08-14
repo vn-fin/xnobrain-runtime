@@ -32,6 +32,57 @@ const blend: Blend = {
 };
 
 describe('BlendEditorDialog Smart route', () => {
+  it('explains every mode and shows why an incomplete form cannot be saved', async () => {
+    render(
+      <BlendEditorDialog
+        blend={null}
+        loadModels={async () => []}
+        onSave={vi.fn(async () => undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Tries models in order/)).toBeInTheDocument();
+    expect(screen.getByText(/Rotates requests across/)).toBeInTheDocument();
+    expect(screen.getByText(/Runs every selected model/)).toBeInTheDocument();
+    expect(screen.getByText(/Classifies task difficulty/)).toBeInTheDocument();
+    expect(screen.getByText('Name is required.')).toBeInTheDocument();
+    expect(screen.getByText('At least one model is required.')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Name/)).toBeRequired();
+
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute('title', 'Name is required. Add at least one model.');
+
+    fireEvent.click(screen.getByLabelText('Smart route'));
+    expect(screen.getByText(/responses may be slightly slower/)).toBeInTheDocument();
+    expect(screen.getByText(/save cost/)).toBeInTheDocument();
+    expect(screen.getAllByText('At least one model is required.')).toHaveLength(3);
+  });
+
+  it('validates mode-specific Fusion and Round robin inputs', async () => {
+    render(
+      <BlendEditorDialog
+        blend={null}
+        loadModels={async () => [
+          { id: 'cx/a', provider: 'codex', name: 'A' },
+          { id: 'cx/b', provider: 'codex', name: 'B' },
+        ]}
+        onSave={vi.fn(async () => undefined)}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Fusion'));
+    expect(screen.getByText('Fusion requires at least two models.')).toBeInTheDocument();
+    expect(screen.getByText('Judge model is required for Fusion.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Judge model')).toBeRequired();
+
+    fireEvent.click(screen.getByLabelText('Round robin'));
+    fireEvent.change(screen.getByLabelText('Sticky limit'), { target: { value: '0' } });
+    expect(screen.getByText(/whole number from 1 to 1000/)).toBeInTheDocument();
+  });
+
   it('shows grouped models and saves each model thinking level', async () => {
     const save = vi.fn(async () => undefined);
     render(

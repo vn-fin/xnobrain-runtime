@@ -11,11 +11,11 @@ import type {
 } from '../../api/blends';
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-const STRATEGIES: { value: BlendStrategy; label: string }[] = [
-  { value: 'fallback', label: 'Fallback' },
-  { value: 'round-robin', label: 'Round robin' },
-  { value: 'fusion', label: 'Fusion' },
-  { value: 'smart-route', label: 'Smart route' },
+const STRATEGIES: { value: BlendStrategy; label: string; description: string }[] = [
+  { value: 'fallback', label: 'Fallback', description: 'Tries models in order and moves to the next one when a model is unavailable or fails.' },
+  { value: 'round-robin', label: 'Round robin', description: 'Rotates requests across the selected models to spread usage.' },
+  { value: 'fusion', label: 'Fusion', description: 'Runs every selected model and uses a judge model to combine the answers. Highest cost; tools are disabled.' },
+  { value: 'smart-route', label: 'Smart route', description: 'Classifies task difficulty and sends it to the first suitable model in the matching tier.' },
 ];
 const TIERS = ['quick', 'normal', 'difficult'] as const;
 type Tier = (typeof TIERS)[number];
@@ -38,13 +38,14 @@ const S = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 } as CSSProperties,
   dialog: { width: 'min(860px, 96vw)', maxHeight: '92vh', overflow: 'auto', background: 'var(--panel, #1b1b1b)', color: 'inherit', border: '1px solid rgba(128,128,128,0.3)', borderRadius: 12, padding: 18 } as CSSProperties,
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 } as CSSProperties,
-  label: { fontSize: 12, fontWeight: 600, opacity: 0.8, margin: '12px 0 4px' } as CSSProperties,
+  label: { display: 'block', fontSize: 12, fontWeight: 600, opacity: 0.8, margin: '12px 0 4px' } as CSSProperties,
   input: { width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.32)', background: 'transparent', color: 'inherit', fontSize: 13 } as CSSProperties,
   btn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(128,128,128,0.3)', background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 13 } as CSSProperties,
   primary: { background: ACCENT, borderColor: ACCENT, color: '#fff' } as CSSProperties,
   iconbtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 24, borderRadius: 6, border: '1px solid rgba(128,128,128,0.3)', background: 'transparent', color: 'inherit', cursor: 'pointer' } as CSSProperties,
   row: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' } as CSSProperties,
   muted: { fontSize: 12, opacity: 0.65 } as CSSProperties,
+  required: { color: '#d06a52' } as CSSProperties,
   err: { color: '#d06a52', fontSize: 12, marginTop: 8 } as CSSProperties,
   caveat: { fontSize: 12, opacity: 0.75, background: 'rgba(184,134,11,0.12)', border: '1px solid rgba(184,134,11,0.4)', borderRadius: 6, padding: '6px 8px', marginTop: 6 } as CSSProperties,
   tier: { border: '1px solid rgba(128,128,128,0.24)', borderRadius: 9, overflow: 'hidden', marginTop: 10 } as CSSProperties,
@@ -100,6 +101,29 @@ export function BlendEditorDialog({
     ? Math.min(...routeContexts) : null;
   const maximumContext = routeContexts.length > 0 ? Math.max(...routeContexts) : null;
   const nameValid = NAME_RE.test(name) && name.toLowerCase() !== 'auto';
+  const stickyNumber = Number(sticky);
+  const stickyValid = !sticky.trim()
+    || (Number.isInteger(stickyNumber) && stickyNumber >= 1 && stickyNumber <= 1000);
+  const validationIssues = (() => {
+    const issues: string[] = [];
+    if (!name.trim()) issues.push('Name is required.');
+    else if (!nameValid) issues.push('Enter a valid name.');
+    if (strategy === 'smart-route') {
+      for (const tier of TIERS) {
+        if (groups[tier].length === 0) issues.push(`${TIER_COPY[tier].title} requires at least one model.`);
+      }
+      if (routedIds.length > 24) issues.push('Smart route supports at most 24 tier assignments.');
+    } else {
+      if (strategy === 'fusion') {
+        if (models.length < 2) issues.push('Fusion requires at least two models.');
+        if (!judge) issues.push('Judge model is required for Fusion.');
+      } else if (models.length === 0) issues.push('Add at least one model.');
+    }
+    if (strategy === 'round-robin' && !stickyValid) {
+      issues.push('Sticky limit must be a whole number from 1 to 1000.');
+    }
+    return issues;
+  })();
 
   function moveModel(index: number, dir: -1 | 1) {
     const target = index + dir;
@@ -134,15 +158,8 @@ export function BlendEditorDialog({
     return { quick: clean('quick'), normal: clean('normal'), difficult: clean('difficult'), uncertain_tier: uncertainTier };
   }
 
-  function canSave(): boolean {
-    if (!nameValid) return false;
-    if (strategy === 'smart-route') return TIERS.every((tier) => groups[tier].length > 0) && routedIds.length <= 24;
-    if (models.length < 1) return false;
-    if (strategy === 'fusion' && (models.length < 2 || !judge)) return false;
-    return true;
-  }
-
   async function save() {
+    if (validationIssues.length > 0) return;
     setBusy(true); setError(null);
     try {
       const smart = strategy === 'smart-route' ? smartRoute() : null;
@@ -172,17 +189,23 @@ export function BlendEditorDialog({
           <strong>{blend ? 'Edit blend' : 'New blend'}</strong>
           <button style={S.iconbtn} onClick={onClose} aria-label="Close"><X size={15} /></button>
         </div>
+        <div style={S.muted}>Fields marked with <span style={S.required}>*</span> are required.</div>
 
-        <div style={S.label}>Name</div>
-        <input style={S.input} value={name} onChange={(event) => setName(event.target.value)} placeholder="research-blend" />
-        {!nameValid && name.length > 0 && <div style={S.muted}>Letters, digits, '.', '_', '-' (max 64); not "auto".</div>}
+        <label style={S.label} htmlFor="blend-name">Name <span style={S.required}>*</span></label>
+        <input id="blend-name" required aria-invalid={!nameValid} style={S.input} value={name} onChange={(event) => setName(event.target.value)} placeholder="research-blend" />
+        {!name.trim()
+          ? <div style={S.err}>Name is required.</div>
+          : !nameValid && <div style={S.err}>Use letters, digits, '.', '_', or '-' (max 64); the name cannot be "auto".</div>}
 
-        <div style={S.label}>How should this blend choose a model?</div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          {STRATEGIES.map(({ value, label }) => (
-            <label key={value} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer' }}>
-              <input type="radio" name="strategy" checked={strategy === value} onChange={() => setStrategy(value)} />
-              {label}
+        <div style={S.label}>Blend mode <span style={S.required}>*</span></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+          {STRATEGIES.map(({ value, label, description }) => (
+            <label key={value} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, padding: 9, border: strategy === value ? `1px solid ${ACCENT}` : '1px solid rgba(128,128,128,0.24)', borderRadius: 8, cursor: 'pointer' }}>
+              <input required aria-label={label} type="radio" name="strategy" checked={strategy === value} onChange={() => setStrategy(value)} />
+              <span>
+                <strong style={{ display: 'block', fontSize: 13 }}>{label}</strong>
+                <span style={S.muted}>{description}</span>
+              </span>
             </label>
           ))}
         </div>
@@ -190,7 +213,7 @@ export function BlendEditorDialog({
         {strategy === 'smart-route' ? (
           <>
             <div style={{ ...S.caveat, borderColor: 'rgba(47,111,98,0.5)', background: 'rgba(47,111,98,0.1)' }}>
-              Smart route reads the task and chooses the first suitable model from one of the three groups. No thresholds to configure.
+              Smart Route adds a classification step, so responses may be slightly slower. It can save cost by routing quick and normal tasks to less expensive models.
             </div>
             {TIERS.map((tier) => {
               const copy = TIER_COPY[tier];
@@ -199,11 +222,11 @@ export function BlendEditorDialog({
               return (
                 <div style={S.tier} key={tier}>
                   <div style={{ padding: '8px 10px', borderLeft: `4px solid ${copy.tone}`, background: 'rgba(128,128,128,0.06)' }}>
-                    <strong style={{ fontSize: 13 }}>{copy.title}</strong>
+                    <strong style={{ fontSize: 13 }}>{copy.title}</strong> <span style={S.required}>*</span>
                     <div style={S.muted}>{copy.help}</div>
                   </div>
                   <div style={{ padding: '4px 10px 8px' }}>
-                    {groups[tier].length === 0 && <div style={{ ...S.muted, padding: '8px 0' }}>Add at least one model.</div>}
+                    {groups[tier].length === 0 && <div style={{ ...S.err, padding: '8px 0' }}>At least one model is required.</div>}
                     {groups[tier].map((row, index) => {
                       const metadata = modelById.get(row.model);
                       const supported = metadata?.reasoning_levels ?? [];
@@ -248,7 +271,7 @@ export function BlendEditorDialog({
               );
             })}
 
-            <div style={S.label}>If the task is unclear</div>
+            <div style={S.label}>If the task is unclear <span style={S.required}>*</span></div>
             <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
               <label><input type="radio" checked={uncertainTier === 'difficult'} onChange={() => setUncertainTier('difficult')} /> Use Difficult (recommended)</label>
               <label><input type="radio" checked={uncertainTier === 'normal'} onChange={() => setUncertainTier('normal')} /> Use Normal</label>
@@ -259,8 +282,9 @@ export function BlendEditorDialog({
           </>
         ) : (
           <>
-            <div style={S.label}>Models (order = fallback order)</div>
-            {models.length === 0 && <div style={S.muted}>No models yet — add at least one below.</div>}
+            <div style={S.label}>Models <span style={S.required}>*</span>{strategy === 'fallback' ? ' (order = fallback order)' : ''}</div>
+            {strategy !== 'fusion' && models.length === 0 && <div style={S.err}>At least one model is required.</div>}
+            {strategy === 'fusion' && models.length < 2 && <div style={S.err}>Fusion requires at least two models.</div>}
             {models.map((id, index) => (
               <div style={S.row} key={id}>
                 <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{index + 1}. {id}</span>
@@ -271,7 +295,7 @@ export function BlendEditorDialog({
               </div>
             ))}
             <div style={{ ...S.row, marginTop: 4 }}>
-              <select style={{ ...S.input, flex: 1 }} value={addPick} onChange={(event) => setAddPick(event.target.value)}>
+              <select aria-label="Add blend model" style={{ ...S.input, flex: 1 }} value={addPick} onChange={(event) => setAddPick(event.target.value)}>
                 <option value="">Add a model…</option>
                 {unselected.map((id) => <option key={id} value={id}>{id}</option>)}
               </select>
@@ -286,16 +310,18 @@ export function BlendEditorDialog({
         {strategy === 'round-robin' && (
           <>
             <div style={S.label}>Sticky limit (applies to all round-robin blends)</div>
-            <input style={{ ...S.input, width: 120 }} type="number" min={1} value={sticky} onChange={(event) => setSticky(event.target.value)} />
+            <input aria-label="Sticky limit" style={{ ...S.input, width: 120 }} type="number" min={1} max={1000} value={sticky} onChange={(event) => setSticky(event.target.value)} />
+            {!stickyValid && <div style={S.err}>Enter a whole number from 1 to 1000, or leave it empty.</div>}
           </>
         )}
         {strategy === 'fusion' && (
           <>
-            <div style={S.label}>Judge model</div>
-            <select style={S.input} value={judge} onChange={(event) => setJudge(event.target.value)}>
+            <div style={S.label}>Judge model <span style={S.required}>*</span></div>
+            <select required aria-label="Judge model" aria-invalid={!judge} style={S.input} value={judge} onChange={(event) => setJudge(event.target.value)}>
               <option value="">Choose a judge model…</option>
               {available.map((model) => <option key={model.id} value={model.id}>{model.id}</option>)}
             </select>
+            {!judge && <div style={S.err}>Judge model is required for Fusion.</div>}
             <div style={S.caveat}>Fusion runs every model in the blend on each request (higher cost); tools are disabled for fusion.</div>
           </>
         )}
@@ -303,7 +329,8 @@ export function BlendEditorDialog({
         {error && <div style={S.err}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button style={S.btn} onClick={onClose} disabled={busy}>Cancel</button>
-          <button style={{ ...S.btn, ...S.primary }} onClick={() => void save()} disabled={busy || !canSave()}>
+          <button style={{ ...S.btn, ...S.primary }} onClick={() => void save()}
+            title={validationIssues.join(' ')} disabled={busy || validationIssues.length > 0}>
             {busy ? 'Saving…' : 'Save'}
           </button>
         </div>
