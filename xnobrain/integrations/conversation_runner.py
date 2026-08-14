@@ -281,23 +281,148 @@ class ConversationRunnerMixin:
                 # fan-out parallel, but join it inside this originating turn so
                 # the parent can synthesize the workers' results reliably.
                 from tools.delegate_tool import (
+                    _get_max_concurrent_children,
                     _strip_model_hidden_task_fields,
                     delegate_task,
                 )
 
                 def dispatch_delegate_sync(function_args: Mapping[str, Any]) -> str:
-                    return delegate_task(
-                        goal=function_args.get("goal"),
-                        context=function_args.get("context"),
-                        tasks=_strip_model_hidden_task_fields(function_args.get("tasks")),
-                        max_iterations=function_args.get("max_iterations"),
-                        role=function_args.get("role"),
-                        output_schema=function_args.get("output_schema"),
-                        background=False,
-                        parent_agent=agent,
-                    )
+                    tasks = _strip_model_hidden_task_fields(function_args.get("tasks"))
+                    slots = _get_max_concurrent_children()
+                    max_batch_tasks = 20
+                    if not isinstance(tasks, list) or len(tasks) <= slots:
+                        return delegate_task(
+                            goal=function_args.get("goal"),
+                            context=function_args.get("context"),
+                            tasks=tasks,
+                            max_iterations=function_args.get("max_iterations"),
+                            role=function_args.get("role"),
+                            output_schema=function_args.get("output_schema"),
+                            background=False,
+                            parent_agent=agent,
+                        )
+                    if len(tasks) > max_batch_tasks:
+                        return json.dumps({
+                            "error": (
+                                f"Too many tasks: {len(tasks)} provided; "
+                                f"this runtime accepts at most {max_batch_tasks}."
+                            ),
+                        })
+
+                    # Hermes currently treats max_concurrent_children as both
+                    # a slot count and a hard batch-size limit. XNOBrain keeps
+                    # the configured number of execution slots, queues the
+                    # remainder, and presents the model with one consolidated
+                    # tool result. Each wave is still internally parallel.
+                    original_callback = getattr(agent, "tool_progress_callback", None)
+                    started = time.monotonic()
+                    combined_results: list[dict[str, Any]] = []
+                    live_transcripts: list[str] = []
+                    for task_index, task in enumerate(tasks):
+                        if callable(original_callback):
+                            original_callback(
+                                "subagent.queued",
+                                None,
+                                str(task.get("goal") or "") if isinstance(task, Mapping) else "",
+                                None,
+                                task_index=task_index,
+                                task_count=len(tasks),
+                                concurrency=slots,
+                                queue_position=max(0, task_index - slots + 1),
+                            )
+
+                    for offset in range(0, len(tasks), slots):
+                        chunk = tasks[offset:offset + slots]
+
+                        def relay_chunk_progress(
+                            event_type: str,
+                            tool_name: str | None = None,
+                            preview: str | None = None,
+                            event_args: Any = None,
+                            **event_kwargs: Any,
+                        ) -> None:
+                            if not callable(original_callback):
+                                return
+                            local_index = event_kwargs.get("task_index")
+                            if isinstance(local_index, int):
+                                event_kwargs["task_index"] = offset + local_index
+                            event_kwargs["task_count"] = len(tasks)
+                            event_kwargs["concurrency"] = slots
+                            original_callback(
+                                event_type,
+                                tool_name,
+                                preview,
+                                event_args,
+                                **event_kwargs,
+                            )
+
+                        agent.tool_progress_callback = relay_chunk_progress
+                        try:
+                            raw_result = delegate_task(
+                                tasks=chunk,
+                                max_iterations=function_args.get("max_iterations"),
+                                role=function_args.get("role"),
+                                background=False,
+                                parent_agent=agent,
+                            )
+                        finally:
+                            agent.tool_progress_callback = original_callback
+
+                        try:
+                            decoded = json.loads(raw_result)
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            decoded = {}
+                        chunk_results = decoded.get("results") if isinstance(decoded, Mapping) else None
+                        if isinstance(chunk_results, list):
+                            for local_index, item in enumerate(chunk_results):
+                                entry = dict(item) if isinstance(item, Mapping) else {
+                                    "status": "error",
+                                    "error": str(item),
+                                }
+                                entry["task_index"] = offset + int(entry.get("task_index", local_index))
+                                combined_results.append(entry)
+                        else:
+                            error = str(decoded.get("error") or raw_result) if isinstance(decoded, Mapping) else str(raw_result)
+                            for local_index in range(len(chunk)):
+                                combined_results.append({
+                                    "task_index": offset + local_index,
+                                    "status": "error",
+                                    "summary": None,
+                                    "error": error,
+                                    "api_calls": 0,
+                                    "duration_seconds": 0,
+                                })
+                        paths = decoded.get("live_transcripts") if isinstance(decoded, Mapping) else None
+                        if isinstance(paths, list):
+                            live_transcripts.extend(str(path) for path in paths if path)
+
+                    payload: dict[str, Any] = {
+                        "results": sorted(combined_results, key=lambda item: int(item.get("task_index", 0))),
+                        "total_duration_seconds": round(time.monotonic() - started, 2),
+                        "concurrency": slots,
+                    }
+                    if live_transcripts:
+                        payload["live_transcripts"] = live_transcripts
+                    return json.dumps(payload, ensure_ascii=False, default=str)
 
                 agent._dispatch_delegate_task = dispatch_delegate_sync
+                # Tell the model that task count and concurrent slot count are
+                # separate on this host, otherwise Hermes' stock schema causes
+                # it to split a five-task request into multiple tool calls.
+                for tool in getattr(agent, "tools", []) or []:
+                    function = tool.get("function") if isinstance(tool, dict) else None
+                    if not isinstance(function, dict) or function.get("name") != "delegate_task":
+                        continue
+                    parameters = function.get("parameters")
+                    properties = parameters.get("properties") if isinstance(parameters, dict) else None
+                    tasks_schema = properties.get("tasks") if isinstance(properties, dict) else None
+                    if isinstance(tasks_schema, dict):
+                        tasks_schema["description"] = (
+                            "Batch mode: provide up to 20 independent tasks in one call. "
+                            f"The runtime runs at most { _get_max_concurrent_children() } workers "
+                            "at once and automatically queues the remainder. Do not split a larger "
+                            "batch merely to match the concurrency limit."
+                        )
                 route_reasoning = str(prepared.get("route_reasoning") or "")
                 if route_reasoning in {"low", "medium", "high"}:
                     agent.reasoning_config = {

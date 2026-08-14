@@ -1,5 +1,5 @@
 import type { SSEEvent } from '../api/stream';
-import type { ChatMessage, ChatRun, ChatRunStep, ChatTodoItem, ChatTodoStatus, RunApprovalChoice, RunTimelineItem } from '../types';
+import type { ChatMessage, ChatRun, ChatRunStep, ChatTodoItem, ChatTodoStatus, DelegationLogEntry, DelegationWorker, DelegationWorkerStatus, RunApprovalChoice, RunTimelineItem } from '../types';
 
 type Data = Record<string, unknown>;
 const APPROVAL_CHOICES: RunApprovalChoice[] = ['once', 'always', 'deny'];
@@ -93,6 +93,117 @@ function terminal(status: ChatRun['status']): boolean {
   return status === 'completed' || status === 'error' || status === 'interrupted' || status === 'cancelled';
 }
 
+function delegationWorkers(args: unknown): DelegationWorker[] {
+  const input = record(args);
+  const tasks = Array.isArray(input.tasks) ? input.tasks : [];
+  const goals = tasks.length > 0
+    ? tasks.map((task) => string(record(task).goal))
+    : [string(input.goal)].filter(Boolean);
+  return goals.map((goal, index) => ({
+    index,
+    goal,
+    status: 'queued',
+    queuePosition: index + 1,
+    toolCount: 0,
+    logs: [],
+  }));
+}
+
+function normalizedWorkerStatus(value: unknown): DelegationWorkerStatus {
+  const status = string(value);
+  if (status === 'completed' || status === 'interrupted' || status === 'cancelled') return status;
+  if (status === 'error' || status === 'failed' || status === 'timeout') return 'error';
+  return 'running';
+}
+
+function updateDelegationWorker(run: ChatRun, data: Data, type: string): ChatRun {
+  const stepIndex = [...run.steps].reverse().findIndex((step) =>
+    step.toolName === 'delegate_task' && step.status === 'running' && step.delegation);
+  if (stepIndex < 0) return run;
+  const actualStepIndex = run.steps.length - 1 - stepIndex;
+  const taskIndex = number(data.task_index);
+  if (taskIndex === undefined) return run;
+  const timestamp = ts(data);
+  return {
+    ...run,
+    steps: run.steps.map((step, index) => {
+      if (index !== actualStepIndex || !step.delegation) return step;
+      const workers = step.delegation.workers.map((worker) => {
+        if (worker.index !== taskIndex) return worker;
+        let next: DelegationWorker = { ...worker, lastEventAt: timestamp ?? worker.lastEventAt };
+        let log: DelegationLogEntry | undefined;
+        if (type === 'delegation.worker.queued') {
+          next = {
+            ...next,
+            status: 'queued',
+            queuePosition: number(data.queue_position) ?? worker.queuePosition,
+          };
+        } else if (type === 'delegation.worker.started') {
+          next = { ...next, status: 'running', queuePosition: undefined, startedAt: timestamp ?? worker.startedAt };
+          log = { id: `${step.id}-${taskIndex}-${timestamp ?? Date.now()}-start`, timestamp, kind: 'start', message: string(data.goal) || worker.goal };
+        } else if (type === 'delegation.worker.activity') {
+          const tool = string(data.tool);
+          next = {
+            ...next,
+            status: 'running',
+            lastTool: tool || worker.lastTool,
+            toolCount: number(data.tool_count) ?? (tool ? worker.toolCount + 1 : worker.toolCount),
+          };
+          log = {
+            id: `${step.id}-${taskIndex}-${timestamp ?? Date.now()}-${next.logs.length}`,
+            timestamp,
+            kind: tool ? 'tool' : 'activity',
+            message: string(data.message) || (tool ? tool : 'Working'),
+            ...(tool ? { tool } : {}),
+          };
+        } else if (type === 'delegation.worker.text') {
+          const delta = string(data.delta);
+          const previous = next.logs[next.logs.length - 1];
+          if (delta && previous?.kind === 'text') {
+            next = {
+              ...next,
+              logs: [...next.logs.slice(0, -1), { ...previous, message: (previous.message + delta).slice(-12_000) }],
+            };
+          } else if (delta) {
+            log = { id: `${step.id}-${taskIndex}-${timestamp ?? Date.now()}-text`, timestamp, kind: 'text', message: delta };
+          }
+        } else if (type === 'delegation.worker.completed') {
+          const status = normalizedWorkerStatus(data.status);
+          const summary = string(data.summary);
+          next = {
+            ...next,
+            status,
+            endedAt: timestamp,
+            steps: number(data.api_calls),
+            inputTokens: number(data.input_tokens),
+            outputTokens: number(data.output_tokens),
+            reasoningTokens: number(data.reasoning_tokens),
+            summary: status === 'completed' ? summary : worker.summary,
+            error: status === 'error' ? summary || 'Worker failed' : worker.error,
+            filesRead: Array.isArray(data.files_read) ? data.files_read.filter((item): item is string => typeof item === 'string') : worker.filesRead,
+            filesWritten: Array.isArray(data.files_written) ? data.files_written.filter((item): item is string => typeof item === 'string') : worker.filesWritten,
+          };
+          log = {
+            id: `${step.id}-${taskIndex}-${timestamp ?? Date.now()}-complete`,
+            timestamp,
+            kind: status === 'completed' ? 'complete' : 'error',
+            message: status === 'completed' ? 'Worker completed' : next.error || 'Worker failed',
+          };
+        }
+        if (log) next = { ...next, logs: [...next.logs, log].slice(-300) };
+        return next;
+      });
+      return {
+        ...step,
+        delegation: {
+          concurrency: number(data.concurrency) ?? step.delegation.concurrency,
+          workers,
+        },
+      };
+    }),
+  };
+}
+
 function initialRun(data: Data): ChatRun {
   return {
     id: string(data.run_id) || `run-${string(data.session_id) || 'active'}`,
@@ -152,6 +263,9 @@ export function reduceRunEvent(run: ChatRun | null, event: SSEEvent): ChatRun | 
     }
     return { ...run, todos, timeline };
   }
+  if (type.startsWith('delegation.worker.')) {
+    return updateDelegationWorker(run, data, type);
+  }
   if (type === 'tool.started') {
     const toolName = toolNameOf(data) || 'tool';
     const step: ChatRunStep = {
@@ -159,6 +273,12 @@ export function reduceRunEvent(run: ChatRun | null, event: SSEEvent): ChatRun | 
       toolName,
       preview: string(data.preview),
       ...(data.args !== undefined ? { args: data.args } : {}),
+      ...(toolName === 'delegate_task' ? {
+        delegation: {
+          concurrency: number(data.concurrency) ?? 3,
+          workers: delegationWorkers(data.args),
+        },
+      } : {}),
       status: 'running',
       startedAt: ts(data),
     };

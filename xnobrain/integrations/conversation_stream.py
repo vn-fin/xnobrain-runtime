@@ -106,6 +106,97 @@ class ConversationStreamMixin:
         ) -> None:
             timestamp = time.time()
             normalized_tool = tool_name or "tool"
+
+            def safe_text(value: Any, limit: int = 2_000) -> str:
+                text = str(value or "")
+                try:
+                    from agent.redact import redact_sensitive_text
+
+                    text = redact_sensitive_text(text, force=True) or ""
+                except Exception:
+                    text = "[event text withheld: redaction unavailable]"
+                return text[:limit]
+
+            def safe_delegation_output(value: Any) -> str:
+                """Keep UI result data while withholding local transcript paths."""
+                if isinstance(value, str):
+                    try:
+                        decoded = json.loads(value)
+                    except (TypeError, ValueError):
+                        return safe_text(value, 20_000)
+                elif isinstance(value, Mapping):
+                    decoded = dict(value)
+                else:
+                    return json.dumps(value, ensure_ascii=False, default=str)
+                if not isinstance(decoded, Mapping):
+                    return json.dumps(decoded, ensure_ascii=False, default=str)
+                sanitized = dict(decoded)
+                sanitized.pop("live_transcripts", None)
+                results = sanitized.get("results")
+                if isinstance(results, list):
+                    sanitized["results"] = [
+                        {
+                            key: item_value
+                            for key, item_value in item.items()
+                            if key not in {"live_transcript", "transcript_path"}
+                        }
+                        if isinstance(item, Mapping)
+                        else item
+                        for item in results
+                    ]
+                return json.dumps(sanitized, ensure_ascii=False, default=str)
+
+            if event_type.startswith("subagent."):
+                event_name = {
+                    "subagent.queued": "delegation.worker.queued",
+                    "subagent.start": "delegation.worker.started",
+                    "subagent.tool": "delegation.worker.activity",
+                    "subagent.thinking": "delegation.worker.activity",
+                    "subagent.text": "delegation.worker.text",
+                    "subagent.complete": "delegation.worker.completed",
+                }.get(event_type)
+                if event_name is None:
+                    return
+                task_index = kwargs.get("task_index")
+                if not isinstance(task_index, int):
+                    return
+                event = {
+                    "event": event_name,
+                    "run_id": run_id,
+                    "timestamp": timestamp,
+                    "task_index": task_index,
+                    "task_count": int(kwargs.get("task_count") or 1),
+                    "concurrency": int(kwargs.get("concurrency") or 1),
+                    "goal": safe_text(kwargs.get("goal") or preview),
+                }
+                if event_type == "subagent.queued":
+                    event["queue_position"] = int(kwargs.get("queue_position") or 0)
+                elif event_type == "subagent.tool":
+                    event.update({
+                        "kind": "tool",
+                        "tool": safe_text(tool_name, 120),
+                        "message": safe_text(preview, 500),
+                        "tool_count": int(kwargs.get("tool_count") or 0),
+                    })
+                elif event_type == "subagent.thinking":
+                    event.update({"kind": "activity", "message": "Reasoning"})
+                elif event_type == "subagent.text":
+                    event["delta"] = safe_text(preview, 4_000)
+                elif event_type == "subagent.complete":
+                    event.update({
+                        "status": safe_text(kwargs.get("status"), 40) or "completed",
+                        "duration_seconds": round(float(kwargs.get("duration_seconds") or 0), 3),
+                        "summary": safe_text(kwargs.get("summary") or preview, 4_000),
+                        "input_tokens": int(kwargs.get("input_tokens") or 0),
+                        "output_tokens": int(kwargs.get("output_tokens") or 0),
+                        "reasoning_tokens": int(kwargs.get("reasoning_tokens") or 0),
+                        "api_calls": int(kwargs.get("api_calls") or 0),
+                        "files_read": [safe_text(path, 500) for path in list(kwargs.get("files_read") or [])[:40]],
+                        "files_written": [safe_text(path, 500) for path in list(kwargs.get("files_written") or [])[:40]],
+                    })
+                enqueue_event(event)
+                return
+
             if event_type == "tool.started":
                 event: dict[str, Any] = {
                     "event": "tool.started",
@@ -116,6 +207,12 @@ class ConversationStreamMixin:
                 }
                 if normalized_tool == "delegate_task" and isinstance(args, Mapping):
                     event["args"] = dict(args)
+                    try:
+                        from tools.delegate_tool import _get_max_concurrent_children
+
+                        event["concurrency"] = _get_max_concurrent_children()
+                    except Exception:
+                        event["concurrency"] = 3
                 enqueue_event(event)
             elif event_type == "tool.completed":
                 result = kwargs.get("result")
@@ -133,11 +230,7 @@ class ConversationStreamMixin:
                     or write_status in {"rejected", "failed"},
                 }
                 if normalized_tool == "delegate_task":
-                    event["output"] = (
-                        result
-                        if isinstance(result, str)
-                        else json.dumps(result, ensure_ascii=False, default=str)
-                    )
+                    event["output"] = safe_delegation_output(result)
                 enqueue_event(event)
                 if tool_name == "todo" and not bool(kwargs.get("is_error", False)):
                     todo_event = _todo_updated_event(result)

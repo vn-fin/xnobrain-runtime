@@ -141,6 +141,42 @@ export type ChatMessage = {
 export type ChatRunStepStatus = 'running' | 'completed' | 'error' | 'interrupted' | 'cancelled';
 export type RunApprovalChoice = 'once' | 'always' | 'deny';
 
+export type DelegationWorkerStatus = 'queued' | 'running' | 'completed' | 'error' | 'interrupted' | 'cancelled';
+
+export type DelegationLogEntry = {
+  id: string;
+  timestamp?: number;
+  kind: 'start' | 'tool' | 'activity' | 'text' | 'complete' | 'error';
+  message: string;
+  tool?: string;
+};
+
+export type DelegationWorker = {
+  index: number;
+  goal: string;
+  status: DelegationWorkerStatus;
+  queuePosition?: number;
+  startedAt?: number;
+  endedAt?: number;
+  lastEventAt?: number;
+  lastTool?: string;
+  toolCount: number;
+  steps?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  summary?: string;
+  error?: string;
+  filesRead?: string[];
+  filesWritten?: string[];
+  logs: DelegationLogEntry[];
+};
+
+export type ChatDelegation = {
+  concurrency: number;
+  workers: DelegationWorker[];
+};
+
 export type ChatRunApproval = {
   command: string;
   description: string;
@@ -156,6 +192,7 @@ export type ChatRunStep = {
   args?: unknown;
   output?: string;
   progress?: string;
+  delegation?: ChatDelegation;
   status: ChatRunStepStatus;
   startedAt?: number;
   endedAt?: number;

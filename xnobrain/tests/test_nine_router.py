@@ -1163,16 +1163,58 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 }
                 delegation_result = json.dumps({
                     "results": [
-                        {"task_index": 0, "status": "completed", "summary": "Found it."},
+                        {
+                            "task_index": 0,
+                            "status": "completed",
+                            "summary": "Found it.",
+                            "live_transcript": "/private/task-0.log",
+                        },
                         {"task_index": 1, "status": "completed", "summary": "Verified it."},
                     ],
                     "total_duration_seconds": 1.25,
+                    "live_transcripts": ["/private/task-0.log"],
                 })
                 tool_progress_callback(
                     "tool.started",
                     "delegate_task",
                     "delegating 2 tasks",
                     delegation_args,
+                )
+                worker_context = {
+                    "task_index": 0,
+                    "task_count": 2,
+                    "concurrency": 3,
+                    "goal": "Research the current implementation in detail.",
+                }
+                tool_progress_callback(
+                    "subagent.queued", None, None, None,
+                    **worker_context, queue_position=1,
+                )
+                tool_progress_callback(
+                    "subagent.start", None, "Starting research", None,
+                    **worker_context,
+                )
+                tool_progress_callback(
+                    "subagent.tool", "web_search", "ICML proceedings", None,
+                    **worker_context, tool_count=1,
+                )
+                tool_progress_callback(
+                    "subagent.text", None, "Drafting the report.", None,
+                    **worker_context,
+                )
+                tool_progress_callback(
+                    "subagent.complete", None, None, None,
+                    **worker_context,
+                    status="completed",
+                    duration_seconds=1.2,
+                    summary="Research complete.",
+                    input_tokens=100,
+                    output_tokens=25,
+                    reasoning_tokens=5,
+                    api_calls=2,
+                    files_read=["/workspace/source.md"],
+                    files_written=["/workspace/report.pdf"],
+                    transcript_path="/private/worker-transcript.jsonl",
                 )
                 tool_progress_callback(
                     "tool.completed",
@@ -1230,7 +1272,19 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(b'"tool":"delegate_task"', payload)
             self.assertIn(b'"args":{"tasks"', payload)
             self.assertIn(b'Research the current implementation', payload)
+            self.assertIn(b'"event":"delegation.worker.queued"', payload)
+            self.assertIn(b'"event":"delegation.worker.started"', payload)
+            self.assertIn(b'"event":"delegation.worker.activity"', payload)
+            self.assertIn(b'"tool":"web_search"', payload)
+            self.assertIn(b'"event":"delegation.worker.text"', payload)
+            self.assertIn(b'"delta":"Drafting the report."', payload)
+            self.assertIn(b'"event":"delegation.worker.completed"', payload)
+            self.assertIn(b'"input_tokens":100', payload)
+            self.assertIn(b'"api_calls":2', payload)
+            self.assertIn(b'"files_written":["/workspace/report.pdf"]', payload)
+            self.assertNotIn(b"worker-transcript.jsonl", payload)
             self.assertIn(b'"output":"{\\"results\\"', payload)
+            self.assertNotIn(b"/private/task-0.log", payload)
             self.assertIn(b'"event":"todo.updated"', payload)
             self.assertIn(b'"content":"Summarize findings"', payload)
             self.assertIn(b'"in_progress":1', payload)
@@ -1268,6 +1322,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             db.close()
             observed: dict[str, Any] = {}
             reasoning_events: list[tuple[Any, ...]] = []
+            delegation_events: list[tuple[Any, ...]] = []
 
             class FakeSessionAdapter:
                 def __init__(self, _config):
@@ -1291,6 +1346,9 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 def _create_agent(self, **_kwargs):
                     return type("FakeAgent", (), {
                         "model": "cx/gpt-5.6-luna",
+                        "tool_progress_callback": staticmethod(
+                            _kwargs.get("tool_progress_callback")
+                        ),
                         "context_compressor": type("FakeCompressor", (), {
                             "last_prompt_tokens": 10_000,
                             "context_length": 200_000,
@@ -1302,13 +1360,21 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
                 async def _run_agent(self, **kwargs):
                     observed.update(kwargs)
-                    agent = self._create_agent()
+                    agent = self._create_agent(
+                        tool_progress_callback=kwargs["tool_progress_callback"],
+                    )
                     kwargs["agent_ref"][0] = agent
                     observed["delegated"] = agent._dispatch_delegate_task({
                         "tasks": [{
                             "goal": "Inspect the implementation thoroughly.",
                             "acp_command": "hidden-provider-command",
                         }],
+                    })
+                    observed["queued_delegated"] = agent._dispatch_delegate_task({
+                        "tasks": [
+                            {"goal": f"Research conference task number {index} thoroughly."}
+                            for index in range(5)
+                        ],
                     })
                     agent.reasoning_callback("I checked the saved context.")
 
@@ -1353,19 +1419,33 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 patch(
                     "tools.delegate_tool.delegate_task",
-                    return_value='{"results":[]}',
+                    side_effect=[
+                        '{"results":[]}',
+                        json.dumps({"results": [
+                            {"task_index": index, "status": "completed", "summary": f"wave one {index}"}
+                            for index in range(3)
+                        ]}),
+                        json.dumps({"results": [
+                            {"task_index": index, "status": "completed", "summary": f"wave two {index}"}
+                            for index in range(2)
+                        ]}),
+                    ],
                 ) as delegate,
+                patch("tools.delegate_tool._get_max_concurrent_children", return_value=3),
             ):
                 result, usage = await manager._run_session_agent(
                     prepared,
                     run_id="run_" + "a" * 32,
                     stream_delta_callback=deltas.append,
-                    tool_progress_callback=lambda *args, **_kwargs: reasoning_events.append(args),
+                    tool_progress_callback=lambda *args, **_kwargs: (
+                        reasoning_events if args and args[0] == "reasoning.delta" else delegation_events
+                    ).append(args),
                     approval_notify_callback=lambda _data: None,
                     agent_ref=[None],
                 )
 
             delegated = observed.get("delegated")
+            queued_delegated = json.loads(observed["queued_delegated"])
 
             self.assertEqual(
                 [item["content"] for item in observed["conversation_history"]],
@@ -1384,12 +1464,20 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(deltas, ["I remember."])
             self.assertEqual(delegated, '{"results":[]}')
-            delegate.assert_called_once()
-            delegate_kwargs = delegate.call_args.kwargs
+            self.assertEqual(delegate.call_count, 3)
+            delegate_kwargs = delegate.call_args_list[0].kwargs
             self.assertFalse(delegate_kwargs["background"])
             self.assertEqual(
                 delegate_kwargs["tasks"],
                 [{"goal": "Inspect the implementation thoroughly."}],
+            )
+            self.assertEqual([len(call.kwargs["tasks"]) for call in delegate.call_args_list[1:]], [3, 2])
+            self.assertEqual([item["task_index"] for item in queued_delegated["results"]], [0, 1, 2, 3, 4])
+            self.assertEqual(queued_delegated["concurrency"], 3)
+            self.assertEqual(len(delegation_events), 5)
+            self.assertEqual(
+                [event[0] for event in delegation_events],
+                ["subagent.queued"] * 5,
             )
             self.assertEqual(result["final_response"], "I remember.")
             self.assertEqual(usage["total_tokens"], 5)

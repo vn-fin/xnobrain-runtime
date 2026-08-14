@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChatRun } from '../types';
 import { RunActivityBar, RunSteps } from './RunSteps';
@@ -83,9 +83,9 @@ describe('RunSteps', () => {
 
     expect(screen.getByRole('region', { name: 'Delegation activity' })).toBeVisible();
     expect(screen.getByText('RUNNING')).toBeVisible();
-    expect(screen.getByText('2 workers in parallel')).toBeVisible();
+    expect(screen.getByText('2 running · 0 queued · 2 slots')).toBeVisible();
     expect(screen.getByText(/Inspect the runtime delegation path/)).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel all' }));
     expect(stop).toHaveBeenCalledOnce();
   });
 
@@ -114,9 +114,48 @@ describe('RunSteps', () => {
     fireEvent.click(screen.getByRole('button', { name: /Worked/ }));
     expect(screen.getByText('PARTIAL FAILURE')).toBeVisible();
     expect(screen.getByText(/1\/2 results returned/)).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+    fireEvent.click(screen.getByRole('button', { name: /02 Run focused tests/ }));
     expect(screen.getByText('Worker session failed.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Close worker activity' }));
+    fireEvent.click(screen.getByRole('button', { name: /01 Inspect the runtime/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Result' }));
     expect(screen.getByText('Runtime inspected.')).toBeVisible();
+  });
+
+  it('opens a worker modal that updates with live logs and exact metrics', () => {
+    render(<RunSteps run={run({
+      status: 'running',
+      assistantContent: '',
+      steps: [{
+        id: 'delegate-live',
+        toolName: 'delegate_task',
+        preview: 'five research tasks',
+        args: { tasks: Array.from({ length: 5 }, (_, index) => ({ goal: `Research conference ${index + 1} with a deliberately long description.` })) },
+        status: 'running',
+        delegation: {
+          concurrency: 3,
+          workers: Array.from({ length: 5 }, (_, index) => ({
+            index,
+            goal: `Research conference ${index + 1} with a deliberately long description.`,
+            status: index < 2 ? 'completed' : index < 4 ? 'running' : 'queued',
+            queuePosition: index === 4 ? 1 : undefined,
+            toolCount: index === 2 ? 3 : 0,
+            steps: index < 2 ? 2 : undefined,
+            inputTokens: index < 2 ? 1_200 : undefined,
+            outputTokens: index < 2 ? 300 : undefined,
+            logs: index === 2 ? [{ id: 'log-1', timestamp: 1_000, kind: 'tool', tool: 'web_search', message: 'ICML proceedings' }] : [],
+          })),
+        },
+      }],
+    })} />);
+
+    expect(screen.getByText('2 running · 1 queued · 3 slots')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /03 Research conference 3/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Worker 3 activity' });
+    expect(dialog).toBeVisible();
+    expect(within(dialog).getByText(/3 tools/)).toBeVisible();
+    expect(within(dialog).getByText(/web_search/)).toBeVisible();
+    expect(within(dialog).getByText('● streaming updates')).toBeVisible();
   });
 
   it('shows the live agent plan and task progress', () => {

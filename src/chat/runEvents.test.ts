@@ -69,6 +69,35 @@ describe('reduceRunEvent (live API format)', () => {
     });
   });
 
+  it('tracks queued workers, live activity, logs, and completion usage', () => {
+    const args = { tasks: Array.from({ length: 5 }, (_, index) => ({ goal: `Research conference ${index + 1}.` })) };
+    const run = fold([
+      stream[0],
+      body({ event: 'tool.started', run_id: RUN_ID, tool: 'delegate_task', args, concurrency: 3 }),
+      body({ event: 'delegation.worker.queued', run_id: RUN_ID, task_index: 4, task_count: 5, concurrency: 3, queue_position: 2 }),
+      body({ event: 'delegation.worker.started', run_id: RUN_ID, task_index: 0, task_count: 5, concurrency: 3, timestamp: 10 }),
+      body({ event: 'delegation.worker.activity', run_id: RUN_ID, task_index: 0, concurrency: 3, timestamp: 11, kind: 'tool', tool: 'web_search', message: 'KDD proceedings', tool_count: 1 }),
+      body({ event: 'delegation.worker.text', run_id: RUN_ID, task_index: 0, concurrency: 3, timestamp: 12, delta: 'Drafting findings.' }),
+      body({ event: 'delegation.worker.completed', run_id: RUN_ID, task_index: 0, concurrency: 3, timestamp: 13, status: 'completed', summary: 'Found papers.', input_tokens: 1200, output_tokens: 300, reasoning_tokens: 10, api_calls: 2, files_read: ['/workspace/a.md'], files_written: [] }),
+    ]);
+
+    const delegation = run?.steps[0].delegation;
+    expect(delegation?.concurrency).toBe(3);
+    expect(delegation?.workers).toHaveLength(5);
+    expect(delegation?.workers[0]).toMatchObject({
+      status: 'completed',
+      lastTool: 'web_search',
+      toolCount: 1,
+      steps: 2,
+      inputTokens: 1200,
+      outputTokens: 300,
+      summary: 'Found papers.',
+      filesRead: ['/workspace/a.md'],
+    });
+    expect(delegation?.workers[0].logs.map((entry) => entry.kind)).toEqual(['start', 'tool', 'text', 'complete']);
+    expect(delegation?.workers[4]).toMatchObject({ status: 'queued', queuePosition: 2 });
+  });
+
   it('tracks authoritative todo snapshots without exposing generic tool output', () => {
     const run = fold([
       stream[0],

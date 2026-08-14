@@ -5,6 +5,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   CircleStop,
   Code,
   FileText,
@@ -19,10 +20,11 @@ import {
   Sparkles,
   Terminal,
   Wrench,
+  X,
   XCircle,
 } from 'lucide-react';
 import { formatRunDuration, formatStepDuration, previewCode, stepLabel, toolGroupSummary, toolKind } from '../chat/runEvents';
-import type { ChatRun, ChatRunStep, ChatTodoItem, RunApprovalChoice } from '../types';
+import type { ChatRun, ChatRunStep, ChatTodoItem, DelegationWorker, RunApprovalChoice } from '../types';
 import { ConfirmDialog } from './modals';
 import { Markdown } from './Markdown';
 
@@ -340,12 +342,16 @@ function StepRow({ step }: { step: ChatRunStep }) {
   );
 }
 
-type DelegationWorker = {
+type DelegationResult = {
   task_index?: number;
   status?: string;
   summary?: string;
   duration_seconds?: number;
   error?: string;
+  api_calls?: number;
+  tokens?: { input?: number; output?: number };
+  files_read?: string[];
+  files_written?: string[];
 };
 
 function delegationDuration(seconds: unknown): string {
@@ -356,8 +362,99 @@ function delegationDuration(seconds: unknown): string {
   return `${minutes}m ${Math.round(seconds % 60)}s`;
 }
 
+function compactTokens(value: number): string {
+  if (value < 1_000) return String(value);
+  if (value < 1_000_000) return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)}k`;
+  return `${(value / 1_000_000).toFixed(1)}m`;
+}
+
+function workerDuration(worker: DelegationWorker, now: number): string {
+  const start = worker.startedAt;
+  const end = worker.endedAt ?? now;
+  return start !== undefined ? delegationDuration(Math.max(0, end - start)) : '';
+}
+
+function workerStatusGlyph(worker: DelegationWorker): string {
+  if (worker.status === 'completed') return '[✓]';
+  if (worker.status === 'error') return '[!]';
+  if (worker.status === 'cancelled' || worker.status === 'interrupted') return '[×]';
+  if (worker.status === 'running') return '[>]';
+  return '[ ]';
+}
+
+function WorkerLogModal({ worker, now, onClose }: { worker: DelegationWorker; now: number; onClose: () => void }) {
+  const [tab, setTab] = useState<'log' | 'result' | 'files'>('log');
+  const [autoScroll, setAutoScroll] = useState(true);
+  const logRef = useRef<HTMLDivElement>(null);
+  const running = worker.status === 'running';
+  const tokens = (worker.inputTokens ?? 0) + (worker.outputTokens ?? 0) + (worker.reasoningTokens ?? 0);
+  useEffect(() => {
+    if (autoScroll && logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [autoScroll, worker.logs]);
+  const files = [
+    ...(worker.filesRead ?? []).map((path) => ({ kind: 'read', path })),
+    ...(worker.filesWritten ?? []).map((path) => ({ kind: 'written', path })),
+  ];
+  return (
+    <div className="delegation-log-overlay" role="presentation" onMouseDown={onClose}>
+      <section className="delegation-log-modal" role="dialog" aria-modal="true" aria-label={`Worker ${worker.index + 1} activity`} onMouseDown={(event) => event.stopPropagation()}>
+        <header className="delegation-log-head">
+          <span className="delegation-prompt" aria-hidden="true">$</span>
+          <strong>WORKER {String(worker.index + 1).padStart(2, '0')}</strong>
+          <span className={`delegation-log-state ${worker.status}`}>{worker.status.toUpperCase()}</span>
+          <button type="button" onClick={onClose} aria-label="Close worker activity"><X size={16} /></button>
+        </header>
+        <div className="delegation-log-goal" title={worker.goal}>{worker.goal}</div>
+        <div className="delegation-log-meta">
+          <span>{workerDuration(worker, now) || '0s'}</span>
+          <span>{worker.toolCount} {worker.toolCount === 1 ? 'tool' : 'tools'}</span>
+          <span>{worker.steps === undefined ? 'steps —' : `${worker.steps} ${worker.steps === 1 ? 'step' : 'steps'}`}</span>
+          <span>{tokens > 0 ? `${compactTokens(tokens)} tokens` : 'tokens pending'}</span>
+        </div>
+        <nav className="delegation-log-tabs" aria-label="Worker activity views">
+          <button type="button" className={tab === 'log' ? 'active' : ''} onClick={() => setTab('log')}>Live log</button>
+          <button type="button" className={tab === 'result' ? 'active' : ''} onClick={() => setTab('result')}>Result</button>
+          <button type="button" className={tab === 'files' ? 'active' : ''} onClick={() => setTab('files')}>Files</button>
+        </nav>
+        {tab === 'log' && (
+          <div className="delegation-log-lines" ref={logRef} aria-live="polite">
+            {worker.logs.length > 0 ? worker.logs.map((entry) => (
+              <div className={`delegation-log-line ${entry.kind}`} key={entry.id}>
+                <time>{entry.timestamp ? new Date(entry.timestamp * 1_000).toLocaleTimeString([], { hour12: false }) : '--:--:--'}</time>
+                <span>{entry.kind}</span>
+                <code>{entry.tool ? `${entry.tool}${entry.message ? ` · ${entry.message}` : ''}` : entry.message}</code>
+              </div>
+            )) : <div className="delegation-log-empty">Waiting for the worker to start…</div>}
+          </div>
+        )}
+        {tab === 'result' && (
+          <div className="delegation-log-result">
+            {worker.error ? <pre>{worker.error}</pre> : worker.summary ? <Markdown content={worker.summary} /> : <span>No result yet.</span>}
+          </div>
+        )}
+        {tab === 'files' && (
+          <div className="delegation-log-files">
+            {files.length > 0 ? files.map((file, index) => <div key={`${file.kind}-${file.path}-${index}`}><span>{file.kind}</span><code>{file.path}</code></div>) : <span>No file activity reported.</span>}
+          </div>
+        )}
+        <footer className="delegation-log-footer">
+          <span className={running ? 'streaming' : ''}>{running ? '● streaming updates' : '● stream complete'}</span>
+          <button type="button" onClick={() => setAutoScroll((value) => !value)}>Auto-scroll {autoScroll ? 'on' : 'off'}</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 function DelegationCard({ step, onStop }: { step: ChatRunStep; onStop?: () => void }) {
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedWorker, setSelectedWorker] = useState<number>();
+  const [collapseCompleted, setCollapseCompleted] = useState(false);
+  const [now, setNow] = useState(() => Date.now() / 1_000);
+  useEffect(() => {
+    if (step.status !== 'running') return;
+    const timer = window.setInterval(() => setNow(Date.now() / 1_000), 1_000);
+    return () => window.clearInterval(timer);
+  }, [step.status]);
   const args = object(step.args);
   const output = object(step.output);
   const rawTasks = Array.isArray(args.tasks) ? args.tasks : [];
@@ -366,16 +463,46 @@ function DelegationCard({ step, onStop }: { step: ChatRunStep; onStop?: () => vo
     .filter((goal): goal is string => typeof goal === 'string' && goal.trim().length > 0);
   if (goals.length === 0 && typeof args.goal === 'string' && args.goal.trim()) goals.push(args.goal);
   const results = (Array.isArray(output.results) ? output.results : [])
-    .map((result) => object(result) as DelegationWorker);
-  const workerCount = Math.max(goals.length, results.length, 1);
-  const failedCount = results.filter((result) => result.status !== 'completed' || Boolean(result.error)).length;
-  const completedCount = results.filter((result) => result.status === 'completed' && !result.error).length;
+    .map((result) => object(result) as DelegationResult);
+  const workers: DelegationWorker[] = step.delegation?.workers ?? Array.from(
+    { length: Math.max(goals.length, results.length, 1) },
+    (_, index) => {
+      const result = results.find((item) => item.task_index === index) ?? results[index];
+      const status = result?.status === 'completed' && !result.error ? 'completed' : result ? 'error' : step.status === 'running' ? 'running' : 'error';
+      return {
+        index,
+        goal: goals[index] || `Worker ${String(index + 1).padStart(2, '0')}`,
+        status,
+        toolCount: Array.isArray(object(result).tool_trace) ? (object(result).tool_trace as unknown[]).length : 0,
+        steps: result?.api_calls,
+        inputTokens: result?.tokens?.input,
+        outputTokens: result?.tokens?.output,
+        summary: result?.summary,
+        error: result?.error,
+        filesRead: result?.files_read,
+        filesWritten: result?.files_written,
+        startedAt: step.startedAt,
+        endedAt: step.endedAt,
+        logs: result ? [{
+          id: `${step.id}-${index}-restored`,
+          timestamp: step.endedAt,
+          kind: status === 'completed' ? 'complete' : 'error',
+          message: status === 'completed' ? 'Worker completed' : result.error || 'Worker failed',
+        }] : [],
+      };
+    },
+  );
+  const workerCount = workers.length;
+  const failedCount = workers.filter((worker) => worker.status === 'error').length;
+  const completedCount = workers.filter((worker) => worker.status === 'completed').length;
+  const runningCount = workers.filter((worker) => worker.status === 'running').length;
+  const queuedCount = workers.filter((worker) => worker.status === 'queued').length;
   const isRunning = step.status === 'running';
   const state = isRunning
     ? 'RUNNING'
     : step.status === 'cancelled' || step.status === 'interrupted'
       ? 'STOPPED'
-      : step.status === 'error' || (results.length > 0 && failedCount === results.length)
+      : step.status === 'error' || (workers.length > 0 && failedCount === workers.length)
         ? 'FAILED'
         : failedCount > 0
           ? 'PARTIAL FAILURE'
@@ -385,9 +512,12 @@ function DelegationCard({ step, onStop }: { step: ChatRunStep; onStop?: () => vo
     .map((item) => typeof item === 'string' ? item.match(/deleg_[^/\\]+/)?.[0] : undefined)
     .find(Boolean);
   const elapsed = isRunning
-    ? formatStepDuration(step)
+    ? step.startedAt ? delegationDuration(now - step.startedAt) : formatStepDuration(step)
     : delegationDuration(output.total_duration_seconds) || formatStepDuration(step);
-  const details = results.filter((result) => result.error || result.summary);
+  const visibleWorkers = collapseCompleted ? workers.filter((worker) => worker.status !== 'completed') : workers;
+  const selected = selectedWorker === undefined ? undefined : workers.find((worker) => worker.index === selectedWorker);
+  const concurrency = step.delegation?.concurrency ?? (typeof output.concurrency === 'number' ? output.concurrency : Math.min(workerCount, 3));
+  const percent = workerCount > 0 ? Math.round((completedCount + failedCount) / workerCount * 100) : 0;
 
   return (
     <section className={`delegation-card ${state.toLowerCase().replace(/\s+/g, '-')}`} aria-label="Delegation activity">
@@ -397,24 +527,35 @@ function DelegationCard({ step, onStop }: { step: ChatRunStep; onStop?: () => vo
         <span className="delegation-state">{state}</span>
       </header>
       <div className="delegation-meta">
-        <span>{workerCount} {workerCount === 1 ? 'worker' : 'workers'} in parallel</span>
+        <span>{completedCount + failedCount} / {workerCount} complete</span>
         {elapsed && <span>{elapsed}</span>}
       </div>
+      <div className="delegation-capacity">{runningCount} running · {queuedCount} queued · {concurrency} {concurrency === 1 ? 'slot' : 'slots'}</div>
+      <div className="delegation-progress" role="progressbar" aria-label="Delegation progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+        <span style={{ width: `${percent}%` }} />
+      </div>
       <ol className="delegation-workers">
-        {Array.from({ length: workerCount }, (_, index) => {
-          const result = results.find((item) => item.task_index === index) ?? results[index];
-          const failed = Boolean(result?.error) || (Boolean(result?.status) && result?.status !== 'completed');
-          const done = !isRunning && Boolean(result) && !failed;
-          const goal = goals[index] || `Worker ${String(index + 1).padStart(2, '0')}`;
+        {visibleWorkers.map((worker) => {
+          const tokens = (worker.inputTokens ?? 0) + (worker.outputTokens ?? 0) + (worker.reasoningTokens ?? 0);
+          const metrics = worker.status === 'queued'
+            ? `queue #${worker.queuePosition ?? 1}`
+            : [
+                worker.lastTool,
+                `${worker.toolCount} ${worker.toolCount === 1 ? 'tool' : 'tools'}`,
+                worker.steps === undefined ? 'steps —' : `${worker.steps} ${worker.steps === 1 ? 'step' : 'steps'}`,
+                tokens > 0 ? `${compactTokens(tokens)} tok` : 'tokens —',
+                workerDuration(worker, now),
+              ].filter(Boolean).join(' · ');
           return (
-            <li key={index} className={failed ? 'error' : done ? 'completed' : 'running'}>
-              <span className="delegation-worker-status" aria-hidden="true">
-                {failed ? '[!]' : done ? '[✓]' : '[·]'}
-              </span>
-              <span className="delegation-worker-goal">{String(index + 1).padStart(2, '0')} {goal}</span>
-              {result?.duration_seconds !== undefined && (
-                <span className="delegation-worker-time">{delegationDuration(result.duration_seconds)}</span>
-              )}
+            <li key={worker.index} className={worker.status}>
+              <button type="button" title={worker.goal} onClick={() => setSelectedWorker(worker.index)}>
+                <span className="delegation-worker-status" aria-hidden="true">{workerStatusGlyph(worker)}</span>
+                <span className="delegation-worker-main">
+                  <span className="delegation-worker-goal"><strong>{String(worker.index + 1).padStart(2, '0')}</strong> {worker.goal}</span>
+                  <span className="delegation-worker-metrics">{metrics}</span>
+                </span>
+                <ChevronRight size={14} />
+              </button>
             </li>
           );
         })}
@@ -422,7 +563,7 @@ function DelegationCard({ step, onStop }: { step: ChatRunStep; onStop?: () => vo
       <div className="delegation-command">
         <span aria-hidden="true">$</span>
         <span>{isRunning
-          ? `running ${workerCount} ${workerCount === 1 ? 'worker' : 'workers'} in parallel...`
+          ? `${completedCount} completed · ${runningCount} running · ${queuedCount} queued`
           : state === 'COMPLETED'
             ? 'results returned to agent for synthesis'
             : state === 'PARTIAL FAILURE'
@@ -432,24 +573,10 @@ function DelegationCard({ step, onStop }: { step: ChatRunStep; onStop?: () => vo
                 : 'delegation failed'}</span>
       </div>
       <div className="delegation-actions">
-        {details.length > 0 && (
-          <button type="button" onClick={() => setDetailsOpen((open) => !open)} aria-expanded={detailsOpen}>
-            {detailsOpen ? 'Hide details' : 'View details'}
-          </button>
-        )}
-        {isRunning && onStop && <button type="button" className="danger" onClick={onStop}>Cancel</button>}
+        {completedCount > 0 && <button type="button" onClick={() => setCollapseCompleted((value) => !value)}>{collapseCompleted ? 'Show completed' : 'Collapse completed'}</button>}
+        {isRunning && onStop && <button type="button" className="danger" onClick={onStop}>Cancel all</button>}
       </div>
-      {detailsOpen && (
-        <div className="delegation-details">
-          {details.map((result, index) => (
-            <div key={result.task_index ?? index}>
-              <strong>Worker {String((result.task_index ?? index) + 1).padStart(2, '0')}</strong>
-              {result.error && <pre>{result.error}</pre>}
-              {result.summary && <Markdown content={result.summary} />}
-            </div>
-          ))}
-        </div>
-      )}
+      {selected && <WorkerLogModal worker={selected} now={now} onClose={() => setSelectedWorker(undefined)} />}
     </section>
   );
 }
