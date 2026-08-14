@@ -45,6 +45,30 @@ describe('reduceRunEvent (live API format)', () => {
     expect(formatStepDuration(step)).toBe('105ms');
   });
 
+  it('retains delegation tasks and consolidated worker results', () => {
+    const args = { tasks: [{ goal: 'Inspect the implementation.' }, { goal: 'Run focused tests.' }] };
+    const output = JSON.stringify({
+      results: [
+        { task_index: 0, status: 'completed', summary: 'Inspected.' },
+        { task_index: 1, status: 'completed', summary: 'Passed.' },
+      ],
+      total_duration_seconds: 1.4,
+    });
+    const run = fold([
+      stream[0],
+      body({ event: 'tool.started', run_id: RUN_ID, tool: 'delegate_task', args }),
+      body({ event: 'tool.completed', run_id: RUN_ID, tool: 'delegate_task', output, duration: 1.4, error: false }),
+    ]);
+
+    expect(run?.steps[0]).toMatchObject({
+      toolName: 'delegate_task',
+      args,
+      output,
+      status: 'completed',
+      durationSec: 1.4,
+    });
+  });
+
   it('tracks authoritative todo snapshots without exposing generic tool output', () => {
     const run = fold([
       stream[0],

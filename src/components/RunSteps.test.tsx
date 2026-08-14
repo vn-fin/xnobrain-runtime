@@ -64,6 +64,61 @@ describe('RunSteps', () => {
     expect(screen.getByRole('button', { name: /Worked.*2 steps/ })).toBeVisible();
   });
 
+  it('shows a live parallel delegation in the terminal card and can stop it', () => {
+    const stop = vi.fn();
+    render(<RunSteps run={run({
+      status: 'running',
+      assistantContent: '',
+      steps: [{
+        id: 'delegate-1',
+        toolName: 'delegate_task',
+        preview: 'delegating 2 tasks',
+        args: { tasks: [
+          { goal: 'Inspect the runtime delegation path.' },
+          { goal: 'Verify the UI behavior.' },
+        ] },
+        status: 'running',
+      }],
+    })} onStop={stop} />);
+
+    expect(screen.getByRole('region', { name: 'Delegation activity' })).toBeVisible();
+    expect(screen.getByText('RUNNING')).toBeVisible();
+    expect(screen.getByText('2 workers in parallel')).toBeVisible();
+    expect(screen.getByText(/Inspect the runtime delegation path/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it('shows partial delegation results and worker details', () => {
+    render(<RunSteps run={run({
+      steps: [{
+        id: 'delegate-1',
+        toolName: 'delegate_task',
+        preview: 'delegating 2 tasks',
+        args: { tasks: [
+          { goal: 'Inspect the runtime.' },
+          { goal: 'Run focused tests.' },
+        ] },
+        output: JSON.stringify({
+          results: [
+            { task_index: 0, status: 'completed', summary: 'Runtime inspected.', duration_seconds: 2.2 },
+            { task_index: 1, status: 'error', error: 'Worker session failed.', duration_seconds: 1.1 },
+          ],
+          total_duration_seconds: 2.3,
+        }),
+        status: 'completed',
+        durationSec: 2.3,
+      }],
+    })} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Worked/ }));
+    expect(screen.getByText('PARTIAL FAILURE')).toBeVisible();
+    expect(screen.getByText(/1\/2 results returned/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+    expect(screen.getByText('Worker session failed.')).toBeVisible();
+    expect(screen.getByText('Runtime inspected.')).toBeVisible();
+  });
+
   it('shows the live agent plan and task progress', () => {
     render(<RunSteps run={run({
       status: 'running',

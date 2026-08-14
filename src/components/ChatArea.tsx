@@ -917,6 +917,7 @@ export function ChatArea({
                     run={run}
                     answerContent={message.content}
                     onResolveApproval={onResolveRunApproval}
+                    onStop={onStop}
                     expandSignal={liveRun?.id === run.id ? activityExpandSignal : 0}
                   />
                 ))}
@@ -944,6 +945,7 @@ export function ChatArea({
             key={run.id}
             run={run}
             onResolveApproval={onResolveRunApproval}
+            onStop={onStop}
             expandSignal={liveRun?.id === run.id ? activityExpandSignal : 0}
           />
         ))}

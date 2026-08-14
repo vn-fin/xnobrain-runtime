@@ -340,11 +340,134 @@ function StepRow({ step }: { step: ChatRunStep }) {
   );
 }
 
+type DelegationWorker = {
+  task_index?: number;
+  status?: string;
+  summary?: string;
+  duration_seconds?: number;
+  error?: string;
+};
+
+function delegationDuration(seconds: unknown): string {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return '';
+  if (seconds < 1) return `${Math.round(seconds * 1_000)}ms`;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${Math.round(seconds % 60)}s`;
+}
+
+function DelegationCard({ step, onStop }: { step: ChatRunStep; onStop?: () => void }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const args = object(step.args);
+  const output = object(step.output);
+  const rawTasks = Array.isArray(args.tasks) ? args.tasks : [];
+  const goals = rawTasks
+    .map((task) => object(task).goal)
+    .filter((goal): goal is string => typeof goal === 'string' && goal.trim().length > 0);
+  if (goals.length === 0 && typeof args.goal === 'string' && args.goal.trim()) goals.push(args.goal);
+  const results = (Array.isArray(output.results) ? output.results : [])
+    .map((result) => object(result) as DelegationWorker);
+  const workerCount = Math.max(goals.length, results.length, 1);
+  const failedCount = results.filter((result) => result.status !== 'completed' || Boolean(result.error)).length;
+  const completedCount = results.filter((result) => result.status === 'completed' && !result.error).length;
+  const isRunning = step.status === 'running';
+  const state = isRunning
+    ? 'RUNNING'
+    : step.status === 'cancelled' || step.status === 'interrupted'
+      ? 'STOPPED'
+      : step.status === 'error' || (results.length > 0 && failedCount === results.length)
+        ? 'FAILED'
+        : failedCount > 0
+          ? 'PARTIAL FAILURE'
+          : 'COMPLETED';
+  const transcripts = Array.isArray(output.live_transcripts) ? output.live_transcripts : [];
+  const delegationId = transcripts
+    .map((item) => typeof item === 'string' ? item.match(/deleg_[^/\\]+/)?.[0] : undefined)
+    .find(Boolean);
+  const elapsed = isRunning
+    ? formatStepDuration(step)
+    : delegationDuration(output.total_duration_seconds) || formatStepDuration(step);
+  const details = results.filter((result) => result.error || result.summary);
+
+  return (
+    <section className={`delegation-card ${state.toLowerCase().replace(/\s+/g, '-')}`} aria-label="Delegation activity">
+      <header className="delegation-head">
+        <span className="delegation-prompt" aria-hidden="true">$</span>
+        <strong>DELEGATION{delegationId ? ` ${delegationId}` : ''}</strong>
+        <span className="delegation-state">{state}</span>
+      </header>
+      <div className="delegation-meta">
+        <span>{workerCount} {workerCount === 1 ? 'worker' : 'workers'} in parallel</span>
+        {elapsed && <span>{elapsed}</span>}
+      </div>
+      <ol className="delegation-workers">
+        {Array.from({ length: workerCount }, (_, index) => {
+          const result = results.find((item) => item.task_index === index) ?? results[index];
+          const failed = Boolean(result?.error) || (Boolean(result?.status) && result?.status !== 'completed');
+          const done = !isRunning && Boolean(result) && !failed;
+          const goal = goals[index] || `Worker ${String(index + 1).padStart(2, '0')}`;
+          return (
+            <li key={index} className={failed ? 'error' : done ? 'completed' : 'running'}>
+              <span className="delegation-worker-status" aria-hidden="true">
+                {failed ? '[!]' : done ? '[✓]' : '[·]'}
+              </span>
+              <span className="delegation-worker-goal">{String(index + 1).padStart(2, '0')} {goal}</span>
+              {result?.duration_seconds !== undefined && (
+                <span className="delegation-worker-time">{delegationDuration(result.duration_seconds)}</span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      <div className="delegation-command">
+        <span aria-hidden="true">$</span>
+        <span>{isRunning
+          ? `running ${workerCount} ${workerCount === 1 ? 'worker' : 'workers'} in parallel...`
+          : state === 'COMPLETED'
+            ? 'results returned to agent for synthesis'
+            : state === 'PARTIAL FAILURE'
+              ? `${completedCount}/${workerCount} results returned; agent received available results`
+              : state === 'STOPPED'
+                ? 'delegation stopped'
+                : 'delegation failed'}</span>
+      </div>
+      <div className="delegation-actions">
+        {details.length > 0 && (
+          <button type="button" onClick={() => setDetailsOpen((open) => !open)} aria-expanded={detailsOpen}>
+            {detailsOpen ? 'Hide details' : 'View details'}
+          </button>
+        )}
+        {isRunning && onStop && <button type="button" className="danger" onClick={onStop}>Cancel</button>}
+      </div>
+      {detailsOpen && (
+        <div className="delegation-details">
+          {details.map((result, index) => (
+            <div key={result.task_index ?? index}>
+              <strong>Worker {String((result.task_index ?? index) + 1).padStart(2, '0')}</strong>
+              {result.error && <pre>{result.error}</pre>}
+              {result.summary && <Markdown content={result.summary} />}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /** A grouped batch of consecutive tool steps, shown as one summary line
  *  ("Read files, ran commands, …") that expands to the individual steps. */
-function ToolGroup({ steps }: { steps: ChatRunStep[] }) {
+function ToolGroup({ steps, onStop }: { steps: ChatRunStep[]; onStop?: () => void }) {
   const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
+  if (steps.some((step) => step.toolName === 'delegate_task')) {
+    return (
+      <div className="delegation-card-list">
+        {steps.map((step) => step.toolName === 'delegate_task'
+          ? <DelegationCard key={step.id} step={step} onStop={onStop} />
+          : <StepRow key={step.id} step={step} />)}
+      </div>
+    );
+  }
   return (
     <div className={`run-tool-group ${open ? 'open' : ''}`}>
       <button className="run-tool-group-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
@@ -360,11 +483,13 @@ function ToolGroup({ steps }: { steps: ChatRunStep[] }) {
 export function RunSteps({
   run,
   onResolveApproval,
+  onStop,
   answerContent,
   expandSignal = 0,
 }: {
   run: ChatRun;
   onResolveApproval?: (runId: string, choice: RunApprovalChoice) => void | Promise<void>;
+  onStop?: () => void;
   answerContent?: string;
   expandSignal?: number;
 }) {
@@ -449,7 +574,7 @@ export function RunSteps({
                   return <RunPlan key={`plan-${index}`} todos={item.todos} runStatus={run.status} />;
                 }
                 const groupSteps = item.stepIds.map((id) => byId.get(id)).filter((step): step is ChatRunStep => Boolean(step));
-                return <ToolGroup key={`tools-${index}`} steps={groupSteps} />;
+                return <ToolGroup key={`tools-${index}`} steps={groupSteps} onStop={onStop} />;
               });
             })()
           ) : (
@@ -461,7 +586,9 @@ export function RunSteps({
                   streaming={run.reasoningStreaming && index === reasoningParts.length - 1}
                 />
               ))}
-              {run.steps.map((step) => <StepRow key={step.id} step={step} />)}
+              {run.steps.map((step) => step.toolName === 'delegate_task'
+                ? <DelegationCard key={step.id} step={step} onStop={onStop} />
+                : <StepRow key={step.id} step={step} />)}
             </>
           )}
           {run.steps.length === 0 && !showReasoning && !timeline?.length && !run.approval && <div className="run-step-empty">Preparing response…</div>}

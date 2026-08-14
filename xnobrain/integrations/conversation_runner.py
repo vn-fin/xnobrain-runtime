@@ -272,6 +272,32 @@ class ConversationRunnerMixin:
                     agent,
                     str(prepared.get("model") or ""),
                 )
+                # Hermes' API-server surface normally dispatches top-level
+                # delegations in the background and relies on GatewayRunner to
+                # feed the completed result back into the parent conversation.
+                # XNOBrain owns the shorter-lived adapter directly and has no
+                # GatewayRunner completion consumer, so detached results would
+                # remain pending after this session DB closes. Keep the batch
+                # fan-out parallel, but join it inside this originating turn so
+                # the parent can synthesize the workers' results reliably.
+                from tools.delegate_tool import (
+                    _strip_model_hidden_task_fields,
+                    delegate_task,
+                )
+
+                def dispatch_delegate_sync(function_args: Mapping[str, Any]) -> str:
+                    return delegate_task(
+                        goal=function_args.get("goal"),
+                        context=function_args.get("context"),
+                        tasks=_strip_model_hidden_task_fields(function_args.get("tasks")),
+                        max_iterations=function_args.get("max_iterations"),
+                        role=function_args.get("role"),
+                        output_schema=function_args.get("output_schema"),
+                        background=False,
+                        parent_agent=agent,
+                    )
+
+                agent._dispatch_delegate_task = dispatch_delegate_sync
                 route_reasoning = str(prepared.get("route_reasoning") or "")
                 if route_reasoning in {"low", "medium", "high"}:
                     agent.reasoning_config = {

@@ -104,31 +104,41 @@ class ConversationStreamMixin:
             args: Any = None,
             **kwargs: Any,
         ) -> None:
-            del args
             timestamp = time.time()
+            normalized_tool = tool_name or "tool"
             if event_type == "tool.started":
-                enqueue_event({
+                event: dict[str, Any] = {
                     "event": "tool.started",
                     "run_id": run_id,
                     "timestamp": timestamp,
-                    "tool": tool_name or "tool",
+                    "tool": normalized_tool,
                     "preview": preview or "",
-                })
+                }
+                if normalized_tool == "delegate_task" and isinstance(args, Mapping):
+                    event["args"] = dict(args)
+                enqueue_event(event)
             elif event_type == "tool.completed":
                 result = kwargs.get("result")
                 write_status = resolve_staged_write(
-                    tool_name or "tool",
+                    normalized_tool,
                     result,
                 )
-                enqueue_event({
+                event = {
                     "event": "tool.completed",
                     "run_id": run_id,
                     "timestamp": timestamp,
-                    "tool": tool_name or "tool",
+                    "tool": normalized_tool,
                     "duration": round(float(kwargs.get("duration") or 0), 3),
                     "error": bool(kwargs.get("is_error", False))
                     or write_status in {"rejected", "failed"},
-                })
+                }
+                if normalized_tool == "delegate_task":
+                    event["output"] = (
+                        result
+                        if isinstance(result, str)
+                        else json.dumps(result, ensure_ascii=False, default=str)
+                    )
+                enqueue_event(event)
                 if tool_name == "todo" and not bool(kwargs.get("is_error", False)):
                     todo_event = _todo_updated_event(result)
                     if todo_event is not None:

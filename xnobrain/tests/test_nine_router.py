@@ -1155,6 +1155,34 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                         "summary": {"total": 2},
                     }),
                 )
+                delegation_args = {
+                    "tasks": [
+                        {"goal": "Research the current implementation in detail."},
+                        {"goal": "Verify the proposed behavior with focused tests."},
+                    ],
+                }
+                delegation_result = json.dumps({
+                    "results": [
+                        {"task_index": 0, "status": "completed", "summary": "Found it."},
+                        {"task_index": 1, "status": "completed", "summary": "Verified it."},
+                    ],
+                    "total_duration_seconds": 1.25,
+                })
+                tool_progress_callback(
+                    "tool.started",
+                    "delegate_task",
+                    "delegating 2 tasks",
+                    delegation_args,
+                )
+                tool_progress_callback(
+                    "tool.completed",
+                    "delegate_task",
+                    None,
+                    None,
+                    duration=1.25,
+                    is_error=False,
+                    result=delegation_result,
+                )
                 approval_notify_callback({
                     "command": "rm -rf ./cache",
                     "description": "Delete the cache directory",
@@ -1199,7 +1227,10 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(b'"duration":0.125', payload)
             self.assertNotIn(b"private tool output", payload)
             self.assertNotIn(b"private-args", payload)
-            self.assertNotIn(b'"args"', payload)
+            self.assertIn(b'"tool":"delegate_task"', payload)
+            self.assertIn(b'"args":{"tasks"', payload)
+            self.assertIn(b'Research the current implementation', payload)
+            self.assertIn(b'"output":"{\\"results\\"', payload)
             self.assertIn(b'"event":"todo.updated"', payload)
             self.assertIn(b'"content":"Summarize findings"', payload)
             self.assertIn(b'"in_progress":1', payload)
@@ -1273,6 +1304,12 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                     observed.update(kwargs)
                     agent = self._create_agent()
                     kwargs["agent_ref"][0] = agent
+                    observed["delegated"] = agent._dispatch_delegate_task({
+                        "tasks": [{
+                            "goal": "Inspect the implementation thoroughly.",
+                            "acp_command": "hidden-provider-command",
+                        }],
+                    })
                     agent.reasoning_callback("I checked the saved context.")
 
                     def execute():
@@ -1309,9 +1346,15 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 require_conversation=True,
             )
             deltas: list[str] = []
-            with patch(
-                "gateway.platforms.api_server.APIServerAdapter",
-                FakeSessionAdapter,
+            with (
+                patch(
+                    "gateway.platforms.api_server.APIServerAdapter",
+                    FakeSessionAdapter,
+                ),
+                patch(
+                    "tools.delegate_tool.delegate_task",
+                    return_value='{"results":[]}',
+                ) as delegate,
             ):
                 result, usage = await manager._run_session_agent(
                     prepared,
@@ -1321,6 +1364,8 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                     approval_notify_callback=lambda _data: None,
                     agent_ref=[None],
                 )
+
+            delegated = observed.get("delegated")
 
             self.assertEqual(
                 [item["content"] for item in observed["conversation_history"]],
@@ -1338,6 +1383,14 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 [("reasoning.delta", "_thinking", "I checked the saved context.", None)],
             )
             self.assertEqual(deltas, ["I remember."])
+            self.assertEqual(delegated, '{"results":[]}')
+            delegate.assert_called_once()
+            delegate_kwargs = delegate.call_args.kwargs
+            self.assertFalse(delegate_kwargs["background"])
+            self.assertEqual(
+                delegate_kwargs["tasks"],
+                [{"goal": "Inspect the implementation thoroughly."}],
+            )
             self.assertEqual(result["final_response"], "I remember.")
             self.assertEqual(usage["total_tokens"], 5)
             self.assertEqual(usage["context_used"], 10_000)
