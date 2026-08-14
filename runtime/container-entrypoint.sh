@@ -50,6 +50,12 @@ for profile_dir in "$HERMES_PROFILES_ROOT"/*; do
   sync_profile_skills "$profile_dir"
 done
 
+# Skill synchronization may have installed the bundled PDF helper after the
+# initial template pass. Reapply XNOBrain's link-preserving helper now.
+XNOBRAIN_PROFILE_TEMPLATES_DIR=/opt/xnobrain/profile-templates \
+XNOBRAIN_SKILL_OVERRIDES_DIR=/opt/xnobrain/skill-overrides \
+  /usr/local/bin/xnobrain-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
+
 DATA_DIR="$NINE_ROUTER_DATA_DIR" \
 PORT=20128 \
 HOSTNAME=0.0.0.0 \

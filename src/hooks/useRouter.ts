@@ -123,8 +123,8 @@ export function parseRoute(pathname: string, search: string): RouteState {
 export function reconcileSelection(agentId: string, conversationId: string, agents: Agent[]) {
   const agent = agents.find((item) => item.id === agentId) ?? agents[0];
   if (!agent) return { agentId: '', conversationId: '' };
-  const conversation = agent.conversations.find((item) => item.id === conversationId) ?? agent.conversations[0];
-  return { agentId: agent.id, conversationId: conversation?.id ?? '' };
+  if (conversationId) return { agentId: agent.id, conversationId };
+  return { agentId: agent.id, conversationId: agent.conversations[0]?.id ?? '' };
 }
 
 export function computeUrl(state: RouteState): string {

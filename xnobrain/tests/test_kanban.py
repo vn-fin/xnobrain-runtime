@@ -93,8 +93,8 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(created.status_code, 201, created.text)
             task_id = created.json()["data"]["id"]
             self.assertEqual(len(task_id), 10)
-            self.assertEqual(created.json()["data"]["status"], "ready")
-            self.assertEqual(created.json()["data"]["kanban_status"], "running")
+            self.assertEqual(created.json()["data"]["status"], "todo")
+            self.assertEqual(created.json()["data"]["kanban_status"], "todo")
 
             comment = await client.post(
                 f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}/comments",
@@ -544,29 +544,37 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             agent = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Brief writer"})
             self.assertEqual(agent.status_code, 201, agent.text)
             agent_id = agent.json()["data"]["id"]
-            created = await client.post(
-                "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
-                json={
-                    "title": "Draft brief",
-                    "description": "Create the first draft.",
-                    "status": "backlog",
-                    "assignee": agent_id,
-                    "skills": ["writing"],
-                },
-            )
+            inventory = {
+                "skills": [
+                    {"skill_id": "writing", "installed": True, "enabled": True},
+                    {"skill_id": "web-research", "installed": True, "enabled": True},
+                ]
+            }
+            with patch.object(self.composition.service.agents, "list_skills", return_value=inventory):
+                created = await client.post(
+                    "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
+                    json={
+                        "title": "Draft brief",
+                        "description": "Create the first draft.",
+                        "status": "backlog",
+                        "assignee": agent_id,
+                        "skills": ["writing"],
+                    },
+                )
             self.assertEqual(created.status_code, 201, created.text)
             task_id = created.json()["data"]["id"]
             self.assertEqual(created.json()["data"]["workspace_kind"], "dir")
 
-            updated = await client.patch(
-                f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}",
-                json={
-                    "title": "Draft launch brief",
-                    "description": "Create a concise launch brief with sources.",
-                    "priority": "high",
-                    "skills": ["writing", "web-research"],
-                },
-            )
+            with patch.object(self.composition.service.agents, "list_skills", return_value=inventory):
+                updated = await client.patch(
+                    f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}",
+                    json={
+                        "title": "Draft launch brief",
+                        "description": "Create a concise launch brief with sources.",
+                        "priority": "high",
+                        "skills": ["writing", "web-research"],
+                    },
+                )
             self.assertEqual(updated.status_code, 200, updated.text)
             task = updated.json()["data"]
             self.assertEqual(task["status"], "triage")

@@ -191,6 +191,7 @@ class TeamRunService:
             "created_at": now,
             "started_at": None,
             "ended_at": None,
+            "completed_at": None,
             "updated_at": now,
             "revision": 0,
             "steps": steps,
@@ -247,10 +248,12 @@ class TeamRunService:
         # can distinguish "no session" from a missing/legacy contract.
         record.setdefault("coordinator_conversation_id", None)
         record.setdefault("synthesis_conversation_id", None)
+        record.setdefault("completed_at", record.get("ended_at"))
         if record.get("status") in {"pending", "running"} and record.get("id") not in self._active:
             record["status"] = "failed"
             record["error"] = "interrupted_by_restart"
             record["ended_at"] = iso()
+            record["completed_at"] = None
             self._cancel_open_steps(record)
             record["revision"] = int(record.get("revision", 0)) + 1
             record["updated_at"] = iso()
@@ -270,6 +273,7 @@ class TeamRunService:
         if error is not None:
             record["error"] = error
         record["ended_at"] = iso()
+        record["completed_at"] = record["ended_at"] if status == "completed" else None
         if status in {"cancelled", "failed"}:
             self._cancel_open_steps(record)
         await self._persist(record)

@@ -11,6 +11,20 @@ type ViewMode = 'list' | 'grid';
 type SortKey = 'name' | 'modified' | 'size';
 type SortDir = 'asc' | 'desc';
 
+export function workspaceNameError(name: string): string | undefined {
+  const normalized = name.normalize('NFC');
+  if (!name.trim()) return 'A name is required.';
+  if (normalized !== name) return 'Use a normalized file name.';
+  if (name === '.' || name === '..') return 'Choose a normal file or folder name.';
+  if (/[\\/\u2215\u2044\uff0f\0\r\n]/u.test(name)) return 'Enter a name only, without path separators.';
+  try {
+    if (decodeURIComponent(name) !== name) return 'Encoded path characters are not allowed.';
+  } catch {
+    return 'The name contains invalid encoding.';
+  }
+  return undefined;
+}
+
 export const WORKSPACE_FILE_MIME = 'application/x-workspace-file';
 const SpreadsheetViewer = lazy(() => import('./SpreadsheetViewer'));
 const CodeViewer = lazy(() => import('./CodeViewer'));
@@ -572,6 +586,7 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
           label={createType === 'file' ? 'File name' : 'Folder name'}
           placeholder={createType === 'file' ? 'notes.md' : 'new-folder'}
           confirmLabel="Create"
+          validate={workspaceNameError}
           onConfirm={(name) => {
             void workspace.create(name, createType);
             setCreateType(null);

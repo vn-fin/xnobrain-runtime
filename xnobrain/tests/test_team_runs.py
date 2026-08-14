@@ -36,7 +36,7 @@ _STEP_SCHEMA_KEYS = {
 _RUN_SCHEMA_KEYS = {
     "id", "team_id", "status", "error", "mode", "task", "synthesis_instruction",
     "orchestrator_id", "orchestrator_summary", "created_at", "started_at",
-    "ended_at", "updated_at", "revision", "steps", "coordinator_conversation_id",
+    "ended_at", "completed_at", "updated_at", "revision", "steps", "coordinator_conversation_id",
     "synthesis_conversation_id",
 }
 
@@ -230,6 +230,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
             final = await self._poll_until_terminal(client, team_id, run_id)
 
         self.assertEqual(final["status"], "completed")
+        self.assertEqual(final["completed_at"], final["ended_at"])
         self.assertEqual(final["orchestrator_summary"], "final synthesis")
         self.assertEqual(final["coordinator_conversation_id"], "c-final")
         self.assertEqual(final["synthesis_conversation_id"], "c-final")
@@ -244,6 +245,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
         self.assertTrue(path.is_file())
         stored = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(set(stored), _RUN_SCHEMA_KEYS)
+        self.assertEqual(stored["completed_at"], stored["ended_at"])
         self.assertEqual(set(stored["steps"][0]), _STEP_SCHEMA_KEYS)
 
     async def test_team_inherits_agent_tools_and_supports_skills_scratchpad_and_dialogue(self):
@@ -418,6 +420,7 @@ class TeamRunLifecycleTests(_TeamRunBase):
         record = cancel.json()["data"]
         self.assertEqual(record["status"], "cancelled")
         self.assertIsNotNone(record["ended_at"])
+        self.assertIsNone(record["completed_at"])
         self.assertTrue(all(step["status"] in {"completed", "failed", "cancelled"} for step in record["steps"]))
         self.assertTrue(any(step["status"] == "cancelled" for step in record["steps"]))
         self.assertEqual(self.composition.service.team_runs._active, {})

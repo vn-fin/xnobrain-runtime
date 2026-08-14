@@ -2027,6 +2027,19 @@ body.col-resizing {
   color: var(--muted-2);
   opacity: 0;
 }
+.conversation-option-rename {
+  width: 24px;
+  height: 24px;
+  min-width: 24px !important;
+  flex: 0 0 24px !important;
+  display: grid !important;
+  grid-template-columns: none !important;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--muted-2);
+}
+.conversation-option-rename:hover,
+.conversation-option-rename:focus-visible { color: var(--text); background: var(--surface-2); }
 .conversation-picker-list > button:hover .conversation-option-delete,
 .conversation-picker-list > button:focus-visible .conversation-option-delete { opacity: 1; }
 .conversation-option-delete:hover { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }

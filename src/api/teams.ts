@@ -66,6 +66,7 @@ export type TeamRunStep = {
   conversation_id: string | null;
   started_at: string | null;
   ended_at: string | null;
+  completed_at?: string | null;
 };
 
 export type TeamRunRecord = {

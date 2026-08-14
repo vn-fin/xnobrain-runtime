@@ -155,7 +155,9 @@ function taskFromApi(raw: RawTask): KanbanTask {
       orchestratorId: String(raw.team.orchestrator_id ?? ''),
       status: String(raw.team.status ?? 'todo'),
       synthesisTaskId: raw.team.synthesis_task_id == null ? null : String(raw.team.synthesis_task_id),
-      progress: Number(raw.team.progress ?? 0),
+      progress: ['done', 'completed'].includes(String(raw.team.status ?? '').toLowerCase())
+        ? 100
+        : Number(raw.team.progress ?? 0),
       cancelled: Boolean(raw.team.cancelled),
       nodes: Array.isArray(raw.team.nodes) ? raw.team.nodes.map((node: any) => ({
         stepId: String(node.step_id ?? ''),

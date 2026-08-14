@@ -99,8 +99,9 @@ export default function App() {
   }, [sidebarCollapsed]);
   const clampRightWidth = (width: number) => Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, Math.min(width, Math.round(window.innerWidth * 0.6))));
 
-  const activeConversation =
-    activeAgent?.conversations.find((c) => c.id === router.activeConversationId) ?? activeAgent?.conversations[0];
+  const activeConversation = router.activeConversationId
+    ? activeAgent?.conversations.find((c) => c.id === router.activeConversationId)
+    : activeAgent?.conversations[0];
 
   // UI-only modal state
   const [createAgentOpen, setCreateAgentOpen] = useState(false);
@@ -176,7 +177,7 @@ export default function App() {
         selected = await assistants.loadConversation(activeAgent.id, router.activeConversationId).catch(() => undefined);
         if (cancelled) return;
       }
-      selected ??= rows[0];
+      if (!router.activeConversationId) selected ??= rows[0];
       if ((selected?.id ?? '') !== router.activeConversationId) {
         router.setActiveConversationId(selected?.id ?? '');
       }
@@ -507,6 +508,7 @@ export default function App() {
             agent={activeAgent}
             agents={assistants.agents}
             activeConversation={activeConversation}
+            missingConversationId={!activeConversation ? router.activeConversationId : ''}
             providers={connections.connections}
             blends={blends.blends.map((blend) => blend.name)}
             runs={conversation.runs}

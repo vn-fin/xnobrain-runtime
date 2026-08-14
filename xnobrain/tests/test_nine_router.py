@@ -21,6 +21,7 @@ from xnobrain.integrations.conversation_prompt import (
     AGENT_WORKSPACE_GUIDANCE,
     MARKDOWN_RESPONSE_GUIDANCE,
 )
+from xnobrain.integrations.conversation_stream import _commit_resolved_write_result
 from xnobrain.integrations.nine_router import (
     NINE_ROUTER_API_BASE_URL,
     NINE_ROUTER_PROVIDER,
@@ -47,6 +48,41 @@ class FakeNineRouterManager(NineRouterManager):
 
 
 class NineRouterConfigTests(unittest.TestCase):
+    def test_committed_skill_write_replaces_staged_tool_result(self) -> None:
+        class SessionDB:
+            def __init__(self):
+                self.replacement = None
+
+            def replace_messages(self, session_id, messages, active_only=False):
+                self.replacement = (session_id, messages, active_only)
+
+        db = SessionDB()
+        messages = [{
+            "role": "tool",
+            "name": "skill_manage",
+            "content": json.dumps({"staged": True, "pending_id": "pending-1"}),
+        }]
+        agent = SimpleNamespace(
+            _db_flush_scan_prefix=messages,
+            _session_db=db,
+            session_id="session-1",
+        )
+
+        changed = _commit_resolved_write_result(
+            agent,
+            "skill_manage",
+            "pending-1",
+            {"success": True, "path": "skills/news/SKILL.md"},
+        )
+
+        self.assertTrue(changed)
+        committed = json.loads(messages[0]["content"])
+        self.assertTrue(committed["success"])
+        self.assertFalse(committed["staged"])
+        self.assertEqual(committed["disposition"], "applied")
+        self.assertNotIn("pending_id", committed)
+        self.assertEqual(db.replacement, ("session-1", messages, True))
+
     def test_agent_manager_loads_private_router_key_from_prepared_token(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -1166,6 +1166,9 @@ class KanbanService:
                     status=409,
                     code="assignment_invalid",
                 )
+            existing_skills = list(getattr(task, "skills", None) or [])
+            if existing_skills:
+                self._validate_agent_skills(body.get("assignee"), existing_skills)
             try:
                 ok = kb.reassign_task(conn, task_id, body.get("assignee"), reclaim_first=bool(body.get("reclaim_first", False)), reason=body.get("reason"))
             except (ValueError, RuntimeError) as exc:

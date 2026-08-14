@@ -4,7 +4,9 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_dir="$(cd -- "$script_dir/.." && pwd)"
 templates_dir="${XNOBRAIN_PROFILE_TEMPLATES_DIR:-$project_dir/runtime/profile-templates}"
+skill_overrides_dir="${XNOBRAIN_SKILL_OVERRIDES_DIR:-$project_dir/runtime/skill-overrides}"
 hermes_home="${1:-${HERMES_HOME:-$HOME/.hermes}}"
+profiles_root="${2:-$hermes_home/profiles}"
 backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 profile_template="$hermes_home/profile-template"
 
@@ -45,5 +47,25 @@ done
 apply_file "$hermes_home" "$templates_dir/SOUL.md" "$hermes_home/SOUL.md" "SOUL.md"
 apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/AGENTS.md" "AGENTS.md"
 apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/workspace/AGENTS.md" "workspace/AGENTS.md"
+
+# The upstream PDF helper renders visible URLs as plain text. Apply the
+# runtime-owned compatible helper after skill synchronization so every profile
+# emits and verifies URI annotations without modifying the Hermes source tree.
+pdf_override="$skill_overrides_dir/productivity/pdf/scripts/pdf_create.py"
+if [[ -f "$pdf_override" ]]; then
+  install_pdf_override() {
+    local profile_dir="$1"
+    [[ -d "$profile_dir/skills" ]] || return
+    while IFS= read -r -d '' target; do
+      local relative_target="${target#"$profile_dir/"}"
+      apply_file "$profile_dir" "$pdf_override" "$target" "$relative_target"
+    done < <(find "$profile_dir/skills" -type f -path '*/pdf/scripts/pdf_create.py' -print0)
+  }
+  install_pdf_override "$hermes_home"
+  for profile_dir in "$profiles_root"/*; do
+    [[ -d "$profile_dir" ]] || continue
+    install_pdf_override "$profile_dir"
+  done
+fi
 
 echo "Installed the independent XNOBrain profile template and refreshed Big Brother guidance."

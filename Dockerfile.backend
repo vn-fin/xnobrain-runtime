@@ -125,6 +125,7 @@ RUN uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
 COPY xnobrain /opt/xnobrain/xnobrain
 COPY server.py /opt/xnobrain/server.py
 COPY runtime/profile-templates /opt/xnobrain/profile-templates
+COPY runtime/skill-overrides /opt/xnobrain/skill-overrides
 COPY scripts/apply-profile-templates.sh /usr/local/bin/xnobrain-apply-profile-templates
 COPY runtime/container-entrypoint.sh /usr/local/bin/xnobrain-runtime
 COPY runtime/prepare-nine-router-auth.sh /usr/local/bin/xnobrain-prepare-nine-router-auth

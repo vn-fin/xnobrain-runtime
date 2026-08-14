@@ -134,9 +134,10 @@ describe('KanbanView', () => {
         if (path.endsWith('/archive')) archivedTask = true;
         const providerTask = path.includes('/provider-rollout/');
         const completedTask = path.includes('/t-done');
+        const teamTask = path.includes('/t-team');
         return new Response(JSON.stringify({ success: true, data: {
-          id: providerTask ? 'p-201' : completedTask ? 't-done' : 't-1042',
-          title: providerTask ? 'Verify provider callback' : completedTask ? 'Publish release notes' : 'Prepare the weekly report',
+          id: providerTask ? 'p-201' : completedTask ? 't-done' : teamTask ? 't-team' : 't-1042',
+          title: providerTask ? 'Verify provider callback' : completedTask ? 'Publish release notes' : teamTask ? 'Team launch' : 'Prepare the weekly report',
           description: providerTask ? 'Check the callback.' : completedTask ? 'Release notes are complete.' : 'Prepare the report.',
           status: archived ? 'archived' : completedTask ? 'done' : 'running',
           allowed_kanban_statuses: completedTask ? [] : undefined,
@@ -147,6 +148,11 @@ describe('KanbanView', () => {
           skills: taskDetailSkills,
           tags: providerTask ? [] : ['report'],
           progress: archived ? 100 : 50,
+          team: teamTask ? {
+            id: 'launch-team', name: 'Launch Team', orchestrator_id: 'research-agent', status: 'todo',
+            progress: 0, cancelled: false, synthesis_task_id: 'synthesis-1',
+            nodes: [{ step_id: 'research', task_id: 'node-1', title: 'Research', agent_id: 'research-agent', role: 'researcher', needs: [], status: 'todo', kanban_status: 'todo', summary: null }],
+          } : null,
           conversation: providerTask || archived ? null : {
             id: '20260727_140600_abcdef',
             agent_id: 'research-agent',
@@ -171,6 +177,7 @@ describe('KanbanView', () => {
             { id: 't-1051', title: 'Draft the report template', description: 'Draft a template.', status: 'todo', priority: 'low', assignee: 'research-agent', assignees: ['research-agent'], parents: [], tags: ['docs'], progress: 0, updated_at: new Date().toISOString() },
             { id: 't-blocked', title: 'Compute 1 + 1', description: 'Needs user input.', status: 'blocked', kanban_status: 'done', allowed_kanban_statuses: ['todo', 'archived'], state_detail: { kind: 'needs_input', label: 'Needs input', reason: 'Confirm the expected answer.' }, priority: 'medium', assignee: null, assignees: [], parents: [], tags: [], progress: 0, updated_at: new Date().toISOString() },
             { id: 't-done', title: 'Publish release notes', description: 'Release notes are complete and include a deliberately long input preview that must stay inside the compact card.', summary: 'Completed a deliberately long result with paths, verification details, and additional context that must be clamped on the board while remaining available in task details.', status: 'done', allowed_kanban_statuses: [], priority: 'medium', assignee: null, assignees: [], parents: [], tags: [], progress: 100, updated_at: new Date().toISOString() },
+            { id: 't-team', title: 'Team launch', description: 'Coordinate the launch.', status: 'todo', kanban_status: 'todo', allowed_kanban_statuses: ['running', 'archived'], priority: 'medium', assignee: null, assignees: ['research-agent'], parents: [], tags: [], progress: 0, updated_at: new Date().toISOString(), team: { id: 'launch-team', name: 'Launch Team', orchestrator_id: 'research-agent', status: 'todo', progress: 0, cancelled: false, synthesis_task_id: 'synthesis-1', nodes: [{ step_id: 'research', task_id: 'node-1', title: 'Research', agent_id: 'research-agent', role: 'researcher', needs: [], status: 'todo', kanban_status: 'todo', summary: null }] } },
           ] },
           { id: 'provider-rollout', name: 'Provider rollout', description: 'Provider checks', color: '#34d399', tasks: [
             { id: 'p-201', title: 'Verify provider callback', description: 'Check the callback.', status: 'running', priority: 'high', assignee: 'provider-agent', assignees: ['provider-agent'], parents: [], tags: [], progress: 50, updated_at: new Date().toISOString() },
@@ -469,6 +476,20 @@ describe('KanbanView', () => {
       expect(request).toBeDefined();
       expect(JSON.parse(String(request?.[1]?.body)).skills).toEqual(['writing']);
     });
+  });
+
+  it('does not cancel a team workflow until its confirmation is accepted', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    render(<TestBoard agents={[researchAgent]} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Open t-team: Team launch' }));
+    const drawer = screen.getByRole('dialog', { name: '' });
+    await user.click(within(drawer).getByRole('button', { name: 'Cancel team run' }));
+    const confirmation = screen.getByRole('alertdialog', { name: 'Cancel this scheduled team workflow?' });
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/tasks/t-team/team/cancel'))).toBe(false);
+    await user.click(within(confirmation).getByRole('button', { name: /cancel$/i }));
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/tasks/t-team/team/cancel'))).toBe(false);
   });
 
   it('filters task skills by name without changing their selected state', async () => {

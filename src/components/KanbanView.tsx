@@ -596,7 +596,7 @@ function TaskDrawer({
   const [priority, setPriority] = useState(task.priority);
   const [skills, setSkills] = useState(() => {
     const installed = installedSkillsFor(agents, task.assignees[0] ?? '');
-    return task.skills.filter((skill) => installed.some((item) => item.skill_id === skill));
+    return task.skills.filter((skill) => installed.some((item) => item.skill_id === skill && item.enabled));
   });
   const [skillsExpanded, setSkillsExpanded] = useState(false);
   const [comment, setComment] = useState('');
@@ -622,7 +622,7 @@ function TaskDrawer({
     setDescription(task.description);
     setPriority(task.priority);
     const installed = installedSkillsFor(agents, task.assignees[0] ?? '');
-    setSkills(task.skills.filter((skill) => installed.some((item) => item.skill_id === skill)));
+    setSkills(task.skills.filter((skill) => installed.some((item) => item.skill_id === skill && item.enabled)));
   }, [agents, editing, task.assignees, task.description, task.priority, task.skills, task.title]);
 
   useEffect(() => setSkillsExpanded(false), [task.id]);
@@ -1347,7 +1347,12 @@ function NewTaskModal({
   if (!board) return null;
 
   const submit = async () => {
-    if (!title.trim() || !description.trim() || (status === 'scheduled' && !scheduledAt)) {
+    if (
+      !title.trim()
+      || !description.trim()
+      || (assignmentType === 'team' && !teamId)
+      || (status === 'scheduled' && !scheduledAt)
+    ) {
       setInvalid(true);
       return;
     }
@@ -1411,7 +1416,7 @@ function NewTaskModal({
               >
                 <option value="backlog">Backlog</option>
                 <option value="todo">Todo</option>
-                <option value="scheduled">Scheduled</option>
+                <option value="scheduled" disabled={assignmentType === 'team'}>Scheduled</option>
               </select>
             </label>
             <label className="kb-field">
@@ -1449,6 +1454,7 @@ function NewTaskModal({
               <>
                 <TeamPicker teams={teams} value={teamId} onChange={setTeamId} />
                 <small className="kb-field-help">The saved DAG expands into native runtime tasks.</small>
+                {invalid && !teamId && <small role="alert">Choose an agent team.</small>}
               </>
             )}
           </div>

@@ -1,4 +1,5 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Check, ClipboardPaste, FileArchive, Plus, Upload, X } from 'lucide-react';
 import { ExternalLinkIcon, ProviderBrandIcon } from './common';
@@ -428,6 +429,7 @@ export function ConfirmDialog({
   message,
   confirmLabel,
   danger,
+  pending = false,
   onConfirm,
   onCancel,
 }: {
@@ -435,37 +437,91 @@ export function ConfirmDialog({
   message: string;
   confirmLabel: string;
   danger?: boolean;
+  pending?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
   const titleId = useId();
   const messageId = useId();
-  return (
-    <div className="modal-overlay alert-overlay" onClick={onCancel}>
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const overlay = overlayRef.current;
+    const background = Array.from(document.body.children).filter((node) => node !== overlay);
+    const prior = background.map((node) => ({
+      node,
+      inert: (node as HTMLElement).inert,
+      ariaHidden: node.getAttribute('aria-hidden'),
+    }));
+    background.forEach((node) => {
+      (node as HTMLElement).inert = true;
+      node.setAttribute('aria-hidden', 'true');
+    });
+    cancelRef.current?.focus();
+    return () => {
+      prior.forEach(({ node, inert, ariaHidden }) => {
+        (node as HTMLElement).inert = inert;
+        if (ariaHidden === null) node.removeAttribute('aria-hidden');
+        else node.setAttribute('aria-hidden', ariaHidden);
+      });
+      previouslyFocused?.focus();
+    };
+  }, []);
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Escape' && !pending) {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    ) ?? []);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  return createPortal(
+    <div ref={overlayRef} className="modal-overlay alert-overlay" onClick={() => { if (!pending) onCancel(); }}>
       <div
+        ref={dialogRef}
         className={`app-modal confirm-modal${danger ? ' danger' : ''}`}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={messageId}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
       >
         <div className="app-modal-head">
           <strong id={titleId}>{title}</strong>
-          <button className="icon-button" onClick={onCancel} title={t('common.close')}>
+          <button type="button" className="icon-button" disabled={pending} onClick={onCancel} title={t('common.close')}>
             <X size={17} />
           </button>
         </div>
         <p className="confirm-message" id={messageId}>{message}</p>
         <div className="modal-actions">
-          <button className="conn-btn ghost" onClick={onCancel}>{t('common.cancel')}</button>
-          <button className={danger ? 'conn-btn danger-solid' : 'conn-btn primary'} onClick={onConfirm}>
+          <button ref={cancelRef} type="button" className="conn-btn ghost" disabled={pending} onClick={onCancel}>{t('common.cancel')}</button>
+          <button type="button" disabled={pending} className={danger ? 'conn-btn danger-solid' : 'conn-btn primary'} onClick={onConfirm}>
             {confirmLabel}
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -475,6 +531,7 @@ export function PromptDialog({
   label,
   placeholder,
   confirmLabel,
+  validate,
   onConfirm,
   onCancel,
 }: {
@@ -483,16 +540,26 @@ export function PromptDialog({
   label: string;
   placeholder?: string;
   confirmLabel: string;
+  validate?: (value: string) => string | undefined;
   onConfirm: (value: string) => void;
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
   const titleId = useId();
   const descriptionId = useId();
+  const errorId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
+  const [error, setError] = useState('');
   const submit = () => {
     const next = value.trim();
-    if (next) onConfirm(next);
+    const nextError = !next ? `${label} is required.` : validate?.(next);
+    if (nextError) {
+      setError(nextError);
+      inputRef.current?.focus();
+      return;
+    }
+    onConfirm(next);
   };
 
   return (
@@ -517,12 +584,21 @@ export function PromptDialog({
         </div>
         {message && <p className="app-modal-message" id={descriptionId}>{message}</p>}
         <label className="prompt-field">
-          <span>{label}</span>
-          <input value={value} onChange={(event) => setValue(event.target.value)} placeholder={placeholder} autoFocus />
+          <span>{label} *</span>
+          <input
+            ref={inputRef}
+            value={value}
+            onChange={(event) => { setValue(event.target.value); if (error) setError(''); }}
+            placeholder={placeholder}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? errorId : undefined}
+            autoFocus
+          />
         </label>
+        {error && <p id={errorId} className="field-error" role="alert">{error}</p>}
         <div className="modal-actions">
           <button type="button" className="conn-btn ghost" onClick={onCancel}>{t('common.cancel')}</button>
-          <button type="submit" className="conn-btn primary" disabled={!value.trim()}>{confirmLabel}</button>
+          <button type="submit" className="conn-btn primary">{confirmLabel}</button>
         </div>
       </form>
     </div>

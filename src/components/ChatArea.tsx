@@ -18,8 +18,6 @@ import {
   RefreshCw,
   Search,
   Square,
-  ThumbsDown,
-  ThumbsUp,
   Trash2,
   UploadCloud,
   X,
@@ -31,6 +29,7 @@ import { AsyncState } from './AsyncState';
 import { RunActivityBar, RunSteps, RunUsage } from './RunSteps';
 import { Markdown } from './Markdown';
 import { UserMessage } from './UserMessage';
+import { ConfirmDialog } from './modals';
 import { WORKSPACE_FILE_MIME, readDroppedEntries } from './WorkspacePanel';
 import { workspaceApi } from '../api/workspace';
 import type { ConversationCompactResult } from '../api/conversations';
@@ -167,6 +166,7 @@ export function ChatArea({
   onUploadFiles,
   onUploadTree,
   workspaceCwd,
+  missingConversationId = '',
 }: {
   agent: Agent;
   agents: Agent[];
@@ -207,6 +207,7 @@ export function ChatArea({
   onUploadFiles?: (files: File[]) => void | Promise<void>;
   onUploadTree?: (items: { file: File; relativeDir: string }[]) => void | Promise<void>;
   workspaceCwd?: string;
+  missingConversationId?: string;
 }) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
@@ -218,6 +219,7 @@ export function ChatArea({
   const [agentPickerSearch, setAgentPickerSearch] = useState('');
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [conversationPickerOpen, setConversationPickerOpen] = useState(false);
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [conversationSearch, setConversationSearch] = useState('');
   const [conversationLoadingMore, setConversationLoadingMore] = useState(false);
   const [conversationPickerPosition, setConversationPickerPosition] = useState({ top: 0, left: 0 });
@@ -329,6 +331,8 @@ export function ChatArea({
     && !compacting
     && onCompactContext,
   );
+  const activeTaskCount = runs.filter((run) => run.status === 'running' || run.status === 'waiting_for_approval').length;
+  const requestStop = () => setStopConfirmOpen(true);
 
   const confirmContextCompaction = async () => {
     if (!canCompactContext || !onCompactContext) return;
@@ -832,6 +836,25 @@ export function ChatArea({
                         <span><strong>{conversation.title}</strong><small>{conversationTime(conversation)}</small></span>
                       )}
                       {selected && <Check size={14} />}
+                      {tabRenamingId !== conversation.id && (
+                        <span
+                          className="conversation-option-rename"
+                          role="button"
+                          tabIndex={0}
+                          aria-label={t('conversation.renameLabel')}
+                          title={t('conversation.renameLabel')}
+                          onClick={(event) => { event.stopPropagation(); startTabRename(conversation); }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              startTabRename(conversation);
+                            }
+                          }}
+                        >
+                          <Pencil size={13} />
+                        </span>
+                      )}
                       <span
                         className="conversation-option-delete"
                         title={t('chat.closeConversation')}
@@ -890,7 +913,14 @@ export function ChatArea({
         {chatStatus === 'loading' ? <AsyncState status="loading" /> : chatStatus === 'error' && messages.length === 0 ? (
           <AsyncState status="error" error={chatError} onRetry={onRetry} />
         ) : visibleMessages.length === 0 && queuedMessages.length === 0 && runs.length === 0 ? (
-          !activeConversation ? (
+          !activeConversation && missingConversationId ? (
+            <div className="chat-empty" role="status">
+              <span className="chat-empty-icon subtle"><MessageSquarePlus size={26} /></span>
+              <strong>Session not found</strong>
+              <p className="chat-empty-desc">This session may have been removed or is not available to this agent.</p>
+              <button type="button" className="conn-btn primary" onClick={onCreateConversation}>Start a new session</button>
+            </div>
+          ) : !activeConversation ? (
             <div className="chat-empty">
               <button type="button" className="chat-empty-card" onClick={onCreateConversation}>
                 <span className="chat-empty-icon"><MessageSquarePlus size={28} /></span>
@@ -917,7 +947,7 @@ export function ChatArea({
                     run={run}
                     answerContent={message.content}
                     onResolveApproval={onResolveRunApproval}
-                    onStop={onStop}
+                    onStop={requestStop}
                     expandSignal={liveRun?.id === run.id ? activityExpandSignal : 0}
                   />
                 ))}
@@ -930,10 +960,7 @@ export function ChatArea({
                 {!message.streaming && (
                   <div className="message-actions">
                     <button title="Copy" onClick={() => void navigator.clipboard?.writeText(message.content)}><Copy size={16} /></button>
-                    <button title="Good response"><ThumbsUp size={16} /></button>
-                    <button title="Bad response"><ThumbsDown size={16} /></button>
                     <button title="Retry"><RefreshCw size={16} /></button>
-                    <button title="More"><MoreHorizontal size={17} /></button>
                   </div>
                 )}
               </article>
@@ -945,7 +972,7 @@ export function ChatArea({
             key={run.id}
             run={run}
             onResolveApproval={onResolveRunApproval}
-            onStop={onStop}
+            onStop={requestStop}
             expandSignal={liveRun?.id === run.id ? activityExpandSignal : 0}
           />
         ))}
@@ -1228,7 +1255,7 @@ export function ChatArea({
                     title={canStop ? 'Stop' : 'Starting…'}
                     aria-label={canStop ? 'Stop' : 'Starting'}
                     disabled={!canStop}
-                    onClick={onStop}
+                    onClick={requestStop}
                   >
                     {canStop ? <Square size={14} /> : <LoaderCircle className="run-step-spin" size={16} />}
                   </button>
@@ -1249,6 +1276,18 @@ export function ChatArea({
 
         </div>
       </footer>
+      {stopConfirmOpen && (
+        <ConfirmDialog
+          title="Stop this response?"
+          message={activeTaskCount
+            ? `Stopping will cancel ${activeTaskCount} active task${activeTaskCount === 1 ? '' : 's'} and keep all output received so far.`
+            : 'Stopping will cancel the active response and keep all output received so far.'}
+          confirmLabel="Stop response"
+          danger
+          onConfirm={() => { setStopConfirmOpen(false); onStop(); }}
+          onCancel={() => setStopConfirmOpen(false)}
+        />
+      )}
     </>
   );
 }
