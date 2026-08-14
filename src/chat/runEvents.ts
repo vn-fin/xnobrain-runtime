@@ -131,6 +131,14 @@ function updateDelegationWorker(run: ChatRun, data: Data, type: string): ChatRun
       const workers = step.delegation.workers.map((worker) => {
         if (worker.index !== taskIndex) return worker;
         let next: DelegationWorker = { ...worker, lastEventAt: timestamp ?? worker.lastEventAt };
+        const liveSteps = number(data.api_calls);
+        const liveInputTokens = number(data.input_tokens);
+        const liveOutputTokens = number(data.output_tokens);
+        const liveReasoningTokens = number(data.reasoning_tokens);
+        if (liveSteps !== undefined) next.steps = liveSteps;
+        if (liveInputTokens !== undefined) next.inputTokens = liveInputTokens;
+        if (liveOutputTokens !== undefined) next.outputTokens = liveOutputTokens;
+        if (liveReasoningTokens !== undefined) next.reasoningTokens = liveReasoningTokens;
         let log: DelegationLogEntry | undefined;
         if (type === 'delegation.worker.queued') {
           next = {

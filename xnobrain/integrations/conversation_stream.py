@@ -146,6 +146,35 @@ class ConversationStreamMixin:
                     ]
                 return json.dumps(sanitized, ensure_ascii=False, default=str)
 
+            def live_subagent_usage(subagent_id: Any) -> dict[str, int]:
+                """Snapshot counters already recorded by a running Hermes child."""
+                if not isinstance(subagent_id, str) or not subagent_id:
+                    return {}
+                parent = agent_ref[0]
+                if parent is None:
+                    return {}
+                lock = getattr(parent, "_active_children_lock", None)
+                try:
+                    if lock is not None:
+                        with lock:
+                            children = list(getattr(parent, "_active_children", ()))
+                    else:
+                        children = list(getattr(parent, "_active_children", ()))
+                    child = next(
+                        (item for item in children if getattr(item, "_subagent_id", None) == subagent_id),
+                        None,
+                    )
+                    if child is None:
+                        return {}
+                    return {
+                        "api_calls": int(getattr(child, "session_api_calls", 0) or 0),
+                        "input_tokens": int(getattr(child, "session_input_tokens", 0) or 0),
+                        "output_tokens": int(getattr(child, "session_output_tokens", 0) or 0),
+                        "reasoning_tokens": int(getattr(child, "session_reasoning_tokens", 0) or 0),
+                    }
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    return {}
+
             if event_type.startswith("subagent."):
                 event_name = {
                     "subagent.queued": "delegation.worker.queued",
@@ -169,6 +198,8 @@ class ConversationStreamMixin:
                     "concurrency": int(kwargs.get("concurrency") or 1),
                     "goal": safe_text(kwargs.get("goal") or preview),
                 }
+                if event_type != "subagent.queued":
+                    event.update(live_subagent_usage(kwargs.get("subagent_id")))
                 if event_type == "subagent.queued":
                     event["queue_position"] = int(kwargs.get("queue_position") or 0)
                 elif event_type == "subagent.tool":

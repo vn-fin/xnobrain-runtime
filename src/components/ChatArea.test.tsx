@@ -121,6 +121,23 @@ describe('manual context compaction', () => {
 });
 
 describe('user message layout', () => {
+  it('copies the exact original user prompt and confirms success', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const prompt = 'Keep **Markdown** and spacing exactly.\n\n  indented text';
+    render(<UserMessage content={prompt} />);
+
+    await user.click(screen.getByRole('button', { name: 'Copy user message' }));
+
+    expect(writeText).toHaveBeenCalledOnce();
+    expect(writeText).toHaveBeenCalledWith(prompt);
+    expect(screen.getByRole('button', { name: 'User message copied' })).toHaveAttribute('title', 'Copied');
+  });
+
   it('collapses and expands a long user prompt', async () => {
     const user = userEvent.setup();
     const longMessage = `Review this request: ${'very-long-content '.repeat(20)}`;

@@ -1107,6 +1107,17 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 agent_ref,
             ):
                 self.assertRegex(run_id, r"^run_[0-9a-f]{32}$")
+                child = SimpleNamespace(
+                    _subagent_id="sa-test",
+                    session_api_calls=1,
+                    session_input_tokens=80,
+                    session_output_tokens=20,
+                    session_reasoning_tokens=4,
+                )
+                agent_ref[0] = SimpleNamespace(
+                    _active_children=[child],
+                    _active_children_lock=None,
+                )
                 tool_progress_callback(
                     "tool.started",
                     "mcp__news__search",
@@ -1185,6 +1196,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                     "task_count": 2,
                     "concurrency": 3,
                     "goal": "Research the current implementation in detail.",
+                    "subagent_id": "sa-test",
                 }
                 tool_progress_callback(
                     "subagent.queued", None, None, None,
@@ -1276,6 +1288,8 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(b'"event":"delegation.worker.started"', payload)
             self.assertIn(b'"event":"delegation.worker.activity"', payload)
             self.assertIn(b'"tool":"web_search"', payload)
+            self.assertIn(b'"input_tokens":80', payload)
+            self.assertIn(b'"output_tokens":20', payload)
             self.assertIn(b'"event":"delegation.worker.text"', payload)
             self.assertIn(b'"delta":"Drafting the report."', payload)
             self.assertIn(b'"event":"delegation.worker.completed"', payload)

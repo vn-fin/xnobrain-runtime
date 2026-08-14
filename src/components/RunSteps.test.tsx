@@ -83,9 +83,13 @@ describe('RunSteps', () => {
 
     expect(screen.getByRole('region', { name: 'Delegation activity' })).toBeVisible();
     expect(screen.getByText('RUNNING')).toBeVisible();
-    expect(screen.getByText('2 running · 0 queued · 2 slots')).toBeVisible();
+    expect(screen.getByText(/2 running · 0 queued · 2 slots · 0 tools · 0 steps/)).toBeVisible();
     expect(screen.getByText(/Inspect the runtime delegation path/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel all' }));
+    expect(stop).not.toHaveBeenCalled();
+    const confirmation = screen.getByRole('alertdialog', { name: 'Cancel all delegated tasks?' });
+    expect(within(confirmation).getByText(/stops the current response/)).toBeVisible();
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Cancel all' }));
     expect(stop).toHaveBeenCalledOnce();
   });
 
@@ -140,20 +144,22 @@ describe('RunSteps', () => {
             status: index < 2 ? 'completed' : index < 4 ? 'running' : 'queued',
             queuePosition: index === 4 ? 1 : undefined,
             toolCount: index === 2 ? 3 : 0,
-            steps: index < 2 ? 2 : undefined,
-            inputTokens: index < 2 ? 1_200 : undefined,
-            outputTokens: index < 2 ? 300 : undefined,
+            steps: index < 2 ? 2 : index === 2 ? 3 : undefined,
+            inputTokens: index < 2 ? 1_200 : index === 2 ? 2_400 : undefined,
+            outputTokens: index < 2 ? 300 : index === 2 ? 360 : undefined,
             logs: index === 2 ? [{ id: 'log-1', timestamp: 1_000, kind: 'tool', tool: 'web_search', message: 'ICML proceedings' }] : [],
           })),
         },
       }],
     })} />);
 
-    expect(screen.getByText('2 running · 1 queued · 3 slots')).toBeVisible();
+    expect(screen.getByText(/2 running · 1 queued · 3 slots · 3 tools · 7 steps · 5.8k tok/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /03 Research conference 3/ }));
     const dialog = screen.getByRole('dialog', { name: 'Worker 3 activity' });
     expect(dialog).toBeVisible();
     expect(within(dialog).getByText(/3 tools/)).toBeVisible();
+    expect(within(dialog).getByText(/3 steps/)).toBeVisible();
+    expect(within(dialog).getByText(/2.8k tokens/)).toBeVisible();
     expect(within(dialog).getByText(/web_search/)).toBeVisible();
     expect(within(dialog).getByText('● streaming updates')).toBeVisible();
   });

@@ -2171,6 +2171,7 @@ body.col-resizing {
 }
 
 .user-bubble {
+  position: relative;
   width: fit-content;
   min-width: 0;
   max-width: min(520px, 70%);
@@ -2184,20 +2185,23 @@ body.col-resizing {
   word-break: break-word;
 }
 
-.user-bubble.collapsible {
-  position: relative;
-  margin-bottom: 50px;
-}
+.user-bubble.collapsible { margin-bottom: 50px; }
 
 .user-bubble.collapsed .user-bubble-content {
   max-height: calc(1.45em * 4);
   overflow: hidden;
 }
 
-.user-bubble-toggle {
+.user-bubble-actions {
   position: absolute;
-  right: 10px;
-  bottom: -16px;
+  right: 8px;
+  bottom: -36px;
+  display: flex;
+  gap: 4px;
+}
+
+.user-bubble-toggle,
+.user-bubble-copy {
   display: grid;
   place-items: center;
   width: 30px;
@@ -2209,10 +2213,13 @@ body.col-resizing {
   box-shadow: 0 4px 12px rgb(0 0 0 / 24%);
 }
 
-.user-bubble-toggle:hover {
+.user-bubble-toggle:hover,
+.user-bubble-copy:hover {
   color: var(--text);
   background: var(--hover);
 }
+
+.user-bubble-copy.copied { color: var(--green); }
 
 .queue-strip {
   display: flex;

@@ -454,6 +454,7 @@ function WorkerLogModal({ worker, now, onClose }: { worker: DelegationWorker; no
 function DelegationCard({ step, onStop }: { step: ChatRunStep; onStop?: () => void }) {
   const [selectedWorker, setSelectedWorker] = useState<number>();
   const [collapseCompleted, setCollapseCompleted] = useState(false);
+  const [confirmCancelAll, setConfirmCancelAll] = useState(false);
   const [now, setNow] = useState(() => Date.now() / 1_000);
   useEffect(() => {
     if (step.status !== 'running') return;
@@ -502,6 +503,12 @@ function DelegationCard({ step, onStop }: { step: ChatRunStep; onStop?: () => vo
   const completedCount = workers.filter((worker) => worker.status === 'completed').length;
   const runningCount = workers.filter((worker) => worker.status === 'running').length;
   const queuedCount = workers.filter((worker) => worker.status === 'queued').length;
+  const totalTools = workers.reduce((sum, worker) => sum + worker.toolCount, 0);
+  const totalSteps = workers.reduce((sum, worker) => sum + (worker.steps ?? 0), 0);
+  const totalTokens = workers.reduce(
+    (sum, worker) => sum + (worker.inputTokens ?? 0) + (worker.outputTokens ?? 0) + (worker.reasoningTokens ?? 0),
+    0,
+  );
   const isRunning = step.status === 'running';
   const state = isRunning
     ? 'RUNNING'
@@ -535,7 +542,11 @@ function DelegationCard({ step, onStop }: { step: ChatRunStep; onStop?: () => vo
         <span>{completedCount + failedCount} / {workerCount} complete</span>
         {elapsed && <span>{elapsed}</span>}
       </div>
-      <div className="delegation-capacity">{runningCount} running · {queuedCount} queued · {concurrency} {concurrency === 1 ? 'slot' : 'slots'}</div>
+      <div className="delegation-capacity">
+        {runningCount} running · {queuedCount} queued · {concurrency} {concurrency === 1 ? 'slot' : 'slots'}
+        {` · ${totalTools} ${totalTools === 1 ? 'tool' : 'tools'} · ${totalSteps} ${totalSteps === 1 ? 'step' : 'steps'}`}
+        {totalTokens > 0 ? ` · ${compactTokens(totalTokens)} tok` : ''}
+      </div>
       <div className="delegation-progress" role="progressbar" aria-label="Delegation progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
         <span style={{ width: `${percent}%` }} />
       </div>
@@ -579,9 +590,22 @@ function DelegationCard({ step, onStop }: { step: ChatRunStep; onStop?: () => vo
       </div>
       <div className="delegation-actions">
         {completedCount > 0 && <button type="button" onClick={() => setCollapseCompleted((value) => !value)}>{collapseCompleted ? 'Show completed' : 'Collapse completed'}</button>}
-        {isRunning && onStop && <button type="button" className="danger" onClick={onStop}>Cancel all</button>}
+        {isRunning && onStop && <button type="button" className="danger" onClick={() => setConfirmCancelAll(true)}>Cancel all</button>}
       </div>
       {selected && <WorkerLogModal worker={selected} now={now} onClose={() => setSelectedWorker(undefined)} />}
+      {confirmCancelAll && onStop && (
+        <ConfirmDialog
+          title="Cancel all delegated tasks?"
+          message={`This stops the current response, cancels ${runningCount} running ${runningCount === 1 ? 'worker' : 'workers'}, and removes ${queuedCount} queued ${queuedCount === 1 ? 'worker' : 'workers'}. Completed results remain available.`}
+          confirmLabel="Cancel all"
+          danger
+          onConfirm={() => {
+            setConfirmCancelAll(false);
+            onStop();
+          }}
+          onCancel={() => setConfirmCancelAll(false)}
+        />
+      )}
     </section>
   );
 }

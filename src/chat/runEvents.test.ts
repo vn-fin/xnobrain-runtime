@@ -76,7 +76,7 @@ describe('reduceRunEvent (live API format)', () => {
       body({ event: 'tool.started', run_id: RUN_ID, tool: 'delegate_task', args, concurrency: 3 }),
       body({ event: 'delegation.worker.queued', run_id: RUN_ID, task_index: 4, task_count: 5, concurrency: 3, queue_position: 2 }),
       body({ event: 'delegation.worker.started', run_id: RUN_ID, task_index: 0, task_count: 5, concurrency: 3, timestamp: 10 }),
-      body({ event: 'delegation.worker.activity', run_id: RUN_ID, task_index: 0, concurrency: 3, timestamp: 11, kind: 'tool', tool: 'web_search', message: 'KDD proceedings', tool_count: 1 }),
+      body({ event: 'delegation.worker.activity', run_id: RUN_ID, task_index: 0, concurrency: 3, timestamp: 11, kind: 'tool', tool: 'web_search', message: 'KDD proceedings', tool_count: 1, api_calls: 1, input_tokens: 800, output_tokens: 120, reasoning_tokens: 5 }),
       body({ event: 'delegation.worker.text', run_id: RUN_ID, task_index: 0, concurrency: 3, timestamp: 12, delta: 'Drafting findings.' }),
       body({ event: 'delegation.worker.completed', run_id: RUN_ID, task_index: 0, concurrency: 3, timestamp: 13, status: 'completed', summary: 'Found papers.', input_tokens: 1200, output_tokens: 300, reasoning_tokens: 10, api_calls: 2, files_read: ['/workspace/a.md'], files_written: [] }),
     ]);
@@ -96,6 +96,24 @@ describe('reduceRunEvent (live API format)', () => {
     });
     expect(delegation?.workers[0].logs.map((entry) => entry.kind)).toEqual(['start', 'tool', 'text', 'complete']);
     expect(delegation?.workers[4]).toMatchObject({ status: 'queued', queuePosition: 2 });
+  });
+
+  it('updates exact worker steps and tokens before delegation completes', () => {
+    const run = fold([
+      stream[0],
+      body({ event: 'tool.started', run_id: RUN_ID, tool: 'delegate_task', args: { goal: 'Inspect usage.' }, concurrency: 1 }),
+      body({ event: 'delegation.worker.started', run_id: RUN_ID, task_index: 0, concurrency: 1, timestamp: 10 }),
+      body({ event: 'delegation.worker.activity', run_id: RUN_ID, task_index: 0, concurrency: 1, timestamp: 11, tool: 'terminal', tool_count: 2, api_calls: 3, input_tokens: 2400, output_tokens: 360, reasoning_tokens: 40 }),
+    ]);
+
+    expect(run?.steps[0].delegation?.workers[0]).toMatchObject({
+      status: 'running',
+      toolCount: 2,
+      steps: 3,
+      inputTokens: 2400,
+      outputTokens: 360,
+      reasoningTokens: 40,
+    });
   });
 
   it('tracks authoritative todo snapshots without exposing generic tool output', () => {
