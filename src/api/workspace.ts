@@ -214,4 +214,6 @@ export const workspaceApi = {
     uploadFileInChunks(agentId, path, file, onProgress),
   remove: (agentId: string, path: string) =>
     request(`${root(agentId)}/delete`, { method: 'POST', body: JSON.stringify({ path }) }),
+  rename: (agentId: string, path: string, newName: string) =>
+    request(`${root(agentId)}/rename`, { method: 'POST', body: JSON.stringify({ path, new_name: newName }) }),
 };

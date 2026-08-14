@@ -18,4 +18,5 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         "workspace_write": (lambda: s.write_workspace(p["agent_id"], body), "workspace updated successfully", 200),
         "workspace_create": (lambda: s.create_workspace(p["agent_id"], body), "workspace created successfully", 201),
         "workspace_delete": (lambda: s.delete_workspace(p["agent_id"], body), "workspace deleted successfully", 200),
+        "workspace_rename": (lambda: s.rename_workspace(p["agent_id"], body), "workspace renamed successfully", 200),
     }

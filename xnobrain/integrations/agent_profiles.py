@@ -390,6 +390,9 @@ class AgentProfilesMixin:
             "memory_write_approval": self._coerce_bool(
                 self._get_nested(config, ("memory", "write_approval"), False)
             ),
+            "checkpoints_enabled": self._coerce_bool(
+                self._get_nested(config, ("checkpoints", "enabled"), False)
+            ),
             "system_prompt": self._get_nested(config, ("agent", "system_prompt"), ""),
         }
 

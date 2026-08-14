@@ -23,6 +23,7 @@ class ConfigPatch(BaseModel):
     approval_mode: str | None = None
     skills_write_approval: bool | None = None
     memory_write_approval: bool | None = None
+    checkpoints_enabled: bool | None = None
     system_prompt: str | None = None
 
 

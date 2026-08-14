@@ -1,11 +1,16 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import DOMPurify from 'dompurify';
-import { ArrowUp, ChevronDown, ChevronUp, Download, FilePlus2, FileText, FolderPlus, HardDrive, LayoutGrid, List, LoaderCircle, Pencil, RefreshCw, Trash2, UploadCloud, X } from 'lucide-react';
+import { ArrowUp, ChevronDown, ChevronUp, Download, FilePlus2, FileText, FolderPlus, HardDrive, LayoutGrid, List, LoaderCircle, Pencil, RefreshCw, UploadCloud, X } from 'lucide-react';
 import { useWorkspace, WORKSPACE_PREVIEW_MAX_BYTES } from '../hooks/useWorkspace';
 import { TreeIcon } from './common';
 import { AsyncState } from './AsyncState';
 import { ConfirmDialog, PromptDialog } from './modals';
 import type { WorkspaceEntry } from '../types';
+import type { WorkspaceView } from '../types';
+import { useCheckpoints } from '../hooks/useCheckpoints';
+import { WorkspaceRowMenu } from './WorkspaceRowMenu';
+import { WorkspaceRestorePoints } from './WorkspaceRestorePoints';
+import { useTranslation } from 'react-i18next';
 
 type ViewMode = 'list' | 'grid';
 type SortKey = 'name' | 'modified' | 'size';
@@ -225,18 +230,27 @@ export function LargeFileNotice({
   );
 }
 
-export function WorkspacePanel({ workspace, openRequest }: { workspace: WorkspaceController; openRequest?: { path: string; token: number } }) {
+export function WorkspacePanel({ workspace, agentId, workspaceView, checkpointId, versionPath, onWorkspaceView, onCheckpoint, onVersionPath, onEnableHistory, openRequest }: { workspace: WorkspaceController; agentId: string; workspaceView: WorkspaceView; checkpointId: string; versionPath: string; onWorkspaceView: (view: WorkspaceView) => void; onCheckpoint: (id: string) => void; onVersionPath: (path: string) => void; onEnableHistory: () => void; openRequest?: { path: string; token: number } }) {
+  const { t } = useTranslation();
   const [view, setView] = useState<ViewMode>('list');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [activePath, setActivePath] = useState('');
   const [createType, setCreateType] = useState<'file' | 'directory' | null>(null);
   const [pendingDelete, setPendingDelete] = useState<WorkspaceEntry | null>(null);
+  const [pendingRename, setPendingRename] = useState<WorkspaceEntry | null>(null);
+  const [announcement, setAnnouncement] = useState('');
   const [dragging, setDragging] = useState(false);
   const [htmlMode, setHtmlMode] = useState<'preview' | 'source'>('preview');
   const dragDepth = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
   const openByPath = workspace.openByPath;
+  const checkpoints = useCheckpoints(agentId, true);
+
+  useEffect(() => {
+    if (workspaceView === 'versions' && versionPath && checkpoints.status?.enabled) void checkpoints.loadVersions(versionPath);
+    if (workspaceView !== 'files' && checkpointId && checkpoints.status?.enabled) void checkpoints.select(checkpointId);
+  }, [workspaceView, versionPath, checkpointId, checkpoints.status?.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (openRequest?.path) {
@@ -286,6 +300,14 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
 
   const activate = (entry: WorkspaceEntry) => setActivePath(entry.path);
   const openEntry = (entry: WorkspaceEntry) => { setActivePath(entry.path); void workspace.open(entry); };
+  const copyPath = async (entry: WorkspaceEntry) => {
+    await navigator.clipboard.writeText(entry.path);
+    setAnnouncement(`Copied ${entry.path}`);
+  };
+  const openHistory = (entry: WorkspaceEntry) => {
+    onVersionPath(entry.path); onCheckpoint(''); onWorkspaceView('versions');
+    void checkpoints.loadVersions(entry.path);
+  };
 
   useEffect(() => {
     setHtmlMode('preview');
@@ -419,6 +441,16 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
 
   return (
     <section className="panel-section workspace-section">
+      <div className="workspace-view-tabs" role="tablist" aria-label="Workspace view">
+        <button role="tab" aria-selected={workspaceView === 'files'} className={workspaceView === 'files' ? 'active' : ''} onClick={() => onWorkspaceView('files')}>{t('checkpoints.files')}</button>
+        <button role="tab" aria-selected={workspaceView !== 'files'} className={workspaceView !== 'files' ? 'active' : ''} onClick={() => onWorkspaceView('restore-points')}>{t('checkpoints.restorePoints')} {checkpoints.status?.checkpointCount ? <span>{checkpoints.status.checkpointCount}</span> : null}</button>
+      </div>
+      <span className="sr-only" aria-live="polite">{announcement}</span>
+      {workspaceView !== 'files' ? (
+        !checkpoints.status?.enabled ? <div className="workspace-history-empty"><strong>{t('checkpoints.disabled')}</strong><span>{t('checkpoints.description')}</span><button className="conn-btn primary" onClick={onEnableHistory}>{t('checkpoints.enableHistory')}</button></div>
+          : !checkpoints.status.available ? <div className="workspace-history-empty" role="alert"><strong>{t('checkpoints.unavailable')}</strong><span>{checkpoints.status.unavailableReason}</span></div>
+            : <WorkspaceRestorePoints checkpoints={checkpoints} view={workspaceView} path={versionPath} checkpointId={checkpointId} onView={onWorkspaceView} onPath={onVersionPath} onCheckpoint={onCheckpoint} onRestored={async () => { await workspace.refresh(); if (workspace.selected) await workspace.retryOpen(); setAnnouncement('Workspace restore completed'); }} />
+      ) : (
       <div
         className={dragging ? 'gd-drive gd-dragging' : 'gd-drive'}
         onDragEnter={onDragEnter}
@@ -500,7 +532,7 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
                       <span className="gd-col-modified">{formatModified(entry.modified)}</span>
                       <span className="gd-col-size">{entry.type === 'directory' ? '—' : formatSize(entry.size)}</span>
                     </button>
-                    <button className="gd-delete" title={`Delete ${entry.name}`} onClick={() => confirmRemove(entry)}><Trash2 size={13} /></button>
+                    <WorkspaceRowMenu entry={entry} historyEnabled={!!checkpoints.status?.enabled} onOpen={() => openEntry(entry)} onDownload={() => void workspace.download(entry)} onHistory={() => openHistory(entry)} onEnableHistory={onEnableHistory} onRename={() => setPendingRename(entry)} onCopy={() => void copyPath(entry)} onDelete={() => confirmRemove(entry)} />
                   </div>
                 ))}
               </div>
@@ -518,7 +550,7 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
                       <span className="gd-thumb"><TreeIcon entry={entry} size={34} /></span>
                       <span className="gd-cardname" title={entry.name}>{entry.name}</span>
                     </button>
-                    <button className="gd-delete" title={`Delete ${entry.name}`} onClick={() => confirmRemove(entry)}><Trash2 size={13} /></button>
+                    <WorkspaceRowMenu entry={entry} historyEnabled={!!checkpoints.status?.enabled} onOpen={() => openEntry(entry)} onDownload={() => void workspace.download(entry)} onHistory={() => openHistory(entry)} onEnableHistory={onEnableHistory} onRename={() => setPendingRename(entry)} onCopy={() => void copyPath(entry)} onDelete={() => confirmRemove(entry)} />
                   </div>
                 ))}
               </div>
@@ -526,6 +558,7 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
           )}
         </div>
       </div>
+      )}
 
       {workspace.selected && (
         <div className="workspace-editor-backdrop" onClick={workspace.close}>
@@ -592,6 +625,19 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
             setCreateType(null);
           }}
           onCancel={() => setCreateType(null)}
+        />
+      )}
+      {pendingRename && (
+        <PromptDialog
+          title={`Rename ${pendingRename.name}`}
+          message="Choose a new name in the same workspace folder."
+          label="New name"
+          placeholder={pendingRename.name}
+          initialValue={pendingRename.name}
+          confirmLabel="Rename"
+          validate={workspaceNameError}
+          onConfirm={(name) => { void workspace.rename(pendingRename, name); setAnnouncement(`Renamed ${pendingRename.path} to ${name}`); setPendingRename(null); }}
+          onCancel={() => setPendingRename(null)}
         />
       )}
     </section>

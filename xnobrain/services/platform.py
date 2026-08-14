@@ -25,6 +25,7 @@ from .automation import AutomationServiceMixin
 from .base import ServiceError
 from .blends import BlendService
 from .conversations import ConversationsServiceMixin
+from .checkpoints import CheckpointService, CheckpointsServiceMixin
 from .conversation_runs import ConversationRunService
 from .cron import CronService, CronServiceError
 from .helpers import MemoryCache
@@ -45,6 +46,7 @@ class PlatformService(
     AgentsServiceMixin,
     AutomationServiceMixin,
     ConversationsServiceMixin,
+    CheckpointsServiceMixin,
     PortabilityServiceMixin,
     ProvidersServiceMixin,
     SandboxesServiceMixin,
@@ -70,6 +72,7 @@ class PlatformService(
         self.cron = CronService(repository, agents)
         self.workspace_previews = WorkspacePreviewService(repository.data_dir / "workspace-previews")
         self.workspace_uploads = WorkspaceUploadService(repository.data_dir / "workspace-uploads")
+        self.checkpoints = CheckpointService(agents)
         from .kanban import KanbanService
         self.kanban = KanbanService(agents, repository)
         self.cron.kanban = self.kanban

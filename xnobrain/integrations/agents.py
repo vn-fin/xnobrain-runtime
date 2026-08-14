@@ -97,6 +97,16 @@ class AgentOperationsMixin:
                 self._copy_seed_profile(profile_dir, copy_credentials=bool(body.get("copy_credentials", True)))
                 self._copy_root_skills(profile_dir, overwrite=True)
                 self._clear_seeded_disabled_skills(profile_dir)
+            if not existed:
+                # Restore points are always an explicit per-profile choice and
+                # must never be inherited from the root/Big Brother profile.
+                seeded_config = self._read_config(profile_dir)
+                checkpoints = seeded_config.get("checkpoints")
+                if isinstance(checkpoints, Mapping):
+                    checkpoints["enabled"] = False
+                else:
+                    seeded_config["checkpoints"] = {"enabled": False}
+                self._write_yaml_atomic(profile_dir / "config.yaml", seeded_config)
             self._ensure_router_profile(profile_dir, body.get("model"))
             self._write_workspace_cwd(profile_dir, workspace_dir)
             self._ensure_workspace_agents(profile_dir, workspace_dir)
@@ -494,6 +504,7 @@ class AgentOperationsMixin:
             "approval_mode",
             "skills_write_approval",
             "memory_write_approval",
+            "checkpoints_enabled",
             "system_prompt",
             "language",
             "stream_output",
@@ -545,6 +556,12 @@ class AgentOperationsMixin:
                 config,
                 ("memory", "write_approval"),
                 self._coerce_bool(body["memory_write_approval"]),
+            )
+        if "checkpoints_enabled" in body:
+            self._set_nested(
+                config,
+                ("checkpoints", "enabled"),
+                self._coerce_bool(body["checkpoints_enabled"]),
             )
         if "system_prompt" in body:
             prompt = self._text_value(body["system_prompt"], field="system_prompt", max_chars=20_000)

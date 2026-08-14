@@ -95,7 +95,9 @@ class WorkspacesServiceMixin:
         return self.workspace_previews.workbook(self.workspace_file(agent_id, path))
 
     def write_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        return self.agents.write_workspace_file(agent_id, body)
+        relative = _validate_create_path(body.get("path"))
+        with self.checkpoints.mutation(agent_id, f"before workspace write: {relative}"):
+            return self.agents.write_workspace_file(agent_id, body)
 
     def upload_workspace_chunk(
         self,
@@ -131,16 +133,40 @@ class WorkspacesServiceMixin:
             total_chunks=total_chunks,
             total_size=total_size,
             payload=payload,
+            publish_context=lambda: self.checkpoints.mutation(
+                agent_id, f"before workspace upload: {relative}"
+            ),
         )
 
     def create_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         path_value = _validate_create_path(body.get("path"))
         if str(body.get("type") or "file") == "directory":
             path = self.agents._workspace_path(agent_id, path_value, require_file=False)
-            path.mkdir(parents=True, exist_ok=True)
+            with self.checkpoints.mutation(agent_id, f"before workspace create: {path_value}"):
+                path.mkdir(parents=True, exist_ok=True)
             return {"agent": agent_id, "path": str(path.relative_to(self.agents._workspace_dir(agent_id))), "type": "directory"}
         return self.write_workspace(agent_id, {"path": path_value, "content": body.get("content") or ""})
 
     def delete_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        return self.agents.delete_workspace_path(agent_id, body)
+        relative = _validate_create_path(body.get("path"))
+        with self.checkpoints.mutation(agent_id, f"before workspace delete: {relative}"):
+            return self.agents.delete_workspace_path(agent_id, body)
 
+    def rename_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        source_relative = _validate_create_path(body.get("path"))
+        new_name = _validate_create_path(body.get("new_name"))
+        if "/" in new_name or len(new_name) > 255:
+            raise AgentAPIError("new_name must be one file name", code="invalid_workspace_path")
+        source = self.agents._workspace_path(agent_id, source_relative, require_file=False)
+        if source == self.agents._workspace_dir(agent_id) or not source.exists():
+            raise AgentAPIError("path not found", code="workspace_path_not_found", status=404)
+        destination = source.with_name(new_name)
+        if destination.exists() or destination.is_symlink():
+            raise AgentAPIError("destination already exists", code="destination_exists", status=409)
+        with self.checkpoints.mutation(agent_id, f"before workspace rename: {source_relative}"):
+            os.replace(source, destination)
+        return {
+            "agent": agent_id,
+            "path": destination.relative_to(self.agents._workspace_dir(agent_id)).as_posix(),
+            "type": "directory" if destination.is_dir() else "file",
+        }

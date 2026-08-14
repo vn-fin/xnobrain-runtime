@@ -7,11 +7,12 @@ from fastapi.responses import Response
 
 from ..models import APIEnvelope
 from .definition import Route
-from . import analytics, agents, automation, conversations, kanban, mcp, portability, providers, sandboxes, system, teams, workspaces
+from . import analytics, agents, automation, checkpoints, conversations, kanban, mcp, portability, providers, sandboxes, system, teams, workspaces
 
 ROUTE_GROUPS = (
     system.ROUTES,
     agents.ROUTES,
+    checkpoints.ROUTES,
     mcp.ROUTES,
     workspaces.ROUTES,
     conversations.ROUTES,

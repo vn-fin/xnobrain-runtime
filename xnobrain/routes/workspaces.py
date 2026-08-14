@@ -1,6 +1,6 @@
 """Workspaces API route declarations."""
 
-from ..models import WorkspaceCreate, WorkspacePath, WorkspaceWrite
+from ..models import WorkspaceCreate, WorkspacePath, WorkspaceRename, WorkspaceWrite
 from .definition import route
 
 ROUTES = (
@@ -14,4 +14,5 @@ ROUTES = (
     route("POST", "/agents-workspaces/{agent_id}/upload/chunk", "workspace_upload_chunk", special="workspace_upload_chunk", tags=("Workspace",)),
     route("POST", "/agents-workspaces/{agent_id}/upload", "workspace_upload", special="workspace_upload", tags=("Workspace",)),
     route("POST", "/agents-workspaces/{agent_id}/delete", "workspace_delete", WorkspacePath, tags=("Workspace",)),
+    route("POST", "/agents-workspaces/{agent_id}/rename", "workspace_rename", WorkspaceRename, tags=("Workspace",)),
 )

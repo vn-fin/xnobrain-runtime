@@ -16,3 +16,7 @@ class WorkspaceWrite(WorkspacePath):
 
 class WorkspaceCreate(WorkspaceWrite):
     type: Literal["file", "directory"] = "file"
+
+
+class WorkspaceRename(WorkspacePath):
+    new_name: str

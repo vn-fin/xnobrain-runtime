@@ -5,6 +5,7 @@ from typing import Any, Callable
 from .agents import operations as agents_operations
 from .analytics import operations as analytics_operations
 from .automation import operations as automation_operations
+from .checkpoints import operations as checkpoints_operations
 from .conversations import operations as conversations_operations
 from .kanban import operations as kanban_operations
 from .mcp import operations as mcp_operations
@@ -20,6 +21,7 @@ OPERATION_GROUPS = (
     agents_operations,
     analytics_operations,
     automation_operations,
+    checkpoints_operations,
     conversations_operations,
     kanban_operations,
     mcp_operations,

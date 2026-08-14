@@ -1,6 +1,7 @@
 """Expected application-layer exceptions handled as API responses."""
 
 from ..integrations import AgentAPIError, ConfigAPIError, NineRouterAPIError
+from ..integrations.checkpoints import CheckpointIntegrationError
 from ..repositories import StoreError
 from .base import ServiceError
 from .cron import CronServiceError
@@ -16,4 +17,5 @@ EXPECTED_ERRORS = (
     NineRouterAPIError,
     WorkspacePreviewError,
     WorkspaceUploadError,
+    CheckpointIntegrationError,
 )

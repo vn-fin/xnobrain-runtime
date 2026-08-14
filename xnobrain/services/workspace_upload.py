@@ -12,6 +12,8 @@ import tempfile
 import threading
 import time
 from typing import Any
+from collections.abc import Callable
+from contextlib import nullcontext
 
 
 WORKSPACE_UPLOAD_CHUNK_BYTES = 768 * 1024
@@ -69,6 +71,7 @@ class WorkspaceUploadService:
         total_chunks: int,
         total_size: int,
         payload: bytes,
+        publish_context: Callable[[], Any] | None = None,
     ) -> dict[str, Any]:
         upload_id = str(upload_id or "").strip()
         if not _SAFE_UPLOAD_ID.fullmatch(upload_id):
@@ -147,7 +150,8 @@ class WorkspaceUploadService:
                 }
 
             target.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
-            self._assemble(parts, target, total_chunks, total_size)
+            with publish_context() if publish_context is not None else nullcontext():
+                self._assemble(parts, target, total_chunks, total_size)
             shutil.rmtree(session)
             self._sync_dir(self.root)
             return {

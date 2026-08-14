@@ -20,6 +20,9 @@ const state = (settingsSection: RouteState['settingsSection']): RouteState => ({
   cronJobId: '',
   cronAgentId: '',
   rightView: 'workspace',
+  workspaceView: 'files',
+  checkpointId: '',
+  versionPath: '',
   agentSearch: '',
   skillsSearch: '',
   skillsGroupFilter: 'all',
@@ -48,6 +51,15 @@ describe('settings routes', () => {
 
   it('falls back to Profiles for an unknown settings section', () => {
     expect(parseRoute('/settings/unknown', '').settingsSection).toBe('profiles');
+  });
+});
+
+describe('workspace restore-point routes', () => {
+  it('round-trips selected restore points and encoded file paths', () => {
+    const url = '/agents/a1/sessions/c1?panel=workspace&workspaceView=versions&path=src%2Fapp.ts&checkpoint=0123456789abcdef0123456789abcdef01234567';
+    const route = parseRoute('/agents/a1/sessions/c1', url.slice(url.indexOf('?')));
+    expect(route).toMatchObject({ workspaceView: 'versions', versionPath: 'src/app.ts', checkpointId: '0123456789abcdef0123456789abcdef01234567' });
+    expect(computeUrl({ ...state('profiles'), ...route })).toBe(url);
   });
 });
 

@@ -124,8 +124,16 @@
     "totalSkills_other": "{{count}} compétences",
     "filterPlaceholder": "Filtrer par nom, description ou chemin…",
     "sortBy": "Trier les compétences",
-    "filter": { "all": "Toutes", "on": "Activées", "off": "Désactivées" },
-    "sort": { "name": "Nom", "category": "Catégorie", "status": "Statut" }
+    "filter": {
+      "all": "Toutes",
+      "on": "Activées",
+      "off": "Désactivées"
+    },
+    "sort": {
+      "name": "Nom",
+      "category": "Catégorie",
+      "status": "Statut"
+    }
   },
   "connections": {
     "title": "Connexions",
@@ -238,5 +246,29 @@
     "scheduled": "planifié",
     "stopped": "arrêté",
     "running": "en cours"
+  },
+  "checkpoints": {
+    "title": "File restore points",
+    "description": "Restore points preserve this agent's workspace before files change. Preview or restore the entire workspace, or recover one file.",
+    "files": "Files",
+    "restorePoints": "Restore points",
+    "versionHistory": "Version history",
+    "enableHistory": "Enable version history…",
+    "open": "Open / Preview",
+    "download": "Download",
+    "rename": "Rename",
+    "copyPath": "Copy path",
+    "delete": "Delete…",
+    "empty": "No restore points yet. One will be saved before the next file change.",
+    "disabled": "File restore points are off",
+    "unavailable": "Restore points unavailable",
+    "previewDiff": "Preview diff",
+    "restoreFile": "Restore this file",
+    "restoreWorkspace": "Restore entire workspace",
+    "chatWarning": "Chat history will not change, and the agent may still remember later work.",
+    "safety": "A safety restore point will be created first.",
+    "deleteFolder": "Delete folder…",
+    "versionDescription": "Recover this exact workspace-relative path",
+    "changesSince": "Changes since this point"
   }
 }

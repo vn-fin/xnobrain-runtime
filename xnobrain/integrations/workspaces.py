@@ -80,7 +80,7 @@ class WorkspacesMixin:
                 status=413,
             )
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_bytes(content)
+        self._write_bytes_atomic(file_path, content, mode=0o640)
         return {
             "object": "hermes.agent_workspace_file",
             "agent": name,

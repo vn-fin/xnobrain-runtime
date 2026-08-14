@@ -379,6 +379,12 @@ class AgentsServiceMixin:
         return self.config.get_config()
 
     def update_global_config(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        if "checkpoints_enabled" in body:
+            raise ServiceError(
+                "File restore points must be enabled on an individual agent profile",
+                status=400,
+                code="profile_setting_required",
+            )
         result = self.config.update_config(body)
         self._cache.invalidate("agents")
         return result
@@ -388,7 +394,12 @@ class AgentsServiceMixin:
         if "reasoning_effort" in translated:
             translated["effort"] = translated.pop("reasoning_effort")
         if self._is_big_brother(agent_id):
-            result = self.config.update_config(translated)["config"]
+            checkpoint_value = translated.pop("checkpoints_enabled", None)
+            if translated:
+                self.config.update_config(translated)
+            if checkpoint_value is not None:
+                self.config.update_config({"config": {"checkpoints": {"enabled": bool(checkpoint_value)}}})
+            result = self.agents.describe_agent(agent_id)["config"]
         else:
             profile = self.repository.profile_path(agent_id)
             path = profile / "config.yaml"
@@ -723,6 +734,7 @@ class AgentsServiceMixin:
                 "approval_mode": str(config.get("approval_mode") or "off"),
                 "skills_write_approval": bool(config.get("skills_write_approval", False)),
                 "memory_write_approval": bool(config.get("memory_write_approval", False)),
+                "checkpoints_enabled": bool(config.get("checkpoints_enabled", False)),
             },
             "created_at": metadata.get("created_at"),
             "updated_at": metadata.get("updated_at"),

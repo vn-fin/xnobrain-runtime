@@ -126,8 +126,16 @@
     "totalSkills_other": "{{count}} 个技能",
     "filterPlaceholder": "按名称、描述或路径筛选…",
     "sortBy": "排序技能",
-    "filter": { "all": "全部", "on": "已启用", "off": "已停用" },
-    "sort": { "name": "名称", "category": "类别", "status": "状态" }
+    "filter": {
+      "all": "全部",
+      "on": "已启用",
+      "off": "已停用"
+    },
+    "sort": {
+      "name": "名称",
+      "category": "类别",
+      "status": "状态"
+    }
   },
   "connections": {
     "title": "连接",
@@ -240,5 +248,29 @@
     "scheduled": "已计划",
     "stopped": "已停止",
     "running": "运行中"
+  },
+  "checkpoints": {
+    "title": "File restore points",
+    "description": "Restore points preserve this agent's workspace before files change. Preview or restore the entire workspace, or recover one file.",
+    "files": "Files",
+    "restorePoints": "Restore points",
+    "versionHistory": "Version history",
+    "enableHistory": "Enable version history…",
+    "open": "Open / Preview",
+    "download": "Download",
+    "rename": "Rename",
+    "copyPath": "Copy path",
+    "delete": "Delete…",
+    "empty": "No restore points yet. One will be saved before the next file change.",
+    "disabled": "File restore points are off",
+    "unavailable": "Restore points unavailable",
+    "previewDiff": "Preview diff",
+    "restoreFile": "Restore this file",
+    "restoreWorkspace": "Restore entire workspace",
+    "chatWarning": "Chat history will not change, and the agent may still remember later work.",
+    "safety": "A safety restore point will be created first.",
+    "deleteFolder": "Delete folder…",
+    "versionDescription": "Recover this exact workspace-relative path",
+    "changesSince": "Changes since this point"
   }
 }

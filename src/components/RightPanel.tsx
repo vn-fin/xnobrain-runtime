@@ -15,7 +15,7 @@ import {
 import { WorkspacePanel, type WorkspaceController } from './WorkspacePanel';
 import { CronPanel } from './CronPanel';
 import type { ResponsePagination } from '../api/client';
-import type { Agent, AgentSkill, AgentSkillMap, CronJob, GlobalRuntimeConfig, RightView } from '../types';
+import type { Agent, AgentSkill, AgentSkillMap, CronJob, GlobalRuntimeConfig, RightView, WorkspaceView } from '../types';
 
 const AGENT_ACTIONS = [
   { id: 'create', label: 'Create' },
@@ -52,6 +52,12 @@ export function RightPanel({
   onDeleteAgent,
   workspaceOpenRequest,
   workspace,
+  workspaceView,
+  checkpointId,
+  versionPath,
+  onWorkspaceView,
+  onCheckpoint,
+  onVersionPath,
   width,
   onResize,
 }: {
@@ -82,6 +88,12 @@ export function RightPanel({
   onDeleteAgent: () => void;
   workspaceOpenRequest?: { path: string; token: number };
   workspace: WorkspaceController;
+  workspaceView: WorkspaceView;
+  checkpointId: string;
+  versionPath: string;
+  onWorkspaceView: (view: WorkspaceView) => void;
+  onCheckpoint: (id: string) => void;
+  onVersionPath: (path: string) => void;
   width: number;
   onResize: (width: number) => void;
 }) {
@@ -178,7 +190,7 @@ export function RightPanel({
       </div>
 
       {rightView === 'workspace' && (
-        <WorkspacePanel workspace={workspace} openRequest={workspaceOpenRequest} />
+        <WorkspacePanel workspace={workspace} agentId={agent.id} workspaceView={workspaceView} checkpointId={checkpointId} versionPath={versionPath} onWorkspaceView={onWorkspaceView} onCheckpoint={onCheckpoint} onVersionPath={onVersionPath} onEnableHistory={() => onRightView('runtime')} openRequest={workspaceOpenRequest} />
       )}
 
       {rightView === 'skills' && (
@@ -420,6 +432,16 @@ export function RightPanel({
               <span className="runtime-switch" />
             </label>
             {approvalError && <p className="runtime-approval-error">{approvalError}</p>}
+          </div>
+          <div className="runtime-approval-panel">
+            <div className="runtime-approval-head"><span><ShieldCheck size={15} /> File restore points</span><em>{agent.checkpointsEnabled ? 'ACTIVE' : 'OFF'}</em></div>
+            <p className="runtime-checkpoint-copy">Preserve this agent's workspace before it changes files or runs destructive commands.</p>
+            <label className="runtime-approval-row">
+              <div className="runtime-approval-copy"><strong>This agent profile only</strong><small>{agent.checkpointsEnabled ? 'New restore points will be recorded' : 'No new restore points while disabled'}</small></div>
+              <input type="checkbox" checked={agent.checkpointsEnabled} onChange={() => onOpenSettings()} />
+              <span className="runtime-switch" />
+            </label>
+            {agent.checkpointsEnabled && <button className="conn-btn ghost" onClick={() => { onWorkspaceView('restore-points'); onRightView('workspace'); }}>View restore points</button>}
           </div>
           <div className="button-grid">
             {AGENT_ACTIONS.map((action) => (

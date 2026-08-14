@@ -13,6 +13,7 @@ export type AgentConfigDTO = {
   stream_output?: boolean;
   skills_write_approval?: boolean;
   system_prompt?: string;
+  checkpoints_enabled?: boolean;
 };
 
 export type AgentDTO = {

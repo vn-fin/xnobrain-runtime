@@ -317,6 +317,7 @@ export function AgentSettingsModal({
   );
   const [reasoningEffort, setReasoningEffort] = useState(agent.reasoningEffort);
   const [approvalMode, setApprovalMode] = useState<Agent['approvalMode']>(agent.approvalMode);
+  const [checkpointsEnabled, setCheckpointsEnabled] = useState(agent.checkpointsEnabled);
   const [confirming, setConfirming] = useState(false);
   const selectedProvider = providers.find((item) => item.id === provider);
   const selectedProviderModels = providerModels(selectedProvider);
@@ -324,7 +325,7 @@ export function AgentSettingsModal({
     ? selectedProviderModels
     : model ? [model] : [];
 
-  const save = () => onSave({ title, description, provider, model, reasoningEffort, approvalMode });
+  const save = () => onSave({ title, description, provider, model, reasoningEffort, approvalMode, checkpointsEnabled });
 
   return (
     <div className={embedded ? 'agent-settings-embedded' : 'modal-overlay'} onClick={embedded ? undefined : onClose}>
@@ -397,6 +398,15 @@ export function AgentSettingsModal({
                     <option value="manual">manual</option>
                     <option value="auto">auto</option>
                   </select>
+                </label>
+              </div>
+              <div className="runtime-approval-panel">
+                <div className="runtime-approval-head"><span>File restore points</span><em>{checkpointsEnabled ? 'ON' : 'OFF'}</em></div>
+                <p className="runtime-checkpoint-copy">Restore points preserve this agent's workspace before files change. Preview or restore the entire workspace, or recover one file.</p>
+                <label className="runtime-approval-row">
+                  <div className="runtime-approval-copy"><strong>This agent profile only</strong><small>{checkpointsEnabled ? 'Keeps up to 20 points · files up to 10 MB' : 'No new restore points while disabled'}</small></div>
+                  <input type="checkbox" checked={checkpointsEnabled} onChange={(event) => setCheckpointsEnabled(event.target.checked)} />
+                  <span className="runtime-switch" />
                 </label>
               </div>
             </div>
@@ -530,6 +540,7 @@ export function PromptDialog({
   message,
   label,
   placeholder,
+  initialValue = '',
   confirmLabel,
   validate,
   onConfirm,
@@ -539,6 +550,7 @@ export function PromptDialog({
   message?: string;
   label: string;
   placeholder?: string;
+  initialValue?: string;
   confirmLabel: string;
   validate?: (value: string) => string | undefined;
   onConfirm: (value: string) => void;
@@ -550,7 +562,7 @@ export function PromptDialog({
   const errorId = useId();
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(initialValue);
   const [error, setError] = useState('');
   const submit = () => {
     const next = value.trim();

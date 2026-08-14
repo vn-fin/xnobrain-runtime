@@ -103,6 +103,7 @@ export const agentsApi = {
       // automatic execution is "off".
       config.approval_mode = updates.approvalMode === 'auto' ? 'off' : 'on';
     }
+    if (updates.checkpointsEnabled !== undefined) config.checkpoints_enabled = updates.checkpointsEnabled;
     await Promise.all([
       Object.keys(metadata).length ? agentsApi.updateMetadata(id, metadata) : Promise.resolve(),
       Object.keys(config).length ? agentsApi.updateConfig(id, config) : Promise.resolve(),

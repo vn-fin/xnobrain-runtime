@@ -168,16 +168,16 @@ export function useWorkspace(agentId: string, active = true) {
     }
   };
 
-  const downloadSelected = async () => {
-    if (!selected || downloading) return;
+  const download = async (entry: WorkspaceEntry) => {
+    if (downloading) return;
     setDownloading(true);
     setDownloadError('');
     try {
-      const blob = await workspaceApi.download(agentId, selected.path);
+      const blob = await workspaceApi.download(agentId, entry.path);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = selected.name;
+      anchor.download = entry.name;
       anchor.style.display = 'none';
       document.body.appendChild(anchor);
       anchor.click();
@@ -189,6 +189,7 @@ export function useWorkspace(agentId: string, active = true) {
       setDownloading(false);
     }
   };
+  const downloadSelected = async () => { if (selected) await download(selected); };
 
   const openByPath = async (path: string) => {
     const absolute = path.trim().startsWith('/');
@@ -269,6 +270,7 @@ export function useWorkspace(agentId: string, active = true) {
     },
     retryOpen: () => selected ? open(selected) : Promise.resolve(),
     downloadSelected,
+    download,
     close: () => {
       openController.current?.abort();
       openController.current = undefined;
@@ -301,5 +303,6 @@ export function useWorkspace(agentId: string, active = true) {
       }
     }) : Promise.resolve(),
     remove: (entry: WorkspaceEntry) => mutate(() => workspaceApi.remove(agentId, entry.path)),
+    rename: (entry: WorkspaceEntry, newName: string) => mutate(() => workspaceApi.rename(agentId, entry.path, newName)),
   };
 }

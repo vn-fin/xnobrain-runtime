@@ -2,6 +2,7 @@
 // (agent-gateway, conversations, sandboxes, and Hermes Kanban).
 
 export type RightView = 'workspace' | 'skills' | 'cron' | 'runtime';
+export type WorkspaceView = 'files' | 'restore-points' | 'versions';
 export type CenterView = 'chat' | 'skills' | 'teams' | 'data' | 'kanban' | 'analytics' | 'cron';
 
 export type ConnectionMode = 'device-code' | 'cli' | 'api-key' | 'no-auth';
@@ -288,6 +289,7 @@ export type GlobalRuntimeConfig = {
   model: string;
   skillsWriteApproval: boolean;
   memoryWriteApproval: boolean;
+  checkpointsEnabled?: boolean;
 };
 
 // Assistants / agents (agent-gateway agents)
@@ -305,6 +307,7 @@ export type Agent = {
   approvalMode: 'auto' | 'manual';
   skillsWriteApproval: boolean;
   memoryWriteApproval: boolean;
+  checkpointsEnabled?: boolean;
   workspace: string;
   skills: AgentSkill[];
   conversations: Conversation[];
@@ -326,6 +329,54 @@ export type WorkspaceEntry = {
     | 'pdf' | 'document' | 'spreadsheet' | 'presentation' | 'binary';
   size: string;
   modified: string;
+};
+
+export type CheckpointStatus = {
+  agentId: string;
+  enabled: boolean;
+  available: boolean;
+  unavailableReason?: string;
+  checkpointCount: number;
+  retainedBytes?: number;
+  maxSnapshots: number;
+  maxFileSizeBytes: number;
+};
+
+export type Checkpoint = {
+  id: string;
+  shortId: string;
+  createdAt: string;
+  reason: string;
+  trigger: string;
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+};
+
+export type CheckpointFile = {
+  path: string;
+  status: 'added' | 'modified' | 'deleted';
+  insertions: number;
+  deletions: number;
+  binary: boolean;
+};
+
+export type CheckpointDiff = {
+  checkpointId: string;
+  shortId: string;
+  files: CheckpointFile[];
+  patch: string;
+  truncated: boolean;
+  totalPatchBytes: number;
+};
+
+export type FileVersion = {
+  checkpointId: string;
+  shortId: string;
+  createdAt: string;
+  reason: string;
+  exists: boolean;
+  size?: number;
 };
 
 // Cron / scheduled jobs

@@ -18,6 +18,7 @@ export function mapAgent(dto: AgentDTO): Agent {
     approvalMode: config?.approval_mode === 'on' || config?.approval_mode === 'manual' ? 'manual' : 'auto',
     skillsWriteApproval: config?.skills_write_approval ?? false,
     memoryWriteApproval: config?.memory_write_approval ?? false,
+    checkpointsEnabled: config?.checkpoints_enabled ?? false,
     workspace: dto.id ? `${dto.id}/workspace` : '',
     skills: [],
     conversations: [],

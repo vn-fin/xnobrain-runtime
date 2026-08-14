@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Agent, CenterView, RightView } from '../types';
+import type { Agent, CenterView, RightView, WorkspaceView } from '../types';
 import { requestNavigation } from '../utils/navigationGuard';
 
 export type SettingsSection = 'profiles' | 'context' | 'vm' | 'connectors' | 'mcp' | 'blends';
@@ -21,6 +21,9 @@ export type RouteState = {
   cronJobId: string;
   cronAgentId: string;
   rightView: RightView;
+  workspaceView: WorkspaceView;
+  checkpointId: string;
+  versionPath: string;
   agentSearch: string;
   skillsSearch: string;
   skillsGroupFilter: string;
@@ -45,6 +48,9 @@ export function parseRoute(pathname: string, search: string): RouteState {
   let cronAgentId = '';
   let rightView: RightView = 'workspace';
   let settingsSection: SettingsSection = 'profiles';
+  let workspaceView: WorkspaceView = 'files';
+  let checkpointId = '';
+  let versionPath = '';
 
   // Keep old deep links useful while the two destinations live under Settings.
   if (seg[0] === 'sandbox') {
@@ -96,6 +102,10 @@ export function parseRoute(pathname: string, search: string): RouteState {
     if (seg[2] === 'sessions' || seg[2] === 'conversations') conversationId = seg[3] ?? '';
     const panel = sp.get('panel');
     if (panel === 'skills' || panel === 'cron' || panel === 'runtime' || panel === 'workspace') rightView = panel;
+    const requestedWorkspaceView = sp.get('workspaceView');
+    if (requestedWorkspaceView === 'restore-points' || requestedWorkspaceView === 'versions') workspaceView = requestedWorkspaceView;
+    checkpointId = sp.get('checkpoint') ?? '';
+    versionPath = sp.get('path') ?? '';
   }
 
   return {
@@ -115,6 +125,9 @@ export function parseRoute(pathname: string, search: string): RouteState {
     cronJobId,
     cronAgentId,
     rightView,
+    workspaceView,
+    checkpointId,
+    versionPath,
     agentSearch: sp.get('agentq') ?? '',
     skillsSearch: sp.get('q') ?? '',
     skillsGroupFilter: sp.get('group') ?? 'all',
@@ -172,6 +185,12 @@ export function computeUrl(state: RouteState): string {
   let path = `/agents/${encodeURIComponent(state.agentId)}`;
   if (state.conversationId) path += `/sessions/${encodeURIComponent(state.conversationId)}`;
   if (state.rightView !== 'workspace') params.set('panel', state.rightView);
+  if (state.workspaceView !== 'files') {
+    params.set('panel', 'workspace');
+    params.set('workspaceView', state.workspaceView);
+  }
+  if (state.workspaceView === 'versions' && state.versionPath) params.set('path', state.versionPath);
+  if (state.workspaceView !== 'files' && state.checkpointId) params.set('checkpoint', state.checkpointId);
   if (state.agentSearch.trim()) params.set('agentq', state.agentSearch.trim());
   return `${path}${params.size ? `?${params}` : ''}`;
 }
@@ -186,6 +205,9 @@ export function useRouter() {
   const [centerView, setCenterView] = useState<CenterView>(bootRoute.centerView);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(bootRoute.settingsSection);
   const [rightView, setRightView] = useState<RightView>(bootRoute.rightView);
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(bootRoute.workspaceView);
+  const [checkpointId, setCheckpointId] = useState(bootRoute.checkpointId);
+  const [versionPath, setVersionPath] = useState(bootRoute.versionPath);
   const [activeAgentId, setActiveAgentId] = useState(bootRoute.agentId);
   const [activeConversationId, setActiveConversationId] = useState(bootRoute.conversationId);
   const [activeTeamId, setActiveTeamId] = useState(bootRoute.teamId);
@@ -206,7 +228,7 @@ export function useRouter() {
   useEffect(() => {
     const url = computeUrl({
       centerView, settingsSection, agentId: activeAgentId, conversationId: activeConversationId,
-      teamId: activeTeamId, teamRunId: activeTeamRunId, teamCreate, teamAgentId, teamConversationId, rightView,
+      teamId: activeTeamId, teamRunId: activeTeamRunId, teamCreate, teamAgentId, teamConversationId, rightView, workspaceView, checkpointId, versionPath,
       kanbanBoardId, kanbanTaskId, kanbanAgentId, kanbanConversationId,
       cronJobId, cronAgentId,
       agentSearch, skillsSearch, skillsGroupFilter,
@@ -219,7 +241,7 @@ export function useRouter() {
     centerView, settingsSection, activeAgentId, activeConversationId, activeTeamId, activeTeamRunId,
     teamCreate, teamAgentId, teamConversationId, kanbanBoardId, kanbanTaskId, kanbanAgentId, kanbanConversationId,
     cronJobId, cronAgentId,
-    rightView, agentSearch, skillsSearch, skillsGroupFilter,
+    rightView, workspaceView, checkpointId, versionPath, agentSearch, skillsSearch, skillsGroupFilter,
   ]);
 
   useEffect(() => {
@@ -241,6 +263,9 @@ export function useRouter() {
       setCronJobId(state.cronJobId);
       setCronAgentId(state.cronAgentId);
       setRightView(state.rightView);
+      setWorkspaceView(state.workspaceView);
+      setCheckpointId(state.checkpointId);
+      setVersionPath(state.versionPath);
       setAgentSearch(state.agentSearch);
       setSkillsSearch(state.skillsSearch);
       setSkillsGroupFilter(state.skillsGroupFilter);
@@ -342,7 +367,7 @@ export function useRouter() {
     setActiveConversationId(next.conversationId);
     const currentState: RouteState = {
       centerView, settingsSection, agentId: next.agentId, conversationId: next.conversationId,
-      teamId: activeTeamId, teamRunId: activeTeamRunId, teamCreate, teamAgentId, teamConversationId, rightView,
+      teamId: activeTeamId, teamRunId: activeTeamRunId, teamCreate, teamAgentId, teamConversationId, rightView, workspaceView, checkpointId, versionPath,
       kanbanBoardId, kanbanTaskId, kanbanAgentId, kanbanConversationId,
       cronJobId, cronAgentId,
       agentSearch, skillsSearch, skillsGroupFilter,
@@ -352,12 +377,13 @@ export function useRouter() {
     activeAgentId, activeConversationId, activeTeamId, activeTeamRunId, teamCreate, teamAgentId, teamConversationId,
     kanbanBoardId, kanbanTaskId, kanbanAgentId, kanbanConversationId,
     cronJobId, cronAgentId,
-    centerView, settingsSection, rightView, agentSearch, skillsSearch, skillsGroupFilter,
+    centerView, settingsSection, rightView, workspaceView, checkpointId, versionPath, agentSearch, skillsSearch, skillsGroupFilter,
   ]);
 
   return {
     centerView, setCenterView: guardedSetCenterView,
     settingsSection, setSettingsSection: guardedSetSettingsSection, rightView, setRightView,
+    workspaceView, setWorkspaceView, checkpointId, setCheckpointId, versionPath, setVersionPath,
     activeAgentId, setActiveAgentId, activeConversationId, setActiveConversationId,
     activeTeamId, activeTeamRunId, teamCreate, teamAgentId, teamConversationId, openTeam, openTeamConversation, createTeam, editTeam,
     kanbanBoardId, kanbanTaskId, kanbanAgentId, kanbanConversationId, openKanbanBoard, openKanbanTask,

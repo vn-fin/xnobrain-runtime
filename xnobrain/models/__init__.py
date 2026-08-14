@@ -1,6 +1,7 @@
 """Public Pydantic contracts, grouped by backend service."""
 
 from .agents import *
+from .checkpoints import *
 from .analytics import *
 from .automation import *
 from .common import *

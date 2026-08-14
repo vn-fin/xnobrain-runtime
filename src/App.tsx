@@ -592,6 +592,12 @@ export default function App() {
           onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}
           workspaceOpenRequest={workspaceOpenRequest}
           workspace={workspace}
+          workspaceView={router.workspaceView}
+          checkpointId={router.checkpointId}
+          versionPath={router.versionPath}
+          onWorkspaceView={router.setWorkspaceView}
+          onCheckpoint={router.setCheckpointId}
+          onVersionPath={router.setVersionPath}
           width={rightWidth}
           onResize={(width) => setRightWidth(clampRightWidth(width))}
         />
