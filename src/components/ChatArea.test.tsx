@@ -246,7 +246,14 @@ describe('conversation picker', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Show all sessions: Quarterly risk review' }));
     const selectedOption = screen.getByRole('option', { name: /Quarterly risk review/ });
-    fireEvent.click(within(selectedOption).getByRole('button', { name: 'Rename session' }));
+    fireEvent.click(within(selectedOption).getByRole('button', { name: 'Options for Quarterly risk review' }));
+    const sessionMenu = screen.getByRole('menu', { name: 'Options for Quarterly risk review' });
+    expect(within(sessionMenu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'RenameF2',
+      'DeleteDel',
+      'Copy linkCtrl+Shift+C',
+    ]);
+    fireEvent.click(within(sessionMenu).getByRole('menuitem', { name: /Rename/ }));
     const renameInput = screen.getByRole('textbox', { name: 'Session name' });
     fireEvent.change(renameInput, { target: { value: 'Renamed review' } });
     fireEvent.keyDown(renameInput, { key: 'Enter' });

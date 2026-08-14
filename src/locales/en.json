@@ -124,6 +124,8 @@
     "shareUnavailable": "Sharing isn't available yet",
     "rename": "Rename",
     "delete": "Delete",
+    "copyLink": "Copy link",
+    "menuFor": "Options for {{name}}",
     "deleteTitle": "Delete session",
     "deleteMessage": "Delete “{{name}}”? This permanently removes the session and its messages. This action cannot be undone.",
     "renameLabel": "Session name",

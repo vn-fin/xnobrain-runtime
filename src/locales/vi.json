@@ -124,6 +124,8 @@
     "shareUnavailable": "Tính năng chia sẻ chưa khả dụng",
     "rename": "Đổi tên",
     "delete": "Xóa",
+    "copyLink": "Sao chép liên kết",
+    "menuFor": "Tùy chọn cho {{name}}",
     "deleteTitle": "Xóa phiên",
     "deleteMessage": "Xóa “{{name}}”? Phiên này và toàn bộ tin nhắn sẽ bị xóa vĩnh viễn. Không thể hoàn tác.",
     "renameLabel": "Tên phiên",

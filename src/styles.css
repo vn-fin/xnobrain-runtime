@@ -2018,32 +2018,52 @@ body.col-resizing {
   font-size: 12px;
 }
 .conversation-picker-list > .conversation-load-more:disabled { cursor: wait; opacity: 0.7; }
-.conversation-option-delete {
+.conversation-option-menu-trigger {
   width: 24px;
   height: 24px;
   flex: 0 0 24px !important;
   display: grid !important;
   place-items: center;
+  padding: 0;
+  border: 0;
   border-radius: 5px;
   color: var(--muted-2);
+  background: transparent;
   opacity: 0;
 }
-.conversation-option-rename {
-  width: 24px;
-  height: 24px;
-  min-width: 24px !important;
-  flex: 0 0 24px !important;
-  display: grid !important;
-  grid-template-columns: none !important;
-  place-items: center;
-  border-radius: 5px;
-  color: var(--muted-2);
+.conversation-option-menu-trigger:hover,
+.conversation-option-menu-trigger:focus-visible,
+.conversation-option-menu-trigger[aria-expanded='true'] { color: var(--text); background: var(--surface-2); }
+.conversation-picker-list > [role='option']:hover .conversation-option-menu-trigger,
+.conversation-picker-list > [role='option']:focus-within .conversation-option-menu-trigger { opacity: 1; }
+.conversation-option-menu {
+  position: fixed;
+  z-index: 50;
+  width: 190px;
+  padding: 5px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--elevated-hi);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
 }
-.conversation-option-rename:hover,
-.conversation-option-rename:focus-visible { color: var(--text); background: var(--surface-2); }
-.conversation-picker-list > [role='option']:hover .conversation-option-delete,
-.conversation-picker-list > [role='option']:focus-visible .conversation-option-delete { opacity: 1; }
-.conversation-option-delete:hover { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
+.conversation-option-menu button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text);
+  background: transparent;
+  font-size: 11px;
+  text-align: left;
+}
+.conversation-option-menu button:hover,
+.conversation-option-menu button:focus-visible { background: var(--hover); }
+.conversation-option-menu button.danger { color: var(--danger); }
+.conversation-option-menu kbd { color: var(--muted-2); font: inherit; font-size: 9px; }
 
 .chat-tab {
   max-width: 220px;

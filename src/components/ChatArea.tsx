@@ -228,12 +228,16 @@ export function ChatArea({
   const [fileDragOver, setFileDragOver] = useState(false);
   const [tabRenamingId, setTabRenamingId] = useState<string | null>(null);
   const [tabRenameValue, setTabRenameValue] = useState('');
+  const [conversationMenuId, setConversationMenuId] = useState<string | null>(null);
+  const [conversationMenuPosition, setConversationMenuPosition] = useState({ top: 0, left: 0 });
   const [editingQueuedId, setEditingQueuedId] = useState<string | null>(null);
   const [editingQueuedText, setEditingQueuedText] = useState('');
   const streamingKeys = useStreamingConversations();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversationPickerButtonRef = useRef<HTMLButtonElement>(null);
   const activeConversationOptionRef = useRef<HTMLDivElement>(null);
+  const conversationMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const conversationMenuRef = useRef<HTMLDivElement>(null);
   const messageCanvasRef = useRef<HTMLDivElement>(null);
   const followLatestRef = useRef(true);
   const [activityExpandSignal, setActivityExpandSignal] = useState(0);
@@ -255,6 +259,7 @@ export function ChatArea({
   const conversationPickerRef = useDismissibleLayer<HTMLDivElement>(conversationPickerOpen, () => {
     setConversationPickerOpen(false);
     setConversationSearch('');
+    setConversationMenuId(null);
   });
   const mobileActionsRef = useDismissibleLayer<HTMLDivElement>(mobileActionsOpen, () => setMobileActionsOpen(false));
   // provider runtime always stores `nine-router`; find the upstream account that owns
@@ -280,6 +285,7 @@ export function ChatArea({
     setMobileActionsOpen(false);
     setConversationPickerOpen(false);
     setConversationSearch('');
+    setConversationMenuId(null);
     setContextOpen(false);
     setContextConfirming(false);
     setContextFocus('');
@@ -296,6 +302,15 @@ export function ChatArea({
     const option = activeConversationOptionRef.current;
     if (typeof option?.scrollIntoView === 'function') option.scrollIntoView({ block: 'center' });
   }, [activeConversation?.id, conversationPickerOpen, conversationQuery]);
+
+  useEffect(() => {
+    if (!conversationMenuId) return;
+    conversationMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  }, [conversationMenuId]);
+
+  useEffect(() => {
+    if (!conversationPickerOpen) setConversationMenuId(null);
+  }, [conversationPickerOpen]);
   // Only the final answer of a turn is shown as a chat bubble. Intermediate
   // tool-call messages (finish_reason "tool_calls") are hidden here and instead
   // folded into the turn's collapsible "thinking" run. Live streaming messages
@@ -406,6 +421,56 @@ export function ChatArea({
     const value = tabRenameValue.trim();
     if (value && value !== conversation.title) void onRenameConversation(conversation.id, value);
     setTabRenamingId(null);
+  };
+
+  const copyConversationLink = async (conversation: Conversation) => {
+    const path = `/agents/${encodeURIComponent(agent.id)}/sessions/${encodeURIComponent(conversation.id)}`;
+    await navigator.clipboard?.writeText(new URL(path, window.location.origin).toString());
+    setConversationMenuId(null);
+  };
+
+  const openConversationMenu = (conversationId: string, button: HTMLElement) => {
+    const rect = button.getBoundingClientRect();
+    const menuHeight = 112;
+    setConversationMenuPosition({
+      top: rect.bottom + menuHeight > window.innerHeight ? Math.max(8, rect.top - menuHeight) : rect.bottom + 4,
+      left: Math.max(8, Math.min(rect.right - 190, window.innerWidth - 198)),
+    });
+    setConversationMenuId((current) => current === conversationId ? null : conversationId);
+  };
+
+  const deleteConversationFromPicker = (conversationId: string) => {
+    setConversationMenuId(null);
+    setConversationPickerOpen(false);
+    setConversationSearch('');
+    onDeleteConversation(conversationId);
+  };
+
+  const onConversationMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>, conversation: Conversation) => {
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      items[event.key === 'Home' ? 0 : items.length - 1]?.focus();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      setConversationMenuId(null);
+      conversationMenuButtonRef.current?.focus();
+    } else if (event.key === 'F2') {
+      event.preventDefault();
+      setConversationMenuId(null);
+      startTabRename(conversation);
+    } else if (event.key === 'Delete') {
+      event.preventDefault();
+      deleteConversationFromPicker(conversation.id);
+    } else if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'c') {
+      event.preventDefault();
+      void copyConversationLink(conversation);
+    }
   };
 
   const addAttachment = (path: string) => {
@@ -767,7 +832,10 @@ export function ChatArea({
                 <Search size={14} />
                 <input
                   value={conversationSearch}
-                  onChange={(event) => setConversationSearch(event.target.value)}
+                  onChange={(event) => {
+                    setConversationSearch(event.target.value);
+                    setConversationMenuId(null);
+                  }}
                   placeholder={t('chat.searchConversations', { defaultValue: 'Search sessions…' })}
                   autoFocus
                 />
@@ -819,11 +887,26 @@ export function ChatArea({
                         startTabRename(conversation);
                       }}
                       onKeyDown={(event) => {
-                        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
-                        event.preventDefault();
-                        onSelectConversation(conversation.id);
-                        setConversationPickerOpen(false);
-                        setConversationSearch('');
+                        if (event.target !== event.currentTarget) return;
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          onSelectConversation(conversation.id);
+                          setConversationPickerOpen(false);
+                          setConversationSearch('');
+                        } else if (event.key === 'F2') {
+                          event.preventDefault();
+                          startTabRename(conversation);
+                        } else if (event.key === 'Delete') {
+                          event.preventDefault();
+                          deleteConversationFromPicker(conversation.id);
+                        } else if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'c') {
+                          event.preventDefault();
+                          void copyConversationLink(conversation);
+                        } else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                          event.preventDefault();
+                          const button = event.currentTarget.querySelector<HTMLButtonElement>('.conversation-option-menu-trigger');
+                          if (button) openConversationMenu(conversation.id, button);
+                        }
                       }}
                     >
                       {tabStreaming ? <span className="tab-stream-dot" /> : <MessageSquarePlus size={14} />}
@@ -848,46 +931,44 @@ export function ChatArea({
                       )}
                       {selected && <Check size={14} />}
                       {tabRenamingId !== conversation.id && (
-                        <span
-                          className="conversation-option-rename"
-                          role="button"
-                          tabIndex={0}
-                          aria-label={t('conversation.renameAction', { defaultValue: 'Rename session' })}
-                          title={t('conversation.renameAction', { defaultValue: 'Rename session' })}
-                          onClick={(event) => { event.stopPropagation(); startTabRename(conversation); }}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              startTabRename(conversation);
-                            }
+                        <button
+                          ref={conversationMenuId === conversation.id ? conversationMenuButtonRef : undefined}
+                          className="conversation-option-menu-trigger"
+                          aria-label={t('conversation.menuFor', { name: conversation.title, defaultValue: 'Options for {{name}}' })}
+                          title={t('conversation.menu', { defaultValue: 'Session options' })}
+                          aria-haspopup="menu"
+                          aria-expanded={conversationMenuId === conversation.id}
+                          onDoubleClick={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openConversationMenu(conversation.id, event.currentTarget);
                           }}
                         >
-                          <Pencil size={13} />
-                        </span>
+                          <MoreHorizontal size={16} />
+                        </button>
                       )}
-                      <span
-                        className="conversation-option-delete"
-                        role="button"
-                        tabIndex={0}
-                        aria-label={t('chat.closeConversation')}
-                        title={t('chat.closeConversation')}
-                        onDoubleClick={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setConversationPickerOpen(false);
-                          onDeleteConversation(conversation.id);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key !== 'Enter' && event.key !== ' ') return;
-                          event.preventDefault();
-                          event.stopPropagation();
-                          setConversationPickerOpen(false);
-                          onDeleteConversation(conversation.id);
-                        }}
-                      >
-                        <X size={13} />
-                      </span>
+                      {conversationMenuId === conversation.id && (
+                        <div
+                          ref={conversationMenuRef}
+                          className="conversation-option-menu"
+                          role="menu"
+                          aria-label={t('conversation.menuFor', { name: conversation.title, defaultValue: 'Options for {{name}}' })}
+                          style={conversationMenuPosition}
+                          onClick={(event) => event.stopPropagation()}
+                          onDoubleClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => onConversationMenuKeyDown(event, conversation)}
+                        >
+                          <button role="menuitem" onClick={() => { setConversationMenuId(null); startTabRename(conversation); }}>
+                            <Pencil size={14} /><span>{t('conversation.rename')}</span><kbd>F2</kbd>
+                          </button>
+                          <button className="danger" role="menuitem" onClick={() => deleteConversationFromPicker(conversation.id)}>
+                            <Trash2 size={14} /><span>{t('conversation.delete')}</span><kbd>Del</kbd>
+                          </button>
+                          <button role="menuitem" onClick={() => void copyConversationLink(conversation)}>
+                            <Copy size={14} /><span>{t('conversation.copyLink', { defaultValue: 'Copy link' })}</span><kbd>{navigator.platform?.includes('Mac') ? '⇧⌘C' : 'Ctrl+Shift+C'}</kbd>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
