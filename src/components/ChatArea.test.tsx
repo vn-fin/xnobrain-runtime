@@ -131,12 +131,13 @@ describe('agent feature shortcuts', () => {
       provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
       skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [conversation],
     };
-    const onCreateGoal = vi.fn().mockResolvedValue(undefined);
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    const onGoalMaxTurnsChange = vi.fn().mockResolvedValue(undefined);
     render(<ChatArea
       agent={agent} agents={[agent]} activeConversation={conversation} providers={[]}
       runs={[]} messages={[]} usage={null} chatStatus="ready" chatError="" streaming={false} canStop={false}
-      onCreateGoal={onCreateGoal}
-      onSend={vi.fn()} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
+      goalMaxTurns={20} onGoalMaxTurnsChange={onGoalMaxTurnsChange}
+      onSend={onSend} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
       onSelectModel={vi.fn()} onSelectAgent={vi.fn()} onTestAgent={vi.fn()}
       onSelectConversation={vi.fn()} onCreateConversation={vi.fn()} onDeleteConversation={vi.fn()}
       onRenameConversation={vi.fn()} onOpenFile={vi.fn()}
@@ -153,10 +154,13 @@ describe('agent feature shortcuts', () => {
     expect(menu).not.toHaveTextContent('/goal');
 
     await user.click(within(menu).getByRole('menuitem', { name: /Goal/ }));
-    await user.type(screen.getByPlaceholderText('What outcome should the agent keep working toward?'), 'Fix every authentication test');
-    await user.click(screen.getByRole('button', { name: 'Start goal' }));
+    expect(screen.getByRole('radiogroup', { name: 'Maximum goal turns' })).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: '25' }));
+    expect(onGoalMaxTurnsChange).toHaveBeenCalledWith(25);
+    await user.type(screen.getByPlaceholderText('Describe the goal, then send'), 'Fix every authentication test');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
 
-    expect(onCreateGoal).toHaveBeenCalledWith('Fix every authentication test', 20, { verification: '' });
+    expect(onSend).toHaveBeenCalledWith('Fix every authentication test', 'goal');
   });
 
   it('shows the persistent goal above live work activity with inline controls', async () => {

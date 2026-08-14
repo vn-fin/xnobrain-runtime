@@ -38,6 +38,7 @@ function mapGlobalConfig(config: AgentConfigDTO | null): GlobalRuntimeConfig | n
     model: config.model ?? '',
     skillsWriteApproval: config.skills_write_approval ?? nestedWriteApproval(config, 'skills') ?? false,
     memoryWriteApproval: config.memory_write_approval ?? nestedWriteApproval(config, 'memory') ?? false,
+    goalMaxTurns: config.goal_max_turns ?? 20,
   };
 }
 

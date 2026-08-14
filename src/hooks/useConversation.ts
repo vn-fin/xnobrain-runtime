@@ -214,7 +214,7 @@ export function useConversation(agentId: string, conversationId: string, model =
     }
   };
 
-  const createGoal = (objective: string, maxTurns = 20, contract?: Partial<GoalContract>) =>
+  const createGoal = (objective: string, maxTurns?: number, contract?: Partial<GoalContract>) =>
     mutateGoal(() => conversationsApi.createGoal(agentId, conversationId, { objective, maxTurns, contract }), true);
   const updateGoal = (objective: string, maxTurns = goal?.maxTurns ?? 20, contract?: Partial<GoalContract>) =>
     mutateGoal(() => conversationsApi.updateGoal(agentId, conversationId, { objective, maxTurns, contract }));

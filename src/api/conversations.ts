@@ -73,7 +73,7 @@ function mapGoal(dto?: GoalDTO | null): ConversationGoal | null {
 function goalBody(input: GoalInput) {
   return {
     objective: input.objective,
-    max_turns: input.maxTurns ?? 20,
+    ...(input.maxTurns !== undefined ? { max_turns: input.maxTurns } : {}),
     contract: {
       outcome: input.contract?.outcome ?? '',
       verification: input.contract?.verification ?? '',

@@ -335,6 +335,7 @@ export type Agent = {
   skillsWriteApproval: boolean;
   memoryWriteApproval: boolean;
   checkpointsEnabled?: boolean;
+  goalMaxTurns?: number;
   workspace: string;
   skills: AgentSkill[];
   conversations: Conversation[];

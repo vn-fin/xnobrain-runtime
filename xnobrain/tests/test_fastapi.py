@@ -743,11 +743,18 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         async with self.client() as client:
             toggled = await client.patch(
                 f"/xnobrain/api/runtime/v1/agents-configs/{agent_id}",
-                json={"skills_write_approval": True, "memory_write_approval": True},
+                json={
+                    "skills_write_approval": True,
+                    "memory_write_approval": True,
+                    "goal_max_turns": 25,
+                },
             )
         self.assertEqual(toggled.status_code, 200, toggled.text)
         self.assertTrue(toggled.json()["data"]["skills_write_approval"])
         self.assertTrue(toggled.json()["data"]["memory_write_approval"])
+        self.assertEqual(toggled.json()["data"]["goal_max_turns"], 25)
+        persisted = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["goals"]["max_turns"], 25)
         config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self.assertTrue(config["skills"]["write_approval"])
         self.assertTrue(config["memory"]["write_approval"])

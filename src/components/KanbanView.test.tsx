@@ -450,6 +450,7 @@ describe('KanbanView', () => {
       '20260727_140600_abcdef',
       'Continue from the task board',
       researchAgent.model,
+      undefined,
     );
     await user.click(screen.getByRole('button', { name: 'Close task session' }));
     await user.click(within(drawer).getByRole('button', { name: 'View session' }));
