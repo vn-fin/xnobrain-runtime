@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { htmlPreviewDocument, LargeFileNotice, OpeningFile } from './WorkspacePanel';
+import { htmlPreviewDocument, LargeFileNotice, OpeningFile, workspaceNameError } from './WorkspacePanel';
 import { detectLanguage } from '../api/mappers/workspace';
 
 describe('workspace HTML preview', () => {
@@ -22,6 +22,11 @@ describe('workspace HTML preview', () => {
 });
 
 describe('workspace opening state', () => {
+  it('rejects traversal and encoded path-like create names', () => {
+    expect(workspaceNameError('../escape')).toMatch(/name only/);
+    expect(workspaceNameError('%2e%2e')).toMatch(/Encoded/);
+    expect(workspaceNameError('safe-notes.md')).toBeUndefined();
+  });
   it('routes unknown file formats to the safe download fallback', () => {
     expect(detectLanguage('qa-2026-08-14/qa-unsupported.xyz')).toBe('binary');
     expect(detectLanguage('Dockerfile')).toBe('dockerfile');

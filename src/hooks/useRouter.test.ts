@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { computeUrl, parseRoute, type RouteState, useRouter } from './useRouter';
+import { computeUrl, parseRoute, reconcileSelection, type RouteState, useRouter } from './useRouter';
+import type { Agent } from '../types';
 
 const state = (settingsSection: RouteState['settingsSection']): RouteState => ({
   centerView: 'data',
@@ -168,6 +169,15 @@ describe('Kanban routes', () => {
 });
 
 describe('Session routes', () => {
+  it('preserves an explicit stale session id instead of selecting an unrelated session', () => {
+    const agent = {
+      id: 'agent-01', conversations: [{ id: 'newer-session' }],
+    } as Agent;
+    expect(reconcileSelection('agent-01', 'missing-session', [agent])).toEqual({
+      agentId: 'agent-01', conversationId: 'missing-session',
+    });
+  });
+
   it('canonicalizes the legacy conversation path to sessions', () => {
     const route = parseRoute('/agents/agent-01/conversations/session-01', '');
     expect(route).toMatchObject({

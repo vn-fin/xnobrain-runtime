@@ -640,6 +640,12 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(config["memory_write_approval"])
             self.assertTrue(any((profile / "snapshots" / "config").rglob("*")))
 
+            promoted = await client.post(
+                f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}/move",
+                json={"status": "running"},
+            )
+            self.assertEqual(promoted.status_code, 200, promoted.text)
+
             with kanban_db.connect_closing(board="default") as conn:
                 claimed = kanban_db.claim_task(conn, task_id, claimer="test")
                 self.assertIsNotNone(claimed)

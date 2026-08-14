@@ -21,7 +21,10 @@ from xnobrain.integrations.conversation_prompt import (
     AGENT_WORKSPACE_GUIDANCE,
     MARKDOWN_RESPONSE_GUIDANCE,
 )
-from xnobrain.integrations.conversation_stream import _commit_resolved_write_result
+from xnobrain.integrations.conversation_stream import (
+    _commit_resolved_write_result,
+    _persist_cancelled_terminal,
+)
 from xnobrain.integrations.nine_router import (
     NINE_ROUTER_API_BASE_URL,
     NINE_ROUTER_PROVIDER,
@@ -48,6 +51,25 @@ class FakeNineRouterManager(NineRouterManager):
 
 
 class NineRouterConfigTests(unittest.TestCase):
+    def test_cancelled_run_persists_visible_terminal_message(self) -> None:
+        class SessionDB:
+            def __init__(self):
+                self.appended = None
+
+            def append_messages_batch(self, session_id, messages):
+                self.appended = (session_id, messages)
+
+        db = SessionDB()
+        agent = SimpleNamespace(_session_db=db, _session_messages=[], session_id="session-1")
+
+        self.assertTrue(_persist_cancelled_terminal(agent, "Partial result"))
+        session_id, messages = db.appended
+        self.assertEqual(session_id, "session-1")
+        self.assertEqual(messages[0]["finish_reason"], "cancelled")
+        self.assertIn("Partial result", messages[0]["content"])
+        self.assertIn("stopped by user", messages[0]["content"])
+        self.assertEqual(agent._session_messages[-1], messages[0])
+
     def test_committed_skill_write_replaces_staged_tool_result(self) -> None:
         class SessionDB:
             def __init__(self):

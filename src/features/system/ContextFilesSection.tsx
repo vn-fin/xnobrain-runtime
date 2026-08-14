@@ -3,6 +3,7 @@ import { FilePenLine, FileText, LoaderCircle, Pencil, X } from 'lucide-react';
 import type { Agent } from '../../types';
 import { TreeIcon } from '../../components/common';
 import { ConfirmDialog } from '../../components/modals';
+import { NAVIGATION_REQUEST_EVENT, type NavigationRequestDetail } from '../../utils/navigationGuard';
 
 const CodeViewer = lazy(() => import('../../components/CodeViewer'));
 const NumberedTextEditor = lazy(() => import('../../components/CodeViewer').then((module) => ({
@@ -41,6 +42,7 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
 
   const dirty = editing && (creating || draft !== content);
 
@@ -49,6 +51,18 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const guardNavigation = (rawEvent: Event) => {
+      const event = rawEvent as CustomEvent<NavigationRequestDetail>;
+      event.preventDefault();
+      setPendingNavigation(() => event.detail.proceed);
+      setDiscardOpen(true);
+    };
+    window.addEventListener(NAVIGATION_REQUEST_EVENT, guardNavigation);
+    return () => window.removeEventListener(NAVIGATION_REQUEST_EVENT, guardNavigation);
   }, [dirty]);
 
   useEffect(() => {
@@ -95,6 +109,9 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
     setCreating(false);
     setStatus('idle');
     setError('');
+    const proceed = pendingNavigation;
+    setPendingNavigation(null);
+    if (proceed) window.setTimeout(proceed, 0);
   };
 
   const close = () => {
@@ -259,7 +276,7 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
           confirmLabel="Discard changes"
           danger
           onConfirm={discardAndClose}
-          onCancel={() => setDiscardOpen(false)}
+          onCancel={() => { setDiscardOpen(false); setPendingNavigation(null); }}
         />
       )}
     </section>

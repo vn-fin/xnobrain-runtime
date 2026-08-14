@@ -1990,7 +1990,8 @@ body.col-resizing {
   text-align: left;
 }
 .conversation-create-option:hover { background: var(--hover); }
-.conversation-picker-list > button {
+.conversation-picker-list > button,
+.conversation-picker-list > [role='option'] {
   width: 100%;
   display: flex;
   align-items: center;
@@ -2002,9 +2003,9 @@ body.col-resizing {
   background: transparent;
   text-align: left;
 }
-.conversation-picker-list > button:hover,
-.conversation-picker-list > button[aria-selected='true'] { background: var(--hover); }
-.conversation-picker-list > button > span:not(.tab-stream-dot) { min-width: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.conversation-picker-list > [role='option']:hover,
+.conversation-picker-list > [role='option'][aria-selected='true'] { background: var(--hover); }
+.conversation-picker-list > [role='option'] > span:not(.tab-stream-dot) { min-width: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
 .conversation-picker-list strong,
 .conversation-picker-list small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .conversation-picker-list strong { font-size: 11px; }
@@ -2040,8 +2041,8 @@ body.col-resizing {
 }
 .conversation-option-rename:hover,
 .conversation-option-rename:focus-visible { color: var(--text); background: var(--surface-2); }
-.conversation-picker-list > button:hover .conversation-option-delete,
-.conversation-picker-list > button:focus-visible .conversation-option-delete { opacity: 1; }
+.conversation-picker-list > [role='option']:hover .conversation-option-delete,
+.conversation-picker-list > [role='option']:focus-visible .conversation-option-delete { opacity: 1; }
 .conversation-option-delete:hover { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
 
 .chat-tab {

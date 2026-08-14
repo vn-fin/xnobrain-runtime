@@ -115,16 +115,16 @@ class KanbanService:
             return
         described = self.agents.describe_agent(name, include_memory=False)
         config = described.get("config") if isinstance(described, Mapping) else {}
-        if (
+        already_automatic = (
             isinstance(config, Mapping)
             and str(config.get("approval_mode") or "") == "off"
             and config.get("skills_write_approval") is False
             and config.get("memory_write_approval") is False
-        ):
-            return
+        )
         profile = Path(str(described["profile_path"]))
         config_path = profile / "config.yaml"
-        if config_path.is_file():
+        snapshot_root = profile / "snapshots" / "config"
+        if config_path.is_file() and (not already_automatic or not any(snapshot_root.rglob("*"))):
             payload = config_path.read_bytes()
             if profile == self.agents.root_profile:
                 digest = hashlib.sha256(payload).hexdigest()
@@ -137,6 +137,8 @@ class KanbanService:
                 )
             else:
                 self.repository.snapshot(name, "config", "config", payload)
+        if already_automatic:
+            return
         self.agents.update_config(name, {
             "approval_mode": "off",
             "skills_write_approval": False,

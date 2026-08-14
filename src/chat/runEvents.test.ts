@@ -397,6 +397,25 @@ describe('formatRunDuration', () => {
 });
 
 describe('historicalRuns', () => {
+  it('restores a persisted stopped turn as cancelled', () => {
+    const runs = historicalRuns([
+      { id: 1, role: 'user', content: 'Run the workers', timestamp: 10 },
+      {
+        id: 2,
+        role: 'assistant',
+        content: '',
+        toolCalls: JSON.stringify([{ id: 'call-1', function: { name: 'delegate_task', arguments: '{}' } }]),
+        finishReason: 'tool_calls',
+        timestamp: 11,
+      },
+      { id: 3, role: 'assistant', content: 'Response stopped by user.', finishReason: 'cancelled', timestamp: 12 },
+    ]);
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0].status).toBe('cancelled');
+    expect(runs[0].endedAt).toBe(12);
+  });
+
   it('restores the completed tool-step total from persisted session messages', () => {
     const runs = historicalRuns([
       { id: 1, role: 'user', content: 'Inspect the project', timestamp: 10 },

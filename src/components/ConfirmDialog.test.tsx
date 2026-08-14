@@ -1,6 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfirmDialog, PromptDialog } from './modals';
+
+afterEach(cleanup);
 
 describe('ConfirmDialog', () => {
   it('uses the shared styled alert dialog and runs the selected action', () => {
@@ -25,6 +27,21 @@ describe('ConfirmDialog', () => {
     expect(cancel).not.toHaveBeenCalled();
   });
 
+  it('focuses the safe action, traps focus, and cancels with Escape', () => {
+    const cancel = vi.fn();
+    render(<ConfirmDialog title="Delete?" message="Permanent." confirmLabel="Delete" onConfirm={vi.fn()} onCancel={cancel} danger />);
+
+    const dialog = screen.getByRole('alertdialog');
+    const cancelButton = screen.getByRole('button', { name: 'common.cancel' });
+    const confirmButton = screen.getByRole('button', { name: 'Delete' });
+    expect(cancelButton).toHaveFocus();
+    confirmButton.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(screen.getByTitle('common.close')).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it('uses the shared modal styling for text prompts', () => {
     const confirm = vi.fn();
     render(
@@ -42,5 +59,13 @@ describe('ConfirmDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     expect(confirm).toHaveBeenCalledWith('reports');
+  });
+
+  it('shows an associated required-field error instead of silently doing nothing', () => {
+    render(<PromptDialog title="Create file" label="File name" confirmLabel="Create" onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('File name is required.');
+    expect(screen.getByLabelText('File name')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('File name')).toHaveFocus();
   });
 });

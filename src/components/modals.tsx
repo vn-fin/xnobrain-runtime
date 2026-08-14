@@ -548,6 +548,7 @@ export function PromptDialog({
   const titleId = useId();
   const descriptionId = useId();
   const errorId = useId();
+  const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
@@ -583,14 +584,17 @@ export function PromptDialog({
           </button>
         </div>
         {message && <p className="app-modal-message" id={descriptionId}>{message}</p>}
-        <label className="prompt-field">
-          <span>{label} *</span>
+        <label className="prompt-field" htmlFor={inputId}>
+          <span>{label} <span aria-hidden="true">*</span></span>
           <input
             ref={inputRef}
+            id={inputId}
+            aria-label={label}
             value={value}
             onChange={(event) => { setValue(event.target.value); if (error) setError(''); }}
             placeholder={placeholder}
             aria-invalid={Boolean(error)}
+            aria-required="true"
             aria-describedby={error ? errorId : undefined}
             autoFocus
           />

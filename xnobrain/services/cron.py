@@ -94,6 +94,24 @@ class CronService:
             )
         except ValueError as exc:
             raise CronServiceError(str(exc), code="invalid_schedule") from exc
+        if self.kanban is not None:
+            next_run_at = _iso(created.get("next_run_at"))
+            task = self.kanban.create_task("default", {
+                "title": name,
+                "description": prompt,
+                "status": "scheduled",
+                "assignee": agent_id,
+                "schedule": {
+                    "recurrence": "interval" if interval > 0 else "once",
+                    "scheduled_at": next_run_at,
+                    "interval_minutes": interval if interval > 0 else None,
+                    "timezone": "Etc/UTC",
+                },
+            }, created_by="cron")
+            created = self._native(agent_id, "update_job", str(created["id"]), {
+                "xnobrain_kanban_board": "default",
+                "xnobrain_kanban_task_id": str(task["id"]),
+            }) or created
         return self._dto(agent_id, created)
 
     def list_blueprints(self) -> dict[str, Any]:
@@ -582,6 +600,8 @@ class CronService:
         result["next_run_at"] = _iso(job.get("next_run_at"))
         result["enabled"] = bool(job.get("enabled", True))
         result["delivery_targets"] = [dict(item) for item in job.get("xnobrain_delivery_targets") or []]
+        result["kanban_board"] = str(job.get("xnobrain_kanban_board") or "") or None
+        result["kanban_task_id"] = str(job.get("xnobrain_kanban_task_id") or "") or None
         result.pop("xnobrain_delivery_records", None)
         result.pop("origin", None)
         return result

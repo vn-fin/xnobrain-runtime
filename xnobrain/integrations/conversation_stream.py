@@ -1,41 +1,5 @@
 """Conversation SSE lifecycle and approval methods for the Hermes adapter."""
 
-
-def _commit_resolved_write_result(agent, tool_name, pending_id, applied) -> bool:
-    """Replace a staged tool row before Hermes sends it back to the model."""
-    if agent is None or not isinstance(applied, Mapping):
-        return False
-    committed = dict(applied)
-    committed.pop("pending_id", None)
-    committed["staged"] = False
-    committed["disposition"] = str(committed.get("disposition") or "applied")
-    messages = getattr(agent, "_db_flush_scan_prefix", None)
-    if not isinstance(messages, list):
-        messages = getattr(agent, "_session_messages", None)
-    if not isinstance(messages, list):
-        return False
-    replacement = json.dumps(committed, ensure_ascii=False, default=str)
-    changed = False
-    for message in reversed(messages):
-        if not isinstance(message, dict) or message.get("role") != "tool":
-            continue
-        if str(message.get("name") or "") != str(tool_name):
-            continue
-        if pending_id not in str(message.get("content") or ""):
-            continue
-        message["content"] = replacement
-        changed = True
-        break
-    if not changed:
-        return False
-    session_db = getattr(agent, "_session_db", None)
-    session_id = str(getattr(agent, "session_id", "") or "")
-    if session_db is not None and session_id:
-        # The staged row was flushed immediately before the progress callback.
-        # Rewrite the live transcript atomically so reload cannot resurrect it.
-        session_db.replace_messages(session_id, messages, active_only=True)
-    return True
-
 from .hermes_support import (
     AgentAPIError,
     Any,
@@ -52,6 +16,61 @@ from .hermes_support import (
     uuid,
 )
 from xnobrain.runtime_limits import max_parallel_agents
+
+
+def _commit_resolved_write_result(agent, tool_name, pending_id, applied) -> bool:
+    """Replace a staged tool row before Hermes sends it back to the model."""
+    if agent is None or not isinstance(applied, Mapping):
+        return False
+    committed = dict(applied)
+    committed.pop("pending_id", None)
+    committed["staged"] = False
+    committed["disposition"] = str(committed.get("disposition") or "applied")
+    messages = getattr(agent, "_db_flush_scan_prefix", None)
+    if not isinstance(messages, list):
+        messages = getattr(agent, "_session_messages", None)
+    if not isinstance(messages, list):
+        return False
+    replacement = json.dumps(committed, ensure_ascii=False, default=str)
+    for message in reversed(messages):
+        if not isinstance(message, dict) or message.get("role") != "tool":
+            continue
+        if str(message.get("name") or "") != str(tool_name):
+            continue
+        if pending_id not in str(message.get("content") or ""):
+            continue
+        message["content"] = replacement
+        session_db = getattr(agent, "_session_db", None)
+        session_id = str(getattr(agent, "session_id", "") or "")
+        if session_db is not None and session_id:
+            # The staged row was flushed immediately before the progress callback.
+            session_db.replace_messages(session_id, messages, active_only=True)
+        return True
+    return False
+
+
+def _persist_cancelled_terminal(agent, output: str = "") -> bool:
+    """Persist a visible terminal marker so a stopped run survives reload."""
+    if agent is None:
+        return False
+    session_db = getattr(agent, "_session_db", None)
+    session_id = str(getattr(agent, "session_id", "") or "")
+    if session_db is None or not session_id:
+        return False
+    partial = str(output or "").strip()
+    marker = "Response stopped by user. Active and queued work was cancelled; completed and partial output is retained above."
+    content = f"{partial}\n\n---\n\n{marker}" if partial else marker
+    message = {
+        "role": "assistant",
+        "content": content,
+        "finish_reason": "cancelled",
+        "timestamp": time.time(),
+    }
+    session_db.append_messages_batch(session_id, [message])
+    session_messages = getattr(agent, "_session_messages", None)
+    if isinstance(session_messages, list):
+        session_messages.append(message)
+    return True
 
 
 class ConversationStreamMixin:
@@ -547,6 +566,7 @@ class ConversationStreamMixin:
                         "delta": output,
                     })
                 if state["stop_requested"] or bool(result.get("interrupted")):
+                    _persist_cancelled_terminal(agent_ref[0], "".join(output_chunks))
                     yield self._sse_data({
                         "event": "run.cancelled",
                         "run_id": run_id,

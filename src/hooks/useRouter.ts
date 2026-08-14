@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Agent, CenterView, RightView } from '../types';
+import { requestNavigation } from '../utils/navigationGuard';
 
 export type SettingsSection = 'profiles' | 'context' | 'vm' | 'connectors' | 'mcp' | 'blends';
 
@@ -249,12 +250,15 @@ export function useRouter() {
   }, []);
 
   const openChat = useCallback((agentId: string, conversationId: string) => {
-    setActiveAgentId(agentId);
-    setActiveConversationId(conversationId);
-    setCenterView('chat');
+    requestNavigation(() => {
+      setActiveAgentId(agentId);
+      setActiveConversationId(conversationId);
+      setCenterView('chat');
+    });
   }, []);
 
   const openTeam = useCallback((teamId = '', runId = '', replace = false) => {
+    requestNavigation(() => {
     setActiveTeamId(teamId);
     setActiveTeamRunId(runId);
     setTeamCreate(false);
@@ -266,50 +270,70 @@ export function useRouter() {
       if (runId) path += `/runs/${encodeURIComponent(runId)}`;
       window.history.replaceState(null, '', path);
     }
+    });
   }, []);
 
   const openTeamConversation = useCallback((agentId = '', conversationId = '') => {
+    requestNavigation(() => {
     setTeamAgentId(conversationId ? agentId : '');
     setTeamConversationId(conversationId);
     setCenterView('teams');
+    });
   }, []);
 
   const createTeam = useCallback(() => {
+    requestNavigation(() => {
     setActiveTeamId('');
     setActiveTeamRunId('');
     setTeamCreate(true);
     setCenterView('teams');
+    });
   }, []);
 
   const editTeam = useCallback((teamId: string) => {
+    requestNavigation(() => {
     setActiveTeamId(teamId);
     setActiveTeamRunId('');
     setTeamCreate(true);
     setTeamAgentId('');
     setTeamConversationId('');
     setCenterView('teams');
+    });
   }, []);
 
   const openKanbanBoard = useCallback((boardId = '') => {
+    requestNavigation(() => {
     setKanbanBoardId(boardId);
     setKanbanTaskId('');
     setKanbanAgentId('');
     setKanbanConversationId('');
     setCenterView('kanban');
+    });
   }, []);
 
   const openKanbanTask = useCallback((taskId = '', agentId = '', conversationId = '', boardId?: string) => {
+    requestNavigation(() => {
     if (boardId !== undefined) setKanbanBoardId(boardId);
     setKanbanTaskId(taskId);
     setKanbanAgentId(taskId ? agentId : '');
     setKanbanConversationId(taskId ? conversationId : '');
     setCenterView('kanban');
+    });
   }, []);
 
   const openCronJob = useCallback((jobId = '', agentId = '') => {
+    requestNavigation(() => {
     setCronJobId(jobId);
     setCronAgentId(jobId ? agentId : '');
     setCenterView('cron');
+    });
+  }, []);
+
+  const guardedSetCenterView = useCallback((view: CenterView) => {
+    requestNavigation(() => setCenterView(view));
+  }, []);
+  const guardedSetSettingsSection = useCallback((section: SettingsSection) => {
+    requestNavigation(() => setSettingsSection(section));
   }, []);
 
   const reconcileAgents = useCallback((agents: Agent[]) => {
@@ -332,7 +356,8 @@ export function useRouter() {
   ]);
 
   return {
-    centerView, setCenterView, settingsSection, setSettingsSection, rightView, setRightView,
+    centerView, setCenterView: guardedSetCenterView,
+    settingsSection, setSettingsSection: guardedSetSettingsSection, rightView, setRightView,
     activeAgentId, setActiveAgentId, activeConversationId, setActiveConversationId,
     activeTeamId, activeTeamRunId, teamCreate, teamAgentId, teamConversationId, openTeam, openTeamConversation, createTeam, editTeam,
     kanbanBoardId, kanbanTaskId, kanbanAgentId, kanbanConversationId, openKanbanBoard, openKanbanTask,

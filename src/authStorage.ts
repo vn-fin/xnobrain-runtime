@@ -138,8 +138,8 @@ if (authChannel) {
 export function requestCrossTabTokenSession(timeoutMs = 600): Promise<boolean> {
   if (storedAccessToken() && storedRefreshToken()) return Promise.resolve(true);
   if (!authChannel) return Promise.resolve(false);
-  const requestId = typeof crypto?.randomUUID === 'function'
-    ? crypto.randomUUID()
+  const requestId = typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return new Promise((resolve) => {
     const finish = (message?: TokenSessionMessage) => {

@@ -233,7 +233,7 @@ export function ChatArea({
   const streamingKeys = useStreamingConversations();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversationPickerButtonRef = useRef<HTMLButtonElement>(null);
-  const activeConversationOptionRef = useRef<HTMLButtonElement>(null);
+  const activeConversationOptionRef = useRef<HTMLDivElement>(null);
   const messageCanvasRef = useRef<HTMLDivElement>(null);
   const followLatestRef = useRef(true);
   const [activityExpandSignal, setActivityExpandSignal] = useState(0);
@@ -332,6 +332,9 @@ export function ChatArea({
     && onCompactContext,
   );
   const activeTaskCount = runs.filter((run) => run.status === 'running' || run.status === 'waiting_for_approval').length;
+  const delegationWorkers = runs.flatMap((run) => run.steps.flatMap((step) => step.delegation?.workers ?? []));
+  const activeWorkerCount = delegationWorkers.filter((worker) => worker.status === 'running').length;
+  const queuedWorkerCount = delegationWorkers.filter((worker) => worker.status === 'queued').length;
   const requestStop = () => setStopConfirmOpen(true);
 
   const confirmContextCompaction = async () => {
@@ -800,10 +803,11 @@ export function ChatArea({
                   const selected = conversation.id === activeConversation?.id;
                   const tabStreaming = streamingKeys.includes(`${agent.id}::${conversation.id}`);
                   return (
-                    <button
+                    <div
                       key={conversation.id}
                       ref={selected ? activeConversationOptionRef : undefined}
                       role="option"
+                      tabIndex={0}
                       aria-selected={selected}
                       onClick={() => {
                         onSelectConversation(conversation.id);
@@ -813,6 +817,13 @@ export function ChatArea({
                       onDoubleClick={(event) => {
                         event.stopPropagation();
                         startTabRename(conversation);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+                        event.preventDefault();
+                        onSelectConversation(conversation.id);
+                        setConversationPickerOpen(false);
+                        setConversationSearch('');
                       }}
                     >
                       {tabStreaming ? <span className="tab-stream-dot" /> : <MessageSquarePlus size={14} />}
@@ -841,8 +852,8 @@ export function ChatArea({
                           className="conversation-option-rename"
                           role="button"
                           tabIndex={0}
-                          aria-label={t('conversation.renameLabel')}
-                          title={t('conversation.renameLabel')}
+                          aria-label={t('conversation.renameAction', { defaultValue: 'Rename session' })}
+                          title={t('conversation.renameAction', { defaultValue: 'Rename session' })}
                           onClick={(event) => { event.stopPropagation(); startTabRename(conversation); }}
                           onKeyDown={(event) => {
                             if (event.key === 'Enter' || event.key === ' ') {
@@ -857,6 +868,9 @@ export function ChatArea({
                       )}
                       <span
                         className="conversation-option-delete"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={t('chat.closeConversation')}
                         title={t('chat.closeConversation')}
                         onDoubleClick={(event) => event.stopPropagation()}
                         onClick={(event) => {
@@ -864,10 +878,17 @@ export function ChatArea({
                           setConversationPickerOpen(false);
                           onDeleteConversation(conversation.id);
                         }}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setConversationPickerOpen(false);
+                          onDeleteConversation(conversation.id);
+                        }}
                       >
                         <X size={13} />
                       </span>
-                    </button>
+                    </div>
                   );
                 })}
                 {filteredConversations.length === 0 && (
@@ -1279,7 +1300,9 @@ export function ChatArea({
       {stopConfirmOpen && (
         <ConfirmDialog
           title="Stop this response?"
-          message={activeTaskCount
+          message={activeWorkerCount || queuedWorkerCount
+            ? `Stopping will cancel ${activeWorkerCount} active worker${activeWorkerCount === 1 ? '' : 's'} and ${queuedWorkerCount} queued worker${queuedWorkerCount === 1 ? '' : 's'}. Completed and partial output will be kept.`
+            : activeTaskCount
             ? `Stopping will cancel ${activeTaskCount} active task${activeTaskCount === 1 ? '' : 's'} and keep all output received so far.`
             : 'Stopping will cancel the active response and keep all output received so far.'}
           confirmLabel="Stop response"

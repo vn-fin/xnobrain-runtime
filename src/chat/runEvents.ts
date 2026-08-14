@@ -633,14 +633,14 @@ export function historicalRuns(messages: ChatMessage[]): ChatRun[] {
     startedAt = undefined;
   };
 
-  const flush = (finalMessageId?: string | number, endedAt?: number) => {
+  const flush = (finalMessageId?: string | number, endedAt?: number, status: ChatRun['status'] = 'completed') => {
     if (steps.length === 0 && reasoning.length === 0) {
       reset();
       return;
     }
     runs.push({
       id: `history-run-${turnIndex}`,
-      status: 'completed',
+      status,
       steps,
       assistantContent: '',
       ...(reasoning.length ? { reasoning } : {}),
@@ -701,7 +701,8 @@ export function historicalRuns(messages: ChatMessage[]): ChatRun[] {
     if (startedAt === undefined && message.timestamp !== undefined) startedAt = message.timestamp;
     if (message.reasoning?.trim()) addReasoning(message.reasoning);
 
-    const isFinalAnswer = message.finishReason === 'stop' || (!message.toolCalls && message.content.trim().length > 0);
+    const cancelled = message.finishReason === 'cancelled';
+    const isFinalAnswer = cancelled || message.finishReason === 'stop' || (!message.toolCalls && message.content.trim().length > 0);
     // Intermediate assistant prose (a message that still calls tools) is folded
     // into the turn's "thinking" instead of rendering as its own bubble.
     if (!isFinalAnswer && message.content.trim()) addReasoning(message.content);
@@ -730,7 +731,7 @@ export function historicalRuns(messages: ChatMessage[]): ChatRun[] {
     }
 
     // A final answer closes the turn and becomes the visible chat message.
-    if (isFinalAnswer) flush(message.id, message.timestamp);
+    if (isFinalAnswer) flush(message.id, message.timestamp, cancelled ? 'cancelled' : 'completed');
   }
 
   flush();

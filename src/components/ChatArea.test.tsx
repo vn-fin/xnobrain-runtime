@@ -208,6 +208,7 @@ describe('conversation picker', () => {
     const onCreateConversation = vi.fn();
     const onNewAgent = vi.fn();
     const onOpenManage = vi.fn();
+    const onRenameConversation = vi.fn();
     render(<ChatArea
       agent={agent} agents={[agent]} activeConversation={conversations[198]} providers={[]}
       runs={[]} messages={[]} usage={null} chatStatus="ready" chatError="" streaming={false} canStop={false}
@@ -215,7 +216,7 @@ describe('conversation picker', () => {
       onSelectModel={vi.fn()} onOpenSettings={vi.fn()} onOpenRuntime={vi.fn()} onSelectAgent={vi.fn()}
       onNewAgent={onNewAgent} onOpenManage={onOpenManage}
       onTestAgent={vi.fn()} onDeleteAgent={vi.fn()} onSelectConversation={onSelectConversation}
-      onCreateConversation={onCreateConversation} onDeleteConversation={vi.fn()} onRenameConversation={vi.fn()}
+      onCreateConversation={onCreateConversation} onDeleteConversation={vi.fn()} onRenameConversation={onRenameConversation}
       onOpenFile={vi.fn()}
     />);
 
@@ -244,6 +245,13 @@ describe('conversation picker', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show all sessions: Quarterly risk review' }));
+    const selectedOption = screen.getByRole('option', { name: /Quarterly risk review/ });
+    fireEvent.click(within(selectedOption).getByRole('button', { name: 'Rename session' }));
+    const renameInput = screen.getByRole('textbox', { name: 'Session name' });
+    fireEvent.change(renameInput, { target: { value: 'Renamed review' } });
+    fireEvent.keyDown(renameInput, { key: 'Enter' });
+    expect(onRenameConversation).toHaveBeenCalledWith('session-199', 'Renamed review');
+
     fireEvent.click(screen.getByRole('button', { name: 'Create session' }));
     expect(onCreateConversation).toHaveBeenCalledOnce();
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
@@ -284,6 +292,7 @@ describe('live run activity', () => {
       ],
       assistantContent: 'I found the relevant component.',
     };
+    const onStop = vi.fn();
 
     render(<ChatArea
       agent={agent} agents={[agent]} activeConversation={conversation} providers={[]}
@@ -291,7 +300,7 @@ describe('live run activity', () => {
       queuedMessages={[{ id: 'queued-1', content: 'Summarize the sources next' }]}
       messages={[{ id: 'assistant-live', role: 'assistant', content: activeRun.assistantContent, streaming: true }]}
       usage={null} chatStatus="ready" chatError="" streaming canStop
-      onSend={vi.fn()} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
+      onSend={vi.fn()} onStop={onStop} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
       onSelectModel={vi.fn()} onSelectAgent={vi.fn()} onTestAgent={vi.fn()}
       onSelectConversation={vi.fn()} onCreateConversation={vi.fn()} onDeleteConversation={vi.fn()}
       onRenameConversation={vi.fn()} onOpenFile={vi.fn()}
@@ -310,6 +319,12 @@ describe('live run activity', () => {
 
     expect(workLog).toHaveAttribute('aria-expanded', 'true');
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(screen.getByRole('alertdialog', { name: 'Stop this response?' })).toHaveTextContent('1 active task');
+    expect(onStop).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop response' }));
+    expect(onStop).toHaveBeenCalledOnce();
 
     act(() => vi.advanceTimersByTime(1_000));
     expect(screen.getByLabelText('Agent is working for 16s, 2 steps')).toBeVisible();
