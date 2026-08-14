@@ -69,7 +69,7 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
             {"input": "Research papers and write a PDF report", "model": "test/model"},
         )
         self.assertEqual(record["mode"], "background")
-        self.assertEqual(record["timeout_seconds"], 3600)
+        self.assertEqual(record["timeout_seconds"], 60)
         await self.wait_for_revision(record["id"], 2)
 
         observer = self.service.events("agent-one", "session-one", record["id"])
@@ -100,7 +100,7 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
             "agent-one", "session-one", {"input": "Say hello", "model": "test/model"},
         )
         self.assertEqual(first["mode"], "interactive")
-        self.assertEqual(first["timeout_seconds"], 900)
+        self.assertEqual(first["timeout_seconds"], 60)
         await self.service.cancel_run("agent-one", "session-one", first["id"])
 
         second = await self.service.start_run(
@@ -109,7 +109,7 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
             {"input": "Say hello", "model": "test/model", "run_mode": "background", "timeout_seconds": 7200},
         )
         self.assertEqual(second["mode"], "background")
-        self.assertEqual(second["timeout_seconds"], 7200)
+        self.assertEqual(second["timeout_seconds"], 3600)
         await self.service.cancel_run("agent-one", "session-one", second["id"])
 
 

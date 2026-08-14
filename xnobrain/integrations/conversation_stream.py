@@ -15,6 +15,7 @@ from .hermes_support import (
     time,
     uuid,
 )
+from xnobrain.runtime_limits import max_parallel_agents
 
 
 class ConversationStreamMixin:
@@ -241,7 +242,7 @@ class ConversationStreamMixin:
                     try:
                         from tools.delegate_tool import _get_max_concurrent_children
 
-                        event["concurrency"] = _get_max_concurrent_children()
+                        event["concurrency"] = max_parallel_agents(_get_max_concurrent_children())
                     except Exception:
                         event["concurrency"] = 3
                 enqueue_event(event)

@@ -12,12 +12,10 @@ from typing import Any, AsyncIterator, Mapping
 import uuid
 
 from .base import ServiceError
+from xnobrain.runtime_limits import session_timeout_seconds
 
 
 TERMINAL_STATUSES = frozenset({"completed", "failed", "timed_out", "cancelled"})
-BACKGROUND_TIMEOUT_SECONDS = 3600
-INTERACTIVE_TIMEOUT_SECONDS = 900
-MAX_TIMEOUT_SECONDS = 7200
 BACKGROUND_HINT = re.compile(
     r"\b(pdf|report|research|survey|workspace|paper|papers|kdd|neurips|nips|icml|iclr|acl|"
     r"delegate|subagent|multi[- ]?step|dataset|benchmark|implementation|build|compile)\b",
@@ -67,12 +65,7 @@ class ConversationRunService:
                 code="conversation_running",
             )
         mode = self._mode(body)
-        requested_timeout = body.get("timeout_seconds")
-        timeout_seconds = (
-            max(1, min(MAX_TIMEOUT_SECONDS, int(requested_timeout)))
-            if requested_timeout is not None
-            else BACKGROUND_TIMEOUT_SECONDS if mode == "background" else INTERACTIVE_TIMEOUT_SECONDS
-        )
+        timeout_seconds = session_timeout_seconds(body.get("timeout_seconds"))
         now = time.time()
         run_id = "run_" + uuid.uuid4().hex
         record = {

@@ -4,8 +4,6 @@ from .hermes_support import (
     AgentAPIError,
     Any,
     BIG_BROTHER_AGENT_ID,
-    DEFAULT_CHAT_TIMEOUT_SECONDS,
-    MAX_CHAT_TIMEOUT_SECONDS,
     MAX_TEXT_CHARS,
     Mapping,
     NINE_ROUTER_DEFAULT_MODEL,
@@ -15,6 +13,7 @@ from .hermes_support import (
     re,
     time,
 )
+from xnobrain.runtime_limits import max_parallel_agents, session_timeout_seconds
 
 
 class ConversationRunnerMixin:
@@ -147,8 +146,7 @@ class ConversationRunnerMixin:
         else:
             command.extend(["-z", message])
 
-        timeout_seconds = int(body.get("timeout_seconds") or DEFAULT_CHAT_TIMEOUT_SECONDS)
-        timeout_seconds = max(1, min(timeout_seconds, MAX_CHAT_TIMEOUT_SECONDS))
+        timeout_seconds = session_timeout_seconds(body.get("timeout_seconds"))
         return {
             "name": name,
             "profile_dir": profile_dir,
@@ -298,7 +296,7 @@ class ConversationRunnerMixin:
 
                 def dispatch_delegate_sync(function_args: Mapping[str, Any]) -> str:
                     tasks = _strip_model_hidden_task_fields(function_args.get("tasks"))
-                    slots = _get_max_concurrent_children()
+                    slots = max_parallel_agents(_get_max_concurrent_children())
                     max_batch_tasks = 20
                     if not isinstance(tasks, list) or len(tasks) <= slots:
                         return delegate_task(
@@ -429,7 +427,7 @@ class ConversationRunnerMixin:
                     if isinstance(tasks_schema, dict):
                         tasks_schema["description"] = (
                             "Batch mode: provide up to 20 independent tasks in one call. "
-                            f"The runtime runs at most { _get_max_concurrent_children() } workers "
+                            f"The runtime runs at most {max_parallel_agents(_get_max_concurrent_children())} workers "
                             "at once and automatically queues the remainder. Do not split a larger "
                             "batch merely to match the concurrency limit."
                         )
