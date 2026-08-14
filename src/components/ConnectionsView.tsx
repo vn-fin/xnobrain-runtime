@@ -237,8 +237,6 @@ export function ConnectionsView({
                       : t('common.unavailable', { defaultValue: 'unavailable' })
                     : p.connected
                     ? t('connections.connectedCount', { defaultValue: 'connected · {{count}} account(s)', count })
-                    : p.free_models_available
-                    ? t('common.available', { defaultValue: 'available' })
                     : t('connections.notConnected')}
                 </span>
               </div>
@@ -320,18 +318,6 @@ export function ConnectionsView({
                       {t('connections.removeAllAccounts', { defaultValue: 'Remove all accounts' })}
                     </button>
                   </div>
-                </>
-              ) : p.free_models_available ? (
-                <>
-                  <div className="conn-no-auth">
-                    <Check size={14} />
-                    <span>{t('connections.freeModelsAvailable', {
-                      defaultValue: 'Free models available without an API key.',
-                    })}</span>
-                  </div>
-                  <button className="conn-btn primary" onClick={() => beginConnect(p)}>
-                    {t('connections.addApiKey')}
-                  </button>
                 </>
               ) : (
                 <button className="conn-btn primary" onClick={() => beginConnect(p)}>

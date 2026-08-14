@@ -36,7 +36,6 @@ from .constants import (
     DEFAULT_TEAM_COORDINATOR_PROMPT,
     DEFAULT_TEAM_SYNTHESIS_PROMPT,
     EVERY_SCHEDULE,
-    FREE_MODEL_PROVIDERS,
     NO_AUTH_PROVIDERS,
     OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
     PROVIDER_DEFINITIONS,
@@ -66,9 +65,6 @@ class ProvidersServiceMixin:
         for provider in SUPPORTED_PROVIDERS:
             definition = PROVIDER_DEFINITIONS.get(provider, {})
             no_auth = provider in NO_AUTH_PROVIDERS
-            free_models_available = (
-                provider in FREE_MODEL_PROVIDERS and router_available
-            )
             provider_rows = sorted(
                 (item for item in connections if item.get("provider") == provider),
                 key=lambda item: (int(item.get("priority") or 0), str(item.get("name") or "")),
@@ -94,10 +90,8 @@ class ProvidersServiceMixin:
                     "unavailable" if not router_available
                     else "available" if no_auth
                     else "connected" if active_rows
-                    else "available" if free_models_available
                     else "disconnected"
                 ),
-                "free_models_available": free_models_available,
                 "last_test_status": primary.get("test_status", "unknown"),
                 "default_model": primary.get("default_model", ""),
                 "connection_count": len(provider_rows),
@@ -161,12 +155,7 @@ class ProvidersServiceMixin:
             await self.router.create_api_key_connection({
                 "provider": router_provider,
                 "api_key": value,
-                "default_model": (
-                    body.get("default_model")
-                    or "deepseek-v4-flash-free"
-                    if provider == "opencode"
-                    else body.get("default_model")
-                ),
+                "default_model": body.get("default_model"),
             })
             self._cache.invalidate("providers")
             return {**self._api_key_info(provider), "connected": True, "status": "connected"}
@@ -209,9 +198,7 @@ class ProvidersServiceMixin:
             "provider": router_provider,
             "api_key": body.get("api_key"),
             "name": body.get("display_name") or PROVIDER_DEFINITIONS.get(provider, {}).get("display_name"),
-            "default_model": body.get("default_model") or (
-                "deepseek-v4-flash-free" if provider == "opencode" else None
-            ),
+            "default_model": body.get("default_model"),
         })
         self._cache.invalidate("providers")
         return {"provider_id": provider, "connected": True, "status": "connected", "connection": result}
@@ -268,9 +255,7 @@ class ProvidersServiceMixin:
             "provider": router_provider,
             "api_key": body.get("api_key"),
             "name": body.get("name"),
-            "default_model": body.get("default_model") or (
-                "deepseek-v4-flash-free" if provider == "opencode" else None
-            ),
+            "default_model": body.get("default_model"),
         })
         self._cache.invalidate("providers")
         return {"provider_id": provider, "connected": True, "connection": result["connection"]}
@@ -369,5 +354,3 @@ class ProvidersServiceMixin:
                 ),
             })
         return info
-
-

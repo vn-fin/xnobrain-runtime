@@ -13,7 +13,7 @@ OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS = {
 }
 PROVIDER_DEFINITIONS = {
     "opencode-go": {"display_name": "OpenCode Go", "description": "OpenCode Go models from your coding subscription.", "base_url": ""},
-    "opencode": {"display_name": "OpenCode Zen", "description": "Free and paid OpenCode Zen models. Paid models require a Zen API key.", "base_url": ""},
+    "opencode": {"display_name": "OpenCode Zen", "description": "OpenCode Zen models using your Zen API key.", "base_url": ""},
     **OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
 }
 SUPPORTED_PROVIDERS = (
@@ -22,7 +22,7 @@ SUPPORTED_PROVIDERS = (
 )
 API_KEY_PROVIDERS = frozenset({"openai", "anthropic", "gemini", "opencode-go", "opencode", *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS})
 NO_AUTH_PROVIDERS = frozenset()
-FREE_MODEL_PROVIDERS = frozenset({"opencode"})
+FREE_MODEL_PROVIDERS = frozenset()
 SAFE_TOOLSETS = frozenset({
     "browser", "code_execution", "computer_use", "context_engine", "file",
     "image_gen", "session_search", "skills", "terminal", "todo", "tts",

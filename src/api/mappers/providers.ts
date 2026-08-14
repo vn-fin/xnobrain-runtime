@@ -34,7 +34,6 @@ export function mapConnectionProvider(dto: ProviderConnectorDTO): ConnectionProv
     ...(dto.environment_variable ? { environment_variable: dto.environment_variable } : {}),
     brand: providerBrand(dto),
     connected: dto.connected ?? false,
-    ...(dto.free_models_available !== undefined ? { free_models_available: dto.free_models_available } : {}),
     status: dto.status ?? 'not connected',
     ...(dto.last_test_status ? { last_test_status: dto.last_test_status } : {}),
     ...(dto.default_model ? { default_model: dto.default_model } : {}),

@@ -119,6 +119,17 @@ class NineRouterConfigTests(unittest.TestCase):
         AgentManager._apply_provider_runtime_compatibility(codex, "cx/gpt-5.6-luna")
         self.assertFalse(codex._disable_streaming)
 
+    def test_legacy_opencode_free_model_routes_through_user_zen_connection(self) -> None:
+        config: dict[str, Any] = {}
+
+        selected = normalize_nine_router_config(
+            config,
+            "oc/deepseek-v4-flash-free",
+        )
+
+        self.assertEqual(selected, "ocz/deepseek-v4-flash-free")
+        self.assertEqual(config["model"]["default"], selected)
+
     def test_global_config_defaults_to_automatic_execution(self) -> None:
         with patch.dict(os.environ, {"HONCHO_MEMORY_ENABLE": ""}):
             with TemporaryDirectory() as temp_dir:
@@ -526,6 +537,41 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(connections["connections"][2]["provider"], "openrouter")
         self.assertNotIn("api_key", connections["connections"][0])
         self.assertNotIn("apiKey", connections["connections"][0])
+
+    async def test_opencode_zen_models_keep_their_distinct_ocz_prefix(self) -> None:
+        node_id = "openai-compatible-chat-zen1"
+        manager = FakeNineRouterManager({
+            ("GET", "/api/provider-nodes"): {"nodes": [{
+                "id": node_id,
+                "prefix": "ocz",
+                "name": "OpenCode Zen",
+                "type": "openai-compatible",
+                "apiType": "chat",
+                "baseUrl": "https://opencode.ai/zen/v1",
+            }]},
+            ("GET", "/api/providers"): {"connections": [{
+                "id": "zen-account",
+                "provider": node_id,
+                "authType": "apikey",
+                "defaultModel": "deepseek-v4-flash-free",
+            }]},
+            ("GET", "/v1/models?kind=llm"): {"data": [{
+                "id": "ocz/gpt-5.6-luna",
+                "owned_by": "ocz",
+            }]},
+        })
+
+        payload = await manager.list_models(ensure_auto=False)
+        connections = await manager.list_connections()
+
+        self.assertEqual(
+            [item["id"] for item in payload["data"]],
+            ["auto", "ocz/gpt-5.6-luna"],
+        )
+        self.assertEqual(payload["data"][1]["provider"], "opencode")
+        self.assertEqual(connections["connections"][0]["provider"], "opencode")
+        self.assertEqual(connections["connections"][0]["default_model"], "")
+        self.assertFalse(any("suggested-models" in path for _, path, _ in manager.requests))
 
     async def test_auto_requires_a_connected_provider_for_chat(self) -> None:
         manager = FakeNineRouterManager(

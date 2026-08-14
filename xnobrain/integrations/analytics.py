@@ -18,6 +18,24 @@ from typing import Any
 # strftime formats per granularity (UTC). ``week`` is handled by the service:
 # it asks for ``day`` grain here and folds into ISO weeks in Python.
 _BUCKET_FMT = {"hour": "%Y-%m-%dT%H", "day": "%Y-%m-%d", "month": "%Y-%m"}
+_ROUTER_PREFIXES = {
+    "claude": "cc",
+    "codex": "cx",
+    "antigravity": "ag",
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "gemini": "gemini",
+    "opencode-go": "ocg",
+    "opencode": "oc",
+}
+_PROVIDER_BY_PREFIX = {
+    "cc": "claude",
+    "cx": "codex",
+    "ag": "antigravity",
+    "oc": "opencode",
+    "ocg": "opencode-go",
+    "ocz": "opencode",
+}
 
 
 def _open_ro(path: Path) -> sqlite3.Connection:
@@ -139,6 +157,7 @@ def aggregate_router_usage(
         ).fetchone()
         if exists is None:
             return empty
+        node_prefixes = _provider_node_prefixes(conn)
         rows = conn.execute(
             """
             SELECT timestamp, COALESCE(provider,'unknown') AS provider,
@@ -194,8 +213,10 @@ def aggregate_router_usage(
         totals["estimated_cost_usd"] += cost
         totals["api_calls"] += 1
 
-        provider = str(row["provider"] or "unknown")
-        model = str(row["model"] or "unknown")
+        raw_provider = str(row["provider"] or "unknown")
+        prefix = node_prefixes.get(raw_provider) or _ROUTER_PREFIXES.get(raw_provider, "")
+        provider = _PROVIDER_BY_PREFIX.get(prefix, prefix or raw_provider)
+        model = _qualified_router_model(str(row["model"] or "unknown"), prefix)
         model_row = models.setdefault(
             (model, provider),
             {
@@ -299,6 +320,33 @@ def _token_metadata(value: str) -> dict[str, Any]:
     except (TypeError, ValueError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _provider_node_prefixes(conn: sqlite3.Connection) -> dict[str, str]:
+    """Map 9router's UUID-backed custom provider IDs to stable prefixes."""
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='providerNodes'"
+        ).fetchone()
+        if exists is None:
+            return {}
+        rows = conn.execute("SELECT id, data FROM providerNodes").fetchall()
+    except sqlite3.Error:
+        return {}
+    result: dict[str, str] = {}
+    for row in rows:
+        data = _token_metadata(str(row["data"] or ""))
+        prefix = str(data.get("prefix") or "").strip()
+        if prefix:
+            result[str(row["id"] or "")] = prefix
+    return result
+
+
+def _qualified_router_model(model: str, prefix: str) -> str:
+    normalized = model.strip() or "unknown"
+    if not prefix or "/" in normalized or normalized == "unknown":
+        return normalized
+    return f"{prefix}/{normalized}"
 
 
 def _timestamp_bucket(value: str, bucket: str) -> str:

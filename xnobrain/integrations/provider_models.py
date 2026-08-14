@@ -5,12 +5,10 @@ from .nine_router_support import (
     Mapping,
     NINE_ROUTER_DEFAULT_MODEL,
     NINE_ROUTER_PROVIDER_KEY,
-    NineRouterAPIError,
     OPENAI_COMPATIBLE_PROVIDERS,
     OPENCODE_ZEN_ROUTER_ALIAS,
     ROUTER_MODEL_ALIASES,
     ROUTER_PROVIDER_BY_MODEL_OWNER,
-    quote,
 )
 
 
@@ -53,10 +51,6 @@ class ProviderModelsMixin:
             if owner not in active_owners:
                 continue
             public_model_id = model_id
-            if owner == OPENCODE_ZEN_ROUTER_ALIAS:
-                public_model_id = "oc/" + model_id.removeprefix(
-                    f"{OPENCODE_ZEN_ROUTER_ALIAS}/"
-                )
             if public_model_id in seen:
                 continue
             seen.add(public_model_id)
@@ -82,7 +76,6 @@ class ProviderModelsMixin:
             models.append(model)
         if ensure_auto:
             await self._ensure_auto_combo(models)
-        models.extend(await self._opencode_free_models(seen))
         return {
             "object": "list",
             "provider": NINE_ROUTER_PROVIDER_KEY,
@@ -124,33 +117,3 @@ class ProviderModelsMixin:
         if isinstance(capabilities, Mapping) and capabilities.get("reasoning") is True:
             return ["low", "medium", "high"]
         return []
-
-
-    async def _opencode_free_models(self, seen: set[str]) -> list[dict[str, str]]:
-        path = (
-            "/api/providers/suggested-models?"
-            f"url={quote('https://opencode.ai/zen/v1/models', safe='')}&"
-            "type=opencode-free"
-        )
-        try:
-            payload = await self._request("GET", path)
-        except NineRouterAPIError:
-            return []
-        raw_models = payload.get("data", []) if isinstance(payload, Mapping) else []
-        result: list[dict[str, str]] = []
-        for item in raw_models if isinstance(raw_models, list) else []:
-            if not isinstance(item, Mapping):
-                continue
-            raw_id = str(item.get("id") or "").strip()
-            if not raw_id:
-                continue
-            model_id = raw_id if raw_id.startswith("oc/") else f"oc/{raw_id}"
-            if model_id in seen:
-                continue
-            seen.add(model_id)
-            result.append({
-                "id": model_id,
-                "provider": "opencode",
-                "name": str(item.get("name") or model_id),
-            })
-        return result

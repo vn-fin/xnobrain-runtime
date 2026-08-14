@@ -10,7 +10,6 @@ const noop = () => undefined;
 function openCodeProvider(
   id: 'opencode-go' | 'opencode',
   displayName: string,
-  freeModelsAvailable = false,
 ): ConnectionProvider {
   return {
     id,
@@ -20,8 +19,7 @@ function openCodeProvider(
     connection_mode: 'api-key',
     brand: 'opencode',
     connected: false,
-    free_models_available: freeModelsAvailable,
-    status: freeModelsAvailable ? 'available' : 'disconnected',
+    status: 'disconnected',
   };
 }
 
@@ -44,7 +42,7 @@ describe('ConnectionsView OpenCode providers', () => {
       <ConnectionsView
         providers={[
           openCodeProvider('opencode-go', 'OpenCode Go'),
-          openCodeProvider('opencode', 'OpenCode Zen', true),
+          openCodeProvider('opencode', 'OpenCode Zen'),
         ]}
         keyProviderId="opencode"
         pendingId={null}
@@ -73,7 +71,7 @@ describe('ConnectionsView OpenCode providers', () => {
     const providerSelect = screen.getByRole('combobox');
     const options = within(providerSelect).getAllByRole('option');
     expect(options.map((option) => option.textContent)).toEqual(['OpenCode Zen']);
-    expect(screen.getByText('Free models available without an API key.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add API key' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Subscriptions' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'API keys' })).toBeInTheDocument();
   });

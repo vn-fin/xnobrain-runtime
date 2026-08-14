@@ -1,9 +1,7 @@
 import type { ConnectionProvider, ProviderConnectInfo } from '../types';
 
 export function hasUsableProvider(providers: ConnectionProvider[]): boolean {
-  return providers.some((provider) => (
-    provider.connected || provider.free_models_available === true
-  ));
+  return providers.some((provider) => provider.connected);
 }
 
 /**

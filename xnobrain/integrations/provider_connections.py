@@ -59,6 +59,11 @@ class ProviderConnectionsMixin:
             provider = custom_provider_ids.get(router_provider, router_provider)
             if provider not in SUPPORTED_ROUTER_PROVIDERS | OPENAI_COMPATIBLE_PROVIDERS:
                 continue
+            default_model = str(item.get("defaultModel") or "")
+            if provider == "opencode" and (
+                default_model.endswith("-free") or default_model == "big-pickle"
+            ):
+                default_model = ""
             connections.append(
                 {
                     "id": str(item.get("id") or ""),
@@ -66,7 +71,7 @@ class ProviderConnectionsMixin:
                     "auth_type": str(item.get("authType") or ""),
                     "name": str(item.get("name") or item.get("displayName") or provider),
                     "active": item.get("isActive") is not False,
-                    "default_model": str(item.get("defaultModel") or ""),
+                    "default_model": default_model,
                     "test_status": str(item.get("testStatus") or "unknown"),
                     "last_error": str(item.get("lastError") or ""),
                     "email": str(item.get("email") or ""),

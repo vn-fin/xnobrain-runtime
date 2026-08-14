@@ -56,9 +56,6 @@ _OAUTH_GET_ACTIONS = frozenset(
     {"authorize", "device-code", "start-proxy", "poll-status", "stop-proxy"}
 )
 _OAUTH_POST_ACTIONS = frozenset({"exchange", "poll", "manual-code"})
-_OPENCODE_FREE_MODEL_IDS = frozenset({"big-pickle"})
-
-
 class NineRouterAPIError(RuntimeError):
     """Expected local 9Router API failure."""
 
@@ -73,16 +70,11 @@ def route_nine_router_model(model: Any) -> str:
     if not model_id.startswith("oc/"):
         return model_id
     upstream_id = model_id.removeprefix("oc/")
-    if upstream_id.endswith("-free") or upstream_id in _OPENCODE_FREE_MODEL_IDS:
-        return model_id
     return f"{OPENCODE_ZEN_ROUTER_ALIAS}/{upstream_id}"
 
 
 def display_nine_router_model(model: Any) -> str:
-    model_id = str(model or "").strip()
-    if model_id.startswith(f"{OPENCODE_ZEN_ROUTER_ALIAS}/"):
-        return "oc/" + model_id.removeprefix(f"{OPENCODE_ZEN_ROUTER_ALIAS}/")
-    return model_id
+    return str(model or "").strip()
 
 
 def normalize_nine_router_config(config: dict[str, Any], model: str | None = None) -> str:

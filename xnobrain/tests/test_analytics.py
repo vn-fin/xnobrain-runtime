@@ -12,6 +12,7 @@ import time
 import unittest
 from unittest.mock import patch
 import uuid
+import json
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -115,6 +116,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         out: int,
         cost: float,
         provider: str = "codex",
+        provider_prefix: str | None = None,
         status: str = "success",
         timestamp: str | None = None,
     ):
@@ -135,6 +137,28 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
                 """
             )
             stamp = timestamp or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            if provider_prefix:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS providerNodes (
+                        id TEXT PRIMARY KEY, type TEXT, name TEXT, data TEXT,
+                        createdAt TEXT, updatedAt TEXT
+                    )
+                    """
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO providerNodes "
+                    "(id, type, name, data, createdAt, updatedAt) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (
+                        provider,
+                        "openai-compatible",
+                        provider_prefix,
+                        json.dumps({"prefix": provider_prefix}),
+                        stamp,
+                        stamp,
+                    ),
+                )
             conn.execute(
                 """
                 INSERT INTO usageHistory (
@@ -198,11 +222,36 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["totals"]["input_tokens"], 300)
         self.assertEqual(result["totals"]["output_tokens"], 70)
         self.assertEqual(result["totals"]["api_calls"], 2)
-        self.assertEqual({row["model"] for row in result["by_model"]}, {"gpt-5", "claude"})
+        self.assertEqual(
+            {row["model"] for row in result["by_model"]},
+            {"cx/gpt-5", "cc/claude"},
+        )
         self.assertEqual(
             {row["provider"] for row in result["by_provider"]}, {"codex", "claude"})
         self.assertEqual(result["request_status"]["successful"], 1)
         self.assertEqual(result["request_status"]["failed"], 1)
+
+    def test_aggregate_router_usage_resolves_zen_node_id_and_model_prefix(self):
+        node_id = "openai-compatible-chat-65582489-b7cd"
+        self._insert_router(
+            model="gpt-5.6-luna",
+            provider=node_id,
+            provider_prefix="ocz",
+            inp=120,
+            out=8,
+            cost=0.01,
+        )
+
+        result = aggregate_router_usage(
+            self.router_data,
+            start_epoch=time.time() - 86400,
+            end_epoch=time.time() + 1,
+        )
+
+        self.assertEqual(result["by_provider"][0]["provider"], "opencode")
+        self.assertEqual(result["by_model"][0]["provider"], "opencode")
+        self.assertEqual(result["by_model"][0]["model"], "ocz/gpt-5.6-luna")
+        self.assertNotIn(node_id, str(result))
 
     # ---- integration: routes end-to-end ------------------------------------
 
@@ -270,7 +319,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             series = series_response.json()["data"]
             self.assertNotIn("series", overview)
             self.assertNotIn("by_model", overview)
-            self.assertEqual(models["by_model"][0]["model"], "gpt-5")
+            self.assertEqual(models["by_model"][0]["model"], "cx/gpt-5")
             self.assertEqual(models["by_provider"][0]["provider"], "codex")
             self.assertEqual(series["bucket"], "hour")
             self.assertEqual(aggregate.call_count, 1)

@@ -79,6 +79,14 @@ class FakeRouter:
         })
         return f"openai-compatible-chat-{provider}1"
 
+    async def ensure_opencode_zen_provider(self):
+        return await self.ensure_openai_compatible_provider(
+            "opencode",
+            display_name="OpenCode Zen",
+            base_url="https://opencode.ai/zen/v1",
+            router_prefix="ocz",
+        )
+
     async def update_connection(self, connection_id, *, active=None, priority=None):
         for row in self._rows:
             if row["id"] == connection_id:
@@ -207,6 +215,30 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         info = started.json()["data"]
         self.assertEqual(info["connection_mode"], "api-key")
         self.assertNotIn("login_url", info)
+
+    async def test_opencode_zen_requires_a_key_and_has_no_free_default(self):
+        async with self.client() as client:
+            providers = (await client.get(
+                "/xnobrain/api/runtime/v1/providers"
+            )).json()["data"]
+            zen = next(item for item in providers if item["id"] == "opencode")
+            connected = await client.put(
+                "/xnobrain/api/runtime/v1/providers/opencode/connect",
+                json={"text": "zen-secret"},
+            )
+
+        self.assertFalse(zen["connected"])
+        self.assertEqual(zen["status"], "disconnected")
+        self.assertNotIn("free_models_available", zen)
+        self.assertEqual(connected.status_code, 200)
+        self.assertEqual(
+            self.router.created_bodies[-1],
+            {
+                "provider": "openai-compatible-chat-opencode1",
+                "api_key": "zen-secret",
+                "default_model": None,
+            },
+        )
 
     async def test_patch_activates_reorders_and_requires_a_field(self):
         async with self.client() as client:
