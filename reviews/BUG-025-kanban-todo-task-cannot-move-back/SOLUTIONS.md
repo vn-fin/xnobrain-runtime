@@ -1,1 +1,0 @@
-Current the todo task is merged, now we must add new kanban status "scheduled" as separate columns and do not merge with the todo
