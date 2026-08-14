@@ -210,6 +210,67 @@ class ConversationsServiceMixin:
     ) -> dict[str, Any]:
         return await self.conversation_runs.start_run(agent_id, conversation_id, body)
 
+    def get_conversation_goal(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
+        return self.agents.get_conversation_goal(agent_id, conversation_id)
+
+    async def create_conversation_goal(
+        self, agent_id: str, conversation_id: str, body: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if self.conversation_runs.active_run(agent_id, conversation_id) is not None:
+            raise ServiceError("pause the current response before starting a goal", status=409, code="conversation_running")
+        result = self.agents.set_conversation_goal(agent_id, conversation_id, body)
+        try:
+            run = await self.conversation_runs.start_run(agent_id, conversation_id, {
+                "input": str(body.get("objective") or ""),
+                "run_mode": "background",
+            })
+        except Exception:
+            self.agents.clear_conversation_goal(agent_id, conversation_id)
+            raise
+        return {**result, "run": run}
+
+    def update_conversation_goal(
+        self, agent_id: str, conversation_id: str, body: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if self.conversation_runs.active_run(agent_id, conversation_id) is not None:
+            # Editing is a safe preemption: the current model turn may finish,
+            # but the runner observes the paused replacement before judging it.
+            self.agents.pause_conversation_goal(agent_id, conversation_id)
+        return self.agents.update_conversation_goal(agent_id, conversation_id, body)
+
+    def pause_conversation_goal(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
+        # Persist first: the runner reloads this state after its current model turn.
+        return self.agents.pause_conversation_goal(agent_id, conversation_id)
+
+    async def resume_conversation_goal(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
+        if self.conversation_runs.active_run(agent_id, conversation_id) is not None:
+            raise ServiceError("the goal is already running", status=409, code="conversation_running")
+        result = self.agents.resume_conversation_goal(agent_id, conversation_id)
+        objective = str((result.get("goal") or {}).get("objective") or "")
+        try:
+            run = await self.conversation_runs.start_run(agent_id, conversation_id, {
+                "input": objective,
+                "run_mode": "background",
+                "goal_resume": True,
+            })
+        except Exception:
+            self.agents.pause_conversation_goal(agent_id, conversation_id)
+            raise
+        return {**result, "run": run}
+
+    def delete_conversation_goal(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
+        return self.agents.clear_conversation_goal(agent_id, conversation_id)
+
+    def add_conversation_subgoal(
+        self, agent_id: str, conversation_id: str, body: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return self.agents.add_conversation_subgoal(agent_id, conversation_id, body)
+
+    def remove_conversation_subgoal(
+        self, agent_id: str, conversation_id: str, index: Any,
+    ) -> dict[str, Any]:
+        return self.agents.remove_conversation_subgoal(agent_id, conversation_id, index)
+
     def active_conversation_run(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
         return {"run": self.conversation_runs.active_run(agent_id, conversation_id)}
 

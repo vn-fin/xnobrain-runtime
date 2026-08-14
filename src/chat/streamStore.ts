@@ -1,7 +1,7 @@
 import { conversationsApi } from '../api/conversations';
 import type { SSEEvent } from '../api/stream';
 import { reduceRunEvent } from './runEvents';
-import type { ChatMessage, ChatRun, RunApprovalChoice } from '../types';
+import type { ChatMessage, ChatRun, ComposerFeature, RunApprovalChoice } from '../types';
 import { randomId } from '../utils/id';
 
 // A background-capable chat stream store. Streaming sessions are keyed by
@@ -9,7 +9,7 @@ import { randomId } from '../utils/id';
 // the user switches to another conversation tab. Components subscribe via
 // `useSyncExternalStore` and read an immutable snapshot per conversation.
 
-export type QueuedMessage = { id: string; content: string; model: string };
+export type QueuedMessage = { id: string; content: string; model: string; feature?: ComposerFeature };
 export type SessionStatus = 'idle' | 'streaming' | 'done' | 'error' | 'cancelled';
 
 export type SessionSnapshot = {
@@ -241,7 +241,7 @@ async function followRun(key: string, runtime: Runtime, runId: string, assistant
   }
 }
 
-async function execute(key: string, text: string, model: string) {
+async function execute(key: string, text: string, model: string, feature?: ComposerFeature) {
   const runtime = runtimes.get(key);
   if (!runtime) return;
   const { agentId, conversationId } = runtime;
@@ -266,7 +266,7 @@ async function execute(key: string, text: string, model: string) {
 
   try {
     runtime.lastSequence = 0;
-    const record = await conversationsApi.startRun(agentId, conversationId, text, model, 'auto', controller.signal);
+    const record = await conversationsApi.startRun(agentId, conversationId, text, model, 'auto', controller.signal, feature);
     if (runtime.cancelled || controller.signal.aborted) {
       await conversationsApi.stopRun(agentId, conversationId, record.id).catch(() => undefined);
       throw new DOMException('The operation was aborted.', 'AbortError');
@@ -347,7 +347,7 @@ async function drain(key: string) {
       const snap = getSnapshot(key);
       const [next, ...rest] = snap.queue;
       patch(key, { queue: rest });
-      if (next) await execute(key, next.content, next.model);
+      if (next) await execute(key, next.content, next.model, next.feature);
     }
   } finally {
     runtime.processing = false;
@@ -414,7 +414,7 @@ export const streamStore = {
     return resume(keyOf(agentId, conversationId), agentId, conversationId);
   },
 
-  send(agentId: string, conversationId: string, text: string, model = '') {
+  send(agentId: string, conversationId: string, text: string, model = '', feature?: ComposerFeature) {
     const clean = text.trim();
     if (!clean || !agentId || !conversationId) return;
     const key = keyOf(agentId, conversationId);
@@ -425,6 +425,7 @@ export const streamStore = {
         id: `queued-${randomId()}`,
         content: clean,
         model: model.trim(),
+        feature,
       }],
     });
     void drain(key);

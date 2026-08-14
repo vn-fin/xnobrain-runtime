@@ -1,5 +1,7 @@
 """Conversation preparation and embedded Hermes runner methods."""
 
+import asyncio
+
 from .hermes_support import (
     AgentAPIError,
     Any,
@@ -17,6 +19,21 @@ from xnobrain.runtime_limits import max_parallel_agents, session_timeout_seconds
 
 
 class ConversationRunnerMixin:
+    _FEATURE_PROMPTS = {
+        "todo": (
+            "For this turn, begin by creating a concise todo list with the todo tool. "
+            "Keep it updated as work progresses and verify every item before finishing."
+        ),
+        "delegate": (
+            "For this turn, identify independent work that benefits from parallelism and "
+            "delegate it to sub-agents with delegate_task. Synthesize their results into one answer."
+        ),
+        "learn": (
+            "For this turn, distill the completed work into durable reusable knowledge. "
+            "When appropriate, use the skill management tools to create or improve a focused skill."
+        ),
+    }
+
     def _mark_agent_active(self, name: str) -> None:
         with self._registry_lock:
             self._active_agent_counts[name] = self._active_agent_counts.get(name, 0) + 1
@@ -168,6 +185,9 @@ class ConversationRunnerMixin:
             command.extend(["-z", message])
 
         timeout_seconds = session_timeout_seconds(body.get("timeout_seconds"))
+        feature = str(body.get("feature") or "").strip().lower()
+        if feature and feature not in self._FEATURE_PROMPTS:
+            raise AgentAPIError("invalid composer feature", code="invalid_feature")
         return {
             "name": name,
             "profile_dir": profile_dir,
@@ -184,6 +204,8 @@ class ConversationRunnerMixin:
             "engine": engine,
             "command": command,
             "timeout_seconds": timeout_seconds,
+            "feature": feature,
+            "goal_resume": bool(body.get("goal_resume", False)),
         }
 
 
@@ -534,7 +556,6 @@ class ConversationRunnerMixin:
         profile_token = _api_request_profile.set(str(prepared["name"]))
         register_gateway_notify(run_id, approval_notify_callback)
         try:
-            history = await adapter._conversation_history_for_session(conversation_id)
             session = self._session(profile_dir, conversation_id) or {}
             selected_model = str(
                 prepared.get("requested_model")
@@ -542,16 +563,70 @@ class ConversationRunnerMixin:
                 or prepared.get("model")
                 or ""
             ).strip()
-            result, usage = await adapter._run_agent(
-                user_message=str(prepared["message"]),
-                conversation_history=history,
-                session_id=conversation_id,
-                stream_delta_callback=stream_delta_callback,
-                tool_progress_callback=tool_progress_callback,
-                agent_ref=agent_ref,
-                gateway_session_key=conversation_id,
-                route={"model": selected_model} if selected_model else None,
-            )
+            from hermes_cli.goals import GoalManager
+            from .conversation_goals import _goal_payload
+
+            def read_goal():
+                with _profile_runtime_scope(profile_dir):
+                    return GoalManager(conversation_id).state
+
+            def judge_goal(response: str, user_initiated: bool):
+                with _profile_runtime_scope(profile_dir):
+                    return GoalManager(conversation_id).evaluate_after_turn(
+                        response,
+                        user_initiated=user_initiated,
+                    )
+
+            def emit_goal(state: Any, decision: Mapping[str, Any] | None = None) -> None:
+                tool_progress_callback(
+                    "goal.updated",
+                    "goal",
+                    str((decision or {}).get("reason") or ""),
+                    None,
+                    goal=_goal_payload(state),
+                )
+
+            initial_goal = read_goal()
+            if initial_goal is not None:
+                emit_goal(initial_goal)
+
+            prompt = str(prepared["message"])
+            feature_prompt = self._FEATURE_PROMPTS.get(str(prepared.get("feature") or ""))
+            aggregate_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+            result: dict[str, Any] = {}
+            first_turn = True
+            while prompt:
+                history = await adapter._conversation_history_for_session(conversation_id)
+                result, turn_usage = await adapter._run_agent(
+                    user_message=prompt,
+                    conversation_history=history,
+                    ephemeral_system_prompt=feature_prompt if first_turn else None,
+                    session_id=conversation_id,
+                    stream_delta_callback=stream_delta_callback,
+                    tool_progress_callback=tool_progress_callback,
+                    agent_ref=agent_ref,
+                    gateway_session_key=conversation_id,
+                    route={"model": selected_model} if selected_model else None,
+                )
+                for key in aggregate_usage:
+                    aggregate_usage[key] += int(turn_usage.get(key) or 0)
+                if bool(result.get("interrupted")) or bool(result.get("failed")):
+                    break
+                current_goal = read_goal()
+                if current_goal is None or str(current_goal.status) != "active":
+                    if current_goal is not None:
+                        emit_goal(current_goal)
+                    break
+                output = str(result.get("final_response") or "")
+                decision = await asyncio.to_thread(judge_goal, output, first_turn)
+                current_goal = read_goal()
+                emit_goal(current_goal, decision)
+                if not bool(decision.get("should_continue")):
+                    break
+                prompt = str(decision.get("continuation_prompt") or "")
+                first_turn = False
+                feature_prompt = None
+            usage = aggregate_usage
             agent = agent_ref[0]
             compressor = getattr(agent, "context_compressor", None) if agent is not None else None
             context_used = int(getattr(compressor, "last_prompt_tokens", 0) or 0)

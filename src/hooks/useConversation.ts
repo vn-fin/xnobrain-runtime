@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { conversationsApi, type ConversationCompactResult } from '../api/conversations';
 import { historicalRuns } from '../chat/runEvents';
 import { streamStore } from '../chat/streamStore';
-import type { AsyncStatus, ChatMessage, ChatRun, ConversationUsage, RunApprovalChoice } from '../types';
+import type { AsyncStatus, ChatMessage, ChatRun, ComposerFeature, ConversationGoal, ConversationUsage, GoalContract, RunApprovalChoice } from '../types';
 
 function abortError(value: unknown) {
   return value instanceof DOMException && value.name === 'AbortError';
@@ -58,6 +58,9 @@ export function useConversation(agentId: string, conversationId: string, model =
   const [compacting, setCompacting] = useState(false);
   const [compactError, setCompactError] = useState('');
   const [compactResult, setCompactResult] = useState<ConversationCompactResult | null>(null);
+  const [goal, setGoal] = useState<ConversationGoal | null>(null);
+  const [goalPending, setGoalPending] = useState(false);
+  const [goalError, setGoalError] = useState('');
   const [loadSignal, setLoadSignal] = useState<AbortSignal>();
   const loadController = useRef<AbortController>();
   const loadKey = useRef<string | null>(null);
@@ -97,12 +100,25 @@ export function useConversation(agentId: string, conversationId: string, model =
     return request;
   }, [agentId, conversationId, key]);
 
+  const requestGoal = useCallback(async (requestGeneration = generation.current) => {
+    if (!agentId || !conversationId) { setGoal(null); return; }
+    try {
+      const nextGoal = await conversationsApi.goal(agentId, conversationId);
+      if (generation.current === requestGeneration) setGoal(nextGoal);
+    } catch (value) {
+      if (generation.current === requestGeneration) {
+        setGoalError(value instanceof Error ? value.message : 'Could not load goal.');
+      }
+    }
+  }, [agentId, conversationId]);
+
   const refresh = useCallback(async () => {
     loadController.current?.abort();
     if (!agentId || !conversationId) {
       setServerMessages([]);
       setServerRuns([]);
       setUsage(null);
+      setGoal(null);
       setStatus('ready');
       return;
     }
@@ -114,6 +130,7 @@ export function useConversation(agentId: string, conversationId: string, model =
     setUsage(null);
     setUsageStatus('idle');
     setUsageError('');
+    setGoalError('');
     try {
       const nextMessages = await conversationsApi.messages(agentId, conversationId, controller.signal);
       if (controller.signal.aborted) return;
@@ -147,11 +164,20 @@ export function useConversation(agentId: string, conversationId: string, model =
         await refresh();
         await streamStore.resume(agentId, conversationId);
         await requestUsage(currentGeneration);
+        await requestGoal(currentGeneration);
       })();
     }
     // No stream teardown here: streams intentionally keep running in the
     // background when switching conversations.
-  }, [refresh, requestUsage, key]);
+  }, [refresh, requestGoal, requestUsage, key]);
+
+  const goalEventCount = session.events.filter((event) => {
+    const data = event.data && typeof event.data === 'object' ? event.data as Record<string, unknown> : {};
+    return data.event === 'goal.updated';
+  }).length;
+  useEffect(() => {
+    if (goalEventCount > 0) void requestGoal();
+  }, [goalEventCount, requestGoal]);
 
   useEffect(() => {
     const unsubscribe = streamStore.onComplete((event) => {
@@ -162,15 +188,41 @@ export function useConversation(agentId: string, conversationId: string, model =
     return () => { unsubscribe(); };
   }, [agentId, conversationId, requestUsage]);
 
-  const sendMessage = async (input: string) => {
+  const sendMessage = async (input: string, feature?: ComposerFeature) => {
     const text = input.trim();
     if (!text || !agentId || !conversationId) return;
     if (text.toLowerCase() === '/usage') {
       await requestUsage();
       return;
     }
-    streamStore.send(agentId, conversationId, text, model);
+    streamStore.send(agentId, conversationId, text, model, feature);
   };
+
+  const mutateGoal = async (operation: () => Promise<ConversationGoal | null>, followRun = false) => {
+    setGoalPending(true);
+    setGoalError('');
+    try {
+      const next = await operation();
+      setGoal(next);
+      if (followRun) void streamStore.resume(agentId, conversationId);
+      return next;
+    } catch (value) {
+      setGoalError(value instanceof Error ? value.message : 'Could not update goal.');
+      throw value;
+    } finally {
+      setGoalPending(false);
+    }
+  };
+
+  const createGoal = (objective: string, maxTurns = 20, contract?: Partial<GoalContract>) =>
+    mutateGoal(() => conversationsApi.createGoal(agentId, conversationId, { objective, maxTurns, contract }), true);
+  const updateGoal = (objective: string, maxTurns = goal?.maxTurns ?? 20, contract?: Partial<GoalContract>) =>
+    mutateGoal(() => conversationsApi.updateGoal(agentId, conversationId, { objective, maxTurns, contract }));
+  const pauseGoal = () => mutateGoal(() => conversationsApi.pauseGoal(agentId, conversationId));
+  const resumeGoal = () => mutateGoal(() => conversationsApi.resumeGoal(agentId, conversationId), true);
+  const deleteGoal = () => mutateGoal(async () => { await conversationsApi.deleteGoal(agentId, conversationId); return null; });
+  const addSubgoal = (text: string) => mutateGoal(() => conversationsApi.addSubgoal(agentId, conversationId, text));
+  const deleteSubgoal = (index: number) => mutateGoal(() => conversationsApi.deleteSubgoal(agentId, conversationId, index));
 
   const stopStream = async () => {
     await streamStore.stop(agentId, conversationId);
@@ -217,7 +269,7 @@ export function useConversation(agentId: string, conversationId: string, model =
   return {
     messages,
     queuedMessages: session.queue,
-    usage, usageStatus, usageError, status,
+    usage, usageStatus, usageError, status, goal, goalPending, goalError,
     error: error || session.error,
     streaming: session.streaming,
     streamEvents: session.events,
@@ -225,7 +277,8 @@ export function useConversation(agentId: string, conversationId: string, model =
     loadSignal,
     canStop: session.runActive,
     compacting, compactError, compactResult,
-    refresh, requestUsage, sendMessage, stopStream, compactContext, resolveRunApproval,
+    refresh, requestUsage, requestGoal, sendMessage, stopStream, compactContext, resolveRunApproval,
+    createGoal, updateGoal, pauseGoal, resumeGoal, deleteGoal, addSubgoal, deleteSubgoal,
     removeQueuedMessage: (id: string) => streamStore.removeQueued(agentId, conversationId, id),
     editQueuedMessage: (id: string, content: string) => streamStore.editQueued(agentId, conversationId, id, content),
     moveQueuedMessage: (id: string, direction: 'up' | 'down') => streamStore.moveQueued(agentId, conversationId, id, direction),

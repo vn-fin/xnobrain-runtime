@@ -54,6 +54,30 @@ export type ConversationRunDTO = {
 
 export type ActiveConversationRunDTO = { run?: ConversationRunDTO | null };
 
+export type GoalDTO = {
+  objective: string;
+  status: 'active' | 'paused' | 'done';
+  turns_used: number;
+  max_turns: number;
+  created_at?: number;
+  last_turn_at?: number;
+  last_verdict?: string | null;
+  last_reason?: string | null;
+  paused_reason?: string | null;
+  waiting?: boolean;
+  waiting_reason?: string | null;
+  subgoals?: string[];
+  contract?: {
+    outcome?: string;
+    verification?: string;
+    constraints?: string;
+    boundaries?: string;
+    stop_when?: string;
+  };
+};
+
+export type GoalResponseDTO = { goal?: GoalDTO | null; run?: ConversationRunDTO };
+
 export type ConversationCompactResponseDTO = {
   conversation_id?: string;
   before_tokens?: number;

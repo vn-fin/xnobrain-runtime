@@ -1514,6 +1514,84 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.json()["data"]["title"], "New Session 2")
         self.assertEqual(third.json()["data"]["title"], "New Session 3")
 
+    async def test_goal_lifecycle_and_subgoals_use_persistent_session_state(self):
+        async with self.client() as client:
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/agents",
+                json={"display_name": "Goal worker"},
+            )
+            agent_id = created.json()["data"]["id"]
+            conversation = await client.post(
+                f"/xnobrain/api/runtime/v1/sessions?agent={agent_id}",
+                json={"title": "Persistent goal"},
+            )
+            conversation_id = conversation.json()["data"]["id"]
+            run = {
+                "id": "run_" + "a" * 32,
+                "agent_id": agent_id,
+                "conversation_id": conversation_id,
+                "status": "queued",
+            }
+            with patch.object(
+                self.composition.service.conversation_runs,
+                "start_run",
+                new=AsyncMock(return_value=run),
+            ) as start_run:
+                started = await client.post(
+                    f"/xnobrain/api/runtime/v1/sessions/{conversation_id}/goal?agent={agent_id}",
+                    json={
+                        "objective": "Make every authentication test pass",
+                        "max_turns": 12,
+                        "contract": {"verification": "Run the auth test suite"},
+                    },
+                )
+                added = await client.post(
+                    f"/xnobrain/api/runtime/v1/sessions/{conversation_id}/goal/subgoals?agent={agent_id}",
+                    json={"text": "Keep the login response compatible"},
+                )
+                paused = await client.post(
+                    f"/xnobrain/api/runtime/v1/sessions/{conversation_id}/goal/pause?agent={agent_id}",
+                )
+                edited = await client.patch(
+                    f"/xnobrain/api/runtime/v1/sessions/{conversation_id}/goal?agent={agent_id}",
+                    json={
+                        "objective": "Make authentication reliable",
+                        "max_turns": 15,
+                        "contract": {"verification": "Run all authentication tests"},
+                    },
+                )
+                resumed = await client.post(
+                    f"/xnobrain/api/runtime/v1/sessions/{conversation_id}/goal/resume?agent={agent_id}",
+                )
+                removed = await client.delete(
+                    f"/xnobrain/api/runtime/v1/sessions/{conversation_id}/goal/subgoals/1?agent={agent_id}",
+                )
+                cleared = await client.delete(
+                    f"/xnobrain/api/runtime/v1/sessions/{conversation_id}/goal?agent={agent_id}",
+                )
+                fetched = await client.get(
+                    f"/xnobrain/api/runtime/v1/sessions/{conversation_id}/goal?agent={agent_id}",
+                )
+
+        self.assertEqual(started.status_code, 202, started.text)
+        self.assertEqual(started.json()["data"]["goal"]["status"], "active")
+        self.assertEqual(started.json()["data"]["goal"]["max_turns"], 12)
+        self.assertEqual(
+            started.json()["data"]["goal"]["contract"]["verification"],
+            "Run the auth test suite",
+        )
+        self.assertEqual(added.json()["data"]["goal"]["subgoals"], ["Keep the login response compatible"])
+        self.assertEqual(paused.json()["data"]["goal"]["status"], "paused")
+        self.assertEqual(edited.json()["data"]["goal"]["objective"], "Make authentication reliable")
+        self.assertEqual(edited.json()["data"]["goal"]["status"], "paused")
+        self.assertEqual(edited.json()["data"]["goal"]["subgoals"], ["Keep the login response compatible"])
+        self.assertEqual(resumed.status_code, 202, resumed.text)
+        self.assertEqual(resumed.json()["data"]["goal"]["status"], "active")
+        self.assertEqual(removed.json()["data"]["goal"]["subgoals"], [])
+        self.assertIsNone(cleared.json()["data"]["goal"])
+        self.assertIsNone(fetched.json()["data"]["goal"])
+        self.assertEqual(start_run.await_count, 2)
+
     async def test_conversation_usage_is_aggregated_from_the_hermes_session(self):
         async with self.client() as client:
             created = await client.post(

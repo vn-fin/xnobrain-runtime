@@ -525,7 +525,17 @@ export default function App() {
             compacting={conversation.compacting}
             compactError={conversation.compactError}
             compactResult={conversation.compactResult}
+            goal={conversation.goal}
+            goalPending={conversation.goalPending}
+            goalError={conversation.goalError}
             onCompactContext={conversation.compactContext}
+            onCreateGoal={conversation.createGoal}
+            onUpdateGoal={conversation.updateGoal}
+            onPauseGoal={conversation.pauseGoal}
+            onResumeGoal={conversation.resumeGoal}
+            onDeleteGoal={conversation.deleteGoal}
+            onAddSubgoal={conversation.addSubgoal}
+            onDeleteSubgoal={conversation.deleteSubgoal}
             onSend={(input) => {
               assistants.touchConversation(activeAgent.id, activeConversation?.id ?? '');
               return conversation.sendMessage(input);

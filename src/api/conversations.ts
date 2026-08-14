@@ -8,10 +8,12 @@ import type {
   ConversationUsageDTO,
   ConversationRunDTO,
   ActiveConversationRunDTO,
+  GoalDTO,
+  GoalResponseDTO,
 } from './contracts/conversations';
 import { mapConversation, mapMessage } from './mappers/conversations';
 import { readSSE, type SSEEvent } from './stream';
-import type { ChatMessage, Conversation, ConversationUsage, RunApprovalChoice } from '../types';
+import type { ChatMessage, ComposerFeature, Conversation, ConversationGoal, ConversationUsage, GoalContract, RunApprovalChoice } from '../types';
 
 const ROOT = '/xnobrain/api/runtime/v1/sessions';
 const encoded = (value: string) => encodeURIComponent(value);
@@ -36,6 +38,51 @@ export type ConversationCompactResult = {
   messagesBefore: number;
   messagesAfter: number;
 };
+
+export type GoalInput = {
+  objective: string;
+  maxTurns?: number;
+  contract?: Partial<GoalContract>;
+};
+
+function mapGoal(dto?: GoalDTO | null): ConversationGoal | null {
+  if (!dto) return null;
+  return {
+    objective: dto.objective,
+    status: dto.status,
+    turnsUsed: dto.turns_used,
+    maxTurns: dto.max_turns,
+    createdAt: dto.created_at,
+    lastTurnAt: dto.last_turn_at,
+    lastVerdict: dto.last_verdict ?? undefined,
+    lastReason: dto.last_reason ?? undefined,
+    pausedReason: dto.paused_reason ?? undefined,
+    waiting: dto.waiting ?? false,
+    waitingReason: dto.waiting_reason ?? undefined,
+    subgoals: dto.subgoals ?? [],
+    contract: {
+      outcome: dto.contract?.outcome ?? '',
+      verification: dto.contract?.verification ?? '',
+      constraints: dto.contract?.constraints ?? '',
+      boundaries: dto.contract?.boundaries ?? '',
+      stopWhen: dto.contract?.stop_when ?? '',
+    },
+  };
+}
+
+function goalBody(input: GoalInput) {
+  return {
+    objective: input.objective,
+    max_turns: input.maxTurns ?? 20,
+    contract: {
+      outcome: input.contract?.outcome ?? '',
+      verification: input.contract?.verification ?? '',
+      constraints: input.contract?.constraints ?? '',
+      boundaries: input.contract?.boundaries ?? '',
+      stop_when: input.contract?.stopWhen ?? '',
+    },
+  };
+}
 
 function pathWithAgent(path: string, agentId: string, extra?: Record<string, string | number | undefined>) {
   const params = new URLSearchParams({ agent: agentId });
@@ -176,10 +223,11 @@ export const conversationsApi = {
     model: string,
     runMode: ConversationRunMode = 'auto',
     signal?: AbortSignal,
+    feature?: ComposerFeature,
   ): Promise<ConversationRunDTO> {
     return request<ConversationRunDTO>(pathWithAgent(`${ROOT}/${encoded(conversationId)}/runs`, agentId), {
       method: 'POST',
-      body: JSON.stringify({ input, model, run_mode: runMode }),
+      body: JSON.stringify({ input, model, run_mode: runMode, ...(feature ? { feature } : {}) }),
       signal,
     });
   },
@@ -237,5 +285,50 @@ export const conversationsApi = {
 
   async cancelRun(agentId: string, conversationId: string, runId: string): Promise<void> {
     await conversationsApi.stopRun(agentId, conversationId, runId);
+  },
+
+  async goal(agentId: string, conversationId: string): Promise<ConversationGoal | null> {
+    const data = await request<GoalResponseDTO>(pathWithAgent(`${ROOT}/${encoded(conversationId)}/goal`, agentId));
+    return mapGoal(data.goal);
+  },
+
+  async createGoal(agentId: string, conversationId: string, input: GoalInput): Promise<ConversationGoal> {
+    const data = await request<GoalResponseDTO>(pathWithAgent(`${ROOT}/${encoded(conversationId)}/goal`, agentId), {
+      method: 'POST', body: JSON.stringify(goalBody(input)),
+    });
+    return mapGoal(data.goal)!;
+  },
+
+  async updateGoal(agentId: string, conversationId: string, input: GoalInput): Promise<ConversationGoal> {
+    const data = await request<GoalResponseDTO>(pathWithAgent(`${ROOT}/${encoded(conversationId)}/goal`, agentId), {
+      method: 'PATCH', body: JSON.stringify(goalBody(input)),
+    });
+    return mapGoal(data.goal)!;
+  },
+
+  async pauseGoal(agentId: string, conversationId: string): Promise<ConversationGoal> {
+    const data = await request<GoalResponseDTO>(pathWithAgent(`${ROOT}/${encoded(conversationId)}/goal/pause`, agentId), { method: 'POST' });
+    return mapGoal(data.goal)!;
+  },
+
+  async resumeGoal(agentId: string, conversationId: string): Promise<ConversationGoal> {
+    const data = await request<GoalResponseDTO>(pathWithAgent(`${ROOT}/${encoded(conversationId)}/goal/resume`, agentId), { method: 'POST' });
+    return mapGoal(data.goal)!;
+  },
+
+  async deleteGoal(agentId: string, conversationId: string): Promise<void> {
+    await request<GoalResponseDTO>(pathWithAgent(`${ROOT}/${encoded(conversationId)}/goal`, agentId), { method: 'DELETE' });
+  },
+
+  async addSubgoal(agentId: string, conversationId: string, text: string): Promise<ConversationGoal> {
+    const data = await request<GoalResponseDTO>(pathWithAgent(`${ROOT}/${encoded(conversationId)}/goal/subgoals`, agentId), {
+      method: 'POST', body: JSON.stringify({ text }),
+    });
+    return mapGoal(data.goal)!;
+  },
+
+  async deleteSubgoal(agentId: string, conversationId: string, index: number): Promise<ConversationGoal> {
+    const data = await request<GoalResponseDTO>(pathWithAgent(`${ROOT}/${encoded(conversationId)}/goal/subgoals/${index}`, agentId), { method: 'DELETE' });
+    return mapGoal(data.goal)!;
   },
 };

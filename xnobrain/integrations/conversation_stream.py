@@ -231,6 +231,15 @@ class ConversationStreamMixin:
                 except (AttributeError, RuntimeError, TypeError, ValueError):
                     return {}
 
+            if event_type == "goal.updated":
+                enqueue_event({
+                    "event": "goal.updated",
+                    "run_id": run_id,
+                    "timestamp": timestamp,
+                    "goal": kwargs.get("goal"),
+                })
+                return
+
             if event_type.startswith("subagent."):
                 event_name = {
                     "subagent.queued": "delegation.worker.queued",

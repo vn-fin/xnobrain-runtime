@@ -7,6 +7,7 @@ from .agent_skills import AgentSkillsMixin
 from .agents import AgentOperationsMixin
 from .conversation_runner import ConversationRunnerMixin
 from .conversation_prompt import ConversationPromptMixin
+from .conversation_goals import ConversationGoalsMixin
 from .conversation_stream import ConversationStreamMixin
 from .conversations import ConversationsMixin
 from .default_skills import DefaultSkillsMixin
@@ -33,6 +34,7 @@ class AgentManager(
     AgentSkillsMixin,
     DefaultSkillsMixin,
     ConversationRunnerMixin,
+    ConversationGoalsMixin,
     ConversationPromptMixin,
     ConversationStreamMixin,
     ConversationsMixin,

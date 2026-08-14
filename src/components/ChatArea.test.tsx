@@ -120,6 +120,46 @@ describe('manual context compaction', () => {
   });
 });
 
+describe('agent feature shortcuts', () => {
+  it('opens terminal-style features without slash commands or a full-access control', async () => {
+    const user = userEvent.setup();
+    const conversation: Conversation = {
+      id: 'session-one', title: 'Goal work', preview: '', model: 'auto', messages: 0, tools: 0,
+    };
+    const agent: Agent = {
+      id: 'agent-one', name: 'agent-one', title: 'Research', description: '', status: 'ready',
+      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [conversation],
+    };
+    const onCreateGoal = vi.fn().mockResolvedValue(undefined);
+    render(<ChatArea
+      agent={agent} agents={[agent]} activeConversation={conversation} providers={[]}
+      runs={[]} messages={[]} usage={null} chatStatus="ready" chatError="" streaming={false} canStop={false}
+      onCreateGoal={onCreateGoal}
+      onSend={vi.fn()} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
+      onSelectModel={vi.fn()} onSelectAgent={vi.fn()} onTestAgent={vi.fn()}
+      onSelectConversation={vi.fn()} onCreateConversation={vi.fn()} onDeleteConversation={vi.fn()}
+      onRenameConversation={vi.fn()} onOpenFile={vi.fn()}
+    />);
+
+    expect(screen.queryByText('Full access')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Agent features' }));
+    const menu = screen.getByRole('menu', { name: 'Agent features' });
+    expect(within(menu).getByText('Todo list')).toBeVisible();
+    expect(within(menu).getByText('Sub-agents')).toBeVisible();
+    expect(within(menu).getByText('Goal')).toBeVisible();
+    expect(within(menu).getByText('Subgoal')).toBeVisible();
+    expect(within(menu).getByText('Learn')).toBeVisible();
+    expect(menu).not.toHaveTextContent('/goal');
+
+    await user.click(within(menu).getByRole('menuitem', { name: /Goal/ }));
+    await user.type(screen.getByPlaceholderText('What outcome should the agent keep working toward?'), 'Fix every authentication test');
+    await user.click(screen.getByRole('button', { name: 'Start goal' }));
+
+    expect(onCreateGoal).toHaveBeenCalledWith('Fix every authentication test', 20, { verification: '' });
+  });
+});
+
 describe('user message layout', () => {
   it('copies the exact original user prompt and confirms success', async () => {
     const user = userEvent.setup();

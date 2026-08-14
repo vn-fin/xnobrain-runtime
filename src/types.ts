@@ -121,6 +121,32 @@ export type Conversation = {
   tools: number;
 };
 
+export type ComposerFeature = 'todo' | 'delegate' | 'learn';
+
+export type GoalContract = {
+  outcome: string;
+  verification: string;
+  constraints: string;
+  boundaries: string;
+  stopWhen: string;
+};
+
+export type ConversationGoal = {
+  objective: string;
+  status: 'active' | 'paused' | 'done';
+  turnsUsed: number;
+  maxTurns: number;
+  createdAt?: number;
+  lastTurnAt?: number;
+  lastVerdict?: string;
+  lastReason?: string;
+  pausedReason?: string;
+  waiting: boolean;
+  waitingReason?: string;
+  subgoals: string[];
+  contract: GoalContract;
+};
+
 export type ChatMessage = {
   id: string | number;
   role: 'user' | 'assistant' | 'system' | 'tool' | string;

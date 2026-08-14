@@ -9,15 +9,22 @@ import {
   Copy,
   FileText,
   Gauge,
+  GraduationCap,
+  ListTodo,
   LoaderCircle,
   Menu,
   MessageSquarePlus,
   MoreHorizontal,
   Pencil,
+  Pause,
+  Play,
   Plus,
   RefreshCw,
   Search,
+  Sparkles,
   Square,
+  Target,
+  Users,
   Trash2,
   UploadCloud,
   X,
@@ -38,8 +45,10 @@ import type {
   AsyncStatus,
   ChatMessage,
   ChatRun,
+  ComposerFeature,
   ConnectionProvider,
   Conversation,
+  ConversationGoal,
   ConversationUsage,
   RunApprovalChoice,
   WorkspaceEntry,
@@ -146,7 +155,17 @@ export function ChatArea({
   compacting = false,
   compactError = '',
   compactResult = null,
+  goal = null,
+  goalPending = false,
+  goalError = '',
   onCompactContext,
+  onCreateGoal = async () => undefined,
+  onUpdateGoal = async () => undefined,
+  onPauseGoal = async () => undefined,
+  onResumeGoal = async () => undefined,
+  onDeleteGoal = async () => undefined,
+  onAddSubgoal = async () => undefined,
+  onDeleteSubgoal = async () => undefined,
   onSend,
   onStop,
   onResolveRunApproval,
@@ -187,8 +206,18 @@ export function ChatArea({
   compacting?: boolean;
   compactError?: string;
   compactResult?: ConversationCompactResult | null;
+  goal?: ConversationGoal | null;
+  goalPending?: boolean;
+  goalError?: string;
   onCompactContext?: (focus?: string) => void | Promise<ConversationCompactResult | void>;
-  onSend: (input: string) => void | Promise<void>;
+  onCreateGoal?: (objective: string, maxTurns?: number, contract?: { verification?: string }) => void | Promise<unknown>;
+  onUpdateGoal?: (objective: string, maxTurns?: number, contract?: { verification?: string }) => void | Promise<unknown>;
+  onPauseGoal?: () => void | Promise<unknown>;
+  onResumeGoal?: () => void | Promise<unknown>;
+  onDeleteGoal?: () => void | Promise<unknown>;
+  onAddSubgoal?: (text: string) => void | Promise<unknown>;
+  onDeleteSubgoal?: (index: number) => void | Promise<unknown>;
+  onSend: (input: string, feature?: ComposerFeature) => void | Promise<void>;
   onStop: () => void;
   onResolveRunApproval: (runId: string, choice: RunApprovalChoice) => void | Promise<void>;
   onRetry: () => void;
@@ -215,6 +244,16 @@ export function ChatArea({
   const [contextOpen, setContextOpen] = useState(false);
   const [contextConfirming, setContextConfirming] = useState(false);
   const [contextFocus, setContextFocus] = useState('');
+  const [featureMenuOpen, setFeatureMenuOpen] = useState(false);
+  const [selectedFeature, setSelectedFeature] = useState<ComposerFeature>();
+  const [goalOpen, setGoalOpen] = useState(false);
+  const [goalEditing, setGoalEditing] = useState(false);
+  const [goalDraft, setGoalDraft] = useState('');
+  const [goalVerification, setGoalVerification] = useState('');
+  const [goalMaxTurns, setGoalMaxTurns] = useState(20);
+  const [subgoalDraft, setSubgoalDraft] = useState('');
+  const [subgoalAdding, setSubgoalAdding] = useState(false);
+  const [goalDeleteConfirm, setGoalDeleteConfirm] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [agentPickerSearch, setAgentPickerSearch] = useState('');
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
@@ -256,6 +295,12 @@ export function ChatArea({
     setContextConfirming(false);
     setContextFocus('');
   });
+  const featureMenuRef = useDismissibleLayer<HTMLDivElement>(featureMenuOpen, () => setFeatureMenuOpen(false));
+  const goalControlRef = useDismissibleLayer<HTMLDivElement>(goalOpen, () => {
+    setGoalOpen(false);
+    setGoalEditing(false);
+    setSubgoalAdding(false);
+  });
   const conversationPickerRef = useDismissibleLayer<HTMLDivElement>(conversationPickerOpen, () => {
     setConversationPickerOpen(false);
     setConversationSearch('');
@@ -289,12 +334,22 @@ export function ChatArea({
     setContextOpen(false);
     setContextConfirming(false);
     setContextFocus('');
+    setFeatureMenuOpen(false);
+    setSelectedFeature(undefined);
+    setGoalOpen(false);
+    setGoalEditing(false);
+    setSubgoalAdding(false);
   }, [agent.id]);
 
   useEffect(() => {
     setContextOpen(false);
     setContextConfirming(false);
     setContextFocus('');
+    setFeatureMenuOpen(false);
+    setSelectedFeature(undefined);
+    setGoalOpen(false);
+    setGoalEditing(false);
+    setSubgoalAdding(false);
   }, [activeConversation?.id]);
 
   useEffect(() => {
@@ -405,9 +460,37 @@ export function ChatArea({
     if (!value && attachments.length === 0) return;
     const refs = attachments.map((path) => `\`${path}\``).join('\n');
     const message = [refs, value].filter(Boolean).join('\n\n');
-    void onSend(message);
+    void onSend(message, selectedFeature);
     setInput('');
     setAttachments([]);
+    setSelectedFeature(undefined);
+  };
+
+  const openGoalEditor = (editing: boolean) => {
+    setGoalDraft(editing ? goal?.objective ?? '' : input.trim());
+    setGoalVerification(editing ? goal?.contract.verification ?? '' : '');
+    setGoalMaxTurns(editing ? goal?.maxTurns ?? 20 : 20);
+    setGoalEditing(editing);
+    setSubgoalAdding(false);
+    setGoalOpen(true);
+  };
+
+  const saveGoal = async () => {
+    const objective = goalDraft.trim();
+    if (!objective || goalPending) return;
+    const action = goalEditing ? onUpdateGoal : onCreateGoal;
+    await action(objective, goalMaxTurns, { verification: goalVerification.trim() });
+    setInput('');
+    setGoalOpen(false);
+    setGoalEditing(false);
+  };
+
+  const saveSubgoal = async () => {
+    const text = subgoalDraft.trim();
+    if (!text || goalPending) return;
+    await onAddSubgoal(text);
+    setSubgoalDraft('');
+    setSubgoalAdding(false);
   };
 
   const basename = (path: string) => path.split('/').filter(Boolean).pop() ?? path;
@@ -1212,6 +1295,120 @@ export function ChatArea({
               disabled={!activeConversation || compacting}
             />
             <div className="composer-row">
+              <div className="composer-shortcuts">
+                <div className="composer-add-control" ref={featureMenuRef}>
+                  <button
+                    className="composer-icon"
+                    title="Agent features"
+                    aria-label="Agent features"
+                    aria-haspopup="menu"
+                    aria-expanded={featureMenuOpen}
+                    disabled={!activeConversation}
+                    onClick={() => { setGoalOpen(false); setFeatureMenuOpen((open) => !open); }}
+                  >
+                    <Plus size={17} />
+                  </button>
+                  {featureMenuOpen && (
+                    <div className="composer-add-menu" role="menu" aria-label="Agent features">
+                      <button role="menuitem" onClick={() => { setSelectedFeature('todo'); setFeatureMenuOpen(false); textareaRef.current?.focus(); }}>
+                        <ListTodo size={15} /><span><strong>Todo list</strong><small>Plan and check each step</small></span>
+                      </button>
+                      <button role="menuitem" onClick={() => { setSelectedFeature('delegate'); setFeatureMenuOpen(false); textareaRef.current?.focus(); }}>
+                        <Users size={15} /><span><strong>Sub-agents</strong><small>Delegate independent work</small></span>
+                      </button>
+                      <button role="menuitem" onClick={() => { setFeatureMenuOpen(false); openGoalEditor(Boolean(goal)); }}>
+                        <Target size={15} /><span><strong>Goal</strong><small>{goal ? 'View or edit persistent goal' : 'Run until the outcome is met'}</small></span>
+                      </button>
+                      <button
+                        role="menuitem"
+                        disabled={!goal}
+                        onClick={() => { setFeatureMenuOpen(false); setGoalOpen(true); setSubgoalAdding(true); }}
+                      >
+                        <Sparkles size={15} /><span><strong>Subgoal</strong><small>Add a completion criterion</small></span>
+                      </button>
+                      <button role="menuitem" onClick={() => { setSelectedFeature('learn'); setFeatureMenuOpen(false); textareaRef.current?.focus(); }}>
+                        <GraduationCap size={15} /><span><strong>Learn</strong><small>Capture reusable knowledge</small></span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {selectedFeature && (
+                  <button className="composer-feature-chip" onClick={() => setSelectedFeature(undefined)} title="Remove mode">
+                    {selectedFeature === 'todo' ? <ListTodo size={14} /> : selectedFeature === 'delegate' ? <Users size={14} /> : <GraduationCap size={14} />}
+                    {selectedFeature === 'todo' ? 'Todo list' : selectedFeature === 'delegate' ? 'Sub-agents' : 'Learn'}
+                    <X size={12} />
+                  </button>
+                )}
+                <div className={`goal-control${goalOpen ? ' open' : ''}`} ref={goalControlRef}>
+                  <button
+                    className={`goal-chip ${goal?.status ?? 'idle'}`}
+                    title={goal?.objective ?? 'Create a persistent goal'}
+                    aria-haspopup="dialog"
+                    aria-expanded={goalOpen}
+                    disabled={!activeConversation}
+                    onClick={() => {
+                      setFeatureMenuOpen(false);
+                      if (!goal) openGoalEditor(false);
+                      else setGoalOpen((open) => !open);
+                    }}
+                  >
+                    {goal?.status === 'active' ? <LoaderCircle className={goal.waiting ? '' : 'run-step-spin'} size={14} />
+                      : goal?.status === 'paused' ? <Pause size={13} />
+                        : goal?.status === 'done' ? <Check size={14} /> : <Target size={14} />}
+                    <span>{goal?.status === 'active'
+                      ? goal.waiting ? `Goal waiting · ${goal.turnsUsed}/${goal.maxTurns}` : `Goal ${goal.turnsUsed}/${goal.maxTurns}`
+                      : goal?.status === 'paused' ? `Goal paused · ${goal.turnsUsed}/${goal.maxTurns}`
+                        : goal?.status === 'done' ? 'Goal achieved' : 'Goal'}</span>
+                  </button>
+                  {(goalOpen || goal) && (
+                    <div className="goal-popover" role="dialog" aria-label={goal ? 'Goal details' : 'Create goal'}>
+                      {(goalEditing || !goal) ? (
+                        <div className="goal-editor">
+                          <div className="goal-popover-title"><Target size={15} /><strong>{goalEditing ? 'Edit goal' : 'New goal'}</strong></div>
+                          <label>Objective</label>
+                          <textarea autoFocus rows={3} value={goalDraft} onChange={(event) => setGoalDraft(event.target.value)} placeholder="What outcome should the agent keep working toward?" />
+                          <label>Verification <span>Optional</span></label>
+                          <input value={goalVerification} onChange={(event) => setGoalVerification(event.target.value)} placeholder="e.g. all authentication tests pass" />
+                          <label>Turn budget</label>
+                          <input type="number" min={1} max={100} value={goalMaxTurns} onChange={(event) => setGoalMaxTurns(Math.max(1, Math.min(100, Number(event.target.value) || 1)))} />
+                          {goalError && <div className="goal-error" role="alert">{goalError}</div>}
+                          <div className="goal-actions">
+                            <button onClick={() => { setGoalOpen(false); setGoalEditing(false); }}>Cancel</button>
+                            <button className="primary" disabled={!goalDraft.trim() || goalPending} onClick={() => void saveGoal()}>
+                              {goalPending && <LoaderCircle className="run-step-spin" size={13} />}{goalEditing ? 'Save' : 'Start goal'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="goal-details">
+                          <div className="goal-popover-title">
+                            {goal.status === 'active' ? <LoaderCircle className={goal.waiting ? '' : 'run-step-spin'} size={15} /> : goal.status === 'paused' ? <Pause size={14} /> : <Check size={15} />}
+                            <span><strong>Goal · {goal.waiting ? 'Waiting' : goal.status === 'active' ? 'Running' : goal.status === 'paused' ? 'Paused' : 'Achieved'}</strong><small>Turn {goal.turnsUsed}/{goal.maxTurns}</small></span>
+                          </div>
+                          <p className="goal-objective">{goal.objective}</p>
+                          {(goal.lastReason || goal.pausedReason || goal.waitingReason) && <p className="goal-reason">{goal.waitingReason || goal.pausedReason || goal.lastReason}</p>}
+                          {goal.subgoals.length > 0 && (
+                            <ol className="goal-subgoals">
+                              {goal.subgoals.map((item, index) => <li key={`${index}-${item}`}><span>{item}</span><button title="Delete subgoal" onClick={() => void onDeleteSubgoal(index + 1)}><X size={12} /></button></li>)}
+                            </ol>
+                          )}
+                          {subgoalAdding ? (
+                            <div className="subgoal-editor"><input autoFocus value={subgoalDraft} onChange={(event) => setSubgoalDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void saveSubgoal(); if (event.key === 'Escape') setSubgoalAdding(false); }} placeholder="Add a completion criterion" /><button disabled={!subgoalDraft.trim() || goalPending} onClick={() => void saveSubgoal()}><Check size={14} /></button></div>
+                          ) : <button className="goal-add-subgoal" onClick={() => setSubgoalAdding(true)}><Plus size={13} /> Add subgoal</button>}
+                          {goalError && <div className="goal-error" role="alert">{goalError}</div>}
+                          <div className="goal-actions">
+                            {goal.status === 'active' && !goal.waiting
+                              ? <button disabled={goalPending} onClick={() => void onPauseGoal()}><Pause size={13} /> Pause</button>
+                              : <button disabled={goalPending} onClick={() => void onResumeGoal()}><Play size={13} /> Resume</button>}
+                            <button disabled={goalPending} onClick={() => openGoalEditor(true)}><Pencil size={13} /> Edit</button>
+                            <button className="danger" disabled={goalPending} onClick={() => setGoalDeleteConfirm(true)}><Trash2 size={13} /> Delete</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
               <div className="composer-row-right">
                 <div className="composer-model-context">
                   <div className="composer-model-control" ref={modelPickerRef}>
@@ -1390,6 +1587,16 @@ export function ChatArea({
           danger
           onConfirm={() => { setStopConfirmOpen(false); onStop(); }}
           onCancel={() => setStopConfirmOpen(false)}
+        />
+      )}
+      {goalDeleteConfirm && (
+        <ConfirmDialog
+          title="Delete this goal?"
+          message="The persistent goal and its subgoals will be cleared. The current agent turn may finish, but it will not continue toward this goal."
+          confirmLabel="Delete goal"
+          danger
+          onConfirm={() => { setGoalDeleteConfirm(false); setGoalOpen(false); void onDeleteGoal(); }}
+          onCancel={() => setGoalDeleteConfirm(false)}
         />
       )}
     </>
