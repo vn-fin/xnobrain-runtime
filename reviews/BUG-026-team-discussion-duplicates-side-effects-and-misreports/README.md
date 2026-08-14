@@ -8,6 +8,10 @@ High — revision duplicates workspace mutations while synthesis reports a clean
 
 Teams → level 3 discussion/shared scratchpad execution
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
 ## Prerequisites
 
 - Team `QA 2026-08-14 Discussion Team`
@@ -46,6 +50,5 @@ Repeated side effects can corrupt collaborative artifacts, while inaccurate synt
 
 ## Evidence
 
-- [Researcher stored session reports duplicate marker](../../evidence/team-node-session-details.png)
-- [Completed team summary](../../evidence/team-discussion-completed.png)
-
+- [Researcher stored session reports duplicate marker](../evidence/team-node-session-details.png)
+- [Completed team summary](../evidence/team-discussion-completed.png)

@@ -8,6 +8,14 @@ Medium — the install flow accepts a submission gesture but gives no validation
 
 Skills Library → Install new
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+The authenticated Skills Library install flow with the retained QA agent selected.
+
 ## Reproduction
 
 1. Open `/skills` and click **Install new**.
@@ -38,6 +46,5 @@ Users cannot distinguish invalid syntax from a broken button or network problem.
 
 ## Evidence
 
-- [Malformed identifier before submission](../../evidence/skill-install-invalid-before.png)
-- [Unchanged silent state after submission](../../evidence/skill-install-invalid-after.png)
-
+- [Malformed identifier before submission](../evidence/skill-install-invalid-before.png)
+- [Unchanged silent state after submission](../evidence/skill-install-invalid-after.png)

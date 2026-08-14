@@ -9,13 +9,17 @@ Reproducibility: 100% (3/3 reloads)
 
 Reloading a completed task detail URL renders the correct task, result, and run summary, but falsely shows `0 B log`, `No worker activity yet`, and `EVENT LOG (0)`. Waiting does not repair the view. Clicking the task detail's Refresh button immediately restores the persisted 3655-byte worker log, five structured worker activities, stored session ID, and seven events.
 
+## Prerequisites
+
+A completed retained Kanban task with persisted worker activity/events and a stable task-detail deep link.
+
 Test deep link:
 
 ```text
 /kanban/boards/qa-2026-08-14-board/tasks/t_bc7eaffa
 ```
 
-## Steps to reproduce
+## Reproduction
 
 1. Create and run an assigned Kanban task that uses tools and completes.
 2. Verify its detail drawer shows Worker Activity and Event Log entries.

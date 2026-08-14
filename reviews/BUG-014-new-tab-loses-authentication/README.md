@@ -8,6 +8,14 @@ High — normal new-tab navigation cannot reuse the active login, so deep links 
 
 Authentication persistence and application navigation
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+An authenticated application tab and a second same-browser tab opened to an application deep link.
+
 ## Reproduction
 
 1. Sign in and keep an authenticated XNOBrain agent/session page open.
@@ -22,6 +30,14 @@ The original tab remains authenticated, but the new tab displays the sign-in scr
 
 A same-origin tab opened from an authenticated browser profile should either inherit/recover the authenticated session or present an explicit secure handoff flow. Deep links should not silently discard the active login.
 
+## Reproducibility
+
+Reproduced consistently in a second tab while reload in the original authenticated tab continued to work.
+
+## Impact
+
+Shareable links and normal new-tab workflows unexpectedly require another login and cannot restore the requested route.
+
 ## Suggested fix
 
 - Store the session in a secure same-origin cookie, or implement an explicit cross-tab session bootstrap.
@@ -30,5 +46,4 @@ A same-origin tab opened from an authenticated browser profile should either inh
 
 ## Evidence
 
-- [New application tab displays sign-in](../../evidence/new-tab-not-authenticated.png)
-
+- [New application tab displays sign-in](../evidence/new-tab-not-authenticated.png)

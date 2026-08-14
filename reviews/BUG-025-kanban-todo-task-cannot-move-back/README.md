@@ -8,6 +8,10 @@ High — a normal board move changes task control semantics and traps the task i
 
 Kanban task detail → Move task
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
 ## Prerequisites
 
 - Retained task `t_ef87c5af`, created unassigned in Backlog with no schedule
@@ -17,6 +21,8 @@ Kanban task detail → Move task
 1. Open the unassigned, unscheduled Backlog task.
 2. Choose **Todo** in Move task.
 3. After the move completes, choose **Backlog**.
+
+The same state split also occurs when creating a saved-Team task with either Backlog or Todo selected: the parent is immediately stored as native `scheduled`/Kanban `todo`, all DAG nodes remain Todo, no start control is exposed, and waiting/reload does not dispatch it.
 
 ## Actual result
 
@@ -33,6 +39,7 @@ Reproduced on the retained QA backlog task on 2026-08-14. The task was left in t
 ## Impact
 
 Routine triage can accidentally convert an unassigned task into a schedule-controlled record that cannot be restored through the UI.
+Saved-Team tasks can likewise be expanded into a stranded native DAG with no visible way to start it.
 
 ## Suggested fix
 
@@ -43,5 +50,5 @@ Routine triage can accidentally convert an unassigned task into a schedule-contr
 
 ## Evidence
 
-- [Todo task incorrectly treated as schedule-controlled](../../evidence/kanban-todo-cannot-return-backlog.png)
-
+- [Todo task incorrectly treated as schedule-controlled](../evidence/kanban-todo-cannot-return-backlog.png)
+- [Team task remains scheduled with every native node stuck in Todo](../evidence/kanban-team-task-stuck-scheduled.png)

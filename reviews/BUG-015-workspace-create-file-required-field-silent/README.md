@@ -8,6 +8,14 @@ Medium — the user cannot create a file but receives no indication of what is r
 
 Agent workspace → Create file
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+An authenticated QA-agent Workspace panel open in a writable retained directory.
+
 ## Reproduction
 
 1. Open an agent’s Workspace panel and enter a directory.
@@ -38,5 +46,4 @@ Users can interpret the inactive button as a broken interface, particularly when
 
 ## Evidence
 
-- [Blank create-file dialog](../../evidence/workspace-create-file-required-silent.png)
-
+- [Blank create-file dialog](../evidence/workspace-create-file-required-silent.png)

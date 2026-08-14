@@ -8,6 +8,14 @@ High — the Test Agent action cannot be activated with ordinary pointer input o
 
 Agent header and global task notifications
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148 at the recorded desktop viewport, tested 2026-08-14.
+
+## Prerequisites
+
+An agent page with both Test Agent and the global notification bell rendered.
+
 ## Reproduction
 
 1. Open an agent at a 1600×1000 desktop viewport.
@@ -42,5 +50,4 @@ Users cannot test an agent connection/model from the primary desktop header and 
 
 ## Evidence
 
-- [Overlapping Test Agent and notification controls](../../evidence/test-agent-notification-overlay.png)
-
+- [Overlapping Test Agent and notification controls](../evidence/test-agent-notification-overlay.png)

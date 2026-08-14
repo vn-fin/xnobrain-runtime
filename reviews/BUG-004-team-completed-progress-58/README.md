@@ -8,6 +8,14 @@ Medium — execution succeeds, but the progress display contradicts the terminal
 
 Teams → execution details
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+A retained multi-stage Team execution that has reached its terminal completed state.
+
 ## Reproduction
 
 1. Create a three-stage team whose stages execute in dependency order.
@@ -30,6 +38,14 @@ The retained run record also has status `completed` and revision `9`, while its 
 
 A terminal run with every stage completed should display 100% progress. The persisted run should also record a completion timestamp so duration and terminal-state calculations have a reliable source.
 
+## Reproducibility
+
+Reproduced after reload on the retained completed discussion execution.
+
+## Impact
+
+Users cannot trust the progress indicator or determine whether more work remains.
+
 ## Suggested fix
 
 - Derive terminal progress from completed executable stages, or explicitly clamp successful terminal runs to 100%.
@@ -39,4 +55,4 @@ A terminal run with every stage completed should display 100% progress. The pers
 
 ## Evidence
 
-![Completed run showing 58 percent](../../evidence/team-discussion-completed.png)
+![Completed run showing 58 percent](../evidence/team-discussion-completed.png)

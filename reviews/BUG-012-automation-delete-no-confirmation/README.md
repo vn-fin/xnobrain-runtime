@@ -8,6 +8,14 @@ Critical — a single click permanently removes the job and its stored run outpu
 
 Automation list → Delete
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+The retained QA heartbeat automation visible in the automation list.
+
 ## Reproduction
 
 1. Create retained job `QA 2026-08-14 retained heartbeat` and run it multiple times.
@@ -27,6 +35,14 @@ This happened during the preservation-focused QA pass. The job record, original 
 
 Delete must open a target-specific confirmation with Cancel as the safe/default action. The dialog should explain whether run history and output artifacts will also be removed. No data should change before explicit confirmation.
 
+## Reproducibility
+
+Reproduced once; the job record was restored from its captured snapshot, while original output files were not recoverable.
+
+## Impact
+
+One accidental click can remove an automation and associated history/delivery configuration without a recovery boundary.
+
 ## Suggested fix
 
 - Route Delete through the shared `ConfirmDialog`, including job name and the scope of associated data.
@@ -37,6 +53,6 @@ Delete must open a target-specific confirmation with Cancel as the safe/default 
 
 ## Evidence
 
-- [State immediately after the unconfirmed delete](../../evidence/automation-delete-confirmation.png)
-- [Restored retained job](../../evidence/automation-restored-after-delete.png)
-- [Successful run after restoration](../../evidence/automation-restored-run.png)
+- [State immediately after the unconfirmed delete](../evidence/automation-delete-confirmation.png)
+- [Restored retained job](../evidence/automation-restored-after-delete.png)
+- [Successful run after restoration](../evidence/automation-restored-run.png)

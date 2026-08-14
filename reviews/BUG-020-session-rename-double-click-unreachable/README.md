@@ -8,6 +8,14 @@ Medium — a documented/implemented session lifecycle action is effectively unav
 
 Chat session picker
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+An agent with at least one retained session shown in the session picker.
+
 ## Reproduction
 
 1. Open the session picker on an existing selected session.
@@ -38,5 +46,4 @@ Users cannot rename sessions through ordinary mouse input and receive no hint th
 
 ## Evidence
 
-- [Session picker where double-click closes instead of renaming](../../evidence/session-rename-unreachable.png)
-
+- [Session picker where double-click closes instead of renaming](../evidence/session-rename-unreachable.png)

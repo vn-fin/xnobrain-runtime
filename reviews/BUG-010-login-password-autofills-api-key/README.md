@@ -8,6 +8,14 @@ Critical — a user can accidentally submit their account password to a third-pa
 
 Settings → Connectors → Add API key
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148 with saved login autofill, tested 2026-08-14.
+
+## Prerequisites
+
+An authenticated browser profile that has remembered the application email/password.
+
 ## Reproduction
 
 1. Log in through Chrome using stored or recently entered credentials.
@@ -29,6 +37,14 @@ The QA pass did not submit the form. All autofilled fields were immediately clea
 
 Authentication credentials must never autofill unrelated provider secrets. The API-key field should start empty and Save should remain disabled until the user deliberately enters a key during the current interaction.
 
+## Reproducibility
+
+Reproduced in both provider API-key and custom-compatible connection forms; injected values were cleared immediately.
+
+## Impact
+
+Login credentials can be mistaken for provider credentials and accidentally submitted to an unrelated endpoint.
+
 ## Suggested fix
 
 - Mark provider secret inputs with a unique non-login `name` and `autocomplete="new-password"` (validate Chrome behavior; `off` alone is often ignored for password fields).
@@ -41,4 +57,4 @@ Authentication credentials must never autofill unrelated provider secrets. The A
 
 The screenshot shows only the browser-masked value; no secret is visible.
 
-![Masked autofilled provider secret](../../evidence/api-key-password-autofill.png)
+![Masked autofilled provider secret](../evidence/api-key-password-autofill.png)

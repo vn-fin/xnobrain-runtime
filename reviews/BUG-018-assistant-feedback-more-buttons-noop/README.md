@@ -8,6 +8,14 @@ Medium — three visible message actions imply functionality but provide no feed
 
 Chat → completed assistant message actions
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+A completed retained assistant response with Copy, feedback, Retry, and More controls visible.
+
 ## Reproduction
 
 1. Open a session containing a completed assistant response.
@@ -39,5 +47,4 @@ Users cannot tell whether feedback was accepted and repeatedly click controls th
 
 ## Evidence
 
-- [Assistant action controls](../../evidence/assistant-actions-noop.png)
-
+- [Assistant action controls](../evidence/assistant-actions-noop.png)

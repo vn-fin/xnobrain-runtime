@@ -9,7 +9,11 @@ Reproducibility: 100% (2/2)
 
 The product-facing Create agent dialog displays the internal implementation string `Maps to POST /xnobrain/api/runtime/v1/agents`. Its required Display name field is not marked with `*` and has no inline validation message. With the field empty, **Create agent** is disabled, so attempting to proceed gives the user no explanation.
 
-## Steps to reproduce
+## Prerequisites
+
+An authenticated application session with the visible Create agent dialog available from the sidebar.
+
+## Reproduction
 
 1. Sign in and open any agent conversation.
 2. Click the `+` button beside **Agents**.

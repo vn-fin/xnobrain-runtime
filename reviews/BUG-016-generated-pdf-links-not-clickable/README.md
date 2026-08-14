@@ -8,6 +8,10 @@ Medium — the report looks complete, but readers cannot follow its source citat
 
 Agent PDF generation and Workspace PDF preview
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14; PDF annotations also inspected with local PDF tooling.
+
 ## Prerequisites
 
 - Retained session: `20260814_124514_28927b`
@@ -46,6 +50,5 @@ Citation-heavy reports require manual copying of long, line-broken URLs and can 
 
 ## Evidence
 
-- [Workspace PDF preview](../../evidence/workspace-pdf-preview.png)
-- [Completed research run](../../evidence/research-pdf-completed.png)
-
+- [Workspace PDF preview](../evidence/workspace-pdf-preview.png)
+- [Completed research run](../evidence/research-pdf-completed.png)

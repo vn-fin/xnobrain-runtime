@@ -8,6 +8,14 @@ Medium — users receive incomplete and inconsistent guidance when a task cannot
 
 Kanban → New task
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+The retained QA Kanban board open with the New task dialog visible.
+
 ## Reproduction
 
 1. Open a board and click **New task**.
@@ -38,5 +46,4 @@ Users can mistake the disabled action for a broken form and cannot discover all 
 
 ## Evidence
 
-- [Blank New task form](../../evidence/kanban-new-task-required-silent.png)
-
+- [Blank New task form](../evidence/kanban-new-task-required-silent.png)

@@ -8,6 +8,10 @@ Medium — an accidental click irreversibly stops active workers, and the retain
 
 Chat composer → active response Stop
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
 ## Prerequisites
 
 - Retained QA session: `20260814_131256_3f4f23`
@@ -45,6 +49,5 @@ Users can lose an expensive multi-agent run from a single click and cannot disti
 
 ## Evidence
 
-- [State immediately after clicking Stop (no confirmation)](../../evidence/chat-stop-confirmation.png)
-- [Cancel All confirmation that Stop should mirror](../../evidence/delegation-cancel-all-confirmation.png)
-
+- [State immediately after clicking Stop (no confirmation)](../evidence/chat-stop-confirmation.png)
+- [Cancel All confirmation that Stop should mirror](../evidence/delegation-cancel-all-confirmation.png)

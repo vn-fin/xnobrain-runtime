@@ -8,6 +8,14 @@ High — users cannot normally edit an agent’s provider, model, reasoning effo
 
 Agent chat → right inspector / agent actions
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+An authenticated desktop layout with an agent conversation open.
+
 ## Reproduction
 
 1. Create or open retained agent `QA 2026-08-14 Approval Agent` (`uaphzn`).
@@ -29,6 +37,14 @@ The settings modal can only be reached by artificially keeping the inspector ope
 
 Agent settings should be reachable by a visible, keyboard-accessible desktop action, and a Runtime deep link should open the relevant inspector section.
 
+## Reproducibility
+
+Reproduced across retained QA agents in the normal desktop navigation.
+
+## Impact
+
+Users cannot discover or reach implemented per-agent settings without knowing a deep link.
+
 ## Suggested fix
 
 - Add Runtime to the right-inspector tab list, or add **Agent settings** to the desktop header/sidebar menu.
@@ -38,4 +54,4 @@ Agent settings should be reachable by a visible, keyboard-accessible desktop act
 
 ## Evidence
 
-![Agent page without a settings action](../../evidence/agent-settings-inaccessible.png)
+![Agent page without a settings action](../evidence/agent-settings-inaccessible.png)

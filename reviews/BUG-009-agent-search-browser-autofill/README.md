@@ -8,6 +8,14 @@ Medium — navigation appears to lose all agents until the user notices and clea
 
 Global sidebar → Search agents
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148 with saved login autofill, tested 2026-08-14.
+
+## Prerequisites
+
+An authenticated browser profile that remembers the login email.
+
 ## Reproduction
 
 1. Log in using Chrome with saved or recently entered account credentials.
@@ -24,6 +32,14 @@ The evidence image intentionally demonstrates the state but this report does not
 
 The agent filter should remain empty unless the user deliberately enters a search term, and credential autofill must never target it.
 
+## Reproducibility
+
+Reproduced after login/reload with the retained headed-browser profile.
+
+## Impact
+
+Autofill makes the agent library appear empty and can mislead users into believing profiles were deleted.
+
 ## Suggested fix
 
 - Give the control a stable non-credential `name`, `type="search"`, and an appropriate autocomplete hint such as `autocomplete="off"`/`autocomplete="nope"` after testing against supported Chrome versions.
@@ -33,4 +49,4 @@ The agent filter should remain empty unless the user deliberately enters a searc
 
 ## Evidence
 
-![Sidebar emptied by browser autofill](../../evidence/sidebar-search-email-autofill.png)
+![Sidebar emptied by browser autofill](../evidence/sidebar-search-email-autofill.png)

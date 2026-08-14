@@ -8,6 +8,14 @@ High — the persisted side effect and the terminal chat result contradict one a
 
 Chat run approval → skill write
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+A harmless skill-write request paused at the visible approval prompt.
+
 ## Reproduction
 
 1. Configure retained agent `uaphzn` with manual approval and `skills.write_approval: true`.
@@ -26,6 +34,14 @@ Chat run approval → skill write
 
 After an approval commits the staged write, the tool result returned to the model and UI should state that the skill was created. No resolved pending ID should be presented as actionable.
 
+## Reproducibility
+
+Reproduced on the retained approved QA skill-write session.
+
+## Impact
+
+Users cannot tell whether an approved mutation succeeded and may repeat it or abandon a valid result.
+
 ## Suggested fix
 
 - After `_await_gateway_decision` returns an allow decision, apply the pending record and replace the original staged response with a committed success result before resuming the model.
@@ -35,4 +51,4 @@ After an approval commits the staged write, the tool result returned to the mode
 
 ## Evidence
 
-![Approved run incorrectly reporting pending](../../evidence/skill-write-approved.png)
+![Approved run incorrectly reporting pending](../evidence/skill-write-approved.png)

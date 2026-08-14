@@ -8,6 +8,14 @@ High — a shared/bookmarked URL can display the wrong conversation without warn
 
 Conversation deep-link routing
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+An authenticated QA agent with retained normal and worker sessions plus a deliberately nonexistent session ID.
+
 ## Reproduction
 
 1. While authenticated on agent `bjpvdd`, navigate in the same tab to `/agents/bjpvdd/sessions/QA_MISSING_20260814`.
@@ -38,5 +46,4 @@ Users can believe they are reviewing one shared session while the application di
 
 ## Evidence
 
-- [Stale route replaced by unrelated worker session](../../evidence/stale-session-route.png)
-
+- [Stale route replaced by unrelated worker session](../evidence/stale-session-route.png)

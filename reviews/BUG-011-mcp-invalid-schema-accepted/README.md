@@ -8,6 +8,14 @@ High — malformed MCP configuration is accepted as valid and can break subseque
 
 Settings → MCP
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+The retained QA agent selected in the MCP JSON editor; no external process was intentionally launched.
+
 ## Reproduction
 
 1. Open `/settings/mcp` and select retained QA agent `uaphzn`.
@@ -35,6 +43,14 @@ Each server should satisfy a strict schema before persistence:
 - include/exclude tool filters are arrays of non-empty strings;
 - unsupported keys and ambiguous command-plus-URL definitions receive field-specific feedback.
 
+## Reproducibility
+
+Reproduced with malformed stdio command types and malformed HTTPS URLs, including after reload.
+
+## Impact
+
+Invalid integration definitions persist until runtime, where they can fail unpredictably or launch unintended commands.
+
 ## Suggested fix
 
 - Validate with the same typed schema on both frontend and backend; the backend remains authoritative.
@@ -45,4 +61,4 @@ Each server should satisfy a strict schema before persistence:
 
 ## Evidence
 
-![Malformed MCP URL persisted after reload](../../evidence/mcp-invalid-schema-persisted.png)
+![Malformed MCP URL persisted after reload](../evidence/mcp-invalid-schema-persisted.png)

@@ -8,6 +8,14 @@ High — invalid endpoint configuration can be persisted and then fail only at c
 
 Settings → Connectors → OpenAI-compatible
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+Open the custom-compatible provider form without entering or saving real credentials.
+
 ## Reproduction
 
 1. Open the OpenAI-compatible Add API key form.
@@ -40,5 +48,4 @@ Users can create broken custom connections and receive delayed failures. Combine
 
 ## Evidence
 
-- [Malformed custom-provider URL with enabled Save](../../evidence/custom-provider-invalid-url.png)
-
+- [Malformed custom-provider URL with enabled Save](../evidence/custom-provider-invalid-url.png)

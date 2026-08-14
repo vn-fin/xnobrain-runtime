@@ -9,7 +9,11 @@ Reproducibility: 100% across live metric refreshes
 
 Settings > Runtime displays `Memory 0 B of 30.5 GiB`, `0%`, and `Mem available 30.5 GB`. The runtime API likewise returns `memory_bytes: 0` and makes available bytes equal the full limit. The machine is actively running Chrome, Vite, the runtime, the router, and other processes, and `/proc/meminfo` reports only about 12.1 GiB available of 30.5 GiB—not full availability.
 
-## Steps to reproduce
+## Prerequisites
+
+The local runtime stack is active and the authenticated Settings > Runtime page can read live host/cgroup metrics.
+
+## Reproduction
 
 1. Start the local stack with `make dev`.
 2. Sign in and open **Settings > Runtime**.

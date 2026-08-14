@@ -8,6 +8,14 @@ High — background work can interrupt the user’s browser, expose browsing act
 
 Chat delegation → worker browser/research tools
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+A delegated research worker using browser tooling while the main application remains open.
+
 ## Reproduction
 
 1. In retained session `20260814_124514_28927b`, delegate five real conference research tasks.
@@ -30,6 +38,14 @@ The delegation itself continues correctly in the original app tab.
 
 Background agents should use an isolated browser context/profile that cannot create tabs, change navigation, consume cookies, or steal focus in the user’s interactive browser. The UI should receive sanitized progress/events only.
 
+## Reproducibility
+
+Reproduced during the retained five-worker conference research run; the external tabs remain available as evidence.
+
+## Impact
+
+Background work steals visible browser state, distracts users, and can expose browsing activity in the interactive profile.
+
 ## Suggested fix
 
 - Give each run/worker an isolated headless browser context or sandbox browser service.
@@ -40,5 +56,5 @@ Background agents should use an isolated browser context/profile that cannot cre
 
 ## Evidence
 
-- [Worker-created Google tab](../../evidence/research-pdf-near-timeout.png)
-- [Delegation still running in original app tab](../../evidence/research-pdf-timeout-state.png)
+- [Worker-created Google tab](../evidence/research-pdf-near-timeout.png)
+- [Delegation still running in original app tab](../evidence/research-pdf-timeout-state.png)

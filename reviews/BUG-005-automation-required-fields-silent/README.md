@@ -8,6 +8,14 @@ Medium — users cannot discover why the primary action is unavailable.
 
 Automation → New cron
 
+## Environment
+
+Local development started with `make dev`, headed Chromium 148, tested 2026-08-14.
+
+## Prerequisites
+
+An authenticated user opening the visible New cron form.
+
 ## Reproduction
 
 1. Open `/automations`.
@@ -25,6 +33,14 @@ Automation → New cron
 
 Required labels should include `*`, and attempting an incomplete submission should identify every missing field, move focus to the first error, and expose an accessible error message.
 
+## Reproducibility
+
+Reproduced consistently with blank required fields and invalid interval input.
+
+## Impact
+
+Users cannot discover why the primary action is disabled or which field must be corrected.
+
 ## Suggested fix
 
 - Render `Name *` and `Prompt *` consistently with the product’s other required forms.
@@ -34,4 +50,4 @@ Required labels should include `*`, and attempting an incomplete submission shou
 
 ## Evidence
 
-![New automation form](../../evidence/automation-new-form.png)
+![New automation form](../evidence/automation-new-form.png)
