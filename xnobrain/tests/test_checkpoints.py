@@ -141,6 +141,7 @@ class CheckpointAPITests(unittest.IsolatedAsyncioTestCase):
             for agent in (first, second):
                 await client.patch(f"/xnobrain/api/runtime/v1/agents-configs/{agent}", json={"checkpoints_enabled": True})
                 await client.post(f"/xnobrain/api/runtime/v1/agents-workspaces/{agent}/write", json={"path": "file.txt", "content": agent})
+            await client.post(f"/xnobrain/api/runtime/v1/agents-workspaces/{first}/write", json={"path": "file.txt", "content": "owner-new"})
             listed = await client.get(f"/xnobrain/api/runtime/v1/agents/{first}/checkpoints")
             foreign_hash = listed.json()["data"]["items"][0]["id"]
             response = await client.get(f"/xnobrain/api/runtime/v1/agents/{second}/checkpoints/{foreign_hash}/diff")

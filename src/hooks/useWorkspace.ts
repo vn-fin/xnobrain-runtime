@@ -222,6 +222,13 @@ export function useWorkspace(agentId: string, active = true) {
     finally { setPending(false); setUploadProgress(null); }
   };
 
+  const rename = async (entry: WorkspaceEntry, newName: string) => {
+    setPending(true); setError('');
+    try { await workspaceApi.rename(agentId, entry.path, newName); await loadPath(cwd); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Workspace rename failed'); throw cause; }
+    finally { setPending(false); }
+  };
+
   const uploadOne = async (file: File, path: string, currentFile = 1, totalFiles = 1) => {
     const fallbackTotal = file.size || undefined;
     setUploadProgress({ fileName: file.name, loaded: 0, total: fallbackTotal, percent: 0, currentFile, totalFiles });
@@ -303,6 +310,6 @@ export function useWorkspace(agentId: string, active = true) {
       }
     }) : Promise.resolve(),
     remove: (entry: WorkspaceEntry) => mutate(() => workspaceApi.remove(agentId, entry.path)),
-    rename: (entry: WorkspaceEntry, newName: string) => mutate(() => workspaceApi.rename(agentId, entry.path, newName)),
+    rename,
   };
 }

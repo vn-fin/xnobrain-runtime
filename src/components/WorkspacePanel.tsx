@@ -243,6 +243,7 @@ export function WorkspacePanel({ workspace, agentId, workspaceView, checkpointId
   const [dragging, setDragging] = useState(false);
   const [htmlMode, setHtmlMode] = useState<'preview' | 'source'>('preview');
   const dragDepth = useRef(0);
+  const wasWorkspacePending = useRef(false);
   const uploadRef = useRef<HTMLInputElement>(null);
   const openByPath = workspace.openByPath;
   const checkpoints = useCheckpoints(agentId, true);
@@ -251,6 +252,10 @@ export function WorkspacePanel({ workspace, agentId, workspaceView, checkpointId
     if (workspaceView === 'versions' && versionPath && checkpoints.status?.enabled) void checkpoints.loadVersions(versionPath);
     if (workspaceView !== 'files' && checkpointId && checkpoints.status?.enabled) void checkpoints.select(checkpointId);
   }, [workspaceView, versionPath, checkpointId, checkpoints.status?.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (wasWorkspacePending.current && !workspace.pending) void checkpoints.refresh();
+    wasWorkspacePending.current = workspace.pending;
+  }, [workspace.pending, checkpoints.refresh]);
 
   useEffect(() => {
     if (openRequest?.path) {
@@ -636,7 +641,7 @@ export function WorkspacePanel({ workspace, agentId, workspaceView, checkpointId
           initialValue={pendingRename.name}
           confirmLabel="Rename"
           validate={workspaceNameError}
-          onConfirm={(name) => { void workspace.rename(pendingRename, name); setAnnouncement(`Renamed ${pendingRename.path} to ${name}`); setPendingRename(null); }}
+          onConfirm={(name) => { const entry = pendingRename; void workspace.rename(entry, name).then(() => { setAnnouncement(`Renamed ${entry.path} to ${name}`); setPendingRename(null); }).catch(() => undefined); }}
           onCancel={() => setPendingRename(null)}
         />
       )}

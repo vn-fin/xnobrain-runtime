@@ -2,6 +2,18 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceRowMenu } from './WorkspaceRowMenu';
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string, fallback?: string) => ({
+    'checkpoints.open': 'Open / Preview',
+    'checkpoints.download': 'Download',
+    'checkpoints.versionHistory': 'Version history',
+    'checkpoints.enableHistory': 'Enable version history…',
+    'checkpoints.rename': 'Rename',
+    'checkpoints.copyPath': 'Copy path',
+    'checkpoints.delete': 'Delete…',
+  } as Record<string, string>)[key] ?? fallback ?? key }),
+}));
+
 const entry = { name: 'notes.md', path: 'docs/notes.md', type: 'file' as const, level: 0, size: '12', modified: '' };
 afterEach(cleanup);
 
