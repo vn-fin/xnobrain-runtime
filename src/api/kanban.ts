@@ -14,9 +14,9 @@ import type {
 } from '../types';
 
 export const KANBAN_COLUMNS: Array<{ id: KanbanColumnId; label: string; hint: string }> = [
+  { id: 'scheduled', label: 'Scheduled', hint: 'Work configured to run later' },
   { id: 'backlog', label: 'Backlog', hint: 'Ideas and needs clarification' },
   { id: 'todo', label: 'Todo', hint: 'Work waiting to start' },
-  { id: 'scheduled', label: 'Scheduled', hint: 'Work configured to run later' },
   { id: 'running', label: 'In Progress', hint: 'Ready or being worked on' },
   { id: 'done', label: 'Done', hint: 'Completed or blocked work' },
 ];
@@ -37,12 +37,17 @@ type RawTask = Record<string, any>;
 
 function defaultAllowedStatuses(nativeStatus: KanbanNativeStatus): KanbanColumnId[] {
   if (nativeStatus === 'triage') return ['todo', 'running', 'archived'];
-  if (nativeStatus === 'todo') return ['backlog', 'running', 'done', 'archived'];
-  if (nativeStatus === 'ready' || nativeStatus === 'running') return ['done', 'archived'];
-  if (nativeStatus === 'scheduled') return ['backlog', 'todo', 'running', 'done', 'archived'];
-  if (nativeStatus === 'blocked') return ['todo', 'archived'];
-  if (nativeStatus === 'review') return ['running', 'archived'];
-  if (nativeStatus === 'done') return ['archived'];
+  if (nativeStatus === 'todo') return ['running', 'archived'];
+  if (nativeStatus === 'ready' || nativeStatus === 'running') return ['archived'];
+  if (nativeStatus === 'scheduled') return ['archived'];
+  if (nativeStatus === 'review') return ['archived'];
+  return [];
+}
+
+function productAllowedStatuses(status: KanbanColumnId): KanbanColumnId[] {
+  if (status === 'backlog') return ['todo', 'running', 'archived'];
+  if (status === 'todo') return ['running', 'archived'];
+  if (status === 'scheduled' || status === 'running') return ['archived'];
   return [];
 }
 
@@ -65,14 +70,8 @@ function taskFromApi(raw: RawTask): KanbanTask {
   const advertisedStatuses = Array.isArray(raw.allowed_kanban_statuses)
     ? raw.allowed_kanban_statuses.map(String) as KanbanColumnId[]
     : defaultAllowedStatuses(nativeStatus);
-  // Older/running runtime processes advertised no moves for completed tasks,
-  // although Hermes' archive endpoint supports done -> archived. Normalize
-  // that response during rolling upgrades so the valid action stays visible.
-  const allowedStatuses = nativeStatus === 'done'
-    && kanbanStatus !== 'archived'
-    && !advertisedStatuses.includes('archived')
-    ? [...advertisedStatuses, 'archived' as KanbanColumnId]
-    : advertisedStatuses;
+  const productStatuses = productAllowedStatuses(kanbanStatus);
+  const allowedStatuses = advertisedStatuses.filter((status) => productStatuses.includes(status));
   const parents = Array.isArray(raw.parents) ? raw.parents : [];
   const deps: KanbanDependency[] = parents.map((dep: any) => ({
     id: String(dep.id),

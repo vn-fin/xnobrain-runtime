@@ -485,12 +485,13 @@ function TaskCard({
   const scheduleCompleted = task.schedule?.recurrence === 'once'
     && task.schedule.occurrenceCount > 0
     && task.schedule.nextRunAt == null;
+  const canMoveOnBoard = task.allowedStatuses.some((status) => status !== 'archived');
   return (
     <button
       className={`kb-card col-${column} status-${task.nativeStatus}`}
-      draggable={!task.team && column !== 'archived' && task.nativeStatus !== 'scheduled'}
+      draggable={!task.team && column !== 'archived' && canMoveOnBoard}
       onDragStart={(event) => {
-        if (column === 'archived' || task.nativeStatus === 'scheduled') return;
+        if (column === 'archived' || !canMoveOnBoard) return;
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', task.id);
         onDragStart();
@@ -1293,7 +1294,11 @@ function NewTaskModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<'backlog' | 'todo' | 'scheduled'>(
-    initialStatus === 'backlog' ? 'backlog' : 'todo',
+    initialStatus === 'scheduled'
+      ? 'scheduled'
+      : initialStatus === 'backlog'
+      ? 'backlog'
+      : 'todo',
   );
   const [priority, setPriority] = useState<KanbanPriority>('medium');
   const [assignee, setAssignee] = useState('');
@@ -2072,7 +2077,7 @@ export function KanbanView({
                       />
                     ))
                   )}
-                  {(column.id === 'backlog' || column.id === 'todo') && (
+                  {(['scheduled', 'backlog', 'todo'] as KanbanColumnId[]).includes(column.id) && (
                     <button
                       className="kb-column-add"
                       onClick={() => { setNewTaskStatus(initialStatus); setNewTaskOpen(true); }}

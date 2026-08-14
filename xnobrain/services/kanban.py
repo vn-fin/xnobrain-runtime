@@ -83,20 +83,14 @@ def _allowed_moves(
     if raw == "triage":
         return ["todo", "running", "archived"]
     if raw == "todo":
-        return ["backlog", "running", "done", "archived"]
-    if raw in {"ready", "running"}:
-        return ["done", "archived"]
-    if raw == "scheduled":
-        return ["archived"] if has_schedule else ["backlog", "todo", "running", "done", "archived"]
-    if raw == "blocked":
-        return (
-            ["backlog", "todo", "archived"]
-            if failed
-            else ["todo", "archived"]
-        )
-    if raw == "review":
         return ["running", "archived"]
-    if raw == "done":
+    if raw in {"ready", "running"}:
+        return ["archived"]
+    if raw == "scheduled":
+        return ["archived"]
+    if raw == "blocked":
+        return []
+    if raw == "review":
         return ["archived"]
     return []
 
@@ -525,11 +519,11 @@ class KanbanService:
             result["team"] = team
             result["kanban_status"] = team["kanban_status"]
             if team["status"] == "backlog":
-                result["allowed_kanban_statuses"] = ["todo", "archived"]
+                result["allowed_kanban_statuses"] = ["todo", "running", "archived"]
             elif team["status"] == "todo":
                 result["allowed_kanban_statuses"] = ["running", "archived"]
             elif team["status"] in {"done", "blocked", "cancelled"}:
-                result["allowed_kanban_statuses"] = ["archived"]
+                result["allowed_kanban_statuses"] = []
             else:
                 result["allowed_kanban_statuses"] = []
             result["state_detail"] = {
@@ -1208,6 +1202,16 @@ class KanbanService:
             if raw == "scheduled" and has_schedule and target != "archived":
                 raise ServiceError(
                     "Scheduled tasks are controlled by their schedule",
+                    status=409,
+                    code="invalid_transition",
+                )
+            if target not in _allowed_moves(
+                raw,
+                failed=bool(getattr(task, "last_failure_error", None)),
+                has_schedule=has_schedule,
+            ):
+                raise ServiceError(
+                    "task cannot make that transition",
                     status=409,
                     code="invalid_transition",
                 )

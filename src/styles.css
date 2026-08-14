@@ -11105,7 +11105,7 @@ body.col-resizing {
 }
 
 .kb-board {
-  grid-template-columns: repeat(4, minmax(210px, 1fr));
+  grid-template-columns: repeat(5, minmax(190px, 1fr));
   gap: 12px;
   padding: 14px 16px 20px;
 }
@@ -11171,6 +11171,7 @@ body.col-resizing {
 }
 
 .kb-column {
+  min-width: 0;
   border-radius: 11px;
   background: var(--panel);
   overflow: hidden;
@@ -11202,8 +11203,11 @@ body.col-resizing {
 }
 
 .kb-column-body {
+  min-width: 0;
   gap: 8px;
   padding: 9px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .kb-card {
@@ -13167,13 +13171,17 @@ body.col-resizing {
   font-weight: 650;
 }
 .kb-team-badge {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   padding: 7px 9px;
   border: 1px solid #6d5ce733;
   border-radius: 7px;
   background: #6d5ce712;
 }
 .kb-team-badge span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kb-team-badge strong { margin-left: auto; color: var(--muted-2); font-size: 9px; font-weight: 600; }
+.kb-team-badge strong { color: var(--muted-2); font-size: 9px; font-weight: 600; white-space: nowrap; }
 .kb-team-owner {
   min-height: 36px;
   padding: 0 11px;

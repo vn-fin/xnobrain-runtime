@@ -110,9 +110,18 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(running.json()["data"]["status"], "ready")
             self.assertEqual(running.json()["data"]["kanban_status"], "running")
 
-            done = await client.post(
+            done_move = await client.post(
                 f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}/move",
                 json={"status": "done"},
+            )
+            self.assertEqual(done_move.status_code, 409, done_move.text)
+
+            from hermes_cli import kanban_db
+            from xnobrain.integrations import kanban as kanban_adapter
+            with kanban_adapter.connection("default") as conn:
+                self.assertTrue(kanban_db.complete_task(conn, task_id, summary="Worker completed it"))
+            done = await client.get(
+                f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}",
             )
             self.assertEqual(done.status_code, 200, done.text)
             self.assertEqual(done.json()["data"]["status"], "done")
@@ -367,7 +376,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                 json={"status": "backlog"},
             )
             self.assertEqual(conflict.status_code, 409, conflict.text)
-            self.assertEqual(conflict.json()["message"], "active tasks cannot be returned to Backlog")
+            self.assertEqual(conflict.json()["message"], "task cannot make that transition")
             self.assertNotIn("Hermes", conflict.text)
 
             assignment_conflict = await client.post(
@@ -377,7 +386,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(assignment_conflict.status_code, 409, assignment_conflict.text)
             self.assertEqual(assignment_conflict.json()["message"], "A task can only be assigned before it starts")
 
-    async def test_unscheduled_task_moves_between_backlog_and_todo_without_becoming_scheduled(self):
+    async def test_backlog_moves_forward_to_todo_but_todo_cannot_move_backward(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
             created = await client.post(
                 "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
@@ -401,9 +410,8 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                 f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}/move",
                 json={"status": "backlog"},
             )
-            self.assertEqual(backlog.status_code, 200, backlog.text)
-            self.assertEqual(backlog.json()["data"]["status"], "triage")
-            self.assertEqual(backlog.json()["data"]["kanban_status"], "backlog")
+            self.assertEqual(backlog.status_code, 409, backlog.text)
+            self.assertEqual(backlog.json()["error"]["code"], "invalid_transition")
 
     async def test_disabled_assignee_skill_is_rejected_server_side(self):
         async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
@@ -527,10 +535,15 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(first.json()["data"]["tasks"]), 2)
             self.assertEqual(len(second.json()["data"]["tasks"]), 1)
 
-    def test_completed_tasks_allow_archive_transition(self):
+    def test_product_transition_policy(self):
         from xnobrain.services.kanban import _allowed_moves
 
-        self.assertEqual(_allowed_moves("done"), ["archived"])
+        self.assertEqual(_allowed_moves("triage"), ["todo", "running", "archived"])
+        self.assertEqual(_allowed_moves("todo"), ["running", "archived"])
+        self.assertEqual(_allowed_moves("scheduled", has_schedule=True), ["archived"])
+        self.assertEqual(_allowed_moves("running"), ["archived"])
+        self.assertEqual(_allowed_moves("done"), [])
+        self.assertEqual(_allowed_moves("blocked"), [])
 
     async def test_pre_run_edit_skills_comments_activity_and_conversation_link(self):
         from hermes_cli import kanban_db

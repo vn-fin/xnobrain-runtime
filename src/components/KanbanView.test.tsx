@@ -323,7 +323,13 @@ describe('KanbanView', () => {
     render(<TestBoard />);
 
     const card = await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
-    expect(screen.getAllByRole('region', { name: / column$/ })).toHaveLength(5);
+    expect(screen.getAllByRole('region', { name: / column$/ }).map((column) => column.getAttribute('aria-label'))).toEqual([
+      'Scheduled column',
+      'Backlog column',
+      'Todo column',
+      'In Progress column',
+      'Done column',
+    ]);
     expect(screen.queryByRole('region', { name: 'Archived column' })).toBeNull();
 
     await user.click(card);
@@ -342,14 +348,28 @@ describe('KanbanView', () => {
     expect(screen.getByRole('button', { name: 'Open t-1042: Prepare the weekly report' })).toBeVisible();
   });
 
-  it('allows a completed task to be archived', async () => {
+  it('does not allow a completed task to move or be archived', async () => {
     const user = userEvent.setup();
     render(<TestBoard />);
 
     await user.click(await screen.findByRole('button', { name: 'Open t-done: Publish release notes' }));
     const drawer = screen.getByRole('dialog');
     expect(within(drawer).getByText('Done', { selector: '.kb-substate' })).toBeVisible();
-    expect(within(drawer).getByRole('button', { name: 'Archive task' })).toBeEnabled();
+    expect(within(drawer).getByLabelText('Move task to')).toBeDisabled();
+    expect(within(drawer).queryByRole('button', { name: 'Archive task' })).toBeNull();
+  });
+
+  it('opens the shared task form from Scheduled with scheduling selected', async () => {
+    const user = userEvent.setup();
+    render(<TestBoard agents={[researchAgent]} />);
+
+    const scheduled = await screen.findByRole('region', { name: 'Scheduled column' });
+    await user.click(within(scheduled).getByRole('button', { name: 'Add task' }));
+
+    const modal = screen.getByRole('dialog');
+    expect(within(modal).getByLabelText('Status')).toHaveValue('scheduled');
+    expect(within(modal).getByText('Run later')).toBeVisible();
+    expect(within(modal).getByLabelText('First run')).toHaveValue();
   });
 
   it('marks long task input and result as compact card previews', async () => {
@@ -364,7 +384,7 @@ describe('KanbanView', () => {
     expect(result).toHaveAttribute('title', result.textContent);
   });
 
-  it('disables invalid backward moves for an active task', async () => {
+  it('disables manual moves for an active task', async () => {
     const fetchMock = vi.mocked(fetch);
     render(<TestBoard />);
     const card = await screen.findByRole('button', { name: 'Open t-1042: Prepare the weekly report' });
@@ -384,9 +404,10 @@ describe('KanbanView', () => {
 
     fireEvent.click(card);
     const moveSelect = screen.getByLabelText('Move task to');
+    expect(moveSelect).toBeDisabled();
     expect(within(moveSelect).getByRole('option', { name: 'Backlog' })).toBeDisabled();
     expect(within(moveSelect).getByRole('option', { name: 'Todo' })).toBeDisabled();
-    expect(within(moveSelect).getByRole('option', { name: 'Done' })).toBeEnabled();
+    expect(within(moveSelect).getByRole('option', { name: 'Done' })).toBeDisabled();
   });
 
   it('shows conversation tracking in task details and cancels a running task', async () => {
