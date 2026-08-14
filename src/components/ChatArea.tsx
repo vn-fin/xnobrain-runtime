@@ -1428,7 +1428,7 @@ export function ChatArea({
                     <X size={12} />
                   </button>
                 )}
-                <div className={`goal-control${goalOpen ? ' open' : ''}${selectedFeature === 'goal' ? ' selected' : ''}`} ref={goalControlRef}>
+                {(goal || selectedFeature === 'goal') && <div className={`goal-control${goalOpen ? ' open' : ''}${selectedFeature === 'goal' ? ' selected' : ''}`} ref={goalControlRef}>
                   <button
                     className={`goal-chip ${goal?.status ?? 'idle'}${selectedFeature === 'goal' ? ' selected' : ''}`}
                     title={goal?.objective ?? 'Create a persistent goal'}
@@ -1517,7 +1517,7 @@ export function ChatArea({
                       )}
                     </div>
                   )}
-                </div>
+                </div>}
               </div>
               <div className="composer-row-right">
                 <div className="composer-model-context">

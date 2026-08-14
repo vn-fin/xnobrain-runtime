@@ -144,6 +144,7 @@ describe('agent feature shortcuts', () => {
     />);
 
     expect(screen.queryByText('Full access')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Goal' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Agent features' }));
     const menu = screen.getByRole('menu', { name: 'Agent features' });
     expect(within(menu).getByText('Todo list')).toBeVisible();
@@ -154,6 +155,7 @@ describe('agent feature shortcuts', () => {
     expect(menu).not.toHaveTextContent('/goal');
 
     await user.click(within(menu).getByRole('menuitem', { name: /Goal/ }));
+    expect(screen.getByRole('button', { name: 'Goal' })).toBeInTheDocument();
     expect(screen.getByRole('radiogroup', { name: 'Maximum goal turns' })).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: '25' }));
     expect(onGoalMaxTurnsChange).toHaveBeenCalledWith(25);
