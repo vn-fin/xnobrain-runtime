@@ -5,6 +5,7 @@ from .nine_router_support import (
     Mapping,
     NINE_ROUTER_DEFAULT_MODEL,
     NINE_ROUTER_PROVIDER_KEY,
+    NineRouterAPIError,
     OPENAI_COMPATIBLE_PROVIDERS,
     OPENCODE_ZEN_ROUTER_ALIAS,
     ROUTER_MODEL_ALIASES,
@@ -15,11 +16,13 @@ from .nine_router_support import (
 class ProviderModelsMixin:
     async def list_models(self, *, ensure_auto: bool = True) -> dict[str, Any]:
         connection_payload = await self.list_connections()
+        connections = connection_payload["connections"]
         connected_providers = {
             str(item.get("provider") or "")
-            for item in connection_payload["connections"]
+            for item in connections
             if item.get("active") is not False
         }
+        codex_review_available = await self._codex_review_available(connections)
         active_owners = {
             ROUTER_MODEL_ALIASES[provider]
             for provider in connected_providers
@@ -62,6 +65,12 @@ class ProviderModelsMixin:
                 ),
                 ROUTER_PROVIDER_BY_MODEL_OWNER.get(owner, owner),
             )
+            if (
+                provider == "codex"
+                and public_model_id.lower().endswith("-review")
+                and not codex_review_available
+            ):
+                continue
             model: dict[str, Any] = {
                 "id": public_model_id,
                 "provider": provider,
@@ -90,6 +99,30 @@ class ProviderModelsMixin:
                 *models,
             ],
         }
+
+
+    async def _codex_review_available(self, connections: list[dict[str, Any]]) -> bool:
+        """Report whether an active Codex account exposes review quota."""
+
+        for connection in connections:
+            if (
+                connection.get("provider") != "codex"
+                or connection.get("active") is False
+            ):
+                continue
+            try:
+                usage = await self.usage_for_connection(connection.get("id"))
+            except NineRouterAPIError:
+                # The generic catalog includes review-only aliases even when the
+                # account cannot use them. Do not surface one unless entitlement
+                # can be confirmed from the account quota response.
+                continue
+            if any(
+                str(quota.get("name") or "").lower().startswith("review_")
+                for quota in usage.get("quotas", [])
+            ):
+                return True
+        return False
 
 
     @staticmethod

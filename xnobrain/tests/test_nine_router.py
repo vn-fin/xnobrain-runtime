@@ -631,6 +631,52 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(connections["connections"][0]["default_model"], "")
         self.assertFalse(any("suggested-models" in path for _, path, _ in manager.requests))
 
+    async def test_codex_review_models_require_review_quota(self) -> None:
+        responses = {
+            ("GET", "/api/providers"): {"connections": [{
+                "id": "codex-1",
+                "provider": "codex",
+                "authType": "oauth",
+            }]},
+            ("GET", "/v1/models?kind=llm"): {"data": [
+                {"id": "cx/gpt-5.3-codex-spark", "owned_by": "cx"},
+                {"id": "cx/gpt-5.3-codex-spark-review", "owned_by": "cx"},
+            ]},
+        }
+        without_review = FakeNineRouterManager({
+            **responses,
+            ("GET", "/api/usage/codex-1"): {
+                "plan": "plus",
+                "quotas": {"session": {"used": 1, "total": 100}},
+            },
+        })
+        with_review = FakeNineRouterManager({
+            **responses,
+            ("GET", "/api/usage/codex-1"): {
+                "plan": "plus",
+                "quotas": {
+                    "session": {"used": 1, "total": 100},
+                    "review_session": {"used": 1, "total": 100},
+                },
+            },
+        })
+
+        regular_ids = [
+            item["id"]
+            for item in (await without_review.list_models(ensure_auto=False))["data"]
+        ]
+        review_ids = [
+            item["id"]
+            for item in (await with_review.list_models(ensure_auto=False))["data"]
+        ]
+
+        self.assertEqual(regular_ids, ["auto", "cx/gpt-5.3-codex-spark"])
+        self.assertEqual(review_ids, [
+            "auto",
+            "cx/gpt-5.3-codex-spark",
+            "cx/gpt-5.3-codex-spark-review",
+        ])
+
     async def test_auto_requires_a_connected_provider_for_chat(self) -> None:
         manager = FakeNineRouterManager(
             {
