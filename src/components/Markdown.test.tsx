@@ -26,7 +26,7 @@ describe('Markdown Kanban task links', () => {
   });
 
   it('links a plain task ID and opens a compact task summary', async () => {
-    mocks.getBoards.mockResolvedValue([{ id: 'default', tasks: [{ id: 't_70141301' }] }]);
+    mocks.getBoards.mockResolvedValue([{ id: 'default', tasks: [] }]);
     mocks.listAgents.mockResolvedValue([{ id: 'big-brother', name: 'big-brother', title: 'Big Brother' }]);
     mocks.getTask.mockResolvedValue({
       id: 't_70141301',
@@ -68,9 +68,37 @@ describe('Markdown Kanban task links', () => {
     expect(screen.getByText(/Waiting for the requested topic/)).toHaveTextContent('Additional result detail.');
     expect(screen.getByRole('link', { name: /Open in Kanban/ })).toHaveAttribute(
       'href',
-      '/kanban/tasks/t_70141301',
+      '/kanban/boards/default/tasks/t_70141301',
     );
     await waitFor(() => expect(mocks.getTask).toHaveBeenCalledWith('default', 't_70141301'));
+  });
+
+  it('resolves a task across metadata-only boards and handles an explicit local task link', async () => {
+    mocks.getBoards.mockResolvedValue([
+      { id: 'default', tasks: [] },
+      { id: 'qa-2026-08-14-board', tasks: [] },
+    ]);
+    mocks.listAgents.mockResolvedValue([]);
+    mocks.getTask.mockImplementation(async (boardId: string) => {
+      if (boardId === 'default') throw new Error('Not found');
+      return {
+        id: 't_30954e42', title: 'Existing QA task', description: '', nativeStatus: 'todo',
+        priority: 'medium', assignees: [], progress: 0, updated: 'now', runs: [], schedule: null,
+        team: null, result: '',
+      };
+    });
+    render(<Markdown content={`work kanban task [t_30954e42](${window.location.origin}/kanban/tasks/t_30954e42)`} />);
+
+    const taskLink = screen.getByRole('link', { name: 't_30954e42' });
+    fireEvent.click(taskLink);
+
+    expect(await screen.findByRole('dialog', { name: 'Existing QA task' })).toBeInTheDocument();
+    expect(mocks.getTask).toHaveBeenNthCalledWith(1, 'default', 't_30954e42');
+    expect(mocks.getTask).toHaveBeenNthCalledWith(2, 'qa-2026-08-14-board', 't_30954e42');
+    expect(screen.getByRole('link', { name: /Open in Kanban/ })).toHaveAttribute(
+      'href',
+      '/kanban/boards/qa-2026-08-14-board/tasks/t_30954e42',
+    );
   });
 
   it('does not link task-like text in code or non-task identifiers', () => {

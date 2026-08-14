@@ -140,6 +140,31 @@ function compactUrlLabel(href: string | undefined, children: ReactNode): ReactNo
   }
 }
 
+type KanbanTaskTarget = { taskId: string; boardId?: string };
+
+function kanbanTaskTarget(href: string | undefined): KanbanTaskTarget | null {
+  if (!href) return null;
+  if (href.startsWith(KANBAN_TASK_LINK)) {
+    return { taskId: href.slice(KANBAN_TASK_LINK.length) };
+  }
+  try {
+    const url = new URL(href, window.location.origin);
+    if (url.origin !== window.location.origin) return null;
+    const match = /^\/(?:kanban|board)\/(?:(?:boards\/([^/]+)\/)?tasks\/([^/]+)\/?$)/.exec(url.pathname);
+    if (!match) return null;
+    const taskId = decodeURIComponent(match[2]);
+    if (!/^t_[0-9a-f]{8}$/i.test(taskId)) return null;
+    return { taskId, boardId: match[1] ? decodeURIComponent(match[1]) : undefined };
+  } catch {
+    return null;
+  }
+}
+
+function currentKanbanBoardId(): string | undefined {
+  const match = /^\/(?:kanban|board)\/boards\/([^/]+)(?:\/|$)/.exec(window.location.pathname);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+}
+
 /** Reads the `language-xxx` class off a fenced code block's <code> child. */
 function languageOf(children: ReactNode): string | undefined {
   const child = Array.isArray(children) ? children[0] : children;
@@ -150,7 +175,7 @@ function languageOf(children: ReactNode): string | undefined {
   return undefined;
 }
 
-function buildComponents(onOpenFile?: (path: string) => void, onOpenTask?: (taskId: string) => void): Components {
+function buildComponents(onOpenFile?: (path: string) => void, onOpenTask?: (target: KanbanTaskTarget) => void): Components {
   return {
     code({ className, children, ...props }) {
       const text = String(children ?? '');
@@ -183,14 +208,17 @@ function buildComponents(onOpenFile?: (path: string) => void, onOpenTask?: (task
       );
     },
     a({ href, children }) {
-      if (href?.startsWith(KANBAN_TASK_LINK)) {
-        const taskId = href.slice(KANBAN_TASK_LINK.length);
+      const taskTarget = kanbanTaskTarget(href);
+      if (taskTarget) {
+        const taskHref = taskTarget.boardId
+          ? `/kanban/boards/${encodeURIComponent(taskTarget.boardId)}/tasks/${encodeURIComponent(taskTarget.taskId)}`
+          : `/kanban/tasks/${encodeURIComponent(taskTarget.taskId)}`;
         return (
           <a
-            href={`/kanban/tasks/${encodeURIComponent(taskId)}`}
+            href={taskHref}
             onClick={(event) => {
               event.preventDefault();
-              onOpenTask?.(taskId);
+              onOpenTask?.(taskTarget);
             }}
           >
             {children}
@@ -275,9 +303,10 @@ function ExpandableTaskText({ label, value, empty }: { label: string; value: str
   );
 }
 
-function KanbanTaskPreview({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+function KanbanTaskPreview({ taskId, preferredBoardId, onClose }: { taskId: string; preferredBoardId?: string; onClose: () => void }) {
   const titleId = useId();
   const [task, setTask] = useState<KanbanTask>();
+  const [boardId, setBoardId] = useState('');
   const [agents, setAgents] = useState<Agent[]>([]);
   const [error, setError] = useState('');
 
@@ -285,16 +314,25 @@ function KanbanTaskPreview({ taskId, onClose }: { taskId: string; onClose: () =>
     let active = true;
     setTask(undefined);
     setError('');
-    void Promise.all([
-      kanbanApi.getBoards(),
-      agentsApi.list().catch(() => [] as Agent[]),
-    ])
-      .then(async ([boards, roster]) => {
-        const board = boards.find((item) => item.tasks.some((candidate) => candidate.id === taskId));
-        if (!board) throw new Error(`Task ${taskId} was not found.`);
-        const detail = await kanbanApi.getTask(board.id, taskId);
+    const resolveTask = async () => {
+      const boards = await kanbanApi.getBoards();
+      const embeddedBoardId = boards.find((item) => item.tasks.some((candidate) => candidate.id === taskId))?.id;
+      const candidates = [preferredBoardId, currentKanbanBoardId(), embeddedBoardId, ...boards.map((board) => board.id)]
+        .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
+      for (const candidateBoardId of candidates) {
+        try {
+          return { boardId: candidateBoardId, task: await kanbanApi.getTask(candidateBoardId, taskId) };
+        } catch {
+          // Task IDs are global, but the detail API is board-scoped. Try the next board.
+        }
+      }
+      throw new Error(`Task ${taskId} was not found.`);
+    };
+    void Promise.all([resolveTask(), agentsApi.list().catch(() => [] as Agent[])])
+      .then(([resolved, roster]) => {
         if (active) {
-          setTask(detail);
+          setTask(resolved.task);
+          setBoardId(resolved.boardId);
           setAgents(roster);
         }
       })
@@ -302,7 +340,7 @@ function KanbanTaskPreview({ taskId, onClose }: { taskId: string; onClose: () =>
         if (active) setError(value instanceof Error ? value.message : `Could not load task ${taskId}.`);
       });
     return () => { active = false; };
-  }, [taskId]);
+  }, [preferredBoardId, taskId]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
@@ -399,7 +437,12 @@ function KanbanTaskPreview({ taskId, onClose }: { taskId: string; onClose: () =>
         )}
         <div className="modal-actions">
           <button className="conn-btn ghost" type="button" onClick={onClose}>Close</button>
-          <a className="conn-btn primary" href={`/kanban/tasks/${encodeURIComponent(taskId)}`}>
+          <a
+            className="conn-btn primary"
+            href={boardId
+              ? `/kanban/boards/${encodeURIComponent(boardId)}/tasks/${encodeURIComponent(taskId)}`
+              : `/kanban/tasks/${encodeURIComponent(taskId)}`}
+          >
             <ExternalLink size={14} /> Open in Kanban
           </a>
         </div>
@@ -409,7 +452,7 @@ function KanbanTaskPreview({ taskId, onClose }: { taskId: string; onClose: () =>
 }
 
 function MarkdownBase({ content, onOpenFile }: { content: string; onOpenFile?: (path: string) => void }) {
-  const [taskId, setTaskId] = useState('');
+  const [taskTarget, setTaskTarget] = useState<KanbanTaskTarget | null>(null);
   const normalizedContent = normalizeDisplayMath(content);
   return (
     <>
@@ -417,13 +460,17 @@ function MarkdownBase({ content, onOpenFile }: { content: string; onOpenFile?: (
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath, remarkCurrencyProse, remarkKanbanTaskLinks]}
           rehypePlugins={[rehypeKatex, [rehypeHighlight, { detect: true, ignoreMissing: true }]]}
-          components={buildComponents(onOpenFile, setTaskId)}
+          components={buildComponents(onOpenFile, setTaskTarget)}
         >
           {normalizedContent}
         </ReactMarkdown>
       </div>
-      {taskId && createPortal(
-        <KanbanTaskPreview taskId={taskId} onClose={() => setTaskId('')} />,
+      {taskTarget && createPortal(
+        <KanbanTaskPreview
+          taskId={taskTarget.taskId}
+          preferredBoardId={taskTarget.boardId}
+          onClose={() => setTaskTarget(null)}
+        />,
         document.body,
       )}
     </>
