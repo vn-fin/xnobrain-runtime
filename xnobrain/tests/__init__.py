@@ -1,1 +1,1 @@
-"""Brain4All backend tests."""
+"""XNOBrain backend tests."""

@@ -15,10 +15,10 @@ Read the sibling documents in order:
 
 Also read before starting: [`AGENTS.md`](../../AGENTS.md),
 [`plans/LOCAL_FEATURES_CHECKLIST.md`](../LOCAL_FEATURES_CHECKLIST.md) (program
-principles), [`brain4all/services/platform.py`](../../brain4all/services/platform.py)
-(`run_team`, lines ~476–575), [`brain4all/integrations/hermes.py`](../../brain4all/integrations/hermes.py)
+principles), [`xnobrain/services/platform.py`](../../xnobrain/services/platform.py)
+(`run_team`, lines ~476–575), [`xnobrain/integrations/hermes.py`](../../xnobrain/integrations/hermes.py)
 (`chat`, `_run_hermes_command`, `_chat_stream_events`, `stop_run`),
-[`brain4all/routes/setup.py`](../../brain4all/routes/setup.py), and
+[`xnobrain/routes/setup.py`](../../xnobrain/routes/setup.py), and
 [`docs/implementation/06-agent-teams.md`](../../docs/implementation/06-agent-teams.md)
 (the Hermes-issue-#344 execution contract).
 
@@ -26,13 +26,13 @@ principles), [`brain4all/services/platform.py`](../../brain4all/services/platfor
 
 - One FastAPI/Hermes process on `:8642` and one 9router on `:20128`. No Go, no
   PostgreSQL, no ORM, no second API process.
-- Extend from the `brain4all` package; never copy, fork, or re-implement Hermes
+- Extend from the `xnobrain` package; never copy, fork, or re-implement Hermes
   internals. `.tools/hermes-agent/` is a pinned read-only reference.
-- `brain4all/routes/setup.py` is the only route-assembly point. Handlers own
+- `xnobrain/routes/setup.py` is the only route-assembly point. Handlers own
   HTTP/SSE translation, services own rules, repositories own atomic files,
   integrations adapt Hermes, models are Pydantic.
 - Atomic file persistence (temp → fsync → rename) for all new state; run records
-  are Brain4All product metadata under `DATA_DIR` and are allowed.
+  are XNOBrain product metadata under `DATA_DIR` and are allowed.
 - Never log, return, or persist credentials, provider keys, composed prompts, or
   agent internal reasoning. User-authored task text and the returned final
   summaries are product data and are stored deliberately.
@@ -42,7 +42,7 @@ principles), [`brain4all/services/platform.py`](../../brain4all/services/platfor
 
 ## Goal
 
-Brain4All already has working teams: file-backed team CRUD
+XNOBrain already has working teams: file-backed team CRUD
 (`DATA_DIR/teams/<id>.yaml`), a DAG/convoy execution engine with per-agent
 serialization, team-level parallelism, dependency-summary injection, cycle
 detection, and a coordinator synthesis step (`PlatformService.run_team`). What
@@ -62,7 +62,7 @@ it does **not** have is any run lifecycle around that engine. This plan adds:
 4. **Cancellation** — `POST .../runs/{run_id}/cancel` cancels the background
    task, marks unfinished steps cancelled, persists the final state, **and
    kills the child `hermes` subprocesses**. This requires a small, precisely
-   scoped fix in `brain4all/integrations/hermes.py::_run_hermes_command`,
+   scoped fix in `xnobrain/integrations/hermes.py::_run_hermes_command`,
    which today leaks a running subprocess when the awaiting task is cancelled
    (see [findings.md](findings.md) — this is a verified bug, not a guess).
 5. **Frontend** — a Runs panel in `src/components/TeamsView.tsx`: run
@@ -94,21 +94,21 @@ it does **not** have is any run lifecycle around that engine. This plan adds:
   signature, the `hermes` CLI flags the adapter composes, and — after Phase 3 —
   the `CancelledError` subprocess-kill behavior of `_run_hermes_command`).
 - **Phase 1 — Models.** `TeamRunRecord`, `TeamRunStepRecord` (and reuse of the
-  existing `TeamRun` body) in `brain4all/models/api.py`.
+  existing `TeamRun` body) in `xnobrain/models/api.py`.
 - **Phase 2 — Repository.** `FileRepository` helpers: list/get/put run files
   under `DATA_DIR/teams/runs/<team_id>/`, atomic writes, pruning.
-- **Phase 3 — Service.** New `brain4all/services/team_runs.py`: in-process run
+- **Phase 3 — Service.** New `xnobrain/services/team_runs.py`: in-process run
   registry, the background engine (a shared `_execute_workflow` refactored out
   of `run_team` and used by both the sync and async paths), cancellation, the
   staleness rule, and the `_run_hermes_command` `CancelledError` kill fix in
-  `brain4all/integrations/hermes.py`.
+  `xnobrain/integrations/hermes.py`.
 - **Phase 4 — Handlers + routes.** New operations in
-  `brain4all/handlers/api.py` and the exact `Route(...)` lines (including the
-  SSE special route) in `brain4all/routes/setup.py`.
+  `xnobrain/handlers/api.py` and the exact `Route(...)` lines (including the
+  SSE special route) in `xnobrain/routes/setup.py`.
 - **Phase 5 — Frontend.** `src/api/teams.ts` run endpoints + SSE watcher,
   `src/hooks/useTeams.ts` run state, `TeamRunsPanel` in
   `src/components/TeamsView.tsx`.
-- **Phase 6 — Tests.** `brain4all/tests/test_team_runs.py` mirroring the
+- **Phase 6 — Tests.** `xnobrain/tests/test_team_runs.py` mirroring the
   `test_fastapi.py` / `test_analytics.py` patterns: async lifecycle,
   cancellation kills the subprocess, SSE event shape, restart staleness, run
   file schema and sanitization.

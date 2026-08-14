@@ -7,7 +7,7 @@ filled in; flipping a checkbox without evidence is not complete
 ## 1. Phase 0 probe / compatibility test
 
 ```
-python -m unittest brain4all.tests.test_nine_router_probe -v
+python -m unittest xnobrain.tests.test_nine_router_probe -v
 ```
 
 - With no 9router running: every live test reports `skipped`, the pin test
@@ -24,7 +24,7 @@ python -m unittest brain4all.tests.test_nine_router_probe -v
 ## 2. Unit tests — adapter
 
 ```
-python -m unittest brain4all.tests.test_nine_router -v
+python -m unittest xnobrain.tests.test_nine_router -v
 ```
 
 - Existing tests still pass (list/models/auto-combo/usage filtering —
@@ -37,7 +37,7 @@ python -m unittest brain4all.tests.test_nine_router -v
 ## 3. Integration tests — routes via ASGI
 
 ```
-python -m unittest brain4all.tests.test_fastapi -v
+python -m unittest xnobrain.tests.test_fastapi -v
 ```
 
 Using the stateful multi-connection `FakeRouter`
@@ -58,11 +58,11 @@ Using the stateful multi-connection `FakeRouter`
   email, active, priority, default_model, test_status, last_error}` and the
   planted secret `sk-secret` appears in no response body.
 
-## 4. Nothing stored in Brain4All
+## 4. Nothing stored in XNOBrain
 
 - In the integration test, snapshot the `DATA_DIR` tree (recursive file list
   + mtimes) before and after exercising all six new routes; assert it is
-  unchanged. Evidence that this feature stores nothing in Brain4All and that
+  unchanged. Evidence that this feature stores nothing in XNOBrain and that
   snapshot rules are correctly out of scope.
 
 ## 5. Frontend build
@@ -140,9 +140,9 @@ the Connectors section (Settings → Connectors,
       backward-compat test + manual step 7)
 - [ ] Per-connection usage rendered from `/api/usage/{connectionId}`
       (evidence: unit test + manual step 4)
-- [ ] no api_key/token material ever appears in Brain4All responses or logs
+- [ ] no api_key/token material ever appears in XNOBrain responses or logs
       (evidence: response-scan test)
-- [ ] Nothing stored in Brain4All — `DATA_DIR` unchanged by all new routes
+- [ ] Nothing stored in XNOBrain — `DATA_DIR` unchanged by all new routes
       (evidence: section 4 test)
 - [ ] `make check` and `npm run build` pass (evidence: command
       output)

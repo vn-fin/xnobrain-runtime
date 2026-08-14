@@ -9,11 +9,11 @@ từng agent) hoạt động, và kiến trúc mục tiêu được khuyến ngh
 Ứng dụng mã nguồn mở không chạy một máy chủ riêng gọi Hermes qua mạng. Nó import chính
 ứng dụng web-server của Hermes và đăng ký các tuyến (route) tương thích của mình lên đó,
 rồi phục vụ ứng dụng kết hợp trên cổng 8642. Trên thực tế, tiến trình đang chạy là máy chủ
-web của Hermes cộng với bề mặt quản trị của Brain4All, trong một tiến trình Python duy nhất
+web của Hermes cộng với bề mặt quản trị của XNOBrain, trong một tiến trình Python duy nhất
 dùng chung một môi trường ảo. Bộ định tuyến LLM chạy như một tiến trình riêng trên cổng
 20128 và được truy cập qua HTTP.
 
-Vì Brain4All dùng chung tiến trình và môi trường, nó tích hợp với Hermes qua nhiều kênh
+Vì XNOBrain dùng chung tiến trình và môi trường, nó tích hợp với Hermes qua nhiều kênh
 đồng thời thay vì một ranh giới sạch sẽ duy nhất.
 
 | Cơ chế nền tảng | Cách hoạt động | Chức năng nào sử dụng |

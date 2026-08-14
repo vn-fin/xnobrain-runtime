@@ -353,7 +353,7 @@ class ProvidersServiceMixin:
             "required_client_action": "submit_text",
             "instructions": (
                 "Enter the provider API key. It is stored by 9router, not "
-                "Brain4All."
+                "XNOBrain."
             ),
             "text_label": "API key",
             "status": "waiting_for_user",
@@ -365,7 +365,7 @@ class ProvidersServiceMixin:
                 "instructions": (
                     "Sign in to OpenCode, subscribe to Go, then paste the "
                     "issued API key here. The key is stored by 9router, not "
-                    "Brain4All."
+                    "XNOBrain."
                 ),
             })
         return info

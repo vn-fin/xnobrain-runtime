@@ -11,7 +11,7 @@ Give agents a voice — TTS playback of replies and STT dictation into the
 composer — delivered as an **enterprise capability**: provider keys
 (ElevenLabs, Deepgram, …) live only in the central control plane, all
 synthesis/transcription is proxied through an enterprise **voice gateway**
-(Go, `brain4all-enterprise`), access is gated by the `voice` capability flag
+(Go, `xnobrain-enterprise`), access is gated by the `voice` capability flag
 from `docs/contracts/entitlements-v1.md`, and voice seconds are **metered
 into the same central usage database** that E02 builds
 (`plans/enterprise/E02_usage_collection/`).
@@ -48,16 +48,16 @@ must not restrict local features.* Shipping voice as enterprise-only does not
 violate this because voice is scoped as **additive enterprise value, never a
 restriction of an existing local feature**:
 
-- OSS simply **does not ship** voice UI or Brain4All voice routes. There is
+- OSS simply **does not ship** voice UI or XNOBrain voice routes. There is
   no local voice feature being taken away or gated — it never existed in the
-  Brain4All contract (006 was planned, not implemented).
+  XNOBrain contract (006 was planned, not implemented).
 - When the user is entitled (`voice` capability present) and connected, the
   voice UI appears. When the enterprise API is down, voice buttons degrade
   gracefully with a clear banner while **every non-voice feature keeps
   working** — nothing local depends on the gateway.
 - **No DRM pretense:** a self-hosted user who configures TTS/STT providers
   directly in their raw Hermes `config.yaml` (with their own keys in `.env`)
-  can still use Hermes' native `/api/audio/*` endpoints. Brain4All does not
+  can still use Hermes' native `/api/audio/*` endpoints. XNOBrain does not
   remove Hermes capabilities; it just does not surface them in the OSS UI.
   This is documented plainly as unsupported-but-possible
   ([approaches](approaches.md) Decision E).
@@ -94,12 +94,12 @@ E03 (fleet management) is independent of this plan.
   schema/rollup job is in place to extend, verify provider API facts marked
   "verify" in [findings](findings.md) §6, and re-verify plan-006 Hermes facts
   only if the local-fallback approach is ever revisited.
-- **Phase 1 — Enterprise voice gateway** (`brain4all-enterprise`, Go):
+- **Phase 1 — Enterprise voice gateway** (`xnobrain-enterprise`, Go):
   key vault, provider adapters, `POST /voice/v1/speak`,
   `POST /voice/v1/transcribe`, `GET /voice/v1/voices`, entitlement
   enforcement, caps, metering writes into `voice_usage`.
 - **Phase 2 — OSS thin proxy** (this repo, Python):
-  `brain4all/integrations/enterprise_voice.py`, three proxied routes under
+  `xnobrain/integrations/enterprise_voice.py`, three proxied routes under
   `/api/brain/v1/voice/*`, 403 `capability_unavailable` without
   entitlement, capability flags exposed via the `limits` payload.
 - **Phase 3 — Gated frontend.** Reuse plan 006's UI design (play button in

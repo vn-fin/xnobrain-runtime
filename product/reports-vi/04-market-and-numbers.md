@@ -106,5 +106,5 @@ tranh startup và báo cáo về hào lũy kiểm định.
 > Store: ~**$0.03 mỗi cuộc hội thoại**). Nhân bản chuyên gia đang được rót vốn nhanh
 > (**Delphi $16M/Sequoia**, **Cloneable ARR tăng 100×**) nhưng **chưa ai kiểm định rằng một
 > bản nhân bản tái tạo con người được nêu tên một cách trung thực** — ngay cả khi tỷ lệ áp
-> dụng đánh giá AI sắp tăng gấp ba lên **60% các nhóm kỹ thuật vào năm 2028**. Brain4All sở
+> dụng đánh giá AI sắp tăng gấp ba lên **60% các nhóm kỹ thuật vào năm 2028**. XNOBrain sở
 > hữu khoảng trống đó: cổng kiểm định cho những twin chuyên gia được kiểm chứng.

@@ -16,17 +16,17 @@ are:
 - `enterprise` includes Pro and adds organizations, collaboration, governance, and
   administration.
 - Self-hosted local resources resolve to unlimited.
-- Cloud resources are limited because Brain4All supplies the hardware.
+- Cloud resources are limited because XNOBrain supplies the hardware.
 - Downgrade or quota exhaustion pauses or makes resources read-only; it never deletes
   user data.
 
 ## Runtime ownership
 
-`brain4all` owns the React application and combined Python/FastAPI/Hermes/9router
+`xnobrain` owns the React application and combined Python/FastAPI/Hermes/9router
 runtime. It owns local agents, profiles, skills, memory, MCP, providers, teams,
 conversations, Kanban, and cron without an application database.
 
-`brain4all-enterprise` owns the Go control plane, PostgreSQL, authentication, tenants,
+`xnobrain-enterprise` owns the Go control plane, PostgreSQL, authentication, tenants,
 plans, billing-grade quota state, RBAC, audit, fleet management, encrypted collaboration
 relay, hosted services, and managed cloud packaging. It consumes released OSS contracts
 and must not fork the OSS runtime.

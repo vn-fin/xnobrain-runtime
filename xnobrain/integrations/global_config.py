@@ -29,7 +29,7 @@ class GlobalConfigMixin:
 
 
     def ensure_write_approval_defaults(self) -> dict[str, Any]:
-        """Persist Brain4All's automatic execution defaults when unspecified."""
+        """Persist XNOBrain's automatic execution defaults when unspecified."""
         config = self._read_config()
         changed = False
         approvals = config.get("approvals")

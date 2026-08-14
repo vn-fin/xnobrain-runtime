@@ -1,6 +1,6 @@
-# Brain4All Agent Guide
+# XNOBrain Agent Guide
 
-Brain4All is an open-source FastAPI/Hermes and React application. Read this
+XNOBrain is an open-source FastAPI/Hermes and React application. Read this
 file, `.agents/rules/01-start-here.md`, and applicable additional `.agents/rules/`
 files before every task. For roadmap work,
 also read the assigned specification and referenced versioned contracts.
@@ -59,7 +59,7 @@ Use `npm run build` for the final frontend type/build verification.
 - Keep one FastAPI/Hermes process on port 8642 and one 9router process.
 - Preserve the original Hermes core and native FastAPI routes. Extend them from
   `xnobrain` instead of copying or forking Hermes.
-- `xnobrain/routes/setup.py` is the only Brain4All route assembly point.
+- `xnobrain/routes/setup.py` is the only XNOBrain route assembly point.
 - Handlers own HTTP translation, services own rules, repositories own atomic
   files, integrations adapt Hermes CLI and 9router, and models are Pydantic.
 - Use one consistently named service-group file per backend layer. Keep
@@ -87,7 +87,7 @@ Use `npm run build` for the final frontend type/build verification.
 - Local OSS access is unlimited. Enterprise behavior is optional; an Enterprise
   API outage must not restrict local features.
 - This repository builds the combined backend/runtime image and UI image.
-- Managed control-plane services remain in `brain4all-enterprise`; coordinate
+- Managed control-plane services remain in `xnobrain-enterprise`; coordinate
   versioned contracts when a feature changes both repositories.
 - Incus and cloud runtime packaging are maintained in this repository. The
   managed control plane consumes released, versioned runtime artifacts and

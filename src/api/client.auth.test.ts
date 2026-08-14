@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../runtime', () => ({
-  brain4AllRuntime: { features: { login: true } },
+  xnobrainRuntime: { features: { login: true } },
 }));
 
 vi.mock('../authStorage', () => ({

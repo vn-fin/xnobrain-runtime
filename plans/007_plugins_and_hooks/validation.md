@@ -7,7 +7,7 @@ Verification for [README.md](README.md). Cross-links:
 
 ## 1. Compatibility test (gate)
 
-`brain4all/tests/test_plugins_compat.py` (real pinned Hermes, temp `HERMES_HOME`,
+`xnobrain/tests/test_plugins_compat.py` (real pinned Hermes, temp `HERMES_HOME`,
 committed local fixtures, no network):
 
 - All Phase 0 symbols import with the expected signatures; `VALID_HOOKS`
@@ -26,7 +26,7 @@ Failure here fails readiness with one remediation message (Phase 0 step 3).
 
 ## 2. Unit tests — the scan+approval gate (most important)
 
-`brain4all/tests/test_plugins_service.py`, with the `PluginManager` faked so no
+`xnobrain/tests/test_plugins_service.py`, with the `PluginManager` faked so no
 real clone happens but the **gate logic runs for real**:
 
 - `enable` raises `plugin_scan_required` (409) when no record exists.
@@ -48,7 +48,7 @@ real clone happens but the **gate logic runs for real**:
 
 ## 3. Handler tests
 
-`brain4all/tests/test_fastapi.py` (extend) — envelope + status + error mapping
+`xnobrain/tests/test_fastapi.py` (extend) — envelope + status + error mapping
 for every new route: success shapes, `PluginAPIError`/`ServiceError` → correct
 HTTP code, validation 4xx for bad bodies, 404 for unknown plugin/agent,
 409 for each gate rejection. Assert the response envelope
@@ -57,7 +57,7 @@ HTTP code, validation 4xx for bad bodies, 404 for unknown plugin/agent,
 
 ## 4. Integration lifecycle test
 
-`brain4all/tests/test_plugins_integration.py` (real Hermes, ASGI `AsyncClient`
+`xnobrain/tests/test_plugins_integration.py` (real Hermes, ASGI `AsyncClient`
 like `test_kanban.py`): drive the full HTTP flow —
 `POST /plugins/install` → `POST /plugins/{name}/scan` (or read the install
 response scan) → `POST /plugins/{name}/enable` returns 409 →
@@ -122,7 +122,7 @@ Also: a plugin enabled via the Hermes CLI appears in `GET /plugins` without sync
       approved scan; `dangerous` cannot be overridden; `update` forces re-scan.
       Evidence: `test_plugins_service.py` gate cases (§2) + integration 409-then-200.
 - [ ] Enable/disable/update/remove/visibility work through Hermes' own
-      functions; a Brain4All-enabled plugin is visible to the Hermes CLI and
+      functions; a XNOBrain-enabled plugin is visible to the Hermes CLI and
       vice versa. Evidence: integration test.
 - [ ] Native toolsets list per agent with `enabled/available/ready`; a toggle
       persists in the profile `config.yaml` and is honored by a later run;
@@ -140,7 +140,7 @@ Also: a plugin enabled via the Hermes CLI appears in `GET /plugins` without sync
 
 ## 9. Explicit security acceptance item
 
-- [ ] **A plugin cannot be enabled through any Brain4All path without (a) a
+- [ ] **A plugin cannot be enabled through any XNOBrain path without (a) a
       malware/OSV scan that did not return a `dangerous` verdict, (b) a content
       hash that still matches the scanned bytes, and (c) an explicit recorded
       user approval — enforced in `services/plugins.py::enable`, proven by a

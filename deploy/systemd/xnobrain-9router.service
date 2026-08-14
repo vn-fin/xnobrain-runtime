@@ -1,0 +1,36 @@
+[Unit]
+Description=XNOBrain 9router
+Documentation=https://github.com/vn-fin/xnobrain
+After=network-online.target xnobrain-prepare.service
+Wants=network-online.target
+Requires=xnobrain-prepare.service
+ConditionPathExists=/etc/xnobrain/xnobrain.env
+PartOf=xnobrain.target
+
+[Service]
+Type=simple
+User=xnobrain
+Group=xnobrain
+WorkingDirectory=/opt/xnobrain/.tools/npm-global/lib/node_modules/9router/app
+EnvironmentFile=/etc/xnobrain/xnobrain.env
+Environment=PATH=/opt/xnobrain/.tools/node/bin:/opt/xnobrain/.tools/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=PORT=20128
+Environment=HOSTNAME=127.0.0.1
+Environment=BASE_URL=http://127.0.0.1:20128
+Environment=NEXT_PUBLIC_BASE_URL=http://127.0.0.1:20128
+Environment=REQUIRE_API_KEY=false
+Environment=NODE_ENV=production
+ExecStartPre=/opt/xnobrain/scripts/prepare-service-data.sh
+ExecStart=/usr/bin/env DATA_DIR=${NINE_ROUTER_DATA_DIR} PORT=20128 HOSTNAME=127.0.0.1 BASE_URL=http://127.0.0.1:20128 NEXT_PUBLIC_BASE_URL=http://127.0.0.1:20128 REQUIRE_API_KEY=false NODE_ENV=production /opt/xnobrain/.tools/node/bin/node --dns-result-order=ipv4first --max-old-space-size=6144 /opt/xnobrain/.tools/npm-global/lib/node_modules/9router/app/custom-server.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/srv/xnobrain-data
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=xnobrain.target

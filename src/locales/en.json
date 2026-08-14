@@ -213,7 +213,7 @@
     "testError": "Test failed",
     "capabilities": "Capabilities",
     "addKeyTitle": "Add API key",
-    "addKeyDesc": "Choose a provider and paste the API key. The key is stored by the local runtime and is never returned by Brain4All."
+    "addKeyDesc": "Choose a provider and paste the API key. The key is stored by the local runtime and is never returned by XNOBrain."
   },
   "auth": {
     "connect": "Connect {{name}}",

@@ -4,7 +4,7 @@ Ordered, file-by-file steps in two tracks. Design rationale in
 [architecture.md](architecture.md); verified facts in
 [findings.md](findings.md). OSS-track phases keep `make check` green and
 commit independently; enterprise-track phases do the same in
-`brain4all-enterprise`. Cross-repo coupling happens only through the
+`xnobrain-enterprise`. Cross-repo coupling happens only through the
 `usage-ingest-v1` contract, published in Phase 0.
 
 Track order: OSS Phase 0 → (OSS 1–2 in parallel with ENT 3–5) → joint Phase 6
@@ -24,11 +24,11 @@ contracts table in `plans/enterprise/README.md`'s grounding section if the
 program index is being maintained, and tick the program checklist item
 "`usage-ingest-v1` contract published in `docs/contracts/`".
 
-### 0b. Compatibility test — `brain4all/tests/test_usage_reporter.py` (new file, first test class)
+### 0b. Compatibility test — `xnobrain/tests/test_usage_reporter.py` (new file, first test class)
 
 Same pattern plan 009 used for schema pinning (see
 `plans/009_usage_analytics/` Phase 0 and
-[`brain4all/tests/test_analytics.py`](../../../brain4all/tests/test_analytics.py)
+[`xnobrain/tests/test_analytics.py`](../../../xnobrain/tests/test_analytics.py)
 scaffolding): create an agent through the real API in a temporary
 `HERMES_HOME`, then assert the pinned columns exist.
 
@@ -69,7 +69,7 @@ Also in 0b, resolve the three **verify in Phase 0** items from
 
 Confirm what E01 provides (module, function names) for
 `(device_id, access_token)` + refresh. If E01's connector is not yet merged,
-define the seam here as `brain4all/integrations/enterprise_usage.py::
+define the seam here as `xnobrain/integrations/enterprise_usage.py::
 load_device_identity(data_dir) -> DeviceIdentity | None` reading
 `DATA_DIR/device/` (per device-command-v1: keys live there), returning `None`
 when unenrolled, and file a note in E01's plan to implement/own that surface.
@@ -77,10 +77,10 @@ The reporter treats `None` as "stay dormant".
 
 ## OSS track (this repo, Python)
 
-### Phase 1 — Snapshot reader: `brain4all/integrations/enterprise_usage.py` (new)
+### Phase 1 — Snapshot reader: `xnobrain/integrations/enterprise_usage.py` (new)
 
 Integration-layer module in the style of
-[`brain4all/integrations/analytics.py`](../../../brain4all/integrations/analytics.py):
+[`xnobrain/integrations/analytics.py`](../../../xnobrain/integrations/analytics.py):
 no policy, no HTTP, read-only, degrade-to-empty.
 
 Contents:
@@ -109,7 +109,7 @@ Contents:
 
 Any `sqlite3.Error`/`OSError` returns `([], watermark)`.
 
-### Phase 2 — Outbox + pusher: `brain4all/services/usage_reporter.py` (new)
+### Phase 2 — Outbox + pusher: `xnobrain/services/usage_reporter.py` (new)
 
 Service-layer module owning policy and the loops (architecture.md §2):
 
@@ -135,9 +135,9 @@ Service-layer module owning policy and the loops (architecture.md §2):
   1 s → 15 min. Every exception is caught and recorded; the loop never dies
   and never propagates.
 
-**Lifespan wiring — `brain4all/app.py`.** Extend the existing lifespan
+**Lifespan wiring — `xnobrain/app.py`.** Extend the existing lifespan
 exactly like the kanban dispatcher block (lines ~32–53): start
-`asyncio.create_task(reporter_loop(...), name="brain4all-usage-reporter")`
+`asyncio.create_task(reporter_loop(...), name="xnobrain-usage-reporter")`
 inside `try/except Exception: reporter = None`, and in the `finally` block
 `cancel()` + `suppress(asyncio.CancelledError)` await, alongside the
 dispatcher's teardown. No other app change.
@@ -148,14 +148,14 @@ dispatcher's teardown. No other app change.
 | Env | Default | Meaning |
 |---|---|---|
 | `ENTERPRISE_API_URL` | unset | existing; unset ⇒ reporter fully dormant |
-| `BRAIN4ALL_USAGE_DISABLE` | `0` | `1` ⇒ dormant even when configured |
-| `BRAIN4ALL_USAGE_REPORT_INTERVAL` | `60` | scan seconds |
-| `BRAIN4ALL_USAGE_PUSH_INTERVAL` | `300` | push seconds |
-| `BRAIN4ALL_USAGE_OUTBOX_MAX_BYTES` | `67108864` | spool cap |
-| `BRAIN4ALL_USAGE_BATCH_MAX_SNAPSHOTS` | `500` | per contract 413 limit |
-| `BRAIN4ALL_USAGE_SHARE_LABELS` | `0` | opt-in label registry (approaches §B) |
+| `XNOBRAIN_USAGE_DISABLE` | `0` | `1` ⇒ dormant even when configured |
+| `XNOBRAIN_USAGE_REPORT_INTERVAL` | `60` | scan seconds |
+| `XNOBRAIN_USAGE_PUSH_INTERVAL` | `300` | push seconds |
+| `XNOBRAIN_USAGE_OUTBOX_MAX_BYTES` | `67108864` | spool cap |
+| `XNOBRAIN_USAGE_BATCH_MAX_SNAPSHOTS` | `500` | per contract 413 limit |
+| `XNOBRAIN_USAGE_SHARE_LABELS` | `0` | opt-in label registry (approaches §B) |
 
-### Phase 2t — OSS tests: `brain4all/tests/test_usage_reporter.py` (extend the Phase 0 file)
+### Phase 2t — OSS tests: `xnobrain/tests/test_usage_reporter.py` (extend the Phase 0 file)
 
 Reuse the `test_analytics.py` scaffolding (temp `HERMES_HOME`, real agent
 creation, `_SESSION_COLUMNS`-style inserts of real session rows). Add a
@@ -182,11 +182,11 @@ scriptable failures: 500 N times, drop-connection-after-commit, 401, 413,
    every request body the fake server receives; assert (a) no sentinel
    substring anywhere, (b) every snapshot's key set `==
    set(SNAPSHOT_FIELDS)` exactly — allowlist, not blocklist.
-6. **Bounded spool eviction** — tiny `BRAIN4ALL_USAGE_OUTBOX_MAX_BYTES`;
+6. **Bounded spool eviction** — tiny `XNOBRAIN_USAGE_OUTBOX_MAX_BYTES`;
    sustained outage; oldest files evicted; `dropped_batches` incremented;
    directory bytes ≤ cap at all times.
 7. **Dormancy** — no `ENTERPRISE_API_URL` ⇒ no `DATA_DIR/enterprise/`
-   creation, no requests; `BRAIN4ALL_USAGE_DISABLE=1` same; unenrolled
+   creation, no requests; `XNOBRAIN_USAGE_DISABLE=1` same; unenrolled
    (identity `None`) same.
 8. **Read-only proof** — `state.db` file bytes/mtime unchanged by a full
    scan+push cycle (plan-009 §read-only-safety pattern).
@@ -194,10 +194,10 @@ scriptable failures: 500 N times, drop-connection-after-commit, 401, 413,
    API routes (health, agents, plan-009 analytics) respond normally
    (latency assertion lives in [validation.md](validation.md) §8).
 
-Run: `python -m unittest brain4all.tests.test_usage_reporter -v`, then
+Run: `python -m unittest xnobrain.tests.test_usage_reporter -v`, then
 `make check`.
 
-## Enterprise track (`brain4all-enterprise`, Go + PostgreSQL, no ORM)
+## Enterprise track (`xnobrain-enterprise`, Go + PostgreSQL, no ORM)
 
 Paths follow the repo's `internal/` layout (`docs/enterprise-extension.md`;
 align names with E01's skeleton when it exists — **verify in Phase 0** of the

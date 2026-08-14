@@ -22,7 +22,7 @@ needed. Board and list are two views over the same records and operations.
 
 Visual references may be taken from established Kanban products such as Jira,
 Trello, Linear, and Lark for interaction patterns, but the implementation must
-use the existing Brain4All design system and must not copy protected visual
+use the existing XNOBrain design system and must not copy protected visual
 assets.
 
 ## Information architecture
@@ -206,7 +206,7 @@ reversible onboarding action.
 
 Remove all existing mock/demo and smoke-hook Kanban data paths from the
 production bundle. Automated smoke and browser tests must create their own
-records through the real Brain4All API, verify those records in Hermes SQLite,
+records through the real XNOBrain API, verify those records in Hermes SQLite,
 and clean up only the test records they created. There must be no fallback from
 a failed API request to in-memory sample data.
 

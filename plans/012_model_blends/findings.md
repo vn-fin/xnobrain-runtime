@@ -44,7 +44,7 @@ DELETE FROM combos WHERE id = ?
 
 So a combo has a stable `id` (TEXT PK) distinct from its unique `name`. The
 `name` is what chat requests use; the `id` is what `PUT`/`DELETE` use.
-Brain4All never touches this database directly — HTTP only.
+XNOBrain never touches this database directly — HTTP only.
 
 ## 3. The 9router combos HTTP API
 
@@ -82,7 +82,7 @@ for both the old and new names.
 **`DELETE /api/combos/{id}`** → `{"success": true}`, 404 when missing.
 
 This matches what `NineRouterManager._ensure_auto_combo` already sends
-(`brain4all/integrations/nine_router.py` lines 336–382: `GET /api/combos`,
+(`xnobrain/integrations/nine_router.py` lines 336–382: `GET /api/combos`,
 `POST /api/combos {"name","models"}`, `PUT /api/combos/{id} {"models"}`,
 `DELETE /api/combos/{id}`), so `_request()` provably speaks this surface today.
 
@@ -187,15 +187,15 @@ Consequences:
 - `GET /api/settings` returns the whole instance settings (it strips
   `password`/`oidcClientSecret` server-side, but the payload still contains
   unrelated instance configuration such as proxy and OIDC fields). The
-  Brain4All adapter must **whitelist** and expose only `comboStrategy`,
+  XNOBrain adapter must **whitelist** and expose only `comboStrategy`,
   `comboStrategies`, and `comboStickyRoundRobinLimit` — never the raw payload.
 
 Because both handler functions are compiled, the GET/PATCH shapes are re-proved
 live in Phase 0 (§10).
 
-## 7. Brain4All today: one hidden combo, and a filter that hides all others
+## 7. XNOBrain today: one hidden combo, and a filter that hides all others
 
-`brain4all/integrations/nine_router.py`:
+`xnobrain/integrations/nine_router.py`:
 
 - `NINE_ROUTER_DEFAULT_MODEL = "auto"` (line 23).
 - `ensure_auto_combo()` (line 327) / `_ensure_auto_combo(models)` (lines
@@ -227,21 +227,21 @@ live in Phase 0 (§10).
     ids without `/` — so blends can never be recursively swept into the
     `auto` combo even after they appear in `list_models()` output.
   - `_safe_id` (line 515, regex `^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$`) is what
-    combo ids pass through before URL interpolation; Brain4All's blend-name
+    combo ids pass through before URL interpolation; XNOBrain's blend-name
     rule (architecture.md) is chosen as a subset of both this and the 9router
     regex so names and ids always validate on both sides.
 - `_request()` (lines 384–421) already restricts paths to `/api/` and `/v1/`,
   signs with the `x-9r-cli-token`, and maps connection failures to
   `NineRouterAPIError("9Router is unavailable", code="nine_router_unavailable",
   status=503)`. `NineRouterAPIError` is in `EXPECTED_ERRORS`
-  (`brain4all/services/platform.py` line 810), so handlers already translate a
+  (`xnobrain/services/platform.py` line 810), so handlers already translate a
   down 9router into the standard failure envelope with status 503.
 - Downstream consumers that must stay unpolluted by blend entries, and are —
   because they filter by provider id:
-  - `PlatformService.providers()` (`brain4all/services/platform.py` lines
+  - `PlatformService.providers()` (`xnobrain/services/platform.py` lines
     592–611): `available_models` keeps `item["provider"] == provider` for the
     six real providers only.
-  - `APIHandlers._provider_models` (`brain4all/handlers/api.py` lines
+  - `APIHandlers._provider_models` (`xnobrain/handlers/api.py` lines
     192–194): same per-provider filter, plus a hardcoded `auto` first entry.
   - `NineRouterManager.usage(model)` (line 274): `_provider_for_model` returns
     `""` for a blend name (no `/` prefix match), yielding the existing
@@ -249,12 +249,12 @@ live in Phase 0 (§10).
 
 ## 8. A blend name flows into an agent with zero Hermes changes
 
-`brain4all/integrations/hermes.py`:
+`xnobrain/integrations/hermes.py`:
 
 - `update_config()` (lines 354–439) handles
   `PATCH /api/brain/v1/agents-configs/{agent_id}` (route →
   `config_agent_patch` → `PlatformService.update_agent_config`, which
-  snapshots `config.yaml` first — `brain4all/services/platform.py` lines
+  snapshots `config.yaml` first — `xnobrain/services/platform.py` lines
   190–198). The `model` field is validated only by `_nonempty_string`
   (line 389; definition line 1845 — any non-empty string passes) and written
   via `self._set_nested(config, ("model", "default"), model)` (line 390),
@@ -267,7 +267,7 @@ live in Phase 0 (§10).
   rewrites any provider to `nine-router` before PATCHing, so the picker can
   pass a "blend" pseudo-provider without backend changes.
 - Per-conversation override: `ChatRequest.model`
-  (`brain4all/models/api.py`) reaches `_prepare_chat_command` which appends
+  (`xnobrain/models/api.py`) reaches `_prepare_chat_command` which appends
   `--model <string>` to the Hermes CLI invocation (line 614) — a blend name
   works there too.
 - `_conversation_model()` (line 1410) resolves the session's model from the
@@ -279,8 +279,8 @@ live in Phase 0 (§10).
 Plan 009 (implemented) aggregates the pre-summed `sessions` table per profile;
 `sessions.model` records the **requested** model string (today `"auto"` for
 auto-routed agents; see `plans/009_usage_analytics/findings.md` §1 for the
-column list and `brain4all/integrations/hermes.py` `_conversation_model` /
-`_create_session`, lines 1410–1440). `brain4all/services/analytics.py` groups
+column list and `xnobrain/integrations/hermes.py` `_conversation_model` /
+`_create_session`, lines 1410–1440). `xnobrain/services/analytics.py` groups
 by exactly that string (`by_model` accumulation around lines 223–249). So when
 an agent's model is a blend name, the analytics by-model table shows the blend
 name as the session's model — with no code change. The *actual* underlying
@@ -322,7 +322,7 @@ is written. Probes (test file named in
    201. Record the observed accepted/rejected set against
    `/^[a-zA-Z0-9_.\-]+$/`.
 4. **Duplicate name**: second `POST` with the same name → 400 ("already
-   exists" — status code recorded; upstream uses 400, Brain4All maps its own
+   exists" — status code recorded; upstream uses 400, XNOBrain maps its own
    pre-check to 409, see architecture.md).
 5. **Partial PUT body**: `PUT /api/combos/{id}` with only `{"models": [...]}`
    → 200 and name unchanged; with only `{"name": "renamed"}` → 200 and models
@@ -343,7 +343,7 @@ is written. Probes (test file named in
     `{"comboStrategies": {"b4a-probe": {"fallbackStrategy": "fusion",
     "judgeModel": "<real id>"}}}` round-trips; record what `fusionTuning`
     looks like if the 9router dashboard sets one (shape currently unverified —
-    until probed, Brain4All treats it as an opaque optional object it never
+    until probed, XNOBrain treats it as an opaque optional object it never
     fabricates).
 11. **Sticky limit**: PATCH `{"comboStickyRoundRobinLimit": 3}` round-trips at
     the settings top level (global — §4).
@@ -368,11 +368,11 @@ probe combo name returns from one of its member models and logs the
 - **Fusion cost.** Fusion multiplies spend by the blend size on *every*
   request, plus the judge call, and silently disables tools (§4). Mitigated by
   explicit UI copy and by exposing fusion last in the strategy choices.
-- **Settings read-modify-write race.** Concurrent strategy writes (Brain4All
+- **Settings read-modify-write race.** Concurrent strategy writes (XNOBrain
   and the 9router dashboard open at once) can lose one update (§6).
   Single-operator local deployment makes this acceptable; documented.
 - **Name shadowing.** A combo name that equals a real model id would shadow
-  it at request time. Brain4All's service rejects such names on create/rename
+  it at request time. XNOBrain's service rejects such names on create/rename
   (architecture.md guard rules); names created directly in the 9router
   dashboard bypass this — listed as-is, not repaired.
 
@@ -381,8 +381,8 @@ probe combo name returns from one of its member models and logs the
 - Can a combo's `models` array reference another combo name (nested blends)?
   Not relied upon and not exposed: `GET /blends/available-models` only offers
   real provider models. A Phase-0 curiosity probe may record the upstream
-  behavior, but no Brain4All behavior depends on the answer.
-- Does 9router cap `models` length? Not observed in the handlers; Brain4All
+  behavior, but no XNOBrain behavior depends on the answer.
+- Does 9router cap `models` length? Not observed in the handlers; XNOBrain
   imposes its own cap of 24 (architecture.md) so the UI stays sane either way.
 - Should the global `comboStrategy` default ever be surfaced? Deferred — this
   plan only reads it as the fallback when hydrating per-blend strategies, and

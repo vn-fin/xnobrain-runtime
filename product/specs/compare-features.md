@@ -1,4 +1,4 @@
-# Brain4All — Simple Edition Comparison
+# XNOBrain — Simple Edition Comparison
 
 This is the short product contract. Detailed behavior belongs in:
 
@@ -14,7 +14,7 @@ This is the short product contract. Detailed behavior belongs in:
 Edition controls **features**. Deployment controls **resources**.
 
 - Self-hosted runs on the customer's hardware and does not limit local resources.
-- Cloud runs on Brain4All hardware and limits CPU, RAM, storage, objects, and run time.
+- Cloud runs on XNOBrain hardware and limits CPU, RAM, storage, objects, and run time.
 - Free and Pro are personal products for one user.
 - Enterprise includes Pro and adds organization features for many users.
 - Losing a subscription or exceeding a cloud limit never deletes user data.
@@ -87,7 +87,7 @@ Enterprise includes every Pro capability and adds the business layer:
 6. Fleet management, audit, retention, residency, backup, and disaster recovery.
 
 The Enterprise control plane is implemented in Go with PostgreSQL in the separate
-`brain4all-enterprise` repository. It consumes released OSS runtime contracts and must
+`xnobrain-enterprise` repository. It consumes released OSS runtime contracts and must
 not be required by a signed-out self-hosted installation.
 
 ## Privacy and collaboration note

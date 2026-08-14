@@ -13,8 +13,8 @@ run focused tests before moving on.
    Kanban program (keep one pin for the whole repo). Record the pin and the
    plugin/hook/tool symbols it must provide in `docs/development.md` and
    `docs/architecture.md`.
-2. **Compatibility test** — new `brain4all/tests/test_plugins_compat.py`
-   (mirror `brain4all/tests/test_kanban.py`'s guarded-import + temp-`HERMES_HOME`
+2. **Compatibility test** — new `xnobrain/tests/test_plugins_compat.py`
+   (mirror `xnobrain/tests/test_kanban.py`'s guarded-import + temp-`HERMES_HOME`
    style). Guard with `try: import hermes_cli.plugins_cmd … except Exception:
    HERMES_AVAILABLE=False`. Assert the symbols in
    [findings.md §5](findings.md#compatibility-apis-to-pin-and-test) are importable
@@ -36,7 +36,7 @@ run focused tests before moving on.
      `should_allow_install`, `format_scan_report`, `ScanResult`.
    - `tools.osv_check.check_package_for_malware`.
    - **Lifecycle in a temp `HERMES_HOME`** using a real local plugin directory
-     committed under `brain4all/tests/fixtures/plugins/sample_plugin/` (a minimal
+     committed under `xnobrain/tests/fixtures/plugins/sample_plugin/` (a minimal
      manifest + a harmless tool; NO network): install-from-local → scan (verdict
      `safe`) → assert enable-without-approval is blocked by the service → approve
      → enable → assert in `_get_enabled_set()` → disable → remove. Also a second
@@ -56,16 +56,16 @@ Gate: this test and `make check` pass before Phase 1.
 
 ## Phase 1 — Models + integration adapter {#phase-1}
 
-4. **Models** — `brain4all/models/api.py`: add `PluginInstall`,
+4. **Models** — `xnobrain/models/api.py`: add `PluginInstall`,
    `PluginApproval`, `PluginVisibility`, `HookCreate`, `HookDelete` exactly as in
-   [architecture.md](architecture.md#new-brain4all-api-contract). Export them in
-   `brain4all/models/__init__.py` and import them in `brain4all/routes/setup.py`'s
+   [architecture.md](architecture.md#new-xnobrain-api-contract). Export them in
+   `xnobrain/models/__init__.py` and import them in `xnobrain/routes/setup.py`'s
    models import block. Reuse `EnabledPatch` for tool toggles.
-5. **Integration adapter** — new `brain4all/integrations/plugins.py`:
+5. **Integration adapter** — new `xnobrain/integrations/plugins.py`:
    - `class PluginAPIError(ValueError)` with `__init__(self, message, *,
      code="plugin_error", status=400)` (mirror `AgentAPIError`).
    - `class PluginManager` with the surface in
-     [architecture.md](architecture.md#integration-adapter-brain4allintegrationspluginspy).
+     [architecture.md](architecture.md#integration-adapter-xnobrainintegrationspluginspy).
      Construct from env (`HERMES_ROOT_PROFILE`, `HERMES_PROFILES_ROOT`) like
      `AgentManager`. Hold no policy.
    - Import Hermes lazily inside methods (as `integrations/kanban.py` does):
@@ -112,22 +112,22 @@ Gate: this test and `make check` pass before Phase 1.
      `agent.disabled_toolsets` (denylist, mirroring skills' `_write_disabled_skills`),
      runs `normalize_nine_router_config`, and writes atomically. Reject any
      toolset not in `SAFE_TOOLSETS` ∪ enabled-plugin toolsets.
-6. **Wire the adapter** into `brain4all/app.py`: construct `PluginManager` and
-   pass it into the service (see Phase 2). Instantiate in `brain4all/server.py`
+6. **Wire the adapter** into `xnobrain/app.py`: construct `PluginManager` and
+   pass it into the service (see Phase 2). Instantiate in `xnobrain/server.py`
    next to `AgentManager()`/`GlobalConfigManager()`/`NineRouterManager()`.
 
 ## Phase 2 — Service with the scan+approval rule {#phase-2}
 
-7. **Snapshot kind** — `brain4all/repositories/files.py`: extend the `snapshot()`
+7. **Snapshot kind** — `xnobrain/repositories/files.py`: extend the `snapshot()`
    `kind` whitelist (currently `{memory, skills, config}` at ~line 75) to include
    `"plugins"`. Approval records live at
    `DATA_DIR/plugins/approvals/<name>.json`; snapshots at
    `DATA_DIR/plugins/snapshots/`. (If `DATA_DIR` layout differs, follow the
    repository's existing root helpers — do not hardcode.)
-8. **Service** — new `brain4all/services/plugins.py`, `class PluginService`
+8. **Service** — new `xnobrain/services/plugins.py`, `class PluginService`
    constructed `(repository, plugins: PluginManager, agents: AgentManager)`.
    Implement the methods and invariant from
-   [architecture.md](architecture.md#service-brain4allservicespluginspy):
+   [architecture.md](architecture.md#service-xnobrainservicespluginspy):
    - `_record_path(name)`, `_load_record(name)`, `_write_record(name, record)`
      (snapshot-before-write via `repository.snapshot(agent_id="_global",
      "plugins", name, payload)` then `repository.atomic_json`).
@@ -167,16 +167,16 @@ Gate: this test and `make check` pass before Phase 1.
    - `list()/hub()/rescan()/set_visibility()`, `list_hooks()/create_hook()/
      delete_hook()`, `list_agent_toolsets()/set_agent_toolset()` delegate to the
      adapter with input validation.
-   - Add `PluginAPIError` to `EXPECTED_ERRORS` in `brain4all/services/__init__.py`
+   - Add `PluginAPIError` to `EXPECTED_ERRORS` in `xnobrain/services/__init__.py`
      (or `platform.py` where it is defined) so handlers map it.
-   - Register `PluginService` on `Brain4AllApplication` (compose in
-     `brain4all/app.py`); native-tool methods may live on `PlatformService`
+   - Register `PluginService` on `XNOBrainApplication` (compose in
+     `xnobrain/app.py`); native-tool methods may live on `PlatformService`
      instead, beside skills/MCP — pick one and keep the handler wiring
      consistent.
 
 ## Phase 3 — Handlers + routes {#phase-3}
 
-9. **Handlers** — `brain4all/handlers/api.py`, add to the `operations` dict in
+9. **Handlers** — `xnobrain/handlers/api.py`, add to the `operations` dict in
    `_operation` (async methods are already awaited by `dispatch`):
    ```python
    "plugins_list":     (s.plugins.list, "plugins retrieved successfully", 200),
@@ -197,7 +197,7 @@ Gate: this test and `make check` pass before Phase 1.
    "hook_delete":      (lambda: s.plugins.delete_hook(body), "hook deleted successfully", 200),
    ```
    (Use whichever service object holds each method; `s` is `self.service`.)
-10. **Routes** — `brain4all/routes/setup.py`, add to `ROUTES` (one tag group
+10. **Routes** — `xnobrain/routes/setup.py`, add to `ROUTES` (one tag group
     `("Plugins",)`; hooks/tools may share it or use `("Hooks",)`/`("Tools",)`):
     ```python
     Route("GET",    "/api/brain/v1/plugins",                 "plugins_list", tags=("Plugins",)),

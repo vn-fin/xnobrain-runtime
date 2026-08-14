@@ -7,7 +7,7 @@ import { providerConnectNeedsText, providerUsesInlineApiKey } from '../utils/pro
 import { useProviderAuthPopup } from '../hooks/useProviderAuthPopup';
 import { closeProviderAuthPopup } from '../utils/providerAuth';
 import { SUPPORTED_LANGUAGES } from '../i18n';
-import { brain4AllRuntime } from '../runtime';
+import { xnobrainRuntime } from '../runtime';
 
 const STEP_ICONS = [Server, Plug];
 const TOTAL = 2;
@@ -44,7 +44,7 @@ export function Onboarding({
   onSaveKey: (id: string, key: string, baseUrl?: string) => void;
 }) {
   const { t, i18n } = useTranslation();
-  const managedVM = brain4AllRuntime.edition === 'cloud';
+  const managedVM = xnobrainRuntime.edition === 'cloud';
   const [step, setStep] = useState(0);
 
   const connected = providers.filter((p) => p.connected);
@@ -156,7 +156,7 @@ export function Onboarding({
           {step === 0 && (
             <div className="ob-step-body">
               <strong>{managedVM ? 'Create your VM' : t('onboarding.vm.title')}</strong>
-              <span className="ob-step-desc">{managedVM ? 'Provision your private Incus VM before configuring the Brain4All runtime.' : t('onboarding.vm.desc')}</span>
+              <span className="ob-step-desc">{managedVM ? 'Provision your private Incus VM before configuring the XNOBrain runtime.' : t('onboarding.vm.desc')}</span>
               {setupRunning ? (
                 <div className="ob-progress">
                   <div className="sbx-progress-track" role="progressbar" aria-label="VM provisioning progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={setupProgress}>

@@ -94,7 +94,7 @@ architecture.md §5, contract § Hashing rules).
   agent name across devices (different salts).
 - Tension, stated honestly: admins see `a3f9…` where they want "Marketing
   assistant". Resolution — **the user opts in** to publishing display labels:
-  `BRAIN4ALL_USAGE_SHARE_LABELS=1` enables `POST /ingest/v1/labels` with
+  `XNOBRAIN_USAGE_SHARE_LABELS=1` enables `POST /ingest/v1/labels` with
   `{agent_hash, display_name}` pairs (agent display names only — session
   titles are content and are never labelable). Default is off because
   user-entered names are on the telemetry forbidden list; consent flips the
@@ -156,7 +156,7 @@ files below `DATA_DIR`, no application database*; a writer database invites
 lock contention and corruption modes the file scheme cannot have; and
 "bounded, drop-oldest" is a `stat()+unlink()` on files versus DELETE+VACUUM
 bookkeeping in SQLite. The repo's only SQLite files are Hermes-owned
-`state.db`s that Brain4All reads `?mode=ro` — introducing a Brain4All-owned
+`state.db`s that XNOBrain reads `?mode=ro` — introducing a XNOBrain-owned
 writable SQLite file would be a new persistence category for no gain.
 
 ### Option D2 — Atomic JSONL batch files (chosen)
@@ -176,12 +176,12 @@ header line + wire-ready snapshot lines (architecture.md §2.2).
 
 **Chosen: 60 s local scan / 300 s push, ±20% jitter, env-tunable.**
 
-- **Scan (`BRAIN4ALL_USAGE_REPORT_INTERVAL`, default 60 s).** Cheap by
+- **Scan (`XNOBRAIN_USAGE_REPORT_INTERVAL`, default 60 s).** Cheap by
   construction: per agent it is one `stat()` (mtime-skip, plan-009 pattern)
   and only on change one read-only indexed query. 60 s keeps `acked_watermark`
   and central freshness within a couple of minutes of reality without
   measurable local load.
-- **Push (`BRAIN4ALL_USAGE_PUSH_INTERVAL`, default 300 s).** Usage accounting
+- **Push (`XNOBRAIN_USAGE_PUSH_INTERVAL`, default 300 s).** Usage accounting
   does not need sub-minute freshness; 5-minute batching cuts fleet request
   volume 5× versus pushing every scan and produces fewer, larger, cheaper
   batches. A 10k-device fleet averages ~33 req/s at steady state.

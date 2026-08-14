@@ -1,4 +1,4 @@
-# Hiện trạng — Brain4All là gì ở thời điểm hiện tại
+# Hiện trạng — XNOBrain là gì ở thời điểm hiện tại
 
 > Phạm vi: lấy từ chính repository (`AGENTS.md`, `README.md`,
 > `docs/architecture.md`, `docs/enterprise-extension.md`,
@@ -7,7 +7,7 @@
 
 ## 1. Định nghĩa trong một câu
 
-Brain4All là một **workspace tự lưu trữ (self-host) trên nền React + FastAPI, bao bọc
+XNOBrain là một **workspace tự lưu trữ (self-host) trên nền React + FastAPI, bao bọc
 Hermes Agent mã nguồn mở của Nous Research** và bổ sung một bộ định tuyến LLM đa nhà
 cung cấp (được gọi nội bộ là **9router**), đóng gói thành một sản phẩm có thể tải về
 kèm một control plane doanh nghiệp độc quyền tùy chọn.
@@ -20,7 +20,7 @@ Tầm nhìn Twin Terminal) là đích đến; tài liệu này là điểm khở
 
 ```
 browser → Traefik → React UI
-                 → FastAPI :8642  (Hermes native routes + Brain4All routes)
+                 → FastAPI :8642  (Hermes native routes + XNOBrain routes)
                         → services → repositories → atomic profile/config files
                         → integrations → Hermes CLI/core
                         → integrations → 9router :20128 → LLM providers
@@ -31,17 +31,17 @@ Những sự thật chính rút ra từ `docs/architecture.md`:
 - Container runtime khởi động **đúng hai tiến trình**: FastAPI trên `8642` và
   9router trên `20128`. React được phục vụ qua Traefik.
 - Đây là một **modular monolith bằng Python** được xếp lớp lên trên ứng dụng FastAPI
-  của Hermes CLI gốc. Việc lắp ráp route được tập trung tại `brain4all/routes/setup.py`.
+  của Hermes CLI gốc. Việc lắp ráp route được tập trung tại `xnobrain/routes/setup.py`.
 - **Không có database ứng dụng.** Trạng thái là các file nguyên tử (atomic) nằm dưới
   `DATA_DIR`. Hermes giữ `state.db` riêng cục bộ theo profile cho lịch sử phiên native
-  (một file thuộc upstream, không phải schema của Brain4All).
+  (một file thuộc upstream, không phải schema của XNOBrain).
 - Phân lớp gọn gàng: **handlers** đảm nhiệm chuyển đổi HTTP/SSE, **services** đảm nhiệm
   quy tắc, **repositories** đảm nhiệm file nguyên tử (atomic), **integrations** thích
   ứng Hermes CLI và 9router, **models** là Pydantic.
 - **Không có phụ thuộc control plane được quản lý, không đăng nhập, không proxy API**
   trong bản dựng OSS. OpenTelemetry chỉ chạy cục bộ và mặc định tắt.
 
-### Bản đồ mã nguồn (`brain4all/`)
+### Bản đồ mã nguồn (`xnobrain/`)
 
 | Lớp | File | Trách nhiệm |
 |---|---|---|
@@ -82,8 +82,8 @@ và cung cấp:
 
 | Repo | Dựng | Sở hữu |
 |---|---|---|
-| `brain4all` (repo này, **công khai/OSS**) | Image React + image FastAPI/Hermes/9router hợp nhất | Cô lập profile, đường dẫn an toàn, snapshot, hội thoại, gọi Hermes, ủy thác 9router, middleware quota, thực thi cấp service |
-| `brain4all-enterprise` (**riêng tư**) | Enterprise API + đóng gói cloud được quản lý/Incus | Auth, phân giải tenant/plan, quyền lợi thanh toán, quota phân tán, RBAC, audit, quản lý secret, điều phối được quản lý, lưu giữ telemetry |
+| `xnobrain` (repo này, **công khai/OSS**) | Image React + image FastAPI/Hermes/9router hợp nhất | Cô lập profile, đường dẫn an toàn, snapshot, hội thoại, gọi Hermes, ủy thác 9router, middleware quota, thực thi cấp service |
+| `xnobrain-enterprise` (**riêng tư**) | Enterprise API + đóng gói cloud được quản lý/Incus | Auth, phân giải tenant/plan, quyền lợi thanh toán, quota phân tán, RBAC, audit, quản lý secret, điều phối được quản lý, lưu giữ telemetry |
 
 Các quy tắc bảo vệ mô hình:
 
@@ -92,7 +92,7 @@ Các quy tắc bảo vệ mô hình:
 - **Phụ thuộc là một chiều**: enterprise có thể kéo image runtime công khai; bản triển
   khai OSS không bao giờ kéo image enterprise.
 - Enterprise là một **thành phần riêng tư mỏng** (thin private composition), không phải
-  fork. Nó ghim một module Brain4All + image runtime đã phát hành và hiện thực một hợp
+  fork. Nó ghim một module XNOBrain + image runtime đã phát hành và hiện thực một hợp
   đồng `pkg/edition.Policy` (`-1` = không giới hạn).
 - Các phiên bản: **self-hosted Free** (chỉ file), **Cloud Free / Personal Pro /
   Enterprise** (control plane PostgreSQL riêng tư dùng chung). Enterprise bổ sung
@@ -109,7 +109,7 @@ phiên bản enterprise bằng Go. Thực tế hiện tại của repository là
 - **OSS = Python** (monolith FastAPI) + frontend React/TypeScript. Con đường Go/Postgres
   đã bị loại bỏ một cách rõ ràng trong repo OSS.
 - **Enterprise = Go** (control plane `pkg/edition.Policy`, đường dẫn module
-  `github.com/vn-fin/brain4all/`, điều phối được quản lý).
+  `github.com/vn-fin/xnobrain/`, điều phối được quản lý).
 
 Vậy nên "mã nguồn mở Python + Go" **không** phải là điều mã nguồn làm hôm nay. Hãy
 quyết định một cách có chủ đích (xem tài liệu roadmap): hoặc (a) giữ OSS chỉ Python và

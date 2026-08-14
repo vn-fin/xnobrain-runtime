@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 import yaml
 
-from xnobrain.app import Brain4AllApplication
+from xnobrain.app import XNOBrainApplication
 from xnobrain.integrations import AgentManager, GlobalConfigManager, NineRouterAPIError
 
 
@@ -125,7 +125,7 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.environment.start()
         self.router = FakeRouter()
         app = FastAPI()
-        Brain4AllApplication(
+        XNOBrainApplication(
             AgentManager(root_profile=root, profiles_root=profiles,
                          legacy_agents_root=base / "legacy"),
             GlobalConfigManager(root_profile=root), self.router,

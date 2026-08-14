@@ -110,31 +110,31 @@ RUN uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
 
 # Use 9router's standalone build for the supervised web process. The globally
 # installed CLI above remains available to the root agent for administration.
-COPY --from=nine-router-builder /src/public /opt/brain4all/9router/public
-COPY --from=nine-router-builder /src/.next/static /opt/brain4all/9router/.next/static
-COPY --from=nine-router-builder /src/.next/standalone/ /opt/brain4all/9router/
-COPY --from=nine-router-builder /src/open-sse /opt/brain4all/9router/open-sse
-COPY --from=nine-router-builder /src/src/mitm /opt/brain4all/9router/src/mitm
-COPY --from=nine-router-builder /src/node_modules/node-forge /opt/brain4all/9router/node_modules/node-forge
-COPY --from=nine-router-builder /src/node_modules/next /opt/brain4all/9router/node_modules/next
+COPY --from=nine-router-builder /src/public /opt/xnobrain/9router/public
+COPY --from=nine-router-builder /src/.next/static /opt/xnobrain/9router/.next/static
+COPY --from=nine-router-builder /src/.next/standalone/ /opt/xnobrain/9router/
+COPY --from=nine-router-builder /src/open-sse /opt/xnobrain/9router/open-sse
+COPY --from=nine-router-builder /src/src/mitm /opt/xnobrain/9router/src/mitm
+COPY --from=nine-router-builder /src/node_modules/node-forge /opt/xnobrain/9router/node_modules/node-forge
+COPY --from=nine-router-builder /src/node_modules/next /opt/xnobrain/9router/node_modules/next
 
-COPY requirements.txt /opt/brain4all/requirements.txt
+COPY requirements.txt /opt/xnobrain/requirements.txt
 RUN uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
-      -r /opt/brain4all/requirements.txt
+      -r /opt/xnobrain/requirements.txt
 
-COPY xnobrain /opt/brain4all/xnobrain
-COPY server.py /opt/brain4all/server.py
-COPY runtime/profile-templates /opt/brain4all/profile-templates
-COPY scripts/apply-profile-templates.sh /usr/local/bin/brain4all-apply-profile-templates
-COPY runtime/container-entrypoint.sh /usr/local/bin/brain4all-runtime
-COPY runtime/prepare-nine-router-auth.sh /usr/local/bin/brain4all-prepare-nine-router-auth
-RUN find /opt/brain4all/xnobrain -type d -name __pycache__ -prune -exec rm -rf {} + \
-    && find /opt/brain4all/xnobrain -type f -name '*.pyc' -delete \
+COPY xnobrain /opt/xnobrain/xnobrain
+COPY server.py /opt/xnobrain/server.py
+COPY runtime/profile-templates /opt/xnobrain/profile-templates
+COPY scripts/apply-profile-templates.sh /usr/local/bin/xnobrain-apply-profile-templates
+COPY runtime/container-entrypoint.sh /usr/local/bin/xnobrain-runtime
+COPY runtime/prepare-nine-router-auth.sh /usr/local/bin/xnobrain-prepare-nine-router-auth
+RUN find /opt/xnobrain/xnobrain -type d -name __pycache__ -prune -exec rm -rf {} + \
+    && find /opt/xnobrain/xnobrain -type f -name '*.pyc' -delete \
     && install -d -m 0700 /opt/data /opt/data/home /opt/data/home/.config \
-    && chmod 0755 /usr/local/bin/brain4all-runtime /usr/local/bin/brain4all-prepare-nine-router-auth /usr/local/bin/brain4all-apply-profile-templates \
+    && chmod 0755 /usr/local/bin/xnobrain-runtime /usr/local/bin/xnobrain-prepare-nine-router-auth /usr/local/bin/xnobrain-apply-profile-templates \
     && ln -sfn /usr/local/lib/hermes-agent/venv/bin/hermes /usr/local/bin/agent \
     && /usr/local/lib/hermes-agent/venv/bin/python -m compileall -q \
-      /opt/brain4all/xnobrain /opt/brain4all/server.py \
+      /opt/xnobrain/xnobrain /opt/xnobrain/server.py \
     && apt-get update
 
 ENV PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr/local/bin:${PATH}" \
@@ -151,4 +151,4 @@ VOLUME ["/opt/data"]
 EXPOSE 8642 20128
 HEALTHCHECK --interval=15s --timeout=3s --retries=10 CMD /usr/local/lib/hermes-agent/venv/bin/python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/xnobrain/api/runtime/v1/health',timeout=2)" || exit 1
 USER root
-ENTRYPOINT ["/usr/local/bin/brain4all-runtime"]
+ENTRYPOINT ["/usr/local/bin/xnobrain-runtime"]

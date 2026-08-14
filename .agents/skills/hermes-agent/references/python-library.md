@@ -1,6 +1,6 @@
 # Embedding Hermes: the `AIAgent` Python library
 
-Use this when running Hermes programmatically — exactly what Brain4All's backend
+Use this when running Hermes programmatically — exactly what XNOBrain's backend
 does. Docs: https://hermes-agent.nousresearch.com/docs/guides/python-library
 
 Verify against source:
@@ -114,12 +114,12 @@ cd hermes-agent && uv sync
 uv run python your_app.py
 ```
 
-## How Brain4All uses this
+## How XNOBrain uses this
 
-Brain4All embeds the `AIAgent` runtime and extends it from `xnobrain/`
+XNOBrain embeds the `AIAgent` runtime and extends it from `xnobrain/`
 (integrations adapt the Hermes CLI/runtime). When adding a Hermes-backed feature:
 
 - Instantiate with `quiet_mode=True` and scope toolsets to what the feature needs.
 - Reuse the streaming run events / stop behavior / approval path that
-  `brain4all` already wires — don't bypass them (see `AGENTS.md`).
+  `xnobrain` already wires — don't bypass them (see `AGENTS.md`).
 - Keep prompts/keys/tool args out of logs (repo security rule).

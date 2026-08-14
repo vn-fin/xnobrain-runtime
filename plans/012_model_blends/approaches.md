@@ -56,7 +56,7 @@ Options:
 - The reserved `auto` combo is presented as a built-in blend labeled
   **"Auto"**, `system: true`, and stays managed by `ensure_auto_combo()`.
 
-## Decision B — Where strategy lives in the Brain4All API
+## Decision B — Where strategy lives in the XNOBrain API
 
 Upstream splits the data: model list in the combo row, strategy in
 `settings.comboStrategies[<name>]` (findings.md §4, §6).
@@ -142,8 +142,8 @@ uses when `providers()` degrades.
 
 ### D2. Serve a cached last-known snapshot
 
-- Cons: requires Brain4All-side persistence of 9router state — violates the
-  "Brain4All stores nothing" rule of this plan and the no-mock/no-stale
+- Cons: requires XNOBrain-side persistence of 9router state — violates the
+  "XNOBrain stores nothing" rule of this plan and the no-mock/no-stale
   principle; invalidation bugs. Rejected.
 
 **Chosen: D1.**
@@ -171,7 +171,7 @@ and never fabricates it.
 
 - Pros: smaller Phase-0 surface (no judge/tuning probes).
 - Cons: ships a strategy picker that misses the most differentiated option;
-  users who saw fusion in the 9router dashboard would find Brain4All
+  users who saw fusion in the 9router dashboard would find XNOBrain
   inexplicably behind; the settings write path is identical work anyway
   (same `comboStrategies` entry), so the saving is one select and one probe.
 

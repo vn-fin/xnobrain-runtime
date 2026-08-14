@@ -9,7 +9,7 @@ backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 profile_template="$hermes_home/profile-template"
 
 if [[ ! -f "$templates_dir/config.yaml" || ! -f "$templates_dir/AGENTS.md" || ! -f "$templates_dir/SOUL.md" ]]; then
-  echo "Brain4All profile templates are missing from $templates_dir" >&2
+  echo "XNOBrain profile templates are missing from $templates_dir" >&2
   exit 1
 fi
 
@@ -46,4 +46,4 @@ apply_file "$hermes_home" "$templates_dir/SOUL.md" "$hermes_home/SOUL.md" "SOUL.
 apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/AGENTS.md" "AGENTS.md"
 apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/workspace/AGENTS.md" "workspace/AGENTS.md"
 
-echo "Installed the independent Brain4All profile template and refreshed Big Brother guidance."
+echo "Installed the independent XNOBrain profile template and refreshed Big Brother guidance."

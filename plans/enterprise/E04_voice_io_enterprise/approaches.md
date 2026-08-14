@@ -86,8 +86,8 @@ as the consumption record; the schema already supports it.
 
 ### C1. Extend the existing `limits` payload  ✅ CHOSEN
 
-`GET /api/brain/v1/limits` (`brain4all/routes/setup.py` line 40; op at
-`brain4all/handlers/api.py` line 97 — verified) gains a `capabilities` object
+`GET /api/brain/v1/limits` (`xnobrain/routes/setup.py` line 40; op at
+`xnobrain/handlers/api.py` line 97 — verified) gains a `capabilities` object
 from the cached entitlement document when signed in, `{}` when signed out.
 
 - Pros: the route and its frontend consumption already exist; one fetch on
@@ -176,11 +176,11 @@ local Hermes features"), and it would be DRM theater — the code is open.
 
 ### E2. Documented as unsupported-but-possible; no blocking  ✅ CHOSEN
 
-Brain4All neither removes nor surfaces the capability in OSS: no Brain4All
+XNOBrain neither removes nor surfaces the capability in OSS: no XNOBrain
 voice routes/UI without the enterprise capability, but Hermes' native
 behavior is untouched. Documentation (the E04 section added to `docs/`)
 states plainly: *self-hosted users may configure Hermes voice providers
-directly with their own keys; this path is not integrated with the Brain4All
+directly with their own keys; this path is not integrated with the XNOBrain
 UI, not metered, and not supported — and that's fine.* The enterprise value
 proposition is key custody, integration, and metering — not artificial
 scarcity.

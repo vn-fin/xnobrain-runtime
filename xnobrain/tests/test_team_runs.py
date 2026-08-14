@@ -23,7 +23,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 import yaml
 
-from xnobrain.app import Brain4AllApplication
+from xnobrain.app import XNOBrainApplication
 from xnobrain.integrations import AgentManager, GlobalConfigManager
 from xnobrain.repositories.files import TEAM_RUN_RETENTION
 
@@ -93,7 +93,7 @@ class _TeamRunBase(unittest.IsolatedAsyncioTestCase):
         })
         self.environment.start()
         app = FastAPI()
-        self.composition = Brain4AllApplication(
+        self.composition = XNOBrainApplication(
             AgentManager(root_profile=self.root, profiles_root=self.profiles, legacy_agents_root=base / "legacy-agents"),
             GlobalConfigManager(root_profile=self.root), FakeRouter(),
         )

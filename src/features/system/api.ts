@@ -153,8 +153,8 @@ export const systemApi = {
     if (picker) {
       try {
         const handle = await picker.call(window, {
-          suggestedName: teamIds.length === 1 ? 'brain4all-team.zip' : 'brain4all-profile.zip',
-          types: [{ description: 'Brain4All snapshot', accept: { 'application/zip': ['.zip'] } }],
+          suggestedName: teamIds.length === 1 ? 'xnobrain-team.zip' : 'xnobrain-profile.zip',
+          types: [{ description: 'XNOBrain snapshot', accept: { 'application/zip': ['.zip'] } }],
         });
         writer = await handle.createWritable();
       } catch (error) {

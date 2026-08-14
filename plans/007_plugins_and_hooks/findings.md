@@ -4,11 +4,11 @@ Evidence for [README.md](README.md). Recheck every path/line against the pinned
 Hermes revision before implementation; line numbers drift.
 
 Hermes source root (read-only, EXTEND — never fork):
-`/home/kim/Documents/xno/brain4all-dev/brain4all/.tools/hermes-agent/`
+`/home/kim/Documents/xno/xnobrain-dev/xnobrain/.tools/hermes-agent/`
 
 Import roots (top-level packages inside that tree): `hermes_cli`, `tools`,
 `toolsets` (single module `toolsets.py`), `gateway`, `agent`, `hermes_state`.
-Precedent: `brain4all/integrations/kanban.py` already does
+Precedent: `xnobrain/integrations/kanban.py` already does
 `from hermes_cli import kanban_db`.
 
 ## 1. What Hermes provides
@@ -35,7 +35,7 @@ rejects empty / `..` / `\`). Most are `_require_token`-gated.
 
 ### 1.2 Plugin CLI + dashboard helpers (`hermes_cli/plugins_cmd.py`)
 
-Public-enough functions Brain4All will ride in-process (all verified present):
+Public-enough functions XNOBrain will ride in-process (all verified present):
 
 - `dashboard_install_plugin(identifier, *, force, enable) -> dict` (1762) —
   resolves the git URL (warns on `http://`/`file://`), `git clone --depth 1`
@@ -107,15 +107,15 @@ runtime status + auth-required flags + providers).
     config, platform, enabled_toolset_keys)` (2024).
   - Runtime per-tool gating is by each tool's `check_fn` (creds/binary), not a
     per-tool allow-list — so browser/image/computer-use appear only when their
-    backing binary/key is present. Brain4All must surface this "available vs
+    backing binary/key is present. XNOBrain must surface this "available vs
     enabled vs ready" distinction honestly.
 - **Plugin native-tool override opt-in:** `plugins.entries.<id>.allow_tool_override`
   in `config.yaml` (read `hermes_cli/plugins.py:470`, wired via
   `registry.register_plugin_override_policy`, enforced in `registry.register`
   402–417). The CLI enable path prompts for this; the **dashboard enable path
-  does not** — a Brain4All safety concern (see §4).
+  does not** — a XNOBrain safety concern (see §4).
 
-## 2. What Brain4All has (templates) and lacks
+## 2. What XNOBrain has (templates) and lacks
 
 ### Has (the wiring template)
 - MCP: `PlatformService.get_mcp/update_mcp` (`services/platform.py` 575–588),
@@ -153,18 +153,18 @@ runtime status + auth-required flags + providers).
 - Any hook management or observability surface.
 - Any **persistent per-agent native-tool toggle** — toolsets are only passed
   per-run via `--toolsets`; nothing writes `agent.disabled_toolsets`/
-  `platform_toolsets` from Brain4All.
+  `platform_toolsets` from XNOBrain.
 - Any plugin scan/approval gate.
 
 ## 3. The exact gap
 
-Brain4All exposes MCP + skills but **not** plugins, hooks, or the built-in tool
+XNOBrain exposes MCP + skills but **not** plugins, hooks, or the built-in tool
 set. Hermes exposes all three natively, but its **dashboard plugin install/enable
 path performs no malware/OSV scan, no approval, and no tool-override consent** —
 only a token gate and an opt-in enabled/disabled allow-list. Plan 007 closes
 the surface gap **and** the safety gap: it adds the plugin/hook/tool surfaces
 and inserts a mandatory scan+approval gate (built from Hermes' own
-`skills_guard`/`osv_check`) in front of every Brain4All enable path.
+`skills_guard`/`osv_check`) in front of every XNOBrain enable path.
 
 ## 4. Security model
 
@@ -190,15 +190,15 @@ and inserts a mandatory scan+approval gate (built from Hermes' own
 - **Sandboxing:** plugins run arbitrary Python in-process; there is no runtime
   sandbox. The only containment is the enabled/disabled allow-list and the
   `allow_tool_override` opt-in. Therefore the **pre-enable scan + explicit
-  approval is the primary control** and must be enforced in Brain4All's service,
+  approval is the primary control** and must be enforced in XNOBrain's service,
   not merely offered in the UI.
-- **Brain4All rule (mandatory, see [architecture.md](architecture.md) and
+- **XNOBrain rule (mandatory, see [architecture.md](architecture.md) and
   [implementation.md](implementation.md)):** install never auto-enables; the
   service scans the cloned plugin dir with `skills_guard` (+ `osv_check` on any
   declared package deps); a `dangerous` verdict blocks; `caution`/`ask`
   requires an explicit user approval recorded (with the scanned content hash)
   before enable; `enable` re-verifies the content hash and refuses if the scan
-  is missing, stale, dangerous, or unapproved. Brain4All never grants
+  is missing, stale, dangerous, or unapproved. XNOBrain never grants
   `allow_tool_override` automatically.
 
 ## 5. Compatibility APIs to pin and test

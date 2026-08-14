@@ -22,7 +22,7 @@ and cursor.**
 
 ## B. Connector placement: FastAPI lifespan task vs separate process — **lifespan task**
 
-Precedent: the kanban dispatcher (`brain4all/app.py` starts
+Precedent: the kanban dispatcher (`xnobrain/app.py` starts
 `dispatcher_loop()` as an `asyncio.create_task` inside the wrapped lifespan
 and cancels it on shutdown). The connector follows the same shape.
 
@@ -73,7 +73,7 @@ interface is also the seam for the fake driver used in Go tests.
 
 - **Env at create (chosen):** provisioner mints a *single-use, short-TTL,
   user-bound* enrollment token (E01) and injects it as
-  `BRAIN4ALL_ENROLLMENT_TOKEN` instance config. On first boot the connector
+  `XNOBRAIN_ENROLLMENT_TOKEN` instance config. On first boot the connector
   presents it during register; the server atomically consumes it and binds
   the new device to the owning user (**boots pre-enrolled/claimed**). The
   connector then never reads the env again; long-term identity is the Ed25519

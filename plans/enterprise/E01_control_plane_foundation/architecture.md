@@ -1,7 +1,7 @@
 # E01 — Architecture
 
 Service layout, schema v1, endpoint contract, challenge flow, token
-lifecycle, and tenancy for the new `brain4all-enterprise` repo. Cross-links:
+lifecycle, and tenancy for the new `xnobrain-enterprise` repo. Cross-links:
 [README.md](README.md), [findings.md](findings.md),
 [approaches.md](approaches.md), [implementation.md](implementation.md),
 [validation.md](validation.md).
@@ -10,11 +10,11 @@ lifecycle, and tenancy for the new `brain4all-enterprise` repo. Cross-links:
 
 One Go module, one binary, modular internal packages (decision C in
 [approaches.md](approaches.md)). Module path
-`github.com/vn-fin/brain4all-enterprise` ("verify" org — findings.md §8.4).
+`github.com/vn-fin/xnobrain-enterprise` ("verify" org — findings.md §8.4).
 
 ```
-brain4all-enterprise/
-├── go.mod                          # module github.com/vn-fin/brain4all-enterprise
+xnobrain-enterprise/
+├── go.mod                          # module github.com/vn-fin/xnobrain-enterprise
 ├── Makefile                        # run / test / migrate / build / check
 ├── Dockerfile                      # multi-stage: build → distroless/static
 ├── docker-compose.yaml             # api + postgres:16 (dev/eval stack)

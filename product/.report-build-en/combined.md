@@ -1,6 +1,6 @@
 # Executive Summary
 
-Brain4All is a self-hosted workspace for building and running AI agents, today built on
+XNOBrain is a self-hosted workspace for building and running AI agents, today built on
 Nous Research's open-source **Hermes Agent** (MIT) plus a multi-provider LLM router, with
 a clean open-core split already designed (a public runtime and a private enterprise
 control plane). The commodity capabilities — the agent loop, memory, skills, tool/MCP
@@ -48,7 +48,7 @@ companies — is **certify that a clone faithfully reproduces a specific named e
 organizations while the twin runs on the **customer's own runtime**. Evaluation startups
 measure *application quality*, not fidelity to a person; marketplaces vet *partners*, not
 humans. The strategic imperative is to lead with **certification and royalty**, not with
-"twins" — otherwise Brain4All is one of a dozen.
+"twins" — otherwise XNOBrain is one of a dozen.
 
 ## The moat, made concrete
 
@@ -348,25 +348,25 @@ the Certification Moat section.
 > conversation**). Expert-cloning is being funded fast (**Delphi $16M/Sequoia**,
 > **Cloneable 100× ARR**) yet **nobody certifies that a clone faithfully reproduces
 > the named human** — even as AI-evaluation adoption is set to triple to **60% of eng
-> teams by 2028**. Brain4All owns that gap: the certification gate for verified expert
+> teams by 2028**. XNOBrain owns that gap: the certification gate for verified expert
 > twins.
 
 
 # Startup Landscape — Who's Nearest, and the Whitespace
 
-> The companies closest to Brain4All's "verified expert-twin terminal," organized by
+> The companies closest to XNOBrain's "verified expert-twin terminal," organized by
 > segment, with funding/traction and — the column that matters — **whether they certify
 > fidelity to a named human.** Every figure is linked and dated. This is a landscape
 > scan, not an endorsement; treat funding figures as reported, not audited.
 >
 > ⚠ **Reality check up front:** since the first draft, this space has gotten *more*
-> crowded and *closer* to the Brain4All concept (Viven, IgniteTech, Interloom, Twinnin all landed
+> crowded and *closer* to the XNOBrain concept (Viven, IgniteTech, Interloom, Twinnin all landed
 > in late-2025/2026). The whitespace is still open — but the walls are moving in, which
 > raises the urgency of owning the **certification + royalty** layer first (see §9).
 
 ## 1. The map: still nobody sits at the full intersection
 
-The Brain4All vision needs **four** things at once that most startups do only one or two of:
+The XNOBrain vision needs **four** things at once that most startups do only one or two of:
 **(A)** a self-hostable agent runtime, **(B)** cloning a *named* expert's judgment,
 **(C)** **certified fidelity** to that person (measured, expiring), **(D)** a
 cross-org registry with **royalties**, running on the **customer's own data**.
@@ -374,7 +374,7 @@ cross-org registry with **royalties**, running on the **customer's own data**.
 ```
                          (A) self-host   (B) clone a    (C) CERTIFY      (D) registry +
                           runtime        named expert   fidelity         royalty
-Hermes / Brain4All          ●●●             ○ (planned)    ○ (the bet)      ○ (planned)
+Hermes / XNOBrain          ●●●             ○ (planned)    ○ (the bet)      ○ (planned)
 OpenClaw                    ●●●             ○              ○                ○
 Viven                       ○               ●●● (employee) ○                ○
 IgniteTech MyPersonas       ○               ●●● (employee) ○                ○
@@ -549,7 +549,7 @@ known LLM-judge biases (the Certification Moat section) mean the
 
 | Company | Self-host | Clone a **named** person | **Certify fidelity** (measured, expiring) | Royalty / rev-share | Runs on customer's data |
 |---|:--:|:--:|:--:|:--:|:--:|
-| **Brain4All (goal)** | ✔ | ✔ | ✔ **(the moat)** | ✔ | ✔ |
+| **XNOBrain (goal)** | ✔ | ✔ | ✔ **(the moat)** | ✔ | ✔ |
 | Viven | ✘ | ✔ | ✘ | ✘ | ◐ |
 | IgniteTech MyPersonas | ✘ | ✔ | ✘ | ✘ | ✘ |
 | Cloneable | ◐ | ✔ | ✘ | ✘ | ✔ |
@@ -623,7 +623,7 @@ This directly answers the vision's "supply wall" (the Vision section §5):
 retiring experts consent readily when the alternative is their expertise disappearing.
 
 
-# Current State — What Brain4All Is Today
+# Current State — What XNOBrain Is Today
 
 > Scope: sourced from the repository itself (`AGENTS.md`, `README.md`,
 > `docs/architecture.md`, `docs/enterprise-extension.md`,
@@ -632,7 +632,7 @@ retiring experts consent readily when the alternative is their expertise disappe
 
 ## 1. One-sentence definition
 
-Brain4All is a **self-hosted React + FastAPI workspace that wraps Nous Research's
+XNOBrain is a **self-hosted React + FastAPI workspace that wraps Nous Research's
 open-source Hermes Agent** and adds a multi-provider LLM router (referred to
 internally as **9router**), packaged as a downloadable product with an optional
 proprietary enterprise control plane.
@@ -646,7 +646,7 @@ file is the starting point.
 
 ```
 browser → Traefik → React UI
-                 → FastAPI :8642  (Hermes native routes + Brain4All routes)
+                 → FastAPI :8642  (Hermes native routes + XNOBrain routes)
                         → services → repositories → atomic profile/config files
                         → integrations → Hermes CLI/core
                         → integrations → 9router :20128 → LLM providers
@@ -657,17 +657,17 @@ Key facts pulled from `docs/architecture.md`:
 - The runtime container starts **exactly two processes**: FastAPI on `8642` and
   9router on `20128`. React is served through Traefik.
 - It is a **Python modular monolith** layered onto the original Hermes CLI FastAPI
-  app. Route assembly is centralized in `brain4all/routes/setup.py`.
+  app. Route assembly is centralized in `xnobrain/routes/setup.py`.
 - **No application database.** State is atomic files under `DATA_DIR`. Hermes keeps
   its own profile-local `state.db` for native session history (an upstream file, not
-  a Brain4All schema).
+  a XNOBrain schema).
 - Clean layering: **handlers** own HTTP/SSE translation, **services** own rules,
   **repositories** own atomic files, **integrations** adapt the Hermes CLI and
   9router, **models** are Pydantic.
 - **No managed control-plane dependency, login, or API proxy** in the OSS build.
   OpenTelemetry is local-only and off by default.
 
-### Code map (`brain4all/`)
+### Code map (`xnobrain/`)
 
 | Layer | Files | Responsibility |
 |---|---|---|
@@ -709,8 +709,8 @@ This is the most strategically important thing already in the repo — the
 
 | Repo | Builds | Owns |
 |---|---|---|
-| `brain4all` (this, **public/OSS**) | React image + combined FastAPI/Hermes/9router image | Profile isolation, safe paths, snapshots, conversations, Hermes invocation, 9router delegation, quota middleware, service-level enforcement |
-| `brain4all-enterprise` (**private**) | Enterprise API + managed/Incus cloud packaging | Auth, tenant/plan resolution, billing entitlements, distributed quota, RBAC, audit, secret management, managed orchestration, telemetry retention |
+| `xnobrain` (this, **public/OSS**) | React image + combined FastAPI/Hermes/9router image | Profile isolation, safe paths, snapshots, conversations, Hermes invocation, 9router delegation, quota middleware, service-level enforcement |
+| `xnobrain-enterprise` (**private**) | Enterprise API + managed/Incus cloud packaging | Auth, tenant/plan resolution, billing entitlements, distributed quota, RBAC, audit, secret management, managed orchestration, telemetry retention |
 
 Rules that protect the model:
 
@@ -719,7 +719,7 @@ Rules that protect the model:
 - **Dependency is one-directional**: enterprise may pull the public runtime image;
   the OSS deployment never pulls the enterprise image.
 - Enterprise is a **thin private composition**, not a fork. It pins a released
-  Brain4All module + runtime image and implements a `pkg/edition.Policy` contract
+  XNOBrain module + runtime image and implements a `pkg/edition.Policy` contract
   (`-1` = unlimited).
 - Editions: **self-hosted Free** (file-only), **Cloud Free / Personal Pro /
   Enterprise** (shared private PostgreSQL control plane). Enterprise adds orgs, RBAC,
@@ -735,7 +735,7 @@ and keep an enterprise edition in Go. The repository's current reality is:
 
 - **OSS = Python** (FastAPI monolith) + React/TypeScript frontend. The Go/Postgres
   path was explicitly retired in the OSS repo.
-- **Enterprise = Go** (the `pkg/edition.Policy` control plane, `github.com/vn-fin/brain4all/`
+- **Enterprise = Go** (the `pkg/edition.Policy` control plane, `github.com/vn-fin/xnobrain/`
   module path, managed orchestration).
 
 So "Python + Go open source" is **not** what the code does today. Decide
@@ -773,7 +773,7 @@ should concentrate.
 ## 1. Hermes Agent (Nous Research) — your engine
 
 **What it is.** An open-source, **MIT-licensed** self-improving AI agent, launched
-**February 2026**. It is the exact thing Brain4All wraps (the repo's "original Hermes
+**February 2026**. It is the exact thing XNOBrain wraps (the repo's "original Hermes
 CLI dashboard application").
 
 **Capabilities** (from the official
@@ -795,7 +795,7 @@ independent write-ups
   CLI, and many more via adapters.
 - **Natural-language cron** ("every weekday at 9am, summarize my inbox").
 - **Approval gate** ("converse mode" requiring human sign-off before tool use) — this
-  is the Hermes approval core Brain4All preserves.
+  is the Hermes approval core XNOBrain preserves.
 
 **Maturity.** By v0.18.2 (July 2026) the project reported hundreds of closed issues,
 **370+ contributors, and zero open P0 defects**
@@ -817,7 +817,7 @@ MIT is **maximally permissive**: you may use, modify, and distribute Hermes —
 **including in a closed commercial product** — with essentially one obligation:
 preserve the copyright + license notice
 [[license overview](https://dev.to/juanisidoro/open-source-licenses-which-one-should-you-pick-mit-gpl-apache-agpl-and-more-2026-guide-p90)].
-Consequences for Brain4All:
+Consequences for XNOBrain:
 
 - ✔ You can legally build a **proprietary enterprise/cloud layer** on top of Hermes
   and keep that layer closed. This is exactly what the open-core split assumes.
@@ -833,7 +833,7 @@ Consequences for Brain4All:
 
 ## 2. The router ("9router") and the routing landscape
 
-Brain4All's "9router" is an LLM router (one process on `:20128`) that routes to
+XNOBrain's "9router" is an LLM router (one process on `:20128`) that routes to
 multiple providers — the same job as **OpenRouter** (hosted) or **LiteLLM**
 (self-hostable proxy). Whether "9router" is a distinct project or your alias, the
 landscape it sits in:
@@ -864,9 +864,9 @@ markdown + SQLite; multi-agent routing through one gateway
 [[SFAI Labs](https://sfailabs.com/guides/openclaw-ai-agent-framework)],
 [[freeCodeCamp](https://www.freecodecamp.org/news/how-to-build-and-secure-a-personal-ai-agent-with-openclaw/)].
 
-**How it overlaps and differs from Hermes/Brain4All:**
+**How it overlaps and differs from Hermes/XNOBrain:**
 
-| | Hermes / Brain4All | OpenClaw |
+| | Hermes / XNOBrain | OpenClaw |
 |---|---|---|
 | Config model | Skills + profiles + UI | `SOUL.md` config-first |
 | Memory | MEMORY.md + FTS5 + skills | markdown + SQLite |
@@ -899,7 +899,7 @@ Two takeaways for strategy:
    the Business Model section.
 2. **Everyone competes on "build agents." Nobody competes on "certify that this
    agent faithfully reproduces a specific named human expert."** That is the sentence
-   that differentiates Brain4All from this entire list.
+   that differentiates XNOBrain from this entire list.
 
 
 # The Certification Moat — Making Engine 07 Real
@@ -1025,7 +1025,7 @@ cross-org councils) is scaling.
 The open-core model = **open-source core (MIT/Apache) + proprietary enterprise
 features via paid subscription**
 [[open-core overview](https://viprasol.com/blog/open-source-business-model/)]. Your
-`brain4all` (public) + `brain4all-enterprise` (private) split is textbook.
+`xnobrain` (public) + `xnobrain-enterprise` (private) split is textbook.
 
 | Company | Core license | Commercial model | Lesson for you |
 |---|---|---|---|
@@ -1035,13 +1035,13 @@ features via paid subscription**
 | **n8n** | **fair-code** ("internal use free, resale prohibited") | open-core + cloud | closest to your shape; lets firms self-host free, blocks resale |
 | **Sourcegraph** | went closed-source | enterprise sales | pure-enterprise is viable but loses the OSS funnel |
 
-**Pattern that fits Brain4All best:** **permissive/fair-code core + closed enterprise
+**Pattern that fits XNOBrain best:** **permissive/fair-code core + closed enterprise
 control plane** (like n8n / GitLab), *not* a restrictive relicense of the core (you
 don't own Hermes' license anyway — it's MIT and stays MIT).
 
 ## 2. The two licensing decisions you actually face
 
-### Decision A — the license for *your own* OSS repo (`brain4all`)
+### Decision A — the license for *your own* OSS repo (`xnobrain`)
 The README says it outright: *"Choose and add a license before public distribution."*
 This is currently **unset** and blocks public launch. Options (opinion):
 
@@ -1053,7 +1053,7 @@ This is currently **unset** and blocks public launch. Options (opinion):
 
 **Recommendation (opinion):** **Apache-2.0 or AGPL-3.0 for the OSS core**, and keep
 **all the moat (certification, registry, identity, royalty, billing) in the closed
-`brain4all-enterprise` repo.** Rationale:
+`xnobrain-enterprise` repo.** Rationale:
 
 - The moat is **engines 05–07 & 09**, which are *already* private by design — so you
   don't need a restrictive core license to protect the valuable part. That lets the
@@ -1127,11 +1127,11 @@ isolation) work, and the recommended target architecture for the commercial prod
 The open-source application does not run a separate server that calls Hermes over the
 network. It imports Hermes's own web-server application and registers its compatibility
 routes onto it, then serves the combined application on port 8642. In effect, the running
-process is Hermes's web server plus the Brain4All management surface, in a single Python
+process is Hermes's web server plus the XNOBrain management surface, in a single Python
 process sharing one virtual environment. The LLM router runs as a separate process on port
 20128 and is reached over HTTP.
 
-Because Brain4All shares the process and environment, it integrates with Hermes through
+Because XNOBrain shares the process and environment, it integrates with Hermes through
 several channels simultaneously rather than a single clean boundary.
 
 | Backing mechanism | How it works | Which functions use it |
@@ -1509,7 +1509,7 @@ This is mostly done; close the gaps.*
 - **Legal/contract** — craft ownership, liability, consent, anti-impersonation — gate
   every phase; don't let them lag the product.
 - **Keep commodity engines rented** — do **not** out-build OpenRouter/LiteLLM or fork
-  Hermes' core; extend from `brain4all`, per `AGENTS.md`.
+  Hermes' core; extend from `xnobrain`, per `AGENTS.md`.
 
 ## The one-line sequencing rule
 
@@ -1527,7 +1527,7 @@ This is mostly done; close the gaps.*
 > a compressed-but-faithful record: title, what the agent does, and the named
 > tools/models/numbers. **Sections C–E carry the analysis** — which stories are nearest
 > to Twin Terminal, where Hermes and OpenClaw appear together, and what it means for
-> Brain4All.
+> XNOBrain.
 
 ## Page structure (verbatim)
 
@@ -1881,7 +1881,7 @@ The startups leveraging *both* today are mostly **individual power users and sma
 tools** (primeclaws.com, watchdog setups, migration utilities), not funded companies —
 i.e. the "twin-over-many-runtimes" company slot is **still open.**
 
-## E. What this catalogue means for Brain4All
+## E. What this catalogue means for XNOBrain
 
 1. **Demand is proven and broad.** 262 real, sourced stories across 15 domains, most
    from individuals and small teams — the *self-hosted personal/expert agent* market is

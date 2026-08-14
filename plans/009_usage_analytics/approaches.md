@@ -15,11 +15,11 @@ results.
 - Pros: reuses upstream SQL and per-model capability enrichment; less new code.
 - Cons (decisive):
   - **Single profile per call** — cross-agent totals and a unified time-series
-    still have to be assembled in Brain4All anyway, so the proxy saves little.
+    still have to be assembled in XNOBrain anyway, so the proxy saves little.
   - **Not read-only** — those endpoints use a writable `SessionDB._conn`, which
     violates the `?mode=ro` constraint.
   - **Extra upstream deps** — `agent.insights.InsightsEngine`, `models_dev`, and
-    the `session_model_usage` table are not guaranteed on Brain4All-created DBs
+    the `session_model_usage` table are not guaranteed on XNOBrain-created DBs
     and widen the pinned surface.
   - **Profile-resolution mismatch** — `_cron_profile_home(profile)` may not map
     to `profiles_root/<agent-id>` the way `AgentManager` does.
@@ -28,11 +28,11 @@ results.
 ### A2. Compute on read from `state.db` (chosen for the core)
 
 Open each agent's `state.db` with the existing `?mode=ro` helper and run
-`SUM/GROUP BY` over the accounting columns Brain4All guarantees.
+`SUM/GROUP BY` over the accounting columns XNOBrain guarantees.
 
 - Pros: cross-agent + per-agent + per-model + time-series from one pass;
   strictly read-only; depends only on columns our own schema creates; no new
-  store; small, testable SQL; naturally attaches Brain4All budgets and the
+  store; small, testable SQL; naturally attaches XNOBrain budgets and the
   9router overlay.
 - Cons: reimplements aggregation SQL (small, and largely mirrors upstream);
   no model-capability metadata (not needed for this plan).
@@ -118,7 +118,7 @@ Rationale: this is the only option that satisfies every mandatory constraint at
 once — read-only access to Hermes state, no new database or API process, no fork
 of Hermes internals, cross-agent aggregation the native endpoints cannot do,
 advisory-only budgets, and honest cost reporting — while reusing helpers that
-already exist in `brain4all/integrations/hermes.py`.
+already exist in `xnobrain/integrations/hermes.py`.
 
 ## Decision E — Analytics engine: SQLite compute-on-read vs an embedded OLAP engine (DuckDB)
 

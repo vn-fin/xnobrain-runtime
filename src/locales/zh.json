@@ -139,7 +139,7 @@
     "addApiKey": "添加 API 密钥",
     "disconnect": "断开连接",
     "addKeyTitle": "添加 API 密钥",
-    "addKeyDesc": "选择提供商并粘贴 API 密钥。密钥由本地运行时保存，Brain4All 绝不会将其返回。"
+    "addKeyDesc": "选择提供商并粘贴 API 密钥。密钥由本地运行时保存，XNOBrain 绝不会将其返回。"
   },
   "auth": {
     "connect": "连接 {{name}}",

@@ -1,6 +1,6 @@
 # Local-user feature program — implementation checklist
 
-This is the execution index for the Brain4All **local-user feature program**: surfacing
+This is the execution index for the XNOBrain **local-user feature program**: surfacing
 Hermes-native capabilities the app already *could* offer a self-hosted user but has not
 wired yet. It is a sibling to [the Kanban program](CHECKLIST.md); the two are independent.
 
@@ -15,20 +15,20 @@ blocker beside the item).
 
 Agents, conversations/runs (SSE + approval + stop), skills, memory, MCP config, **cron
 (basic CRUD)**, **Kanban** (plans 000–004), teams, providers (9router), snapshots,
-workspace files, portable bundles. See `brain4all/routes/setup.py` for the current surface.
+workspace files, portable bundles. See `xnobrain/routes/setup.py` for the current surface.
 
 ## Program principles (every plan obeys these)
 
 - One FastAPI/Hermes process (`:8642`) + one 9router (`:20128`). **No Go, PostgreSQL, ORM,
   or second API process.**
-- Preserve the original Hermes core. **Extend from the `brain4all` package; ride Hermes'
+- Preserve the original Hermes core. **Extend from the `xnobrain` package; ride Hermes'
   native APIs/config; never copy, fork, or re-implement Hermes internals.**
-- `brain4all/routes/setup.py` is the only route-assembly point. handlers = HTTP/SSE,
+- `xnobrain/routes/setup.py` is the only route-assembly point. handlers = HTTP/SSE,
   services = rules, repositories = atomic files, integrations = adapt Hermes/9router,
   models = Pydantic. Local layers call each other directly.
-- Provider forced to 9router. No application DB — Brain4All state is atomic files under
+- Provider forced to 9router. No application DB — XNOBrain state is atomic files under
   `DATA_DIR` (temp → fsync → rename); snapshot **before** any persistence-promising
-  mutation. Hermes state (`state.db`, `config.yaml`) is authoritative and Brain4All only
+  mutation. Hermes state (`state.db`, `config.yaml`) is authoritative and XNOBrain only
   reads it read-only unless mutating through a Hermes public API.
 - Never return, log, or trace credentials, tokens, prompts, or provider keys. No mock or
   demo data in production paths.
@@ -142,12 +142,12 @@ plan format and the program principles above.
 
 Implemented and verified 2026-07-25 (`make check` green; 18 new tests; live probe + ASGI e2e against 9router v0.5.40).
 
-- [x] Phase 0: live-probe test (`brain4all/tests/test_nine_router_probe.py`) verified `PUT /api/providers/{id}` partial `{isActive}`/`{priority}` (200, returns `{connection}`), field names, and pins-agree. **Finding:** 9router re-normalizes `priority` (sent 5 → stored 1) → service reads-after-write.
+- [x] Phase 0: live-probe test (`xnobrain/tests/test_nine_router_probe.py`) verified `PUT /api/providers/{id}` partial `{isActive}`/`{priority}` (200, returns `{connection}`), field names, and pins-agree. **Finding:** 9router re-normalizes `priority` (sent 5 → stored 1) → service reads-after-write.
 - [x] Adapter: `list_connections` returns `email`+`priority`; new `update_connection`, `usage_for_connection`, `_quota_list` refactor; credentials never cross the boundary (adapter test + live check).
 - [x] Connection-level API under `/api/brain/v1/providers/{id}/connections*` (list/add/patch/test/delete/usage); provider "connected" = ≥1 active; provider-level disconnect kept as explicit remove-all (UI confirm names the count).
 - [x] Curated 6-provider allowlist kept (Decision A); widening deferred.
 - [x] Frontend: expandable accounts list per provider card (label, active toggle, ↑/↓ reorder, test dot, usage bar, remove) + per-provider "Add account" (api-key inline form / OAuth popup reuse); `tsc -b` + `vite build` clean.
-- [x] Security: no api-key/token/`providerSpecificData` in any Brain4All response (response-scan test + live add returns no key).
+- [x] Security: no api-key/token/`providerSpecificData` in any XNOBrain response (response-scan test + live add returns no key).
 - [ ] Manual OAuth E2E (connect two real codex accounts, observe rotation/priority attribution in `/api/usage`) — needs real credentials; UI copy is honest pending this observation.
 - [~] i18n: new strings use i18next `defaultValue` fallbacks (correct English everywhere); dedicated `connections.*` keys not yet added to all 7 locale files.
 
@@ -155,12 +155,12 @@ Implemented and verified 2026-07-25 (`make check` green; 18 new tests; live prob
 
 Implemented and verified 2026-07-25 (`make check` green; 20 new tests; live probe + ASGI e2e against 9router v0.5.40).
 
-- [x] Phase 0: live probe (`brain4all/tests/test_blends_probe.py`) confirmed combos CRUD, name charset (400), combo→`/v1/models` as `owned_by:"combo"`, and **PATCH `/api/settings` replaces the whole `comboStrategies` map** (→ read-modify-write). **Refinement:** `POST /api/combos` returns the combo object directly (top-level `id`).
+- [x] Phase 0: live probe (`xnobrain/tests/test_blends_probe.py`) confirmed combos CRUD, name charset (400), combo→`/v1/models` as `owned_by:"combo"`, and **PATCH `/api/settings` replaces the whole `comboStrategies` map** (→ read-modify-write). **Refinement:** `POST /api/combos` returns the combo object directly (top-level `id`).
 - [x] Adapter: public `list_combos`/`create_combo`/`update_combo`/`delete_combo` + `combo_settings`/`set_combo_strategy`/`clear_combo_strategy`/`set_combo_sticky_limit` (settings whitelisted to the 3 combo keys); **`list_models` now surfaces user combos as `{provider:"blend"}`** (previously hidden), ordered auto → blends → real models; auto-combo sweep skips blends.
 - [x] `BlendService` + `BlendCreate`/`BlendPatch`; routes `GET/POST /api/brain/v1/blends`, `GET .../available-models`, `PATCH/DELETE .../{id}`; naming layer = "blend" (upstream stays "combos").
 - [x] Guards: name regex + reserved `auto` (403), collision vs blends/real-model-ids (409), models 1–24/no-dupe/known, fusion needs ≥2 models + judge, judge only with fusion, sticky only with round-robin; strategy write is compensated by combo delete on failure; rename moves the strategy entry.
 - [x] "auto" is a read-only system blend (403 on modify/delete; no upstream mutation) — verified by test.
 - [x] Frontend: Settings → **Model Blends** panel (`BlendsSection` + `BlendEditorDialog` with ordered model multi-select, strategy radio, sticky-limit, fusion judge + cost caveat) and a **Blends group** at the top of the chat model picker; a blend name flows into agent config unchanged (`routedConfig` forces provider). `tsc -b` + `vite build` clean.
-- [x] Pure proxy: Brain4All stores nothing; 503 when 9router is down surfaces the standard failure envelope + UI unavailable banner.
+- [x] Pure proxy: XNOBrain stores nothing; 503 when 9router is down surfaces the standard failure envelope + UI unavailable banner.
 - [ ] Manual E2E: create a fusion blend and observe multi-model fan-out + judge in 9router logs (needs ≥2 real connected models); backend fusion path is unit-tested, live observation pending.
 - [~] Docs (`docs/api.md`, `docs/architecture.md`) blend paragraphs not yet added.

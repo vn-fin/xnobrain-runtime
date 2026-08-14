@@ -13,7 +13,7 @@ from .kanban_support import (
 from .kanban_tasks import create_task, task_dependencies
 
 def ensure_schedule_schema(conn: Any) -> None:
-    """Install Brain4All scheduling metadata beside native Kanban tasks.
+    """Install XNOBrain scheduling metadata beside native Kanban tasks.
 
     Native task, event, and run tables remain untouched. This extension table
     is deliberately small and keyed by the native task ID so it can be removed
@@ -21,7 +21,7 @@ def ensure_schedule_schema(conn: Any) -> None:
     """
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS brain4all_task_schedules (
+        CREATE TABLE IF NOT EXISTS xnobrain_task_schedules (
             task_id TEXT PRIMARY KEY,
             recurrence TEXT NOT NULL CHECK (recurrence IN ('once', 'interval')),
             next_run_at INTEGER,
@@ -37,8 +37,8 @@ def ensure_schedule_schema(conn: Any) -> None:
         """
     )
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_brain4all_schedules_due "
-        "ON brain4all_task_schedules(enabled, next_run_at)"
+        "CREATE INDEX IF NOT EXISTS idx_xnobrain_schedules_due "
+        "ON xnobrain_task_schedules(enabled, next_run_at)"
     )
 
 
@@ -47,7 +47,7 @@ def task_schedule(conn: Any, task_id: str) -> dict[str, Any] | None:
     row = conn.execute(
         "SELECT task_id, recurrence, next_run_at, interval_seconds, timezone, "
         "enabled, occurrence_count, last_run_at, created_at, updated_at "
-        "FROM brain4all_task_schedules WHERE task_id = ?",
+        "FROM xnobrain_task_schedules WHERE task_id = ?",
         (task_id,),
     ).fetchone()
     return dict(row) if row is not None else None
@@ -76,7 +76,7 @@ def put_task_schedule(
             raise ValueError("task not found")
         conn.execute(
             """
-            INSERT INTO brain4all_task_schedules
+            INSERT INTO xnobrain_task_schedules
                 (task_id, recurrence, next_run_at, interval_seconds, timezone,
                  enabled, occurrence_count, last_run_at, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, 1, 0, NULL, ?, ?)
@@ -120,7 +120,7 @@ def set_task_schedule_enabled(conn: Any, task_id: str, enabled: bool) -> dict[st
     now = int(time.time())
     with _module().write_txn(conn):
         changed = conn.execute(
-            "UPDATE brain4all_task_schedules SET enabled = ?, updated_at = ? "
+            "UPDATE xnobrain_task_schedules SET enabled = ?, updated_at = ? "
             "WHERE task_id = ?",
             (1 if enabled else 0, now, task_id),
         )
@@ -151,7 +151,7 @@ def run_task_schedule_now(conn: Any, task_id: str, *, board: str) -> list[str]:
     now = int(time.time())
     with _module().write_txn(conn):
         changed = conn.execute(
-            "UPDATE brain4all_task_schedules "
+            "UPDATE xnobrain_task_schedules "
             "SET enabled = 1, next_run_at = ?, updated_at = ? WHERE task_id = ?",
             (now, now, task_id),
         )
@@ -188,7 +188,7 @@ def release_due_schedules(conn: Any, *, board: str, now: int | None = None) -> l
     ensure_schedule_schema(conn)
     due = conn.execute(
         "SELECT task_id, recurrence, next_run_at, interval_seconds "
-        "FROM brain4all_task_schedules "
+        "FROM xnobrain_task_schedules "
         "WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ? "
         "ORDER BY next_run_at, task_id LIMIT 100",
         (current,),
@@ -201,7 +201,7 @@ def release_due_schedules(conn: Any, *, board: str, now: int | None = None) -> l
         if task is None or str(task.status) == "archived":
             with kb.write_txn(conn):
                 conn.execute(
-                    "UPDATE brain4all_task_schedules "
+                    "UPDATE xnobrain_task_schedules "
                     "SET enabled = 0, next_run_at = NULL, updated_at = ? "
                     "WHERE task_id = ? AND next_run_at = ?",
                     (current, task_id, scheduled_for),
@@ -213,7 +213,7 @@ def release_due_schedules(conn: Any, *, board: str, now: int | None = None) -> l
                 continue
             with kb.write_txn(conn):
                 changed = conn.execute(
-                    "UPDATE brain4all_task_schedules "
+                    "UPDATE xnobrain_task_schedules "
                     "SET enabled = 0, next_run_at = NULL, last_run_at = ?, "
                     "occurrence_count = occurrence_count + 1, updated_at = ? "
                     "WHERE task_id = ? AND next_run_at = ?",
@@ -237,7 +237,7 @@ def release_due_schedules(conn: Any, *, board: str, now: int | None = None) -> l
             title=str(task.title),
             body=str(task.body or ""),
             assignee=getattr(task, "assignee", None),
-            created_by="brain4all-schedule",
+            created_by="xnobrain-schedule",
             priority=int(getattr(task, "priority", 0) or 0),
             parents=task_dependencies(conn, task_id),
             idempotency_key=f"schedule:{task_id}:{scheduled_for}",
@@ -255,7 +255,7 @@ def release_due_schedules(conn: Any, *, board: str, now: int | None = None) -> l
             next_run += interval
         with kb.write_txn(conn):
             changed = conn.execute(
-                "UPDATE brain4all_task_schedules "
+                "UPDATE xnobrain_task_schedules "
                 "SET next_run_at = ?, last_run_at = ?, "
                 "occurrence_count = occurrence_count + 1, updated_at = ? "
                 "WHERE task_id = ? AND next_run_at = ?",
@@ -276,7 +276,7 @@ async def dispatcher_loop(*, interval_seconds: float = 15.0, on_tick=None) -> No
     """Run Hermes' supported dispatcher tick inside the host FastAPI process.
 
     The worker spawning, claiming, recovery, and board lock all remain in
-    Hermes ``dispatch_once``. Brain4All only supplies the host lifecycle; this
+    Hermes ``dispatch_once``. XNOBrain only supplies the host lifecycle; this
     is intentionally not a second worker process or cron scheduler.
     """
     while True:

@@ -1,4 +1,4 @@
-"""Brain4All's product-level Kanban service.
+"""XNOBrain's product-level Kanban service.
 
 Hermes owns the records and transitions.  This layer only projects Hermes'
 execution states into the five product columns and translates user intents into
@@ -27,8 +27,8 @@ from .constants import DEFAULT_TEAM_COORDINATOR_PROMPT
 PRODUCT_STATUSES = ("backlog", "todo", "running", "done", "archived")
 PRIORITY_TO_INT = {"low": 0, "medium": 1, "high": 2}
 INT_TO_PRIORITY = {0: "low", 1: "medium", 2: "high"}
-TEAM_META_PREFIX = "[brain4all:team] "
-TEAM_CANCEL_PREFIX = "[brain4all:team-cancelled]"
+TEAM_META_PREFIX = "[xnobrain:team] "
+TEAM_CANCEL_PREFIX = "[xnobrain:team-cancelled]"
 
 
 def _iso(epoch: int | None) -> str | None:
@@ -745,7 +745,7 @@ class KanbanService:
                 if not kb.schedule_task(
                     conn,
                     task_id,
-                    reason="Scheduled from Brain4All",
+                    reason="Scheduled from XNOBrain",
                 ):
                     raise ServiceError(
                         "task could not be scheduled",
@@ -849,7 +849,7 @@ class KanbanService:
         if status == "todo" and not kb.schedule_task(
             conn,
             root_id,
-            reason="Parked team workflow in Todo from Brain4All",
+            reason="Parked team workflow in Todo from XNOBrain",
         ):
             raise ServiceError(
                 "team workflow could not be parked",
@@ -973,7 +973,7 @@ class KanbanService:
         kb.add_comment(
             conn,
             root_id,
-            "brain4all",
+            "xnobrain",
             TEAM_META_PREFIX + json.dumps(metadata, separators=(",", ":")),
         )
         root = kb.get_task(conn, root_id)
@@ -998,9 +998,9 @@ class KanbanService:
                 if member is None or str(member.status) in {"done", "archived"}:
                     continue
                 if str(member.status) == "running":
-                    kb.reclaim_task(conn, member_id, reason="Team run cancelled from Brain4All")
+                    kb.reclaim_task(conn, member_id, reason="Team run cancelled from XNOBrain")
                 kb.archive_task(conn, member_id)
-            kb.add_comment(conn, task_id, "brain4all", TEAM_CANCEL_PREFIX)
+            kb.add_comment(conn, task_id, "xnobrain", TEAM_CANCEL_PREFIX)
             return self._task_dto(conn, task, board=normalized, include_detail=True)
 
     def cancel_task(self, board: str, task_id: str) -> dict[str, Any]:
@@ -1028,7 +1028,7 @@ class KanbanService:
             if not kb.reclaim_task(
                 conn,
                 task_id,
-                reason="Task cancelled from Brain4All",
+                reason="Task cancelled from XNOBrain",
             ):
                 raise ServiceError(
                     "task could not be cancelled",
@@ -1082,7 +1082,7 @@ class KanbanService:
                 if str(current.status) != "scheduled" and not kb.schedule_task(
                     conn,
                     task_id,
-                    reason="Schedule updated from Brain4All",
+                    reason="Schedule updated from XNOBrain",
                 ):
                     raise ServiceError("task could not be scheduled", status=409, code="invalid_schedule")
                 kb_adapter.put_task_schedule(
@@ -1156,9 +1156,9 @@ class KanbanService:
                     if raw in {"blocked", "scheduled"}:
                         ok = kb.unblock_task(conn, task_id)
                         if ok:
-                            ok = kb.complete_task(conn, task_id, summary=reason or "Completed from Brain4All")
+                            ok = kb.complete_task(conn, task_id, summary=reason or "Completed from XNOBrain")
                     else:
-                        ok = kb.complete_task(conn, task_id, summary=reason or "Completed from Brain4All")
+                        ok = kb.complete_task(conn, task_id, summary=reason or "Completed from XNOBrain")
                 elif target == "todo":
                     if raw == "triage":
                         ok = kb.specify_triage_task(conn, task_id, author="user")
@@ -1166,7 +1166,7 @@ class KanbanService:
                             ok = kb.schedule_task(
                                 conn,
                                 task_id,
-                                reason="Parked in Todo from Brain4All",
+                                reason="Parked in Todo from XNOBrain",
                             )
                     elif raw == "blocked":
                         ok = kb.unblock_task(conn, task_id)
@@ -1174,13 +1174,13 @@ class KanbanService:
                             ok = kb.schedule_task(
                                 conn,
                                 task_id,
-                                reason="Parked in Todo from Brain4All",
+                                reason="Parked in Todo from XNOBrain",
                             )
                     elif raw in {"todo", "ready"}:
                         ok = kb.schedule_task(
                             conn,
                             task_id,
-                            reason="Parked in Todo from Brain4All",
+                            reason="Parked in Todo from XNOBrain",
                         )
                     else:
                         ok = raw == "scheduled" and not has_schedule
@@ -1206,13 +1206,13 @@ class KanbanService:
                                     summary=reason or "Team workflow started",
                                 )
                     elif raw == "review":
-                        ok = kb.claim_review_task(conn, task_id, claimer="brain4all") is not None
+                        ok = kb.claim_review_task(conn, task_id, claimer="xnobrain") is not None
                     elif raw == "blocked":
                         ok = kb.unblock_task(conn, task_id)
                     elif raw == "triage":
                         specified = kb.specify_triage_task(conn, task_id, author="user")
                         promoted, promote_reason = (
-                            kb.promote_task(conn, task_id, actor="brain4all")
+                            kb.promote_task(conn, task_id, actor="xnobrain")
                             if specified and hasattr(kb, "promote_task")
                             else (False, None)
                         )
@@ -1232,7 +1232,7 @@ class KanbanService:
                         ok = promoted
                     elif raw == "todo":
                         promoted, promote_reason = (
-                            kb.promote_task(conn, task_id, actor="brain4all")
+                            kb.promote_task(conn, task_id, actor="xnobrain")
                             if hasattr(kb, "promote_task")
                             else (False, None)
                         )

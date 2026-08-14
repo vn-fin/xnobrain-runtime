@@ -1,7 +1,7 @@
 # 008 — Findings
 
 Evidence gathered from the pinned Hermes source under `.tools/hermes-agent/`
-(read-only) and the current Brain4All tree. Line references are from the state
+(read-only) and the current XNOBrain tree. Line references are from the state
 inspected while writing this plan; re-verify during Phase 0.
 
 Cross-links: [README.md](README.md) · [architecture.md](architecture.md) ·
@@ -13,7 +13,7 @@ Cross-links: [README.md](README.md) · [architecture.md](architecture.md) ·
 ### Native cron dashboard routes (`hermes_cli/web_server.py`)
 
 These are Hermes's own dashboard HTTP routes. They confirm the shapes we mirror,
-but Brain4All **rides the underlying Python modules in-process** (like
+but XNOBrain **rides the underlying Python modules in-process** (like
 `integrations/kanban.py` imports `hermes_cli.kanban_db`) rather than HTTP-calling
 these routes.
 
@@ -98,42 +98,42 @@ native cron job — no second scheduler.
   the model for our own idempotent post-run delivery key.
 - There is **no native `kanban` or workspace-`file` delivery platform.** `local`
   writes to `cron/output`, not the agent workspace. Kanban and workspace-file
-  delivery must be **Brain4All-owned** post-run steps.
+  delivery must be **XNOBrain-owned** post-run steps.
 
 ### Cron→Kanban bridge (`gateway/kanban_watchers.py`, ~1000 LOC)
 
 Gateway background-loop mixin that subscribes to Kanban boards, delivers
 notifications/artifacts, and drives the multi-agent dispatcher. It is the
 gateway's Kanban integration, not a per-job delivery target. We do **not** run
-it; Brain4All already owns the Kanban dispatcher (Plan 001/003) and creates
+it; XNOBrain already owns the Kanban dispatcher (Plan 001/003) and creates
 cards through `services/kanban.py`.
 
-## What Brain4All's cron has today
+## What XNOBrain's cron has today
 
 Current operations (all present):
 
-- Routes (`brain4all/routes/setup.py` ≈ 84–89): `GET/POST
+- Routes (`xnobrain/routes/setup.py` ≈ 84–89): `GET/POST
   /api/brain/v1/cron/jobs`, `POST .../{job_id}/pause|resume|run`,
   `DELETE .../{job_id}`.
-- Handler map (`brain4all/handlers/api.py` ≈ 97–99):
+- Handler map (`xnobrain/handlers/api.py` ≈ 97–99):
   `cron_list, cron_create, cron_pause, cron_resume, cron_run, cron_delete`.
-- Service (`brain4all/services/platform.py` ≈ 351–454): `list_crons`,
+- Service (`xnobrain/services/platform.py` ≈ 351–454): `list_crons`,
   `create_cron`, `set_cron_enabled`, `delete_cron`, `run_cron`, `_schedule_job`.
   **These are Kanban-backed** (Plan 003): a cron job is a `scheduled` task on the
   `default` board with `schedule` metadata; `run_cron` calls
   `kanban.schedule_action("default", id, "run_now")`.
-- Model (`brain4all/models/api.py` ≈ 39): `CronCreate = {agent_id, name,
+- Model (`xnobrain/models/api.py` ≈ 39): `CronCreate = {agent_id, name,
   prompt, interval_minutes, schedule, timezone, mode="local"}`.
-- Legacy file repo (`brain4all/repositories/files.py` ≈ 141–174):
+- Legacy file repo (`xnobrain/repositories/files.py` ≈ 141–174):
   `list_crons/put_cron/delete_cron` over per-profile YAML — retained for
   migration/back-compat, not the live path.
 - Frontend (`src/api/crons.ts`, `src/hooks/useCrons.ts`,
   `src/features/system/SystemView.tsx`): list/create/setState/remove only.
 
-## What Brain4All lacks (the exact gap)
+## What XNOBrain lacks (the exact gap)
 
 1. **No delivery targets.** A cron job's output is not routed anywhere by
-   Brain4All. There is no target model, no "deliver to" API, no post-run
+   XNOBrain. There is no target model, no "deliver to" API, no post-run
    delivery step. The Kanban-backed occurrence produces a run/output that simply
    sits in the run history.
 2. **No blueprints.** No catalog, no instantiate path, no gallery. Users hand-

@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Merge the Brain4All report chapters (product/reports/*.md) into one PDF.
+# Merge the XNOBrain report chapters (product/reports/*.md) into one PDF.
 # Requires: pandoc + weasyprint (both present on this machine).
 #
 #   ./product/build-report.sh
 #
-# Output: product/Brain4All-Report.pdf
+# Output: product/XNOBrain-Report.pdf
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LANG_ARG="${1:-en}"
 case "$LANG_ARG" in
-  en) REPORTS="$HERE/reports";    OUT="$HERE/Brain4All-Report.pdf"
-      TITLE="Brain4All — Twin Terminal"; SUBTITLE="Product Report & Development Plan"; DATED="July 2026" ;;
-  vi) REPORTS="$HERE/reports-vi"; OUT="$HERE/Brain4All-Report-VI.pdf"
-      TITLE="Brain4All — Twin Terminal"; SUBTITLE="Báo cáo Sản phẩm & Kế hoạch Phát triển"; DATED="Tháng 7, 2026" ;;
+  en) REPORTS="$HERE/reports";    OUT="$HERE/XNOBrain-Report.pdf"
+      TITLE="XNOBrain — Twin Terminal"; SUBTITLE="Product Report & Development Plan"; DATED="July 2026" ;;
+  vi) REPORTS="$HERE/reports-vi"; OUT="$HERE/XNOBrain-Report-VI.pdf"
+      TITLE="XNOBrain — Twin Terminal"; SUBTITLE="Báo cáo Sản phẩm & Kế hoạch Phát triển"; DATED="Tháng 7, 2026" ;;
   *)  echo "usage: $0 [en|vi]" >&2; exit 1 ;;
 esac
 BUILD="$HERE/.report-build-$LANG_ARG"
@@ -82,7 +82,7 @@ cat > "$BUILD/head.html" <<'CSS'
   @page {
     size: A4; margin: 2cm 1.8cm;
     @bottom-center { content: counter(page); font-size: 9pt; color: #8a8a8a; }
-    @top-right { content: "Brain4All — Twin Terminal"; font-size: 8pt; color: #b3b3b3; }
+    @top-right { content: "XNOBrain — Twin Terminal"; font-size: 8pt; color: #b3b3b3; }
   }
   @page:first { @top-right { content: ""; } }
   body { font-family: "DejaVu Sans","Liberation Sans",Arial,sans-serif;

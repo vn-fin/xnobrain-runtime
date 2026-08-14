@@ -80,7 +80,7 @@ export function AccountView({
           <p>
             {config.auth.provider === 'xno-firebase'
                 ? 'Your Firebase identity was exchanged for an XNOQuant API session.'
-                : 'Your session is verified by the Brain4All gateway before workspace requests are forwarded.'}
+                : 'Your session is verified by the XNOBrain gateway before workspace requests are forwarded.'}
           </p>
         </article>
 

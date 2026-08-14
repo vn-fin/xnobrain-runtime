@@ -24,7 +24,7 @@ const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 export function useKanban(active = true, requestedBoardId = '') {
   const [boards, setBoards] = useState<KanbanBoard[]>([]);
   const [activeBoardId, setActiveBoardIdState] = useState(
-    () => window.localStorage.getItem('brain4all-kanban-board') ?? '',
+    () => window.localStorage.getItem('xnobrain-kanban-board') ?? '',
   );
   const [status, setStatus] = useState<AsyncStatus>('loading');
   const [error, setError] = useState('');
@@ -107,7 +107,7 @@ export function useKanban(active = true, requestedBoardId = '') {
   useEffect(() => {
     if (!requestedBoardId || !boards.some((item) => item.id === requestedBoardId)) return;
     setActiveBoardIdState(requestedBoardId);
-    window.localStorage.setItem('brain4all-kanban-board', requestedBoardId);
+    window.localStorage.setItem('xnobrain-kanban-board', requestedBoardId);
   }, [boards, requestedBoardId]);
 
   const loadTaskScope = useCallback(async (boardId: string, archived: boolean) => {
@@ -214,7 +214,7 @@ export function useKanban(active = true, requestedBoardId = '') {
   const setActiveBoardId = useCallback((boardId: string) => {
     setActiveBoardIdState(boardId);
     setSearch('');
-    window.localStorage.setItem('brain4all-kanban-board', boardId);
+    window.localStorage.setItem('xnobrain-kanban-board', boardId);
   }, []);
 
   const createBoard = useCallback(async (input: NewKanbanBoardInput) => {

@@ -44,7 +44,7 @@ class ProfileTemplateInstallerTests(unittest.TestCase):
             self.assertIn("You are an AI agent", (template / "SOUL.md").read_text(encoding="utf-8"))
             self.assertIn("## Source citations", (template / "AGENTS.md").read_text(encoding="utf-8"))
             agents = (template / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertNotIn("Brain4All", agents)
+            self.assertNotIn("XNOBrain", agents)
             self.assertNotIn("Hermes", agents)
             self.assertNotIn("9router", agents.lower())
             template_config = yaml.safe_load(

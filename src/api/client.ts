@@ -1,9 +1,9 @@
 import { storedAccessToken } from '../authStorage';
-import { brain4AllRuntime } from '../runtime';
+import { xnobrainRuntime } from '../runtime';
 
 export const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL?.trim()
-  || brain4AllRuntime.api?.remoteBaseUrl
+  || xnobrainRuntime.api?.remoteBaseUrl
   || window.location.origin
 ).replace(/\/+$/, '');
 

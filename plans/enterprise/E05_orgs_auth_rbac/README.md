@@ -13,7 +13,7 @@ This plan implements program build-map items **2 (Orgs, accounts, auth &
 RBAC)** and the Phase-2 foundation of **3 (SSO federation hardening)** from
 [`plans/enterprise/README.md`](../README.md) § "Important enterprise
 functions". Implementation lands almost entirely in the private
-`brain4all-enterprise` repo (Go + PostgreSQL, no ORM); this repo gains only a
+`xnobrain-enterprise` repo (Go + PostgreSQL, no ORM); this repo gains only a
 thin, dormant sign-in surface and one versioned contract.
 
 Read the sibling documents in order:

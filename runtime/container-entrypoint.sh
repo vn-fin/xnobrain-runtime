@@ -25,15 +25,15 @@ fi
 if [[ "$HERMES_PROFILES_ROOT" != "$HERMES_HOME/profiles" && ! -e "$HERMES_HOME/profiles" ]]; then
   ln -s "$HERMES_PROFILES_ROOT" "$HERMES_HOME/profiles"
 fi
-/usr/local/bin/brain4all-prepare-nine-router-auth
+/usr/local/bin/xnobrain-prepare-nine-router-auth
 IFS= read -r NINE_ROUTER_API_KEY <"$NINE_ROUTER_DATA_DIR/auth/cli-token"
 export NINE_ROUTER_API_KEY
 touch "$HERMES_HOME/.env"
 chmod 700 "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$NINE_ROUTER_DATA_DIR"
 chmod 600 "$HERMES_HOME/.env"
 
-XNOBRAIN_PROFILE_TEMPLATES_DIR=/opt/brain4all/profile-templates \
-  /usr/local/bin/brain4all-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
+XNOBRAIN_PROFILE_TEMPLATES_DIR=/opt/xnobrain/profile-templates \
+  /usr/local/bin/xnobrain-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 
 # Keep the persistent default and named profiles in sync with the skills bundled
 # by the Hermes runtime image. The upstream synchronizer is manifest-based: it
@@ -56,9 +56,9 @@ BASE_URL=http://127.0.0.1:20128 \
 NEXT_PUBLIC_BASE_URL=http://127.0.0.1:20128 \
 REQUIRE_API_KEY=false \
 NODE_ENV=production \
-node /opt/brain4all/9router/server.js &
+node /opt/xnobrain/9router/server.js &
 router_pid=$!
-"$hermes_python" /opt/brain4all/server.py &
+"$hermes_python" /opt/xnobrain/server.py &
 api_pid=$!
 
 cleanup() {

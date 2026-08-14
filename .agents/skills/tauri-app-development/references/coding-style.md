@@ -54,7 +54,7 @@
 - Verify signed manifests/updates and immutable digests before activation.
 - Never log secrets, tokens, Docker auth, environment dumps, prompts, chat
   content, request bodies, or raw tool output.
-- Label and target only Brain4All-owned resources. Preserve user data unless a
+- Label and target only XNOBrain-owned resources. Preserve user data unless a
   separate exact-target deletion confirmation is completed.
 
 ## Tests

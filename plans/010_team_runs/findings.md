@@ -12,25 +12,25 @@ editing (they will drift).
 
 ### Storage and CRUD
 
-- `brain4all/repositories/files.py` — `FileRepository.teams_root =
+- `xnobrain/repositories/files.py` — `FileRepository.teams_root =
   DATA_DIR/teams` (line 41, created in `__init__` lines 45–46).
   `list_teams` (176–185) globs `*.yaml`, `get_team` (187–194) raises a 404
   `StoreError`, `put_team` (196–200) writes atomically via `atomic_yaml`
   (244–245 → `atomic_write` 247–266: mkstemp → fchmod → fsync → `os.replace`
   → directory fsync), `delete_team` (202–209) unlinks under the repository
   lock. Teams live as `DATA_DIR/teams/<team_id>.yaml`.
-- `brain4all/services/platform.py` — `list_teams`/`get_team`/`create_team`/
+- `xnobrain/services/platform.py` — `list_teams`/`get_team`/`create_team`/
   `update_team`/`delete_team` (458–474). `_put_team` (767–787) validates the
   orchestrator and members via `AgentManager.describe_agent`, dedupes agent
   ids, and restricts member toolsets to `SAFE_TOOLSETS` (33–36). Team ids are
   `uuid.uuid4().hex` (line 465).
-- `brain4all/models/api.py` — `TeamWorkflowStep` (168–174), `TeamRun`
+- `xnobrain/models/api.py` — `TeamWorkflowStep` (168–174), `TeamRun`
   (177–180: `task`, `workflow`, `synthesis`), `TeamMember` (226–231),
   `TeamCreate` (233–239).
-- `brain4all/routes/setup.py` — teams routes at lines 117–124 under tag
+- `xnobrain/routes/setup.py` — teams routes at lines 117–124 under tag
   `Teams`; the run route is
   `Route("POST", "/api/brain/v1/teams/{team_id}/run", "teams_run", TeamRun, tags=("Teams",))`
-  (line 124). Operations are mapped in `brain4all/handlers/api.py` lines
+  (line 124). Operations are mapped in `xnobrain/handlers/api.py` lines
   167–169; `teams_run` calls `s.run_team(p["team_id"], body)` and returns the
   result in the standard envelope with status 200.
 - Frontend: `src/api/teams.ts` (48 lines, `teamsApi.run` posts to
@@ -41,7 +41,7 @@ editing (they will drift).
 
 ### What `run_team` actually does, end to end
 
-`brain4all/services/platform.py::run_team` (476–575), read in full:
+`xnobrain/services/platform.py::run_team` (476–575), read in full:
 
 1. Loads the team; rejects a disabled team with 409 `team_disabled` (477–479).
 2. Requires `task` or `workflow` (480–483). Records `started = iso()` (484).
@@ -162,7 +162,7 @@ except asyncio.CancelledError:
 and re-raises. Without it, run cancellation in this plan would "cancel" only
 the awaiting coroutines while every in-flight step subprocess survives — the
 acceptance item "no orphan hermes processes after cancel" would fail. This is
-an edit to Brain4All's own adapter (`brain4all/integrations/hermes.py`), not
+an edit to XNOBrain's own adapter (`xnobrain/integrations/hermes.py`), not
 to pinned Hermes code, so it is within the program constraints. The exact edit
 is specified in [implementation.md](implementation.md) Phase 3.
 
@@ -198,12 +198,12 @@ Pinned checkout: `.tools/hermes-agent/` at commit
 
 **Why they do not fit cross-profile teams:** both primitives execute children
 *within one agent's runtime* — same process, same `HERMES_HOME`, same
-credentials, toolsets inherited from the parent. Brain4All teams are
+credentials, toolsets inherited from the parent. XNOBrain teams are
 cross-profile by design: each member is a distinct profile with its own
 config, model default, skills, and memory, achieved through the per-step
 `HERMES_HOME` env (see §3). Delegation cannot express "run this step as agent
 B's profile". Additionally, these are in-process Hermes modules reachable only
-from inside a running agent loop, not from Brain4All's FastAPI process;
+from inside a running agent loop, not from XNOBrain's FastAPI process;
 driving them would require either forking Hermes internals (forbidden) or
 prompting an agent to delegate (non-deterministic, no per-step contract).
 Full trade-off analysis: [approaches.md](approaches.md) Decision B.
@@ -216,8 +216,8 @@ Full trade-off analysis: [approaches.md](approaches.md) Decision B.
   `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`. The
   special-route wiring is `special="kanban_stream"` (routes/setup.py 112,
   187–189, and the `raw_response` set at 204).
-- **Background task lifecycle:** `Brain4AllApplication.register`
-  (brain4all/app.py 32–50) already wraps the lifespan to start/cancel the
+- **Background task lifecycle:** `XNOBrainApplication.register`
+  (xnobrain/app.py 32–50) already wraps the lifespan to start/cancel the
   kanban dispatcher task — the same place to cancel still-running team-run
   tasks on shutdown.
 - **Atomic JSON:** `FileRepository.atomic_json` (files.py 241–242) and the
@@ -225,9 +225,9 @@ Full trade-off analysis: [approaches.md](approaches.md) Decision B.
 - **Frontend SSE consumption:** `src/api/stream.ts` (`readSSE`) consumed
   as in `src/api/kanban.ts` lines 235–239 (`requestRaw` + `readSSE`) and
   the reconnect/abort loop in `src/hooks/useKanban.ts` lines 228–300.
-- **Tests:** `brain4all/tests/test_fastapi.py` setUp (temp `HERMES_HOME`,
-  `HERMES_PROFILES_ROOT`, `DATA_DIR`, `Brain4AllApplication` + `FakeRouter`,
-  `AsyncClient(ASGITransport)`), and `brain4all/tests/test_analytics.py` for
+- **Tests:** `xnobrain/tests/test_fastapi.py` setUp (temp `HERMES_HOME`,
+  `HERMES_PROFILES_ROOT`, `DATA_DIR`, `XNOBrainApplication` + `FakeRouter`,
+  `AsyncClient(ASGITransport)`), and `xnobrain/tests/test_analytics.py` for
   the service-level unit style.
 
 ## 7. Risks

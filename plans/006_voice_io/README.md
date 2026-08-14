@@ -2,24 +2,24 @@
 
 Priority: P2. Independent of the Kanban program (001–004) and messaging (005).
 Does not block them and is not blocked by them. Depends only on the shared
-Brain4All spine that already ships: `brain4all/routes/setup.py`,
-`brain4all/handlers/api.py`, `brain4all/services/platform.py`,
-`brain4all/integrations/`, and the pinned Hermes runtime.
+XNOBrain spine that already ships: `xnobrain/routes/setup.py`,
+`xnobrain/handlers/api.py`, `xnobrain/services/platform.py`,
+`xnobrain/integrations/`, and the pinned Hermes runtime.
 
 ## Goal
 
 Give agents a voice. Two capabilities, both already present in the pinned
-Hermes runtime but **not exposed through the Brain4All contract or UI**:
+Hermes runtime but **not exposed through the XNOBrain contract or UI**:
 
 - **Text-to-speech (TTS)** — the agent speaks its replies. A user reads a chat
   message, presses a play button, and hears it. Real Hermes user story:
   voice-first use from a terminal or the desktop app.
 - **Speech-to-text (STT)** — the user records a voice note in the browser and
-  Brain4All transcribes it into text that becomes a chat message. Real Hermes
+  XNOBrain transcribes it into text that becomes a chat message. Real Hermes
   user story: hands-free input and blind/low-vision accessibility.
 
 The work is an **adapter + contract + UI** layer. All synthesis and
-transcription stays inside Hermes. Brain4All rides the existing Hermes audio
+transcription stays inside Hermes. XNOBrain rides the existing Hermes audio
 capability, adds a stable versioned API, per-agent voice configuration, and a
 minimal chat UI (mic button, play button, Voice settings panel).
 
@@ -27,11 +27,11 @@ minimal chat UI (mic button, play button, Voice settings panel).
 
 - No Go, PostgreSQL, ORM, or second API process. One FastAPI/Hermes process on
   `:8642` and one 9router process on `:20128`.
-- Preserve the Hermes core. **Extend** from `brain4all/`; never copy or fork
+- Preserve the Hermes core. **Extend** from `xnobrain/`; never copy or fork
   Hermes internals. Ride the Hermes native audio capability.
 - Provider forced to 9router for LLM inference. Voice providers are a separate
   Hermes concern (Edge/ElevenLabs/neutts/etc.) and are configured, not forked.
-- `brain4all/routes/setup.py` is the only route-assembly point. Handlers do
+- `xnobrain/routes/setup.py` is the only route-assembly point. Handlers do
   HTTP, services own rules, repositories own atomic files, integrations adapt
   Hermes/9router, models are Pydantic.
 - No application database. Per-agent voice config lives in each agent profile's
@@ -58,8 +58,8 @@ minimal chat UI (mic button, play button, Voice settings panel).
 
 In scope:
 
-1. A Brain4All integration adapter over the Hermes audio tools and registries.
-2. Versioned Brain4All routes: list voice providers, list ElevenLabs voices,
+1. A XNOBrain integration adapter over the Hermes audio tools and registries.
+2. Versioned XNOBrain routes: list voice providers, list ElevenLabs voices,
    synthesize speech, transcribe audio, get/set per-agent voice config.
 3. Per-agent voice config persisted natively in the agent profile `config.yaml`
    under the Hermes `tts:` / `stt:` keys.
@@ -88,7 +88,7 @@ Out of scope: everything under Non-goals.
 
 - `README.md` — this file: goal, constraints, scope, phases, done.
 - `findings.md` — what Hermes provides (endpoints, tools, registries, shapes),
-  what Brain4All has/lacks, the exact gap, credential handling, APIs to pin,
+  what XNOBrain has/lacks, the exact gap, credential handling, APIs to pin,
   risks, open questions.
 - `architecture.md` — layering fit, TTS/STT data flow, where voice config
   lives, the new API contract with Pydantic names, adapter methods, UI surface,

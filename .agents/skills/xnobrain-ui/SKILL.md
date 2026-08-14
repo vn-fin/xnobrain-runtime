@@ -1,9 +1,9 @@
 ---
-name: brain4all-ui
-description: Review or refine Brain4All user interfaces and interaction flows in src/. Use for responsive layouts, connector/settings pages, chat and conversation history, agent navigation, notifications, dialogs, accessibility, visual regressions, or implementing feedback from screenshots and product documents.
+name: xnobrain-ui
+description: Review or refine XNOBrain user interfaces and interaction flows in src/. Use for responsive layouts, connector/settings pages, chat and conversation history, agent navigation, notifications, dialogs, accessibility, visual regressions, or implementing feedback from screenshots and product documents.
 ---
 
-# Brain4All UI Review
+# XNOBrain UI Review
 
 Read `AGENTS.md`, `.agents/rules/01-start-here.md`, `.agents/rules/02-source-boundaries.md`, and `.agents/rules/03-trackable-ui-routes.md` first.
 

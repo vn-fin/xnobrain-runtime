@@ -10,7 +10,7 @@ Cross-links: [README.md](README.md) · [findings.md](findings.md) ·
 
 ## 1. Compatibility test (Phase 0 gate)
 
-`brain4all/tests/test_cron_delivery.py::CronDeliveryCompatibilityTests`
+`xnobrain/tests/test_cron_delivery.py::CronDeliveryCompatibilityTests`
 (skipped unless Hermes importable). Assert the imports and shapes listed in
 [implementation.md](implementation.md#phase-0):
 
@@ -22,7 +22,7 @@ Cross-links: [README.md](README.md) · [findings.md](findings.md) ·
   `gateway.config.Platform.{EMAIL,LOCAL}` present.
 
 Run: `make test` (or a focused `python -m pytest
-brain4all/tests/test_cron_delivery.py -k Compatibility`).
+xnobrain/tests/test_cron_delivery.py -k Compatibility`).
 
 Fail behavior: a broken import/shape must fail startup readiness with one concise
 remediation message — verify by running with an intentionally wrong pin locally.
@@ -43,7 +43,7 @@ remediation message — verify by running with an intentionally wrong pin locall
 
 ## 3. Integration tests (temp `HERMES_HOME`, real Hermes)
 
-Same harness as `brain4all/tests/test_kanban.py` (real `Brain4AllApplication`,
+Same harness as `xnobrain/tests/test_kanban.py` (real `XNOBrainApplication`,
 `ASGITransport`, real Kanban SQLite). Cover:
 
 - `GET /api/brain/v1/cron/blueprints` returns real catalog entries with

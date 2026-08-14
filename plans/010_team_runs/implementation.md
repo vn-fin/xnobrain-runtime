@@ -18,10 +18,10 @@ No behavior change; produces the safety net for everything after.
    `Dockerfile.backend`. Verify during Phase 0 that both install paths resolve
    to the same Hermes version as the reference checkout; if a pin mechanism
    from plan 001 already exists, reuse it — do not invent a second one.
-2. Create `brain4all/tests/test_team_runs.py` (this file grows through
+2. Create `xnobrain/tests/test_team_runs.py` (this file grows through
    Phase 6). Add a `CompatibilityTests(unittest.TestCase)` class asserting the
    exact symbols the team execution path uses:
-   - `from brain4all.integrations import AgentManager`;
+   - `from xnobrain.integrations import AgentManager`;
      `inspect.iscoroutinefunction(AgentManager.chat)` is true and
      `list(inspect.signature(AgentManager.chat).parameters)` ==
      `["self", "raw_name", "body"]`.
@@ -42,11 +42,11 @@ No behavior change; produces the safety net for everything after.
      `except asyncio.CancelledError` handler
      (`"CancelledError" in inspect.getsource(AgentManager._run_hermes_command)`)
      — a tripwire so a future upstream-sync cannot silently drop the kill fix.
-3. Run: `make test` (or `python -m unittest brain4all.tests.test_team_runs`).
+3. Run: `make test` (or `python -m unittest xnobrain.tests.test_team_runs`).
 
 ## Phase 1 — Models
 
-File: `brain4all/models/api.py` (append near `TeamCreate`, line ~233).
+File: `xnobrain/models/api.py` (append near `TeamCreate`, line ~233).
 
 1. Add:
 
@@ -87,9 +87,9 @@ class TeamRunRecord(BaseModel):
     steps: list[TeamRunStepRecord] = Field(default_factory=list)
 ```
 
-2. Export both from `brain4all/models/__init__.py` (extend the existing
+2. Export both from `xnobrain/models/__init__.py` (extend the existing
    `from .api import (...)` list) and import them in
-   `brain4all/routes/setup.py`'s model import block (lines 14–23) — the start
+   `xnobrain/routes/setup.py`'s model import block (lines 14–23) — the start
    route reuses the existing `TeamRun` body model; the record models are for
    service-side shaping and OpenAPI documentation of the envelope `data`.
 3. The start body stays the existing `TeamRun` (models/api.py 177–180) —
@@ -97,7 +97,7 @@ class TeamRunRecord(BaseModel):
 
 ## Phase 2 — Repository helpers
 
-File: `brain4all/repositories/files.py`.
+File: `xnobrain/repositories/files.py`.
 
 1. In `__init__` (lines 38–46): add
    `self.team_runs_root = self.teams_root / "runs"` and include it in the
@@ -134,14 +134,14 @@ def delete_team_runs(self, team_id: Any) -> bool:
 ```
 
    Note `run_id` values are `tr_<32hex>` which matches `_SAFE_ID`.
-3. Wire team deletion: in `brain4all/services/platform.py::delete_team`
+3. Wire team deletion: in `xnobrain/services/platform.py::delete_team`
    (471–474), call `self.repository.delete_team_runs(team_id)` after a
    successful `delete_team` (service-level rule; the repository methods stay
    single-purpose).
 
 ## Phase 3 — Service: engine refactor, registry, cancellation, subprocess-kill fix
 
-### 3a. `brain4all/integrations/hermes.py` — the CancelledError kill fix
+### 3a. `xnobrain/integrations/hermes.py` — the CancelledError kill fix
 
 In `_run_hermes_command` (1608–1643), change the try/except around
 `proc.communicate()` (lines 1625–1634) to:
@@ -174,7 +174,7 @@ preserved, and changes nothing on the success or timeout paths. It benefits
 every `chat()`/`install_skill` caller, not just teams. (Rationale and the
 verified bug: findings.md §4.)
 
-### 3b. New file `brain4all/services/team_runs.py`
+### 3b. New file `xnobrain/services/team_runs.py`
 
 ```python
 """Persistent, observable, cancellable team runs over the existing DAG engine."""
@@ -243,7 +243,7 @@ Contents (rules only; no HTTP, no route strings):
   non-terminal file → apply staleness rule and return it.
 - `shutdown()`: cancel all active tasks (used by the lifespan).
 
-### 3c. `brain4all/services/platform.py`
+### 3c. `xnobrain/services/platform.py`
 
 1. In `__init__` (74–77), after analytics wiring:
    `from .team_runs import TeamRunService` /
@@ -261,11 +261,11 @@ Contents (rules only; no HTTP, no route strings):
    `completed_at` (= record `ended_at`). A test pins this shape
    (validation.md).
 4. `delete_team` (471–474): add the `delete_team_runs` call (Phase 2 step 3).
-5. Export nothing new from `brain4all/services/__init__.py` unless handlers
+5. Export nothing new from `xnobrain/services/__init__.py` unless handlers
    need the class — they reach it via `service.team_runs`, mirroring
    `service.kanban` / `service.analytics`.
 
-### 3d. `brain4all/app.py` — lifespan teardown
+### 3d. `xnobrain/app.py` — lifespan teardown
 
 In `register`'s lifespan (32–50), alongside the kanban dispatcher cancel:
 `self.service.team_runs.shutdown()` inside the `finally` block before the
@@ -274,7 +274,7 @@ engine persists `cancelled` records during teardown (findings.md §7).
 
 ## Phase 4 — Handlers and routes
 
-### 4a. `brain4all/handlers/api.py`
+### 4a. `xnobrain/handlers/api.py`
 
 1. In the `operations` dict (after the `teams_run` line, 167–169), add:
 
@@ -292,7 +292,7 @@ engine persists `cancelled` records during teardown (findings.md §7).
    `StreamingResponse` headers, `EXPECTED_ERRORS` → `event: error` then
    return.
 
-### 4b. `brain4all/routes/setup.py`
+### 4b. `xnobrain/routes/setup.py`
 
 1. After line 124 (`teams_run`), add exactly:
 
@@ -383,9 +383,9 @@ Run `npm run build` for type verification.
 
 ## Phase 6 — Tests
 
-File: `brain4all/tests/test_team_runs.py` (extends the Phase 0 class file).
-Mirror the harness of `brain4all/tests/test_fastapi.py` (temp `HERMES_HOME` /
-`HERMES_PROFILES_ROOT` / `DATA_DIR`, `Brain4AllApplication` with `FakeRouter`,
+File: `xnobrain/tests/test_team_runs.py` (extends the Phase 0 class file).
+Mirror the harness of `xnobrain/tests/test_fastapi.py` (temp `HERMES_HOME` /
+`HERMES_PROFILES_ROOT` / `DATA_DIR`, `XNOBrainApplication` with `FakeRouter`,
 `AsyncClient(transport=ASGITransport(app=...))`) and the unit style of
 `test_analytics.py`. Patch `AgentManager.chat` with `unittest.mock.AsyncMock`
 (the same boundary the engine calls) — no live model, no mock *data* in

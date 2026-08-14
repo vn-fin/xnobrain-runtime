@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 import yaml
 
-from xnobrain.app import Brain4AllApplication
+from xnobrain.app import XNOBrainApplication
 from xnobrain.defaults import (
     BIG_BROTHER_AGENT_ID,
     BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
@@ -57,7 +57,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         })
         self.environment.start()
         app = FastAPI()
-        composition = Brain4AllApplication(
+        composition = XNOBrainApplication(
             AgentManager(root_profile=self.root, profiles_root=self.profiles, legacy_agents_root=Path(self.temporary.name) / "legacy-agents"),
             GlobalConfigManager(root_profile=self.root), FakeRouter(),
         )
@@ -128,12 +128,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             profile_config_path.read_text(encoding="utf-8")
         )
         migrated_config["platform_toolsets"]["api_server"].append(
-            "brain4all-control"
+            "xnobrain-control"
         )
         migrated_config["approvals"]["mode"] = "manual"
         migrated_config["model"]["default"] = "pinned-before-model-default"
-        migrated_config["brain4all"].pop(BIG_BROTHER_APPROVAL_DEFAULT_MARKER)
-        migrated_config["brain4all"].pop(BIG_BROTHER_MODEL_DEFAULT_MARKER)
+        migrated_config["xnobrain"].pop(BIG_BROTHER_APPROVAL_DEFAULT_MARKER)
+        migrated_config["xnobrain"].pop(BIG_BROTHER_MODEL_DEFAULT_MARKER)
         profile_config_path.write_text(
             yaml.safe_dump(migrated_config, sort_keys=False),
             encoding="utf-8",
@@ -213,10 +213,10 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(profile_config["approvals"]["mode"], "manual")
         self.assertTrue(
-            profile_config["brain4all"][BIG_BROTHER_APPROVAL_DEFAULT_MARKER]
+            profile_config["xnobrain"][BIG_BROTHER_APPROVAL_DEFAULT_MARKER]
         )
         self.assertTrue(
-            profile_config["brain4all"][BIG_BROTHER_MODEL_DEFAULT_MARKER]
+            profile_config["xnobrain"][BIG_BROTHER_MODEL_DEFAULT_MARKER]
         )
         with self.assertRaises(ServiceError) as protected:
             self.composition.service.delete_agent(BIG_BROTHER_AGENT_ID)
@@ -226,7 +226,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         enabled_toolsets = _get_platform_tools(profile_config, "api_server")
         self.assertTrue(set(BIG_BROTHER_NATIVE_TOOLSETS).issubset(enabled_toolsets))
-        self.assertNotIn("brain4all-control", enabled_toolsets)
+        self.assertNotIn("xnobrain-control", enabled_toolsets)
 
         installed = await self.composition.service.install_skill(
             BIG_BROTHER_AGENT_ID,
@@ -374,7 +374,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(migrated["skills"]["write_approval"])
         self.assertFalse(migrated["memory"]["write_approval"])
         self.assertTrue(
-            migrated["brain4all"][BIG_BROTHER_MODEL_DEFAULT_MARKER]
+            migrated["xnobrain"][BIG_BROTHER_MODEL_DEFAULT_MARKER]
         )
 
         migrated["model"]["default"] = "user-selected-model"
@@ -1011,7 +1011,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         job = response.json()["data"]
         with kanban_adapter.connection("default") as conn:
             conn.execute(
-                "UPDATE brain4all_task_schedules SET next_run_at = 1 "
+                "UPDATE xnobrain_task_schedules SET next_run_at = 1 "
                 "WHERE task_id = ?",
                 (job["id"],),
             )
@@ -1250,7 +1250,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_chunk_merge_rejects_non_hermes_profile_before_create(self):
         manifest = {
-            "format": "brain4all-bundle",
+            "format": "xnobrain-bundle",
             "version": 1,
             "source_version": "test",
             "created_at": "2026-07-31T00:00:00+00:00",
@@ -1520,7 +1520,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                     (
                         "test/model", 100.0, 103.25, 3, 1, 1_000, 200,
                         100, 20, 50, 2, 0.25, "estimated",
-                        json.dumps({"brain4all_context": {
+                        json.dumps({"xnobrain_context": {
                             "used": 10_000,
                             "limit": 200_000,
                             "threshold": 100_000,

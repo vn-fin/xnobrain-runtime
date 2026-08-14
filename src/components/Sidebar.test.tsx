@@ -179,7 +179,7 @@ describe('Sidebar assistant actions', () => {
     const menus = within(container).getAllByRole('button', { name: 'Agent options' });
     fireEvent.click(menus[0]);
     expect(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Pinned' })).toBeDisabled();
-    expect(localStorage.getItem('brain4all.pinnedAssistants')).toContain('big-brother');
+    expect(localStorage.getItem('xnobrain.pinnedAssistants')).toContain('big-brother');
 
     fireEvent.click(within(container).getByRole('button', { name: 'Open in Library' }));
     expect(screen.getByRole('dialog', { name: 'Agent Library' })).toBeVisible();
@@ -188,7 +188,7 @@ describe('Sidebar assistant actions', () => {
 
   it('moves pinned agents to the top and shows their purpose', () => {
     const pinned = { ...agent, id: 'pinned', title: 'Pinned agent', description: 'Monitors production incidents' };
-    localStorage.setItem('brain4all.pinnedAssistants', JSON.stringify([pinned.id]));
+    localStorage.setItem('xnobrain.pinnedAssistants', JSON.stringify([pinned.id]));
     const { container } = render(
       <Sidebar
         agents={[agent, pinned]}
@@ -217,7 +217,7 @@ describe('Sidebar assistant actions', () => {
       title: 'Big Brother',
     };
     const pinned = { ...agent, id: 'pinned', title: 'Pinned agent' };
-    localStorage.setItem('brain4all.pinnedAssistants', JSON.stringify([pinned.id]));
+    localStorage.setItem('xnobrain.pinnedAssistants', JSON.stringify([pinned.id]));
     const { container } = render(
       <Sidebar
         agents={[agent, pinned, bigBrother]}

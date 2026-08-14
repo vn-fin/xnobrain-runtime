@@ -1,4 +1,4 @@
-# 01 · Current State — What Brain4All Is Today
+# 01 · Current State — What XNOBrain Is Today
 
 > Scope: sourced from the repository itself (`AGENTS.md`, `README.md`,
 > `docs/architecture.md`, `docs/enterprise-extension.md`,
@@ -7,7 +7,7 @@
 
 ## 1. One-sentence definition
 
-Brain4All is a **self-hosted React + FastAPI workspace that wraps Nous Research's
+XNOBrain is a **self-hosted React + FastAPI workspace that wraps Nous Research's
 open-source Hermes Agent** and adds a multi-provider LLM router (referred to
 internally as **9router**), packaged as a downloadable product with an optional
 proprietary enterprise control plane.
@@ -21,7 +21,7 @@ file is the starting point.
 
 ```
 browser → Traefik → React UI
-                 → FastAPI :8642  (Hermes native routes + Brain4All routes)
+                 → FastAPI :8642  (Hermes native routes + XNOBrain routes)
                         → services → repositories → atomic profile/config files
                         → integrations → Hermes CLI/core
                         → integrations → 9router :20128 → LLM providers
@@ -32,17 +32,17 @@ Key facts pulled from `docs/architecture.md`:
 - The runtime container starts **exactly two processes**: FastAPI on `8642` and
   9router on `20128`. React is served through Traefik.
 - It is a **Python modular monolith** layered onto the original Hermes CLI FastAPI
-  app. Route assembly is centralized in `brain4all/routes/setup.py`.
+  app. Route assembly is centralized in `xnobrain/routes/setup.py`.
 - **No application database.** State is atomic files under `DATA_DIR`. Hermes keeps
   its own profile-local `state.db` for native session history (an upstream file, not
-  a Brain4All schema).
+  a XNOBrain schema).
 - Clean layering: **handlers** own HTTP/SSE translation, **services** own rules,
   **repositories** own atomic files, **integrations** adapt the Hermes CLI and
   9router, **models** are Pydantic.
 - **No managed control-plane dependency, login, or API proxy** in the OSS build.
   OpenTelemetry is local-only and off by default.
 
-### Code map (`brain4all/`)
+### Code map (`xnobrain/`)
 
 | Layer | Files | Responsibility |
 |---|---|---|
@@ -84,8 +84,8 @@ This is the most strategically important thing already in the repo — the
 
 | Repo | Builds | Owns |
 |---|---|---|
-| `brain4all` (this, **public/OSS**) | React image + combined FastAPI/Hermes/9router image | Profile isolation, safe paths, snapshots, conversations, Hermes invocation, 9router delegation, quota middleware, service-level enforcement |
-| `brain4all-enterprise` (**private**) | Enterprise API + managed/Incus cloud packaging | Auth, tenant/plan resolution, billing entitlements, distributed quota, RBAC, audit, secret management, managed orchestration, telemetry retention |
+| `xnobrain` (this, **public/OSS**) | React image + combined FastAPI/Hermes/9router image | Profile isolation, safe paths, snapshots, conversations, Hermes invocation, 9router delegation, quota middleware, service-level enforcement |
+| `xnobrain-enterprise` (**private**) | Enterprise API + managed/Incus cloud packaging | Auth, tenant/plan resolution, billing entitlements, distributed quota, RBAC, audit, secret management, managed orchestration, telemetry retention |
 
 Rules that protect the model:
 
@@ -94,7 +94,7 @@ Rules that protect the model:
 - **Dependency is one-directional**: enterprise may pull the public runtime image;
   the OSS deployment never pulls the enterprise image.
 - Enterprise is a **thin private composition**, not a fork. It pins a released
-  Brain4All module + runtime image and implements a `pkg/edition.Policy` contract
+  XNOBrain module + runtime image and implements a `pkg/edition.Policy` contract
   (`-1` = unlimited).
 - Editions: **self-hosted Free** (file-only), **Cloud Free / Personal Pro /
   Enterprise** (shared private PostgreSQL control plane). Enterprise adds orgs, RBAC,
@@ -110,7 +110,7 @@ and keep an enterprise edition in Go. The repository's current reality is:
 
 - **OSS = Python** (FastAPI monolith) + React/TypeScript frontend. The Go/Postgres
   path was explicitly retired in the OSS repo.
-- **Enterprise = Go** (the `pkg/edition.Policy` control plane, `github.com/vn-fin/brain4all/`
+- **Enterprise = Go** (the `pkg/edition.Policy` control plane, `github.com/vn-fin/xnobrain/`
   module path, managed orchestration).
 
 So "Python + Go open source" is **not** what the code does today. Decide

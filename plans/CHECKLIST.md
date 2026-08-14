@@ -1,6 +1,6 @@
 # Kanban implementation checklist
 
-This is the execution index for the Brain4All Kanban program. Implement the
+This is the execution index for the XNOBrain Kanban program. Implement the
 plans in numeric order. An item is complete only when its acceptance checks
 pass; changing a checkbox without the corresponding evidence is not complete.
 
@@ -20,7 +20,7 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
 ## Plan documents
 
 - [Research and decisions](000_kanban_research/README.md)
-- [001 — Hermes foundation and Brain4All API](001_kanban_foundation/README.md)
+- [001 — Hermes foundation and XNOBrain API](001_kanban_foundation/README.md)
 - [API contract](001_kanban_foundation/API_CONTRACT.md)
 - [002 — Accessible Kanban and list experience](002_kanban_experience/README.md)
 - [003 — Kanban-native automation](003_kanban_automation/README.md)
@@ -41,20 +41,20 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
   blocked as native error detail mapped into Done; do not add either as a
   product column or write task status directly in SQLite.
 - [ ] Prove the cron-to-Kanban execution bridge described in plan 003 before
-  removing the legacy Brain4All scheduler.
+  removing the legacy XNOBrain scheduler.
 - [ ] Record the accepted Hermes version and compatibility decisions in
   `docs/development.md` and `docs/architecture.md`.
 
 ## 001 — Foundation
 
-- [x] Add a thin `brain4all` integration adapter over Hermes Kanban APIs.
+- [x] Add a thin `xnobrain` integration adapter over Hermes Kanban APIs.
 - [x] Keep Hermes SQLite as the only source of truth for Kanban state.
 - [x] Start and stop the Hermes Kanban dispatcher from the existing FastAPI
   lifespan, with singleton and restart behavior covered by tests.
 - [ ] Add Pydantic request/response models for boards, tasks, comments, links,
   assignments, transitions, attachments, runs, and events.
-- [x] Add the versioned Brain4All Kanban routes through
-  `brain4all/routes/setup.py`.
+- [x] Add the versioned XNOBrain Kanban routes through
+  `xnobrain/routes/setup.py`.
 - [x] Implement the fixed five-state wire mapping: Backlog, Todo, In Progress,
   Done, and Archived.
 - [x] Render four current-work columns and expose Archived as a separate view.
@@ -116,7 +116,7 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
 
 - [x] Use the existing in-process Kanban dispatcher as the only schedule tick;
   do not start a second loop, daemon, API process, or scheduler database.
-- [x] Store schedule metadata in a Brain4All extension table inside each
+- [x] Store schedule metadata in a XNOBrain extension table inside each
   Kanban SQLite database without altering upstream task/run/event tables.
 - [x] Release one-shot tasks to Ready and create recurring occurrence tasks
   before the native dispatcher claims any worker.
@@ -131,9 +131,9 @@ scheduler. Production Kanban contains no mock, demo, or smoke-hook records.
   pause/resume/run-now are complete; schedule edit UI remains).
 - [~] Show schedules as plain language with timezone and next run; advanced
   cron-expression editing remains open.
-- [ ] Migrate existing Brain4All YAML jobs once, with a snapshot, idempotency,
+- [ ] Migrate existing XNOBrain YAML jobs once, with a snapshot, idempotency,
   a dry-run report, and safe conflict handling.
-- [x] Remove the Brain4All `scheduler_loop`; compatibility cron endpoints are
+- [x] Remove the XNOBrain `scheduler_loop`; compatibility cron endpoints are
   now a database-backed facade over Kanban schedules.
 - [ ] Verify settings-created and prompt-created schedules in the browser and
   through the API, including pause/restart/no-duplicate behavior.

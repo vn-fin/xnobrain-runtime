@@ -1,4 +1,4 @@
-name: brain4all
+name: xnobrain
 
 x-honcho-environment: &honcho-environment
   DB_CONNECTION_URI: postgresql+psycopg://postgres:postgres@honcho-database:5432/postgres
@@ -7,7 +7,7 @@ x-honcho-environment: &honcho-environment
   AUTH_USE_AUTH: "false"
   TELEMETRY_ENABLED: "false"
   EMBED_MESSAGES: "false"
-  LLM_OPENAI_API_KEY: brain4all-local-honcho
+  LLM_OPENAI_API_KEY: xnobrain-local-honcho
   DERIVER_MODEL_CONFIG__MODEL: auto
   DERIVER_MODEL_CONFIG__OVERRIDES__BASE_URL: http://runtime:20128/v1
   SUMMARY_MODEL_CONFIG__MODEL: auto
@@ -32,7 +32,7 @@ services:
       - --api.dashboard=false
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
-      - --providers.docker.network=brain4all_edge
+      - --providers.docker.network=xnobrain_edge
       - --entrypoints.web.address=:5152
     ports:
       - "${XNOBRAIN_HTTP_PORT:-5152}:5152"
@@ -43,7 +43,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${XNOBRAIN_FRONTEND_IMAGE:-brain4all-frontend:local}
+    image: ${XNOBRAIN_FRONTEND_IMAGE:-xnobrain-frontend:local}
     build:
       context: .
       dockerfile: Dockerfile.frontend
@@ -59,16 +59,16 @@ services:
         FIREBASE_API_KEY: ${XNOBRAIN_FIREBASE_API_KEY:?Set XNOBRAIN_FIREBASE_API_KEY in .env}
     labels:
       - traefik.enable=true
-      - traefik.http.routers.brain4all-ui.rule=Host(`${XNOBRAIN_DOMAIN:-localhost}`)
-      - traefik.http.routers.brain4all-ui.entrypoints=web
-      - traefik.http.routers.brain4all-ui.priority=1
-      - traefik.http.services.brain4all-ui.loadbalancer.server.port=8080
+      - traefik.http.routers.xnobrain-ui.rule=Host(`${XNOBRAIN_DOMAIN:-localhost}`)
+      - traefik.http.routers.xnobrain-ui.entrypoints=web
+      - traefik.http.routers.xnobrain-ui.priority=1
+      - traefik.http.services.xnobrain-ui.loadbalancer.server.port=8080
     networks:
       - edge
     restart: unless-stopped
 
   runtime:
-    image: ${XNOBRAIN_RUNTIME_IMAGE:-brain4all-hermes-runtime:local}
+    image: ${XNOBRAIN_RUNTIME_IMAGE:-xnobrain-hermes-runtime:local}
     build:
       context: .
       dockerfile: Dockerfile.backend
@@ -92,27 +92,27 @@ services:
       HERMES_ROOT_PROFILE: ${HERMES_HOME:?Set HERMES_HOME in .env}
       HERMES_PROFILES_ROOT: ${HERMES_PROFILES_ROOT:-}
       NINE_ROUTER_DATA_DIR: ${NINE_ROUTER_DATA_DIR:?Set NINE_ROUTER_DATA_DIR in .env}
-      NINE_ROUTER_INTERNAL_SECRET: ${NINE_ROUTER_INTERNAL_SECRET:-brain4all-local-9router}
+      NINE_ROUTER_INTERNAL_SECRET: ${NINE_ROUTER_INTERNAL_SECRET:-xnobrain-local-9router}
       HONCHO_MEMORY_ENABLE: ${HONCHO_MEMORY_ENABLE:-false}
       HONCHO_BASE_URL: http://honcho-api:8000
       HONCHO_ENVIRONMENT: local
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: 8642
-      DATA_DIR: /opt/data/brain4all
+      DATA_DIR: /opt/data/xnobrain
       DEVELOPMENT_ENVIRONMENT: ${DEVELOPMENT_ENVIRONMENT:-development}
       SERVICE_NAME: ${SERVICE_NAME:-xnobrain-runtime-services}
       OTEL_ENABLED: ${OTEL_ENABLED:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
     volumes:
-      - brain4all_data:/opt/data
+      - xnobrain_data:/opt/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
       - traefik.enable=true
-      - traefik.http.routers.brain4all-api.rule=Host(`${XNOBRAIN_DOMAIN:-localhost}`) && PathPrefix(`/xnobrain/api/runtime`)
-      - traefik.http.routers.brain4all-api.entrypoints=web
-      - traefik.http.routers.brain4all-api.priority=100
-      - traefik.http.services.brain4all-api.loadbalancer.server.port=8642
+      - traefik.http.routers.xnobrain-api.rule=Host(`${XNOBRAIN_DOMAIN:-localhost}`) && PathPrefix(`/xnobrain/api/runtime`)
+      - traefik.http.routers.xnobrain-api.entrypoints=web
+      - traefik.http.routers.xnobrain-api.priority=100
+      - traefik.http.services.xnobrain-api.loadbalancer.server.port=8642
     networks:
       - edge
       - control
@@ -205,9 +205,9 @@ networks:
     internal: true
 
 volumes:
-  brain4all_data:
-    name: brain4all_brain4all_data
+  xnobrain_data:
+    name: xnobrain_xnobrain_data
   honcho_pgdata:
-    name: brain4all_honcho_pgdata
+    name: xnobrain_honcho_pgdata
   honcho_redis_data:
-    name: brain4all_honcho_redis_data
+    name: xnobrain_honcho_redis_data

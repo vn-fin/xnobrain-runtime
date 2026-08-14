@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 import yaml
 
-from xnobrain.app import Brain4AllApplication
+from xnobrain.app import XNOBrainApplication
 from xnobrain.integrations import AgentManager, GlobalConfigManager
 from xnobrain.integrations.analytics import (
     aggregate_profile,
@@ -69,7 +69,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         })
         self.environment.start()
         app = FastAPI()
-        composition = Brain4AllApplication(
+        composition = XNOBrainApplication(
             AgentManager(root_profile=self.root, profiles_root=self.profiles,
                          legacy_agents_root=base / "legacy-agents"),
             GlobalConfigManager(root_profile=self.root), FakeRouter(self.router_data),
@@ -355,14 +355,14 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
 
             # config.yaml carries the advisory block; a config snapshot was written
             config = yaml.safe_load((self.profiles / a / "config.yaml").read_text("utf-8"))
-            self.assertIn("brain4all_budget", config)
+            self.assertIn("xnobrain_budget", config)
 
             cleared = (await client.put(
                 f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget",
                 json={"monthly_usd": None})).json()["data"]
             self.assertEqual(cleared["status"], "unset")
             config = yaml.safe_load((self.profiles / a / "config.yaml").read_text("utf-8"))
-            self.assertNotIn("brain4all_budget", config)
+            self.assertNotIn("xnobrain_budget", config)
 
     async def test_usage_is_read_only(self):
         async with self.client() as client:

@@ -347,7 +347,7 @@ class AgentProfilesMixin:
             agent_config["system_prompt"] = current_prompt
         else:
             agent_config.pop("system_prompt", None)
-        managed_config = config.get("brain4all")
+        managed_config = config.get("xnobrain")
         if isinstance(managed_config, dict):
             managed_config.pop("runtime_help_guidance", None)
         prompt_caching = config.get("prompt_caching")

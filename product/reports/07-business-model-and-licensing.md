@@ -10,7 +10,7 @@
 The open-core model = **open-source core (MIT/Apache) + proprietary enterprise
 features via paid subscription**
 [[open-core overview](https://viprasol.com/blog/open-source-business-model/)]. Your
-`brain4all` (public) + `brain4all-enterprise` (private) split is textbook.
+`xnobrain` (public) + `xnobrain-enterprise` (private) split is textbook.
 
 | Company | Core license | Commercial model | Lesson for you |
 |---|---|---|---|
@@ -20,13 +20,13 @@ features via paid subscription**
 | **n8n** | **fair-code** ("internal use free, resale prohibited") | open-core + cloud | closest to your shape; lets firms self-host free, blocks resale |
 | **Sourcegraph** | went closed-source | enterprise sales | pure-enterprise is viable but loses the OSS funnel |
 
-**Pattern that fits Brain4All best:** **permissive/fair-code core + closed enterprise
+**Pattern that fits XNOBrain best:** **permissive/fair-code core + closed enterprise
 control plane** (like n8n / GitLab), *not* a restrictive relicense of the core (you
 don't own Hermes' license anyway — it's MIT and stays MIT).
 
 ## 2. The two licensing decisions you actually face
 
-### Decision A — the license for *your own* OSS repo (`brain4all`)
+### Decision A — the license for *your own* OSS repo (`xnobrain`)
 The README says it outright: *"Choose and add a license before public distribution."*
 This is currently **unset** and blocks public launch. Options (opinion):
 
@@ -38,7 +38,7 @@ This is currently **unset** and blocks public launch. Options (opinion):
 
 **Recommendation (opinion):** **Apache-2.0 or AGPL-3.0 for the OSS core**, and keep
 **all the moat (certification, registry, identity, royalty, billing) in the closed
-`brain4all-enterprise` repo.** Rationale:
+`xnobrain-enterprise` repo.** Rationale:
 
 - The moat is **engines 05–07 & 09**, which are *already* private by design — so you
   don't need a restrictive core license to protect the valuable part. That lets the

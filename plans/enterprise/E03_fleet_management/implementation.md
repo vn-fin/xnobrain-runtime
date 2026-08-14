@@ -1,6 +1,6 @@
 # E03 implementation — ordered steps, two tracks
 
-Track 1 is OSS Python in this repo; Track 2 is Go in `brain4all-enterprise`
+Track 1 is OSS Python in this repo; Track 2 is Go in `xnobrain-enterprise`
 (paths there are relative to that repo's root). Phase 0 blocks both tracks.
 Decisions referenced: [approaches.md](approaches.md); shapes:
 [architecture.md](architecture.md); proof: [validation.md](validation.md).
@@ -18,7 +18,7 @@ Decisions referenced: [approaches.md](approaches.md); shapes:
    code before this lands.
 2. **Probe a real Incus host** and resolve every "verify" item from
    [findings.md](findings.md) §6 and architecture §8: OCI image
-   `brain4all:<version>` boots under Incus 6.x (or needs conversion);
+   `xnobrain:<version>` boots under Incus 6.x (or needs conversion);
    `environment.*` config reaches the entrypoint; custom volume attach at
    `/opt/data` with correct ownership; which `limits.*` apply live vs need
    restart; unix-socket vs HTTPS trust bootstrap; the Incus Go client's module
@@ -32,7 +32,7 @@ Decisions referenced: [approaches.md](approaches.md); shapes:
 
 ### Phase 1 — device identity
 
-4. **`brain4all/integrations/device_identity.py`** (new). Owns everything
+4. **`xnobrain/integrations/device_identity.py`** (new). Owns everything
    under `DATA_DIR/device/` (architecture §3):
    - `DeviceIdentity(data_dir)` — lazy dir creation (`device/`, mode 0700;
      files 0600); `ensure_key()` Ed25519 via the stdlib-adjacent
@@ -40,7 +40,7 @@ Decisions referenced: [approaches.md](approaches.md); shapes:
      Phase 0, else vendor-free `pynacl` decision); key never serialized into
      logs or responses.
    - `register(endpoint, enrollment_token=None)` → POST public key
-     (+ token when `BRAIN4ALL_ENROLLMENT_TOKEN` present), answer the
+     (+ token when `XNOBRAIN_ENROLLMENT_TOKEN` present), answer the
      possession challenge, persist `device.json` + `token.json`.
    - `refresh()` — proof-of-possession token refresh; `claim(code)` for
      account claim; `unpair()` — delete `device/` contents only (never
@@ -49,12 +49,12 @@ Decisions referenced: [approaches.md](approaches.md); shapes:
      window and server-time offset, findings §7), `payload_sha256`.
    - Transport DTOs as plain dataclasses; no Pydantic dependency at this
      layer (matches integrations style, e.g. `runtime.py`).
-5. **`brain4all/integrations/__init__.py`** — export `DeviceIdentity`
+5. **`xnobrain/integrations/__init__.py`** — export `DeviceIdentity`
    alongside `LocalRuntimeManager`.
 
 ### Phase 2 — connector service + lifespan
 
-6. **`brain4all/services/device_connector.py`** (new). The state machine of
+6. **`xnobrain/services/device_connector.py`** (new). The state machine of
    architecture §2:
    - `DeviceConnector(identity, platform_service, endpoint)`; single
    `async def run()` loop: registering → connected (long-poll with cursor,
@@ -74,19 +74,19 @@ Decisions referenced: [approaches.md](approaches.md); shapes:
      unknown → `rejected`/`unknown_type` with **no** service call.
    - Missed-occurrence summaries from poll responses: log + counter, no
      execution (cron machinery deferred; README non-goals).
-7. **`brain4all/app.py`** — wire into the existing wrapped lifespan next to
+7. **`xnobrain/app.py`** — wire into the existing wrapped lifespan next to
    the kanban dispatcher: if `os.getenv("ENTERPRISE_API_URL")` is set, build
    `DeviceIdentity(data_dir)` + `DeviceConnector(...)` and
-   `asyncio.create_task(connector.run(), name="brain4all-device-connector")`;
+   `asyncio.create_task(connector.run(), name="xnobrain-device-connector")`;
    on shutdown, `connector.drain()` then cancel with
    `suppress(asyncio.CancelledError)` — mirroring the dispatcher teardown. If
    unset: no task, no files, no sockets (dormancy is the absence of the
    task).
-8. **`brain4all/services/platform.py`** — expose read-only connector status
+8. **`xnobrain/services/platform.py`** — expose read-only connector status
    for the UI (`self.device_connector` optional): enrollment state, last
    connected, queued command count, endpoint; plus `unpair()` passthrough.
 9. **Routes/handlers** — small additions in the existing single
-   route-assembly point (`brain4all/routes/setup.py`) + `brain4all/handlers/`:
+   route-assembly point (`xnobrain/routes/setup.py`) + `xnobrain/handlers/`:
    `GET  /api/brain/v1/enterprise/device` (status), `POST
    /api/brain/v1/enterprise/device/enroll` (manual pairing token), `POST
    /api/brain/v1/enterprise/device/unpair`. All local-only; they never proxy to the
@@ -107,7 +107,7 @@ Decisions referenced: [approaches.md](approaches.md); shapes:
     ships only if E01 exposes it (Phase-0 item).
 11. **`src/features/system/api.ts`** — add the three device endpoints to
     the existing `systemApi`.
-12. **`brain4all/tests/test_device_connector.py`** (new) — a **fake control
+12. **`xnobrain/tests/test_device_connector.py`** (new) — a **fake control
     plane** (in-process ASGI app or `httpx.MockTransport`) driving the full
     contract sequence, per the `device-command-v1` acceptance list:
     register → connect → dispatch → acknowledge → duplicate →
@@ -122,10 +122,10 @@ Decisions referenced: [approaches.md](approaches.md); shapes:
     `DATA_DIR/device/` created; key file mode is 0600.
 13. Docs: `docs/api.md` (three routes), `docs/architecture.md` (connector
     paragraph + dormancy), `.env`/compose examples for `ENTERPRISE_API_URL`
-    and `BRAIN4ALL_ENROLLMENT_TOKEN` (the latter documented as
+    and `XNOBRAIN_ENROLLMENT_TOKEN` (the latter documented as
     injected-by-provisioner, not user-set). `make check` green.
 
-## Track 2 — enterprise repo (Go, `brain4all-enterprise`)
+## Track 2 — enterprise repo (Go, `xnobrain-enterprise`)
 
 Raw SQL migrations only — extend, never rewrite, the E01 migration history
 (`docs/enterprise-extension.md`); **no ORM** anywhere.
@@ -160,7 +160,7 @@ Raw SQL migrations only — extend, never rewrite, the E01 migration history
 18. **`internal/fleet/provision.go`** — the provision sequence of
     architecture §6: plan validation against `docs/plans.md` sandbox counts,
     volume, one-time enrollment token mint (E01), instance create from pinned
-    `brain4all:<version>` with env injection, first-heartbeat health gate,
+    `xnobrain:<version>` with env injection, first-heartbeat health gate,
     audit event.
 
 ### Phase 6 — replace/drain + rollout
@@ -185,6 +185,6 @@ Raw SQL migrations only — extend, never rewrite, the E01 migration history
 ## Phase 7 — end-to-end validation
 
 22. Run the full [validation.md](validation.md) checklist on a staging Incus
-    host with a released `brain4all:<version>` image and one PC-style install;
+    host with a released `xnobrain:<version>` image and one PC-style install;
     capture evidence per row; tick E03 in
     [`../README.md`](../README.md)'s program checklist.

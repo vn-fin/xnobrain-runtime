@@ -151,8 +151,8 @@ class BlendsIntegrationMixin:
         # 9router replaces the whole comboStrategies map on PATCH, so read then
         # merge then write the entire map (findings.md §6).
         strategies = dict((await self.combo_settings())["combo_strategies"])
-        # Smart Route is a Brain4All strategy. Keep upstream 9router on its
-        # safe ordered-fallback behavior if a request bypasses Brain4All, and
+        # Smart Route is a XNOBrain strategy. Keep upstream 9router on its
+        # safe ordered-fallback behavior if a request bypasses XNOBrain, and
         # persist the routing policy as an ignored per-combo extension.
         entry: dict[str, Any] = {
             "fallbackStrategy": "fallback" if smart_route is not None else strategy,
@@ -174,7 +174,7 @@ class BlendsIntegrationMixin:
         *,
         required_context_tokens: int = 0,
     ) -> dict[str, Any] | None:
-        """Resolve a Brain4All Smart Route blend to one concrete model."""
+        """Resolve a XNOBrain Smart Route blend to one concrete model."""
         settings = await self.combo_settings()
         strategies = settings.get("combo_strategies") or {}
         entry = strategies.get(name) if isinstance(strategies, Mapping) else None

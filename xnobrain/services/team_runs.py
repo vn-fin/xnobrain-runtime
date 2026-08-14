@@ -1,6 +1,6 @@
 """Persistent, observable, cancellable team runs over the existing DAG engine.
 
-The DAG execution engine itself is unchanged Brain4All logic moved verbatim out
+The DAG execution engine itself is unchanged XNOBrain logic moved verbatim out
 of ``PlatformService.run_team``; this service wraps it in a run lifecycle:
 an on-disk run record per transition, background execution, live progress via a
 "changed" pulse, cancellation that reaches the child ``hermes`` subprocesses, and

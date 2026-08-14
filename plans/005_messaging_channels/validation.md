@@ -6,7 +6,7 @@ listed evidence (`plans/CHECKLIST.md` legend).
 
 ## 1. Compatibility test (Phase 0 gate)
 
-File: `brain4all/tests/test_channels_compat.py`. Runs against the **pinned**
+File: `xnobrain/tests/test_channels_compat.py`. Runs against the **pinned**
 Hermes artifact in a temp `HERMES_HOME`.
 
 - [ ] Imports of `gateway.config` (`Platform`, `PORT_BINDING_PLATFORM_VALUES`,
@@ -32,8 +32,8 @@ one-line remediation and fails startup readiness.
 
 ## 2. Unit tests (service + integration, mocked runtime)
 
-File: `brain4all/tests/test_channels.py` (unit section) + handler tests in
-`brain4all/tests/test_fastapi.py`.
+File: `xnobrain/tests/test_channels.py` (unit section) + handler tests in
+`xnobrain/tests/test_fastapi.py`.
 
 - [ ] `agent_id → profile` resolution; unknown agent → 404 before any Hermes
   call.
@@ -56,7 +56,7 @@ File: `brain4all/tests/test_channels.py` (unit section) + handler tests in
 
 ## 3. Integration tests (real pinned Hermes, temp `HERMES_HOME`)
 
-File: `brain4all/tests/test_channels.py` (integration section, mirror
+File: `xnobrain/tests/test_channels.py` (integration section, mirror
 `test_kanban.py`).
 
 - [ ] List channels for a fresh profile: catalog non-empty, all disabled,
@@ -69,12 +69,12 @@ File: `brain4all/tests/test_channels.py` (integration section, mirror
 - [ ] Clear credential + disable: `.env` key removed, `enabled:false`.
 - [ ] Gateway status read reflects `get_running_pid()`.
 - [ ] Pairing: seed a pending code via `PairingStore`, approve through the
-  Brain4All route, verify it moves to approved; revoke; clear-pending.
+  XNOBrain route, verify it moves to approved; revoke; clear-pending.
 - [ ] Telegram onboarding happy path with the external setup service mocked at
   the network boundary only: start → status(ready) → apply persists the token +
   enables telegram + requests a restart.
 - [ ] Native visibility: a channel enabled via the Hermes CLI/dashboard is
-  visible through the Brain4All API without sync, and vice-versa.
+  visible through the XNOBrain API without sync, and vice-versa.
 
 ## 4. `make` targets & manual
 
@@ -126,16 +126,16 @@ the card transitioning disabled → pending_restart → connected.
 - [ ] Every route in `implementation.md` §Phase 5 has success, validation (422),
   not-found (404), and — where applicable — conflict (409) / lockout (429)
   coverage.
-- [ ] A channel enabled + credentialed through Brain4All is visible to the
+- [ ] A channel enabled + credentialed through XNOBrain is visible to the
   native Hermes dashboard and `hermes` CLI without sync; and vice-versa.
 - [ ] Enabling a port-binding channel on a secondary agent under multiplex is
   rejected with Hermes' guidance; client-type channels work per agent.
 - [ ] Gateway start/stop/restart/drain and status work through the public
-  gateway path; Brain4All never re-implements dispatch/session/delivery.
+  gateway path; XNOBrain never re-implements dispatch/session/delivery.
 - [ ] Every credential mutation snapshots `.env` + `config.yaml` before writing.
 - [ ] No raw token/allowed-user/pairing code appears in any response, log,
   error body, trace, or exported bundle (all of §5 green).
-- [ ] No new database, second API process, Brain4All credential file, or copied
+- [ ] No new database, second API process, XNOBrain credential file, or copied
   Hermes internals were introduced.
 - [ ] Manual Telegram round-trip succeeds (message → reply) with the card
   reaching `connected`.

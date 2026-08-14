@@ -59,7 +59,7 @@ description)`. It resolves as `<plugin_name>:<name>` and is an **explicit opt-in
 load** — it does NOT enter the flat skills tree or the `<available_skills>`
 system-prompt index. Name must match `[a-zA-Z0-9_-]+` and contain no `:`.
 
-### Brain4All persistence rule
+### XNOBrain persistence rule
 Per this repo's `AGENTS.md`, agent-created skills belong under
 `DATA_DIR/profiles/<agent-id>/skills/<skill-id>/SKILL.md`, and every skill/memory
 /config mutation writes an immutable snapshot before success and uses atomic

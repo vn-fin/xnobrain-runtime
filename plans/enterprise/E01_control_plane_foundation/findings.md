@@ -6,8 +6,8 @@ re-decide it. Cross-links: [README.md](README.md),
 [implementation.md](implementation.md), [validation.md](validation.md).
 
 All paths below are relative to the public repo
-`/home/kim/Documents/xno/brain4all-dev/brain4all` unless prefixed with
-`brain4all-enterprise/`.
+`/home/kim/Documents/xno/xnobrain-dev/xnobrain` unless prefixed with
+`xnobrain-enterprise/`.
 
 ## 1. Device identity is already specified — `docs/contracts/device-command-v1.md`
 
@@ -120,7 +120,7 @@ Fixed facts E01 seeds into the `plans` table:
 ## 4. Repository and ownership rules — `docs/enterprise-extension.md` + `docs/repository-ownership.md`
 
 - The control plane is a **thin private composition named
-  `brain4all-enterprise`** — Go + PostgreSQL. It "owns authentication, tenant
+  `xnobrain-enterprise`** — Go + PostgreSQL. It "owns authentication, tenant
   and plan resolution, billing entitlements, distributed quota reservations,
   RBAC, audit events, secret management, managed container orchestration,
   and telemetry retention."
@@ -141,10 +141,10 @@ Fixed facts E01 seeds into the `plans` table:
   implemented by the enterprise repo ("It … implements `pkg/edition.Policy`").
 - Module-path rule: "If its binary imports this repository's `internal`
   composition packages, its Go module path must be nested under
-  `github.com/vn-fin/brain4all/`." Since the OSS repo is now Python, there is
+  `github.com/vn-fin/xnobrain/`." Since the OSS repo is now Python, there is
   nothing to import — **prefer HTTP contracts**; the module path is free
   (decision E in [approaches.md](approaches.md)).
-- `docs/repository-ownership.md`: `brain4all-enterprise` owns "Accounts,
+- `docs/repository-ownership.md`: `xnobrain-enterprise` owns "Accounts,
   tenants, plans, managed metadata, and hosted telemetry"; "The OSS server
   communicates with Enterprise only through the public HTTP and telemetry
   contracts and `ENTERPRISE_API_URL`."
@@ -180,14 +180,14 @@ the OSS runtime itself was planned in Go. Per `plans/enterprise/README.md`:
   crosses the wire — relevant to E01 only as the logging redaction rule
   (never log tokens, keys, or nonces).
 - Do **not** copy any `internal/...` layout from those files into
-  `brain4all-enterprise`; the layout in [architecture.md](architecture.md)
+  `xnobrain-enterprise`; the layout in [architecture.md](architecture.md)
   is defined fresh.
 
 ## 7. What exists today
 
 - `plans/enterprise/E01_control_plane_foundation/` — this plan (the program
   README already links to it).
-- The `brain4all-enterprise` repository **does not exist yet** — Phase 0
+- The `xnobrain-enterprise` repository **does not exist yet** — Phase 0
   creates it. There is no enterprise code anywhere in the public repo, and
   none may be added (`AGENTS.md`: "Do not add Go, PostgreSQL, an ORM, or
   another application API process" — that rule is about *this* repo, which is
@@ -205,7 +205,7 @@ the OSS runtime itself was planned in Go. Per `plans/enterprise/README.md`:
    the auth-service owners). E01 mitigates by shipping the
    `PrincipalResolver` interface + a dev-mode static resolver; the real gRPC
    client fills in behind the interface without touching handlers. The proto
-   file, when obtained, lives in `brain4all-enterprise` (it is not a
+   file, when obtained, lives in `xnobrain-enterprise` (it is not a
    cross-repo OSS contract).
 2. **Admin auth story before SSO.** Nothing specifies how operators
    authenticate to `/admin/v1/*` pre-SSO. Decision D in
@@ -216,9 +216,9 @@ the OSS runtime itself was planned in Go. Per `plans/enterprise/README.md`:
    contract defines *device key* rotation triggers or cadence. E01 ships
    token rotation only; device-key rotation is flagged as a `v1.x` contract
    question (would need a signed key-succession message — "verify"/defer).
-4. **GitHub org / module path.** `github.com/vn-fin/brain4all/` appears in
+4. **GitHub org / module path.** `github.com/vn-fin/xnobrain/` appears in
    `docs/enterprise-extension.md`; whether the private repo lives at
-   `github.com/vn-fin/brain4all-enterprise` must be confirmed at repo
+   `github.com/vn-fin/xnobrain-enterprise` must be confirmed at repo
    creation ("verify"). Nothing in the plan depends on the exact host path.
 5. **Claim proof strength.** v1 claim requires the caller to present both a
    valid user bearer *and* a live device token (see

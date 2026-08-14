@@ -1,20 +1,20 @@
 # 005 — Messaging channels
 
 Priority: **P1**. This is Hermes' flagship capability and is entirely missing
-from Brain4All today. Depends on the Kanban foundation discipline
+from XNOBrain today. Depends on the Kanban foundation discipline
 (`plans/001_kanban_foundation/README.md`) for *how* we pin and ride Hermes, but
 has no runtime dependency on Kanban. It can proceed in parallel with 006–009.
 
 Read the five companion files in order:
 
-1. `findings.md` — gap analysis: exactly what Hermes provides, what Brain4All
+1. `findings.md` — gap analysis: exactly what Hermes provides, what XNOBrain
    lacks, the profile ↔ channel ↔ multiplex question, APIs to pin, credential
    and security notes, risks, open questions.
-2. `architecture.md` — Brain4All layering fit, state ownership, the new
+2. `architecture.md` — XNOBrain layering fit, state ownership, the new
    `/api/brain/v1/...` route contract with Pydantic model names, adapter
    methods, React surface, and sequence diagrams.
 3. `approaches.md` — options and trade-offs (multiplexed vs per-agent gateway;
-   native-config vs Brain4All credential file; loopback-HTTP vs in-process
+   native-config vs XNOBrain credential file; loopback-HTTP vs in-process
    Python adapter) and the chosen approach.
 4. `implementation.md` — ordered, phased, file-by-file steps with exact new
    route paths and model names.
@@ -23,13 +23,13 @@ Read the five companion files in order:
 
 ## Goal
 
-Let a local user connect their Brain4All agent to messaging platforms
+Let a local user connect their XNOBrain agent to messaging platforms
 (Telegram, Discord, Slack, WhatsApp, Signal, and every other channel Hermes
 supports) so they can chat with their agent from a phone or app. Manage, per
 agent: which channels are enabled, bot-token credentials stored safely, the
 gateway process lifecycle, pairing/linking, and channel connection status.
 
-Each Brain4All agent **is** a Hermes profile. Channel enablement and
+Each XNOBrain agent **is** a Hermes profile. Channel enablement and
 credentials are therefore per-profile. The single Hermes gateway (or, where a
 channel binds a port, the default profile's gateway) serves those channels.
 
@@ -38,11 +38,11 @@ channel binds a port, the default profile's gateway) serves those channels.
 - No new database, ORM, Go service, or second API process. One FastAPI/Hermes
   process on `:8642`, one 9router on `:20128`.
 - No copied or forked Hermes gateway: no re-implemented dispatch loop, session
-  loop, platform adapter, pairing store, or channel SQL. Brain4All rides
+  loop, platform adapter, pairing store, or channel SQL. XNOBrain rides
   Hermes' native gateway/messaging/pairing APIs and its profile `config.yaml` /
   `.env`.
-- No Brain4All-owned message routing, delivery, or per-message persistence.
-  Messages live in Hermes; Brain4All manages *configuration and lifecycle*.
+- No XNOBrain-owned message routing, delivery, or per-message persistence.
+  Messages live in Hermes; XNOBrain manages *configuration and lifecycle*.
 - No new credential store. Tokens live where Hermes already reads them: the
   agent's profile `.env` (values) and `config.yaml` (`platforms.<id>.enabled`).
 - No provider change: the agent still runs on 9router; channels are transport,

@@ -6,7 +6,7 @@ topologies, and break-glass. Cross-links: [README.md](README.md),
 [findings.md](findings.md), [approaches.md](approaches.md),
 [implementation.md](implementation.md), [validation.md](validation.md).
 
-Everything server-side extends the `brain4all-enterprise` repo laid out in
+Everything server-side extends the `xnobrain-enterprise` repo laid out in
 [E01 architecture.md](../E01_control_plane_foundation/architecture.md); new
 packages are listed in [implementation.md](implementation.md).
 
@@ -178,7 +178,7 @@ Every transition writes an `audit_events` row (action list in §7).
 ## 2. `auth.yaml` — the complete annotated example
 
 Loaded at boot from `AUTH_CONFIG_PATH` (default
-`/etc/brain4all/auth.yaml`; the repo ships
+`/etc/xnobrain/auth.yaml`; the repo ships
 `config/auth.yaml.example`). Hot-reload on SIGHUP +
 `POST /admin/v1/authcfg/reload` (decision A): parse → validate → atomic
 swap; an invalid file is rejected and the previous config stays live.
@@ -186,7 +186,7 @@ Secrets are **never inline** — `_env`/`_file` indirection only, so the
 YAML is safe to commit.
 
 ```yaml
-# auth.yaml — brain4all-enterprise authentication & RBAC configuration.
+# auth.yaml — xnobrain-enterprise authentication & RBAC configuration.
 # Versioned contract: bump `version` only on incompatible schema change.
 version: 1
 
@@ -208,7 +208,7 @@ backends:
     type: oidc                      # (2b) any OIDC IdP: Okta, Entra, Keycloak…
     enabled: true
     issuer: https://idp.example.com/realms/acme
-    client_id: brain4all-enterprise
+    client_id: xnobrain-enterprise
     client_secret_env: OIDC_CLIENT_SECRET      # env indirection, never inline
     scopes: [openid, email, profile, groups]
     groups_claim: groups            # claim carrying IdP group names
@@ -217,7 +217,7 @@ backends:
   - id: corp-saml
     type: saml                      # (2c) SAML 2.0 SP-initiated
     enabled: false
-    idp_metadata_file: /etc/brain4all/idp-metadata.xml   # file indirection —
+    idp_metadata_file: /etc/xnobrain/idp-metadata.xml   # file indirection —
                                                           # works air-gapped
     sp_entity_id: https://cp.example.com/auth/v1/saml/metadata
     acs_url: https://cp.example.com/auth/v1/saml/acs
@@ -229,15 +229,15 @@ backends:
     url: ldaps://ldap.example.com:636
     bind_dn_template: "uid={username},ou=people,dc=example,dc=com"
     # optional service account for group lookup:
-    search_bind_dn: "cn=svc-brain4all,ou=svc,dc=example,dc=com"
-    search_bind_password_file: /etc/brain4all/secrets/ldap-pass
+    search_bind_dn: "cn=svc-xnobrain,ou=svc,dc=example,dc=com"
+    search_bind_password_file: /etc/xnobrain/secrets/ldap-pass
     group_search_base: "ou=groups,dc=example,dc=com"
 
   - id: acme-authsvc
     type: external_grpc             # (2e) the docs/enterprise-extension.md seam:
     enabled: false                  # "principal resolution should call the
     address: authsvc.internal:8443  #  existing external auth service over gRPC"
-    tls_ca_file: /etc/brain4all/secrets/authsvc-ca.pem
+    tls_ca_file: /etc/xnobrain/secrets/authsvc-ca.pem
     # Proto shape is an open question (findings.md §8.1); the backend is a
     # config-flagged plug behind the same Backend interface.
 
@@ -300,7 +300,7 @@ roles:
 bindings:
   - email: root-admin@example.com
     roles: [org_admin, org_manager]
-  - email: ops@brain4all.example
+  - email: ops@xnobrain.example
     roles: [platform_operator]      # built-in: the only role with platform.operate
 
 # ── IdP group → role mappings ────────────────────────────────────────────
@@ -309,10 +309,10 @@ bindings:
 # no DB write.
 group_mappings:
   - backend: corp-oidc
-    group: brain4all-admins
+    group: xnobrain-admins
     roles: [org_admin]
   - backend: corp-oidc
-    group: brain4all-managers
+    group: xnobrain-managers
     roles: [org_manager]
   - backend: corp-oidc
     group: everyone
@@ -627,7 +627,7 @@ Tested in [validation.md](validation.md) §5.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `AUTH_CONFIG_PATH` | `/etc/brain4all/auth.yaml` | the RBAC/backends file |
+| `AUTH_CONFIG_PATH` | `/etc/xnobrain/auth.yaml` | the RBAC/backends file |
 | `ACCESS_TOKEN_TTL` | `15m` | overrides `session.access_ttl` if set |
 | `REFRESH_TOKEN_TTL` | `720h` | overrides `session.refresh_ttl` |
 | `PUBLIC_BASE_URL` | — (required when oidc/saml enabled) | redirect/ACS URL base |

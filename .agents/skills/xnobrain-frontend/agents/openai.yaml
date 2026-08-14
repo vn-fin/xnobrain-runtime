@@ -1,0 +1,4 @@
+interface:
+  display_name: "XNOBrain Frontend"
+  short_description: "Implement and verify React source changes"
+  default_prompt: "Use $xnobrain-frontend to implement a focused React frontend change."

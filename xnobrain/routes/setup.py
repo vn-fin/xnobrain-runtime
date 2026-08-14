@@ -1,4 +1,4 @@
-"""The only Brain4All route assembly point."""
+"""The only XNOBrain route assembly point."""
 
 from typing import Any
 

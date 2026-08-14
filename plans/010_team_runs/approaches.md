@@ -14,7 +14,7 @@ Options considered for each decision, then the chosen path. Cross-links:
   (`teamsApi.run`) and `src/hooks/useTeams.ts` (`lastRun`) — and any
   external client — expect the full result synchronously. The program rule is
   a stable compatibility surface (`routes/setup.py` docstring: "the stable
-  Brain4All compatibility surface"). A silent semantic change from
+  XNOBrain compatibility surface"). A silent semantic change from
   result-in-response to record-in-response is the worst kind of break.
 
 ### A2. Keep `/run` sync but add `?wait=false` to flip it async
@@ -83,14 +83,14 @@ profile, same credentials; children inherit the *parent's* toolsets minus
     product. The per-member model/skills/memory guarantees would silently
     disappear.
   - **Unreachable without violating constraints.** `delegate_task` is an
-    in-agent tool; Brain4All's FastAPI process would have to either import
+    in-agent tool; XNOBrain's FastAPI process would have to either import
     and drive Hermes-internal modules (forbidden: no copying/forking
     internals, and these are not public `hermes_cli` surface) or prompt the
     orchestrator agent to call the tool — non-deterministic, no per-step
     status, no per-step cancellation handle.
   - Cancellation and observability would depend on Hermes-internal thread
     machinery we cannot pin as public API.
-- **Verdict: rejected for cross-profile teams — and Brain4All teams are
+- **Verdict: rejected for cross-profile teams — and XNOBrain teams are
   cross-profile by definition (`_put_team` requires distinct member agent
   ids).** Honest caveat: for a hypothetical future "single-profile team"
   (one agent, many role-steps), B2 would be the better engine — cheaper,

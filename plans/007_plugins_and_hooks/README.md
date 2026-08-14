@@ -1,12 +1,12 @@
 # 007 — Plugins, hooks, and native tool toggles
 
 Priority: **P2**. Independent product surface; does not block the Kanban
-program (plans 001–004). It depends only on the existing Brain4All layering and
+program (plans 001–004). It depends only on the existing XNOBrain layering and
 the pinned Hermes runtime.
 
 Sibling files (read together):
 
-- [findings.md](findings.md) — what Hermes provides, what Brain4All has and
+- [findings.md](findings.md) — what Hermes provides, what XNOBrain has and
   lacks, the exact gap, the security model, compatibility APIs to pin.
 - [architecture.md](architecture.md) — layering fit, data flow, the new API
   contract, integration adapter, React UI, and the safe-install sequence.
@@ -16,7 +16,7 @@ Sibling files (read together):
 
 ## Goal
 
-Let a non-developer manage the Hermes **extensibility layer** from Brain4All:
+Let a non-developer manage the Hermes **extensibility layer** from XNOBrain:
 
 1. **Plugins** — browse the installed/available plugin catalog ("hub"),
    install a plugin from a git URL, enable/disable it, update it, remove it,
@@ -28,10 +28,10 @@ Let a non-developer manage the Hermes **extensibility layer** from Brain4All:
    shell-command hooks and read-only observability of plugin/gateway hooks.
 3. **Native tools** — expose Hermes' built-in **toolsets** (browser, image
    generation, code execution, computer use, web search, and the rest) as
-   per-agent capability toggles. Brain4All currently exposes only MCP and
+   per-agent capability toggles. XNOBrain currently exposes only MCP and
    skills; the built-in tool set is unmanaged.
 
-Brain4All rides Hermes' native plugin, hook, tool-registry, and security
+XNOBrain rides Hermes' native plugin, hook, tool-registry, and security
 primitives in-process. It never forks or reimplements them.
 
 ## Non-goals
@@ -39,15 +39,15 @@ primitives in-process. It never forks or reimplements them.
 - **No remote plugin marketplace.** Hermes has no curated registry; the "hub"
   is the aggregation of installed/discoverable plugins plus install-by-git-URL.
   See the open question in [findings.md](findings.md#open-questions).
-- **No new plugin format, hook format, or tool format.** Brain4All manages
+- **No new plugin format, hook format, or tool format.** XNOBrain manages
   Hermes' existing artifacts; it does not define its own.
 - **No second API process, database, ORM, Go, or PostgreSQL.** One
   FastAPI/Hermes process (:8642) and one 9router process (:20128).
 - **No copied/forked Hermes plugin, hook, tool-registry, or scanner code.**
 - **No authoring UI for plugin Python or hook handler code.** Plugins are
-  installed from source; Brain4All does not edit their code.
+  installed from source; XNOBrain does not edit their code.
 - **No weakening of the enable gate.** A plugin cannot become enabled through a
-  Brain4All path without a passing scan and an explicit approval record.
+  XNOBrain path without a passing scan and an explicit approval record.
 - **No exposure of privileged/undeclared toolsets** beyond the vetted set the
   service already trusts (`SAFE_TOOLSETS`).
 
@@ -82,14 +82,14 @@ Out of scope for this plan: memory-provider/context-engine switching (the
   symbols. Fail readiness with one remediation message if incompatible.
   ([implementation.md](implementation.md#phase-0))
 - **Phase 1 — Models + integration adapter.** New `models` entries and a new
-  `brain4all/integrations/plugins.py` adapter over the Hermes helpers.
+  `xnobrain/integrations/plugins.py` adapter over the Hermes helpers.
   ([implementation.md](implementation.md#phase-1))
 - **Phase 2 — Service with the scan+approval rule.** New
-  `brain4all/services/plugins.py` (or `PlatformService` methods) that make the
+  `xnobrain/services/plugins.py` (or `PlatformService` methods) that make the
   scan-and-approve-before-enable step mandatory in code.
   ([implementation.md](implementation.md#phase-2))
 - **Phase 3 — Handlers + routes.** New `operations` dict entries and `Route(...)`
-  lines in `brain4all/routes/setup.py`.
+  lines in `xnobrain/routes/setup.py`.
   ([implementation.md](implementation.md#phase-3))
 - **Phase 4 — Native tool toggles.** Per-agent toolset list + toggle.
   ([implementation.md](implementation.md#phase-4))
@@ -102,13 +102,13 @@ Out of scope for this plan: memory-provider/context-engine switching (the
 - Compatibility test pins and exercises every Hermes symbol this plan imports
   (plugin lifecycle, discovery, `VALID_HOOKS`, shell hooks, toolset config,
   `skills_guard`, `osv_check`) and fails readiness cleanly when incompatible.
-- The Brain4All plugin API can list, browse, install (without enabling),
+- The XNOBrain plugin API can list, browse, install (without enabling),
   scan, approve, enable, disable, update, and remove a plugin, all through
   Hermes' own functions, with the response envelope and error model.
 - **No code path enables a plugin without a passing scan and a recorded
   approval.** A test proves enable is rejected when the scan is missing,
   stale, dangerous, or unapproved.
-- A plugin installed/enabled through Brain4All is visible to the Hermes plugin
+- A plugin installed/enabled through XNOBrain is visible to the Hermes plugin
   CLI, and vice versa, without import or synchronization.
 - Native toolsets are listable per agent and toggle persistently in the agent's
   profile `config.yaml`; a toggle is visible to a subsequent Hermes run.

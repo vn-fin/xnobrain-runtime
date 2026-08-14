@@ -6,7 +6,7 @@ the resulting contract.
 
 ## Decision 1 — Gateway topology: multiplexed vs per-agent
 
-Brain4All maps each agent to a Hermes profile, and channels are per-profile.
+XNOBrain maps each agent to a Hermes profile, and channels are per-profile.
 How do the profiles' channels get *served*?
 
 ### Option A — Single multiplexed gateway (CHOSEN)
@@ -23,7 +23,7 @@ the `/p/<profile>/` prefix (verified: `gateway/config.py` l.897,
 - **Cons:** *port-binding* channels (`webhook, api_server, msgraph_webhook,
   feishu-webhook, wecom_callback, bluebubbles, sms, whatsapp_cloud, line`) can
   only run on the **default** agent — secondary agents get a 409. This is a
-  genuine Hermes constraint, not a Brain4All limitation.
+  genuine Hermes constraint, not a XNOBrain limitation.
 
 ### Option B — Per-agent gateway process
 
@@ -47,7 +47,7 @@ hidden. This keeps one process, rides Hermes' own multiplex machinery, and
 copies nothing. (Option B may be revisited later behind a flag if a real
 multi-agent port-binding need appears; it is out of scope here.)
 
-## Decision 2 — Credential storage: profile config vs Brain4All file
+## Decision 2 — Credential storage: profile config vs XNOBrain file
 
 Where do bot tokens live?
 
@@ -60,24 +60,24 @@ them.
 
 - **Pros:** the gateway reads them natively with zero glue; single source of
   truth; native dashboard and `hermes` CLI see the same state; no sync; no new
-  format. Brain4All's mandated snapshot-before-mutation still applies (snapshot
+  format. XNOBrain's mandated snapshot-before-mutation still applies (snapshot
   `.env` + `config.yaml`).
 - **Cons:** tokens sit in the profile `.env` alongside other secrets — but
   that is already Hermes' security model and is covered by existing redaction.
 
-### Option B — Brain4All credential file under `DATA_DIR`
+### Option B — XNOBrain credential file under `DATA_DIR`
 
-Store tokens in a Brain4All-owned atomic file, inject into the gateway at start.
+Store tokens in a XNOBrain-owned atomic file, inject into the gateway at start.
 
-- **Pros:** Brain4All controls the format and snapshot lifecycle directly.
+- **Pros:** XNOBrain controls the format and snapshot lifecycle directly.
 - **Cons:** duplicates Hermes' credential storage; requires re-injection glue
-  and risks drift between the Brain4All file and what the gateway actually
+  and risks drift between the XNOBrain file and what the gateway actually
   reads; a second place secrets can leak; violates "ride Hermes' config, don't
   invent a store" (`findings.md` §5). No benefit over A.
 
 ### Choice
 
-**Option A — Hermes-native storage.** No Brain4All credential file. Reads return
+**Option A — Hermes-native storage.** No XNOBrain credential file. Reads return
 redacted values only; writes snapshot first (reusing the
 `integrations/config.py` snapshot mechanism) then call the public
 `hermes_cli.config` writers. This is the direct analog of the Kanban rule
@@ -98,10 +98,10 @@ scoped to the target profile.
   gate and risks 401); no serialization round-trip; matches the established
   Kanban precedent; these APIs are genuinely public (no underscore).
 - **Cons:** the exact per-platform *state projection* and the *multiplex check*
-  are implemented in the private `web_server` helpers, so Brain4All re-derives a
+  are implemented in the private `web_server` helpers, so XNOBrain re-derives a
   thin version from public primitives (`load_gateway_config`,
   `_is_platform_connected`, `read_runtime_status`, `platform_binds_port`). That
-  projection lives in the Brain4All **service** (policy), which is allowed — it
+  projection lives in the XNOBrain **service** (policy), which is allowed — it
   is not copying the dispatch loop, SQL, or an adapter.
 
 ### Option B — Loopback HTTP to native `/api/messaging|gateway|pairing` endpoints
@@ -124,7 +124,7 @@ Have the adapter `httpx` the native endpoints on `127.0.0.1:8642`.
   lifecycle path — the `hermes gateway {start,stop,restart}` CLI subcommand
   driven by a controlled subprocess spawn (the same public mechanism Hermes' own
   endpoint uses via `_spawn_hermes_action`), **or** the native `/api/gateway/*`
-  endpoint if Phase 0 confirms an in-process caller can reach it. Brain4All must
+  endpoint if Phase 0 confirms an in-process caller can reach it. XNOBrain must
   **not** import the private `_spawn_hermes_action`. Phase 0 confirms which
   public path is cleanest; if neither is reachable without private helpers,
   upstream a small public `hermes_cli.gateway.start_profile(...)` hook rather
@@ -140,9 +140,9 @@ Have the adapter `httpx` the native endpoints on `127.0.0.1:8642`.
 ### Rationale
 
 This mirrors the Kanban program exactly: import Hermes' public data/runtime
-APIs, keep product policy in the Brain4All service, and drive lifecycle through
+APIs, keep product policy in the XNOBrain service, and drive lifecycle through
 Hermes' public control path without copying its internal loops. It avoids the
 loopback-auth fragility for the high-frequency read/write paths while still
 riding native endpoints for the two flows (lifecycle spawn, external onboarding)
-where Hermes owns real machinery Brain4All must not duplicate.
+where Hermes owns real machinery XNOBrain must not duplicate.
 </content>

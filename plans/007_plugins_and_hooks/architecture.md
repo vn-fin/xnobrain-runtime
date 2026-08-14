@@ -6,7 +6,7 @@ Companion to [README.md](README.md), [findings.md](findings.md),
 
 ## Layering fit
 
-Plan 007 follows the fixed Brain4All boundaries — nothing new architecturally:
+Plan 007 follows the fixed XNOBrain boundaries — nothing new architecturally:
 
 ```
 routes/setup.py      URL table only (the one route-assembly point)
@@ -44,9 +44,9 @@ per-agent profile config.yaml (platform_toolsets / agent.disabled_toolsets)
 | Plugin visibility | Hermes | root `config.yaml` `dashboard.hidden_plugins` |
 | Per-agent tool/plugin-toolset enablement | Hermes | profile `config.yaml` `platform_toolsets` / `agent.disabled_toolsets` |
 | Shell hooks + approval allowlist | Hermes | config `hooks:` + `shell_hooks` allowlist file |
-| **Brain4All scan + approval record** | Brain4All | `DATA_DIR/plugins/approvals/<name>.json` (atomic, snapshotted) |
+| **XNOBrain scan + approval record** | XNOBrain | `DATA_DIR/plugins/approvals/<name>.json` (atomic, snapshotted) |
 
-The only new Brain4All-owned artifact is the **scan/approval record** — a small
+The only new XNOBrain-owned artifact is the **scan/approval record** — a small
 JSON per plugin holding `{name, content_sha256, verdict, scanned_at,
 approved: bool, approved_at, approval_choice, findings_summary}`. It is written
 atomically via `FileRepository.atomic_json` and snapshotted before mutation
@@ -85,11 +85,11 @@ Disable / update / remove need no approval; **update invalidates the record**
 (git pull changes the content hash) so a re-scan + re-approval is forced before
 the updated plugin can be re-enabled.
 
-## New Brain4All API contract
+## New XNOBrain API contract
 
 Base: `/api/brain/v1`. Envelope: existing `APIEnvelope`
 (`{success, data, message, status_code}`). Errors: existing `failure()` with
-stable `code`s. All new routes registered only in `brain4all/routes/setup.py`;
+stable `code`s. All new routes registered only in `xnobrain/routes/setup.py`;
 each maps to one `operations` entry in `handlers/api.py`.
 
 ### Plugins (global catalog + lifecycle)
@@ -135,7 +135,7 @@ approved, executable}], plugin: [{event, plugin, description}], gateway:
 Hook commands are shown as a **sanitized label** (basename + hash), never the
 full command string, in list responses and logs.
 
-### New Pydantic models (`brain4all/models/api.py`, exported via `models/__init__.py`)
+### New Pydantic models (`xnobrain/models/api.py`, exported via `models/__init__.py`)
 
 ```python
 class PluginInstall(BaseModel):
@@ -162,11 +162,11 @@ class HookDelete(BaseModel):
 ```
 Native-tool toggles reuse the existing `EnabledPatch {enabled: bool}`.
 
-## Integration adapter (`brain4all/integrations/plugins.py`, new)
+## Integration adapter (`xnobrain/integrations/plugins.py`, new)
 
 `class PluginManager` — no policy, no HTTP; adapts Hermes and serializes to safe
 dicts at the boundary. Constructed like the other managers (root/profiles roots
-from env), stored on `Brain4AllApplication` and injected into the service.
+from env), stored on `XNOBrainApplication` and injected into the service.
 
 Representative surface (thin wrappers, each pinned + compat-tested):
 
@@ -202,7 +202,7 @@ The adapter raises typed `ValueError` subclasses carrying `.status`/`.code`
 cleanly. It never returns raw command strings, plugin source, absolute stored
 paths, or scanner internals.
 
-## Service (`brain4all/services/plugins.py`, new)
+## Service (`xnobrain/services/plugins.py`, new)
 
 `class PluginService` owns the **scan+approval rule** and the approval record.
 Constructed with `(repository, plugins: PluginManager, agents: AgentManager)`.

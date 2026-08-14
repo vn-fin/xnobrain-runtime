@@ -1,4 +1,4 @@
-"""Single-process FastAPI application factory for Hermes and Brain4All."""
+"""Single-process FastAPI application factory for Hermes and XNOBrain."""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ from .logging_config import configure_logging
 
 
 def create_app():
-    """Extend Hermes CLI's original FastAPI app with Brain4All routes."""
+    """Extend Hermes CLI's original FastAPI app with XNOBrain routes."""
     from hermes_cli.web_server import app
-    from .app import Brain4AllApplication
+    from .app import XNOBrainApplication
     from .integrations import AgentManager, GlobalConfigManager, NineRouterManager
 
-    if not getattr(app.state, "brain4all_registered", False):
+    if not getattr(app.state, "xnobrain_registered", False):
         cors_origins = [
             origin.strip()
             for origin in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")
@@ -33,17 +33,17 @@ def create_app():
                 allow_headers=["*"],
             )
 
-        composition = Brain4AllApplication(AgentManager(), GlobalConfigManager(), NineRouterManager())
+        composition = XNOBrainApplication(AgentManager(), GlobalConfigManager(), NineRouterManager())
         composition.register(app)
         from .openapi_docs import configure_openapi_docs
         configure_openapi_docs(app)
-        app.state.brain4all = composition
-        app.state.brain4all_registered = True
+        app.state.xnobrain = composition
+        app.state.xnobrain_registered = True
 
         @app.middleware("http")
         async def request_log(request, call_next):
             started = time.monotonic()
-            # Brain4All owns the /xnobrain/api/runtime/v1 management surface. Hermes' dashboard
+            # XNOBrain owns the /xnobrain/api/runtime/v1 management surface. Hermes' dashboard
             # middleware protects its own /api routes with a private browser
             # session token; mark only our versioned platform routes as already
             # authenticated so they remain usable through Traefik without

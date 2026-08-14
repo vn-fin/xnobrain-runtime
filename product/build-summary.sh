@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Render the standalone one-page executive brief to PDF, EN and VI.
 #   ./product/build-summary.sh
-# Output: product/Brain4All-Summary-EN.pdf , product/Brain4All-Summary-VI.pdf
+# Output: product/XNOBrain-Summary-EN.pdf , product/XNOBrain-Summary-VI.pdf
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD="$HERE/.summary-build"
@@ -39,6 +39,6 @@ build () {  # $1=lang  $2=OUTNAME  $3=pagetitle
   ls -lh "$out" | awk '{print "   size:", $5}'
 }
 
-build en "Brain4All-Summary-EN.pdf" "Brain4All — Twin Terminal · Executive Brief"
-build vi "Brain4All-Summary-VI.pdf" "Brain4All — Twin Terminal · Tóm tắt điều hành"
+build en "XNOBrain-Summary-EN.pdf" "XNOBrain — Twin Terminal · Executive Brief"
+build vi "XNOBrain-Summary-VI.pdf" "XNOBrain — Twin Terminal · Tóm tắt điều hành"
 echo ">> done."

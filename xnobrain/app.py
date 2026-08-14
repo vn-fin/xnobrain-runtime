@@ -1,4 +1,4 @@
-"""Composition root for the unified Brain4All and Hermes FastAPI server."""
+"""Composition root for the unified XNOBrain and Hermes FastAPI server."""
 
 from __future__ import annotations
 
@@ -14,13 +14,13 @@ from .routes import setup_routes
 from .services import PlatformService
 
 
-class Brain4AllApplication:
+class XNOBrainApplication:
     """Builds clean layers around the original Hermes runtime objects."""
 
     def __init__(self, agents, config, router, runtime=None):
         root_profile = Path(os.getenv("HERMES_ROOT_PROFILE") or os.getenv("HERMES_HOME") or Path.home() / ".hermes")
         profiles_root = Path(os.getenv("HERMES_PROFILES_ROOT") or root_profile / "profiles")
-        data_dir = Path(os.getenv("DATA_DIR") or root_profile / "brain4all")
+        data_dir = Path(os.getenv("DATA_DIR") or root_profile / "xnobrain")
         self.repository = FileRepository(data_dir, profiles_root)
         if runtime is None:
             from .integrations import LocalRuntimeManager
@@ -41,7 +41,7 @@ class Brain4AllApplication:
                     from .integrations.kanban import dispatcher_loop
                     dispatcher = asyncio.create_task(
                         dispatcher_loop(on_tick=self.service.cron.reconcile_deliveries),
-                        name="brain4all-kanban-dispatcher",
+                        name="xnobrain-kanban-dispatcher",
                     )
                 except Exception:
                     dispatcher = None
@@ -64,13 +64,13 @@ class Brain4AllApplication:
                                 continue
                             task = asyncio.create_task(
                                 asyncio.to_thread(self.service.cron.fire_due, profile, job_id),
-                                name=f"brain4all-cron-{job_id}",
+                                name=f"xnobrain-cron-{job_id}",
                             )
                             task.add_done_callback(lambda completed, key=key: finish_cron_task(key, completed))
                             cron_tasks[key] = task
                         await asyncio.sleep(1)
 
-                cron_dispatcher = asyncio.create_task(profile_cron_loop(), name="brain4all-profile-cron-dispatcher")
+                cron_dispatcher = asyncio.create_task(profile_cron_loop(), name="xnobrain-profile-cron-dispatcher")
                 try:
                     yield
                 finally:

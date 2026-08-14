@@ -2,7 +2,7 @@
 name: hermes-agent
 description: >-
   Code inside and extend the Hermes agent core (NousResearch/hermes-agent) —
-  the runtime that powers Brain4All's backend. Use this skill whenever a task
+  the runtime that powers XNOBrain's backend. Use this skill whenever a task
   involves adding or changing a Hermes tool, writing a Hermes plugin (tools,
   hooks, slash commands, providers, platforms), embedding the AIAgent Python
   library, wiring toolsets/skills/memory/profiles, or navigating the Hermes CLI
@@ -17,7 +17,7 @@ metadata:
 
 # Coding & extending the Hermes agent core
 
-Hermes (`NousResearch/hermes-agent`) is the agent runtime that Brain4All's
+Hermes (`NousResearch/hermes-agent`) is the agent runtime that XNOBrain's
 backend embeds and extends. This skill turns you into a competent Hermes-core
 contributor: it maps the codebase, gives you the exact contracts for every
 extension point, and ships scaffolds you can run.
@@ -45,7 +45,7 @@ copy the core.** Prefer a plugin or a new tool module over editing core files.
 | Add a callable action the model can invoke | **Tool** | [references/building-tools.md](references/building-tools.md) |
 | Ship tools + hooks + slash commands as an installable unit | **Plugin** | [references/plugins.md](references/plugins.md) |
 | Observe/modify the agent loop (pre/post tool call, session, verify) | **Plugin hook** | [references/plugins.md](references/plugins.md) |
-| Embed Hermes in Python (Brain4All backend does this) | **AIAgent library** | [references/python-library.md](references/python-library.md) |
+| Embed Hermes in Python (XNOBrain backend does this) | **AIAgent library** | [references/python-library.md](references/python-library.md) |
 | Swap a backend (web search, image gen, memory, TTS, platform) | **Backend/exclusive/platform plugin** | [references/plugins.md](references/plugins.md) |
 | Package prompt guidance / procedures for the agent | **Skill** (SKILL.md) | [references/skills-and-memory.md](references/skills-and-memory.md) |
 | Understand the loop, modules, and where things live | — | [references/architecture.md](references/architecture.md) |

@@ -5,7 +5,7 @@ core API in this plan pass.
 
 ## Goal
 
-Expose Hermes Kanban through a stable, tested Brain4All service and HTTP
+Expose Hermes Kanban through a stable, tested XNOBrain service and HTTP
 contract while keeping Hermes SQLite and its state machine authoritative. Run
 the supported dispatcher inside the existing application lifecycle.
 
@@ -41,7 +41,7 @@ the supported dispatcher inside the existing application lifecycle.
 6. Implement any necessary upstream changes in the current `hermes_cli`
    package and add/extend its current CLI command surface where a user-facing
    CLI operation is required. Do not patch a legacy CLI or duplicate commands
-   in Brain4All.
+   in XNOBrain.
 
 Completion evidence: a focused test imports the same Hermes artifact used in
 the image and exercises a task from creation through dispatch, review,
@@ -49,16 +49,16 @@ completion, and archive in a temporary home.
 
 ## Backend layers
 
-Follow existing Brain4All boundaries:
+Follow existing XNOBrain boundaries:
 
-- `brain4all/integrations/kanban.py` adapts the public `hermes_cli.kanban_db`
+- `xnobrain/integrations/kanban.py` adapts the public `hermes_cli.kanban_db`
   and dispatcher APIs. It owns no policy and does no HTTP.
-- `brain4all/services/kanban.py` owns the five-state projection, legal user
+- `xnobrain/services/kanban.py` owns the five-state projection, legal user
   intents, default-board rules, filtering, and safe response shaping.
-- `brain4all/models/kanban.py` contains strict Pydantic request/response models.
-- `brain4all/handlers/kanban.py` translates service errors to HTTP and the
+- `xnobrain/models/kanban.py` contains strict Pydantic request/response models.
+- `xnobrain/handlers/kanban.py` translates service errors to HTTP and the
   existing response envelope.
-- `brain4all/routes/setup.py` is the only route registration point.
+- `xnobrain/routes/setup.py` is the only route registration point.
 - The existing application lifespan starts/stops the embedded dispatcher and
   closes it cleanly on shutdown.
 
@@ -71,7 +71,7 @@ implementation reveals a better existing convention.
   path from an unchecked user slug.
 - Use upstream transaction, idempotency, attachment, and task-transition
   functions.
-- Serialize domain records to Brain4All models at the adapter boundary so
+- Serialize domain records to XNOBrain models at the adapter boundary so
   upstream implementation details do not leak to React.
 - Never expose attachment `stored_path`, raw worker environment, credentials,
   prompts, tool arguments/output, or unredacted logs.
@@ -140,7 +140,7 @@ Implement and test vertical slices rather than all reads followed by all writes:
 
 Comments and activity are different: user comments are persisted upstream;
 activity is derived from durable task/run events and should not duplicate task
-state in Brain4All.
+state in XNOBrain.
 
 ## Tests
 
@@ -158,7 +158,7 @@ Use a temporary `HERMES_HOME` and the real pinned Hermes package:
 - concurrent claim/dispatch and restart recovery;
 - safe redaction in responses, logs, and error text;
 - events after API and worker changes;
-- native Hermes CLI/tool mutation is visible through the Brain4All API.
+- native Hermes CLI/tool mutation is visible through the XNOBrain API.
 
 Use handler tests for status/envelope behavior and integration tests for the
 real SQLite lifecycle. Mock only external model execution; do not mock the
@@ -168,8 +168,8 @@ Kanban database in contract tests.
 
 - All routes in `API_CONTRACT.md` have success, validation, conflict, and
   not-found coverage.
-- Creating a task through Brain4All makes it visible to the Hermes Kanban CLI,
-  and a task created by the CLI becomes visible through Brain4All without
+- Creating a task through XNOBrain makes it visible to the Hermes Kanban CLI,
+  and a task created by the CLI becomes visible through XNOBrain without
   import or synchronization.
 - An eligible assigned task is claimed once and run by the embedded dispatcher.
 - The database survives application restart without conversion or duplication.

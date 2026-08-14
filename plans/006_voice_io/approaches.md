@@ -8,10 +8,10 @@ Three independent decisions. Each has options; the chosen one is marked.
 
 ---
 
-## Decision A — How Brain4All reaches Hermes audio
+## Decision A — How XNOBrain reaches Hermes audio
 
 ### A1. HTTP self-call the native `/api/audio/*` routes
-Brain4All handlers call `http://127.0.0.1:8642/api/audio/speak` etc.
+XNOBrain handlers call `http://127.0.0.1:8642/api/audio/speak` etc.
 
 - Pros: zero coupling to Hermes internals; uses the exact tested endpoint.
 - Cons: a process calling its own HTTP port is wasteful and fragile (auth
@@ -24,14 +24,14 @@ Brain4All handlers call `http://127.0.0.1:8642/api/audio/speak` etc.
 `tools.voice_mode.transcribe_recording`, and the two registries, exactly like
 `integrations/kanban.py` imports `hermes_cli.kanban_db`.
 
-- Pros: matches the established Brain4All pattern; no self-HTTP; direct control
+- Pros: matches the established XNOBrain pattern; no self-HTTP; direct control
   of config, temp-file cleanup, and response shaping; testable with a temp
   `HERMES_HOME` and the real package.
 - Cons: depends on tool symbols (mitigated by the Phase 0 compatibility test
   and the pin).
 
 **Rationale:** A2 is the only option consistent with AGENTS.md ("extend from
-brain4all", "local layers call each other directly") and it is the only one
+xnobrain", "local layers call each other directly") and it is the only one
 that can carry per-agent config down to synthesis.
 
 ---

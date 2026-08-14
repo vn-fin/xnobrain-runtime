@@ -1,9 +1,9 @@
-# Brain4All
+# XNOBrain
 
 For detailed local, Docker, and native VM installation instructions, see
 [SETUP.md](SETUP.md).
 
-Brain4All is a self-hosted React workspace for creating and running Hermes
+XNOBrain is a self-hosted React workspace for creating and running Hermes
 agents. One Python/FastAPI process extends the original Hermes CLI dashboard
 application and serves the default profile plus every named profile. One
 9router process provides LLM routing. There is no Go service, PostgreSQL,
@@ -39,7 +39,7 @@ cp .env.example .env
 # NINE_ROUTER_DATA_DIR=/opt/data/nine-router.
 ```
 
-Then start Brain4All without make:
+Then start XNOBrain without make:
 
 ```bash
 docker compose up -d --build
@@ -113,27 +113,27 @@ API-only work after the local install, use
 ### Native VM services
 
 Cloud VM images can run the backend without Docker or a per-workspace
-frontend. Install the native runtime at `/opt/brain4all` with
+frontend. Install the native runtime at `/opt/xnobrain` with
 `scripts/install-linux.sh`, then install the systemd units:
 
 ```bash
-cd /opt/brain4all
+cd /opt/xnobrain
 sudo ./scripts/install-systemd-services.sh
-sudoedit /etc/brain4all/brain4all.env
-sudo systemctl start brain4all.target
+sudoedit /etc/xnobrain/xnobrain.env
+sudo systemctl start xnobrain.target
 ```
 
-`brain4all.target` owns the two long-running processes:
+`xnobrain.target` owns the two long-running processes:
 
-- `brain4all-api.service` runs FastAPI and the integrated Hermes runtime on
+- `xnobrain-api.service` runs FastAPI and the integrated Hermes runtime on
   port `8642`;
-- `brain4all-9router.service` runs 9router on loopback port `20128`.
+- `xnobrain-9router.service` runs 9router on loopback port `20128`.
 
 Hermes agent executions are children of the API service. The service user's
-home is `/srv/brain4all-data/home`, so the standard homes are easy to inspect
-at `~/.hermes` (`/srv/brain4all-data/home/.hermes`) and `~/.9router`
-(`/srv/brain4all-data/home/.9router`). Runtime configuration is read from
-`/etc/brain4all/brain4all.env`. The VM firewall must allow port `8642` only
+home is `/srv/xnobrain-data/home`, so the standard homes are easy to inspect
+at `~/.hermes` (`/srv/xnobrain-data/home/.hermes`) and `~/.9router`
+(`/srv/xnobrain-data/home/.9router`). Runtime configuration is read from
+`/etc/xnobrain/xnobrain.env`. The VM firewall must allow port `8642` only
 from the authenticated workspace gateway; port `20128` must remain private to
 the VM.
 

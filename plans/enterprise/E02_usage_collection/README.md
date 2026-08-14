@@ -24,9 +24,9 @@ Also read before starting: [`AGENTS.md`](../../../AGENTS.md),
 [`docs/implementation/05-telemetry.md`](../../../docs/implementation/05-telemetry.md),
 [`docs/enterprise-extension.md`](../../../docs/enterprise-extension.md), and the
 implemented plan-009 code:
-[`brain4all/integrations/analytics.py`](../../../brain4all/integrations/analytics.py),
-[`brain4all/services/analytics.py`](../../../brain4all/services/analytics.py),
-[`brain4all/integrations/hermes.py`](../../../brain4all/integrations/hermes.py)
+[`xnobrain/integrations/analytics.py`](../../../xnobrain/integrations/analytics.py),
+[`xnobrain/services/analytics.py`](../../../xnobrain/services/analytics.py),
+[`xnobrain/integrations/hermes.py`](../../../xnobrain/integrations/hermes.py)
 (`_ensure_session_schema`).
 
 ## Goal
@@ -36,7 +36,7 @@ implemented plan-009 code:
 A fleet of single-user deployments — each user running the OSS runtime in an
 Incus container or on their own PC, usually behind NAT — reports per-session
 usage (session counts, message counts, token counters, cost) into the single
-`brain4all-enterprise` PostgreSQL control-plane database, keyed by
+`xnobrain-enterprise` PostgreSQL control-plane database, keyed by
 tenant → user → device → agent → session. Admins get per-user / per-device /
 per-model / per-day usage views and a CSV export for billing.
 
@@ -52,7 +52,7 @@ Two deliverables:
    local outbox, and pushes them outbound-only to the enterprise ingest API.
    Active only when `ENTERPRISE_API_URL` is configured **and** the device is
    enrolled (device-command-v1 identity from E01).
-2. **Ingest + storage + admin views** (`brain4all-enterprise`, Go + PostgreSQL) —
+2. **Ingest + storage + admin views** (`xnobrain-enterprise`, Go + PostgreSQL) —
    `POST /ingest/v1/usage` with device-token auth and idempotent UPSERT,
    `usage_session_snapshots` + `usage_rollups_daily` tables, an incremental
    rollup job, `GET /admin/v1/usage` and a CSV export.
@@ -112,12 +112,12 @@ Phase 0.
   copy the `usage-ingest-v1` contract draft from
   [architecture.md](architecture.md) into `docs/contracts/usage-ingest-v1.md`;
   verify the E01 identity seam.
-- **Phase 1 — OSS snapshot reader.** `brain4all/integrations/enterprise_usage.py`:
+- **Phase 1 — OSS snapshot reader.** `xnobrain/integrations/enterprise_usage.py`:
   read-only, watermarked snapshot extraction with the allowlist serializer and
   HMAC hashing.
-- **Phase 2 — OSS outbox + pusher.** `brain4all/services/usage_reporter.py`:
+- **Phase 2 — OSS outbox + pusher.** `xnobrain/services/usage_reporter.py`:
   spool, bounds, drain loop, backoff, cursor advance on ack; lifespan wiring in
-  `brain4all/app.py` next to the kanban dispatcher.
+  `xnobrain/app.py` next to the kanban dispatcher.
 - **Phase 3 — Enterprise ingest.** Go handler, migrations, monotonicity
   validation, UPSERT, ack watermark, rate limits.
 - **Phase 4 — Rollups.** Incremental touched-pair rollup on ingest + nightly

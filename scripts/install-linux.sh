@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the complete Brain4All development runtime on Linux without Docker.
+# Install the complete XNOBrain development runtime on Linux without Docker.
 #
 # The layout is intentionally project-local for executable tooling:
 #   .tools/hermes-agent/  upstream Hermes checkout and runtime
@@ -32,7 +32,7 @@ check_only=false
 
 usage() {
   cat <<'EOF'
-Install Brain4All locally on Linux (no Docker runtime required).
+Install XNOBrain locally on Linux (no Docker runtime required).
 
 Usage: scripts/install-linux.sh [options]
 
@@ -342,7 +342,7 @@ chmod 600 "$router_data_dir/machine-id" "$router_data_dir/auth/cli-secret" "$rou
 
 cat <<EOF
 
-Brain4All local installation complete.
+XNOBrain local installation complete.
 
 Project Python: $project_python
 Hermes:         $hermes_install_dir/venv/bin/hermes

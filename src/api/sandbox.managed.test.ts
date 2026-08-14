@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../runtime', () => ({
   CONTROL_API_PREFIX: '/xnobrain/api/control/v1',
-  brain4AllRuntime: {
+  xnobrainRuntime: {
     edition: 'cloud',
     api: {
       remoteBaseUrl: 'https://runtime.example.com',

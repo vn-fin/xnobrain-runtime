@@ -11,7 +11,7 @@ checksums.json
 profiles/<agent-id>/...
 ```
 
-`manifest.json` contains format `brain4all-bundle`, version `1`, source version, UTC creation time, export ID, selected agent records, included optional sections, required capabilities, and encryption metadata when applicable. `checksums.json` maps normalized relative paths to SHA-256 and size. Paths are UTF-8 forward-slash relative paths with no empty, dot, parent, absolute, drive-prefix, control, or duplicate case-folded components.
+`manifest.json` contains format `xnobrain-bundle`, version `1`, source version, UTC creation time, export ID, selected agent records, included optional sections, required capabilities, and encryption metadata when applicable. `checksums.json` maps normalized relative paths to SHA-256 and size. Paths are UTF-8 forward-slash relative paths with no empty, dot, parent, absolute, drive-prefix, control, or duplicate case-folded components.
 
 Optional `required_environment` lists environment-variable names needed by the
 profile. `credentials_included` is always `false` for Community exports.

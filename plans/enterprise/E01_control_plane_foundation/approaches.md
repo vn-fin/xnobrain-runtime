@@ -37,7 +37,7 @@ the challenge table already exists and is strictly replay-proof (single-use,
 
 **Chosen: `golang-migrate/migrate` (library mode, embedded via `embed.FS`),
 plain `NNNN_name.up.sql` / `.down.sql` files under
-`brain4all-enterprise/internal/store/migrations/`.**
+`xnobrain-enterprise/internal/store/migrations/`.**
 
 Options:
 
@@ -121,12 +121,12 @@ token is a placeholder with a documented eviction date: when RBAC lands, the
 
 ## Decision E — Module path and repo relationship
 
-**Chosen: standalone private module `github.com/vn-fin/brain4all-enterprise`
+**Chosen: standalone private module `github.com/vn-fin/xnobrain-enterprise`
 ("verify" the org at repo creation); HTTP contracts only, zero Go imports of
 OSS code.**
 
 `docs/enterprise-extension.md` requires nesting under
-`github.com/vn-fin/brain4all/` **only if** the enterprise binary imports the
+`github.com/vn-fin/xnobrain/` **only if** the enterprise binary imports the
 OSS repo's internal Go packages. The OSS repo is Python — there is nothing
 to import, and the program frame says to prefer HTTP contracts regardless.
 A standalone module keeps the private repo's release cadence independent and

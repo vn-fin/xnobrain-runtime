@@ -115,7 +115,7 @@ class ConversationsServiceMixin:
         cost = number("actual_cost_usd") if actual_cost is not None else number("estimated_cost_usd")
         model_config = session.get("model_config")
         context = (
-            model_config.get("brain4all_context")
+            model_config.get("xnobrain_context")
             if isinstance(model_config, Mapping)
             else {}
         )

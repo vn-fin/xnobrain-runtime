@@ -2,7 +2,7 @@
 
 FastAPI generates the authoritative interactive contract at
 `/xnobrain/api/runtime/swagger_docs` and JSON schema at `/xnobrain/api/runtime/openapi.json`.
-Hermes CLI native routes remain available under `/api`; Brain4All's
+Hermes CLI native routes remain available under `/api`; XNOBrain's
 application API is exclusively namespaced beneath `/xnobrain/api/runtime/v1` and is
 grouped by feature:
 

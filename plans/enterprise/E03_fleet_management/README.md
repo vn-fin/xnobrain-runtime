@@ -40,7 +40,7 @@ enterprise provisions, some on users' own PCs — from one control plane:
    register/prove/refresh against the E01 endpoints, **one** outbound
    long-poll connection with backoff + jitter, heartbeats carrying version,
    capabilities, and a numeric resource summary (from the existing
-   [`brain4all/integrations/runtime.py`](../../../brain4all/integrations/runtime.py)
+   [`xnobrain/integrations/runtime.py`](../../../xnobrain/integrations/runtime.py)
    `LocalRuntimeManager`), a durable command journal (received → accepted →
    running → terminal, written **before** ack; duplicates return the recorded
    state), and an initial command set of `runtime.ping`,
@@ -49,7 +49,7 @@ enterprise provisions, some on users' own PCs — from one control plane:
    `ENTERPRISE_API_URL` is configured; an enterprise outage never blocks local
    use.
 2. **Incus provisioning (enterprise repo, Go).** Per-user container lifecycle:
-   create from the pinned public `brain4all:<version>` image, persistent
+   create from the pinned public `xnobrain:<version>` image, persistent
    volume for `DATA_DIR` that survives container replacement, resource classes
    (CPU/RAM/disk tiers backing the hardware classes in `docs/plans.md`),
    start/stop/restart/replace **with drain** (reusing the
@@ -72,7 +72,7 @@ in the **same fleet list**, managed through the same command channel.
   to a later plan. This plan implements only the identity, heartbeat, and
   command slices.
 - **No Kubernetes.** Incus only, and Incus packaging lives in
-  `brain4all-enterprise` per `AGENTS.md` — this repo ships zero Incus code.
+  `xnobrain-enterprise` per `AGENTS.md` — this repo ships zero Incus code.
 - **No auto-scaling.** Resource-class changes are explicit admin/entitlement
   operations, never automatic.
 - **No backup/DR.** `bundle.backup` is a named-but-deferred command type; the
@@ -88,17 +88,17 @@ in the **same fleet list**, managed through the same command channel.
   `device-command-v1` (envelope fields, journal states, cursor, long-poll
   endpoint shapes) against E01's actual endpoints, and probe a real Incus host
   to resolve every "verify" item in [findings.md](findings.md).
-- **Phase 1 — OSS device identity.** `brain4all/integrations/device_identity.py`:
+- **Phase 1 — OSS device identity.** `xnobrain/integrations/device_identity.py`:
   key generation (0600), register, prove, refresh, unpair (erase cloud
   credentials only).
-- **Phase 2 — OSS connector.** `brain4all/services/device_connector.py`: the
+- **Phase 2 — OSS connector.** `xnobrain/services/device_connector.py`: the
   long-poll loop with backoff + jitter, journal, heartbeats, command router;
-  lifespan wiring in `brain4all/app.py` following the kanban-dispatcher
+  lifespan wiring in `xnobrain/app.py` following the kanban-dispatcher
   pattern.
 - **Phase 3 — OSS UI + tests.** "Enterprise" section in
   `src/features/system/` (SystemView tab pattern, as plan 012's
   `BlendsSection`); fake-control-plane tests in
-  `brain4all/tests/test_device_connector.py`.
+  `xnobrain/tests/test_device_connector.py`.
 - **Phase 4 — Enterprise fleet core.** `internal/fleet`: command dispatch,
   heartbeat ingestion + store, inventory queries, stale detection, revocation;
   migrations; `GET /admin/v1/fleet` and command endpoints.

@@ -8,8 +8,8 @@ provides, and what remains open. Cross-links: [README](README.md) ·
 Sources: `plans/006_voice_io/findings.md` (Hermes ground truth, read from the
 pinned source under `.tools/hermes-agent/`), `docs/contracts/entitlements-v1.md`,
 `docs/plans.md`, `docs/enterprise-extension.md`, `plans/enterprise/README.md`
-(E02 schema frame), and direct reads of `brain4all/handlers/api.py` and
-`brain4all/routes/setup.py` in this repo.
+(E02 schema frame), and direct reads of `xnobrain/handlers/api.py` and
+`xnobrain/routes/setup.py` in this repo.
 
 ## 1. What plan 006 verified about Hermes audio (reused, not re-derived)
 
@@ -131,14 +131,14 @@ Unlimited"* on every plan row.
 
 Resolution (also in [README](README.md)):
 
-1. Voice was never an OSS Brain4All feature — plan 006 was a design, not an
+1. Voice was never an OSS XNOBrain feature — plan 006 was a design, not an
    implementation (`grep` confirms no voice routes, no `integrations/voice.py`,
    no voice UI exist in this repo). E04 therefore restricts nothing; it adds.
 2. OSS builds ship no voice UI/routes. Entitled + connected → UI appears.
    Enterprise down → voice controls degrade with a banner; all non-voice
    features are untouched (they share no code path with the gateway client).
 3. Raw Hermes' native `/api/audio/*` with user-supplied keys keeps working
-   for anyone who configures it by hand — unsupported by Brain4All but not
+   for anyone who configures it by hand — unsupported by XNOBrain but not
    blocked. "Self-hosted local Hermes features: Unlimited" stays literally
    true.
 
@@ -168,16 +168,16 @@ roster can grow without contract changes.
 
 ## 7. What this repo has today (verified by direct read)
 
-- `brain4all/routes/setup.py` line 40: `Route("GET", "/api/brain/v1/limits",
+- `xnobrain/routes/setup.py` line 40: `Route("GET", "/api/brain/v1/limits",
   "limits", tags=("System",))` — the limits route exists.
-- `brain4all/handlers/api.py` line 97: the `"limits"` operation returns a
+- `xnobrain/handlers/api.py` line 97: the `"limits"` operation returns a
   static dict `{"plan_id": "self-hosted", "local_features_unlimited": True,
   "agents": -1, ...}`. This is the natural place to surface capability flags
   when signed in ([approaches](approaches.md) Decision C).
-- `brain4all/integrations/` contains `analytics.py, config.py, hermes.py,
+- `xnobrain/integrations/` contains `analytics.py, config.py, hermes.py,
   kanban.py, nine_router.py, runtime.py` — **no enterprise client of any
   kind yet**; `ENTERPRISE_API_URL` appears only in
-  `brain4all/tests/test_fastapi.py`. `enterprise_voice.py` will be the first
+  `xnobrain/tests/test_fastapi.py`. `enterprise_voice.py` will be the first
   enterprise integration in this repo — its connection/auth plumbing should
   be shaped so E02's usage reporter can share it (Phase 0 check with E02's
   implementation state).

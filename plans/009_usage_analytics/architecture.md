@@ -1,6 +1,6 @@
 # 009 — Architecture
 
-How the feature fits the Brain4All layering. Cross-links:
+How the feature fits the XNOBrain layering. Cross-links:
 [README.md](README.md), [findings.md](findings.md),
 [approaches.md](approaches.md), [implementation.md](implementation.md).
 
@@ -130,7 +130,7 @@ Rules:
   for the budget period, in the configured `cost_basis`) vs `monthly_usd` (and
   `daily_usd`) -> `ok` | `warning` (>= warn threshold) | `exceeded` (>= cap).
 
-## New Brain4All API contract
+## New XNOBrain API contract
 
 Versioned under the existing `/api/brain/v1` prefix, tag `Analytics`. All
 reads; only the budget PUT mutates (config.yaml). Responses ride the standard
@@ -167,7 +167,7 @@ chart can poll without the per-model payload, or fold it into `usage` if the UI
 does not need it separately (decide during implementation — keep the route list
 minimal).
 
-### Pydantic model names (`brain4all/models/api.py`)
+### Pydantic model names (`xnobrain/models/api.py`)
 
 Request:
 
@@ -203,7 +203,7 @@ themselves serialize through `APIEnvelope` as plain dicts):
 
 ## Integration adapter
 
-Add `brain4all/integrations/analytics.py` (new) rather than growing
+Add `xnobrain/integrations/analytics.py` (new) rather than growing
 `hermes.py`. It owns the aggregation SQL and returns plain dicts; it holds no
 policy and does no HTTP. It reuses hermes.py's read-only primitive — either by
 importing/calling `AgentManager._open_readonly_db` semantics or by re-declaring
@@ -223,7 +223,7 @@ the identical `file:...?mode=ro` open in one small helper. Public surface:
 
 ## Service
 
-`brain4all/services/analytics.py` -> `AnalyticsService(agents: AgentManager,
+`xnobrain/services/analytics.py` -> `AnalyticsService(agents: AgentManager,
 router: NineRouterManager)`, constructed in `PlatformService.__init__` as
 `self.analytics = AnalyticsService(self.agents, self.router)` (mirrors
 `self.kanban = KanbanService(agents)`). It owns: iteration over agents, calling

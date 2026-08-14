@@ -53,7 +53,7 @@ describe('provider OAuth callbacks', () => {
     expect(parsed.searchParams.get('state')).toBe('state-456');
   });
 
-  it('accepts callback messages only from the Brain4All origin', () => {
+  it('accepts callback messages only from the XNOBrain origin', () => {
     const receive = vi.fn();
     const unsubscribe = subscribeProviderOAuthCallbacks(receive);
 

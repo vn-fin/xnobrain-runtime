@@ -1,13 +1,13 @@
 # 009 — Findings
 
-What data exists, where it lives, what Brain4All already does with it, and the
+What data exists, where it lives, what XNOBrain already does with it, and the
 exact gap this plan closes. Cross-links: [README.md](README.md),
 [architecture.md](architecture.md), [approaches.md](approaches.md).
 
 ## 1. Per-agent session accounting lives in each profile's `state.db`
 
 Every agent is one Hermes profile directory. `AgentManager`
-([`brain4all/integrations/hermes.py`](../../brain4all/integrations/hermes.py))
+([`xnobrain/integrations/hermes.py`](../../xnobrain/integrations/hermes.py))
 places native profiles under `profiles_root/<agent-id>/` (default
 `~/.hermes/profiles/<agent-id>/`) plus the root profile `~/.hermes/` and any
 legacy profiles under `legacy-agents/<name>/.profile/`. Each profile owns a
@@ -15,7 +15,7 @@ SQLite file `state.db`.
 
 The `sessions` table is created by `AgentManager._ensure_session_schema`
 (hermes.py, ~line 1514). Every row is one conversation/run. The **exact column
-list** Brain4All guarantees:
+list** XNOBrain guarantees:
 
 ```
 id, source, user_id, model, model_config, system_prompt, parent_session_id,
@@ -35,12 +35,12 @@ reasoning_tokens` (INTEGER, default 0); `estimated_cost_usd, actual_cost_usd`
 `idx_sessions_started ON sessions(started_at DESC)`), which is the time axis.
 
 The real Hermes runtime (invoked as a subprocess with
-`HERMES_HOME=<profile_dir>`) writes these counters as chats run. Brain4All's own
+`HERMES_HOME=<profile_dir>`) writes these counters as chats run. XNOBrain's own
 schema only creates `sessions` and `messages`; richer Hermes tables such as
 `session_model_usage` (auxiliary per-model/per-task usage) may or may not exist
 depending on the runtime version, so analytics must not depend on them.
 
-## 2. Brain4All already reads `state.db` read-only — reuse those helpers
+## 2. XNOBrain already reads `state.db` read-only — reuse those helpers
 
 hermes.py already has exactly the read primitives analytics needs, and they are
 strictly read-only:
@@ -59,13 +59,13 @@ These prove the pattern: open `?mode=ro`, `execute` a `SELECT`, `close()`. The
 analytics integration follows the same shape but issues aggregate SQL
 (`SUM(...) GROUP BY ...`) instead of `SELECT *`.
 
-## 3. What Brain4All exposes today — and what it lacks
+## 3. What XNOBrain exposes today — and what it lacks
 
 Present: `conversations_usage`
-([`brain4all/handlers/api.py`](../../brain4all/handlers/api.py) ~line 86) is a
+([`xnobrain/handlers/api.py`](../../xnobrain/handlers/api.py) ~line 86) is a
 **stub** wired at
 `GET /api/brain/v1/conversations/{conversation_id}/usage`
-([`routes/setup.py`](../../brain4all/routes/setup.py) ~line 77). It returns a
+([`routes/setup.py`](../../xnobrain/routes/setup.py) ~line 77). It returns a
 hard-coded zero payload:
 
 ```python
@@ -93,7 +93,7 @@ totals with the same read helper; noted in implementation.md as a small extra.)
 ## 4. 9router usage overlay
 
 `NineRouterManager.usage(model)`
-([`brain4all/integrations/nine_router.py`](../../brain4all/integrations/nine_router.py)
+([`xnobrain/integrations/nine_router.py`](../../xnobrain/integrations/nine_router.py)
 ~line 274) returns filtered provider **quota windows** for the provider behind a
 model: `{ object, available, provider, model, plan, message, quotas: [{name,
 used, total, remaining_percent, reset_at, unlimited}] }`. This is provider-side
@@ -110,28 +110,28 @@ never fail the whole response.
 - `GET /api/analytics/usage?days&profile` -> `_get_usage_analytics` (~16490):
   returns `daily` (grouped by `date(started_at,'unixepoch')`), `by_model`,
   `by_task`, `totals`, plus `skills`/`tools`. SQL sums the same `sessions`
-  columns Brain4All guarantees.
+  columns XNOBrain guarantees.
 - `GET /api/analytics/models?days&profile` -> `_get_models_analytics` (~16576):
   per-model token/cost/session rows enriched with `agent/models_dev`
   capabilities.
 
-Important limits that make these unsuitable as Brain4All's *primary* source:
+Important limits that make these unsuitable as XNOBrain's *primary* source:
 
 1. **Single profile only.** Both call `_open_session_db_for_profile(profile)`
    (~11434), which resolves one profile home via `_cron_profile_home(profile)`
    and opens that one `state.db`. There is no cross-agent aggregation, which is
-   the central thing Brain4All needs.
+   the central thing XNOBrain needs.
 2. **Extra dependencies.** `_get_usage_analytics` imports `agent.insights.
    InsightsEngine`; `by_task` reads `session_model_usage`; `_get_models_analytics`
-   imports `agent.models_dev`. None are guaranteed for Brain4All-created DBs and
+   imports `agent.models_dev`. None are guaranteed for XNOBrain-created DBs and
    they broaden the surface we must pin/test.
 3. **Not `?mode=ro`.** They use `SessionDB(...)._conn`, a writable connection.
-   Brain4All's constraint is read-only URI access.
+   XNOBrain's constraint is read-only URI access.
 4. **Profile resolution mismatch.** `_cron_profile_home` may not resolve
-   Brain4All's `profiles_root/<agent-id>` identically to `AgentManager`.
+   XNOBrain's `profiles_root/<agent-id>` identically to `AgentManager`.
 
 Conclusion: pin and smoke these for compatibility/reference, but compute the
-Brain4All views on read from the guaranteed columns. See
+XNOBrain views on read from the guaranteed columns. See
 [approaches.md](approaches.md).
 
 ## 6. Budget config anchor — corrected
@@ -143,7 +143,7 @@ for the 3-layer tool-result persistence system (`DEFAULT_TURN_BUDGET_CHARS =
 200_000`, `budget_for_context_window(...)`). It has nothing to do with token or
 dollar spend caps.
 
-Therefore per-agent **spend** budgets are Brain4All-owned. They are advisory
+Therefore per-agent **spend** budgets are XNOBrain-owned. They are advisory
 config stored in the agent's `config.yaml` (written atomically with a snapshot,
 the same mutation discipline `update_agent_config` uses). Do not try to derive
 spend caps from `budget_config.py`.

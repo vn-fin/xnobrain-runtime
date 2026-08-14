@@ -7,7 +7,7 @@
 ## 1. Hermes Agent (Nous Research) — động cơ của bạn
 
 **Nó là gì.** Một AI agent tự cải thiện, mã nguồn mở, **giấy phép MIT**, ra mắt
-**tháng 2 năm 2026**. Đây chính xác là thứ mà Brain4All bọc lại (chính là "ứng dụng
+**tháng 2 năm 2026**. Đây chính xác là thứ mà XNOBrain bọc lại (chính là "ứng dụng
 dashboard Hermes CLI gốc" của repo).
 
 **Năng lực** (theo trang chính thức
@@ -29,7 +29,7 @@ phân tích độc lập
   CLI, và nhiều nền tảng khác thông qua các adapter.
 - **Cron ngôn ngữ tự nhiên** ("mỗi ngày trong tuần lúc 9 giờ sáng, tóm tắt hộp thư của tôi").
 - **Cổng phê duyệt** ("chế độ hội thoại" yêu cầu con người ký duyệt trước khi dùng
-  công cụ) — đây chính là lõi phê duyệt Hermes mà Brain4All giữ lại.
+  công cụ) — đây chính là lõi phê duyệt Hermes mà XNOBrain giữ lại.
 
 **Độ trưởng thành.** Đến phiên bản v0.18.2 (tháng 7 năm 2026), dự án báo cáo hàng trăm
 issue đã đóng, **370+ người đóng góp, và không có lỗi P0 nào còn mở**
@@ -53,7 +53,7 @@ MIT là giấy phép **dễ dãi (permissive) tối đa**: bạn có thể dùng
 Hermes — **kể cả trong một sản phẩm thương mại đóng** — với về cơ bản chỉ một nghĩa vụ:
 giữ nguyên thông báo bản quyền + giấy phép
 [[tổng quan giấy phép](https://dev.to/juanisidoro/open-source-licenses-which-one-should-you-pick-mit-gpl-apache-agpl-and-more-2026-guide-p90)].
-Hệ quả cho Brain4All:
+Hệ quả cho XNOBrain:
 
 - ✅ Bạn có thể hợp pháp xây dựng một **tầng doanh nghiệp/đám mây độc quyền** lên trên
   Hermes và giữ tầng đó đóng. Đây chính xác là điều mà mô hình chia tách open-core giả định.
@@ -70,7 +70,7 @@ Hệ quả cho Brain4All:
 
 ## 2. Bộ định tuyến ("9router") và bức tranh định tuyến
 
-"9router" của Brain4All là một bộ định tuyến LLM (một tiến trình chạy trên `:20128`)
+"9router" của XNOBrain là một bộ định tuyến LLM (một tiến trình chạy trên `:20128`)
 định tuyến tới nhiều nhà cung cấp — cùng công việc như **OpenRouter** (được lưu trữ)
 hay **LiteLLM** (proxy tự lưu trữ được). Dù "9router" là một dự án riêng biệt hay chỉ
 là bí danh của bạn, đây là bức tranh mà nó nằm trong đó:
@@ -103,9 +103,9 @@ GitHub**; bộ nhớ bền vững qua markdown + SQLite; định tuyến đa age
 [[SFAI Labs](https://sfailabs.com/guides/openclaw-ai-agent-framework)],
 [[freeCodeCamp](https://www.freecodecamp.org/news/how-to-build-and-secure-a-personal-ai-agent-with-openclaw/)].
 
-**Nó trùng lặp và khác biệt với Hermes/Brain4All như thế nào:**
+**Nó trùng lặp và khác biệt với Hermes/XNOBrain như thế nào:**
 
-| | Hermes / Brain4All | OpenClaw |
+| | Hermes / XNOBrain | OpenClaw |
 |---|---|---|
 | Mô hình cấu hình | Skill + hồ sơ + UI | `SOUL.md` ưu tiên cấu hình |
 | Bộ nhớ | MEMORY.md + FTS5 + skill | markdown + SQLite |
@@ -140,4 +140,4 @@ Hai điều rút ra cho chiến lược:
    cấp phép.
 2. **Ai cũng cạnh tranh ở việc "xây dựng agent." Không ai cạnh tranh ở việc "kiểm định
    rằng agent này tái tạo trung thành một chuyên gia con người cụ thể có tên."** Đó là
-   câu nói phân biệt Brain4All với toàn bộ danh sách này.
+   câu nói phân biệt XNOBrain với toàn bộ danh sách này.

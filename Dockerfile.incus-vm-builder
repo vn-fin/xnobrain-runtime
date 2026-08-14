@@ -4,12 +4,12 @@ FROM ubuntu:24.04
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl incus-client tar \
     && rm -rf /var/lib/apt/lists/*
-COPY . /opt/brain4all-source
-COPY scripts/incus-build-native-image.sh /opt/brain4all-builder/incus-build-native-image.sh
-COPY deploy/incus/install-native-runtime.sh /opt/brain4all-builder/install-native-runtime.sh
+COPY . /opt/xnobrain-source
+COPY scripts/incus-build-native-image.sh /opt/xnobrain-builder/incus-build-native-image.sh
+COPY deploy/incus/install-native-runtime.sh /opt/xnobrain-builder/install-native-runtime.sh
 COPY deploy/incus-vm-builder/run.sh /usr/local/bin/incus-vm-image-builder
 RUN chmod 0755 \
     /usr/local/bin/incus-vm-image-builder \
-    /opt/brain4all-builder/incus-build-native-image.sh \
-    /opt/brain4all-builder/install-native-runtime.sh
+    /opt/xnobrain-builder/incus-build-native-image.sh \
+    /opt/xnobrain-builder/install-native-runtime.sh
 ENTRYPOINT ["/usr/local/bin/incus-vm-image-builder"]

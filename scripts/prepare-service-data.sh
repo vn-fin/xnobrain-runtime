@@ -3,7 +3,7 @@ set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 python_bin="$project_dir/.tools/python/bin/python"
-service_home="${HOME:-/srv/brain4all-data/home}"
+service_home="${HOME:-/srv/xnobrain-data/home}"
 : "${HERMES_HOME:?HERMES_HOME is required in the service environment file}"
 : "${NINE_ROUTER_DATA_DIR:?NINE_ROUTER_DATA_DIR is required in the service environment file}"
 hermes_home="$HERMES_HOME"
@@ -12,7 +12,7 @@ router_data_dir="$NINE_ROUTER_DATA_DIR"
 lock_file="$router_data_dir/.prepare.lock"
 
 if [[ ! -x "$python_bin" ]]; then
-  echo "Brain4All Python runtime not found: $python_bin" >&2
+  echo "XNOBrain Python runtime not found: $python_bin" >&2
   exit 1
 fi
 
@@ -20,7 +20,7 @@ mkdir -p \
   "$hermes_home" \
   "$profiles_root" \
   "$router_data_dir/auth" \
-  "${DATA_DIR:-/srv/brain4all-data/brain4all}" \
+  "${DATA_DIR:-/srv/xnobrain-data/xnobrain}" \
   "$service_home"
 
 exec 9>"$lock_file"
@@ -55,12 +55,12 @@ chmod 600 \
   "$router_data_dir/auth/cli-secret" \
   "$router_data_dir/auth/cli-token"
 
-if [[ "${EUID}" -eq 0 && -n "${BRAIN4ALL_SERVICE_USER:-}" ]]; then
+if [[ "${EUID}" -eq 0 && -n "${XNOBRAIN_SERVICE_USER:-}" ]]; then
   chown -R \
-    "$BRAIN4ALL_SERVICE_USER:$BRAIN4ALL_SERVICE_USER" \
+    "$XNOBRAIN_SERVICE_USER:$XNOBRAIN_SERVICE_USER" \
     "$service_home" \
     "$hermes_home" \
     "$profiles_root" \
     "$router_data_dir" \
-    "${DATA_DIR:-/srv/brain4all-data/brain4all}"
+    "${DATA_DIR:-/srv/xnobrain-data/xnobrain}"
 fi

@@ -9,7 +9,7 @@ automation from a task, from Settings, or by prompting an agent. Every
 automation has a visible template card on the default board, and every due
 execution becomes a normal Kanban occurrence handled by the existing dispatcher.
 
-The existing in-process Kanban dispatcher owns schedule timing. Brain4All adds
+The existing in-process Kanban dispatcher owns schedule timing. XNOBrain adds
 schedule metadata beside native tasks in the same Kanban SQLite database; it
 does not start another scheduler or create another database.
 
@@ -36,7 +36,7 @@ cron-to-Kanban execution target. Extend the database at the adapter boundary:
 
 ```text
 existing Kanban dispatcher tick
-  -> read due brain4all_task_schedules rows
+  -> read due xnobrain_task_schedules rows
   -> release one-shot task or create idempotent recurring occurrence
   -> embedded kanban dispatcher
   -> worker run and task history
@@ -72,16 +72,16 @@ restarts and manual retries. “Run now” uses a distinct trigger/event ID so
 intentional manual runs are not deduplicated against a scheduled run.
 
 Do not duplicate the task description. Store schedule metadata in
-`brain4all_task_schedules` inside the same board database and resolve it by
+`xnobrain_task_schedules` inside the same board database and resolve it by
 native task ID.
 
 ## Creation paths
 
-All three paths call the same Brain4All/upstream domain operation:
+All three paths call the same XNOBrain/upstream domain operation:
 
 1. **Task UI:** turn on “Repeat or run later” in quick create/task drawer.
 2. **Settings:** create/manage automations in Settings > Automations.
-3. **Prompt:** a Brain4All scheduling tool must call the same Kanban schedule
+3. **Prompt:** a XNOBrain scheduling tool must call the same Kanban schedule
    service and create the associated default-board template.
 
 Prompt-created schedules must not rely on a UI-only post-processing hook. The
@@ -139,7 +139,7 @@ Archiving an occurrence never deletes or pauses its automation.
 
 Inventory both current sources before mutation:
 
-- Brain4All per-profile YAML jobs under its data repository;
+- XNOBrain per-profile YAML jobs under its data repository;
 - native Hermes cron jobs already present for the same profiles.
 
 Implement a one-time, idempotent migration:
@@ -159,7 +159,7 @@ Implement a one-time, idempotent migration:
 
 After successful migration:
 
-- remove `self.service.scheduler_loop()` from the Brain4All lifespan;
+- remove `self.service.scheduler_loop()` from the XNOBrain lifespan;
 - remove file-repository cron scheduling behavior;
 - remove the separate right-panel Cron UI;
 - either retire `/api/brain/v1/cron/jobs` with a versioned migration path or

@@ -6,13 +6,13 @@ large release.
 
 ## Goal
 
-Expose the useful breadth of Hermes Kanban without turning Brain4All into a
+Expose the useful breadth of Hermes Kanban without turning XNOBrain into a
 developer-only dashboard. Reuse pinned public Hermes operations and preserve
 the fixed five-state product model.
 
 “Parity” means the supported Hermes capability is either:
 
-- available through an understandable Brain4All experience;
+- available through an understandable XNOBrain experience;
 - intentionally located in an Advanced/Diagnostics area; or
 - explicitly documented as CLI-only because a safe, stable upstream API or a
   broadly useful GUI does not exist.
@@ -28,7 +28,7 @@ CLI code is out of scope.
 The inventory below combines the documented CLI/tools and current upstream
 dashboard implementation. Reconfirm it at the pinned revision.
 
-| Area | Hermes capability | Brain4All treatment | Priority |
+| Area | Hermes capability | XNOBrain treatment | Priority |
 | --- | --- | --- | --- |
 | Boards | init, list, create, switch, settings, delete | Default board first; management in board menu/settings | P2 |
 | Tasks | create, list, show, edit, archive, bulk actions | Core in plans 001/002; bulk in this plan | P1/P2 |
@@ -149,13 +149,13 @@ five-column board. A local tenant label is not an authorization boundary.
 - No API or event payload leaks stored paths, secrets, prompts, request bodies,
   tool arguments/output, or unredacted logs.
 - All board, attachment, workspace, and profile identifiers use upstream or
-  Brain4All path validation.
+  XNOBrain path validation.
 - Upload size/type/name rules and download content disposition are tested.
 - Bulk actions have bounds, preconditions, and per-record outcomes.
 - Destructive board/worker/GC actions have exact targets and confirmations.
 - Dispatcher, optional notification delivery, and diagnostics failures do not
   restrict unrelated local use.
-- Native Hermes CLI/tool changes and Brain4All UI changes remain immediately
+- Native Hermes CLI/tool changes and XNOBrain UI changes remain immediately
   consistent through the one database.
 
 ## Documentation

@@ -34,7 +34,7 @@ calls `updateProviderConnection(connection.id, {...})` (line 240), confirming
 per-connection reads and updates are first-class in its data layer.
 
 The `data` column is where credential material (API key / OAuth tokens)
-lives. **Brain4All must never read or forward that column's contents.**
+lives. **XNOBrain must never read or forward that column's contents.**
 
 ## 2. 9router HTTP API surface (route manifest — paths verified, verbs NOT)
 
@@ -53,7 +53,7 @@ lists (relevant subset):
   `NineRouterManager.usage()`)
 
 **Caveat:** a Next.js app-paths manifest lists *paths*, not HTTP methods. The
-verbs Brain4All already exercises are proven in production use
+verbs XNOBrain already exercises are proven in production use
 (`GET/POST /api/providers`, `DELETE /api/providers/{id}`,
 `POST /api/providers/{id}/test`, `GET /api/usage/{connectionId}`, the OAuth
 GET/POST split in `_OAUTH_GET_ACTIONS`/`_OAUTH_POST_ACTIONS`). The **PUT on
@@ -63,15 +63,15 @@ its existence, accepted body shape, and response shape are Phase 0 probes
 `app/.next-cli-build/`, so static verification is not practical; probe live.
 
 Authentication: every call goes through `NineRouterManager._request()`
-([`brain4all/integrations/nine_router.py`](../../brain4all/integrations/nine_router.py)
+([`xnobrain/integrations/nine_router.py`](../../xnobrain/integrations/nine_router.py)
 lines 384–421) which sends the derived `x-9r-cli-token` header (`_cli_token()`,
 lines 524–534). New endpoints reuse `_request()` and inherit this.
 
-## 3. Brain4All's current single-connection collapse (the gap)
+## 3. XNOBrain's current single-connection collapse (the gap)
 
 ### 3a. `services/platform.py` — one connection per provider, delete-all disconnect
 
-[`brain4all/services/platform.py`](../../brain4all/services/platform.py):
+[`xnobrain/services/platform.py`](../../xnobrain/services/platform.py):
 
 - `SUPPORTED_PROVIDERS` (line 31) and `API_KEY_PROVIDERS` (line 32) mirror the
   adapter's sets.
@@ -103,7 +103,7 @@ lines 524–534). New endpoints reuse `_request()` and inherit this.
 
 ### 3b. `integrations/nine_router.py` — allowlist and dropped fields
 
-[`brain4all/integrations/nine_router.py`](../../brain4all/integrations/nine_router.py):
+[`xnobrain/integrations/nine_router.py`](../../xnobrain/integrations/nine_router.py):
 
 - `SUPPORTED_ROUTER_PROVIDERS = {claude, codex, antigravity, openai,
   anthropic, gemini}` (lines 25–27) — 6 of 9router's 40+.
@@ -133,13 +133,13 @@ lines 524–534). New endpoints reuse `_request()` and inherit this.
 
 ### 3c. Routes, handlers, models — provider-level only
 
-- [`brain4all/routes/setup.py`](../../brain4all/routes/setup.py) lines
+- [`xnobrain/routes/setup.py`](../../xnobrain/routes/setup.py) lines
   126–134: the whole `Providers` tag is provider-granular (`/connect`,
   `/update`, `/disconnect`, `/test`, `/models`). No connection-granular route
   exists.
-- [`brain4all/handlers/api.py`](../../brain4all/handlers/api.py) lines
+- [`xnobrain/handlers/api.py`](../../xnobrain/handlers/api.py) lines
   170–178: the matching operations in the `_operation` dispatch table.
-- [`brain4all/models/api.py`](../../brain4all/models/api.py) line 183:
+- [`xnobrain/models/api.py`](../../xnobrain/models/api.py) line 183:
   `ProviderCredential` is the only provider body model. No
   create/patch model for a single connection exists.
 
@@ -164,19 +164,19 @@ lines 524–534). New endpoints reuse `_request()` and inherit this.
 ## 4. Hermes profile side is unaffected
 
 `normalize_nine_router_config()`
-([`brain4all/integrations/nine_router.py`](../../brain4all/integrations/nine_router.py)
+([`xnobrain/integrations/nine_router.py`](../../xnobrain/integrations/nine_router.py)
 lines 58–93) forces every profile at the single 9router endpoint
 (`http://127.0.0.1:20128/v1`). Which account serves a request is decided
 inside 9router. Nothing in this plan touches profile `config.yaml`, so
-**no Brain4All-owned persistent file changes → snapshot rules do not apply.
-This feature stores nothing in Brain4All**; all state lives in 9router's DB.
+**no XNOBrain-owned persistent file changes → snapshot rules do not apply.
+This feature stores nothing in XNOBrain**; all state lives in 9router's DB.
 
 ## 5. Version pins (Phase 0 restates and asserts these)
 
 - `Dockerfile.backend` line 4: `ARG NINE_ROUTER_VERSION=v0.5.40` (git build
   stage) and line 18: `ARG NINE_ROUTER_NPM_VERSION=0.5.40` (npm install).
 - `scripts/install-linux.sh` line 24:
-  `nine_router_version="${BRAIN4ALL_NINE_ROUTER_VERSION:-0.5.40}"`.
+  `nine_router_version="${XNOBRAIN_NINE_ROUTER_VERSION:-0.5.40}"`.
 
 All three must agree; the plan does not bump them.
 
@@ -238,7 +238,7 @@ All three must agree; the plan does not bump them.
    {used,total,remaining,remainingPercentage,resetAt,unlimited}}}` shape and
    what an API-key connection returns (possibly empty quotas / a `message`).
 6. **Effect of deactivating the last active connection.** Confirm
-   `/v1/models` drops the provider's models (Brain4All's `list_models()`
+   `/v1/models` drops the provider's models (XNOBrain's `list_models()`
    already assumes active-connection gating) and that the `auto` combo
    re-ensure logic (`_ensure_auto_combo`) still behaves.
 7. **OAuth exchange response for an added second account.** Confirm
@@ -262,7 +262,7 @@ All three must agree; the plan does not bump them.
   response-scan test in [validation.md](validation.md) walks every new
   route's JSON for forbidden substrings.
 - **Deleting/deactivating the account currently serving Hermes traffic.**
-  9router owns failover; Brain4All only re-ensures the `auto` combo (existing
+  9router owns failover; XNOBrain only re-ensures the `auto` combo (existing
   `delete_connection` behavior, extended to deactivation). The UI warns when
   the action would leave zero active accounts.
 - **Priority semantics mismatch.** If observed behavior is pure round-robin

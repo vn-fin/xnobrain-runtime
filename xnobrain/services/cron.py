@@ -39,7 +39,7 @@ def _iso(value: Any) -> str:
 
 
 class CronService:
-    """Translate the stable Brain4All contract to Hermes native Cron calls."""
+    """Translate the stable XNOBrain contract to Hermes native Cron calls."""
 
     def __init__(self, repository: FileRepository, agents: Any):
         self.repository = repository
@@ -210,11 +210,11 @@ class CronService:
             "destination": destination,
             "created_at": _iso(datetime.now(timezone.utc)),
         }
-        targets = [dict(item) for item in job.get("brain4all_delivery_targets") or []]
+        targets = [dict(item) for item in job.get("xnobrain_delivery_targets") or []]
         targets.append(target)
         self._snapshot_store(profile)
         updated = self._native(profile, "update_job", str(job["id"]), {
-            "brain4all_delivery_targets": targets,
+            "xnobrain_delivery_targets": targets,
             "deliver": self._native_deliver(targets),
         })
         return self._target_dto(profile, updated or job, target)
@@ -226,13 +226,13 @@ class CronService:
         agent_id: str | None = None,
     ) -> dict[str, Any]:
         profile, job = self._find_job(job_id, agent_id)
-        targets = [dict(item) for item in job.get("brain4all_delivery_targets") or []]
+        targets = [dict(item) for item in job.get("xnobrain_delivery_targets") or []]
         kept = [item for item in targets if str(item.get("id")) != str(target_id)]
         if len(kept) == len(targets):
             raise CronServiceError("delivery target not found", status=404, code="delivery_target_not_found")
         self._snapshot_store(profile)
         self._native(profile, "update_job", str(job["id"]), {
-            "brain4all_delivery_targets": kept,
+            "xnobrain_delivery_targets": kept,
             "deliver": self._native_deliver(kept),
         })
         return {"deleted": True}
@@ -329,10 +329,10 @@ class CronService:
     ) -> None:
         for profile, jobs in profile_jobs if profile_jobs is not None else self._jobs_by_profile():
             for job in jobs:
-                targets = [dict(item) for item in job.get("brain4all_delivery_targets") or []]
+                targets = [dict(item) for item in job.get("xnobrain_delivery_targets") or []]
                 if not targets:
                     continue
-                records = [dict(item) for item in job.get("brain4all_delivery_records") or []]
+                records = [dict(item) for item in job.get("xnobrain_delivery_records") or []]
                 indexed = {(str(item.get("execution_id")), str(item.get("target_id"))): item for item in records}
                 changed = False
                 for execution in reversed(self._executions(profile, str(job["id"]), 50)):
@@ -365,7 +365,7 @@ class CronService:
                 if changed:
                     self._snapshot_store(profile)
                     self._native(profile, "update_job", str(job["id"]), {
-                        "brain4all_delivery_records": records[-500:],
+                        "xnobrain_delivery_records": records[-500:],
                     })
 
     def _deliver_execution(
@@ -411,7 +411,7 @@ class CronService:
                     "description": output[:50_000] or "Cron run completed without text output.",
                     "status": "todo",
                     "idempotency_key": f"cron-delivery:{delivery_key}",
-                }, created_by="brain4all-cron")
+                }, created_by="xnobrain-cron")
             else:
                 return {"status": "failed", "reason": "Unsupported delivery target"}
         except Exception:
@@ -505,7 +505,7 @@ class CronService:
         return ",".join(item for item in destinations if item) or "local"
 
     def _target_dtos(self, profile: str, job: Mapping[str, Any]) -> list[dict[str, Any]]:
-        targets = list(job.get("brain4all_delivery_targets") or [])
+        targets = list(job.get("xnobrain_delivery_targets") or [])
         needs_options = any(str(item.get("target_type") or "") in {"channel", "email"} for item in targets)
         options = self.list_delivery_target_options(profile)["options"] if needs_options else []
         return [self._target_dto(profile, job, item, options) for item in targets]
@@ -545,8 +545,8 @@ class CronService:
         result["schedule"] = str(display or schedule or "")
         result["next_run_at"] = _iso(job.get("next_run_at"))
         result["enabled"] = bool(job.get("enabled", True))
-        result["delivery_targets"] = [dict(item) for item in job.get("brain4all_delivery_targets") or []]
-        result.pop("brain4all_delivery_records", None)
+        result["delivery_targets"] = [dict(item) for item in job.get("xnobrain_delivery_targets") or []]
+        result.pop("xnobrain_delivery_records", None)
         result.pop("origin", None)
         return result
 
@@ -570,7 +570,7 @@ class CronService:
         return [dict(row) for row in rows]
 
     def _run_dtos(self, profile: str, job: Mapping[str, Any], limit: int) -> list[dict[str, Any]]:
-        records = [dict(item) for item in job.get("brain4all_delivery_records") or []]
+        records = [dict(item) for item in job.get("xnobrain_delivery_records") or []]
         by_execution: dict[str, list[dict[str, Any]]] = {}
         for item in records:
             by_execution.setdefault(str(item.get("execution_id") or ""), []).append({

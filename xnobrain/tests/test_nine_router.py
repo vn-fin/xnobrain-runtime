@@ -113,7 +113,7 @@ class NineRouterConfigTests(unittest.TestCase):
         self.assertEqual(config["approvals"]["mode"], "off")
         self.assertFalse(config["skills"]["write_approval"])
         self.assertFalse(config["memory"]["write_approval"])
-        self.assertNotIn("runtime_help_guidance", config.get("brain4all", {}))
+        self.assertNotIn("runtime_help_guidance", config.get("xnobrain", {}))
 
     def test_runtime_help_guidance_overrides_built_in_identity_and_stored_prompt(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -754,7 +754,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             worker.assert_called_once()
             stored = manager.get_conversation("news", conversation_id)["conversation"]
             self.assertEqual(stored["id"], conversation_id)
-            self.assertEqual(stored["model_config"]["brain4all_context"], {
+            self.assertEqual(stored["model_config"]["xnobrain_context"], {
                 "used": 29_000,
                 "limit": 200_000,
                 "threshold": 100_000,
@@ -1226,7 +1226,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(usage["context_limit"], 200_000)
             stored = manager.get_conversation("news", conversation_id)
             self.assertEqual(
-                stored["conversation"]["model_config"]["brain4all_context"],
+                stored["conversation"]["model_config"]["xnobrain_context"],
                 {
                     "used": 10_000,
                     "limit": 200_000,

@@ -1,6 +1,6 @@
 # Executive Summary
 
-Brain4All is a self-hosted workspace for building and running AI agents, today built on
+XNOBrain is a self-hosted workspace for building and running AI agents, today built on
 Nous Research's open-source **Hermes Agent** (MIT) plus a multi-provider LLM router, with
 a clean open-core split already designed (a public runtime and a private enterprise
 control plane). The commodity capabilities — the agent loop, memory, skills, tool/MCP
@@ -48,7 +48,7 @@ companies — is **certify that a clone faithfully reproduces a specific named e
 organizations while the twin runs on the **customer's own runtime**. Evaluation startups
 measure *application quality*, not fidelity to a person; marketplaces vet *partners*, not
 humans. The strategic imperative is to lead with **certification and royalty**, not with
-"twins" — otherwise Brain4All is one of a dozen.
+"twins" — otherwise XNOBrain is one of a dozen.
 
 ## The moat, made concrete
 

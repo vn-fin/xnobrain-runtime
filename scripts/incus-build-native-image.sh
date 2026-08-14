@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-builder_name_raw="${BRAIN4ALL_INCUS_BUILDER:-xnobrain-runtime-builder}"
-image_alias="${BRAIN4ALL_INCUS_IMAGE_ALIAS:?BRAIN4ALL_INCUS_IMAGE_ALIAS is required}"
-incus_project="${BRAIN4ALL_INCUS_PROJECT:-default}"
-build_id="${BRAIN4ALL_INCUS_BUILD_ID:-manual}"
-base_image="${BRAIN4ALL_INCUS_BASE_IMAGE:-images:ubuntu/24.04/cloud}"
-target_member="${BRAIN4ALL_INCUS_TARGET:-}"
-root_disk_size="${BRAIN4ALL_INCUS_IMAGE_DISK:-40GiB}"
-cpu_count="${BRAIN4ALL_INCUS_IMAGE_CPU:-4}"
-memory_size="${BRAIN4ALL_INCUS_IMAGE_MEMORY:-8GiB}"
-source_archive="${BRAIN4ALL_SOURCE_ARCHIVE:?BRAIN4ALL_SOURCE_ARCHIVE is required}"
-source_revision="${BRAIN4ALL_SOURCE_REVISION:?BRAIN4ALL_SOURCE_REVISION is required}"
-guest_installer="/opt/brain4all-builder/install-native-runtime.sh"
+builder_name_raw="${XNOBRAIN_INCUS_BUILDER:-xnobrain-runtime-builder}"
+image_alias="${XNOBRAIN_INCUS_IMAGE_ALIAS:?XNOBRAIN_INCUS_IMAGE_ALIAS is required}"
+incus_project="${XNOBRAIN_INCUS_PROJECT:-default}"
+build_id="${XNOBRAIN_INCUS_BUILD_ID:-manual}"
+base_image="${XNOBRAIN_INCUS_BASE_IMAGE:-images:ubuntu/24.04/cloud}"
+target_member="${XNOBRAIN_INCUS_TARGET:-}"
+root_disk_size="${XNOBRAIN_INCUS_IMAGE_DISK:-40GiB}"
+cpu_count="${XNOBRAIN_INCUS_IMAGE_CPU:-4}"
+memory_size="${XNOBRAIN_INCUS_IMAGE_MEMORY:-8GiB}"
+source_archive="${XNOBRAIN_SOURCE_ARCHIVE:?XNOBRAIN_SOURCE_ARCHIVE is required}"
+source_revision="${XNOBRAIN_SOURCE_REVISION:?XNOBRAIN_SOURCE_REVISION is required}"
+guest_installer="/opt/xnobrain-builder/install-native-runtime.sh"
 
 builder_name="$(
   printf '%s' "$builder_name_raw" |
@@ -34,7 +34,7 @@ alias_fingerprint() {
 }
 
 hold_after_build() {
-  if [[ "${BRAIN4ALL_INCUS_HOLD_AFTER_BUILD:-0}" != "1" ]]; then
+  if [[ "${XNOBRAIN_INCUS_HOLD_AFTER_BUILD:-0}" != "1" ]]; then
     return
   fi
   echo "VM image builder is idle until the next release."
@@ -47,7 +47,7 @@ if ! command -v incus >/dev/null 2>&1; then
   exit 1
 fi
 if [[ -z "$builder_name" ]]; then
-  echo "BRAIN4ALL_INCUS_BUILDER must contain at least one letter or number." >&2
+  echo "XNOBRAIN_INCUS_BUILDER must contain at least one letter or number." >&2
   exit 1
 fi
 if [[ ! -s "$source_archive" || ! -x "$guest_installer" ]]; then
@@ -129,15 +129,15 @@ if ! incus_call exec "$builder_name" -- curl --fail --silent --show-error \
 fi
 
 incus_call file push "$guest_installer" "$builder_name/tmp/install-native-runtime.sh"
-incus_call file push "$source_archive" "$builder_name/tmp/brain4all-source.tar"
+incus_call file push "$source_archive" "$builder_name/tmp/xnobrain-source.tar"
 incus_call exec "$builder_name" -- chmod 0700 /tmp/install-native-runtime.sh
 incus_call exec "$builder_name" \
-  --env "BRAIN4ALL_SOURCE_ARCHIVE=/tmp/brain4all-source.tar" \
-  --env "BRAIN4ALL_SOURCE_REVISION=$source_revision" \
+  --env "XNOBRAIN_SOURCE_ARCHIVE=/tmp/xnobrain-source.tar" \
+  --env "XNOBRAIN_SOURCE_REVISION=$source_revision" \
   -- /tmp/install-native-runtime.sh
 
 echo "Preparing reusable VM image..."
-incus_call exec "$builder_name" -- systemctl stop brain4all.target
+incus_call exec "$builder_name" -- systemctl stop xnobrain.target
 primary_interface="$(incus_call exec "$builder_name" -- sh -c "ip -4 route show default | awk 'NR == 1 { print \$5 }'")"
 if [[ ! "$primary_interface" =~ ^[[:alnum:]_.:-]+$ ]]; then
   echo "Could not determine the VM network interface." >&2
@@ -145,10 +145,10 @@ if [[ ! "$primary_interface" =~ ^[[:alnum:]_.:-]+$ ]]; then
 fi
 incus_call exec "$builder_name" -- netplan set "ethernets.${primary_interface}.dhcp-identifier=mac"
 incus_call exec "$builder_name" -- netplan generate
-incus_call exec "$builder_name" -- rm -f /tmp/install-native-runtime.sh /tmp/brain4all-source.tar
-incus_call exec "$builder_name" -- find /srv/brain4all-data -mindepth 1 -delete
-incus_call exec "$builder_name" -- chown brain4all:brain4all /srv/brain4all-data
-incus_call exec "$builder_name" -- /opt/brain4all/.tools/python/bin/python -c 'import hermes_cli'
+incus_call exec "$builder_name" -- rm -f /tmp/install-native-runtime.sh /tmp/xnobrain-source.tar
+incus_call exec "$builder_name" -- find /srv/xnobrain-data -mindepth 1 -delete
+incus_call exec "$builder_name" -- chown xnobrain:xnobrain /srv/xnobrain-data
+incus_call exec "$builder_name" -- /opt/xnobrain/.tools/python/bin/python -c 'import hermes_cli'
 incus_call exec "$builder_name" -- apt-get clean
 incus_call exec "$builder_name" -- cloud-init clean --logs --machine-id
 incus_call stop "$builder_name" --timeout 120

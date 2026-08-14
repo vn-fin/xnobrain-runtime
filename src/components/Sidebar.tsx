@@ -32,13 +32,13 @@ import {
 } from 'lucide-react';
 import type { ActiveUser } from '../auth';
 import { productName } from '../config/product';
-import type { Brain4AllEdition } from '../runtime';
+import type { XNOBrainEdition } from '../runtime';
 import { SUPPORTED_LANGUAGES } from '../i18n';
 import { useTheme } from '../theme';
 import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 import type { Agent, CenterView } from '../types';
 
-const PINNED_KEY = 'brain4all.pinnedAssistants';
+const PINNED_KEY = 'xnobrain.pinnedAssistants';
 const ALWAYS_PINNED_AGENT_ID = 'big-brother';
 
 const navItems = [
@@ -67,7 +67,7 @@ export function MobileManageDrawer({
   onOpen: () => void;
   onClose: () => void;
   onNavigate: (view: CenterView) => void;
-  edition?: Brain4AllEdition;
+  edition?: XNOBrainEdition;
   loginEnabled?: boolean;
   sessionActive?: boolean;
   onOpenLogin?: () => void;
@@ -197,7 +197,7 @@ export function Sidebar({
   onRequestDeleteAgent: (agentId: string) => void;
   onNewAgent: () => void;
   user?: ActiveUser | null;
-  edition?: Brain4AllEdition;
+  edition?: XNOBrainEdition;
   loginEnabled?: boolean;
   sessionActive?: boolean;
   onOpenLogin?: () => void;

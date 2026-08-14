@@ -1,17 +1,17 @@
 # 012 — Architecture
 
-How Model Blends fit the Brain4All layering. Cross-links:
+How Model Blends fit the XNOBrain layering. Cross-links:
 [README.md](README.md), [findings.md](findings.md),
 [approaches.md](approaches.md), [implementation.md](implementation.md).
 
-Naming rule everywhere in this design: the **Brain4All surface says "blend"**
+Naming rule everywhere in this design: the **XNOBrain surface says "blend"**
 (routes, Pydantic models, service, UI); the **9router calls say "combos"**
 (paths, settings keys). The adapter is the translation line. `auto` remains a
 built-in, system-managed blend labeled "Auto" (approaches.md Decision C).
 
 ## Layering fit
 
-Pure proxy feature. Brain4All stores **nothing**: 9router's SQLite is the
+Pure proxy feature. XNOBrain stores **nothing**: 9router's SQLite is the
 single source of truth for combos and strategies; every endpoint is a live
 read/write against `:20128`. No repository work, no snapshots (nothing under
 `DATA_DIR` is mutated by the blends API itself), no new process.
@@ -31,10 +31,10 @@ integrations/nine_router.py  NineRouterManager grows public combo CRUD +
 
 Local layers call each other in-process. `NineRouterAPIError` (503 when
 9router is down) is already in `EXPECTED_ERRORS`
-(`brain4all/services/platform.py` line 810), so handler failure envelopes come
+(`xnobrain/services/platform.py` line 810), so handler failure envelopes come
 for free (approaches.md Decision D).
 
-## Adapter — `brain4all/integrations/nine_router.py`
+## Adapter — `xnobrain/integrations/nine_router.py`
 
 `_ensure_auto_combo` already speaks the whole combo surface inline
 (findings.md §7). Refactor those calls into public methods and make
@@ -95,7 +95,7 @@ Rules for the accessors:
 - Strategy literals are the verified upstream ones: `"fallback"`,
   `"round-robin"`, `"fusion"` (findings.md §4). No renaming layer.
 - The settings read-modify-write has a lost-update window under concurrent
-  writers (Brain4All + the 9router dashboard). Accepted for a single-operator
+  writers (XNOBrain + the 9router dashboard). Accepted for a single-operator
   local tool; documented in the docstring and findings.md §11. Do not build
   locking.
 
@@ -123,7 +123,7 @@ provider models. Why this is backward-safe:
 - `NineRouterManager.usage(<blend name>)` already degrades to the "empty
   usage" response.
 
-## Service — `brain4all/services/blends.py` (new)
+## Service — `xnobrain/services/blends.py` (new)
 
 ```python
 class BlendService:
@@ -144,7 +144,7 @@ class BlendService:
 ```
 
 Constructed in `PlatformService.__init__`
-(`brain4all/services/platform.py`) as `self.blends = BlendService(router)`,
+(`xnobrain/services/platform.py`) as `self.blends = BlendService(router)`,
 mirroring `self.kanban` / `self.analytics`.
 
 ### Service rules (the whole policy layer)
@@ -162,7 +162,7 @@ mirroring `self.kanban` / `self.analytics`.
    `_safe_id` (findings.md §7), so a valid blend name is always a valid combo
    name and a valid URL id. Violation → 400 `invalid_blend_name`.
 3. **No shadowing.** The name must not equal (case-insensitive) `auto`, any
-   existing blend name (409 `blend_name_conflict` — pre-checked so Brain4All
+   existing blend name (409 `blend_name_conflict` — pre-checked so XNOBrain
    returns a clean 409 instead of upstream's generic 400), or any **real
    model id** currently listed (409 `blend_name_conflict`; a combo name equal
    to a model id would shadow the model at request time — findings.md §11).
@@ -212,7 +212,7 @@ mirroring `self.kanban` / `self.analytics`.
 ## Route table and Pydantic models
 
 Versioned under `/api/brain/v1`, new tag `Blends`, added to
-`brain4all/routes/setup.py` (the only assembly point). **Order matters**:
+`xnobrain/routes/setup.py` (the only assembly point). **Order matters**:
 `available-models` must be declared before `{blend_id}` because Starlette
 matches routes in registration order.
 
@@ -227,8 +227,8 @@ matches routes in registration order.
 `blend_id` is the 9router combo **id** (stable across rename); responses carry
 both `id` and `name`.
 
-Pydantic (`brain4all/models/api.py`, exported via
-`brain4all/models/__init__.py`):
+Pydantic (`xnobrain/models/api.py`, exported via
+`xnobrain/models/__init__.py`):
 
 ```python
 class BlendCreate(BaseModel):
@@ -248,7 +248,7 @@ class BlendPatch(BaseModel):
     sticky_limit: int | None = Field(default=None, ge=1, le=1000)
 ```
 
-Handler operations (`brain4all/handlers/api.py` `_operation` map — HTTP
+Handler operations (`xnobrain/handlers/api.py` `_operation` map — HTTP
 translation only, all rules live in the service):
 
 ```python
@@ -285,7 +285,7 @@ the combo and applies its strategy (findings.md §4). The session row records
 ## Sequence — create blend → use in agent → chat
 
 ```
-User            Brain4All API              9router (:20128)            Hermes
+User            XNOBrain API              9router (:20128)            Hermes
  |  POST /blends {name:"duo",     |                              |
  |   models:[cc/opus, cx/gpt],    |                              |
  |   strategy:"fallback"}         |                              |

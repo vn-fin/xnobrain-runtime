@@ -106,7 +106,7 @@ built-in roles plus one custom role.
       non-empty `actor_type`/`actor_id` and correct `org_id`; the
       append-only trigger still rejects UPDATE/DELETE. Evidence: test +
       trigger probe.
-- [ ] **`ADMIN_TOKEN` is gone.** Repo-wide grep in `brain4all-enterprise`
+- [ ] **`ADMIN_TOKEN` is gone.** Repo-wide grep in `xnobrain-enterprise`
       finds no `ADMIN_TOKEN`; every former static-token endpoint returns
       401 without a session and enforces its catalog permission
       ([findings.md](findings.md) §1.2 table). Evidence: grep output +
@@ -151,7 +151,7 @@ built-in roles plus one custom role.
       static payload, no new background tasks. With it set but the server
       down: local features and latency unchanged (`AGENTS.md`), limits
       falls back to the static payload, login fails gracefully. Evidence:
-      `brain4all/tests/test_enterprise_auth.py` + latency comparison.
+      `xnobrain/tests/test_enterprise_auth.py` + latency comparison.
 - [ ] **OSS limits payload.** Signed in, `/api/brain/v1/limits` carries
       `org` + `capabilities` per `docs/contracts/enterprise-auth-v1.md`
       and still `local_features_unlimited: true`; the Enterprise settings
@@ -164,7 +164,7 @@ built-in roles plus one custom role.
 
 ## Sign-off
 
-- [ ] All Go tests green in `brain4all-enterprise` CI (incl. dockerized
+- [ ] All Go tests green in `xnobrain-enterprise` CI (incl. dockerized
       Postgres suites); `make check` green in this repo.
 - [ ] `docs/contracts/enterprise-auth-v1.md` published and matched by both
       sides; `docs/authcfg-schema.md` + `config/auth.yaml.example`

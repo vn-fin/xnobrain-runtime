@@ -18,7 +18,7 @@ import {
   storedAccessTokenExpiresAt,
   storedRefreshToken,
 } from './authStorage';
-import { brain4AllRuntime, type RuntimeConfig } from './runtime';
+import { xnobrainRuntime, type RuntimeConfig } from './runtime';
 
 export type ActiveUser = {
   userId: string;
@@ -118,7 +118,7 @@ async function jsonResponse(response: Response): Promise<Record<string, unknown>
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const config = brain4AllRuntime;
+  const config = xnobrainRuntime;
   const authBaseUrl = (
     import.meta.env.VITE_AUTH_API_URL?.trim()
     || config.api.authBaseUrl

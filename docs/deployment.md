@@ -40,14 +40,14 @@ Runtime logs use standard human-readable Python logging. Each record includes
 the timestamp, level, logger name, and message, for example:
 
 ```text
-2026-07-24 09:00:00 INFO brain4all.http: HTTP GET /xnobrain/api/runtime/v1/health -> 200 (1.234 ms, trace_id=-)
+2026-07-24 09:00:00 INFO xnobrain.http: HTTP GET /xnobrain/api/runtime/v1/health -> 200 (1.234 ms, trace_id=-)
 ```
 
 Set `LOG_LEVEL` in `.env` to change the minimum level.
 
 Builds produce only:
 
-- `brain4all-frontend:<tag>`
-- `brain4all-hermes-runtime:<tag>` (FastAPI, Hermes, and 9router)
+- `xnobrain-frontend:<tag>`
+- `xnobrain-hermes-runtime:<tag>` (FastAPI, Hermes, and 9router)
 
 `make build` also creates the checksummed split OCI bundle under `bin/images`.

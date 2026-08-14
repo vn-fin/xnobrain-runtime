@@ -102,18 +102,18 @@ class PlatformService(
             if not isinstance(config, dict):
                 continue
             changed = False
-            brain4all_config = config.get("brain4all")
-            if not isinstance(brain4all_config, dict):
-                brain4all_config = {}
-                config["brain4all"] = brain4all_config
+            xnobrain_config = config.get("xnobrain")
+            if not isinstance(xnobrain_config, dict):
+                xnobrain_config = {}
+                config["xnobrain"] = xnobrain_config
                 changed = True
-            if not bool(brain4all_config.get(BIG_BROTHER_MODEL_DEFAULT_MARKER)):
+            if not bool(xnobrain_config.get(BIG_BROTHER_MODEL_DEFAULT_MARKER)):
                 model = config.get("model")
                 if not isinstance(model, dict):
                     model = {}
                     config["model"] = model
                 model["default"] = DEFAULT_PROFILE_MODEL
-                brain4all_config[BIG_BROTHER_MODEL_DEFAULT_MARKER] = True
+                xnobrain_config[BIG_BROTHER_MODEL_DEFAULT_MARKER] = True
                 changed = True
             approvals = config.get("approvals")
             if not isinstance(approvals, dict):

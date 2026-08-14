@@ -7,7 +7,7 @@
 ## 1. Hermes Agent (Nous Research) — your engine
 
 **What it is.** An open-source, **MIT-licensed** self-improving AI agent, launched
-**February 2026**. It is the exact thing Brain4All wraps (the repo's "original Hermes
+**February 2026**. It is the exact thing XNOBrain wraps (the repo's "original Hermes
 CLI dashboard application").
 
 **Capabilities** (from the official
@@ -29,7 +29,7 @@ independent write-ups
   CLI, and many more via adapters.
 - **Natural-language cron** ("every weekday at 9am, summarize my inbox").
 - **Approval gate** ("converse mode" requiring human sign-off before tool use) — this
-  is the Hermes approval core Brain4All preserves.
+  is the Hermes approval core XNOBrain preserves.
 
 **Maturity.** By v0.18.2 (July 2026) the project reported hundreds of closed issues,
 **370+ contributors, and zero open P0 defects**
@@ -51,7 +51,7 @@ MIT is **maximally permissive**: you may use, modify, and distribute Hermes —
 **including in a closed commercial product** — with essentially one obligation:
 preserve the copyright + license notice
 [[license overview](https://dev.to/juanisidoro/open-source-licenses-which-one-should-you-pick-mit-gpl-apache-agpl-and-more-2026-guide-p90)].
-Consequences for Brain4All:
+Consequences for XNOBrain:
 
 - ✅ You can legally build a **proprietary enterprise/cloud layer** on top of Hermes
   and keep that layer closed. This is exactly what the open-core split assumes.
@@ -67,7 +67,7 @@ Consequences for Brain4All:
 
 ## 2. The router ("9router") and the routing landscape
 
-Brain4All's "9router" is an LLM router (one process on `:20128`) that routes to
+XNOBrain's "9router" is an LLM router (one process on `:20128`) that routes to
 multiple providers — the same job as **OpenRouter** (hosted) or **LiteLLM**
 (self-hostable proxy). Whether "9router" is a distinct project or your alias, the
 landscape it sits in:
@@ -98,9 +98,9 @@ markdown + SQLite; multi-agent routing through one gateway
 [[SFAI Labs](https://sfailabs.com/guides/openclaw-ai-agent-framework)],
 [[freeCodeCamp](https://www.freecodecamp.org/news/how-to-build-and-secure-a-personal-ai-agent-with-openclaw/)].
 
-**How it overlaps and differs from Hermes/Brain4All:**
+**How it overlaps and differs from Hermes/XNOBrain:**
 
-| | Hermes / Brain4All | OpenClaw |
+| | Hermes / XNOBrain | OpenClaw |
 |---|---|---|
 | Config model | Skills + profiles + UI | `SOUL.md` config-first |
 | Memory | MEMORY.md + FTS5 + skills | markdown + SQLite |
@@ -133,4 +133,4 @@ Two takeaways for strategy:
    [07-business-model-and-licensing.md](07-business-model-and-licensing.md).
 2. **Everyone competes on "build agents." Nobody competes on "certify that this
    agent faithfully reproduces a specific named human expert."** That is the sentence
-   that differentiates Brain4All from this entire list.
+   that differentiates XNOBrain from this entire list.

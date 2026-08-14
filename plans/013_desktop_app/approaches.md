@@ -5,13 +5,13 @@
 The product has two explicit editions:
 
 - **Web Version (Docker):** Docker hosts the services and web UI. After install
-  or start, Brain4All opens in the user's default system browser. It never
+  or start, XNOBrain opens in the user's default system browser. It never
   renders the product inside a desktop webview.
 - **Full Managed App:** Tauri renders the existing React UI in a native window
   and manages its platform runtime. This is the application version.
 
 The Docker-first installer may use Tauri for its small wizard/maintenance UI,
-but that utility is not presented as the Brain4All Full Managed App.
+but that utility is not presented as the XNOBrain Full Managed App.
 
 ## Decision B — Tauri 2 is the Full Managed App shell
 
@@ -55,7 +55,7 @@ After Web Version (Docker) is selected:
    consent, launches the official installer, and resumes after installation or
    reboot.
 
-Brain4All does not redistribute Docker Desktop inside its installer unless a
+XNOBrain does not redistribute Docker Desktop inside its installer unless a
 later legal and technical decision explicitly permits it. Downloads use
 official sources and checksums/signatures where published.
 
@@ -100,7 +100,7 @@ The Docker Web installer owns only what is necessary to complete installation:
 - create/start;
 - health check;
 - retry/repair/uninstall;
-- launch Brain4All.
+- launch XNOBrain.
 
 A later **Full Managed App** owns the integrated product and management
 experience: app window, lifecycle, live logs, resource settings,
@@ -112,7 +112,7 @@ to the Docker Web edition as a desktop container dashboard.
 The Full Managed App hides a platform-specific managed runtime behind one app:
 
 - Linux: DEB/RPM runtime and systemd user services.
-- Windows: a signed Brain4All WSL2 root filesystem imported and managed by the
+- Windows: a signed XNOBrain WSL2 root filesystem imported and managed by the
   app, without Docker Desktop; this is not a strict Win32 port.
 - macOS: a signed native-core runtime. Large optional tools may remain Docker-
   only until native equivalents are proven.
@@ -123,6 +123,6 @@ validating every POSIX-oriented runtime tool and skill.
 ## Decision J — Data removal is a separate destructive choice
 
 Uninstalling the desktop shell, uninstalling runtime components, and deleting
-Brain4All user data are three separate operations. Data deletion requires a
+XNOBrain user data are three separate operations. Data deletion requires a
 specific confirmation showing the resolved data location. Repair and update
 never delete user data.

@@ -9,7 +9,7 @@ Cross-links: [README.md](README.md) · [findings.md](findings.md) ·
 
 Constraints restated (obey all): no Go/PostgreSQL/ORM/second API process; one
 FastAPI/Hermes (:8642) + one 9router (:20128); preserve Hermes core and extend
-from `brain4all`; never copy/fork Hermes internals (no second scheduler/dispatch
+from `xnobrain`; never copy/fork Hermes internals (no second scheduler/dispatch
 loop); `routes/setup.py` is the only route-assembly point; handlers/services/
 repositories/integrations/models layering; provider forced 9router; no app DB;
 atomic files; snapshot before mutations; never log/return credentials; pin
@@ -22,7 +22,7 @@ Hermes + compatibility test; no mock/demo data.
    modules in [findings.md](findings.md#compatibility-surface-to-pin). Record the
    version and upgrade steps in `docs/development.md` and `docs/architecture.md`
    (reuse the Plan 001 pin if it already covers these modules — verify it does).
-2. **Compatibility test.** Add to `brain4all/tests/test_cron_delivery.py` a
+2. **Compatibility test.** Add to `xnobrain/tests/test_cron_delivery.py` a
    `CronDeliveryCompatibilityTests` (skipped unless Hermes importable, like
    `test_kanban.py` lines 20–25) that asserts:
    - `from cron.blueprint_catalog import CATALOG, get_blueprint,
@@ -44,9 +44,9 @@ Hermes + compatibility test; no mock/demo data.
 
 ## Phase 1 — Models
 
-File: `brain4all/models/api.py` (add near the existing `CronCreate`, ≈ line 39).
+File: `xnobrain/models/api.py` (add near the existing `CronCreate`, ≈ line 39).
 
-Add (names from [architecture.md](architecture.md#new-brain4all-api-contract)):
+Add (names from [architecture.md](architecture.md#new-xnobrain-api-contract)):
 
 ```python
 CronDeliveryTargetType = Literal["channel", "email", "kanban", "file"]
@@ -86,12 +86,12 @@ Also add `CronBlueprintList`, `CronDeliveryTargetList`,
 and extend the `_schedule_job` response shape with `delivery_targets`
 (a `CronJobSummary` model or add the field to the existing dict). Keep
 `Literal["channel","email","kanban","file"]` closed so an unknown type is a 422
-at the boundary. Export the new names via `brain4all/models/__init__.py` so
+at the boundary. Export the new names via `xnobrain/models/__init__.py` so
 `routes/setup.py` can import them.
 
 ## Phase 2 — Integration adapter
 
-File: **new** `brain4all/integrations/cron_delivery.py`. Policy-free, no HTTP,
+File: **new** `xnobrain/integrations/cron_delivery.py`. Policy-free, no HTTP,
 imports Hermes in-process (guard imports so a missing module raises a typed
 adapter error caught by the readiness guard). Provide:
 
@@ -121,11 +121,11 @@ Return a small `DeliveryResult` dataclass `{status: "delivered"|"failed"|
 result or any log line.
 
 Do **not** put kanban/file delivery here (they belong in the service, using
-existing Brain4All integrations).
+existing XNOBrain integrations).
 
 ## Phase 3 — Service
 
-File: `brain4all/services/platform.py` (the `PlatformService`/cron methods,
+File: `xnobrain/services/platform.py` (the `PlatformService`/cron methods,
 ≈ 351–454). Construct the new adapter alongside the existing `self.kanban`.
 
 Add methods:
@@ -200,7 +200,7 @@ the next run (not marked terminal), so it self-heals when Plan 005 connects.
 
 ## Phase 4 — Handlers + routes
 
-File: `brain4all/handlers/api.py` (operation map, add beside the cron block
+File: `xnobrain/handlers/api.py` (operation map, add beside the cron block
 ≈ 97–99):
 
 ```python
@@ -217,7 +217,7 @@ File: `brain4all/handlers/api.py` (operation map, add beside the cron block
 `run_cron`/`trigger_job` are async — match the existing `cron_run` await
 pattern.
 
-File: `brain4all/routes/setup.py` — import the new models and add to the
+File: `xnobrain/routes/setup.py` — import the new models and add to the
 **existing `Cron` group** (after ≈ line 89), keeping `tags=("Cron",)`:
 
 ```python
@@ -260,7 +260,7 @@ Run `npm run build` for type/build verification.
 
 ## Phase 6 — Tests
 
-Add `brain4all/tests/test_cron_delivery.py` (temp `HERMES_HOME`, real Hermes,
+Add `xnobrain/tests/test_cron_delivery.py` (temp `HERMES_HOME`, real Hermes,
 same harness as `test_kanban.py`). See [validation.md](validation.md) for the
 full matrix. Cover at minimum: blueprint list/instantiate; target-type
 validation (reject unknown; channel degraded when no gateway); add/remove

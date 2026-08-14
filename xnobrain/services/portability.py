@@ -109,7 +109,7 @@ from ..repositories import FileRepository, StoreError
 from ..defaults import BIG_BROTHER_AGENT_ID
 
 
-BUNDLE_FORMAT = "brain4all-bundle"
+BUNDLE_FORMAT = "xnobrain-bundle"
 BUNDLE_VERSION = 1
 # Keep transfer parts below the common/default 1 MiB reverse-proxy body limit.
 # The archive itself remains file-backed and may be up to MAX_COMPRESSED.
@@ -521,14 +521,14 @@ class PortabilityService:
         if size > MAX_COMPRESSED:
             target.unlink(missing_ok=True)
             raise StoreError("bundle size is invalid", code="invalid_bundle")
-        filename = f"brain4all-{export_id}.zip"
+        filename = f"xnobrain-{export_id}.zip"
         if len(selected_teams) == 1:
             team_name = re.sub(
                 r"[^a-z0-9]+",
                 "-",
                 str(selected_teams[0].get("name") or "team").strip().lower(),
             ).strip("-")[:80] or "team"
-            filename = f"brain4all-team-{team_name}-{export_id[:8]}.zip"
+            filename = f"xnobrain-team-{team_name}-{export_id[:8]}.zip"
         return {
             "bundle_export_id": export_id,
             "filename": filename,
@@ -614,7 +614,7 @@ class PortabilityService:
         managed_subtrees: tuple[Path, ...] = (),
     ) -> bool:
         # A named Hermes profile is exported as a complete directory snapshot.
-        # The root/default profile is also the parent of managed Brain4All data,
+        # The root/default profile is also the parent of managed XNOBrain data,
         # so those nested stores remain outside the profile boundary to prevent
         # recursively exporting sibling profiles and transfer staging data.
         if root_profile and relative.parts and relative.parts[0].lower() in ROOT_EXCLUDED_PARTS:

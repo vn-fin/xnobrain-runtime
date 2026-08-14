@@ -1,6 +1,6 @@
 # Tóm tắt điều hành
 
-Brain4All là một không gian làm việc tự lưu trữ (self-host) để xây dựng và vận hành AI agent, hiện được xây dựng trên **Hermes Agent** mã nguồn mở (MIT) của Nous Research cùng một bộ định tuyến LLM đa nhà cung cấp, với một mô hình phân tách open-core được thiết kế sẵn (một runtime công khai và một control plane doanh nghiệp riêng tư). Các năng lực đã trở thành hàng hóa phổ biến — vòng lặp agent, bộ nhớ, skill, tích hợp công cụ/MCP, và định tuyến nhà cung cấp — đều đã được xây dựng hoặc đi thuê. Tài liệu này trình bày sản phẩm là gì, thị trường mà nó bước vào, bối cảnh cạnh tranh, lợi thế phòng thủ (moat) có thể bảo vệ được, mô hình kinh doanh, kiến trúc kỹ thuật, và một kế hoạch theo từng giai đoạn để xây dựng sản phẩm thương mại.
+XNOBrain là một không gian làm việc tự lưu trữ (self-host) để xây dựng và vận hành AI agent, hiện được xây dựng trên **Hermes Agent** mã nguồn mở (MIT) của Nous Research cùng một bộ định tuyến LLM đa nhà cung cấp, với một mô hình phân tách open-core được thiết kế sẵn (một runtime công khai và một control plane doanh nghiệp riêng tư). Các năng lực đã trở thành hàng hóa phổ biến — vòng lặp agent, bộ nhớ, skill, tích hợp công cụ/MCP, và định tuyến nhà cung cấp — đều đã được xây dựng hoặc đi thuê. Tài liệu này trình bày sản phẩm là gì, thị trường mà nó bước vào, bối cảnh cạnh tranh, lợi thế phòng thủ (moat) có thể bảo vệ được, mô hình kinh doanh, kiến trúc kỹ thuật, và một kế hoạch theo từng giai đoạn để xây dựng sản phẩm thương mại.
 
 ## Luận điểm sản phẩm
 
@@ -17,7 +17,7 @@ Cái nhìn chiến lược nằm ở phạm vi áp dụng. **Đo lường độ 
 
 ## Khoảng trống thị trường — và nó đang thu hẹp lại
 
-Ô "nhân bản một chuyên gia có tên tuổi" hiện đã đông đúc: Viven, IgniteTech, Interloom, Cloneable, Delphi, và Coachvox đều nhân bản con người. Vì vậy "Chúng tôi tạo ra twin chuyên gia" đã **không còn là điểm khác biệt**. Điều mà *không ai* làm — được kiểm chứng qua hơn hai mươi công ty — là **kiểm định rằng một bản nhân bản tái tạo trung thực một chuyên gia cụ thể có tên tuổi** (được đo lường, kèm một huy hiệu có hạn dùng), **giám sát trôi dạt**, và **quyết toán royalty** xuyên các tổ chức trong khi twin chạy trên **chính runtime của khách hàng**. Các startup đánh giá đo *chất lượng ứng dụng*, chứ không phải độ trung thành so với một con người; các chợ thẩm định *đối tác*, chứ không thẩm định con người. Mệnh lệnh chiến lược là dẫn dắt bằng **kiểm định và royalty**, chứ không phải bằng "twin" — nếu không, Brain4All chỉ là một trong hàng chục cái tên.
+Ô "nhân bản một chuyên gia có tên tuổi" hiện đã đông đúc: Viven, IgniteTech, Interloom, Cloneable, Delphi, và Coachvox đều nhân bản con người. Vì vậy "Chúng tôi tạo ra twin chuyên gia" đã **không còn là điểm khác biệt**. Điều mà *không ai* làm — được kiểm chứng qua hơn hai mươi công ty — là **kiểm định rằng một bản nhân bản tái tạo trung thực một chuyên gia cụ thể có tên tuổi** (được đo lường, kèm một huy hiệu có hạn dùng), **giám sát trôi dạt**, và **quyết toán royalty** xuyên các tổ chức trong khi twin chạy trên **chính runtime của khách hàng**. Các startup đánh giá đo *chất lượng ứng dụng*, chứ không phải độ trung thành so với một con người; các chợ thẩm định *đối tác*, chứ không thẩm định con người. Mệnh lệnh chiến lược là dẫn dắt bằng **kiểm định và royalty**, chứ không phải bằng "twin" — nếu không, XNOBrain chỉ là một trong hàng chục cái tên.
 
 ## Lợi thế phòng thủ (moat), được cụ thể hóa
 
@@ -301,27 +301,27 @@ tranh startup và báo cáo về hào lũy kiểm định.
 > Store: ~**$0.03 mỗi cuộc hội thoại**). Nhân bản chuyên gia đang được rót vốn nhanh
 > (**Delphi $16M/Sequoia**, **Cloneable ARR tăng 100×**) nhưng **chưa ai kiểm định rằng một
 > bản nhân bản tái tạo con người được nêu tên một cách trung thực** — ngay cả khi tỷ lệ áp
-> dụng đánh giá AI sắp tăng gấp ba lên **60% các nhóm kỹ thuật vào năm 2028**. Brain4All sở
+> dụng đánh giá AI sắp tăng gấp ba lên **60% các nhóm kỹ thuật vào năm 2028**. XNOBrain sở
 > hữu khoảng trống đó: cổng kiểm định cho những twin chuyên gia được kiểm chứng.
 
 
 # Bức tranh khởi nghiệp — Ai đang gần nhất, và khoảng trống thị trường
 
-> Những công ty gần nhất với "terminal twin chuyên gia đã kiểm định" của Brain4All, được
+> Những công ty gần nhất với "terminal twin chuyên gia đã kiểm định" của XNOBrain, được
 > sắp xếp theo phân khúc, kèm vốn/lực kéo và — cột thực sự quan trọng — **liệu họ có kiểm
 > định độ trung thành với một con người cụ thể được nêu tên hay không.** Mọi con số đều
 > được liên kết và ghi ngày. Đây là bản quét toàn cảnh, không phải một sự chứng thực; hãy
 > coi các con số vốn là số liệu được báo cáo, chưa qua kiểm toán.
 >
 > ⚠ **Kiểm tra thực tế ngay từ đầu:** kể từ bản nháp đầu tiên, không gian này đã trở nên
-> *đông đúc hơn* và *gần hơn* với concept của Brain4All (Viven, IgniteTech, Interloom,
+> *đông đúc hơn* và *gần hơn* với concept của XNOBrain (Viven, IgniteTech, Interloom,
 > Twinnin đều xuất hiện vào cuối 2025/2026). Khoảng trống thị trường vẫn còn mở — nhưng
 > các bức tường đang thu hẹp lại, điều này làm tăng tính cấp bách của việc sở hữu lớp
 > **kiểm định + royalty** trước tiên (xem §9).
 
 ## 1. Bản đồ: vẫn chưa ai ngồi ở điểm giao đầy đủ
 
-Tầm nhìn Brain4All cần **bốn** thứ cùng một lúc mà hầu hết các startup chỉ làm được một
+Tầm nhìn XNOBrain cần **bốn** thứ cùng một lúc mà hầu hết các startup chỉ làm được một
 hoặc hai: **(A)** một agent runtime có thể tự lưu trữ (self-host), **(B)** nhân bản phán
 đoán của một chuyên gia *được nêu tên*, **(C)** **kiểm định độ trung thành** với người đó
 (đo lường được, có hạn dùng), **(D)** một kệ (registry) xuyên tổ chức với **royalty
@@ -331,7 +331,7 @@ hoặc hai: **(A)** một agent runtime có thể tự lưu trữ (self-host), *
                          (A) self-host   (B) nhân bản    (C) KIỂM ĐỊNH    (D) registry +
                           runtime        chuyên gia      độ trung thành   royalty
                                          được nêu tên
-Hermes / Brain4All          ●●●             ○ (dự kiến)    ○ (canh bạc)     ○ (dự kiến)
+Hermes / XNOBrain          ●●●             ○ (dự kiến)    ○ (canh bạc)     ○ (dự kiến)
 OpenClaw                    ●●●             ○              ○                ○
 Viven                       ○               ●●● (nhân viên) ○               ○
 IgniteTech MyPersonas       ○               ●●● (nhân viên) ○               ○
@@ -514,7 +514,7 @@ con người* vẫn còn là R&D chưa được xây dựng — lợi thế phò
 
 | Công ty | Self-host | Nhân bản một người **được nêu tên** | **Kiểm định độ trung thành** (đo lường được, có hạn dùng) | Royalty / chia doanh thu | Chạy trên dữ liệu của khách |
 |---|:--:|:--:|:--:|:--:|:--:|
-| **Brain4All (mục tiêu)** | ✔ | ✔ | ✔ **(moat)** | ✔ | ✔ |
+| **XNOBrain (mục tiêu)** | ✔ | ✔ | ✔ **(moat)** | ✔ | ✔ |
 | Viven | ✘ | ✔ | ✘ | ✘ | ◐ |
 | IgniteTech MyPersonas | ✘ | ✔ | ✘ | ✘ | ✘ |
 | Cloneable | ◐ | ✔ | ✘ | ✘ | ✔ |
@@ -594,7 +594,7 @@ twin terminal, §5): các chuyên gia sắp nghỉ hưu sẵn sàng đồng thu�
 là chuyên môn của họ biến mất.
 
 
-# Hiện trạng — Brain4All là gì ở thời điểm hiện tại
+# Hiện trạng — XNOBrain là gì ở thời điểm hiện tại
 
 > Phạm vi: lấy từ chính repository (`AGENTS.md`, `README.md`,
 > `docs/architecture.md`, `docs/enterprise-extension.md`,
@@ -603,7 +603,7 @@ là chuyên môn của họ biến mất.
 
 ## 1. Định nghĩa trong một câu
 
-Brain4All là một **workspace tự lưu trữ (self-host) trên nền React + FastAPI, bao bọc
+XNOBrain là một **workspace tự lưu trữ (self-host) trên nền React + FastAPI, bao bọc
 Hermes Agent mã nguồn mở của Nous Research** và bổ sung một bộ định tuyến LLM đa nhà
 cung cấp (được gọi nội bộ là **9router**), đóng gói thành một sản phẩm có thể tải về
 kèm một control plane doanh nghiệp độc quyền tùy chọn.
@@ -616,7 +616,7 @@ Tầm nhìn Twin Terminal) là đích đến; tài liệu này là điểm khở
 
 ```
 browser → Traefik → React UI
-                 → FastAPI :8642  (Hermes native routes + Brain4All routes)
+                 → FastAPI :8642  (Hermes native routes + XNOBrain routes)
                         → services → repositories → atomic profile/config files
                         → integrations → Hermes CLI/core
                         → integrations → 9router :20128 → LLM providers
@@ -627,17 +627,17 @@ Những sự thật chính rút ra từ `docs/architecture.md`:
 - Container runtime khởi động **đúng hai tiến trình**: FastAPI trên `8642` và
   9router trên `20128`. React được phục vụ qua Traefik.
 - Đây là một **modular monolith bằng Python** được xếp lớp lên trên ứng dụng FastAPI
-  của Hermes CLI gốc. Việc lắp ráp route được tập trung tại `brain4all/routes/setup.py`.
+  của Hermes CLI gốc. Việc lắp ráp route được tập trung tại `xnobrain/routes/setup.py`.
 - **Không có database ứng dụng.** Trạng thái là các file nguyên tử (atomic) nằm dưới
   `DATA_DIR`. Hermes giữ `state.db` riêng cục bộ theo profile cho lịch sử phiên native
-  (một file thuộc upstream, không phải schema của Brain4All).
+  (một file thuộc upstream, không phải schema của XNOBrain).
 - Phân lớp gọn gàng: **handlers** đảm nhiệm chuyển đổi HTTP/SSE, **services** đảm nhiệm
   quy tắc, **repositories** đảm nhiệm file nguyên tử (atomic), **integrations** thích
   ứng Hermes CLI và 9router, **models** là Pydantic.
 - **Không có phụ thuộc control plane được quản lý, không đăng nhập, không proxy API**
   trong bản dựng OSS. OpenTelemetry chỉ chạy cục bộ và mặc định tắt.
 
-### Bản đồ mã nguồn (`brain4all/`)
+### Bản đồ mã nguồn (`xnobrain/`)
 
 | Lớp | File | Trách nhiệm |
 |---|---|---|
@@ -678,8 +678,8 @@ và cung cấp:
 
 | Repo | Dựng | Sở hữu |
 |---|---|---|
-| `brain4all` (repo này, **công khai/OSS**) | Image React + image FastAPI/Hermes/9router hợp nhất | Cô lập profile, đường dẫn an toàn, snapshot, hội thoại, gọi Hermes, ủy thác 9router, middleware quota, thực thi cấp service |
-| `brain4all-enterprise` (**riêng tư**) | Enterprise API + đóng gói cloud được quản lý/Incus | Auth, phân giải tenant/plan, quyền lợi thanh toán, quota phân tán, RBAC, audit, quản lý secret, điều phối được quản lý, lưu giữ telemetry |
+| `xnobrain` (repo này, **công khai/OSS**) | Image React + image FastAPI/Hermes/9router hợp nhất | Cô lập profile, đường dẫn an toàn, snapshot, hội thoại, gọi Hermes, ủy thác 9router, middleware quota, thực thi cấp service |
+| `xnobrain-enterprise` (**riêng tư**) | Enterprise API + đóng gói cloud được quản lý/Incus | Auth, phân giải tenant/plan, quyền lợi thanh toán, quota phân tán, RBAC, audit, quản lý secret, điều phối được quản lý, lưu giữ telemetry |
 
 Các quy tắc bảo vệ mô hình:
 
@@ -688,7 +688,7 @@ Các quy tắc bảo vệ mô hình:
 - **Phụ thuộc là một chiều**: enterprise có thể kéo image runtime công khai; bản triển
   khai OSS không bao giờ kéo image enterprise.
 - Enterprise là một **thành phần riêng tư mỏng** (thin private composition), không phải
-  fork. Nó ghim một module Brain4All + image runtime đã phát hành và hiện thực một hợp
+  fork. Nó ghim một module XNOBrain + image runtime đã phát hành và hiện thực một hợp
   đồng `pkg/edition.Policy` (`-1` = không giới hạn).
 - Các phiên bản: **self-hosted Free** (chỉ file), **Cloud Free / Personal Pro /
   Enterprise** (control plane PostgreSQL riêng tư dùng chung). Enterprise bổ sung
@@ -705,7 +705,7 @@ phiên bản enterprise bằng Go. Thực tế hiện tại của repository là
 - **OSS = Python** (monolith FastAPI) + frontend React/TypeScript. Con đường Go/Postgres
   đã bị loại bỏ một cách rõ ràng trong repo OSS.
 - **Enterprise = Go** (control plane `pkg/edition.Policy`, đường dẫn module
-  `github.com/vn-fin/brain4all/`, điều phối được quản lý).
+  `github.com/vn-fin/xnobrain/`, điều phối được quản lý).
 
 Vậy nên "mã nguồn mở Python + Go" **không** phải là điều mã nguồn làm hôm nay. Hãy
 quyết định một cách có chủ đích (xem tài liệu roadmap): hoặc (a) giữ OSS chỉ Python và
@@ -743,7 +743,7 @@ roadmap nên tập trung.
 ## 1. Hermes Agent (Nous Research) — động cơ của bạn
 
 **Nó là gì.** Một AI agent tự cải thiện, mã nguồn mở, **giấy phép MIT**, ra mắt
-**tháng 2 năm 2026**. Đây chính xác là thứ mà Brain4All bọc lại (chính là "ứng dụng
+**tháng 2 năm 2026**. Đây chính xác là thứ mà XNOBrain bọc lại (chính là "ứng dụng
 dashboard Hermes CLI gốc" của repo).
 
 **Năng lực** (theo trang chính thức
@@ -765,7 +765,7 @@ phân tích độc lập
   CLI, và nhiều nền tảng khác thông qua các adapter.
 - **Cron ngôn ngữ tự nhiên** ("mỗi ngày trong tuần lúc 9 giờ sáng, tóm tắt hộp thư của tôi").
 - **Cổng phê duyệt** ("chế độ hội thoại" yêu cầu con người ký duyệt trước khi dùng
-  công cụ) — đây chính là lõi phê duyệt Hermes mà Brain4All giữ lại.
+  công cụ) — đây chính là lõi phê duyệt Hermes mà XNOBrain giữ lại.
 
 **Độ trưởng thành.** Đến phiên bản v0.18.2 (tháng 7 năm 2026), dự án báo cáo hàng trăm
 issue đã đóng, **370+ người đóng góp, và không có lỗi P0 nào còn mở**
@@ -789,7 +789,7 @@ MIT là giấy phép **dễ dãi (permissive) tối đa**: bạn có thể dùng
 Hermes — **kể cả trong một sản phẩm thương mại đóng** — với về cơ bản chỉ một nghĩa vụ:
 giữ nguyên thông báo bản quyền + giấy phép
 [[tổng quan giấy phép](https://dev.to/juanisidoro/open-source-licenses-which-one-should-you-pick-mit-gpl-apache-agpl-and-more-2026-guide-p90)].
-Hệ quả cho Brain4All:
+Hệ quả cho XNOBrain:
 
 - ✔ Bạn có thể hợp pháp xây dựng một **tầng doanh nghiệp/đám mây độc quyền** lên trên
   Hermes và giữ tầng đó đóng. Đây chính xác là điều mà mô hình chia tách open-core giả định.
@@ -806,7 +806,7 @@ Hệ quả cho Brain4All:
 
 ## 2. Bộ định tuyến ("9router") và bức tranh định tuyến
 
-"9router" của Brain4All là một bộ định tuyến LLM (một tiến trình chạy trên `:20128`)
+"9router" của XNOBrain là một bộ định tuyến LLM (một tiến trình chạy trên `:20128`)
 định tuyến tới nhiều nhà cung cấp — cùng công việc như **OpenRouter** (được lưu trữ)
 hay **LiteLLM** (proxy tự lưu trữ được). Dù "9router" là một dự án riêng biệt hay chỉ
 là bí danh của bạn, đây là bức tranh mà nó nằm trong đó:
@@ -839,9 +839,9 @@ GitHub**; bộ nhớ bền vững qua markdown + SQLite; định tuyến đa age
 [[SFAI Labs](https://sfailabs.com/guides/openclaw-ai-agent-framework)],
 [[freeCodeCamp](https://www.freecodecamp.org/news/how-to-build-and-secure-a-personal-ai-agent-with-openclaw/)].
 
-**Nó trùng lặp và khác biệt với Hermes/Brain4All như thế nào:**
+**Nó trùng lặp và khác biệt với Hermes/XNOBrain như thế nào:**
 
-| | Hermes / Brain4All | OpenClaw |
+| | Hermes / XNOBrain | OpenClaw |
 |---|---|---|
 | Mô hình cấu hình | Skill + hồ sơ + UI | `SOUL.md` ưu tiên cấu hình |
 | Bộ nhớ | MEMORY.md + FTS5 + skill | markdown + SQLite |
@@ -876,7 +876,7 @@ Hai điều rút ra cho chiến lược:
    cấp phép.
 2. **Ai cũng cạnh tranh ở việc "xây dựng agent." Không ai cạnh tranh ở việc "kiểm định
    rằng agent này tái tạo trung thành một chuyên gia con người cụ thể có tên."** Đó là
-   câu nói phân biệt Brain4All với toàn bộ danh sách này.
+   câu nói phân biệt XNOBrain với toàn bộ danh sách này.
 
 
 # Lợi thế phòng thủ từ kiểm định — Biến Engine 07 thành hiện thực
@@ -1008,7 +1008,7 @@ royalty, các hội đồng liên tổ chức) chỉ là mở rộng quy mô.
 Mô hình open-core = **lõi mã nguồn mở (MIT/Apache) + tính năng doanh nghiệp độc quyền
 qua đăng ký trả phí**
 [[tổng quan open-core](https://viprasol.com/blog/open-source-business-model/)]. Việc bạn
-tách `brain4all` (công khai) + `brain4all-enterprise` (riêng tư) là bài bản sách giáo khoa.
+tách `xnobrain` (công khai) + `xnobrain-enterprise` (riêng tư) là bài bản sách giáo khoa.
 
 | Công ty | Giấy phép lõi | Mô hình thương mại | Bài học cho bạn |
 |---|---|---|---|
@@ -1018,14 +1018,14 @@ tách `brain4all` (công khai) + `brain4all-enterprise` (riêng tư) là bài b�
 | **n8n** | **fair-code** ("dùng nội bộ miễn phí, cấm bán lại") | open-core + đám mây | gần với hình dạng của bạn nhất; cho các công ty tự lưu trữ (self-host) miễn phí, chặn bán lại |
 | **Sourcegraph** | chuyển sang đóng mã nguồn | bán hàng doanh nghiệp | thuần-doanh-nghiệp là khả thi nhưng mất đi phễu (thu hút người dùng) từ OSS |
 
-**Mô hình phù hợp với Brain4All nhất:** **lõi dễ dãi (permissive)/fair-code + control
+**Mô hình phù hợp với XNOBrain nhất:** **lõi dễ dãi (permissive)/fair-code + control
 plane (mặt điều khiển) doanh nghiệp đóng** (như n8n / GitLab), *chứ không phải* đổi giấy
 phép lõi theo hướng hạn chế (dù sao bạn cũng không sở hữu giấy phép của Hermes — nó là
 MIT và vẫn là MIT).
 
 ## 2. Hai quyết định cấp phép mà bạn thực sự phải đối mặt
 
-### Quyết định A — giấy phép cho *chính* kho OSS của bạn (`brain4all`)
+### Quyết định A — giấy phép cho *chính* kho OSS của bạn (`xnobrain`)
 README nói thẳng ra: *"Chọn và thêm một giấy phép trước khi phân phối công khai."*
 Hiện tại giấy phép này **chưa được đặt** và đang chặn việc ra mắt công khai. Các phương án (ý kiến):
 
@@ -1037,7 +1037,7 @@ Hiện tại giấy phép này **chưa được đặt** và đang chặn việc
 
 **Khuyến nghị (ý kiến):** **Apache-2.0 hoặc AGPL-3.0 cho lõi OSS**, và giữ **toàn bộ
 lợi thế phòng thủ (moat) (kiểm định, registry, danh tính, royalty, thanh toán) trong kho
-đóng `brain4all-enterprise`.** Lý do:
+đóng `xnobrain-enterprise`.** Lý do:
 
 - Lợi thế phòng thủ (moat) nằm ở **các engine 05–07 & 09**, vốn *đã* được thiết kế riêng
   tư từ đầu — nên bạn không cần một giấy phép lõi hạn chế để bảo vệ phần có giá trị. Điều
@@ -1114,11 +1114,11 @@ từng agent) hoạt động, và kiến trúc mục tiêu được khuyến ngh
 Ứng dụng mã nguồn mở không chạy một máy chủ riêng gọi Hermes qua mạng. Nó import chính
 ứng dụng web-server của Hermes và đăng ký các tuyến (route) tương thích của mình lên đó,
 rồi phục vụ ứng dụng kết hợp trên cổng 8642. Trên thực tế, tiến trình đang chạy là máy chủ
-web của Hermes cộng với bề mặt quản trị của Brain4All, trong một tiến trình Python duy nhất
+web của Hermes cộng với bề mặt quản trị của XNOBrain, trong một tiến trình Python duy nhất
 dùng chung một môi trường ảo. Bộ định tuyến LLM chạy như một tiến trình riêng trên cổng
 20128 và được truy cập qua HTTP.
 
-Vì Brain4All dùng chung tiến trình và môi trường, nó tích hợp với Hermes qua nhiều kênh
+Vì XNOBrain dùng chung tiến trình và môi trường, nó tích hợp với Hermes qua nhiều kênh
 đồng thời thay vì một ranh giới sạch sẽ duy nhất.
 
 | Cơ chế nền tảng | Cách hoạt động | Chức năng nào sử dụng |
@@ -1515,7 +1515,7 @@ quay.*
 - **Pháp lý/hợp đồng** — sở hữu tay nghề, trách nhiệm pháp lý, đồng thuận, chống mạo danh
   — làm cổng cho mọi giai đoạn; đừng để chúng tụt lại sau sản phẩm.
 - **Giữ nguyên các engine hàng hóa ở dạng đi thuê** — **đừng** cố xây vượt
-  OpenRouter/LiteLLM hay fork lõi của Hermes; hãy mở rộng từ `brain4all`, theo `AGENTS.md`.
+  OpenRouter/LiteLLM hay fork lõi của Hermes; hãy mở rộng từ `xnobrain`, theo `AGENTS.md`.
 
 ## Quy tắc trình tự một dòng
 
@@ -1534,7 +1534,7 @@ quay.*
 > dưới là một bản ghi cô đọng nhưng trung thực: tiêu đề, agent làm gì, và các
 > công cụ/mô hình/con số được nêu tên. **Các mục C–E chứa phần phân tích** — những story
 > nào gần nhất với Twin Terminal, nơi Hermes và OpenClaw xuất hiện cùng nhau, và điều đó
-> có ý nghĩa gì với Brain4All.
+> có ý nghĩa gì với XNOBrain.
 
 ## Cấu trúc trang (nguyên văn)
 
@@ -1891,7 +1891,7 @@ hầu hết là **những power user cá nhân và công cụ nhỏ** (primeclaw
 watchdog, tiện ích di trú), chứ không phải các công ty được cấp vốn — tức là ô "twin-trên-
 nhiều-runtime" **vẫn còn để trống.**
 
-## E. Danh mục này có ý nghĩa gì với Brain4All
+## E. Danh mục này có ý nghĩa gì với XNOBrain
 
 1. **Nhu cầu đã được chứng minh và rộng khắp.** 262 story thật, có nguồn, trải khắp 15
    lĩnh vực, phần lớn từ cá nhân và nhóm nhỏ — thị trường *agent cá nhân/chuyên gia tự lưu

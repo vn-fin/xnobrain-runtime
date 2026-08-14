@@ -11,7 +11,7 @@ every surface benefits.
 | Mode | Entry file | Purpose |
 |---|---|---|
 | CLI | `cli.py` | Interactive terminal + TUI (`--tui`) |
-| Python library | `run_agent.py` (`AIAgent`) | Embed in your own code (Brain4All backend) |
+| Python library | `run_agent.py` (`AIAgent`) | Embed in your own code (XNOBrain backend) |
 | Gateway | `gateway/run.py` (`GatewayRunner`) | Messaging-platform server (~20 adapters) |
 | ACP adapter | `acp_adapter/` | Editor integration over JSON-RPC (VS Code, Zed, JetBrains) |
 | Batch runner | `batch_runner.py` | Trajectory / dataset generation |

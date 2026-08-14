@@ -1792,7 +1792,7 @@ function TeamImportModal({
           <button className="icon-button" onClick={close} aria-label="Close Team import"><X size={17} /></button>
         </div>
         <p className="app-modal-sub">
-          Import a verified Brain4All ZIP. Referenced agents are cloned with new IDs when needed; credentials are never taken from the archive.
+          Import a verified XNOBrain ZIP. Referenced agents are cloned with new IDs when needed; credentials are never taken from the archive.
         </p>
         <label className="profile-upload-picker">
           <FileArchive size={20} />

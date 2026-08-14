@@ -15,7 +15,7 @@ for candidate in \
 done
 
 if ! "$python_bin" -c 'import hermes_cli, jlogger' >/dev/null 2>&1; then
-  echo "The project Python environment is incomplete (Hermes or Brain4All dependencies are missing)." >&2
+  echo "The project Python environment is incomplete (Hermes or XNOBrain dependencies are missing)." >&2
   echo "Run ./scripts/install-linux.sh to repair the local toolchain." >&2
   exit 1
 fi

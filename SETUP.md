@@ -1,12 +1,12 @@
-# Brain4All Setup
+# XNOBrain Setup
 
-This guide covers the open-source, self-hosted Brain4All runtime in this
+This guide covers the open-source, self-hosted XNOBrain runtime in this
 repository. Local development runs three processes:
 
 | Component | Default address | Purpose |
 | --- | --- | --- |
 | React/Vite | `http://127.0.0.1:5173` | Browser UI |
-| FastAPI + Hermes | `http://127.0.0.1:8642` | Brain4All API and agent runtime |
+| FastAPI + Hermes | `http://127.0.0.1:8642` | XNOBrain API and agent runtime |
 | 9router | `http://127.0.0.1:20128` | Model and provider routing |
 
 Vite automatically tries the next available port when `5173` is occupied.
@@ -15,7 +15,7 @@ For example, if ports `5173` and `5174` are already used, open
 
 ## Local Linux development
 
-Run all commands from the `brain4all/` repository root.
+Run all commands from the `xnobrain/` repository root.
 
 ### 1. Check the host
 
@@ -94,7 +94,7 @@ return a managed-API 401 response.
 ## Local data locations
 
 `HERMES_HOME` and `NINE_ROUTER_DATA_DIR` are required. Copy `.env.example` to
-`.env`, then enter both paths before installing or starting Brain4All. Example
+`.env`, then enter both paths before installing or starting XNOBrain. Example
 host paths for native development are:
 
 ```text
@@ -116,7 +116,7 @@ make dev
 `NINE_ROUTER_DATA_DIR` stores router accounts and runtime state. No service
 supplies fallback values for either setting. Docker paths should be inside the
 persistent `/opt/data` volume; native systemd paths should be writable by the
-`brain4all` service user.
+`xnobrain` service user.
 
 The installed runtime also exposes `agent` as an alias for the underlying agent
 CLI. Application services use this neutral alias by default.
@@ -135,17 +135,17 @@ runtime's internal 9router OpenAI-compatible endpoint. At least one connected
 disabled in this local default, so semantic message search is unavailable while
 profile modeling, conclusions, summaries, and dialectic memory remain enabled.
 
-Honcho data persists in the `brain4all_honcho_pgdata` and
-`brain4all_honcho_redis_data` Docker volumes. Set
+Honcho data persists in the `xnobrain_honcho_pgdata` and
+`xnobrain_honcho_redis_data` Docker volumes. Set
 `HONCHO_MEMORY_ENABLE=false` to stop selecting Honcho for profiles that do not
 already have an explicit memory provider.
 
 Do not expect `~/.hermes` inside a VM to refer to the host user's home. For a
-native Brain4All VM service installation, the service user's home is normally
-`/srv/brain4all-data/home`, so Hermes data is stored at:
+native XNOBrain VM service installation, the service user's home is normally
+`/srv/xnobrain-data/home`, so Hermes data is stored at:
 
 ```text
-/srv/brain4all-data/home/.hermes
+/srv/xnobrain-data/home/.hermes
 ```
 
 ## Development overrides
@@ -190,7 +190,7 @@ docker ps --format '{{.Names}} {{.Ports}}'
 ```
 
 If another `make dev` terminal is still running, stop it with `Ctrl+C`. Only
-terminate a process after verifying that it belongs to this Brain4All checkout.
+terminate a process after verifying that it belongs to this XNOBrain checkout.
 Do not stop services merely because Vite reports that `5173` is occupied; Vite
 can safely select the next port.
 
@@ -216,15 +216,15 @@ Traefik configuration rather than the Vite development URLs.
 
 ## Native VM services
 
-After installing the repository at `/opt/brain4all`, install and start the
+After installing the repository at `/opt/xnobrain`, install and start the
 systemd services with:
 
 ```bash
-cd /opt/brain4all
+cd /opt/xnobrain
 sudo ./scripts/install-systemd-services.sh --start
 ```
 
-The `brain4all.target` unit owns the API/Hermes service and local 9router. In a
+The `xnobrain.target` unit owns the API/Hermes service and local 9router. In a
 managed VM, expose port `8642` only to the authenticated workspace gateway and
 keep port `20128` private to the VM.
 
@@ -240,7 +240,7 @@ make smoke-api
 Useful focused commands include:
 
 ```bash
-.tools/python/bin/python -m unittest brain4all.tests.test_cron_delivery
+.tools/python/bin/python -m unittest xnobrain.tests.test_cron_delivery
 npm test -- --run src/api/crons.test.ts src/components/CronView.test.tsx
 npm run build
 ```

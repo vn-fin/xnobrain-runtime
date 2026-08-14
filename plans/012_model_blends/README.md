@@ -7,7 +7,7 @@ required — blends work against whatever providers are connected today.
 Read the sibling documents in order:
 
 - [findings.md](findings.md) — verified upstream 9router facts, the exact
-  Brain4All gap, and the Phase-0 probe list.
+  XNOBrain gap, and the Phase-0 probe list.
 - [architecture.md](architecture.md) — layering, adapter signatures, API
   contract, UI sketch, data flow.
 - [approaches.md](approaches.md) — decisions (naming, strategy placement,
@@ -18,11 +18,11 @@ Read the sibling documents in order:
 Also read before starting: [`AGENTS.md`](../../AGENTS.md),
 [`plans/LOCAL_FEATURES_CHECKLIST.md`](../LOCAL_FEATURES_CHECKLIST.md) (program
 principles),
-[`brain4all/routes/setup.py`](../../brain4all/routes/setup.py) (only route
+[`xnobrain/routes/setup.py`](../../xnobrain/routes/setup.py) (only route
 assembly point),
-[`brain4all/integrations/nine_router.py`](../../brain4all/integrations/nine_router.py)
+[`xnobrain/integrations/nine_router.py`](../../xnobrain/integrations/nine_router.py)
 (the adapter this plan extends), and
-[`brain4all/integrations/hermes.py`](../../brain4all/integrations/hermes.py)
+[`xnobrain/integrations/hermes.py`](../../xnobrain/integrations/hermes.py)
 (`update_config` / `normalize_nine_router_config` — the model-string path a
 blend rides).
 
@@ -35,10 +35,10 @@ list at request time, with a per-combo **strategy** (`fallback` |
 `round-robin` | `fusion`) read from 9router settings. All of this is verified
 against the pinned 9router 0.5.40 in [findings.md](findings.md).
 
-Brain4All uses this machinery today for exactly one hidden, system-managed
+XNOBrain uses this machinery today for exactly one hidden, system-managed
 combo named `auto`
 (`NineRouterManager.ensure_auto_combo()` in
-[`brain4all/integrations/nine_router.py`](../../brain4all/integrations/nine_router.py)).
+[`xnobrain/integrations/nine_router.py`](../../xnobrain/integrations/nine_router.py)).
 User-created combos are invisible: `list_models()` filters them out (they
 surface in `/v1/models` with `owned_by: "combo"`, which is not an active
 provider alias — findings.md §7).
@@ -54,7 +54,7 @@ never renamed.
 Let a local operator create, edit, and use named model blends:
 
 1. **CRUD**: create / rename / edit models / reorder / delete named blends
-   through Brain4All, proxied to 9router `/api/combos*`. The reserved `auto`
+   through XNOBrain, proxied to 9router `/api/combos*`. The reserved `auto`
    combo stays system-managed and is read-only through this surface.
 2. **Strategy**: a per-blend strategy editor — `fallback` (ordered failover),
    `round-robin` (sticky rotation), or `fusion` (fan out to every model and
@@ -72,17 +72,17 @@ Let a local operator create, edit, and use named model blends:
    `sessions.model` (findings.md §9). No analytics change needed; verified and
    stated, not built.
 
-**Brain4All stores nothing.** 9router's own database is the single source of
-truth for blends and strategies; every Brain4All endpoint is a live proxy. No
-snapshots are needed because no Brain4All-owned file is mutated (the snapshot
-rule applies to persistence-promising mutations of Brain4All/Hermes state —
+**XNOBrain stores nothing.** 9router's own database is the single source of
+truth for blends and strategies; every XNOBrain endpoint is a live proxy. No
+snapshots are needed because no XNOBrain-owned file is mutated (the snapshot
+rule applies to persistence-promising mutations of XNOBrain/Hermes state —
 setting an *agent's model* to a blend continues to go through the existing
 `update_agent_config` snapshot path untouched).
 
 ## Non-goals
 
-- **No per-request routing logic in Brain4All.** 9router owns resolution,
-  failover, rotation, and fusion. Brain4All never inspects or rewrites chat
+- **No per-request routing logic in XNOBrain.** 9router owns resolution,
+  failover, rotation, and fusion. XNOBrain never inspects or rewrites chat
   requests for blends.
 - **No auto-blend redesign.** `ensure_auto_combo()` keeps its current
   behavior (up to 12 models, one per provider owner). `auto` is shown as a
@@ -99,7 +99,7 @@ setting an *agent's model* to a blend continues to go through the existing
 - **No mock data.** Every blend shown comes from a live 9router read; when
   9router is down the API returns the standard 503 failure envelope
   (approaches.md Decision D).
-- **No new persistence.** No Brain4All-side blend store, cache file, or
+- **No new persistence.** No XNOBrain-side blend store, cache file, or
   snapshot of 9router state.
 
 ## Phase overview
@@ -116,13 +116,13 @@ setting an *agent's model* to a blend continues to go through the existing
   (`list_combos`, `create_combo`, `update_combo`, `delete_combo`) plus
   strategy accessors over `/api/settings`; extend `list_models()` to append
   blends as `{id: <name>, provider: "blend", name}` entries.
-- **Phase 2 — Service + models.** `brain4all/services/blends.py`
+- **Phase 2 — Service + models.** `xnobrain/services/blends.py`
   (`BlendService`: name guards, `auto` read-only, strategy hydration) and the
   `BlendCreate`/`BlendPatch` Pydantic models in
-  `brain4all/models/api.py`.
+  `xnobrain/models/api.py`.
 - **Phase 3 — Handlers + routes.** `blends_*` operations in
-  `brain4all/handlers/api.py` and the `Route(...)` lines in
-  `brain4all/routes/setup.py` (tag `Blends`, versioned `/api/brain/v1`).
+  `xnobrain/handlers/api.py` and the `Route(...)` lines in
+  `xnobrain/routes/setup.py` (tag `Blends`, versioned `/api/brain/v1`).
 - **Phase 4 — Frontend.** `src/api/blends.ts`, `src/hooks/useBlends.ts`,
   a Blends section in `src/features/system/SystemView.tsx`, and the
   "Blends" group in the `src/components/ChatArea.tsx` model picker.
@@ -137,7 +137,7 @@ File-by-file steps are in [implementation.md](implementation.md).
 - Creating a blend of two real models via `POST /api/brain/v1/blends`
   creates the combo in 9router (visible in `GET /api/combos` and as a model in
   `/v1/models`), and the blend appears in `GET /api/brain/v1/blends` and
-  in every Brain4All model list with `provider: "blend"`.
+  in every XNOBrain model list with `provider: "blend"`.
 - Setting an agent's model to the blend name through the existing
   `PATCH /api/brain/v1/agents-configs/{agent_id}` writes
   `model.default: <blend>` into the profile `config.yaml`, and a chat on that

@@ -20,7 +20,7 @@ export type AnalyticsControls = {
 
 export type AnalyticsStatus = 'idle' | 'loading' | 'ready' | 'error';
 
-const STORAGE_KEY = 'brain4all.analytics.controls';
+const STORAGE_KEY = 'xnobrain.analytics.controls';
 const DEFAULT_CONTROLS: AnalyticsControls = { agents: [], days: 30, bucket: 'day' };
 
 function loadControls(): AnalyticsControls {

@@ -1,6 +1,6 @@
 # 008 — Architecture
 
-How delivery targets and blueprints fit Brain4All's layering without a second
+How delivery targets and blueprints fit XNOBrain's layering without a second
 scheduler, store, or API process.
 
 Cross-links: [README.md](README.md) · [findings.md](findings.md) ·
@@ -9,7 +9,7 @@ Cross-links: [README.md](README.md) · [findings.md](findings.md) ·
 
 ## Layering fit
 
-Brain4All's fixed boundaries (from `AGENTS.md`): handlers own HTTP translation,
+XNOBrain's fixed boundaries (from `AGENTS.md`): handlers own HTTP translation,
 services own rules, repositories own atomic files, integrations adapt Hermes,
 models are Pydantic, and `routes/setup.py` is the only route-assembly point.
 
@@ -41,10 +41,10 @@ Hermes Python modules in-process, exactly as `integrations/kanban.py` imports
 
 ## Data flow: job fires → agent runs → output routed to target
 
-Because Brain4All's cron is Kanban-backed (Plan 003), a "job" is a scheduled
+Because XNOBrain's cron is Kanban-backed (Plan 003), a "job" is a scheduled
 template task on the `default` board and a "fire" is the Kanban dispatcher
 promoting/creating an **occurrence** task that a worker runs. Delivery is a
-**post-run step Brain4All owns** — Hermes's native `deliver` only fires inside
+**post-run step XNOBrain owns** — Hermes's native `deliver` only fires inside
 its own `run_job` loop, which we do not run.
 
 ```
@@ -71,7 +71,7 @@ invokes; it must not be a second loop.
 ## Where config lives
 
 - **Blueprint catalog:** Hermes `cron/blueprint_catalog.py` (read-only,
-  in-image). Brain4All never stores or forks blueprints.
+  in-image). XNOBrain never stores or forks blueprints.
 - **Delivery-target availability:** derived live from
   `cron.scheduler.cron_delivery_targets()` (channel/email platforms the gateway
   has configured) + always-available `kanban` and `file`. Not persisted.
@@ -84,12 +84,12 @@ invokes; it must not be a second loop.
   email resolve their secrets from gateway config at delivery time.
 - **Gateway/email/channel secrets:** stay in Hermes gateway config / profile
   `config.yaml` and env (`EMAIL_HOME_ADDRESS`, `*_HOME_CHANNEL`), owned by
-  Hermes and (for channels) Plan 005. Brain4All references them by id only.
+  Hermes and (for channels) Plan 005. XNOBrain references them by id only.
 
-## New Brain4All API contract (versioned)
+## New XNOBrain API contract (versioned)
 
 All under the existing `Cron` tag / `/api/brain/v1/cron` prefix. Request and
-response bodies are strict Pydantic models in `brain4all/models/api.py`. Envelope
+response bodies are strict Pydantic models in `xnobrain/models/api.py`. Envelope
 matches the existing handler response envelope.
 
 | Method & path | Operation | Request model | Response |
@@ -161,7 +161,7 @@ Thin, policy-free, no HTTP. Responsibilities:
   email `DeliveryTarget`/home address from gateway config. Independent of Plan
   005.
 
-Kanban and file delivery live in the **service** (they use existing Brain4All
+Kanban and file delivery live in the **service** (they use existing XNOBrain
 integrations `kanban.py` and the workspace/files repo), not in this adapter, so
 the adapter stays a pure Hermes boundary.
 
@@ -169,7 +169,7 @@ the adapter stays a pure Hermes boundary.
 
 Plan 005 (Messaging Channels) owns connecting platforms (telegram/discord/…):
 credentials, adapters, and the gateway config that `cron_delivery_targets()`
-reads. A Brain4All `channel` delivery target stores only the **platform id**
+reads. A XNOBrain `channel` delivery target stores only the **platform id**
 (and optional `chat_id`). At delivery time, `deliver_channel` resolves the live
 adapter from the Plan 005 gateway config. Before Plan 005, `cron_delivery_targets()`
 returns no channel platforms, so a stored channel target reports
@@ -203,7 +203,7 @@ every locale in `src/locales/*.json`.
 ## ASCII sequence diagram — daily brief → Telegram
 
 ```
-User        React            Brain4All API         Service            cron_delivery/Kanban        Hermes/Gateway
+User        React            XNOBrain API         Service            cron_delivery/Kanban        Hermes/Gateway
  │  pick "Morning Brief"     │                     │                       │                          │
  │──"Use" blueprint────────► │                     │                       │                          │
  │  fill time=08:00,         │  GET /cron/blueprints                        │                          │

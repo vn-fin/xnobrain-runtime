@@ -9,9 +9,9 @@ item.
 ## 1. Component diagram
 
 ```
- user runtime (Incus container or PC)                brain4all-enterprise (Go)                Incus host(s)
+ user runtime (Incus container or PC)                xnobrain-enterprise (Go)                Incus host(s)
 ┌──────────────────────────────────────┐            ┌────────────────────────────────┐      ┌──────────────────┐
-│ FastAPI process (brain4all + Hermes) │            │ device API (E01)               │      │ incusd           │
+│ FastAPI process (xnobrain + Hermes) │            │ device API (E01)               │      │ incusd           │
 │ ┌──────────────────────────────────┐ │  HTTPS 443 │  /device/v1/register|prove|    │      │  instances       │
 │ │ lifespan task:                   │ │  outbound  │  refresh|claim                 │      │  profiles        │
 │ │ services/device_connector.py     │◄├────────────┤  /device/v1/commands/poll      │      │  (resource       │
@@ -43,7 +43,7 @@ Rules the diagram encodes:
   the only difference is how the enrollment token arrives.
 - The connector calls **existing services only** (`PlatformService.runtime`,
   the E02 reporter) — never the filesystem, never Hermes directly.
-- The Incus driver lives entirely in `brain4all-enterprise`
+- The Incus driver lives entirely in `xnobrain-enterprise`
   ([`AGENTS.md`](../../../AGENTS.md)); the control plane talks to `incusd`
   over its REST API, never to the containers' network.
 - Enterprise outage: the lifespan task backs off and retries forever; nothing
@@ -73,7 +73,7 @@ Rules the diagram encodes:
 - **disconnected**: no active poll; timer-driven retry with exponential
   backoff (base 1 s, factor 2, cap 5 min) plus full jitter.
 - **registering**: generate key if absent (0600, `DATA_DIR/device/`), POST
-  register (public key [+ enrollment token if `BRAIN4ALL_ENROLLMENT_TOKEN` is
+  register (public key [+ enrollment token if `XNOBRAIN_ENROLLMENT_TOKEN` is
   present]), answer the possession challenge, store `device_id` + short-lived
   token. Token refresh re-enters this state's *refresh* sub-step, not full
   registration.
@@ -146,7 +146,7 @@ transitions"):
 ## 4. Heartbeat payload — allow-listed fields only
 
 Source: `PlatformService.runtime.detail()`
-([`brain4all/integrations/runtime.py`](../../../brain4all/integrations/runtime.py)),
+([`xnobrain/integrations/runtime.py`](../../../xnobrain/integrations/runtime.py)),
 filtered through an explicit allow-list. Per
 [`docs/implementation/05-telemetry.md`](../../../docs/implementation/05-telemetry.md),
 allowed attributes are service/version, hashed identifiers, runtime class,
@@ -221,9 +221,9 @@ size — **verify** exact keys against Incus 6.x).
 2. Create custom storage volume `vol-<user>` if absent (persistent `DATA_DIR`).
 3. Mint a **one-time enrollment token** (E01), bound to the user, short TTL,
    single use.
-4. Create instance `b4a-<user>-<n>` from pinned image `brain4all:<version>`
+4. Create instance `b4a-<user>-<n>` from pinned image `xnobrain:<version>`
    with profile `rc.*`, attach `vol-<user>` at `/opt/data`, inject
-   `ENTERPRISE_API_URL` and `BRAIN4ALL_ENROLLMENT_TOKEN` via instance env
+   `ENTERPRISE_API_URL` and `XNOBRAIN_ENROLLMENT_TOKEN` via instance env
    config (**verify** OCI env injection).
 5. Start; the connector inside registers with the token → device is created
    **already claimed** by the owning user; token is consumed server-side and
@@ -254,7 +254,7 @@ device** and resumes from its cursor with no duplicate execution.
 
 **Version rollout (staged, health-gated):**
 
-1. Admin creates a rollout: target image `brain4all:<new>`, canary size N,
+1. Admin creates a rollout: target image `xnobrain:<new>`, canary size N,
    health window, failure threshold.
 2. Driver replaces N canary sandboxes (replace-with-drain each).
 3. Health gate: all canaries reconnected + heartbeating healthy + no
@@ -337,12 +337,12 @@ state), `resource_classes`, `rollouts` + `rollout_devices`, `audit_events`
 ## 8. Persistent-volume layout (Incus sandbox)
 
 One custom storage volume per user, attached at `/opt/data` (the runtime's
-default `DATA_DIR`, see `brain4all/integrations/runtime.py`):
+default `DATA_DIR`, see `xnobrain/integrations/runtime.py`):
 
 ```
 /opt/data                      ← Incus custom volume vol-<user> (survives replace)
 ├── device/                    ← §3: identity + journal + cursor
-├── ...                        ← FileRepository data (brain4all/app.py wires
+├── ...                        ← FileRepository data (xnobrain/app.py wires
 │                                DATA_DIR into FileRepository)
 └── (profiles root if colocated per image layout — verify image's
     HERMES_PROFILES_ROOT placement in Phase 0)

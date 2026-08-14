@@ -6,7 +6,7 @@ Cross-links: [README.md](README.md), [implementation.md](implementation.md),
 
 ## 1. Compatibility test (schema + helpers)
 
-`brain4all/tests/test_analytics.py`, skipped when Hermes is unavailable (as
+`xnobrain/tests/test_analytics.py`, skipped when Hermes is unavailable (as
 `test_kanban.py` does).
 
 - `PRAGMA table_info(sessions)` on a freshly created profile contains the
@@ -104,7 +104,7 @@ Evidence: response-key allowlist test + log inspection.
 
 ## 7. Suite and smoke
 
-- `make test` (or focused `python -m pytest brain4all/tests/test_analytics.py`)
+- `make test` (or focused `python -m pytest xnobrain/tests/test_analytics.py`)
   passes.
 - `make check` passes (backend + lint + frontend type/build).
 - `npm run build` passes (inline SVG chart, no new dependency added —

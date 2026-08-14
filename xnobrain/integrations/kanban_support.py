@@ -1,6 +1,6 @@
 """Small adapter around the Hermes Kanban database.
 
-Brain4All leaves the native task, run, and event schemas untouched. Its
+XNOBrain leaves the native task, run, and event schemas untouched. Its
 schedule metadata lives in a namespaced extension table created here, at the
 only boundary where the platform service reaches into Hermes' Kanban
 implementation. The import is lazy so the rest of the API can still be

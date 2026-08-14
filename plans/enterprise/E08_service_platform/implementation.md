@@ -30,7 +30,7 @@ excerpts (redact the key).
 
 ## Phase 1 — `ai-stt` service (Python/FastAPI) (1–2 days)
 
-**Repo layout** (`brain4all-enterprise`):
+**Repo layout** (`xnobrain-enterprise`):
 
 ```
 services/ai/stt/
@@ -104,7 +104,7 @@ rollup gains a `voice.stt` capability filter (feeds the E04 admin Voice page and
 ## Phase 3 — OSS wiring (thin, dormant) (1 day)
 
 Per E04's OSS slice — unchanged in spirit:
-- `brain4all/integrations/enterprise_voice.py`: forward multipart to
+- `xnobrain/integrations/enterprise_voice.py`: forward multipart to
   `ENTERPRISE_API_URL /voice/v1/transcribe` with the member session; map errors.
 - Route `/api/brain/v1/voice/transcribe` registered only when `ENTERPRISE_API_URL`
   is set — absent env ⇒ 404, zero behavior change for OSS users.

@@ -32,7 +32,7 @@ BIG_BROTHER_NATIVE_TOOLSETS = (
 BIG_BROTHER_APPROVAL_DEFAULT_MARKER = "approval_default_initialized"
 BIG_BROTHER_MODEL_DEFAULT_MARKER = "model_default_initialized"
 DEFAULT_PROFILE_MODEL = "auto"
-LEGACY_BIG_BROTHER_TOOLSET = "brain4all-control"
+LEGACY_BIG_BROTHER_TOOLSET = "xnobrain-control"
 
 
 def honcho_memory_enabled() -> bool:

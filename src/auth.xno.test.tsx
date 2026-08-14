@@ -8,7 +8,7 @@ import { setAccessToken, setTokenSession } from './authStorage';
 import { AccountView } from './components/AccountView';
 
 vi.mock('./runtime', () => ({
-  brain4AllRuntime: {
+  xnobrainRuntime: {
     edition: 'cloud',
     api: {
       remoteBaseUrl: 'https://runtime.example.com',
@@ -131,11 +131,11 @@ describe('XNOQuant Firebase authentication adapter', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer access-token' }),
       }),
     );
-    expect(localStorage.getItem('brain4all.firebase.refresh-token')).toBeNull();
-    expect(sessionStorage.getItem('brain4all.xno.access-token')).toBe('access-token');
-    expect(sessionStorage.getItem('brain4all.xno.refresh-token')).toBe('xno-refresh-token');
-    expect(localStorage.getItem('brain4all.xno.access-token')).toBeNull();
-    expect(localStorage.getItem('brain4all.xno.refresh-token')).toBeNull();
+    expect(localStorage.getItem('xnobrain.firebase.refresh-token')).toBeNull();
+    expect(sessionStorage.getItem('xnobrain.xno.access-token')).toBe('access-token');
+    expect(sessionStorage.getItem('xnobrain.xno.refresh-token')).toBe('xno-refresh-token');
+    expect(localStorage.getItem('xnobrain.xno.access-token')).toBeNull();
+    expect(localStorage.getItem('xnobrain.xno.refresh-token')).toBeNull();
   });
 
   it('reuses the saved XNO access token on reload without refreshing Firebase', async () => {
@@ -145,8 +145,8 @@ describe('XNOQuant Firebase authentication adapter', () => {
       accessExpiresAt: Date.now() + 300_000,
       refreshExpiresAt: Date.now() + 3_600_000,
     });
-    localStorage.setItem('brain4all.xno.access-token', 'legacy-access-token');
-    localStorage.setItem('brain4all.xno.refresh-token', 'legacy-refresh-token');
+    localStorage.setItem('xnobrain.xno.access-token', 'legacy-access-token');
+    localStorage.setItem('xnobrain.xno.refresh-token', 'legacy-refresh-token');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: true,
@@ -184,8 +184,8 @@ describe('XNOQuant Firebase authentication adapter', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer saved-xno-access-token' }),
       }),
     );
-    expect(localStorage.getItem('brain4all.xno.access-token')).toBeNull();
-    expect(localStorage.getItem('brain4all.xno.refresh-token')).toBeNull();
+    expect(localStorage.getItem('xnobrain.xno.access-token')).toBeNull();
+    expect(localStorage.getItem('xnobrain.xno.refresh-token')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Account' }));
 
@@ -252,8 +252,8 @@ describe('XNOQuant Firebase authentication adapter', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer rotated-xno-access-token' }),
       }),
     );
-    expect(sessionStorage.getItem('brain4all.xno.access-token')).toBe('rotated-xno-access-token');
-    expect(sessionStorage.getItem('brain4all.xno.refresh-token')).toBe('rotated-xno-refresh-token');
+    expect(sessionStorage.getItem('xnobrain.xno.access-token')).toBe('rotated-xno-access-token');
+    expect(sessionStorage.getItem('xnobrain.xno.refresh-token')).toBe('rotated-xno-refresh-token');
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('securetoken.googleapis.com'))).toBe(false);
   });
 
@@ -274,8 +274,8 @@ describe('XNOQuant Firebase authentication adapter', () => {
     render(<AuthProvider><LazyAccount /></AuthProvider>);
 
     expect(await screen.findByText('Signed out')).toBeInTheDocument();
-    expect(sessionStorage.getItem('brain4all.xno.access-token')).toBeNull();
-    expect(sessionStorage.getItem('brain4all.xno.refresh-token')).toBeNull();
+    expect(sessionStorage.getItem('xnobrain.xno.access-token')).toBeNull();
+    expect(sessionStorage.getItem('xnobrain.xno.refresh-token')).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('securetoken.googleapis.com'))).toBe(false);
   });

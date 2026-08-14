@@ -1,6 +1,6 @@
 # 011 — Architecture
 
-How multi-account connections fit the fixed Brain4All layering. Read
+How multi-account connections fit the fixed XNOBrain layering. Read
 [findings.md](findings.md) first for the verified 9router facts and the
 Phase 0 probe list.
 
@@ -23,13 +23,13 @@ integrations/nine_router.py ── NineRouterManager: filtered HTTP facade over
 9router :20128 ── owns providerConnections (SQLite), keys/tokens, rotation
 ```
 
-No repository layer is involved: **this feature stores nothing in Brain4All**.
+No repository layer is involved: **this feature stores nothing in XNOBrain**.
 All account state lives in 9router's database (which is fine — it is the
 credential authority already). No `DATA_DIR` file changes, therefore no
 snapshots. Hermes profiles are untouched: `normalize_nine_router_config()`
 keeps every profile pointed at the single 9router endpoint.
 
-## Integration adapter — `brain4all/integrations/nine_router.py`
+## Integration adapter — `xnobrain/integrations/nine_router.py`
 
 All new methods go through the existing `_request()` (auth header, retry,
 error mapping) and `_safe_id()` (id validation), and return **only
@@ -97,7 +97,7 @@ Refactor note: extract the quota-normalization loop shared by `usage()` and
 `_quota_list(payload, *, provider="", model_id="") -> list[dict]` so the two
 stay in sync (model filtering applied only when `model_id` is given).
 
-## Service rules — `brain4all/services/platform.py`
+## Service rules — `xnobrain/services/platform.py`
 
 New methods (same class that owns `providers()` today). Rules live here, not
 in handlers:
@@ -165,7 +165,7 @@ async def _owned_connection(self, provider: str, connection_id: str) -> dict:
 
 ## API contract — routes and models
 
-### Route table (append to the `Providers` block, `brain4all/routes/setup.py` after line 134)
+### Route table (append to the `Providers` block, `xnobrain/routes/setup.py` after line 134)
 
 | Method | Path | Operation | Body model |
 |---|---|---|---|
@@ -180,12 +180,12 @@ All `tags=("Providers",)`. Exact `Route(...)` lines are in
 [implementation.md](implementation.md) Phase 3. Every existing provider-level
 route (lines 126–134) is preserved unchanged.
 
-### Pydantic models (`brain4all/models/api.py`, next to `ProviderCredential`)
+### Pydantic models (`xnobrain/models/api.py`, next to `ProviderCredential`)
 
 ```python
 class ConnectionCreate(BaseModel):
     """Add an API-key account to a provider. The key is passed through to
-    9router and never stored or echoed by Brain4All."""
+    9router and never stored or echoed by XNOBrain."""
     api_key: str = Field(min_length=1, max_length=4096)
     name: str | None = Field(default=None, max_length=128)
     default_model: str | None = Field(default=None, max_length=128)
@@ -288,21 +288,21 @@ Record<string, ConnectionUsage>`, plus per-row pending flags. API methods in
   to `POST .../connections` for API-key providers; the UI's shared key panel
   migrates to the new endpoint, but the old route is not removed.
 - Existing tests (`FakeRouter` in
-  [`brain4all/tests/test_fastapi.py`](../../brain4all/tests/test_fastapi.py),
+  [`xnobrain/tests/test_fastapi.py`](../../xnobrain/tests/test_fastapi.py),
   `FakeNineRouterManager` in
-  [`brain4all/tests/test_nine_router.py`](../../brain4all/tests/test_nine_router.py))
+  [`xnobrain/tests/test_nine_router.py`](../../xnobrain/tests/test_nine_router.py))
   keep passing: `list_connections` only gains fields, and defaults
   (`priority` absent → 0, `email` absent → "") are tolerated.
 
 ## Security invariants
 
-1. Brain4All never sees, stores, returns, or logs API keys or OAuth tokens.
+1. XNOBrain never sees, stores, returns, or logs API keys or OAuth tokens.
    The create path passes the key through to 9router in one request body and
    the response is rebuilt from an allowlist (`_filtered_connection_response`
    — keep it). `ConnectionCreate.api_key` must never appear in logs: handlers
    do not log bodies (existing behavior — preserve).
 2. `credentials.env` continues to carry only `NINE_ROUTER_API_KEY`, as today.
-3. All state for this feature lives in 9router's DB; Brain4All writes no
+3. All state for this feature lives in 9router's DB; XNOBrain writes no
    file, so snapshot rules do not apply — stated explicitly and asserted in
    [validation.md](validation.md) (no `DATA_DIR` diff after exercising every
    new route).

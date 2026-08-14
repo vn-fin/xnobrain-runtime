@@ -16,7 +16,7 @@ features while a P0 installer gate remains incomplete.
 4. Define separate identifiers, manifests, data locations, and UI copy for
    Docker Web and Full Managed App.
 5. Add a minimal Tauri workspace for the Web installer/maintenance wizard. It
-   must not embed or present the Brain4All product UI.
+   must not embed or present the XNOBrain product UI.
 6. Prove that successful install/start launches the default browser at the
    loopback Web URL on Windows, macOS, and Linux.
 7. Define and validate the signed runtime-manifest schema.
@@ -44,7 +44,7 @@ systems without implying that it is the Full Managed App.
    Do not accept Docker terms on the user's behalf.
 6. Implement signed manifest fetch/cache/verification.
 7. Pull images by digest with structured progress, cancellation, retry, and
-   cleanup limited to incomplete Brain4All-owned artifacts.
+   cleanup limited to incomplete XNOBrain-owned artifacts.
 8. Generate per-install secrets, Compose configuration, labels, loopback
    ingress, and the persistent data volume. The generated app-owned Compose
    configuration contains exactly one host port mapping:
@@ -120,7 +120,7 @@ Docker, repair, and uninstall on every supported target.
 
 ## Stage 5 — P1: Full Managed App for Windows through WSL2
 
-1. Produce a signed, versioned Brain4All WSL2 root filesystem.
+1. Produce a signed, versioned XNOBrain WSL2 root filesystem.
 2. Add preflight and explicit elevation/reboot handling for WSL2 enablement.
 3. Import with a stable distro name and versioned location; preserve user data
    separately from the runtime root filesystem.
@@ -151,6 +151,6 @@ Extend the App version rather than adding these controls to Docker Web:
 - resource and port configuration with validation;
 - runtime update channel and rollback controls;
 - backup, restore, and data-location management;
-- disk cleanup restricted to unreferenced Brain4All artifacts;
+- disk cleanup restricted to unreferenced XNOBrain artifacts;
 - migration between supported runtime drivers only after a tested data contract
   exists.

@@ -118,9 +118,9 @@ Cross-links: [README](README.md) · [findings](findings.md) ·
 ## 8. Repo checks
 
 - [ ] This repo: `make check` green (lint + backend tests + frontend);
-      focused `python -m pytest brain4all/tests/test_enterprise_voice.py`;
+      focused `python -m pytest xnobrain/tests/test_enterprise_voice.py`;
       `npm run build`.
-- [ ] `brain4all-enterprise`: `go test ./internal/voice/...` green; `go vet`
+- [ ] `xnobrain-enterprise`: `go test ./internal/voice/...` green; `go vet`
       / repo lint green; migration applies cleanly on a copy of a
       production-shaped schema.
 - [ ] Diff review: OSS changes limited to the

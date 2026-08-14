@@ -1,4 +1,4 @@
-"""Shared versioned route primitives for the Brain4All public API."""
+"""Shared versioned route primitives for the XNOBrain public API."""
 
 from dataclasses import dataclass
 
@@ -14,7 +14,7 @@ class Route:
     operation: str
     body: type | None = None
     special: str | None = None
-    tags: tuple[str, ...] = ("Brain4All",)
+    tags: tuple[str, ...] = ("XNOBrain",)
     include_in_schema: bool = True
 
 
@@ -24,7 +24,7 @@ def route(
     operation: str,
     body: type | None = None,
     special: str | None = None,
-    tags: tuple[str, ...] = ("Brain4All",),
+    tags: tuple[str, ...] = ("XNOBrain",),
     include_in_schema: bool = True,
 ) -> Route:
     """Declare a route relative to the current public API version."""

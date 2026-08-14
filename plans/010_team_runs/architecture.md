@@ -1,6 +1,6 @@
 # 010 — Architecture
 
-How persistent team runs fit the Brain4All layering. Cross-links:
+How persistent team runs fit the XNOBrain layering. Cross-links:
 [README.md](README.md), [findings.md](findings.md),
 [approaches.md](approaches.md), [implementation.md](implementation.md),
 [validation.md](validation.md).
@@ -9,7 +9,7 @@ How persistent team runs fit the Brain4All layering. Cross-links:
 
 The feature respects the standard boundaries (`AGENTS.md`): handlers translate
 HTTP/SSE, services own rules, repositories own atomic files, integrations
-adapt Hermes, models are Pydantic, and `brain4all/routes/setup.py` is the only
+adapt Hermes, models are Pydantic, and `xnobrain/routes/setup.py` is the only
 route-assembly point. One FastAPI/Hermes process, one 9router; no new process,
 DB, or ORM.
 
@@ -137,7 +137,7 @@ by the cancel/interrupt paths to any step not yet terminal. Step transitions:
 
 ## New route table
 
-All added to `ROUTES` in `brain4all/routes/setup.py`, tag `Teams`, immediately
+All added to `ROUTES` in `xnobrain/routes/setup.py`, tag `Teams`, immediately
 after the existing line 124 (`teams_run`). Envelope = `APIEnvelope` except the
 raw SSE route.
 
@@ -163,7 +163,7 @@ for the team), `run_already_finished` 409 (cancel on a terminal run),
 `too_many_team_runs` 409 (process-wide cap, see registry), plus the existing
 workflow validation codes surfaced at start time with 400.
 
-Pydantic models (Phase 1, `brain4all/models/api.py`):
+Pydantic models (Phase 1, `xnobrain/models/api.py`):
 
 - `TeamRunStepRecord` — fields exactly as the step object above.
 - `TeamRunRecord` — fields exactly as the run object above,
@@ -172,7 +172,7 @@ Pydantic models (Phase 1, `brain4all/models/api.py`):
 
 ## In-process run registry
 
-`brain4all/services/team_runs.py`:
+`xnobrain/services/team_runs.py`:
 
 ```python
 @dataclass
@@ -199,7 +199,7 @@ class _ActiveRun:
   task (with a bounded `asyncio.wait_for(..., 30)`) so the response reflects
   the persisted `cancelled` record; if the run_id is not active but the file
   says non-terminal, apply the staleness rule instead.
-- Lifespan integration: `Brain4AllApplication.register` (brain4all/app.py,
+- Lifespan integration: `XNOBrainApplication.register` (xnobrain/app.py,
   lifespan at lines 32–50) additionally cancels all `_active` tasks on
   shutdown, mirroring the kanban dispatcher teardown; the engine's
   `CancelledError` handler persists terminal state first (so a clean shutdown

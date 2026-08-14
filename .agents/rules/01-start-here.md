@@ -4,7 +4,7 @@
 
 - `server.py`: root FastAPI entrypoint; run with `python server.py`.
 - `requirements.txt`: backend/runtime dependencies.
-- `xnobrain/routes/setup.py`: the only Brain4All route assembly point.
+- `xnobrain/routes/setup.py`: the only XNOBrain route assembly point.
 - `xnobrain/handlers`: HTTP/SSE and Enterprise proxy translation.
 - `xnobrain/models`: Pydantic request/response contracts used by Swagger.
 - `xnobrain/services`: application rules and orchestration.

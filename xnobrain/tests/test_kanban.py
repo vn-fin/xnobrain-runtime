@@ -13,7 +13,7 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from xnobrain.app import Brain4AllApplication
+from xnobrain.app import XNOBrainApplication
 from xnobrain.integrations import AgentManager, GlobalConfigManager
 from xnobrain.services.kanban import _status
 
@@ -67,7 +67,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
         })
         self.env.start()
         self.app = FastAPI()
-        self.composition = Brain4AllApplication(
+        self.composition = XNOBrainApplication(
             AgentManager(root_profile=root, profiles_root=profiles, legacy_agents_root=Path(self.temp.name) / "legacy"),
             GlobalConfigManager(root_profile=root),
             _Router(),

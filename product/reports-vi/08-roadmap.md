@@ -111,7 +111,7 @@ quay.*
 - **Pháp lý/hợp đồng** — sở hữu tay nghề, trách nhiệm pháp lý, đồng thuận, chống mạo danh
   — làm cổng cho mọi giai đoạn; đừng để chúng tụt lại sau sản phẩm.
 - **Giữ nguyên các engine hàng hóa ở dạng đi thuê** — **đừng** cố xây vượt
-  OpenRouter/LiteLLM hay fork lõi của Hermes; hãy mở rộng từ `brain4all`, theo `AGENTS.md`.
+  OpenRouter/LiteLLM hay fork lõi của Hermes; hãy mở rộng từ `xnobrain`, theo `AGENTS.md`.
 
 ## Quy tắc trình tự một dòng
 

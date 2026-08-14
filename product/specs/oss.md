@@ -1,4 +1,4 @@
-# Brain4All — OSS (Open-Core) System Specification
+# XNOBrain — OSS (Open-Core) System Specification
 
 **Edition:** Open-source, self-hosted, single user — tiers **Free** and **Pro**
 **License:** Open-core (wraps Hermes Agent — MIT, and 9router — MIT)
@@ -8,14 +8,14 @@
 
 ## 1. System description
 
-Brain4All OSS is a **self-hosted, single-user** application for building and running
+XNOBrain OSS is a **self-hosted, single-user** application for building and running
 AI agents on your own machine. It is a thin, product-grade layer over two open-source
 engines:
 
 - **Hermes Agent** (Nous Research, MIT) — the agent runtime. Each assistant is a
   Hermes *profile* with its own isolated state in a local SQLite `state.db`.
 - **9router** (MIT) — the LLM router. It holds provider credentials locally and routes
-  every model call; Brain4All forces the provider to `nine-router` so keys never leak
+  every model call; XNOBrain forces the provider to `nine-router` so keys never leak
   into agent config.
 
 The frontend is a React + TypeScript (Vite) single-page app; the backend is a Python
@@ -25,21 +25,21 @@ operate the product, and chat works offline once a provider is configured.
 
 ### Design principles
 - **Local-first.** All data (profiles, conversations, tasks, usage) lives on the
-  user's machine in per-profile SQLite. Nothing is sent to a Brain4All service.
+  user's machine in per-profile SQLite. Nothing is sent to a XNOBrain service.
 - **Credentials stay put.** Provider keys live only in the local 9router store; the app
   never logs or returns them.
 - **Open-core.** The OSS edition is fully functional standalone; enterprise capabilities
   are additive and live in a separate control plane.
 - **No metering on your own hardware.** Nothing in §2 is quota-limited, counted, or gated
   by an account on a self-hosted install. A signed-out install has the complete
-  single-user product. *(Brain4All Cloud runs the same build on our servers and does size
+  single-user product. *(XNOBrain Cloud runs the same build on our servers and does size
   these resources by plan — a hosting cost, not a feature paywall. See
   [`plans.md`](plans.md) §7.)*
 
 ### Free and Pro are the same build
 
 There is one OSS runtime. **Free** and **Pro** are the same application on the same
-machine; a Pro subscription unlocks the three capabilities that require a Brain4All
+machine; a Pro subscription unlocks the three capabilities that require a XNOBrain
 service (§3):
 
 | | Free | Pro |
@@ -55,9 +55,9 @@ per provider, blends, teams, boards, channels, cron jobs, MCP servers — differ
 the two on a self-hosted install.
 
 **Deployment is a separate axis.** This spec describes the self-hosted runtime. The same
-build also runs as **Brain4All Cloud** (Cloud Free / Cloud Pro / Cloud Pro Max) on our
+build also runs as **XNOBrain Cloud** (Cloud Free / Cloud Pro / Cloud Pro Max) on our
 servers, where CPU, RAM, agent count, run-minutes, provider connections, and retention are
-sized by plan because Brain4All pays for the hardware. Cloud Free has the Free capability
+sized by plan because XNOBrain pays for the hardware. Cloud Free has the Free capability
 set; Cloud Pro and Pro Max have the Pro capability set. Packaging, limits, and
 enforcement: [`plans.md`](plans.md).
 
@@ -183,7 +183,7 @@ without limit and without an account.
 ## 3. Pro capabilities *(paid, still single-user)*
 
 The only capabilities gated behind a subscription. Each requires a signed-in account
-because each depends on a Brain4All-operated service — a marketplace, a transcription
+because each depends on a XNOBrain-operated service — a marketplace, a transcription
 service, and hosted storage — and each therefore carries a marginal cost we must cover.
 Everything in §2 keeps working signed-out and offline; a Pro user who signs out loses
 only these three.
@@ -202,14 +202,14 @@ only these three.
 - Dictate to an assistant from the composer (microphone capture → transcript → message).
 - Transcribe **voice notes arriving over a message channel** (§2.6) into text messages.
 - Per-assistant voice settings (enabled, provider, language).
-- Transcription runs either against the Brain4All-hosted STT service under a monthly Pro
+- Transcription runs either against the XNOBrain-hosted STT service under a monthly Pro
   allowance, or against the user's own provider key (unmetered).
 - Provider keys stay server-side in the local runtime and are never returned or logged.
 - ⛔ Not available in Free — the UI surface is present but entitlement-gated (403).
 
 ### 3.3 Skill & memory snapshot versions
-Brain4All keeps a **version history** of what makes an assistant *itself* — its skills and
-its memory — stored on Brain4All's servers so it survives a lost disk, a bad edit, or a
+XNOBrain keeps a **version history** of what makes an assistant *itself* — its skills and
+its memory — stored on XNOBrain's servers so it survives a lost disk, a bad edit, or a
 new machine.
 
 - **What is versioned, per assistant:**
@@ -225,7 +225,7 @@ new machine.
 - **Portability:** restore a snapshot onto a **different machine or a fresh install**,
   which is how a Pro user moves between devices or recovers from hardware loss.
 - **Encryption (non-negotiable):** snapshots are encrypted **client-side with a key the
-  user holds** before upload. Brain4All stores ciphertext and cannot read memory content.
+  user holds** before upload. XNOBrain stores ciphertext and cannot read memory content.
   This preserves the privacy floor — losing the key means losing the snapshots, and the
   UI must say so at setup.
 - **Free:** local only. The runtime still snapshots before risky writes and the user can
@@ -242,7 +242,7 @@ new machine.
 - **Deployment:** single self-hosted instance (PC or a container the user runs).
 - **Tenancy:** single user; one local identity. Sign-in is optional and unlocks only §3.
 - **Storage:** local SQLite per profile; no external database.
-- **Connectivity:** operates without any Brain4All service; only reaches the configured
+- **Connectivity:** operates without any XNOBrain service; only reaches the configured
   LLM providers. A Pro install that loses connectivity keeps every §2 capability and
   loses only marketplace access, hosted transcription, and snapshot upload (snapshots
   spool locally and upload on reconnect).

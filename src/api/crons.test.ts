@@ -18,7 +18,7 @@ describe('cronsApi', () => {
     expect(fetchMock.mock.calls[1][0]).toContain('/cron/jobs/job-1?agent_id=agent-1');
   });
 
-  it('creates through the Brain4All cron wrapper', async () => {
+  it('creates through the XNOBrain cron wrapper', async () => {
     const dto = { id: 'job-1', agent_id: 'agent-1', name: 'Health check', enabled: true, schedule: 'every 30m', prompt: 'Check the service', next_run_at: '2099-07-29T12:00:00Z' };
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: dto }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);

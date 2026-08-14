@@ -1,18 +1,18 @@
 # 05 · Startup Landscape — Who's Nearest, and the Whitespace
 
-> The companies closest to Brain4All's "verified expert-twin terminal," organized by
+> The companies closest to XNOBrain's "verified expert-twin terminal," organized by
 > segment, with funding/traction and — the column that matters — **whether they certify
 > fidelity to a named human.** Every figure is linked and dated. This is a landscape
 > scan, not an endorsement; treat funding figures as reported, not audited.
 >
 > ⚠️ **Reality check up front:** since the first draft, this space has gotten *more*
-> crowded and *closer* to the Brain4All concept (Viven, IgniteTech, Interloom, Twinnin all landed
+> crowded and *closer* to the XNOBrain concept (Viven, IgniteTech, Interloom, Twinnin all landed
 > in late-2025/2026). The whitespace is still open — but the walls are moving in, which
 > raises the urgency of owning the **certification + royalty** layer first (see §9).
 
 ## 1. The map: still nobody sits at the full intersection
 
-The Brain4All vision needs **four** things at once that most startups do only one or two of:
+The XNOBrain vision needs **four** things at once that most startups do only one or two of:
 **(A)** a self-hostable agent runtime, **(B)** cloning a *named* expert's judgment,
 **(C)** **certified fidelity** to that person (measured, expiring), **(D)** a
 cross-org registry with **royalties**, running on the **customer's own data**.
@@ -20,7 +20,7 @@ cross-org registry with **royalties**, running on the **customer's own data**.
 ```
                          (A) self-host   (B) clone a    (C) CERTIFY      (D) registry +
                           runtime        named expert   fidelity         royalty
-Hermes / Brain4All          ●●●             ○ (planned)    ○ (the bet)      ○ (planned)
+Hermes / XNOBrain          ●●●             ○ (planned)    ○ (the bet)      ○ (planned)
 OpenClaw                    ●●●             ○              ○                ○
 Viven                       ○               ●●● (employee) ○                ○
 IgniteTech MyPersonas       ○               ●●● (employee) ○                ○
@@ -195,7 +195,7 @@ known LLM-judge biases ([06-certification-moat.md](06-certification-moat.md)) me
 
 | Company | Self-host | Clone a **named** person | **Certify fidelity** (measured, expiring) | Royalty / rev-share | Runs on customer's data |
 |---|:--:|:--:|:--:|:--:|:--:|
-| **Brain4All (goal)** | ✅ | ✅ | ✅ **(the moat)** | ✅ | ✅ |
+| **XNOBrain (goal)** | ✅ | ✅ | ✅ **(the moat)** | ✅ | ✅ |
 | Viven | ❌ | ✅ | ❌ | ❌ | 🟡 |
 | IgniteTech MyPersonas | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Cloneable | 🟡 | ✅ | ❌ | ❌ | ✅ |

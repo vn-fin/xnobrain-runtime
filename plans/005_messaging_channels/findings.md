@@ -1,7 +1,7 @@
 # 005 — Findings (gap analysis)
 
 All paths below are real and were read during analysis. `.tools/hermes-agent/`
-is the pinned Hermes source Brain4All extends (read-only reference). Line
+is the pinned Hermes source XNOBrain extends (read-only reference). Line
 numbers are from the artifact present on 2026-07-24 and must be re-verified
 against the pinned commit in Phase 0 (`implementation.md` §Phase 0).
 
@@ -26,7 +26,7 @@ native endpoints on the shared FastAPI app (`:8642`), all profile-scoped by a
 The lifecycle "public contract" is the `hermes gateway {start,stop,restart}`
 CLI subcommand; the HTTP endpoints are thin wrappers that `subprocess`-spawn it
 (`_spawn_hermes_action`, l.3784). `hermes_cli/gateway.py` is the public gateway
-module. **Brain4All must never re-implement the dispatch/session loop** — same
+module. **XNOBrain must never re-implement the dispatch/session loop** — same
 rule as the Kanban dispatcher (`plans/001_kanban_foundation/README.md`
 §Dispatcher lifecycle).
 
@@ -102,20 +102,20 @@ as the Kanban adapter imports `hermes_cli.kanban_db`:
   `resolve_channel_name()`, `lookup_channel_type()`.
 - `gateway.platform_registry.platform_registry.plugin_entries()` (l.266).
 
-## 2. What Brain4All has / lacks
+## 2. What XNOBrain has / lacks
 
-Brain4All layers (`AGENTS.md`, `plans/001_kanban_foundation/README.md`):
+XNOBrain layers (`AGENTS.md`, `plans/001_kanban_foundation/README.md`):
 
 | Layer | File | Channels status |
 |---|---|---|
-| Routes (only assembly point) | `brain4all/routes/setup.py` | **No** `/gateway`, `/channels`, `/messaging`, or `/pairing` routes. Zero coverage. |
-| Handlers | `brain4all/handlers/api.py` | `APIHandlers.dispatch` routes by `route.name` into an `operations` dict (l.48). No channel operations. |
-| Services | `brain4all/services/` | `kanban.py`, `platform.py`, `portability.py`. **No** `channels.py`. |
-| Integrations | `brain4all/integrations/` | `hermes.py`, `config.py`, `nine_router.py`, `kanban.py`, `runtime.py`. **No** `gateway.py`. |
-| Models | `brain4all/models/api.py` | No channel/gateway/pairing models. |
+| Routes (only assembly point) | `xnobrain/routes/setup.py` | **No** `/gateway`, `/channels`, `/messaging`, or `/pairing` routes. Zero coverage. |
+| Handlers | `xnobrain/handlers/api.py` | `APIHandlers.dispatch` routes by `route.name` into an `operations` dict (l.48). No channel operations. |
+| Services | `xnobrain/services/` | `kanban.py`, `platform.py`, `portability.py`. **No** `channels.py`. |
+| Integrations | `xnobrain/integrations/` | `hermes.py`, `config.py`, `nine_router.py`, `kanban.py`, `runtime.py`. **No** `gateway.py`. |
+| Models | `xnobrain/models/api.py` | No channel/gateway/pairing models. |
 | Frontend | `src/` | `components/ConnectionsView.tsx` is **model-provider** connections (9router/API keys), **not** channels. `hooks/useConnections.ts` likewise. No channels page, hook, or `api/channels.ts`. |
 
-Brain4All already proves the pattern this plan reuses: each **agent is a Hermes
+XNOBrain already proves the pattern this plan reuses: each **agent is a Hermes
 profile** (`integrations/hermes.py::_profile_dir`, `_native_profile_dir`,
 `create_agent`), and it already reads/writes a profile's `config.yaml`
 atomically (`integrations/config.py::GlobalConfigManager._atomic_write`,
@@ -128,7 +128,7 @@ missing piece is a channel-configuration surface over the profile's `.env` +
 **Fact:** every Hermes messaging endpoint above is profile-scoped (`?profile=`
 or `body.profile`, resolved by `_profile_scope`, `web_server.py` l.15190).
 Channel enablement and tokens are per-profile: written to that profile's `.env`
-and `config.yaml`. So Brain4All naturally maps `agent_id → profile`.
+and `config.yaml`. So XNOBrain naturally maps `agent_id → profile`.
 
 **The multiplex constraint** (`gateway.multiplex_profiles`, verified at
 `web_server.py::_multiplex_port_binding_conflict` l.9469 and
@@ -147,10 +147,10 @@ and `config.yaml`. So Brain4All naturally maps `agent_id → profile`.
   outbound long-poll / websocket / bridge connections and do **not** bind a
   port, so they multiplex cleanly per agent.
 
-**Consequence for Brain4All:** the common case (phone chat via Telegram /
+**Consequence for XNOBrain:** the common case (phone chat via Telegram /
 Discord / Slack / Signal / WhatsApp) works per-agent under a single multiplexed
 gateway. Port-binding webhook-style channels are a restricted case that the
-Brain4All service must surface honestly (mirror Hermes' 409) rather than hide.
+XNOBrain service must surface honestly (mirror Hermes' 409) rather than hide.
 See `approaches.md` §1 for the multiplexed-vs-per-agent decision and the
 recommendation (single multiplexed gateway; enable multiplex on the default
 profile; restrict port-binding channels to the default agent).
@@ -175,7 +175,7 @@ artifact in a temp `HERMES_HOME`, that:
    `/api/messaging/telegram/onboarding/*`, `/api/messaging/whatsapp/onboarding/*`,
    `/api/pairing`, `/api/pairing/{approve,revoke,clear-pending}`.
 
-If any assertion fails, Brain4All readiness must fail with **one** concise
+If any assertion fails, XNOBrain readiness must fail with **one** concise
 remediation line (per `plans/001_kanban_foundation/README.md` Phase 0 §5). If a
 needed capability turns out to be Hermes-private (e.g. no public gateway-start
 entrypoint reachable without the private `web_server` spawn helper), expose a
@@ -186,10 +186,10 @@ logic.
 
 - Tokens live only in the profile `.env` (values) and `config.yaml`
   (`platforms.<id>.enabled`, `home_channel`) — Hermes' native storage. **Do not
-  invent a Brain4All credential file.**
+  invent a XNOBrain credential file.**
 - Reads must return **only** `redacted_value` + `is_set`, never raw tokens —
   Hermes' `_messaging_platform_payload` already redacts (`redact_key`); the
-  Brain4All service must preserve that and never add a raw-value field.
+  XNOBrain service must preserve that and never add a raw-value field.
 - Writes accept a token in the request body once, persist it, and echo back
   only `is_set`/redacted state — never the value. Snapshot the profile's
   `.env` + `config.yaml` **before** the write (`AGENTS.md` §Persistence).
@@ -210,7 +210,7 @@ logic.
    payload / multiplex check. Mitigation: ride the native endpoints or the
    public `gateway.config` primitives; keep only thin projection in the service.
 2. **Gateway-start reachability in-process.** The native start endpoint spawns
-   `hermes gateway start`. Brain4All must drive lifecycle the same public way
+   `hermes gateway start`. XNOBrain must drive lifecycle the same public way
    (CLI subcommand or the native endpoint), not by importing private
    `_spawn_hermes_action`. Confirm a public path in Phase 0.
 3. **Multiplex misconfiguration bricking all agents.** Enabling a port-binding
@@ -227,16 +227,16 @@ logic.
 
 ## 7. Open questions
 
-1. Should Brain4All auto-enable `gateway.multiplex_profiles` on the default
+1. Should XNOBrain auto-enable `gateway.multiplex_profiles` on the default
    profile at first channel enablement, or require the user to opt in? (Recommend
    auto-enable with a one-time notice; see `approaches.md`.)
 2. Is there a public `hermes_cli.gateway` start/stop entrypoint callable
    in-process without the private `web_server` spawn helper? Confirm in Phase 0;
    if not, ride the native `/api/gateway/*` endpoints or upstream a small hook.
 3. Does the pinned Hermes auth middleware allow an in-process loopback call from
-   Brain4All's own handler, or must the adapter use the public Python APIs?
+   XNOBrain's own handler, or must the adapter use the public Python APIs?
    Decide in Phase 0 (drives `approaches.md` §3).
 4. Which channels should the first UI release surface as "guided" (Telegram,
    WhatsApp have native onboarding) vs "manual token" (all others)?
 5. Should per-agent channel state be cached, or read live from Hermes on each
-   request? (Recommend live reads; no Brain4All-owned channel state.)
+   request? (Recommend live reads; no XNOBrain-owned channel state.)

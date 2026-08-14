@@ -1,6 +1,6 @@
 # Enterprise program — plans index
 
-Design plans for the **Brain4All Enterprise** edition: a central control plane that
+Design plans for the **XNOBrain Enterprise** edition: a central control plane that
 manages a fleet of **single-user deployments** (each user runs the OSS runtime in an
 Incus container or on their own PC) and collects **all usage — chats, tokens, cost —
 into one central database**.
@@ -8,10 +8,10 @@ into one central database**.
 These are planning documents. Implementation is split across two repositories per
 `docs/repository-ownership.md`:
 
-- **`brain4all-enterprise`** (private, Go + PostgreSQL) — the control plane: ingest
+- **`xnobrain-enterprise`** (private, Go + PostgreSQL) — the control plane: ingest
   API, database, dashboards, auth, fleet management. It consumes the released OSS
   runtime interface and must never be required by the OSS deployment.
-- **`brain4all`** (this repo, Python OSS) — only the thin edge pieces: the usage
+- **`xnobrain`** (this repo, Python OSS) — only the thin edge pieces: the usage
   reporter, the device connector, and entitlement-gated UI. All OSS behavior stays
   fully functional when the enterprise server is unreachable (`AGENTS.md`: an
   Enterprise API outage must not restrict local features).
@@ -25,7 +25,7 @@ These are planning documents. Implementation is split across two repositories pe
 | `docs/contracts/entitlements-v1.md` | Entitlement documents + quota Check/Reserve/Commit/Release with idempotency keys |
 | `docs/enterprise-extension.md` | Go control plane, `pkg/edition.Policy`, **PostgreSQL is the billing source of truth**, reservation semantics |
 | `docs/implementation/03-device-connector.md`, `05-telemetry.md` | Connector responsibilities and redaction rules. ⚠️ These numbered files are **retired Go-era specs** — concepts and contracts stand; package paths do not. OSS-side code is Python. |
-| `plans/009_usage_analytics/` (implemented) | The local usage source: per-agent `state.db` `sessions` rows already carry input/output/cache/reasoning tokens, estimated/actual cost, api_call_count — read-only aggregation machinery exists (`brain4all/integrations/analytics.py`) |
+| `plans/009_usage_analytics/` (implemented) | The local usage source: per-agent `state.db` `sessions` rows already carry input/output/cache/reasoning tokens, estimated/actual cost, api_call_count — read-only aggregation machinery exists (`xnobrain/integrations/analytics.py`) |
 | `product/reports/` (esp. 11-integration-architecture, 07-business-model) | Go + PostgreSQL control-plane strategy; the moat lives in the enterprise layer |
 
 ## The core architecture: distributed usage → one database
@@ -40,7 +40,7 @@ offline outbox.** No inbound connections to user machines, no polling of user PC
 ```
  user PC / Incus container (per user)                    central enterprise server
 ┌──────────────────────────────────────┐               ┌────────────────────────────────┐
-│ OSS runtime (FastAPI + Hermes)       │   HTTPS 443   │ brain4all-enterprise (Go)      │
+│ OSS runtime (FastAPI + Hermes)       │   HTTPS 443   │ xnobrain-enterprise (Go)      │
 │  agents' state.db (sessions: tokens, │   outbound    │  POST /ingest/v1/usage         │
 │  cost, counts — per plan 009)        │   only        │   device-token auth            │
 │        │ read-only, watermarked      │               │        │ UPSERT (idempotent)   │
@@ -95,7 +95,7 @@ These are set by the product owner and bind every plan in this program:
    accounts, OIDC/SAML SSO, LDAP, or a custom org auth service), and **services and
    roles can be declared in a config file** — an ops team can define
    roles/permissions in versioned YAML without touching a database console.
-3. **Control plane runs self-hosted or cloud.** The same `brain4all-enterprise`
+3. **Control plane runs self-hosted or cloud.** The same `xnobrain-enterprise`
    deploys on a firm's own servers (including air-gapped) or as our managed cloud.
 4. **Org manager sees everything.** A built-in org-manager role can view all
    members' usage, devices, and dashboards across the org.
@@ -171,13 +171,13 @@ program research notes in E05 findings).
 
 | # | Plan | Repo(s) touched | Docs |
 |---|------|-----------------|------|
-| E01 | **Control-plane foundation** | `brain4all-enterprise` (new) + contracts here | [README](E01_control_plane_foundation/README.md) · findings · architecture · approaches · implementation · validation |
+| E01 | **Control-plane foundation** | `xnobrain-enterprise` (new) + contracts here | [README](E01_control_plane_foundation/README.md) · findings · architecture · approaches · implementation · validation |
 | E02 | **Central usage collection** | both (reporter in OSS; ingest in enterprise) | [README](E02_usage_collection/README.md) · findings · architecture · approaches · implementation · validation |
 | E03 | **Fleet management (Incus + devices)** | both (connector in OSS; orchestration in enterprise) | [README](E03_fleet_management/README.md) · findings · architecture · approaches · implementation · validation |
 | E04 | **Voice I/O as enterprise capability** | both (gateway in enterprise; gated UI in OSS) | [README](E04_voice_io_enterprise/README.md) · findings · architecture · approaches · implementation · validation |
-| E05 | **Orgs, accounts, auth & RBAC** | `brain4all-enterprise` + thin OSS login/entitlement surfaces | [README](E05_orgs_auth_rbac/README.md) · findings · architecture · approaches · implementation · validation |
+| E05 | **Orgs, accounts, auth & RBAC** | `xnobrain-enterprise` + thin OSS login/entitlement surfaces | [README](E05_orgs_auth_rbac/README.md) · findings · architecture · approaches · implementation · validation |
 | E07 | **Enterprise boards (cross-account Kanban)** | both (board/dispatch in enterprise; local executor in OSS) | [README](E07_enterprise_boards/README.md) · findings · architecture · approaches · implementation · validation |
-| E08 | **Service platform: Go app services + Python AI services** (first build: STT on Groq Whisper v3) | `brain4all-enterprise` (refines E04's gateway split) | [README](E08_service_platform/README.md) · [implementation](E08_service_platform/implementation.md) |
+| E08 | **Service platform: Go app services + Python AI services** (first build: STT on Groq Whisper v3) | `xnobrain-enterprise` (refines E04's gateway split) | [README](E08_service_platform/README.md) · [implementation](E08_service_platform/implementation.md) |
 
 **Order:** E01 → E02 (the user-visible value: one usage database) → E05 (orgs/auth —
 required before real multi-user rollout) → E03 → E04. E02 is deliberately buildable

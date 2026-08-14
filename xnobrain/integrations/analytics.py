@@ -109,7 +109,7 @@ def aggregate_router_usage(
 ) -> dict[str, Any]:
     """Aggregate 9router's durable ``usageHistory`` ledger.
 
-    The table is owned by 9router and contains no Brain4All agent identifier.
+    The table is owned by 9router and contains no XNOBrain agent identifier.
     Consequently this function deliberately returns workspace totals, provider
     and model breakdowns, and request status only; agent attribution continues
     to come from profile databases.

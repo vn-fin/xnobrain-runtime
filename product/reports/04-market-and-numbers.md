@@ -101,5 +101,5 @@ precisely engine 07. See [05-startup-landscape.md](05-startup-landscape.md) and
 > conversation**). Expert-cloning is being funded fast (**Delphi $16M/Sequoia**,
 > **Cloneable 100× ARR**) yet **nobody certifies that a clone faithfully reproduces
 > the named human** — even as AI-evaluation adoption is set to triple to **60% of eng
-> teams by 2028**. Brain4All owns that gap: the certification gate for verified expert
+> teams by 2028**. XNOBrain owns that gap: the certification gate for verified expert
 > twins.

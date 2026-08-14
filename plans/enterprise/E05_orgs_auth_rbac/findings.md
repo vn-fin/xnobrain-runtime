@@ -111,7 +111,7 @@ defers auth to this plan: "Admin auth comes from E01's principal resolution
 - Ownership: "The enterprise project owns authentication, tenant and plan
   resolution, billing entitlements, distributed quota reservations, RBAC,
   audit events, secret management…" — everything in this plan except the
-  thin login stub belongs in `brain4all-enterprise`.
+  thin login stub belongs in `xnobrain-enterprise`.
 - "Enterprise migrations may extend but must not rewrite the open-source
   migration history" — applied analogously to E01's migration history
   inside the enterprise repo.

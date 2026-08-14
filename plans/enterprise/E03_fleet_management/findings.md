@@ -89,9 +89,9 @@ Go layout and do **not** apply — the OSS side is Python. Its *concepts* stand:
   never blocks local API; invalid commands cannot call Hermes or mutate
   profiles; no secrets in logs/traces/health APIs.
 
-Python translation of the boundary: `brain4all/integrations/device_identity.py`
+Python translation of the boundary: `xnobrain/integrations/device_identity.py`
 owns keys, tokens, signature verification, and transport DTOs;
-`brain4all/services/device_connector.py` owns lifecycle, reconnect, dispatch,
+`xnobrain/services/device_connector.py` owns lifecycle, reconnect, dispatch,
 and service adapters (see [implementation.md](implementation.md)).
 
 ## 3. The hardware-upgrade sequence (`docs/enterprise-extension.md`)
@@ -105,8 +105,8 @@ sequence E03 reuses for **every** restart/replace/resize:
 > an audit event. Keep profile data on a persistent volume so replacement does
 > not move agent memory or skills.
 
-Also fixed there: separate versioned images — `brain4all:<version>` is the
-public self-contained runtime, `brain4all-enterprise:<version>` the private
+Also fixed there: separate versioned images — `xnobrain:<version>` is the
+public self-contained runtime, `xnobrain-enterprise:<version>` the private
 control plane; "Enterprise deployments may pull the public runtime image from
 the open-source release. The reverse dependency is forbidden." Orchestration
 "may select CPU, memory, storage, and accelerator classes without rebuilding"
@@ -123,7 +123,7 @@ per-plan attribute, which E03 models as resource-class tiers
 
 ## 4. What `LocalRuntimeManager` actually exposes (verified by reading)
 
-[`brain4all/integrations/runtime.py`](../../../brain4all/integrations/runtime.py)
+[`xnobrain/integrations/runtime.py`](../../../xnobrain/integrations/runtime.py)
 (read 2026-07-25) — class `LocalRuntimeManager`, one public method
 `detail()` reading cgroup v2 and proc files, no shelling out. It returns:
 
@@ -147,16 +147,16 @@ forbids "user-entered names" and file paths while allowing only
 service/version, hashed identifiers, runtime class, and similar. The heartbeat
 payload allow-list is specified in [architecture.md](architecture.md).
 
-It is already wired: `brain4all/app.py` constructs `LocalRuntimeManager` and
+It is already wired: `xnobrain/app.py` constructs `LocalRuntimeManager` and
 passes it into `PlatformService` (`self.runtime`,
-`brain4all/services/platform.py`), so the connector reaches it through the
+`xnobrain/services/platform.py`), so the connector reaches it through the
 service layer, not by constructing its own.
 
 ## 5. Existing patterns the OSS track reuses
 
-- **Lifespan background task.** `brain4all/app.py` `register()` wraps the
+- **Lifespan background task.** `xnobrain/app.py` `register()` wraps the
   upstream lifespan and starts the kanban dispatcher with
-  `asyncio.create_task(dispatcher_loop(), name="brain4all-kanban-dispatcher")`,
+  `asyncio.create_task(dispatcher_loop(), name="xnobrain-kanban-dispatcher")`,
   cancelling it on shutdown with `suppress(asyncio.CancelledError)`. The
   connector copies this pattern exactly (decision B in
   [approaches.md](approaches.md)).
@@ -172,7 +172,7 @@ service layer, not by constructing its own.
   `completed` + `noop: true` result. **Gap found:** there is *no existing
   restart primitive* in the Python codebase today — no supervisor client, no
   process-restart service (grep for `restart` hits only team-runs staleness
-  handling in `brain4all/services/team_runs.py`). `runtime.restart_gateway`
+  handling in `xnobrain/services/team_runs.py`). `runtime.restart_gateway`
   therefore maps to a *graceful self-termination after journaling the terminal
   state and acking*, relying on the container/service restart policy to bring
   the process back — and is **refused** (`rejected`, error code
@@ -184,10 +184,10 @@ service layer, not by constructing its own.
 
 Per [`AGENTS.md`](../../../AGENTS.md): "Incus and cloud runtime packaging are
 maintained outside this repository" — everything below lands in
-`brain4all-enterprise`. All specifics below are from general Incus knowledge
+`xnobrain-enterprise`. All specifics below are from general Incus knowledge
 and are **Phase-0 "verify against Incus 6.x docs / a live host"** items:
 
-- **Images**: import the OCI/`brain4all:<version>` image and alias it
+- **Images**: import the OCI/`xnobrain:<version>` image and alias it
   (`incus image import` / remote alias). *Verify:* whether the published
   Docker/OCI image runs directly under Incus's OCI support or needs conversion
   to an Incus image; which Incus version introduced stable OCI container
@@ -203,7 +203,7 @@ and are **Phase-0 "verify against Incus 6.x docs / a live host"** items:
   attached as a disk device (`source=<volume>`, `path=/opt/data`), surviving
   instance deletion. *Verify:* custom-volume attach syntax, ownership/idmap
   behavior for the container user writing `DATA_DIR`.
-- **Config/env injection**: `environment.BRAIN4ALL_ENROLLMENT_TOKEN` and
+- **Config/env injection**: `environment.XNOBRAIN_ENROLLMENT_TOKEN` and
   `environment.ENTERPRISE_API_URL` instance config keys. *Verify:* that
   `environment.*` keys reach the container init process in OCI mode, and
   whether they are readable via the Incus API afterwards (they are — which is
@@ -252,7 +252,7 @@ and are **Phase-0 "verify against Incus 6.x docs / a live host"** items:
    `device-command-v1` against them before Phase 1 code.
 2. What does the runtime advertise as `supervised_restart`? Proposed: true
    when running inside the shipped Compose/Incus image (detectable via an env
-   set by the image, e.g. `BRAIN4ALL_SUPERVISED=1`), false otherwise. Confirm
+   set by the image, e.g. `XNOBRAIN_SUPERVISED=1`), false otherwise. Confirm
    with the image owner.
 3. Canonical-JSON definition for signature verification (key order, number
    formatting) — must match the Go signer byte-for-byte; freeze test vectors

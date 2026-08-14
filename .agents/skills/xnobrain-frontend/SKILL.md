@@ -1,9 +1,9 @@
 ---
-name: brain4all-frontend
-description: Implement, diagnose, or review the Brain4All React and TypeScript frontend under src/. Use for API clients, hooks, state, routing, components, localization, accessibility, unit tests, Vite configuration, or frontend builds.
+name: xnobrain-frontend
+description: Implement, diagnose, or review the XNOBrain React and TypeScript frontend under src/. Use for API clients, hooks, state, routing, components, localization, accessibility, unit tests, Vite configuration, or frontend builds.
 ---
 
-# Brain4All Frontend
+# XNOBrain Frontend
 
 Read `AGENTS.md`, `.agents/rules/01-start-here.md`, `.agents/rules/02-source-boundaries.md`, and `.agents/rules/03-trackable-ui-routes.md` first.
 

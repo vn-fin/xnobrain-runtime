@@ -1,6 +1,6 @@
 # Local OpenTelemetry collector
 
-Brain4All has no observability dashboard and no managed telemetry service.
+XNOBrain has no observability dashboard and no managed telemetry service.
 Telemetry is disabled by default.
 
 To enable the bundled local collector:

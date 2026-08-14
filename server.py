@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Root FastAPI entrypoint for the unified Brain4All and Hermes server."""
+"""Root FastAPI entrypoint for the unified XNOBrain and Hermes server."""
 
 from __future__ import annotations
 

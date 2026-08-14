@@ -76,5 +76,5 @@ make --version | head -n 1
 if [[ "$group_added" == true ]]; then
   echo "Installation complete. Sign out and sign back in before running Docker without sudo."
 else
-  echo "Installation complete. Start Brain4All with: docker compose up -d --build"
+  echo "Installation complete. Start XNOBrain with: docker compose up -d --build"
 fi

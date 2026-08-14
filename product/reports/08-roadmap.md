@@ -97,7 +97,7 @@ This is mostly done; close the gaps.*
 - **Legal/contract** — craft ownership, liability, consent, anti-impersonation — gate
   every phase; don't let them lag the product.
 - **Keep commodity engines rented** — do **not** out-build OpenRouter/LiteLLM or fork
-  Hermes' core; extend from `brain4all`, per `AGENTS.md`.
+  Hermes' core; extend from `xnobrain`, per `AGENTS.md`.
 
 ## The one-line sequencing rule
 

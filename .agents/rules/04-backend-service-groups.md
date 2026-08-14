@@ -3,7 +3,7 @@
 ## Mandatory layout
 
 - The Python package is `xnobrain`. New internal imports must use
-  `xnobrain.*`; do not recreate a `brain4all` package alias.
+  `xnobrain.*`; do not recreate a `xnobrain` package alias.
 - A backend capability has one stable service-group name, such as `agents`,
   `automation`, `conversations`, `mcp`, `providers`, `sandboxes`,
   `teams`, or `workspaces`.

@@ -31,7 +31,7 @@ describe('Markdown Kanban task links', () => {
     mocks.getTask.mockResolvedValue({
       id: 't_70141301',
       title: 'Summarize the news',
-      description: `Collect the requested headlines and prepare a concise summary. ${'Detailed briefing context. '.repeat(12)} Artifact: /home/brain4all/${'nested-directory/'.repeat(20)}result.txt`,
+      description: `Collect the requested headlines and prepare a concise summary. ${'Detailed briefing context. '.repeat(12)} Artifact: /home/xnobrain/${'nested-directory/'.repeat(20)}result.txt`,
       nativeStatus: 'blocked',
       priority: 'medium',
       assignees: ['big-brother'],

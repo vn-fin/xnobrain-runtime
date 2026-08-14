@@ -9,8 +9,8 @@ report success without reading the actual output (AGENTS.md).
 
 ## 1. Compatibility test (Phase 0 gate)
 
-File: `brain4all/tests/test_voice_compat.py` (skip-guarded on
-`HERMES_AVAILABLE`, like `brain4all/tests/test_kanban.py`).
+File: `xnobrain/tests/test_voice_compat.py` (skip-guarded on
+`HERMES_AVAILABLE`, like `xnobrain/tests/test_kanban.py`).
 
 - [ ] Imports succeed: `tools.tts_tool.text_to_speech_tool`,
       `tools.voice_mode.transcribe_recording`,
@@ -26,11 +26,11 @@ File: `brain4all/tests/test_voice_compat.py` (skip-guarded on
       returns a `transcript` key. External model/network calls mocked; the
       tools themselves are NOT mocked.
 
-Command: `python -m pytest brain4all/tests/test_voice_compat.py -q`
+Command: `python -m pytest xnobrain/tests/test_voice_compat.py -q`
 
 ## 2. Unit tests (service rules, no Hermes required)
 
-File: `brain4all/tests/test_voice_api.py` (handler/service level) — mock the
+File: `xnobrain/tests/test_voice_api.py` (handler/service level) — mock the
 integration adapter:
 
 - [ ] `speak` rejects empty and over-long text (400).
@@ -47,7 +47,7 @@ integration adapter:
 
 ## 3. Integration tests (real pinned Hermes, temp `HERMES_HOME`)
 
-Same harness as `test_kanban.py` (`Brain4AllApplication`, `httpx.AsyncClient`,
+Same harness as `test_kanban.py` (`XNOBrainApplication`, `httpx.AsyncClient`,
 `ASGITransport`), skip-guarded on the runtime:
 
 - [ ] `POST /api/brain/v1/voice/speak?agent=<id>` with `{text}` returns

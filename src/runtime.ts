@@ -1,4 +1,4 @@
-export type Brain4AllEdition = 'opensource' | 'pro' | 'cloud' | 'enterprise';
+export type XNOBrainEdition = 'opensource' | 'pro' | 'cloud' | 'enterprise';
 export type AuthMode = 'required';
 export type AuthProvider = 'gateway' | 'xno-firebase';
 
@@ -6,7 +6,7 @@ export const CONTROL_API_PREFIX = '/xnobrain/api/control/v1';
 export const AUTH_API_PREFIX = '/auth/v1';
 
 export type RuntimeConfig = {
-  edition: Brain4AllEdition;
+  edition: XNOBrainEdition;
   api: {
     remoteBaseUrl: string;
     authBaseUrl: string;
@@ -59,7 +59,7 @@ type RuntimeConfigSource = Partial<RuntimeConfig> & {
   features?: Partial<RuntimeConfig['features']>;
 };
 
-const editions = new Set<Brain4AllEdition>(['opensource', 'pro', 'cloud', 'enterprise']);
+const editions = new Set<XNOBrainEdition>(['opensource', 'pro', 'cloud', 'enterprise']);
 const authModes = new Set<AuthMode>(['required']);
 const authProviders = new Set<AuthProvider>(['gateway', 'xno-firebase']);
 
@@ -73,8 +73,8 @@ export function runtimeConfig(
   const requestedEdition = buildEdition || source?.edition;
   const requestedAuthMode = buildAuthMode || source?.auth?.mode;
   const requestedAuthProvider = buildAuthProvider || source?.auth?.provider;
-  const edition = editions.has(requestedEdition as Brain4AllEdition)
-    ? requestedEdition as Brain4AllEdition
+  const edition = editions.has(requestedEdition as XNOBrainEdition)
+    ? requestedEdition as XNOBrainEdition
     : DEFAULT_CONFIG.edition;
   const mode = authModes.has(requestedAuthMode as AuthMode)
     ? requestedAuthMode as AuthMode
@@ -116,4 +116,4 @@ export function runtimeConfig(
   };
 }
 
-export const brain4AllRuntime = runtimeConfig();
+export const xnobrainRuntime = runtimeConfig();

@@ -6,18 +6,18 @@ Options considered and the chosen ones. Context in
 
 ## Decision A — Widen the 6-provider allowlist?
 
-9router supports 40+ providers; Brain4All curates six
+9router supports 40+ providers; XNOBrain curates six
 (`SUPPORTED_ROUTER_PROVIDERS` in
-[`brain4all/integrations/nine_router.py`](../../brain4all/integrations/nine_router.py)
+[`xnobrain/integrations/nine_router.py`](../../xnobrain/integrations/nine_router.py)
 lines 25–27).
 
 ### A1. Keep the curated six (chosen — now)
 
 Safest. Everything downstream is built and tested for exactly these six:
 
-- The OAuth flows Brain4All drives (`start_provider_connect` /
+- The OAuth flows XNOBrain drives (`start_provider_connect` /
   `submit_provider_connect` in
-  [`brain4all/services/platform.py`](../../brain4all/services/platform.py)
+  [`xnobrain/services/platform.py`](../../xnobrain/services/platform.py)
   lines 619–653) hardcode per-provider redirect URIs and the
   authorize/exchange choreography for `claude`/`codex`/`antigravity` only.
 - The UI auth copy, brand icons (`providerBrand()` in
@@ -32,7 +32,7 @@ this plan untestable.
 
 ### A2. Allowlist configurable via env (follow-up flag — recommended later)
 
-E.g. `BRAIN4ALL_EXTRA_ROUTER_PROVIDERS=openrouter,groq` merged into the
+E.g. `XNOBRAIN_EXTRA_ROUTER_PROVIDERS=openrouter,groq` merged into the
 frozensets at import. Cheap to add once A1 ships, but each added provider
 still needs an alias entry, brand fallback, and auth-mode classification, so
 it must ship with a "best-effort, api-key-only, generic branding" contract.
@@ -106,7 +106,7 @@ must not ship the label unreviewed against the probe log.
 ### D1. Keep provider-level disconnect as explicit delete-all with confirm (chosen)
 
 `disconnect_provider()`
-([`brain4all/services/platform.py`](../../brain4all/services/platform.py)
+([`xnobrain/services/platform.py`](../../xnobrain/services/platform.py)
 lines 662–669) already means "delete every connection"; existing API clients
 depend on that route. Keeping it preserves backward compatibility and gives a
 legitimate "start over with this provider" action. The fix is honesty in the

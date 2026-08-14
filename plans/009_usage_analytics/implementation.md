@@ -7,8 +7,8 @@ Ordered, phased, file-by-file. Follow the chosen approach in
 
 ## Phase 0 — Pin and compatibility test
 
-File: `brain4all/tests/test_analytics.py` (new). Reuse the temp-`HERMES_HOME`
-pattern from `brain4all/tests/test_kanban.py` (skip when Hermes is unavailable).
+File: `xnobrain/tests/test_analytics.py` (new). Reuse the temp-`HERMES_HOME`
+pattern from `xnobrain/tests/test_kanban.py` (skip when Hermes is unavailable).
 
 1. Confirm the Hermes pin from plan 001 is in place; no version bump here.
 2. Assert the accounting schema: create an `AgentManager` against a temp home,
@@ -29,7 +29,7 @@ pattern from `brain4all/tests/test_kanban.py` (skip when Hermes is unavailable).
 
 ## Phase 1 — Models
 
-File: `brain4all/models/api.py`. Add (see architecture.md for fields):
+File: `xnobrain/models/api.py`. Add (see architecture.md for fields):
 
 - `AgentBudgetPatch(BaseModel)` — the PUT body. Validators: amounts `>= 0` or
   `None`; `0 < warn_threshold_percent <= 100`; `cost_basis in {"estimated",
@@ -38,13 +38,13 @@ File: `brain4all/models/api.py`. Add (see architecture.md for fields):
   `BudgetStatus`, `QuotaOverlay`, `UsageSummary` (used internally to build/
   validate dicts; the envelope serializes plain dicts).
 
-Export the new names in `brain4all/models/__init__.py` (add to the existing
+Export the new names in `xnobrain/models/__init__.py` (add to the existing
 `from .api import (...)` block and `__all__`), following the Kanban model export
 style.
 
 ## Phase 2 — Integration + service
 
-### 2a. `brain4all/integrations/analytics.py` (new)
+### 2a. `xnobrain/integrations/analytics.py` (new)
 
 Read-only aggregation. No policy, no HTTP. Sketch:
 
@@ -120,7 +120,7 @@ Notes: never `SELECT *`; select only numeric/dimension columns (no
 `system_prompt`, `title`, or message content). If a column is missing on an old
 DB the whole `try` degrades to zeroes.
 
-### 2b. `brain4all/services/analytics.py` (new)
+### 2b. `xnobrain/services/analytics.py` (new)
 
 `AnalyticsService(agents: AgentManager, router: NineRouterManager)`. Duties:
 
@@ -190,7 +190,7 @@ dimension fields only.
 
 ### 2c. Wire into `PlatformService`
 
-File: `brain4all/services/platform.py`, in `__init__` next to
+File: `xnobrain/services/platform.py`, in `__init__` next to
 `self.kanban = KanbanService(agents)`:
 
 ```python
@@ -198,14 +198,14 @@ from .analytics import AnalyticsService
 self.analytics = AnalyticsService(self.agents, self.router)
 ```
 
-Export `AnalyticsService` from `brain4all/services/__init__.py` (add to the
+Export `AnalyticsService` from `xnobrain/services/__init__.py` (add to the
 `from .analytics import ...` line and `__all__`).
 
 ## Phase 3 — Handlers + routes
 
 ### 3a. Handlers
 
-File: `brain4all/handlers/api.py`, add to the `operations` dict in `_operation`
+File: `xnobrain/handlers/api.py`, add to the `operations` dict in `_operation`
 (these mirror the async kanban entries; the dispatcher already awaits awaitables):
 
 ```python
@@ -251,7 +251,7 @@ to have, not required.
 
 ### 3b. Routes
 
-File: `brain4all/routes/setup.py`. Add an Analytics group to the `ROUTES` tuple
+File: `xnobrain/routes/setup.py`. Add an Analytics group to the `ROUTES` tuple
 (place near the Cron/Kanban blocks):
 
 ```python
@@ -335,7 +335,7 @@ read-only and never blocks execution.
 
 See [validation.md](validation.md) for the full test matrix. Add:
 
-- `brain4all/tests/test_analytics.py` — compatibility (Phase 0) + aggregation
+- `xnobrain/tests/test_analytics.py` — compatibility (Phase 0) + aggregation
   math on **real** session rows written into a temp `HERMES_HOME` (no mocks of
   the DB), including per-agent isolation, per-model, day/week bucketing,
   estimated-vs-actual `cost_basis`, empty-profile zeroes, and a read-only-safety

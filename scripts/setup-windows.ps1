@@ -59,4 +59,4 @@ if (-not (docker info 2>$null)) {
 docker --version
 docker compose version
 make --version | Select-Object -First 1
-Write-Host 'Installation complete. Start Brain4All with: docker compose up -d --build'
+Write-Host 'Installation complete. Start XNOBrain with: docker compose up -d --build'

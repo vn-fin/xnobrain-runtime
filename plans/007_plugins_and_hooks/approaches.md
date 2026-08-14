@@ -5,7 +5,7 @@ Companion to [README.md](README.md), [findings.md](findings.md),
 [validation.md](validation.md). Three decisions, each with options, then the
 chosen path. Safety is the tie-breaker throughout.
 
-## Decision A — How Brain4All reaches Hermes plugin/hook/tool functions
+## Decision A — How XNOBrain reaches Hermes plugin/hook/tool functions
 
 **A1. In-process import of Hermes helpers (chosen).**
 `integrations/plugins.py` imports `hermes_cli.plugins_cmd`,
@@ -26,7 +26,7 @@ chosen path. Safety is the tie-breaker throughout.
   scan+approval gate cleanly (the native route would enable directly).
 - Rejected: awkward and it does not let us interpose the mandatory gate.
 
-**A3. Manage plugin files/config directly from Brain4All.**
+**A3. Manage plugin files/config directly from XNOBrain.**
 - Rejected outright: forbidden by the constraints (no forking/duplicating Hermes
   internals) and it would desync from `plugins.enabled`/toolset resolution.
 
@@ -89,7 +89,7 @@ reachable only after a passing scan whose content hash still matches the disk
 and an explicit recorded approval. There is no service path that enables without
 those checks, updates force a fresh gate, and `allow_tool_override` is never
 granted automatically. The scanners and approval records are Hermes' own, so
-Brain4All adds enforcement without inventing security-critical code.
+XNOBrain adds enforcement without inventing security-critical code.
 
 ### Rejected extras
 

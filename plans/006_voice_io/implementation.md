@@ -13,7 +13,7 @@ base64 whole-file audio in the standard envelope (C1).
 
 ## Phase 0 — Pin + compatibility gate (no feature code until green)
 
-1. **Confirm the pin.** Brain4All already pins Hermes for the Kanban program
+1. **Confirm the pin.** XNOBrain already pins Hermes for the Kanban program
    (see `plans/001_kanban_foundation/README.md` Phase 0 and
    `docs/development.md`). Reuse the same pinned commit/release; do not move to
    `main`. Record the exact commit used for voice in `docs/development.md`.
@@ -39,8 +39,8 @@ base64 whole-file audio in the standard envelope (C1).
    cannot land against the pin, skip and let the compatibility test select B1.
 
 4. **Compatibility test** — add
-   `brain4all/tests/test_voice_compat.py` (mirror
-   `brain4all/tests/test_kanban.py`'s `HERMES_AVAILABLE` skip guard):
+   `xnobrain/tests/test_voice_compat.py` (mirror
+   `xnobrain/tests/test_kanban.py`'s `HERMES_AVAILABLE` skip guard):
    - Import each symbol above; assert callable.
    - Detect whether `text_to_speech_tool` accepts `tts_config`
      (`inspect.signature`) and expose a module constant the service reads to
@@ -54,19 +54,19 @@ base64 whole-file audio in the standard envelope (C1).
      network/model calls; do not mock the tools themselves.
 
 5. **Readiness gate.** In the app startup/health path
-   (`brain4all/services/platform.py` health/diagnostics, following the Kanban
+   (`xnobrain/services/platform.py` health/diagnostics, following the Kanban
    pattern), surface a `voice: { available, degraded_reason }` flag derived from
    the adapter's import check. Do not crash unrelated features when voice is
    unavailable; return a clear one-line reason.
 
-Exit: `python -m pytest brain4all/tests/test_voice_compat.py` passes (or skips
+Exit: `python -m pytest xnobrain/tests/test_voice_compat.py` passes (or skips
 cleanly without the runtime), and the B2/B1 selection constant is known.
 
 ---
 
 ## Phase 1 — Backend contract (models, integration, service, handlers, routes)
 
-### 1.1 Models — `brain4all/models/api.py`
+### 1.1 Models — `xnobrain/models/api.py`
 Add (see [architecture](architecture.md) section 5 for full bodies):
 `VoiceSpeakRequest`, `VoiceTranscribeRequest`, `VoiceChannelConfig`,
 `VoiceConfigUpdate` (and optional `VoiceProviderConfig`). Use `Field(...)`
@@ -74,11 +74,11 @@ constraints and `Literal`/allowlists consistent with `KanbanTaskCreate`.
 - `VoiceSpeakRequest.text`: 1..20_000 chars.
 - `VoiceTranscribeRequest.data_url`: 1..40_000_000 (base64 of <=25 MiB);
   `mime_type` optional <=128.
-Then import them in `brain4all/models/__init__.py` alongside the existing
+Then import them in `xnobrain/models/__init__.py` alongside the existing
 imports so `__all__` (all non-underscore names) exports them.
 
-### 1.2 Integration — `brain4all/integrations/voice.py` (NEW)
-Model after `brain4all/integrations/kanban.py`:
+### 1.2 Integration — `xnobrain/integrations/voice.py` (NEW)
+Model after `xnobrain/integrations/kanban.py`:
 - `class VoiceUnavailable(RuntimeError)`.
 - Lazy importers `_tts_tool()`, `_transcribe()`, `_tts_providers()`,
   `_stt_providers()` — each `try: from ... import ...; except Exception: raise
@@ -104,7 +104,7 @@ Model after `brain4all/integrations/kanban.py`:
   Hermes fetch logic reading `ELEVENLABS_API_KEY` from env; **never** return the
   key; map 401/403 to `{available:false, error:"unauthorized"}`.
 
-### 1.3 Service — `brain4all/services/voice.py` (NEW)
+### 1.3 Service — `xnobrain/services/voice.py` (NEW)
 `class VoiceService` constructed with the same collaborators the Kanban service
 gets (agents/repository/config). Methods:
 - `async speak(agent_id, text) -> dict`: strip/validate text; load per-agent
@@ -133,10 +133,10 @@ gets (agents/repository/config). Methods:
 - `_agent_voice_config(agent_id)`: private helper returning the raw `tts`/`stt`
   dicts for the adapter (used only under B2).
 
-Wire it in `brain4all/services/platform.py`: add
+Wire it in `xnobrain/services/platform.py`: add
 `self.voice = VoiceService(...)` next to `self.kanban = KanbanService(...)`.
 
-### 1.4 Handlers — `brain4all/handlers/api.py`
+### 1.4 Handlers — `xnobrain/handlers/api.py`
 In `APIHandlers._operation`, add to the `operations` dict (all JSON, use the
 normal `dispatch` path — no raw response needed for base64):
 ```python
@@ -151,7 +151,7 @@ normal `dispatch` path — no raw response needed for base64):
 dispatcher already `await`s awaitable results. `agent()` is the existing lambda
 that reads `?agent=` and raises if missing.
 
-### 1.5 Routes — `brain4all/routes/setup.py`
+### 1.5 Routes — `xnobrain/routes/setup.py`
 Add these to the `ROUTES` tuple (place a `("Voice",)` tag group; import the new
 body models at the top with the others). These are **standard JSON envelope
 routes** — no `special`, because base64 audio rides inside `APIEnvelope`:
@@ -246,20 +246,20 @@ frontend component/hook tests and `npm run build` pass.
 ## File change summary
 
 New:
-- `brain4all/integrations/voice.py`
-- `brain4all/services/voice.py`
-- `brain4all/tests/test_voice_compat.py`
-- `brain4all/tests/test_voice_api.py` (integration, temp `HERMES_HOME`)
+- `xnobrain/integrations/voice.py`
+- `xnobrain/services/voice.py`
+- `xnobrain/tests/test_voice_compat.py`
+- `xnobrain/tests/test_voice_api.py` (integration, temp `HERMES_HOME`)
 - `src/api/voice.ts`
 - `src/hooks/useVoice.ts`
 - `src/api/voice.test.ts`, plus a component test for the mic/play controls
 
 Edited:
-- `brain4all/models/api.py` (+ voice models), `brain4all/models/__init__.py`
+- `xnobrain/models/api.py` (+ voice models), `xnobrain/models/__init__.py`
   (import them)
-- `brain4all/handlers/api.py` (+6 operations)
-- `brain4all/routes/setup.py` (+6 routes, + model imports)
-- `brain4all/services/platform.py` (`self.voice = VoiceService(...)`; voice
+- `xnobrain/handlers/api.py` (+6 operations)
+- `xnobrain/routes/setup.py` (+6 routes, + model imports)
+- `xnobrain/services/platform.py` (`self.voice = VoiceService(...)`; voice
   health flag)
 - `src/components/ChatArea.tsx` (play button + mic recorder)
 - agent settings surface (Voice panel), `src/locales/*.json` (all 7)

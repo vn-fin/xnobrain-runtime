@@ -139,7 +139,7 @@
     "addApiKey": "Añadir clave API",
     "disconnect": "Desconectar",
     "addKeyTitle": "Añadir clave API",
-    "addKeyDesc": "Elige un proveedor y pega la clave API. La clave se guarda en el entorno de ejecución local y Brain4All nunca la devuelve."
+    "addKeyDesc": "Elige un proveedor y pega la clave API. La clave se guarda en el entorno de ejecución local y XNOBrain nunca la devuelve."
   },
   "auth": {
     "connect": "Conectar {{name}}",

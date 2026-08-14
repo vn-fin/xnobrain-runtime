@@ -27,7 +27,7 @@ _TOKEN_COLS = (
     "input_tokens", "output_tokens", "cache_read_tokens",
     "cache_write_tokens", "reasoning_tokens",
 )
-_BUDGET_KEY = "brain4all_budget"
+_BUDGET_KEY = "xnobrain_budget"
 _MERGED_TTL = 20.0
 _CACHE_CAP = 512
 
@@ -381,7 +381,7 @@ class AnalyticsService:
             bucket,
         )
         durable["agents"] = live["agents"]
-        # Sessions only exist in Brain4All's live profile records. Requests,
+        # Sessions only exist in XNOBrain's live profile records. Requests,
         # tokens, cost, model/provider rows and the time series are durable.
         durable["totals"]["sessions"] = live["totals"]["sessions"]
         durable["source"] = {

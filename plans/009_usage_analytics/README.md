@@ -12,10 +12,10 @@ Read the sibling documents in order:
 - [validation.md](validation.md) — how completion is proven.
 
 Also read before starting: [`AGENTS.md`](../../AGENTS.md),
-[`brain4all/routes/setup.py`](../../brain4all/routes/setup.py),
-[`brain4all/integrations/hermes.py`](../../brain4all/integrations/hermes.py)
+[`xnobrain/routes/setup.py`](../../xnobrain/routes/setup.py),
+[`xnobrain/integrations/hermes.py`](../../xnobrain/integrations/hermes.py)
 (session `state.db` schema and read-only helpers),
-[`brain4all/integrations/nine_router.py`](../../brain4all/integrations/nine_router.py)
+[`xnobrain/integrations/nine_router.py`](../../xnobrain/integrations/nine_router.py)
 (`usage()` quota overlay), and
 [`docs/enterprise-extension.md`](../../docs/enterprise-extension.md) (why hard
 enforcement stays out of the OSS edition).
@@ -34,9 +34,9 @@ an advisory way to cap it:
   warning** when the current period's spend crosses it. The cap is advisory
   only; nothing is blocked.
 
-Today Brain4All exposes only per-conversation usage, and that route is a
+Today XNOBrain exposes only per-conversation usage, and that route is a
 zero-valued stub
-([`brain4all/handlers/api.py`](../../brain4all/handlers/api.py) operation
+([`xnobrain/handlers/api.py`](../../xnobrain/handlers/api.py) operation
 `conversations_usage`). There is no aggregation, no per-model or time breakdown,
 and no budget concept. This plan closes that gap.
 
@@ -57,7 +57,7 @@ and no budget concept. This plan closes that gap.
   process on `:8642`, one 9router on `:20128`.
 - **No forking or copying Hermes internals.** We may ride the pinned Hermes
   native analytics endpoints for compatibility testing, but the core computes
-  from the columns Brain4All already guarantees.
+  from the columns XNOBrain already guarantees.
 - **No mock or demo analytics.** Every number must trace to a real session
   record. Empty ranges return zeroes, not synthetic data.
 
@@ -72,7 +72,7 @@ In:
    evaluates advisory budgets.
 3. Advisory per-agent budget config stored in the agent's own `config.yaml`
    (snapshot-before-write), read back with computed spend and a status.
-4. New versioned Brain4All routes under an `Analytics` tag.
+4. New versioned XNOBrain routes under an `Analytics` tag.
 5. A React Analytics dashboard: totals tiles, per-model bars, a time chart, and
    a per-agent budget bar, using a lightweight inline chart (no new dependency).
 6. Tests against real session records in a temporary `HERMES_HOME`.
@@ -91,8 +91,8 @@ plan closes.
   `/api/analytics/usage` and `/api/analytics/models` endpoints for reference.
 - **Phase 1 — Models.** Request/response Pydantic models for usage views and the
   budget patch.
-- **Phase 2 — Integration + service.** `brain4all/integrations/analytics.py`
-  (read-only aggregation) and `brain4all/services/analytics.py` (shaping,
+- **Phase 2 — Integration + service.** `xnobrain/integrations/analytics.py`
+  (read-only aggregation) and `xnobrain/services/analytics.py` (shaping,
   budget evaluation, quota overlay). Wire `self.analytics` in `platform.py`.
 - **Phase 3 — Handlers + routes.** Operations and `Route(...)` lines in the
   single route-assembly point.

@@ -1,4 +1,4 @@
-# Brain4All — Enterprise System Specification
+# XNOBrain — Enterprise System Specification
 
 **Edition:** Enterprise (commercial, for businesses), multi-user, self-hosted **or** managed cloud
 **Builds on:** the OSS edition ([`oss.md`](oss.md)) at the **Pro** level — unchanged local runtime
@@ -8,7 +8,7 @@
 
 ## 1. System description
 
-Brain4All Enterprise is a **multi-user, organization-managed** edition built as a
+XNOBrain Enterprise is a **multi-user, organization-managed** edition built as a
 separate **control plane** on top of the OSS product. Each member still runs the full
 OSS runtime on their own machine or container; the control plane sits *above* those
 runtimes to provide identity, central visibility, governance, fleet management, voice,
@@ -29,7 +29,7 @@ people, oversight of them, and control over what they can do.
 
 - **Control plane:** a Go service backed by **PostgreSQL** (the one billing-grade
   database). Runs **self-hosted** on the firm's servers — including **air-gapped** — or
-  as **Enterprise Cloud** on Brain4All's servers, where member runtimes are managed Incus
+  as **Enterprise Cloud** on XNOBrain's servers, where member runtimes are managed Incus
   containers with contracted resources ([`plans.md`](plans.md) §7.3).
 - **Deployments (members' runtimes):** unchanged OSS instances, enrolled to the control
   plane by an outbound-only device identity. They **push** metadata to the center; the

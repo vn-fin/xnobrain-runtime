@@ -15,7 +15,7 @@ from xnobrain.openapi_docs import (
 
 class OpenAPIDocsTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.app = FastAPI(title="Brain4All Test")
+        self.app = FastAPI(title="XNOBrain Test")
 
         @self.app.get("/xnobrain/api/runtime/v1/health")
         async def health():

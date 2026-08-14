@@ -2,21 +2,21 @@
 set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-install_root="/opt/brain4all"
-service_user="brain4all"
-data_root="/srv/brain4all-data"
+install_root="/opt/xnobrain"
+service_user="xnobrain"
+data_root="/srv/xnobrain-data"
 start_services=false
 
 usage() {
   cat <<'EOF'
-Install Brain4All's native systemd services.
+Install XNOBrain's native systemd services.
 
-The Brain4All checkout and runtime must already be installed at /opt/brain4all.
+The XNOBrain checkout and runtime must already be installed at /opt/xnobrain.
 
 Usage: sudo ./scripts/install-systemd-services.sh [--start]
 
 Options:
-  --start     Start brain4all.target after installing and enabling the units
+  --start     Start xnobrain.target after installing and enabling the units
   -h, --help  Show this help
 EOF
 }
@@ -34,7 +34,7 @@ if [[ "${EUID}" -ne 0 ]]; then
   exit 1
 fi
 if [[ "$project_dir" != "$install_root" ]]; then
-  echo "Brain4All must be checked out at $install_root; found $project_dir" >&2
+  echo "XNOBrain must be checked out at $install_root; found $project_dir" >&2
   exit 1
 fi
 for path in \
@@ -65,24 +65,24 @@ fi
 install -d -o "$service_user" -g "$service_user" -m 0700 \
   "$data_root" \
   "$data_root/home" \
-  "$data_root/brain4all"
+  "$data_root/xnobrain"
 chown -R "$service_user:$service_user" "$install_root"
 
-install -d -o root -g "$service_user" -m 0750 /etc/brain4all
+install -d -o root -g "$service_user" -m 0750 /etc/xnobrain
 install -m 0640 -o root -g "$service_user" \
-  "$install_root/deploy/systemd/brain4all.env.example" \
-  /etc/brain4all/brain4all.env.example
-if [[ ! -e /etc/brain4all/brain4all.env ]]; then
+  "$install_root/deploy/systemd/xnobrain.env.example" \
+  /etc/xnobrain/xnobrain.env.example
+if [[ ! -e /etc/xnobrain/xnobrain.env ]]; then
   install -m 0640 -o root -g "$service_user" \
-    "$install_root/deploy/systemd/brain4all.env.example" \
-    /etc/brain4all/brain4all.env
+    "$install_root/deploy/systemd/xnobrain.env.example" \
+    /etc/xnobrain/xnobrain.env
 fi
 
 for unit in \
-  brain4all-prepare.service \
-  brain4all-9router.service \
-  brain4all-api.service \
-  brain4all.target; do
+  xnobrain-prepare.service \
+  xnobrain-9router.service \
+  xnobrain-api.service \
+  xnobrain.target; do
   install -m 0644 \
     "$install_root/deploy/systemd/$unit" \
     "/etc/systemd/system/$unit"
@@ -90,18 +90,18 @@ done
 chmod 0755 "$install_root/scripts/prepare-service-data.sh"
 
 systemctl daemon-reload
-systemctl enable brain4all.target
+systemctl enable xnobrain.target
 if [[ "$start_services" == true ]]; then
   for variable_name in HERMES_HOME NINE_ROUTER_DATA_DIR; do
-    if ! grep -Eq "^${variable_name}=[^[:space:]].*" /etc/brain4all/brain4all.env; then
-      echo "$variable_name is required in /etc/brain4all/brain4all.env before services can start." >&2
+    if ! grep -Eq "^${variable_name}=[^[:space:]].*" /etc/xnobrain/xnobrain.env; then
+      echo "$variable_name is required in /etc/xnobrain/xnobrain.env before services can start." >&2
       exit 1
     fi
   done
-  systemctl restart brain4all.target
+  systemctl restart xnobrain.target
 fi
 
-echo "Brain4All systemd services installed."
-echo "Configuration: /etc/brain4all/brain4all.env"
+echo "XNOBrain systemd services installed."
+echo "Configuration: /etc/xnobrain/xnobrain.env"
 echo "Persistent data: $data_root"
 echo "API: http://<private-vm-ip>:8642"

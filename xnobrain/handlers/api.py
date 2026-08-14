@@ -1,4 +1,4 @@
-"""FastAPI handlers layered over the Brain4All platform service."""
+"""FastAPI handlers layered over the XNOBrain platform service."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from .workspaces import WorkspaceHandlers
 
 
 class APIHandlers(WorkspaceHandlers, PortabilityHandlers, StreamingHandlers, ProviderHandlers):
-    """Expose the stable Brain4All contract without duplicating Hermes APIs."""
+    """Expose the stable XNOBrain contract without duplicating Hermes APIs."""
 
     def __init__(self, service: PlatformService):
         self.service = service

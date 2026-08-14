@@ -9,11 +9,11 @@ isolation) work, and the recommended target architecture for the commercial prod
 The open-source application does not run a separate server that calls Hermes over the
 network. It imports Hermes's own web-server application and registers its compatibility
 routes onto it, then serves the combined application on port 8642. In effect, the running
-process is Hermes's web server plus the Brain4All management surface, in a single Python
+process is Hermes's web server plus the XNOBrain management surface, in a single Python
 process sharing one virtual environment. The LLM router runs as a separate process on port
 20128 and is reached over HTTP.
 
-Because Brain4All shares the process and environment, it integrates with Hermes through
+Because XNOBrain shares the process and environment, it integrates with Hermes through
 several channels simultaneously rather than a single clean boundary.
 
 | Backing mechanism | How it works | Which functions use it |

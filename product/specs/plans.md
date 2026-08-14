@@ -1,4 +1,4 @@
-# Brain4All — Editions & Plans: OSS Free, OSS Pro, Enterprise, and Cloud
+# XNOBrain — Editions & Plans: OSS Free, OSS Pro, Enterprise, and Cloud
 
 How the product is packaged and sold, and how the tiers are enforced. Complements the
 edition specs ([`oss.md`](oss.md), [`enterprise.md`](enterprise.md)) and revises the
@@ -32,7 +32,7 @@ Two more rules shape everything below:
 > **Free and Pro are the same product.** Pro adds exactly three capabilities — the
 > **skill marketplace**, **speech-to-text**, and **hosted skill/memory snapshot
 > versions**. No capability and no resource count differs otherwise on a self-hosted
-> install. All three are the same kind of thing: a Brain4All-operated service with a real
+> install. All three are the same kind of thing: a XNOBrain-operated service with a real
 > marginal cost (a catalog, transcription compute, stored bytes).
 >
 > **Free and Pro are for one person; Enterprise is for a business.** Teamwork here means
@@ -98,7 +98,7 @@ machine, same unlimited local resources.
 ### 4.1 Skill & memory snapshot versions
 
 We keep a **version history of what makes an agent itself** — its skills and its memory —
-on Brain4All's servers, so it survives a lost disk, a bad edit, or a move to a new
+on XNOBrain's servers, so it survives a lost disk, a bad edit, or a move to a new
 machine. Free keeps local snapshots; Pro keeps *versions*, stored and restorable.
 
 | | Free | Pro | Enterprise |
@@ -180,14 +180,14 @@ The member's local runtime is unchanged; the control plane sits above it.
 - **Audit & compliance:** append-only audit log, SIEM streaming, evidence exports,
   SOC 2 / ISO 27001 / GDPR program.
 - **Operations:** managed encrypted backups, HA/DR, license & update management.
-- **Hosting:** self-hosted (incl. air-gapped) **or** Brain4All managed cloud.
+- **Hosting:** self-hosted (incl. air-gapped) **or** XNOBrain managed cloud.
 - **Billing:** per seat, contract or invoice, org-managed.
 
 Full functional detail: [`enterprise.md`](enterprise.md).
 
 ---
 
-## 7. Cloud — Brain4All-hosted deployment
+## 7. Cloud — XNOBrain-hosted deployment
 
 The same product, running on **our** servers instead of the user's machine. A cloud
 account gets a managed runtime (an Incus container) that we provision, patch, back up,
@@ -420,7 +420,7 @@ Three layers make the tiers real:
   (invite / SCIM), cloud resources contracted.
 
 **Metering note.** Speech-to-text is the one paid capability with a marginal cost. Pro
-includes a monthly transcription allowance on the Brain4All-hosted STT service and also
+includes a monthly transcription allowance on the XNOBrain-hosted STT service and also
 permits a bring-your-own provider key (unmetered). Enterprise routes all voice through
 the org gateway with org-held keys, metered into the central usage database.
 

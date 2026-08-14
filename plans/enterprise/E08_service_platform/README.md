@@ -7,7 +7,7 @@ Groq Whisper v3 (see [implementation.md](implementation.md)) · **Status:** desi
 
 ## Goal
 
-Define the service architecture of `brain4all-enterprise` as two families:
+Define the service architecture of `xnobrain-enterprise` as two families:
 
 - **App services — Go.** Everything billing-grade, stateful, and control-plane:
   identity, entitlements, usage, fleet, boards, billing. Raw SQL on PostgreSQL
@@ -29,7 +29,7 @@ Define the service architecture of `brain4all-enterprise` as two families:
 ## Topology
 
 ```
-                                   brain4all-enterprise deployment
+                                   xnobrain-enterprise deployment
 member runtime / browser          ┌──────────────────────────────────────────────────────┐
   (OSS thin proxy,                │  control-plane  (ONE Go binary, modular)             │
    ENTERPRISE_API_URL)  ──TLS──►  │   gateway: authn · RBAC · entitlements · rate limit  │

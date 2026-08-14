@@ -1,9 +1,9 @@
 ---
 name: tauri-app-development
-description: Build, review, test, package, or document the Brain4All Tauri 2 installer and Full Managed App under app/. Use for Tauri/Rust commands, app-only React UI, Docker Web installation, managed platform drivers, native installers, signing, updates, capabilities, IPC, or make dev-app/win-app/mac-app/rpm-app work.
+description: Build, review, test, package, or document the XNOBrain Tauri 2 installer and Full Managed App under app/. Use for Tauri/Rust commands, app-only React UI, Docker Web installation, managed platform drivers, native installers, signing, updates, capabilities, IPC, or make dev-app/win-app/mac-app/rpm-app work.
 ---
 
-# Develop the Brain4All Tauri app
+# Develop the XNOBrain Tauri app
 
 Keep every implementation change under `app/`. Read `app/AGENTS.md` and
 `plans/013_desktop_app/README.md` before acting.

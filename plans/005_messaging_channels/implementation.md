@@ -5,14 +5,14 @@ state. Read `architecture.md` for the contract and `approaches.md` for the
 chosen mechanisms. Exact new route paths and model names are fixed here so the
 handler `operations` map and the frontend client agree.
 
-Real paths (all under repo root `/home/kim/Documents/xno/brain4all-dev/brain4all/`):
+Real paths (all under repo root `/home/kim/Documents/xno/xnobrain-dev/xnobrain/`):
 
-- Routes: `brain4all/routes/setup.py`
-- Handlers: `brain4all/handlers/api.py`
-- Service (new): `brain4all/services/channels.py`
-- Integration (new): `brain4all/integrations/gateway.py`
-- Models: `brain4all/models/api.py` (+ export in `brain4all/models/__init__.py`)
-- Tests (new): `brain4all/tests/test_channels.py`
+- Routes: `xnobrain/routes/setup.py`
+- Handlers: `xnobrain/handlers/api.py`
+- Service (new): `xnobrain/services/channels.py`
+- Integration (new): `xnobrain/integrations/gateway.py`
+- Models: `xnobrain/models/api.py` (+ export in `xnobrain/models/__init__.py`)
+- Tests (new): `xnobrain/tests/test_channels.py`
 - Frontend: `src/api/channels.ts`, `src/hooks/useChannels.ts`,
   `src/components/ChannelsView.tsx`, `src/App.tsx`
 - Pinned Hermes (reference only): `.tools/hermes-agent/`
@@ -27,7 +27,7 @@ Real paths (all under repo root `/home/kim/Documents/xno/brain4all-dev/brain4all
    (`plans/001_kanban_foundation/README.md` Phase 0). Re-verify the
    `web_server.py` line numbers cited in `findings.md` against this commit and
    correct them in-code if they drifted.
-2. **Compatibility module/test** `brain4all/tests/test_channels_compat.py` (or a
+2. **Compatibility module/test** `xnobrain/tests/test_channels_compat.py` (or a
    `compat` marker in `test_channels.py`) asserting, against the pinned artifact
    in a temp `HERMES_HOME` (mirror `test_kanban.py`):
    - `from gateway.config import Platform, PORT_BINDING_PLATFORM_VALUES,
@@ -54,14 +54,14 @@ Real paths (all under repo root `/home/kim/Documents/xno/brain4all-dev/brain4all
    one) that fails with **one** remediation line if the channel compat contract
    is unmet. Do not limp along with partial channel mutations.
 
-Exit: `brain4all/tests/test_channels_compat.py` passes against the pinned image.
+Exit: `xnobrain/tests/test_channels_compat.py` passes against the pinned image.
 
 ---
 
 ## Phase 1 — Models
 
-Add to `brain4all/models/api.py` (strict validation; mirror existing style) and
-export each from `brain4all/models/__init__.py` (the `from ..models import (…)`
+Add to `xnobrain/models/api.py` (strict validation; mirror existing style) and
+export each from `xnobrain/models/__init__.py` (the `from ..models import (…)`
 block in `routes/setup.py` must resolve them):
 
 ```python
@@ -107,7 +107,7 @@ Never add a field that echoes a raw stored token back to the client.
 
 ---
 
-## Phase 2 — Integration adapter (`brain4all/integrations/gateway.py`)
+## Phase 2 — Integration adapter (`xnobrain/integrations/gateway.py`)
 
 New file. Mirror `integrations/kanban.py`: lazy import, `GatewayUnavailable`,
 profile-scoped calls, no secret leakage outward. Methods (signatures in
@@ -143,7 +143,7 @@ profile-scoped calls, no secret leakage outward. Methods (signatures in
 
 ---
 
-## Phase 3 — Service (`brain4all/services/channels.py`)
+## Phase 3 — Service (`xnobrain/services/channels.py`)
 
 New file. Owns all policy (`architecture.md` §5):
 
@@ -163,7 +163,7 @@ New file. Owns all policy (`architecture.md` §5):
    e. apply writes,
    f. read back + **redact** before returning.
 4. Register `EXPECTED_ERRORS` so `handlers/api.py::dispatch` maps them to the
-   envelope (extend `brain4all/services/__init__.py` exports).
+   envelope (extend `xnobrain/services/__init__.py` exports).
 5. Wire the service into the app's service composition wherever `PlatformService`
    / Kanban service are constructed (follow `services/__init__.py` +
    the app factory that builds `APIHandlers`). The handler must reach it (e.g.
@@ -171,7 +171,7 @@ New file. Owns all policy (`architecture.md` §5):
 
 ---
 
-## Phase 4 — Handlers (`brain4all/handlers/api.py`)
+## Phase 4 — Handlers (`xnobrain/handlers/api.py`)
 
 Add operations to the `operations` dict in `_operation` (l.48), keyed by the
 `route.name` values below. Pattern matches existing entries (`p`=path_params,
@@ -210,7 +210,7 @@ the service are caught by the existing `dispatch` try/except and rendered by
 
 ---
 
-## Phase 5 — Routes (`brain4all/routes/setup.py`)
+## Phase 5 — Routes (`xnobrain/routes/setup.py`)
 
 Add to the `from ..models import (…)` block:
 `ChannelUpdate, ChannelCredentialSet, GatewayDrain, PairingApprove,
@@ -288,7 +288,7 @@ Notes:
 
 ## Phase 7 — Tests
 
-`brain4all/tests/test_channels.py` (real pinned Hermes, temp `HERMES_HOME`,
+`xnobrain/tests/test_channels.py` (real pinned Hermes, temp `HERMES_HOME`,
 mirror `test_kanban.py`) and handler tests in `test_fastapi.py`. Full matrix in
 `validation.md` §2–3. At minimum: list/enable/disable/test round-trip; multiplex
 409; snapshot-before-write; redaction in every response; pairing approve/revoke;

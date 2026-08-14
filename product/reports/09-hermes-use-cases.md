@@ -7,7 +7,7 @@
 > a compressed-but-faithful record: title, what the agent does, and the named
 > tools/models/numbers. **Sections C–E carry the analysis** — which stories are nearest
 > to Twin Terminal, where Hermes and OpenClaw appear together, and what it means for
-> Brain4All.
+> XNOBrain.
 
 ## Page structure (verbatim)
 
@@ -361,7 +361,7 @@ The startups leveraging *both* today are mostly **individual power users and sma
 tools** (primeclaws.com, watchdog setups, migration utilities), not funded companies —
 i.e. the "twin-over-many-runtimes" company slot is **still open.**
 
-## E. What this catalogue means for Brain4All
+## E. What this catalogue means for XNOBrain
 
 1. **Demand is proven and broad.** 262 real, sourced stories across 15 domains, most
    from individuals and small teams — the *self-hosted personal/expert agent* market is

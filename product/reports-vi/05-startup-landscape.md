@@ -1,20 +1,20 @@
 # 05 · Bức tranh khởi nghiệp — Ai đang gần nhất, và khoảng trống thị trường
 
-> Những công ty gần nhất với "terminal twin chuyên gia đã kiểm định" của Brain4All, được
+> Những công ty gần nhất với "terminal twin chuyên gia đã kiểm định" của XNOBrain, được
 > sắp xếp theo phân khúc, kèm vốn/lực kéo và — cột thực sự quan trọng — **liệu họ có kiểm
 > định độ trung thành với một con người cụ thể được nêu tên hay không.** Mọi con số đều
 > được liên kết và ghi ngày. Đây là bản quét toàn cảnh, không phải một sự chứng thực; hãy
 > coi các con số vốn là số liệu được báo cáo, chưa qua kiểm toán.
 >
 > ⚠️ **Kiểm tra thực tế ngay từ đầu:** kể từ bản nháp đầu tiên, không gian này đã trở nên
-> *đông đúc hơn* và *gần hơn* với concept của Brain4All (Viven, IgniteTech, Interloom,
+> *đông đúc hơn* và *gần hơn* với concept của XNOBrain (Viven, IgniteTech, Interloom,
 > Twinnin đều xuất hiện vào cuối 2025/2026). Khoảng trống thị trường vẫn còn mở — nhưng
 > các bức tường đang thu hẹp lại, điều này làm tăng tính cấp bách của việc sở hữu lớp
 > **kiểm định + royalty** trước tiên (xem §9).
 
 ## 1. Bản đồ: vẫn chưa ai ngồi ở điểm giao đầy đủ
 
-Tầm nhìn Brain4All cần **bốn** thứ cùng một lúc mà hầu hết các startup chỉ làm được một
+Tầm nhìn XNOBrain cần **bốn** thứ cùng một lúc mà hầu hết các startup chỉ làm được một
 hoặc hai: **(A)** một agent runtime có thể tự lưu trữ (self-host), **(B)** nhân bản phán
 đoán của một chuyên gia *được nêu tên*, **(C)** **kiểm định độ trung thành** với người đó
 (đo lường được, có hạn dùng), **(D)** một kệ (registry) xuyên tổ chức với **royalty
@@ -24,7 +24,7 @@ hoặc hai: **(A)** một agent runtime có thể tự lưu trữ (self-host), *
                          (A) self-host   (B) nhân bản    (C) KIỂM ĐỊNH    (D) registry +
                           runtime        chuyên gia      độ trung thành   royalty
                                          được nêu tên
-Hermes / Brain4All          ●●●             ○ (dự kiến)    ○ (canh bạc)     ○ (dự kiến)
+Hermes / XNOBrain          ●●●             ○ (dự kiến)    ○ (canh bạc)     ○ (dự kiến)
 OpenClaw                    ●●●             ○              ○                ○
 Viven                       ○               ●●● (nhân viên) ○               ○
 IgniteTech MyPersonas       ○               ●●● (nhân viên) ○               ○
@@ -207,7 +207,7 @@ con người* vẫn còn là R&D chưa được xây dựng — lợi thế phò
 
 | Công ty | Self-host | Nhân bản một người **được nêu tên** | **Kiểm định độ trung thành** (đo lường được, có hạn dùng) | Royalty / chia doanh thu | Chạy trên dữ liệu của khách |
 |---|:--:|:--:|:--:|:--:|:--:|
-| **Brain4All (mục tiêu)** | ✅ | ✅ | ✅ **(moat)** | ✅ | ✅ |
+| **XNOBrain (mục tiêu)** | ✅ | ✅ | ✅ **(moat)** | ✅ | ✅ |
 | Viven | ❌ | ✅ | ❌ | ❌ | 🟡 |
 | IgniteTech MyPersonas | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Cloneable | 🟡 | ✅ | ❌ | ❌ | ✅ |

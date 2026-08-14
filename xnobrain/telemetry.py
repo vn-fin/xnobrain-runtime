@@ -41,7 +41,7 @@ def configure(app) -> None:
 
     endpoint = local_collector_endpoint()
     provider = TracerProvider(resource=Resource.create({
-        "service.name": "brain4all",
+        "service.name": "xnobrain",
         "service.version": os.getenv("XNOBRAIN_VERSION", "dev"),
         "deployment.environment": "local",
     }))

@@ -7,18 +7,18 @@ on. Recheck them against the pinned Hermes revision before implementation.
 
 ## Desired outcome
 
-Brain4All will expose one approachable task system for human work, agent work,
+XNOBrain will expose one approachable task system for human work, agent work,
 and scheduled work:
 
 - users see exactly **Backlog**, **Todo**, **Running**, **Done**, and
   **Archived** in board and list views;
 - Hermes owns task persistence, worker dispatch, dependencies, run history, and
   cron timing;
-- Brain4All supplies a stable product API, the five-state presentation, and an
+- XNOBrain supplies a stable product API, the five-state presentation, and an
   accessible UI;
 - schedules created in Settings or by prompting an agent create an automation
   card on the default board, and each firing becomes an auditable Kanban task;
-- there is no separate Brain4All cron daemon, scheduler loop, database, or
+- there is no separate XNOBrain cron daemon, scheduler loop, database, or
   standalone cron product.
 
 This remains a single-user, local-first OSS product. Multi-board support is
@@ -42,12 +42,12 @@ does not match the requested information architecture.
 
 ### Backend and runtime
 
-Brain4All already extends `hermes_cli.web_server.app` and registers routes
-through `brain4all/routes/setup.py`. This is the correct host for a thin
+XNOBrain already extends `hermes_cli.web_server.app` and registers routes
+through `xnobrain/routes/setup.py`. This is the correct host for a thin
 Kanban integration.
 
-`brain4all/app.py`, `brain4all/services/platform.py`, and
-`brain4all/repositories/files.py` currently implement a separate Brain4All
+`xnobrain/app.py`, `xnobrain/services/platform.py`, and
+`xnobrain/repositories/files.py` currently implement a separate XNOBrain
 cron loop and YAML job storage. At the same time, the Hermes web server already
 starts its native desktop cron ticker when `HERMES_DESKTOP=1`. Keeping both
 would create competing schedulers and sources of truth.
@@ -75,7 +75,7 @@ Current upstream internal states are:
 and `archived`.
 
 The dispatcher belongs in the messaging gateway in a normal Hermes deployment.
-Brain4All hosts the Hermes web app directly, so the implementation must embed
+XNOBrain hosts the Hermes web app directly, so the implementation must embed
 the supported dispatcher component in the existing FastAPI lifespan. Starting
 the deprecated standalone daemon would violate the project architecture.
 
@@ -125,7 +125,7 @@ dispatcher operations or contribute them upstream.
 - Hermes Kanban SQLite is authoritative for boards, tasks, links, comments,
   attachments, assignments, worker state, and runs.
 - Hermes cron persistence and ticker are authoritative for schedule timing.
-- Brain4All owns Pydantic HTTP translation, the five-state projection, settings,
+- XNOBrain owns Pydantic HTTP translation, the five-state projection, settings,
   UX, and migration from its legacy YAML jobs.
 - Local layers call the Hermes Python package directly; they do not call the
   application’s own HTTP endpoints.

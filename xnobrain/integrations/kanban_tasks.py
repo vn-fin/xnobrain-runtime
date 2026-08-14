@@ -41,13 +41,13 @@ def team_member_task_ids(conn: Any) -> set[str]:
     """Return internal team-stage task IDs without hydrating every task DTO."""
     rows = conn.execute(
         "SELECT body FROM task_comments WHERE body LIKE ?",
-        ("[brain4all:team] %",),
+        ("[xnobrain:team] %",),
     ).fetchall()
     task_ids: set[str] = set()
     for row in rows:
         body = str(row["body"] or "")
         try:
-            metadata = json.loads(body[len("[brain4all:team] "):])
+            metadata = json.loads(body[len("[xnobrain:team] "):])
         except (TypeError, json.JSONDecodeError):
             continue
         if not isinstance(metadata, dict):
@@ -103,7 +103,7 @@ def return_failed_task_to_triage(
     conn: Any,
     task_id: str,
     *,
-    actor: str = "brain4all",
+    actor: str = "xnobrain",
 ) -> bool:
     """Return a failed (circuit-breaker blocked) task to native triage.
 

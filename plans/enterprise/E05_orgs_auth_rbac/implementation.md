@@ -1,6 +1,6 @@
 # E05 — Implementation
 
-Ordered phases, file-by-file. Track 1 is Go in `brain4all-enterprise`
+Ordered phases, file-by-file. Track 1 is Go in `xnobrain-enterprise`
 (everything except Phase 10); Track 2 is the thin OSS surface in this
 repo. Cross-links: [README.md](README.md), [findings.md](findings.md),
 [architecture.md](architecture.md), [approaches.md](approaches.md),
@@ -256,7 +256,7 @@ idempotent re-POST of same externalId; wrong-org token isolation.
 All dormant without `ENTERPRISE_API_URL` (`AGENTS.md`; `docs/plans.md`
 dormancy rule). Exact files:
 
-1. **`brain4all/services/enterprise_auth.py`** (new) — session store:
+1. **`xnobrain/services/enterprise_auth.py`** (new) — session store:
    login via the enterprise `POST /auth/v1/login` (per
    `docs/contracts/enterprise-auth-v1.md`), tokens persisted atomically
    under `DATA_DIR/enterprise/session.json` (temp-file+fsync+rename
@@ -264,7 +264,7 @@ dormancy rule). Exact files:
    `get_session_context()` returning `{user, org, roles, capabilities}`
    from `GET /auth/v1/session` (cached, TTL ≤ access TTL). Failures ⇒
    `None`, never an exception into local paths.
-2. **`brain4all/handlers/api.py`** — extend the existing `"limits"` entry
+2. **`xnobrain/handlers/api.py`** — extend the existing `"limits"` entry
    (currently the lambda at line ~97 returning
    `{"plan_id": "self-hosted", "local_features_unlimited": True, …}`):
    when a session context exists, merge
@@ -272,7 +272,7 @@ dormancy rule). Exact files:
    "sso": …, "audit_export": …}, "plan_id": <from entitlements>}`.
    `local_features_unlimited` stays `True` unconditionally — local limits
    never change (`docs/plans.md` enforcement rule 1).
-3. **`brain4all/routes/setup.py`** — local-only routes
+3. **`xnobrain/routes/setup.py`** — local-only routes
    `POST /api/brain/v1/enterprise/auth/login`, `POST
    /api/brain/v1/enterprise/auth/logout`, `GET /api/brain/v1/enterprise/auth/session`
    (tag `System`), thin passthroughs to `enterprise_auth.py` so the
@@ -301,7 +301,7 @@ breakdown + members list link; member sees the self view. This plan
 delivers the **API gating + members list endpoint**; the dashboard UI
 itself remains the E02 follow-up task, now unblocked with real auth.
 
-OSS tests: `brain4all/tests/test_enterprise_auth.py` — dormancy (unset
+OSS tests: `xnobrain/tests/test_enterprise_auth.py` — dormancy (unset
 env ⇒ no routes active work, no calls); session file atomicity; token
 never in logs (capture + grep); limits merge shape; enterprise-down ⇒
 limits fall back to the current static payload unchanged. Frontend:

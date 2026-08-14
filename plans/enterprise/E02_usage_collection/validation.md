@@ -2,7 +2,7 @@
 
 How completion is proven. Each section names the mechanism, the exact
 procedure, and the evidence to record. Automated tests live in
-`brain4all/tests/test_usage_reporter.py` (OSS) and `internal/ingest/*_test.go`
+`xnobrain/tests/test_usage_reporter.py` (OSS) and `internal/ingest/*_test.go`
 + `internal/adminapi/usage_test.go` (enterprise) — see
 [implementation.md](implementation.md). Sections 2, 3, 8 additionally require
 a live two-device run (README definition of done).
@@ -49,7 +49,7 @@ The flagship correctness demo. For each device/user, over the same UTC
 window, the central numbers must equal the local numbers.
 
 **Local side** (what plan 009 computes, per
-[`brain4all/integrations/analytics.py`](../../../brain4all/integrations/analytics.py)
+[`xnobrain/integrations/analytics.py`](../../../xnobrain/integrations/analytics.py)
 — run against each profile's `state.db`, summed across the user's agents):
 
 ```sql
@@ -167,7 +167,7 @@ and `GET /admin/v1/usage` for the same window.
 ## 10. Suite, dormancy, and docs
 
 - `make check` green in this repo; `go test ./...` green in
-  `brain4all-enterprise`.
+  `xnobrain-enterprise`.
 - Dormancy proof (Phase 2t test 7): default self-hosted mode creates no
   `DATA_DIR/enterprise/` files and makes zero network calls.
 - Read-only proof (Phase 2t test 8): `state.db` bytes untouched by a full

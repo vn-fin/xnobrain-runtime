@@ -1,7 +1,7 @@
 # 006 — Findings
 
 Ground truth from reading the pinned Hermes source under
-`.tools/hermes-agent/` (read-only, we EXTEND it) and the Brain4All backend.
+`.tools/hermes-agent/` (read-only, we EXTEND it) and the XNOBrain backend.
 Every path and shape below was read directly, not inferred. Cross-links:
 [README](README.md) · [architecture](architecture.md) · [approaches](approaches.md)
 · [implementation](implementation.md) · [validation](validation.md).
@@ -10,8 +10,8 @@ Every path and shape below was read directly, not inferred. Cross-links:
 
 ### 1.1 HTTP endpoints — `.tools/hermes-agent/hermes_cli/web_server.py`
 
-These live in the same FastAPI app Brain4All runs inside (`:8642`). They are
-**Hermes-owned native routes**; Brain4All must not treat them as its product
+These live in the same FastAPI app XNOBrain runs inside (`:8642`). They are
+**Hermes-owned native routes**; XNOBrain must not treat them as its product
 contract, but we can call the functions they call, in-process.
 
 - **`POST /api/audio/transcribe`** (def `transcribe_audio_upload`, ~line 4269)
@@ -102,7 +102,7 @@ lists live in `CONFIG_SCHEMA` in `web_server.py`:
 - `stt.elevenlabs.model_id.options`: `["scribe_v2","scribe_v1"]`.
 - Dynamic merge helper `_custom_provider_options(kind, builtins, cfg)` (~1045)
   and `_schema_with_dynamic_provider_options()` (~1160) add command-type and
-  plugin providers at request time. Brain4All's provider list should mirror
+  plugin providers at request time. XNOBrain's provider list should mirror
   this: builtins first, then registry `list_providers()` names, deduped.
 
 ### 1.5 Local vs cloud
@@ -116,28 +116,28 @@ lists live in `CONFIG_SCHEMA` in `web_server.py`:
   `groq, openai, xai, elevenlabs` (STT). These need provider keys in the
   environment / provider credentials.
 
-## 2. What Brain4All has today
+## 2. What XNOBrain has today
 
-- One FastAPI/Hermes process; `brain4all/routes/setup.py` assembles all
-  Brain4All routes (`Route` dataclass; `special`/raw-response for streaming and
+- One FastAPI/Hermes process; `xnobrain/routes/setup.py` assembles all
+  XNOBrain routes (`Route` dataclass; `special`/raw-response for streaming and
   uploads). No voice routes exist.
-- `brain4all/handlers/api.py` — `APIHandlers.dispatch` maps `route.name` ->
+- `xnobrain/handlers/api.py` — `APIHandlers.dispatch` maps `route.name` ->
   an operation in a big `operations` dict, wraps results in the success
   envelope. Raw endpoints (`stream`, `workspace_upload`, `sandbox_*`,
   `kanban_stream`, bundles) are handled by dedicated methods and registered
   with `response_model=None`.
-- `brain4all/integrations/` — `hermes.py`, `config.py`, `kanban.py`,
+- `xnobrain/integrations/` — `hermes.py`, `config.py`, `kanban.py`,
   `nine_router.py`, `runtime.py`. `kanban.py` shows the lazy-import pattern:
   `def _module(): from hermes_cli import kanban_db ...` raising a typed
   `KanbanUnavailable` if the runtime is missing. **No `voice.py`.**
-- `brain4all/services/platform.py` — `PlatformService` holds sub-services
+- `xnobrain/services/platform.py` — `PlatformService` holds sub-services
   (`self.kanban = KanbanService(...)`). Per-agent config is written by
   `update_agent_config(agent_id, body)`: snapshot the current `config.yaml`
   (`repository.snapshot`), then `agents.update_config(...)`. Agent profiles
   live under `DATA_DIR/profiles/<agent-id>/config.yaml`. **No voice service.**
-- `brain4all/models/api.py` — Pydantic request models (e.g. `KanbanTaskCreate`
+- `xnobrain/models/api.py` — Pydantic request models (e.g. `KanbanTaskCreate`
   with `Field(...)` constraints and `Literal[...]`). Exported via
-  `brain4all/models/__init__.py` (`__all__` = all non-underscore names).
+  `xnobrain/models/__init__.py` (`__all__` = all non-underscore names).
   **No voice models.**
 - Frontend `src/`:
   - `src/api/client.ts` — `request<T>`, `requestRaw`, `requestMultipart`,
@@ -154,12 +154,12 @@ lists live in `CONFIG_SCHEMA` in `web_server.py`:
 
 Hermes can already synthesize and transcribe in the same process, but:
 
-1. No Brain4All **contract**: nothing under `/api/brain/v1/voice/*` or
+1. No XNOBrain **contract**: nothing under `/api/brain/v1/voice/*` or
    `/api/brain/v1/agents/{id}/voice`.
-2. No Brain4All **adapter**: no `integrations/voice.py` calling the Hermes
+2. No XNOBrain **adapter**: no `integrations/voice.py` calling the Hermes
    tools/registries, no service, no models.
 3. No **per-agent voice**: Hermes TTS/STT read the root profile `config.yaml`
-   only (see section 4). Brain4All manages many agent profiles; each needs its
+   only (see section 4). XNOBrain manages many agent profiles; each needs its
    own `tts:`/`stt:` config, exposed and edited safely.
 4. No **UI**: no play button, no recorder, no Voice settings panel.
 
@@ -171,7 +171,7 @@ Hermes can already synthesize and transcribe in the same process, but:
 output_path=None)` has **no `tts_config` override parameter**. So:
 
 - The native `/api/audio/speak` uses the **root** `tts:` config only.
-- To make an agent speak with *its own* voice, Brain4All cannot simply call the
+- To make an agent speak with *its own* voice, XNOBrain cannot simply call the
   public tool and get per-agent behavior.
 
 Options (decided in [approaches.md](approaches.md)):
@@ -188,7 +188,7 @@ fallback if the pin lacks the parameter.
 ## 5. Provider-credential handling
 
 - `ELEVENLABS_API_KEY` and other provider keys are read by Hermes from
-  `load_env()` / `os.environ` and **never returned**. Brain4All must preserve
+  `load_env()` / `os.environ` and **never returned**. XNOBrain must preserve
   this: the voices endpoint returns only `voice_id/name/label`; the providers
   endpoint returns only names/labels/availability; the per-agent voice config
   get/set operates on `tts:`/`stt:` YAML (provider name, `voice_id`,
@@ -223,9 +223,9 @@ and behave:
   safe default; surface a clear "voice provider not configured" error, never a
   stack trace or key.
 - **R3 — Large / wrong-format audio.** Enforce the 25 MiB cap and `audio/*`
-  mime at the Brain4All boundary before touching Hermes.
+  mime at the XNOBrain boundary before touching Hermes.
 - **R4 — Blocking synthesis on the event loop.** Hermes runs the tool in an
-  executor; Brain4All's adapter must do the same (`run_in_executor` /
+  executor; XNOBrain's adapter must do the same (`run_in_executor` /
   `asyncio.to_thread`) so TTS does not stall the single process.
 - **R5 — Temp-file leakage.** The Hermes endpoints unlink their temp files;
   if we call the tools directly we must unlink the file the tool returns.

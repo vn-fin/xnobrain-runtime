@@ -740,7 +740,7 @@ class ConversationsMixin:
             if threshold:
                 stored_context["threshold"] = threshold
                 stored_context["auto_compaction"] = bool(context.get("auto_compaction"))
-            model_config["brain4all_context"] = stored_context
+            model_config["xnobrain_context"] = stored_context
             conn.execute(
                 "UPDATE sessions SET model_config = ? WHERE id = ?",
                 (json.dumps(model_config, separators=(",", ":")), session_id),

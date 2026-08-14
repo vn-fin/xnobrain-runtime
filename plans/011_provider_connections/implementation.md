@@ -17,12 +17,12 @@ so a future bump cannot silently desync them:
 - `Dockerfile.backend` line 4 `ARG NINE_ROUTER_VERSION=v0.5.40` and line 18
   `ARG NINE_ROUTER_NPM_VERSION=0.5.40`
 - `scripts/install-linux.sh` line 24
-  `nine_router_version="${BRAIN4ALL_NINE_ROUTER_VERSION:-0.5.40}"`
+  `nine_router_version="${XNOBRAIN_NINE_ROUTER_VERSION:-0.5.40}"`
 
 Implementation: read both files with a regex in the test module and assert
 all extracted versions normalize to the same `0.5.40`.
 
-### 0b. Live probe test — `brain4all/tests/test_nine_router_probe.py` (new)
+### 0b. Live probe test — `xnobrain/tests/test_nine_router_probe.py` (new)
 
 Pattern: `unittest.IsolatedAsyncioTestCase` that **skips cleanly when 9router
 is down** (the rest of the suite fakes the router; this one is the only test
@@ -33,7 +33,7 @@ allowed to talk to a real one):
 this plan depends on. Skips when no 9router answers on :20128."""
 
 import os, unittest, aiohttp
-from brain4all.integrations.nine_router import NineRouterManager
+from xnobrain.integrations.nine_router import NineRouterManager
 
 BASE = os.environ.get("NINE_ROUTER_URL", "http://127.0.0.1:20128")
 
@@ -87,16 +87,16 @@ Probes (one test method each, matching findings.md §6; use
    accounts; this test asserts a documented conclusion exists: it reads
    `plans/011_provider_connections/findings.md` and fails if the §6 item 3
    round-robin/priority question is still marked unresolved once
-   `BRAIN4ALL_PLAN011_PHASE0_DONE=1` is set in the environment. (Keeps the
+   `XNOBRAIN_PLAN011_PHASE0_DONE=1` is set in the environment. (Keeps the
    manual observation step — two real accounts, watch attribution in
    `/api/usage` — from being skipped silently.)
 
-Run: `python -m unittest brain4all.tests.test_nine_router_probe -v` with a
+Run: `python -m unittest xnobrain.tests.test_nine_router_probe -v` with a
 local `9router` started (e.g. `.tools/npm-global/bin/9router`). Record the
 observed shapes as a comment block at the top of the test file and update
 findings.md §6 with the answers.
 
-## Phase 1 — Adapter methods (`brain4all/integrations/nine_router.py`)
+## Phase 1 — Adapter methods (`xnobrain/integrations/nine_router.py`)
 
 ### 1a. Extend `list_connections()` (lines 126–148)
 
@@ -177,7 +177,7 @@ def _quota_list(self, payload: Any, *, provider: str = "", model_id: str = "") -
 
 `usage()` calls `self._quota_list(payload, provider=provider,
 model_id=model_id)` (behavior identical — existing tests in
-`brain4all/tests/test_nine_router.py` line 149 must still pass). Then:
+`xnobrain/tests/test_nine_router.py` line 149 must still pass). Then:
 
 ```python
 async def usage_for_connection(self, connection_id: Any) -> dict[str, Any]:
@@ -204,15 +204,15 @@ payload is forwarded wholesale.
 
 ## Phase 2 — Service rules + Pydantic models
 
-### 2a. `brain4all/models/api.py` (append near `ProviderCredential`, line 183)
+### 2a. `xnobrain/models/api.py` (append near `ProviderCredential`, line 183)
 
 Add `ConnectionCreate` and `ConnectionPatch` exactly as specified in
 [architecture.md](architecture.md) § API contract. Export them wherever the
-models package re-exports (`brain4all/models/__init__.py` — mirror how
+models package re-exports (`xnobrain/models/__init__.py` — mirror how
 `ProviderCredential` is exported; `routes/setup.py` imports from
 `..models`).
 
-### 2b. `brain4all/services/platform.py` (append after `test_provider()`, ~line 678)
+### 2b. `xnobrain/services/platform.py` (append after `test_provider()`, ~line 678)
 
 Implement the six methods plus the guard from
 [architecture.md](architecture.md) § Service rules:
@@ -308,7 +308,7 @@ async def _owned_connection(self, provider: str, connection_id: str) -> dict[str
 
 ## Phase 3 — Handlers + routes
 
-### 3a. `brain4all/handlers/api.py` — extend `_operation` (after line 178)
+### 3a. `xnobrain/handlers/api.py` — extend `_operation` (after line 178)
 
 ```python
 "provider_connections_list": (lambda: s.list_provider_connections(p["provider_id"]), "provider connections retrieved successfully", 200),
@@ -321,7 +321,7 @@ async def _owned_connection(self, provider: str, connection_id: str) -> dict[str
 
 No other handler logic — HTTP translation only.
 
-### 3b. `brain4all/routes/setup.py` — exact `Route(...)` lines (after line 134)
+### 3b. `xnobrain/routes/setup.py` — exact `Route(...)` lines (after line 134)
 
 Import `ConnectionCreate, ConnectionPatch` in the existing `..models` import
 block (line 14), then append inside the Providers group:
@@ -456,7 +456,7 @@ plain div fill).
 
 ## Phase 5 — Tests
 
-### 5a. Adapter tests — `brain4all/tests/test_nine_router.py`
+### 5a. Adapter tests — `xnobrain/tests/test_nine_router.py`
 
 Extend `FakeNineRouterManager` (lines 20–33) fixtures with multi-connection
 responses; new tests:
@@ -473,7 +473,7 @@ responses; new tests:
   `usage(model)`, no model filtering: the `review_session` quota from the
   existing fixture (line 166) IS included.
 
-### 5b. Route/service integration — `brain4all/tests/test_fastapi.py`
+### 5b. Route/service integration — `xnobrain/tests/test_fastapi.py`
 
 Extend `FakeRouter` (lines 22–24) into a stateful multi-connection fake:
 

@@ -3,16 +3,16 @@ import { readSSE, type SSEEvent } from './stream';
 import type { SandboxDetailDTO } from './contracts/sandboxes';
 import { mapSandboxData } from './mappers/sandbox';
 import type { SandboxData } from '../types';
-import { brain4AllRuntime, CONTROL_API_PREFIX } from '../runtime';
+import { xnobrainRuntime, CONTROL_API_PREFIX } from '../runtime';
 
 export type SandboxResult = { provisioned: boolean; data: SandboxData | null };
 export type SandboxSetupProgress = { percent: number; message: string };
 const SANDBOX_BASE = '/xnobrain/api/runtime/v1/sandboxes';
-const CONTROL_BASE = brain4AllRuntime.api.controlBaseUrl.replace(/\/+$/, '');
+const CONTROL_BASE = xnobrainRuntime.api.controlBaseUrl.replace(/\/+$/, '');
 // Cloud always requires a managed workspace. A missing control URL must be
 // visible as a setup/configuration error instead of silently falling back to
 // the local OSS sandbox API.
-const MANAGED_WORKSPACE = brain4AllRuntime.edition === 'cloud';
+const MANAGED_WORKSPACE = xnobrainRuntime.edition === 'cloud';
 const WORKSPACE_CURRENT = `${CONTROL_BASE}${CONTROL_API_PREFIX}/workspace/current`;
 const WORKSPACE_CREATE = `${CONTROL_BASE}${CONTROL_API_PREFIX}/workspace/create`;
 

@@ -8,7 +8,7 @@ provider, with entitlement checks, metering, and failure modes. Cross-links:
 ## 1. Topology
 
 ```
- user device (OSS runtime, this repo)                 brain4all-enterprise (Go)              voice provider
+ user device (OSS runtime, this repo)                 xnobrain-enterprise (Go)              voice provider
 ┌─────────────────────────────────────┐             ┌───────────────────────────────┐      ┌──────────────┐
 │ Browser (src/)                  │             │ voice gateway (internal/voice)│      │ ElevenLabs / │
 │  Play btn · mic · settings          │             │  POST /voice/v1/speak         │      │ STT provider │
@@ -85,7 +85,7 @@ fills the composer for review, never auto-sends.
                    ← {voices:[{voice_id, name, label}]}   — never a key, mirrors 006's rule
 ```
 
-## 3. Enterprise gateway internals (`brain4all-enterprise`)
+## 3. Enterprise gateway internals (`xnobrain-enterprise`)
 
 Go package `internal/voice/` (paths per that repo's layout; raw SQL, no ORM
 per `docs/enterprise-extension.md`):
@@ -129,7 +129,7 @@ per `docs/enterprise-extension.md`):
 
 ## 4. Metering schema (PostgreSQL, the E02 database)
 
-New migration in `brain4all-enterprise` (extends, never rewrites, the E01/E02
+New migration in `xnobrain-enterprise` (extends, never rewrites, the E01/E02
 migration history):
 
 ```sql
@@ -188,7 +188,7 @@ in the schema (§5).
 - Provider-side: where the provider offers a no-retention/zero-retention
   flag, the adapter sets it (*verify per provider*, findings Q/§6).
 - Device-side: the browser holds audio in blobs/object URLs for playback;
-  nothing is persisted by Brain4All. Standard non-goal: no audio storage.
+  nothing is persisted by XNOBrain. Standard non-goal: no audio storage.
 
 ## 6. Entitlement check path
 
@@ -209,9 +209,9 @@ in the schema (§5).
 
 ## 7. OSS route table and handler ops (this repo)
 
-All registered only in `brain4all/routes/setup.py`, handled in
-`brain4all/handlers/api.py`, thin: validate → forward via
-`brain4all/integrations/enterprise_voice.py` → translate errors. No service
+All registered only in `xnobrain/routes/setup.py`, handled in
+`xnobrain/handlers/api.py`, thin: validate → forward via
+`xnobrain/integrations/enterprise_voice.py` → translate errors. No service
 rules beyond gating and size checks — policy lives in the gateway.
 
 | Method | Path | Operation | Body | Returns |
@@ -233,8 +233,8 @@ Error translation at the proxy (stable codes, entitlements-v1 aligned):
 ## 8. Frontend gating (how the browser learns capabilities)
 
 Chosen ([approaches](approaches.md) Decision C): extend the existing limits
-payload. `brain4all/handlers/api.py` line 97 (`"limits"` op, route
-`GET /api/brain/v1/limits` at `brain4all/routes/setup.py` line 40) currently
+payload. `xnobrain/handlers/api.py` line 97 (`"limits"` op, route
+`GET /api/brain/v1/limits` at `xnobrain/routes/setup.py` line 40) currently
 returns a static dict; it gains a `capabilities` object populated from the
 cached entitlement document when signed in, `{}` otherwise:
 

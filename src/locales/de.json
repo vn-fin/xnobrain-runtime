@@ -139,7 +139,7 @@
     "addApiKey": "API-Schlüssel hinzufügen",
     "disconnect": "Trennen",
     "addKeyTitle": "API-Schlüssel hinzufügen",
-    "addKeyDesc": "Wähle einen Anbieter und füge den API-Schlüssel ein. Der Schlüssel wird von der lokalen Laufzeit gespeichert und nie von Brain4All zurückgegeben."
+    "addKeyDesc": "Wähle einen Anbieter und füge den API-Schlüssel ein. Der Schlüssel wird von der lokalen Laufzeit gespeichert und nie von XNOBrain zurückgegeben."
   },
   "auth": {
     "connect": "{{name}} verbinden",

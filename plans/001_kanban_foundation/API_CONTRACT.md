@@ -1,4 +1,4 @@
-# Brain4All Kanban API contract
+# XNOBrain Kanban API contract
 
 This is the target product contract, not a license to reproduce the Hermes
 dashboard API. During implementation, use the repository’s existing success
@@ -160,7 +160,7 @@ silently mapped to Todo.
 
 Scheduled tasks include a database-backed `schedule` object with recurrence,
 `next_run_at`, interval minutes, timezone, enabled state, occurrence count, and
-last-run time. The metadata lives in `brain4all_task_schedules` inside the
+last-run time. The metadata lives in `xnobrain_task_schedules` inside the
 board's Kanban SQLite database. Native scheduled cards have no ordinary move
 targets; archive remains a separate confirmed action.
 

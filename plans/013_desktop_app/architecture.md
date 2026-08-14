@@ -8,7 +8,7 @@ Docker Web edition (Stages 1–3)
 │   ├── Edition selection and install wizard only
 │   └── Rust Docker installer driver
 ├── Docker runtime
-│   ├── Brain4All Web UI image
+│   ├── XNOBrain Web UI image
 │   ├── FastAPI/Hermes runtime image
 │   ├── 9router process
 │   └── Persistent named data volume
@@ -212,7 +212,7 @@ supports a documented rotation procedure.
   store where possible; otherwise use an owner-only file.
 - Bind the Traefik product endpoint to `127.0.0.1`, never all interfaces.
 - Keep data in a stable named volume independent of image/container versions.
-- Label all Brain4All-owned Docker resources so repair/uninstall targets are
+- Label all XNOBrain-owned Docker resources so repair/uninstall targets are
   exact and cannot touch unrelated Docker resources.
 - Do not mount the Docker socket into the product runtime unless a separately
   reviewed feature requires it. The desktop driver talks to Docker from the

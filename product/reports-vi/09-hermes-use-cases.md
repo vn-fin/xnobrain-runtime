@@ -7,7 +7,7 @@
 > dưới là một bản ghi cô đọng nhưng trung thực: tiêu đề, agent làm gì, và các
 > công cụ/mô hình/con số được nêu tên. **Các mục C–E chứa phần phân tích** — những story
 > nào gần nhất với Twin Terminal, nơi Hermes và OpenClaw xuất hiện cùng nhau, và điều đó
-> có ý nghĩa gì với Brain4All.
+> có ý nghĩa gì với XNOBrain.
 
 ## Cấu trúc trang (nguyên văn)
 
@@ -364,7 +364,7 @@ hầu hết là **những power user cá nhân và công cụ nhỏ** (primeclaw
 watchdog, tiện ích di trú), chứ không phải các công ty được cấp vốn — tức là ô "twin-trên-
 nhiều-runtime" **vẫn còn để trống.**
 
-## E. Danh mục này có ý nghĩa gì với Brain4All
+## E. Danh mục này có ý nghĩa gì với XNOBrain
 
 1. **Nhu cầu đã được chứng minh và rộng khắp.** 262 story thật, có nguồn, trải khắp 15
    lĩnh vực, phần lớn từ cá nhân và nhóm nhỏ — thị trường *agent cá nhân/chuyên gia tự lưu

@@ -1,6 +1,6 @@
-# Brain4All App Guide
+# XNOBrain App Guide
 
-This directory is the exclusive home of the Brain4All native installer and
+This directory is the exclusive home of the XNOBrain native installer and
 Full Managed App. Read `../AGENTS.md`, this file, Plan 013, and the repository
 skill `.agents/skills/tauri-app-development/SKILL.md` before app work.
 
@@ -8,7 +8,7 @@ skill `.agents/skills/tauri-app-development/SKILL.md` before app work.
 
 - Put every app-specific TypeScript, React, Rust, test, manifest, installer,
   packaging, helper, and document under `app/`.
-- Do not change `../src/`, `../brain4all/`, `../server.py`, the Hermes runtime,
+- Do not change `../src/`, `../xnobrain/`, `../server.py`, the Hermes runtime,
   9router integration, Docker images, or existing Web UI behavior to make an
   app feature work.
 - Consume the existing product only through its released HTTP/SSE contracts or

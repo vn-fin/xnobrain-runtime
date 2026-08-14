@@ -1,0 +1,4 @@
+interface:
+  display_name: "XNOBrain UI Review"
+  short_description: "Review and refine XNOBrain UI behavior"
+  default_prompt: "Use $xnobrain-ui to review and refine a XNOBrain UI flow."

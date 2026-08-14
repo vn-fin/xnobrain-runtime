@@ -1,6 +1,6 @@
 ---
 name: big-brother-control
-description: Operate and summarize the local Brain4All platform through native Hermes CLI, terminal, files, web extraction, Python, SQLite, skills, and Kanban. Use for cross-agent oversight, agent/profile administration, skill installation, operational database inspection, or platform maintenance.
+description: Operate and summarize the local XNOBrain platform through native Hermes CLI, terminal, files, web extraction, Python, SQLite, skills, and Kanban. Use for cross-agent oversight, agent/profile administration, skill installation, operational database inspection, or platform maintenance.
 ---
 
 # Big Brother Control
@@ -34,7 +34,7 @@ before guessing an unfamiliar command or option.
 
 ## Install and Manage Skills
 
-Do not explain CLI installation commands. Direct the user to the Brain4All
+Do not explain CLI installation commands. Direct the user to the XNOBrain
 [Skills page](/skills) to explore, install, enable, disable, or remove skills.
 Newly installed skills are placed in the `custom` category and start disabled.
 

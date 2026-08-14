@@ -7,9 +7,9 @@ carries a file reference; anything not directly verifiable today is marked
 
 ## 1. The local source of truth: `sessions` in each profile's `state.db`
 
-Brain4All itself guarantees the accounting schema — it is created by
+XNOBrain itself guarantees the accounting schema — it is created by
 `_ensure_session_schema` in
-[`brain4all/integrations/hermes.py`](../../../brain4all/integrations/hermes.py)
+[`xnobrain/integrations/hermes.py`](../../../xnobrain/integrations/hermes.py)
 (around line 1514; the method is invoked from both the profile-provisioning
 path near line 1188 and the conversation-create path near line 1461). The
 `sessions` table columns, verbatim from the `CREATE TABLE`:
@@ -87,7 +87,7 @@ mtime-skip (§2) already prevents scanning quiet agents at all.
 Plan 009 (implemented) established every local mechanism the reporter needs:
 
 - **Read-only opening.**
-  [`brain4all/integrations/analytics.py`](../../../brain4all/integrations/analytics.py)
+  [`xnobrain/integrations/analytics.py`](../../../xnobrain/integrations/analytics.py)
   `_open_ro()` opens `file:{path}?mode=ro` with `uri=True, timeout=1.0`. The
   reporter uses the same helper (import, not copy — see
   [implementation.md](implementation.md) Phase 1). The module's docstring
@@ -97,7 +97,7 @@ Plan 009 (implemented) established every local mechanism the reporter needs:
   reporter adopts the same posture: a locked/corrupt/missing `state.db` yields
   no snapshots this cycle, never an exception that could disturb the app.
 - **mtime-skip partial cache.**
-  [`brain4all/services/analytics.py`](../../../brain4all/services/analytics.py)
+  [`xnobrain/services/analytics.py`](../../../xnobrain/services/analytics.py)
   `_collect_partials` stats `state.db` (`st_mtime_ns`) and skips re-reading an
   unchanged file. The reporter persists the same idea durably: the cursor file
   stores `{agent_id: mtime_ns}` and an unchanged file is skipped without
@@ -111,7 +111,7 @@ Plan 009 (implemented) established every local mechanism the reporter needs:
   central dashboard must match (README definition of done). The validation
   query pair is in [validation.md](validation.md) §3.
 - **Test scaffolding.**
-  [`brain4all/tests/test_analytics.py`](../../../brain4all/tests/test_analytics.py)
+  [`xnobrain/tests/test_analytics.py`](../../../xnobrain/tests/test_analytics.py)
   builds a temporary `HERMES_HOME`, creates agents through the real API, and
   inserts real `sessions` rows (`_SESSION_COLUMNS` insert). The reporter tests
   reuse this scaffolding wholesale.
@@ -209,10 +209,10 @@ The program README fixes this choice; the reasoning, spelled out:
   7-day gap, [validation.md](validation.md) §2) within the outbox byte bound.
 - **Dormancy.** The reporter must be a no-op unless `ENTERPRISE_API_URL` is
   configured (env already recognized — see
-  [`brain4all/tests/test_fastapi.py`](../../../brain4all/tests/test_fastapi.py)
+  [`xnobrain/tests/test_fastapi.py`](../../../xnobrain/tests/test_fastapi.py)
   line ~70 and `docs/plans.md`) **and** the device is enrolled. Default
   Compose self-hosted mode must show zero network calls and zero new files.
-- **Lifespan pattern exists.** [`brain4all/app.py`](../../../brain4all/app.py)
+- **Lifespan pattern exists.** [`xnobrain/app.py`](../../../xnobrain/app.py)
   lines ~32–53 wrap the upstream lifespan and start/cancel the kanban
   `dispatcher_loop` task with `suppress(Exception)` on startup and
   `cancel()`/`CancelledError` suppression on shutdown. The reporter wires in

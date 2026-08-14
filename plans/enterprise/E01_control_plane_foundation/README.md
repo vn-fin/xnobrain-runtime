@@ -5,7 +5,7 @@ Priority: **P0 — everything in the enterprise program depends on it.** E02
 devices + tenancy; E04 (voice) needs entitlements. Nothing else can start until
 the skeleton, schema, and device-identity slice exist.
 
-This plan creates a **new private repository** `brain4all-enterprise`
+This plan creates a **new private repository** `xnobrain-enterprise`
 (Go + PostgreSQL, raw SQL, no ORM) and implements the minimal control plane:
 service skeleton, schema v1, the **device-identity slice** of
 `docs/contracts/device-command-v1.md`, the **read slice** of
@@ -90,7 +90,7 @@ Stand up the minimal Go control plane that the rest of the program builds on:
 ## Constraints (restated, binding)
 
 - Two-repo split per `docs/repository-ownership.md`: control plane lives in
-  the **new private** `brain4all-enterprise` repo; the OSS Python repo never
+  the **new private** `xnobrain-enterprise` repo; the OSS Python repo never
   requires it.
 - Go + PostgreSQL, **no ORM** — raw SQL and plain-file migrations
   (`docs/enterprise-extension.md`: "Neither project may introduce an ORM").
@@ -98,7 +98,7 @@ Stand up the minimal Go control plane that the rest of the program builds on:
   `docs/contracts/`; incompatible changes create `v2`.
 - Prefer HTTP contracts over Go imports. The OSS repo is Python, so there are
   no OSS internal Go packages to import; the module path is therefore free to
-  be `github.com/vn-fin/brain4all-enterprise` ("verify" the GitHub org — see
+  be `github.com/vn-fin/xnobrain-enterprise` ("verify" the GitHub org — see
   [approaches.md](approaches.md) decision E). The nesting rule from
   `docs/enterprise-extension.md` applies only if a Go import ever appears.
 - Numeric `-1` = unlimited; `0` = unavailable (`docs/plans.md`,

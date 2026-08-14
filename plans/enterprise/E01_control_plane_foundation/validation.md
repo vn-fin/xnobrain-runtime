@@ -6,7 +6,7 @@ box. Cross-links: [README.md](README.md), [findings.md](findings.md),
 [architecture.md](architecture.md), [approaches.md](approaches.md),
 [implementation.md](implementation.md).
 
-All test paths are in the private repo `brain4all-enterprise` unless noted.
+All test paths are in the private repo `xnobrain-enterprise` unless noted.
 
 ## 1. Skeleton and migrations
 
@@ -22,7 +22,7 @@ All test paths are in the private repo `brain4all-enterprise` unless noted.
 - [ ] The binary refuses to serve traffic when the schema version is behind
       (readyz stays 503). Evidence: test or manual demo with migrations
       intentionally not run.
-- [ ] No ORM anywhere: `grep -rE 'gorm|sqlboiler|"entgo|xorm|bun\.' brain4all-enterprise/`
+- [ ] No ORM anywhere: `grep -rE 'gorm|sqlboiler|"entgo|xorm|bun\.' xnobrain-enterprise/`
       returns nothing; all SQL lives under `internal/store/`. Evidence:
       grep output (empty) + `grep -rl 'SELECT\|INSERT\|UPDATE\|DELETE' --include='*.go' | grep -v internal/store` (empty).
 
@@ -126,7 +126,7 @@ All test paths are in the private repo `brain4all-enterprise` unless noted.
 ## 6. Boundaries (program rules)
 
 - [ ] The public OSS repo is untouched by code: `git status` in
-      `/home/kim/Documents/xno/brain4all-dev/brain4all` shows only the
+      `/home/kim/Documents/xno/xnobrain-dev/xnobrain` shows only the
       `plans/enterprise/E01_control_plane_foundation/` docs (this plan).
       Evidence: `git status` output.
 - [ ] No new cross-repo contract was created; `docs/contracts/` in the
@@ -137,7 +137,7 @@ All test paths are in the private repo `brain4all-enterprise` unless noted.
       unset and with the enterprise stack down (nothing in this plan touched
       it — assert by running the OSS `make test` unchanged). Evidence:
       OSS `make test` PASS at the same commit.
-- [ ] `go vet ./...` and `make check` are green in `brain4all-enterprise`.
+- [ ] `go vet ./...` and `make check` are green in `xnobrain-enterprise`.
       Evidence: command output.
 
 ## Definition-of-done restatement

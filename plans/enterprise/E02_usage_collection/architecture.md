@@ -41,7 +41,7 @@ in [findings.md](findings.md); decisions and rejected alternatives in
                │  Authorization: Bearer <device token>
                ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  brain4all-enterprise (Go)                                          │
+│  xnobrain-enterprise (Go)                                          │
 │                                                                     │
 │  internal/ingest  — auth device token → (device, user?, tenant?)    │
 │    validate: schema, non-negative, size (413), rate (429),          │
@@ -70,12 +70,12 @@ in [findings.md](findings.md); decisions and rejected alternatives in
 ### 2.1 Activation gate
 
 The reporter task starts inside the existing lifespan wrapper in
-[`brain4all/app.py`](../../../brain4all/app.py) (exactly like the kanban
+[`xnobrain/app.py`](../../../xnobrain/app.py) (exactly like the kanban
 dispatcher block, lines ~32–53) but immediately parks (returns / sleeps
 forever re-checking cheaply) unless **all** of:
 
 1. `ENTERPRISE_API_URL` is set and non-empty.
-2. `BRAIN4ALL_USAGE_DISABLE` is not `"1"` (operator escape hatch).
+2. `XNOBRAIN_USAGE_DISABLE` is not `"1"` (operator escape hatch).
 3. Device identity is present and enrolled (E01 seam:
    `load_device_identity()` finds `DATA_DIR/device/` credentials — seam
    definition in [implementation.md](implementation.md) Phase 1).
@@ -143,7 +143,7 @@ malformed). Kept for diagnosis, bounded to 8 files, oldest deleted.
 
 ### 2.3 Scan loop (producer)
 
-Runs every `BRAIN4ALL_USAGE_REPORT_INTERVAL` seconds (default 60) with ±20%
+Runs every `XNOBRAIN_USAGE_REPORT_INTERVAL` seconds (default 60) with ±20%
 jitter, entirely in `asyncio.to_thread` for the SQLite work, concurrency
 bounded by a semaphore (plan-009 uses 8; reporter uses 2 — it is background
 work and must never compete with interactive reads):
@@ -157,7 +157,7 @@ for each agent in agents.list_agents()["agents"]:
            FROM sessions s
            WHERE last_activity_at > :watermark
            ORDER BY last_activity_at ASC
-           LIMIT BRAIN4ALL_USAGE_BATCH_MAX_SNAPSHOTS          # ?mode=ro
+           LIMIT XNOBRAIN_USAGE_BATCH_MAX_SNAPSHOTS          # ?mode=ro
     build Snapshot objects (allowlist serializer + HMAC hashing, §5)
     collect per-agent candidate watermark = max(last_activity_at of rows)
     note stat.st_mtime_ns taken BEFORE the read (safe: a write during the
@@ -176,7 +176,7 @@ Nothing propagates to the app.
 ### 2.4 Spool bound
 
 Total bytes under `outbox/` (excluding `dead/`) capped by
-`BRAIN4ALL_USAGE_OUTBOX_MAX_BYTES` (default 64 MiB — years of snapshots at
+`XNOBRAIN_USAGE_OUTBOX_MAX_BYTES` (default 64 MiB — years of snapshots at
 realistic volume; a snapshot line is ~400 bytes). Before appending a new
 batch: while `total + new > cap`, delete the **oldest** batch file and
 increment `dropped_batches` (persisted in the cursor file). Per
@@ -187,7 +187,7 @@ of the same session supersedes the old one (cumulative counters); see
 
 ### 2.5 Drain loop (pusher)
 
-Runs every `BRAIN4ALL_USAGE_PUSH_INTERVAL` seconds (default 300) with ±20%
+Runs every `XNOBRAIN_USAGE_PUSH_INTERVAL` seconds (default 300) with ±20%
 jitter. State machine:
 
 ```
@@ -378,7 +378,7 @@ schema: `title`, `system_prompt`, `model_config`, `billing_base_url`,
   without the salt). The domain-separation prefixes prevent agent/session
   collisions.
 - Consequence: the server cannot display real agent names. A device MAY
-  opt in (explicit user action; `BRAIN4ALL_USAGE_SHARE_LABELS=1`) to publish
+  opt in (explicit user action; `XNOBRAIN_USAGE_SHARE_LABELS=1`) to publish
   a label registry mapping `agent_hash → display_name` via
   `POST /ingest/v1/labels` (same envelope/auth rules; display names are the
   only permitted user-entered strings on this channel and are opt-in
@@ -655,7 +655,7 @@ run.
 ## 7. Admin usage views
 
 Read API mirroring plan 009's Grafana-style parameters
-([`brain4all/services/analytics.py`](../../../brain4all/services/analytics.py)
+([`xnobrain/services/analytics.py`](../../../xnobrain/services/analytics.py)
 uses `agent_ids/from/to/bucket`; the central version adds fleet dimensions):
 
 ```

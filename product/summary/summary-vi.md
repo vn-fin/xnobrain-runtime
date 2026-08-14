@@ -1,8 +1,8 @@
-# Brain4All — Twin Terminal · Tóm tắt điều hành
+# XNOBrain — Twin Terminal · Tóm tắt điều hành
 
 ## Một câu
 
-Brain4All là nền tảng tự lưu trữ (self-host) để xây dựng AI agent, đang tiến hóa thành một
+XNOBrain là nền tảng tự lưu trữ (self-host) để xây dựng AI agent, đang tiến hóa thành một
 **"Bloomberg Terminal cho các twin chuyên gia đã kiểm định"**: chuyên gia mã hóa tay nghề
 của mình vào các twin, các twin này đi qua cổng kiểm định độ trung thành, chạy trên dữ liệu
 của chính khách hàng, và trả royalty (tiền bản quyền) ngược lại cho chuyên gia.

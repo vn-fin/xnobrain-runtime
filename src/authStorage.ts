@@ -1,9 +1,9 @@
-export const FIREBASE_REFRESH_TOKEN_KEY = 'brain4all.firebase.refresh-token';
-export const XNO_ACCESS_TOKEN_KEY = 'brain4all.xno.access-token';
-export const XNO_REFRESH_TOKEN_KEY = 'brain4all.xno.refresh-token';
+export const FIREBASE_REFRESH_TOKEN_KEY = 'xnobrain.firebase.refresh-token';
+export const XNO_ACCESS_TOKEN_KEY = 'xnobrain.xno.access-token';
+export const XNO_REFRESH_TOKEN_KEY = 'xnobrain.xno.refresh-token';
 
-const XNO_ACCESS_EXPIRES_AT_KEY = 'brain4all.xno.access-expires-at';
-const XNO_REFRESH_EXPIRES_AT_KEY = 'brain4all.xno.refresh-expires-at';
+const XNO_ACCESS_EXPIRES_AT_KEY = 'xnobrain.xno.access-expires-at';
+const XNO_REFRESH_EXPIRES_AT_KEY = 'xnobrain.xno.refresh-expires-at';
 const EXPIRY_SKEW_MS = 30_000;
 
 let accessToken: string | null = null;

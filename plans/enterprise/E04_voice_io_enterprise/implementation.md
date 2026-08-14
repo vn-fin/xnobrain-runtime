@@ -48,7 +48,7 @@ facts recorded in this file's §Provider notes (append); caps confirmed.
 
 ---
 
-## Phase 1 — Enterprise track: the voice gateway (`brain4all-enterprise`, Go)
+## Phase 1 — Enterprise track: the voice gateway (`xnobrain-enterprise`, Go)
 
 Paths follow that repo's `internal/` layout (per
 `docs/enterprise-extension.md`; adjust prefixes to the E01-established tree —
@@ -105,10 +105,10 @@ a staging tenant (evidence for [validation](validation.md)).
 
 ## Phase 2 — OSS track: thin proxy (this repo, Python)
 
-1. **Integration client** — `brain4all/integrations/enterprise_voice.py`
-   (NEW; first enterprise integration in `brain4all/integrations/` —
+1. **Integration client** — `xnobrain/integrations/enterprise_voice.py`
+   (NEW; first enterprise integration in `xnobrain/integrations/` —
    findings §7). Follows the lazy/typed-error style of
-   `brain4all/integrations/kanban.py`:
+   `xnobrain/integrations/kanban.py`:
    - `class EnterpriseVoiceUnavailable(RuntimeError)` (no
      `ENTERPRISE_API_URL`, not signed in, or no `voice` capability — carries
      a stable code) and `class EnterpriseUnreachable(RuntimeError)`.
@@ -122,7 +122,7 @@ a staging tenant (evidence for [validation](validation.md)).
    - `def capability_enabled() -> bool` — reads the cached entitlement
      document; never a network call on the hot path.
    - Never logs bodies; timeouts mapped to `EnterpriseUnreachable`.
-2. **Handlers** — `brain4all/handlers/api.py`:
+2. **Handlers** — `xnobrain/handlers/api.py`:
    - `voice_transcribe` and `voice_voices` as normal operations in the
      `operations` dict (envelope path); `voice_speak` as a dedicated raw
      method (returns `Response(content=..., media_type="audio/mpeg")`,
@@ -134,7 +134,7 @@ a staging tenant (evidence for [validation](validation.md)).
    - **Extend the `limits` op (line 97)**: add
      `"capabilities": <flags from the cached entitlement doc or {}>` to the
      returned dict.
-3. **Routes** — `brain4all/routes/setup.py`, a `("Voice",)` tag group:
+3. **Routes** — `xnobrain/routes/setup.py`, a `("Voice",)` tag group:
 
    ```python
    Route("POST", "/api/brain/v1/voice/speak", "voice_speak", VoiceSpeakRequest, special="voice_speak", tags=("Voice",)),
@@ -146,16 +146,16 @@ a staging tenant (evidence for [validation](validation.md)).
    mechanics in `setup.py` — transcribe needs multipart handling, speak a
    raw response; match the exact `special`/`response_model=None` plumbing
    the file already uses for uploads/streams.)
-4. **Models** — `brain4all/models/api.py`: `VoiceSpeakRequest`
+4. **Models** — `xnobrain/models/api.py`: `VoiceSpeakRequest`
    (`text: 1..5_000`, `voice_id: str | None ≤ 256`) — mirroring the gateway
-   cap; export via `brain4all/models/__init__.py`.
+   cap; export via `xnobrain/models/__init__.py`.
 5. **Per-agent preference** (Decision D note): store `tts.enabled`,
    `stt.enabled`, `voice_id` in the agent profile `config.yaml` via the
    existing `PlatformService.update_agent_config` snapshot+atomic path;
    reuse 006's GET/PUT `/api/brain/v1/agents/{agent_id}/voice` route
    design with a model that accepts **only** those fields (never provider
    keys — 006's secret-stripping rule).
-6. **Python tests** — `brain4all/tests/test_enterprise_voice.py` with a
+6. **Python tests** — `xnobrain/tests/test_enterprise_voice.py` with a
    fake enterprise gateway (`httpx.MockTransport` or a local ASGI fake):
    403 without capability; 413 oversize; 503 on unreachable; happy paths;
    limits payload contains `capabilities`; a redaction check that no token
@@ -224,17 +224,17 @@ Exit: manual browser pass per [validation](validation.md) §6.
 
 ## File change summary
 
-**`brain4all-enterprise` (Go):** new `migrations/NNNN_voice.sql`,
+**`xnobrain-enterprise` (Go):** new `migrations/NNNN_voice.sql`,
 `internal/voice/{handler,adapter,vault,caps,meter}.go`,
 `internal/voice/providers/{elevenlabs,<stt>}.go`, tests with fake providers;
 edits to the router wiring, entitlement capability set (E01 policy), E02
 rollup job, usage dashboard.
 
-**`brain4all` (this repo, Python/TS):** new
-`brain4all/integrations/enterprise_voice.py`,
-`brain4all/tests/test_enterprise_voice.py`, `src/api/voice.ts`,
+**`xnobrain` (this repo, Python/TS):** new
+`xnobrain/integrations/enterprise_voice.py`,
+`xnobrain/tests/test_enterprise_voice.py`, `src/api/voice.ts`,
 `src/hooks/useVoice.ts`, `src/api/voice.test.ts`; edits to
-`brain4all/models/api.py` + `brain4all/models/__init__.py`,
-`brain4all/handlers/api.py` (3 voice ops + limits `capabilities`),
-`brain4all/routes/setup.py` (voice routes), agent settings surface,
+`xnobrain/models/api.py` + `xnobrain/models/__init__.py`,
+`xnobrain/handlers/api.py` (3 voice ops + limits `capabilities`),
+`xnobrain/routes/setup.py` (voice routes), agent settings surface,
 `src/components/ChatArea.tsx`, all 7 `src/locales/*.json`, docs.

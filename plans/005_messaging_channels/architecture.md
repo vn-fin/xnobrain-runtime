@@ -1,13 +1,13 @@
 # 005 — Architecture
 
-How messaging channels fit Brain4All's layering. Read `findings.md` first for
+How messaging channels fit XNOBrain's layering. Read `findings.md` first for
 the Hermes surface this rides, and `approaches.md` for why the adapter is
 in-process Python (not loopback HTTP). `implementation.md` turns this into
 file-by-file steps.
 
 ## 1. Layering fit
 
-Brain4All boundaries (`AGENTS.md`, `plans/001_kanban_foundation/README.md`):
+XNOBrain boundaries (`AGENTS.md`, `plans/001_kanban_foundation/README.md`):
 
 ```
 React "Channels" page (src/components/ChannelsView.tsx, hooks/useChannels.ts, api/channels.ts)
@@ -34,7 +34,7 @@ React. Redaction happens before data leaves the service.
 
 ## 2. Data flow & where state lives
 
-**State is Hermes-owned. Brain4All owns no channel state.**
+**State is Hermes-owned. XNOBrain owns no channel state.**
 
 | State | Lives in | Written via | Read via |
 |---|---|---|---|
@@ -45,10 +45,10 @@ React. Redaction happens before data leaves the service.
 | Gateway process | OS process on `:8642` | `hermes gateway {start,stop,restart}` | `get_running_pid()` |
 | Pairing pending/approved | `gateway/pairing.py` store files | `PairingStore` | `PairingStore.list_*` |
 
-Brain4All's **only** persistence responsibility is the mandated
+XNOBrain's **only** persistence responsibility is the mandated
 snapshot-before-mutation: before any write to a profile's `.env` or
 `config.yaml`, snapshot both (reuse the same snapshot mechanism as
-`integrations/config.py` / `AGENTS.md` §Persistence). No new Brain4All file
+`integrations/config.py` / `AGENTS.md` §Persistence). No new XNOBrain file
 format, no channel cache.
 
 `agent_id` → `profile`: an agent **is** a profile
@@ -56,7 +56,7 @@ format, no channel cache.
 the agent, then passes the profile name to every Hermes call (as the `profile`
 arg / `_profile_scope`). A missing/invalid agent → 404 before any Hermes call.
 
-## 3. New Brain4All API contract
+## 3. New XNOBrain API contract
 
 Base: `/api/brain/v1` (matches the existing agent-scoped surface in
 `routes/setup.py`). All responses use the standard `APIEnvelope`
@@ -120,7 +120,7 @@ audit. All three run the **multiplex port-binding guard** before writing.
 `WhatsAppOnboardApply` = `{mode?, allowed_users?}`. The agent's profile is taken
 from the path `agent_id`, not the body.
 
-### 3e. Pydantic model names (new, in `brain4all/models/api.py`)
+### 3e. Pydantic model names (new, in `xnobrain/models/api.py`)
 
 `ChannelUpdate`, `ChannelCredentialSet`, `GatewayDrain`, `PairingApprove`,
 `PairingRevoke`, `TelegramOnboardStart`, `TelegramOnboardApply`,
@@ -128,7 +128,7 @@ from the path `agent_id`, not the body.
 the service (dicts) and wrapped by `APIEnvelope`, matching the existing Kanban
 style (no per-response Pydantic classes required, but validate inputs strictly).
 
-## 4. Integration-adapter methods (`brain4all/integrations/gateway.py`)
+## 4. Integration-adapter methods (`xnobrain/integrations/gateway.py`)
 
 A thin, lazy-importing adapter (mirror `integrations/kanban.py`'s
 `KanbanUnavailable` + `_module()` pattern). Raises `GatewayUnavailable` when the
@@ -174,7 +174,7 @@ Profile scoping: the adapter enters Hermes' profile scope (the same mechanism
 public-API call so reads/writes hit the target agent's `.env`/`config.yaml`, not
 the root install's.
 
-## 5. Service rules (`brain4all/services/channels.py`)
+## 5. Service rules (`xnobrain/services/channels.py`)
 
 1. Resolve `agent_id` → profile via `integrations/hermes.py`; 404 if missing.
 2. **Read projection:** map Hermes' raw `state` (`disabled, not_configured,
@@ -192,7 +192,7 @@ the root install's.
    entry ever carries a raw value.
 7. **Lifecycle:** after an enable + credential write, the UI decides whether to
    restart; the service exposes `gateway_restart` and reports `needs_restart`.
-8. Convert Hermes 404/409/429 into the Brain4All error envelope with stable
+8. Convert Hermes 404/409/429 into the XNOBrain error envelope with stable
    codes; log structured names only.
 
 ## 6. React UI surface (`src`)
@@ -219,14 +219,14 @@ the root install's.
 ### 7a. Enable Telegram (manual bot token)
 
 ```
-React ChannelsView            Brain4All (routes→handler→service→integration)         Hermes (same process)
+React ChannelsView            XNOBrain (routes→handler→service→integration)         Hermes (same process)
   │ toggle Telegram on              │                                                     │
   │ + paste bot token               │                                                     │
   ├── PUT /api/brain/v1/agents/A/channels/telegram ──▶                                │
   │      {enabled:true, env:{TELEGRAM_BOT_TOKEN:…, TELEGRAM_ALLOWED_USERS:…}}             │
   │                                 │ resolve A→profile (404 if missing)                  │
   │                                 │ multiplex guard: telegram not port-binding → OK     │
-  │                                 │ snapshot profile .env + config.yaml ───────────────▶│ (Brain4All snapshot)
+  │                                 │ snapshot profile .env + config.yaml ───────────────▶│ (XNOBrain snapshot)
   │                                 │ integration.set_env(TELEGRAM_BOT_TOKEN) ───────────▶│ save_env_value → .env
   │                                 │ integration.set_env(TELEGRAM_ALLOWED_USERS) ───────▶│ save_env_value
   │                                 │ integration.set_channel_enabled(telegram,true) ────▶│ write_platform_config_field
@@ -249,7 +249,7 @@ Phone (Telegram app)     Telegram servers      Hermes gateway (profile A)       
   │◀── reply shown ─────────┤                          │                                │
 ```
 
-Brain4All is **not** on the message path — it only configured the channel and
+XNOBrain is **not** on the message path — it only configured the channel and
 drove lifecycle. Delivery, session, and dispatch are entirely Hermes'
 (`gateway/session.py`, `gateway/stream_consumer.py`, `gateway/delivery.py`),
 never re-implemented.

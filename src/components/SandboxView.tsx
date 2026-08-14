@@ -4,7 +4,7 @@ import { StatCard, UsageBar, formatBytes, formatUptime } from './common';
 import type { SandboxData } from '../types';
 import type { AsyncStatus } from '../types';
 import { AsyncState } from './AsyncState';
-import { brain4AllRuntime } from '../runtime';
+import { xnobrainRuntime } from '../runtime';
 
 export function SandboxView({
   data,
@@ -32,7 +32,7 @@ export function SandboxView({
   embedded?: boolean;
 }) {
   const { t } = useTranslation();
-  const managedVM = brain4AllRuntime.edition === 'cloud';
+  const managedVM = xnobrainRuntime.edition === 'cloud';
   const viewClass = embedded ? 'sandbox-view embedded' : 'sandbox-view';
   if (status === 'loading' && !setupRunning) return <AsyncState status="loading" />;
   if (status === 'error' && !setupRunning) return <AsyncState status="error" error={error} onRetry={onRefresh} />;
@@ -69,7 +69,7 @@ export function SandboxView({
                 <Server size={30} />
               </span>
               <h2>{managedVM ? 'No VM yet' : t('sandbox.noSandbox')}</h2>
-              <p>{managedVM ? 'Create your private Incus VM for the Brain4All runtime.' : t('sandbox.noSandboxDesc')}</p>
+              <p>{managedVM ? 'Create your private Incus VM for the XNOBrain runtime.' : t('sandbox.noSandboxDesc')}</p>
               <button className="sbx-create-btn" onClick={onCreate}>
                 <Plus size={16} />
                 {managedVM ? 'Create VM' : t('sandbox.create')}

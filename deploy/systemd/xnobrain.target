@@ -1,0 +1,7 @@
+[Unit]
+Description=XNOBrain workspace runtime
+Wants=xnobrain-prepare.service xnobrain-9router.service xnobrain-api.service
+After=xnobrain-prepare.service xnobrain-9router.service xnobrain-api.service
+
+[Install]
+WantedBy=multi-user.target

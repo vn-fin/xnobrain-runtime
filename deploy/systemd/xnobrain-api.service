@@ -1,0 +1,34 @@
+[Unit]
+Description=XNOBrain FastAPI and Hermes runtime
+Documentation=https://github.com/vn-fin/xnobrain
+After=network-online.target xnobrain-prepare.service xnobrain-9router.service
+Wants=network-online.target xnobrain-9router.service
+Requires=xnobrain-prepare.service
+ConditionPathExists=/etc/xnobrain/xnobrain.env
+PartOf=xnobrain.target
+
+[Service]
+Type=simple
+User=xnobrain
+Group=xnobrain
+WorkingDirectory=/opt/xnobrain
+EnvironmentFile=/etc/xnobrain/xnobrain.env
+Environment=PATH=/opt/xnobrain/.tools/node/bin:/opt/xnobrain/.tools/npm-global/bin:/opt/xnobrain/.tools/hermes-agent/venv/bin:/opt/xnobrain/.tools/office-python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=HERMES_CLI=/opt/xnobrain/.tools/npm-global/bin/agent
+Environment=HERMES_RUNTIME_PYTHON=/opt/xnobrain/.tools/hermes-agent/venv/bin/python
+ExecStartPre=/opt/xnobrain/scripts/prepare-service-data.sh
+ExecStart=/opt/xnobrain/.tools/python/bin/python /opt/xnobrain/server.py
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=60
+TimeoutStopSec=120
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/srv/xnobrain-data
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=xnobrain.target

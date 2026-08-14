@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 import yaml
 
-from xnobrain.app import Brain4AllApplication
+from xnobrain.app import XNOBrainApplication
 from xnobrain.integrations import AgentManager, GlobalConfigManager, NineRouterAPIError
 from xnobrain.services.blends import BlendService
 from xnobrain.services.platform import ServiceError
@@ -419,7 +419,7 @@ class BlendRouteTests(unittest.IsolatedAsyncioTestCase):
             combos=[{"id": "cmb_auto", "name": "auto", "kind": "", "models": ["cx/a"], "created_at": "", "updated_at": ""}],
             models=[{"id": "cx/a"}, {"id": "cx/b"}, {"id": "cx/c"}])
         app = FastAPI()
-        Brain4AllApplication(
+        XNOBrainApplication(
             AgentManager(root_profile=root, profiles_root=profiles, legacy_agents_root=base / "legacy"),
             GlobalConfigManager(root_profile=root), self.router).register(app)
         self.app = app

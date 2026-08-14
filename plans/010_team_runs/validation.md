@@ -11,7 +11,7 @@ path). Flipping a checkbox without evidence is not complete
 
 ## 1. Compatibility test (Phase 0 gate)
 
-Run: `python -m unittest brain4all.tests.test_team_runs -k Compatibility`
+Run: `python -m unittest xnobrain.tests.test_team_runs -k Compatibility`
 
 Asserts (implementation.md Phase 0):
 
@@ -30,7 +30,7 @@ Asserts (implementation.md Phase 0):
 
 ## 2. Unit and integration tests
 
-`brain4all/tests/test_team_runs.py` (implementation.md Phase 6, tests 1–10):
+`xnobrain/tests/test_team_runs.py` (implementation.md Phase 6, tests 1–10):
 
 | Test | Proves |
 |---|---|

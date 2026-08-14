@@ -2,9 +2,9 @@
 
 Ordered, phased, file-by-file. Follow the chosen approaches in
 [approaches.md](approaches.md) and the contract in
-[architecture.md](architecture.md). Naming rule throughout: Brain4All surface
+[architecture.md](architecture.md). Naming rule throughout: XNOBrain surface
 says **blend**; 9router calls say **combos**; upstream paths/keys are never
-renamed. Brain4All persists nothing for this feature — every endpoint is a
+renamed. XNOBrain persists nothing for this feature — every endpoint is a
 live 9router proxy.
 
 ## Phase 0 — Probe the pinned 9router
@@ -13,12 +13,12 @@ The dependency is already pinned (`Dockerfile.backend` line 18
 `ARG NINE_ROUTER_NPM_VERSION=0.5.40`; `scripts/install-linux.sh` line 261).
 Do not bump it in this plan.
 
-File: `brain4all/tests/test_blends_probe.py` (new). A live-probe suite that
+File: `xnobrain/tests/test_blends_probe.py` (new). A live-probe suite that
 runs against the local 9router only with
 `RUN_LIVE_NINE_ROUTER_PROBES=1`, and **skips cleanly otherwise or when the
 router is not running**
 (mirror the guard style of `@unittest.skipUnless(HERMES_AVAILABLE, ...)` in
-`brain4all/tests/test_kanban.py` line 52 — here, attempt
+`xnobrain/tests/test_kanban.py` line 52 — here, attempt
 `NineRouterManager().status()` in `setUpClass` and `raise unittest.SkipTest`
 when `available` is false). Use a real `NineRouterManager` (its `_request`
 handles the CLI token) and a unique probe name like `b4a-probe-<pid>`.
@@ -52,7 +52,7 @@ Gate: the rest of the plan proceeds only after this suite passes against
 0.5.40. If any probe contradicts [findings.md](findings.md), update
 findings.md first and adjust the design before writing dependent code.
 
-## Phase 1 — Adapter refactor (`brain4all/integrations/nine_router.py`)
+## Phase 1 — Adapter refactor (`xnobrain/integrations/nine_router.py`)
 
 Signatures and rules in [architecture.md](architecture.md) § Adapter.
 
@@ -86,16 +86,16 @@ Signatures and rules in [architecture.md](architecture.md) § Adapter.
 
 ## Phase 2 — Service + models
 
-### 2a. `brain4all/models/api.py`
+### 2a. `xnobrain/models/api.py`
 
 Add `BlendCreate` and `BlendPatch` exactly as specified in
 [architecture.md](architecture.md) § Route table (name pattern
 `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, models 1–24, strategy literal set
 `fallback|round-robin|fusion`, `judge_model`, `sticky_limit ge=1`). Export
-both in `brain4all/models/__init__.py` (extend the existing `from .api import
+both in `xnobrain/models/__init__.py` (extend the existing `from .api import
 (...)` block, alphabetical position).
 
-### 2b. `brain4all/services/blends.py` (new)
+### 2b. `xnobrain/services/blends.py` (new)
 
 `BlendService(router: NineRouterManager)` implementing exactly the eight
 service rules in [architecture.md](architecture.md) § Service rules:
@@ -127,15 +127,15 @@ architecture.md (`invalid_blend_name` 400, `blend_name_conflict` 409,
 `blend_reserved` 403, `blend_not_found` 404, `invalid_blend` 400 for
 models/strategy guard failures). Register the service:
 
-- `brain4all/services/platform.py` `PlatformService.__init__`: after the
+- `xnobrain/services/platform.py` `PlatformService.__init__`: after the
   analytics wiring (line 76–77 pattern), add
   `from .blends import BlendService` / `self.blends = BlendService(router)`.
-- `brain4all/services/__init__.py`: export `BlendService` alongside
+- `xnobrain/services/__init__.py`: export `BlendService` alongside
   `KanbanService`.
 
 ## Phase 3 — Handlers + routes
 
-### 3a. `brain4all/handlers/api.py`
+### 3a. `xnobrain/handlers/api.py`
 
 Add to the `_operation` map (keep alphabetical grouping near the provider
 operations; no logic in the handler):
@@ -148,7 +148,7 @@ operations; no logic in the handler):
 "blends_delete": (lambda: s.blends.delete_blend(p["blend_id"]), "blend deleted successfully", 200),
 ```
 
-### 3b. `brain4all/routes/setup.py`
+### 3b. `xnobrain/routes/setup.py`
 
 Import `BlendCreate, BlendPatch` in the existing `from ..models import (...)`
 block, and add to `ROUTES` (after the Providers block; **`available-models`
@@ -216,8 +216,8 @@ matching current UI tone.
 
 ## Phase 5 — Tests
 
-1. **`brain4all/tests/test_blends.py`** (new) — unit tests with the
-   fake-router pattern from `brain4all/tests/test_nine_router.py`
+1. **`xnobrain/tests/test_blends.py`** (new) — unit tests with the
+   fake-router pattern from `xnobrain/tests/test_nine_router.py`
    (`FakeNineRouterManager` overriding `_request` with a
    `(method, path) -> response` map, recording requests). Fixtures include
    `("GET", "/api/combos")`, `("POST", "/api/combos")`,
@@ -240,7 +240,7 @@ matching current UI tone.
    - `auto` immutability: `update_blend`/`delete_blend` on the `auto` combo
      id → `ServiceError` 403 `blend_reserved`, and **no** 9router mutation
      request was recorded.
-2. **Integration (ASGI)** — extend `brain4all/tests/test_fastapi.py` (it
+2. **Integration (ASGI)** — extend `xnobrain/tests/test_fastapi.py` (it
    already has a `FakeRouter`, line 22): add combo/settings responses; assert
    `GET/POST/PATCH/DELETE /api/brain/v1/blends*` envelope shapes and
    status codes (incl. 201 create, 403 auto, 409 collision, 503 when the fake
@@ -262,6 +262,6 @@ matching current UI tone.
 ## Documentation (with Phase 5)
 
 - `docs/api.md`: the five Blends routes, DTO fields, error codes, and the
-  "Brain4All stores nothing — 9router is authoritative" note.
+  "XNOBrain stores nothing — 9router is authoritative" note.
 - `docs/architecture.md`: one paragraph on the blend/combo naming line and
   the strategy read-modify-write caveat.

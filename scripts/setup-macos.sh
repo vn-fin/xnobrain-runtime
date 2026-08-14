@@ -41,4 +41,4 @@ fi
 docker --version
 docker compose version
 make --version | head -n 1
-echo "Installation complete. Start Brain4All with: docker compose up -d --build"
+echo "Installation complete. Start XNOBrain with: docker compose up -d --build"

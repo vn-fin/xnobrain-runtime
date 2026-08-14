@@ -201,7 +201,7 @@ class ConversationRunnerMixin:
             config = json.loads(raw_config) if isinstance(raw_config, str) else raw_config
         except (TypeError, ValueError, json.JSONDecodeError):
             config = {}
-        context = config.get("brain4all_context") if isinstance(config, Mapping) else None
+        context = config.get("xnobrain_context") if isinstance(config, Mapping) else None
         if isinstance(context, Mapping):
             estimated += max(0, int(context.get("used") or 0))
         return estimated
@@ -330,7 +330,7 @@ class ConversationRunnerMixin:
         adapter = RunScopedAPIServerAdapter(PlatformConfig(enabled=True))
         session_db = self._session_db(profile_dir)
         adapter._session_db = session_db
-        # Brain4All may also expose legacy agent directories. Pin the native
+        # XNOBrain may also expose legacy agent directories. Pin the native
         # adapter to the already validated profile path instead of resolving
         # the profile name a second time.
         adapter._profile_scope = lambda _profile: _profile_runtime_scope(profile_dir)

@@ -3,7 +3,7 @@
 These findings define the constraints the desktop plan must preserve. Recheck
 versions, operating-system requirements, and licensing before each release.
 
-## 1. Brain4All is already a web application
+## 1. XNOBrain is already a web application
 
 - The product UI is React, TypeScript, and Vite under `src/`.
 - The application host is one FastAPI/Hermes process on port 8642, with one
@@ -39,7 +39,7 @@ Consequences:
 - The Compose path builds images locally. A desktop release must pull signed,
   prebuilt, multi-architecture images pinned by digest.
 - The development Compose currently uses Traefik's internal entrypoint 5152
-  and `BRAIN4ALL_HTTP_PORT` for its host mapping. The app-owned Docker Web
+  and `XNOBRAIN_HTTP_PORT` for its host mapping. The app-owned Docker Web
   template must preserve Traefik as the sole ingress while binding the chosen
   host port to loopback; it must not edit the core Compose file.
 
@@ -53,7 +53,7 @@ updates and target-specific external binaries.
 Limits relevant here:
 
 - It uses the operating-system webview: WebView2 on Windows, WKWebView on
-  macOS, and WebKitGTK on Linux. Brain4All needs cross-webview UI testing.
+  macOS, and WebKitGTK on Linux. XNOBrain needs cross-webview UI testing.
 - Each sidecar is built for a target triple. A sidecar is appropriate for the
   small runtime manager/helper, not the full Linux runtime.
 - Installer production still requires Windows and macOS code signing,
@@ -88,7 +88,7 @@ Primary references:
 
 Before publishing installers or container images:
 
-- Choose and add the Brain4All project license if still unresolved.
+- Choose and add the XNOBrain project license if still unresolved.
 - Inventory redistributed binaries, fonts, models, browser components, office
   components, and Python/Node packages.
 - Record notices/source-offer obligations as applicable.

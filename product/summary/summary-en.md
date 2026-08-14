@@ -1,8 +1,8 @@
-# Brain4All — Twin Terminal · Executive Brief
+# XNOBrain — Twin Terminal · Executive Brief
 
 ## In one line
 
-Brain4All is a self-hosted platform for building AI agents, evolving into a **"Bloomberg
+XNOBrain is a self-hosted platform for building AI agents, evolving into a **"Bloomberg
 Terminal for verified expert AI twins"**: experts encode their craft into twins that pass
 a fidelity-certification gate, run on the customer's own data, and pay royalties back.
 

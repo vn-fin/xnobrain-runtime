@@ -13,7 +13,7 @@ locally:
 
 ```
 RUN_LIVE_NINE_ROUTER_PROBES=1 \
-  python -m unittest brain4all.tests.test_blends_probe -v
+  python -m unittest xnobrain.tests.test_blends_probe -v
 ```
 
 - Without the explicit opt-in variable, the suite reports **skipped** so
@@ -30,7 +30,7 @@ RUN_LIVE_NINE_ROUTER_PROBES=1 \
 ## 2. Unit tests — adapter and service (fake router)
 
 ```
-python -m unittest brain4all.tests.test_blends -v
+python -m unittest xnobrain.tests.test_blends -v
 ```
 
 Cases per [implementation.md](implementation.md) Phase 5.1. Must-pass
@@ -67,15 +67,15 @@ Same suite, dedicated tests:
 - After the rejections, `ensure_auto_combo()` still reconciles `auto`
   normally (unchanged behavior of the refactored `_ensure_auto_combo`,
   covered by the existing
-  `brain4all/tests/test_nine_router.py::test_models_are_filtered_and_auto_combo_is_created`,
+  `xnobrain/tests/test_nine_router.py::test_models_are_filtered_and_auto_combo_is_created`,
   which must keep passing unmodified in intent).
 
 ## 4. Integration tests — routes via ASGI
 
-Extended `brain4all/tests/test_fastapi.py`:
+Extended `xnobrain/tests/test_fastapi.py`:
 
 ```
-python -m unittest brain4all.tests.test_fastapi -v
+python -m unittest xnobrain.tests.test_fastapi -v
 ```
 
 - Envelope shape and status for all five routes (`200/201` happy paths;

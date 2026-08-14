@@ -127,7 +127,7 @@ module scope.
 
 If you're shipping outside core, don't add a file to `tools/`; use a plugin and
 call `ctx.register_tool(...)` (same fields). See [plugins.md](plugins.md). This is
-the right choice for anything Brain4All adds, per `AGENTS.md` (extend, don't fork).
+the right choice for anything XNOBrain adds, per `AGENTS.md` (extend, don't fork).
 
 ## `override=True` — replacing a built-in
 

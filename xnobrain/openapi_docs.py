@@ -1,4 +1,4 @@
-"""Version-independent OpenAPI and Swagger UI routes for Brain4All."""
+"""Version-independent OpenAPI and Swagger UI routes for XNOBrain."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ _FASTAPI_DOC_ROUTE_NAMES = {
 
 def configure_openapi_docs(app: Any) -> None:
     """Replace FastAPI's root documentation endpoints with Brain-owned paths."""
-    if getattr(app.state, "brain4all_docs_registered", False):
+    if getattr(app.state, "xnobrain_docs_registered", False):
         return
 
     app.router.routes[:] = [
@@ -55,19 +55,19 @@ def configure_openapi_docs(app: Any) -> None:
         OPENAPI_URL,
         openapi_schema,
         include_in_schema=False,
-        name="brain4all_openapi",
+        name="xnobrain_openapi",
     )
     app.add_api_route(
         DOCS_URL,
         swagger_ui,
         include_in_schema=False,
-        name="brain4all_swagger_ui",
+        name="xnobrain_swagger_ui",
     )
     app.add_api_route(
         OAUTH2_REDIRECT_URL,
         swagger_oauth2_redirect,
         include_in_schema=False,
-        name="brain4all_swagger_oauth2_redirect",
+        name="xnobrain_swagger_oauth2_redirect",
     )
 
     # Hermes serves its SPA through an ordered catch-all route.
@@ -82,4 +82,4 @@ def configure_openapi_docs(app: Any) -> None:
         ] + catch_all
 
     app.openapi_schema = None
-    app.state.brain4all_docs_registered = True
+    app.state.xnobrain_docs_registered = True

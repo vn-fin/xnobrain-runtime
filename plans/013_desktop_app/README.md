@@ -2,7 +2,7 @@
 
 Priority: **P0 for the Docker Web installer**, followed by the independently
 shippable **Full Managed App**. Docker is only the Web version: it runs the
-stack and opens Brain4All in the user's normal browser. The Full Managed App
+stack and opens XNOBrain in the user's normal browser. The Full Managed App
 is the native application version and is implemented later with Tauri 2.
 
 Read the sibling documents in order:
@@ -24,7 +24,7 @@ local [`AGENTS.md`](../../app/AGENTS.md) is mandatory for app work.
 ## Goal
 
 Deliver a normal desktop installation experience while preserving one
-Brain4All product and one runtime contract:
+XNOBrain product and one runtime contract:
 
 1. The user downloads a signed installer and opens it normally.
 2. The first screen requires a **product-version selection**: **Web Version
@@ -32,7 +32,7 @@ Brain4All product and one runtime contract:
 3. The first release implements the Web version end to end. Full Managed App
    remains visibly planned but cannot report a false successful installation.
 4. Web Version detects prerequisites, helps install or connect Docker, pulls
-   pinned Brain4All images, creates persistent data, starts the stack, waits
+   pinned XNOBrain images, creates persistent data, starts the stack, waits
    for health, and opens the URL in the **system browser**.
 5. Docker Web publishes one loopback port through Traefik only. Installation
    offers the release default port or a validated custom port.
@@ -44,7 +44,7 @@ Brain4All product and one runtime contract:
 The wizard never silently chooses a runtime. Its first actionable screen is:
 
 ```text
-Choose your Brain4All version
+Choose your XNOBrain version
 
   Web Version (Docker)           Browser based, available first
   Full Managed App               Native managed app, planned
@@ -77,7 +77,7 @@ After selecting Docker, the user chooses one of:
 | 7 | P2 | Advanced Full Managed App operations | Yes |
 
 Strict Win32-native installation of the complete Hermes/tool runtime is not
-in this plan. The Windows Full Managed App privately manages a Brain4All WSL2
+in this plan. The Windows Full Managed App privately manages a XNOBrain WSL2
 distribution because the current runtime and toolchain are Linux-oriented.
 
 ## Docker-installer MVP scope
@@ -107,7 +107,7 @@ Not included in the MVP:
 ## Repository boundary
 
 Plan 013 is implemented entirely in `app/`. App development must not modify
-the core backend (`brain4all/`, `server.py`, Hermes/9router runtime), the Web UI
+the core backend (`xnobrain/`, `server.py`, Hermes/9router runtime), the Web UI
 (`src/`), or their existing behavior. The app consumes released HTTP/SSE
 contracts and may display an unmodified production Web build. If a missing
 public contract is discovered, record it and schedule an explicitly authorized
@@ -130,7 +130,7 @@ and open it normally; they do not install Node, Rust, or run Make.
 
 - A clean supported Windows machine can run the signed installer, explicitly
   select Docker, install/connect prerequisites, survive a required reboot,
-  pull the pinned release, reach the Brain4All health endpoint, and open the
+  pull the pinned release, reach the XNOBrain health endpoint, and open the
   Web version in the system browser without using a terminal.
 - A machine with Docker already running follows a shorter path and does not
   reinstall or modify Docker.

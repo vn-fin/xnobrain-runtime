@@ -1,7 +1,7 @@
 """Model Blends — user-named 9router combos exposed as one virtual model.
 
 Pure proxy: 9router's SQLite is the source of truth for combos and per-combo
-strategies. Brain4All stores nothing. This service owns the policy layer (name
+strategies. XNOBrain stores nothing. This service owns the policy layer (name
 guards, ``auto`` read-only, strategy validation, DTO shaping); the adapter owns
 the HTTP translation to ``/api/combos*`` and ``/api/settings``.
 """

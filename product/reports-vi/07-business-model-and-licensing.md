@@ -11,7 +11,7 @@
 Mô hình open-core = **lõi mã nguồn mở (MIT/Apache) + tính năng doanh nghiệp độc quyền
 qua đăng ký trả phí**
 [[tổng quan open-core](https://viprasol.com/blog/open-source-business-model/)]. Việc bạn
-tách `brain4all` (công khai) + `brain4all-enterprise` (riêng tư) là bài bản sách giáo khoa.
+tách `xnobrain` (công khai) + `xnobrain-enterprise` (riêng tư) là bài bản sách giáo khoa.
 
 | Công ty | Giấy phép lõi | Mô hình thương mại | Bài học cho bạn |
 |---|---|---|---|
@@ -21,14 +21,14 @@ tách `brain4all` (công khai) + `brain4all-enterprise` (riêng tư) là bài b�
 | **n8n** | **fair-code** ("dùng nội bộ miễn phí, cấm bán lại") | open-core + đám mây | gần với hình dạng của bạn nhất; cho các công ty tự lưu trữ (self-host) miễn phí, chặn bán lại |
 | **Sourcegraph** | chuyển sang đóng mã nguồn | bán hàng doanh nghiệp | thuần-doanh-nghiệp là khả thi nhưng mất đi phễu (thu hút người dùng) từ OSS |
 
-**Mô hình phù hợp với Brain4All nhất:** **lõi dễ dãi (permissive)/fair-code + control
+**Mô hình phù hợp với XNOBrain nhất:** **lõi dễ dãi (permissive)/fair-code + control
 plane (mặt điều khiển) doanh nghiệp đóng** (như n8n / GitLab), *chứ không phải* đổi giấy
 phép lõi theo hướng hạn chế (dù sao bạn cũng không sở hữu giấy phép của Hermes — nó là
 MIT và vẫn là MIT).
 
 ## 2. Hai quyết định cấp phép mà bạn thực sự phải đối mặt
 
-### Quyết định A — giấy phép cho *chính* kho OSS của bạn (`brain4all`)
+### Quyết định A — giấy phép cho *chính* kho OSS của bạn (`xnobrain`)
 README nói thẳng ra: *"Chọn và thêm một giấy phép trước khi phân phối công khai."*
 Hiện tại giấy phép này **chưa được đặt** và đang chặn việc ra mắt công khai. Các phương án (ý kiến):
 
@@ -40,7 +40,7 @@ Hiện tại giấy phép này **chưa được đặt** và đang chặn việc
 
 **Khuyến nghị (ý kiến):** **Apache-2.0 hoặc AGPL-3.0 cho lõi OSS**, và giữ **toàn bộ
 lợi thế phòng thủ (moat) (kiểm định, registry, danh tính, royalty, thanh toán) trong kho
-đóng `brain4all-enterprise`.** Lý do:
+đóng `xnobrain-enterprise`.** Lý do:
 
 - Lợi thế phòng thủ (moat) nằm ở **các engine 05–07 & 09**, vốn *đã* được thiết kế riêng
   tư từ đầu — nên bạn không cần một giấy phép lõi hạn chế để bảo vệ phần có giá trị. Điều

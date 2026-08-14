@@ -48,7 +48,7 @@ Property/fault tests interrupt each mutating transition and then relaunch.
 - Containers expose no port beyond loopback by default.
 - Generated secrets differ between installs and never occur in application
   logs, UI errors, crash reports, or diagnostic bundles.
-- Repair/uninstall targets only resources carrying the exact Brain4All install
+- Repair/uninstall targets only resources carrying the exact XNOBrain install
   identity labels.
 - External URLs cannot navigate the trusted Full Managed App webview. Docker
   Web intentionally uses the default system browser.

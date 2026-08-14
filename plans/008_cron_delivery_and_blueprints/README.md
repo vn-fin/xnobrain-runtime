@@ -6,7 +6,7 @@ type. Email, Kanban, and workspace-file targets ship without Plan 005.
 
 Companion documents (read together):
 
-- [findings.md](findings.md) — what Hermes and Brain4All already provide, the
+- [findings.md](findings.md) — what Hermes and XNOBrain already provide, the
   exact gap, compatibility surface to pin, risks, open questions.
 - [architecture.md](architecture.md) — layering, data flow, the new API
   contract, where config lives, the React surface, sequence diagram.
@@ -16,13 +16,13 @@ Companion documents (read together):
 
 ## Goal
 
-Extend Brain4All's **existing** cron so a scheduled job can (a) send its output
+Extend XNOBrain's **existing** cron so a scheduled job can (a) send its output
 to a chosen **delivery target** — a messaging **channel**, **email**, a
 **Kanban card**, or a **workspace file** — and (b) be created from a reusable,
 parameterized **blueprint** (template) that a user instantiates into a concrete
 job.
 
-Brain4All already has cron CRUD (list/create/pause/resume/run/delete), and since
+XNOBrain already has cron CRUD (list/create/pause/resume/run/delete), and since
 Plan 003 that cron is **Kanban-backed**: a cron job is a scheduled task on the
 default board, ticked by the one in-process Kanban dispatcher. This plan adds
 delivery targets and blueprints **on top of that** model. It does not introduce a
@@ -49,7 +49,7 @@ second scheduler, a second job store, or an app database.
 | Blueprints (list / instantiate) | Plan 003 cron | Yes |
 | Delivery target: `email` | Hermes email gateway config (`EMAIL_HOME_ADDRESS`, SMTP) | Yes |
 | Delivery target: `kanban` | Plan 001–004 Kanban (already shipped) | Yes |
-| Delivery target: `file` | Brain4All workspace/files repo (already shipped) | Yes |
+| Delivery target: `file` | XNOBrain workspace/files repo (already shipped) | Yes |
 | Delivery target: `channel` | **Plan 005 Messaging Channels** (for a connected platform + adapter) | No — degrades cleanly |
 
 Design rule: `email`, `kanban`, and `file` targets are fully functional now.
@@ -62,10 +62,10 @@ delivery.
 
 In scope:
 
-1. A Brain4All integration adapter over Hermes's blueprint catalog
+1. A XNOBrain integration adapter over Hermes's blueprint catalog
    (`cron.blueprint_catalog`) and delivery-target discovery
    (`cron.scheduler.cron_delivery_targets`), plus a post-run delivery step.
-2. Versioned Brain4All routes for: list blueprints, instantiate a blueprint,
+2. Versioned XNOBrain routes for: list blueprints, instantiate a blueprint,
    list available delivery targets, list/add/remove targets attached to a job,
    trigger a job now, list a job's runs.
 3. Strict Pydantic models with explicit target-type validation
@@ -86,16 +86,16 @@ per-run streaming delivery, and blueprint authoring UI (catalog is upstream).
   See [implementation.md](implementation.md#phase-0) and
   [findings.md](findings.md#compatibility-surface-to-pin).
 - **Phase 1 — Models.** Add Pydantic request/response models in
-  `brain4all/models/api.py`. Explicit `target_type` enum.
-- **Phase 2 — Integration.** Add `brain4all/integrations/cron_delivery.py`
+  `xnobrain/models/api.py`. Explicit `target_type` enum.
+- **Phase 2 — Integration.** Add `xnobrain/integrations/cron_delivery.py`
   adapting the Hermes blueprint catalog + delivery-target discovery + the
   post-run delivery routing (reusing `gateway.delivery` for channel/email).
 - **Phase 3 — Service.** Extend the cron service in
-  `brain4all/services/platform.py` with blueprint and delivery-target
+  `xnobrain/services/platform.py` with blueprint and delivery-target
   operations, and hook post-run delivery into occurrence completion.
 - **Phase 4 — Handlers + routes.** Add operations in
-  `brain4all/handlers/api.py` and `Route(...)` lines in the existing `Cron`
-  group in `brain4all/routes/setup.py`.
+  `xnobrain/handlers/api.py` and `Route(...)` lines in the existing `Cron`
+  group in `xnobrain/routes/setup.py`.
 - **Phase 5 — Frontend.** Blueprint gallery + "Deliver to" selector under
   Settings > Automations; extend `src/api/crons.ts` / `useCrons.ts`.
 - **Phase 6 — Tests + validation.** Unit, integration (temp `HERMES_HOME`),

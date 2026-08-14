@@ -1,6 +1,6 @@
 # 006 — Architecture
 
-How Voice I/O fits the Brain4All layering, the data flows, where config lives,
+How Voice I/O fits the XNOBrain layering, the data flows, where config lives,
 the new API contract, adapter methods, and the UI surface. Cross-links:
 [README](README.md) · [findings](findings.md) · [approaches](approaches.md) ·
 [implementation](implementation.md) · [validation](validation.md).
@@ -43,7 +43,7 @@ Per-agent, in the agent profile's native Hermes config file:
 ```
 DATA_DIR/profiles/<agent-id>/config.yaml
   tts:
-    enabled: true          # brain4all product flag (agent may speak)
+    enabled: true          # xnobrain product flag (agent may speak)
     provider: edge         # one of the Hermes TTS providers
     elevenlabs:
       voice_id: <id>       # non-secret voice id, provider-specific block
@@ -57,7 +57,7 @@ DATA_DIR/profiles/<agent-id>/config.yaml
 - These are **native Hermes keys** (`tts:` / `stt:`), so the config stays
   portable and is honored by Hermes when the agent's profile is the active
   `HERMES_HOME`.
-- Brain4All adds only the product-level `enabled` flag semantics on top.
+- XNOBrain adds only the product-level `enabled` flag semantics on top.
 - Global/root defaults remain in the root `config.yaml` and are reached through
   the existing global-config surface — not redesigned here.
 - **Secrets never live here.** `ELEVENLABS_API_KEY` and friends stay in `.env`
@@ -110,11 +110,11 @@ Design choice: transcription fills the composer for review; it does **not**
 auto-send. That keeps STT accessible and safe (user confirms) and reuses the
 existing `onSend` chat path unchanged. (An "auto-send" toggle can come later.)
 
-## 5. The new Brain4All API contract (versioned)
+## 5. The new XNOBrain API contract (versioned)
 
 All under the existing `agent-gateway/v1` prefix, registered only in
 `routes/setup.py`. Responses use the standard `APIEnvelope` (base64 audio inside
-`data`). Pydantic request models live in `brain4all/models/api.py`.
+`data`). Pydantic request models live in `xnobrain/models/api.py`.
 
 | Method | Path | Operation | Body model | Returns (in `data`) |
 | --- | --- | --- | --- | --- |
@@ -132,7 +132,7 @@ All under the existing `agent-gateway/v1` prefix, registered only in
   (the one provider with a queryable catalog); other providers return their
   static voice options via config/schema.
 
-### Pydantic model names (`brain4all/models/api.py`)
+### Pydantic model names (`xnobrain/models/api.py`)
 
 ```python
 class VoiceSpeakRequest(BaseModel):
@@ -161,10 +161,10 @@ class VoiceConfigUpdate(BaseModel):            # PUT body
 # secret-free.
 ```
 
-Export every new model through `brain4all/models/__init__.py` (its `__all__`
+Export every new model through `xnobrain/models/__init__.py` (its `__all__`
 picks up all non-underscore names automatically once imported there).
 
-## 6. Integration-adapter methods (`brain4all/integrations/voice.py`)
+## 6. Integration-adapter methods (`xnobrain/integrations/voice.py`)
 
 Thin, in-process, no policy. Mirrors `integrations/kanban.py` style.
 
@@ -205,7 +205,7 @@ Notes:
   self-call the pinned Hermes route shape. Either way, no key crosses the
   boundary.
 
-## 7. Service responsibilities (`brain4all/services/voice.py`)
+## 7. Service responsibilities (`xnobrain/services/voice.py`)
 
 - Validate inputs (empty text, data-url shape, mime allowlist, 25 MiB cap
   matching `_MAX_TRANSCRIPTION_UPLOAD_BYTES`).

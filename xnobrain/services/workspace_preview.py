@@ -140,7 +140,7 @@ class WorkspacePreviewService:
     @staticmethod
     def _digest(source: Path) -> str:
         digest = hashlib.sha256()
-        digest.update(b"brain4all-office-preview-v1\0")
+        digest.update(b"xnobrain-office-preview-v1\0")
         digest.update(source.suffix.lower().encode("utf-8"))
         with source.open("rb") as file:
             while chunk := file.read(1024 * 1024):
@@ -164,7 +164,7 @@ class WorkspacePreviewService:
                 status=503,
                 code="workspace_preview_unavailable",
             )
-        with tempfile.TemporaryDirectory(prefix="brain4all-preview-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="xnobrain-preview-") as temporary:
             temporary_root = Path(temporary)
             input_path = temporary_root / f"document{source.suffix.lower()}"
             output_root = temporary_root / "output"
