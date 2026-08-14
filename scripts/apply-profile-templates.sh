@@ -55,7 +55,7 @@ pdf_override="$skill_overrides_dir/productivity/pdf/scripts/pdf_create.py"
 if [[ -f "$pdf_override" ]]; then
   install_pdf_override() {
     local profile_dir="$1"
-    [[ -d "$profile_dir/skills" ]] || return
+    [[ -d "$profile_dir/skills" ]] || return 0
     while IFS= read -r -d '' target; do
       local relative_target="${target#"$profile_dir/"}"
       apply_file "$profile_dir" "$pdf_override" "$target" "$relative_target"

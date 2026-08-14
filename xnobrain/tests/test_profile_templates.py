@@ -41,7 +41,7 @@ class ProfileTemplateInstallerTests(unittest.TestCase):
                 (template / "SOUL.md").read_text(encoding="utf-8"),
                 (templates / "SOUL.md").read_text(encoding="utf-8"),
             )
-            self.assertIn("You are an AI agent", (template / "SOUL.md").read_text(encoding="utf-8"))
+            self.assertIn("AI assistant", (template / "SOUL.md").read_text(encoding="utf-8"))
             self.assertIn("## Source citations", (template / "AGENTS.md").read_text(encoding="utf-8"))
             agents = (template / "AGENTS.md").read_text(encoding="utf-8")
             self.assertNotIn("XNOBrain", agents)

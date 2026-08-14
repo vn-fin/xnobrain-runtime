@@ -37,6 +37,7 @@
     "signOut": "Đăng xuất",
     "signingIn": "Đang đăng nhập…",
     "error": "Không thể đăng nhập. Hãy kiểm tra thông tin tài khoản rồi thử lại.",
+    "invalidCredentials": "Email hoặc mật khẩu không đúng. Hãy thử lại.",
     "mockNote": "Bản cài đặt cục bộ này không yêu cầu đăng nhập ứng dụng."
   },
   "common": {
@@ -284,6 +285,7 @@
     "createAgent": "Tạo Agent",
     "createAgentApi": "Ánh xạ tới POST /xnobrain/api/runtime/v1/agents",
     "name": "Tên hiển thị",
+    "nameRequired": "Tên hiển thị là bắt buộc.",
     "namePlaceholder": "Ví dụ: Chuyên viên phân tích dữ liệu",
     "description": "Mô tả",
     "descPlaceholder": "Agent này sẽ làm gì?",

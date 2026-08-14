@@ -18,6 +18,8 @@ Tester: Codex manual browser QA
 
 Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` unavailable or safely skipped with a written reason.
 
+> Remediation update (2026-08-14): BUG-001 through BUG-036 linked below have been addressed in the runtime and covered by focused regression tests. The `[!]` entries are intentionally retained as the factual results of the original pre-fix QA run; they should only be changed after the corresponding browser/data-preservation scenario is re-run against the fixed build. Repository verification passes with 225 backend tests (3 skipped), 322 frontend tests, Python compilation, and the production frontend build.
+
 ## 1. Startup, authentication, and application shell
 
 - [x] Start `make dev`; verify frontend, runtime API, and router/gateway listen on their configured ports.

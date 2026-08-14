@@ -1031,11 +1031,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 "agent_id": agent_id, "name": "Due", "prompt": "Run", "interval_minutes": 60,
             })
         job = response.json()["data"]
+        scheduled_task_id = job["kanban_task_id"]
         with kanban_adapter.connection("default") as conn:
             conn.execute(
                 "UPDATE xnobrain_task_schedules SET next_run_at = 1 "
                 "WHERE task_id = ?",
-                (job["id"],),
+                (scheduled_task_id,),
             )
             released = kanban_adapter.release_due_schedules(
                 conn,
@@ -1043,11 +1044,11 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 now=2,
             )
             tasks = kanban_db.list_tasks(conn, include_archived=True)
-            schedule = kanban_adapter.task_schedule(conn, job["id"])
+            schedule = kanban_adapter.task_schedule(conn, scheduled_task_id)
         self.assertEqual(len(released), 1)
         self.assertEqual(schedule["occurrence_count"], 1)
         self.assertTrue(any(
-            str(task.idempotency_key or "").startswith(f"schedule:{job['id']}:")
+            str(task.idempotency_key or "").startswith(f"schedule:{scheduled_task_id}:")
             for task in tasks
         ))
 
