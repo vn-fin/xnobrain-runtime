@@ -93,3 +93,7 @@ reviews/browser-profile/
 # Windows/macOS artifacts can be added here when built on their target hosts.
 !/binary/
 !/binary/**
+binary/*.AppImage
+
+# Local container image archive parts are build artifacts, not source.
+bin/images/open-lumora-images-local.tar.gz.part-*
