@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { htmlPreviewDocument, LargeFileNotice, OpeningFile } from './WorkspacePanel';
+import { detectLanguage } from '../api/mappers/workspace';
 
 describe('workspace HTML preview', () => {
   it('removes active content and injects a restrictive content policy', () => {
@@ -21,6 +22,12 @@ describe('workspace HTML preview', () => {
 });
 
 describe('workspace opening state', () => {
+  it('routes unknown file formats to the safe download fallback', () => {
+    expect(detectLanguage('qa-2026-08-14/qa-unsupported.xyz')).toBe('binary');
+    expect(detectLanguage('Dockerfile')).toBe('dockerfile');
+    expect(detectLanguage('LICENSE')).toBe('text');
+  });
+
   it('immediately names the file and offers cancellation', () => {
     const cancel = vi.fn();
     render(<OpeningFile name="HPG model - 2026 v3.xlsm" onCancel={cancel} />);

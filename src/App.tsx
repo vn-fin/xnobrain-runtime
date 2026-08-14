@@ -82,7 +82,9 @@ export default function App() {
     const stored = Number(localStorage.getItem('rightPanelWidth'));
     return Number.isFinite(stored) && stored >= RIGHT_MIN ? Math.min(stored, RIGHT_MAX) : 330;
   });
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelOpen, setRightPanelOpen] = useState(
+    () => router.centerView === 'chat' && router.rightView !== 'workspace',
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem('leftSidebarCollapsed') === 'true',
   );

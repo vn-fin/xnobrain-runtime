@@ -142,6 +142,7 @@ export function useWorkspace(agentId: string, active = true) {
         setPreviewBlocked(true);
         return;
       }
+      if (entry.language === 'binary') return;
       setOpening(true);
       if (isText(entry)) {
         setContent(await workspaceApi.read(agentId, entry.path, controller.signal));

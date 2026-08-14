@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Activity, ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Plus, Trash2, X,
@@ -9,6 +9,20 @@ import type { ConnectionProvider } from '../types';
 import type { ProviderTestOutcome } from '../hooks/useConnections';
 import type { ProviderConnection, ConnectionUsage } from '../api/providers';
 import { providerUsesAuthFlow, providerUsesInlineApiKey } from '../utils/providers';
+
+export function providerBaseUrlError(value: string, required: boolean): string {
+  const text = value.trim();
+  if (!text) return required ? 'Enter an absolute HTTP(S) base URL.' : '';
+  try {
+    const url = new URL(text);
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) {
+      return 'Enter an absolute HTTP(S) base URL.';
+    }
+  } catch {
+    return 'Enter an absolute HTTP(S) base URL.';
+  }
+  return '';
+}
 
 export type AccountProps = {
   connectionsByProvider: Record<string, ProviderConnection[]>;
@@ -100,8 +114,10 @@ function AddAccount({ provider, actions }: { provider: ConnectionProvider; actio
   return (
     <div className="conn-add-form">
       <input type="text" placeholder={t('connections.accountName', { defaultValue: 'Label (optional)' })}
+        name={`provider-${provider.id}-account-label`} autoComplete="off"
         value={name} onChange={(e) => setName(e.target.value)} />
       <input type="password" placeholder="sk-… / AIza… / sk-ant-…"
+        name={`provider-${provider.id}-new-api-key`} autoComplete="new-password"
         value={key} onChange={(e) => setKey(e.target.value)} />
       <button className="conn-btn primary" disabled={!key.trim()}
         onClick={() => { actions.onAddAccount(provider.id, { api_key: key, name }); setKey(''); setName(''); }}>
@@ -138,6 +154,8 @@ export function ConnectionsView({
   const { t } = useTranslation();
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
+  const [baseUrlTouched, setBaseUrlTouched] = useState(false);
+  const keyEntryActivated = useRef(false);
   const keyPanelRef = useRef<HTMLElement>(null);
   const keyInputRef = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -165,6 +183,17 @@ export function ConnectionsView({
   ].filter((group) => group.providers.length > 0);
   const selectedKeyProvider = apiKeyProviders.find((p) => p.id === keyProviderId) ?? apiKeyProviders[0];
   const selectedBaseUrl = baseUrl || selectedKeyProvider?.base_url || '';
+  const showBaseUrl = Boolean(selectedKeyProvider?.requires_base_url || selectedKeyProvider?.base_url);
+  const baseUrlError = showBaseUrl
+    ? providerBaseUrlError(selectedBaseUrl, Boolean(selectedKeyProvider?.requires_base_url))
+    : '';
+
+  useEffect(() => {
+    setApiKey('');
+    setBaseUrl('');
+    setBaseUrlTouched(false);
+    keyEntryActivated.current = false;
+  }, [selectedKeyProvider?.id]);
 
   const beginConnect = (provider: ConnectionProvider) => {
     if (!providerUsesInlineApiKey(provider)) {
@@ -172,7 +201,10 @@ export function ConnectionsView({
       return;
     }
     onSelectKeyProvider(provider.id);
+    setApiKey('');
     setBaseUrl('');
+    setBaseUrlTouched(false);
+    keyEntryActivated.current = false;
     keyPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     keyInputRef.current?.focus();
   };
@@ -356,9 +388,9 @@ export function ConnectionsView({
         {apiKeyProviders.length > 0 && <section className="conn-keypanel" ref={keyPanelRef}>
           <strong>{t('connections.addKeyTitle')}</strong>
           <p>{t('connections.addKeyDesc')}</p>
-          <div className={(selectedKeyProvider?.requires_base_url || selectedKeyProvider?.base_url) ? 'conn-keyform has-base-url' : 'conn-keyform'}>
+          <div className={showBaseUrl ? 'conn-keyform has-base-url' : 'conn-keyform'}>
             <div className="conn-select">
-              <select value={selectedKeyProvider?.id ?? ''} onChange={(e) => { onSelectKeyProvider(e.target.value); setBaseUrl(''); }}>
+              <select value={selectedKeyProvider?.id ?? ''} onChange={(e) => { onSelectKeyProvider(e.target.value); setApiKey(''); setBaseUrl(''); setBaseUrlTouched(false); keyEntryActivated.current = false; }}>
                 {apiKeyProviders.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.display_name}
@@ -367,19 +399,41 @@ export function ConnectionsView({
               </select>
               <ChevronDown size={15} />
             </div>
-            {(selectedKeyProvider?.requires_base_url || selectedKeyProvider?.base_url) && (
-              <input
-                value={selectedBaseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.example.com/v1"
-                type="url"
-                aria-label="Provider base URL"
-              />
+            {showBaseUrl && (
+              <label className="conn-key-field">
+                <span className="sr-only">Provider base URL</span>
+                <input
+                  value={selectedBaseUrl}
+                  onChange={(e) => { setBaseUrl(e.target.value); setBaseUrlTouched(true); }}
+                  onBlur={() => setBaseUrlTouched(true)}
+                  placeholder="https://api.example.com/v1"
+                  type="url"
+                  name={`provider-${selectedKeyProvider?.id ?? 'custom'}-base-url`}
+                  autoComplete="off"
+                  aria-label="Provider base URL"
+                  aria-invalid={Boolean(baseUrlTouched && baseUrlError)}
+                  aria-describedby={baseUrlTouched && baseUrlError ? 'provider-base-url-error' : undefined}
+                />
+                {baseUrlTouched && baseUrlError && <span id="provider-base-url-error" className="conn-field-error" role="alert">{baseUrlError}</span>}
+              </label>
             )}
-            <input ref={keyInputRef} value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-… / AIza… / sk-ant-…" type="password" />
+            <input
+              ref={keyInputRef}
+              value={apiKey}
+              onPointerDown={() => { keyEntryActivated.current = true; }}
+              onKeyDown={() => { keyEntryActivated.current = true; }}
+              onChange={(e) => {
+                if (keyEntryActivated.current) setApiKey(e.target.value);
+              }}
+              placeholder="sk-… / AIza… / sk-ant-…"
+              type="password"
+              name={`provider-${selectedKeyProvider?.id ?? 'custom'}-new-api-key`}
+              autoComplete="new-password"
+              aria-label="Provider API key"
+            />
             <button
               className="conn-btn primary"
-              disabled={!apiKey.trim() || Boolean(selectedKeyProvider?.requires_base_url && !selectedBaseUrl.trim())}
+              disabled={!apiKey.trim() || Boolean(baseUrlError)}
               onClick={() => {
                 if (selectedKeyProvider) onSaveKey(selectedKeyProvider.id, apiKey, selectedBaseUrl);
                 setApiKey('');

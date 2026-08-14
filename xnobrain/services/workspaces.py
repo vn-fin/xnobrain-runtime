@@ -48,6 +48,28 @@ from .helpers import cached_method
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError
 from .workspace_upload import WorkspaceUploadError
 
+
+def _validate_create_path(raw_path: Any) -> str:
+    """Reject traversal/normalization tricks while allowing nested UI paths."""
+    import unicodedata
+    from urllib.parse import unquote
+
+    path = str(raw_path or "")
+    decoded = unquote(path)
+    if (
+        not path
+        or decoded != path
+        or path.startswith(("/", "\\"))
+        or "\\" in path
+        or any(character in path for character in ("\x00", "\r", "\n", "∕", "⁄", "／"))
+        or unicodedata.normalize("NFC", path) != path
+    ):
+        raise AgentAPIError("path contains an invalid file name", code="invalid_workspace_path", status=400)
+    parts = path.split("/")
+    if any(not part or part in {".", ".."} for part in parts):
+        raise AgentAPIError("path contains an invalid file name", code="invalid_workspace_path", status=400)
+    return path
+
 class WorkspacesServiceMixin:
     def list_workspace(self, agent_id: str, path: str = ".") -> dict[str, Any]:
         return self.agents.list_workspace(agent_id, {"path": path})
@@ -112,13 +134,13 @@ class WorkspacesServiceMixin:
         )
 
     def create_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        path_value = _validate_create_path(body.get("path"))
         if str(body.get("type") or "file") == "directory":
-            path = self.agents._workspace_path(agent_id, body.get("path"), require_file=False)
+            path = self.agents._workspace_path(agent_id, path_value, require_file=False)
             path.mkdir(parents=True, exist_ok=True)
             return {"agent": agent_id, "path": str(path.relative_to(self.agents._workspace_dir(agent_id))), "type": "directory"}
-        return self.write_workspace(agent_id, {"path": body.get("path"), "content": body.get("content") or ""})
+        return self.write_workspace(agent_id, {"path": path_value, "content": body.get("content") or ""})
 
     def delete_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.agents.delete_workspace_path(agent_id, body)
-
 

@@ -3751,7 +3751,7 @@ body.col-resizing {
 
 .right-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 3px;
   padding: 8px;
   border-bottom: 1px solid var(--border);
@@ -8606,6 +8606,7 @@ body.col-resizing {
 
 .app:not(.no-right) .kanban-notifications {
   right: calc(var(--right) + 12px);
+  top: 60px;
 }
 
 .kanban-notification-bell,

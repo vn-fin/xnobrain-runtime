@@ -219,6 +219,7 @@ export function Sidebar({
   const [renamingAgentId, setRenamingAgentId] = useState<string | null>(null);
   const [agentRenameValue, setAgentRenameValue] = useState('');
   const [pinnedIds, setPinnedIds] = useState(() => readIds(PINNED_KEY));
+  const agentSearchEngaged = useRef(false);
 
   useEffect(() => {
     localStorage.setItem(PINNED_KEY, JSON.stringify(pinnedIds));
@@ -410,7 +411,17 @@ export function Sidebar({
         </div>
         <div className="agent-search">
           <Search size={14} />
-          <input value={agentSearch} onChange={(event) => onAgentSearch(event.target.value)} placeholder={t('agents.searchPlaceholder')} />
+          <input
+            value={agentSearch}
+            onFocus={() => { agentSearchEngaged.current = true; }}
+            onChange={(event) => {
+              if (agentSearchEngaged.current) onAgentSearch(event.target.value);
+            }}
+            placeholder={t('agents.searchPlaceholder')}
+            type="search"
+            name="agent-filter-query"
+            autoComplete="off"
+          />
         </div>
         {q && focusedAgents.length > 0 && <div className="assistant-list-label">{t('agents.searchResults')}</div>}
         {focusedAgents.map((agent) => renderAgent(agent))}
@@ -521,7 +532,7 @@ export function Sidebar({
             </header>
             <div className="agent-search library-search">
               <Search size={15} />
-              <input value={librarySearch} onChange={(event) => setLibrarySearch(event.target.value)} placeholder={t('agents.searchPlaceholder')} autoFocus />
+              <input value={librarySearch} onChange={(event) => setLibrarySearch(event.target.value)} placeholder={t('agents.searchPlaceholder')} type="search" name="agent-library-filter-query" autoComplete="off" autoFocus />
             </div>
             <div className="assistant-library-list">
               {libraryAgents.map((agent) => renderAgent(agent, true))}

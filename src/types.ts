@@ -408,7 +408,7 @@ export type AgentSkillMap = Record<string, Record<string, boolean>>;
 // fixed columns.
 // ---------------------------------------------------------------------------
 
-export type KanbanColumnId = 'backlog' | 'todo' | 'running' | 'done' | 'archived';
+export type KanbanColumnId = 'backlog' | 'todo' | 'scheduled' | 'running' | 'done' | 'archived';
 export type KanbanNativeStatus = 'triage' | 'todo' | 'ready' | 'scheduled' | 'running' | 'blocked' | 'review' | 'done' | 'archived';
 export type KanbanPriority = 'high' | 'medium' | 'low';
 export type KanbanDepState = 'done' | 'pending' | 'blocked';
@@ -554,7 +554,7 @@ export type NewKanbanBoardInput = {
 export type NewKanbanTaskInput = {
   title: string;
   description: string;
-  status: KanbanColumnId | 'scheduled';
+  status: KanbanColumnId;
   priority: KanbanPriority;
   assignee: string | null;
   teamId?: string | null;

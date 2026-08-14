@@ -384,8 +384,13 @@ export function WorkspacePanel({ workspace, openRequest }: { workspace: Workspac
         <div className="gd-noview">
           <FileText size={40} />
           <p>Preview isn't available for this file type</p>
-          <span>Download the file to open it in a compatible app.</span>
-          {workspace.previewUrl && <a className="conn-btn primary" href={workspace.previewUrl} download={selected.name}><Download size={14} /> Download</a>}
+          <span>{selected.name}{selected.size ? ` · ${formatSize(selected.size)}` : ''}. Download the file to open it in a compatible app.</span>
+          <button className="conn-btn primary" disabled={workspace.downloading} onClick={() => void workspace.downloadSelected()}>
+            {workspace.downloading
+              ? <><LoaderCircle className="run-step-spin" size={14} /> Downloading…</>
+              : <><Download size={14} /> Download file</>}
+          </button>
+          {workspace.downloadError && <span className="gd-large-file-error" role="alert">{workspace.downloadError}</span>}
         </div>
       );
     }

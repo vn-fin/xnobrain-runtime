@@ -15,7 +15,8 @@ import type {
 
 export const KANBAN_COLUMNS: Array<{ id: KanbanColumnId; label: string; hint: string }> = [
   { id: 'backlog', label: 'Backlog', hint: 'Ideas and needs clarification' },
-  { id: 'todo', label: 'Todo', hint: 'Work waiting or scheduled' },
+  { id: 'todo', label: 'Todo', hint: 'Work waiting to start' },
+  { id: 'scheduled', label: 'Scheduled', hint: 'Work configured to run later' },
   { id: 'running', label: 'In Progress', hint: 'Ready or being worked on' },
   { id: 'done', label: 'Done', hint: 'Completed or blocked work' },
 ];
@@ -36,9 +37,9 @@ type RawTask = Record<string, any>;
 
 function defaultAllowedStatuses(nativeStatus: KanbanNativeStatus): KanbanColumnId[] {
   if (nativeStatus === 'triage') return ['todo', 'running', 'archived'];
-  if (nativeStatus === 'todo') return ['running', 'done', 'archived'];
+  if (nativeStatus === 'todo') return ['backlog', 'running', 'done', 'archived'];
   if (nativeStatus === 'ready' || nativeStatus === 'running') return ['done', 'archived'];
-  if (nativeStatus === 'scheduled') return ['archived'];
+  if (nativeStatus === 'scheduled') return ['backlog', 'todo', 'running', 'done', 'archived'];
   if (nativeStatus === 'blocked') return ['todo', 'archived'];
   if (nativeStatus === 'review') return ['running', 'archived'];
   if (nativeStatus === 'done') return ['archived'];
@@ -204,7 +205,7 @@ export const kanbanApi = {
     if (Array.isArray(raw)) {
       const legacy = raw.find((item) => String(item.id ?? item.slug) === boardId);
       const tasks = Array.isArray(legacy?.tasks) ? legacy.tasks : [];
-      const byStatus = { backlog: 0, todo: 0, running: 0, done: 0, archived: 0 };
+      const byStatus = { backlog: 0, todo: 0, scheduled: 0, running: 0, done: 0, archived: 0 };
       for (const task of tasks) {
         const status = String(task.kanban_status ?? task.status ?? 'todo') as KanbanColumnId;
         if (status in byStatus) byStatus[status] += 1;
@@ -232,6 +233,7 @@ export const kanbanApi = {
       byStatus: {
         backlog: Number(counts.backlog ?? 0),
         todo: Number(counts.todo ?? 0),
+        scheduled: Number(counts.scheduled ?? 0),
         running: Number(counts.running ?? 0),
         done: Number(counts.done ?? 0),
         archived: Number(counts.archived ?? 0),

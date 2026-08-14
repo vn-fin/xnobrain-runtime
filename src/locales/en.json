@@ -284,6 +284,7 @@
     "createAgent": "Create agent",
     "createAgentApi": "Maps to POST /xnobrain/api/runtime/v1/agents",
     "name": "Display name",
+    "nameRequired": "Display name is required.",
     "namePlaceholder": "e.g. Data Analyst",
     "description": "Description",
     "descPlaceholder": "What should this agent do?",

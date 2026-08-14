@@ -53,7 +53,7 @@ class KanbanScheduleAction(BaseModel):
 
 
 class KanbanMove(BaseModel):
-    status: Literal["backlog", "todo", "running", "done", "archived"]
+    status: Literal["backlog", "todo", "scheduled", "running", "done", "archived"]
     revision: str | None = Field(default=None, max_length=128)
     reason: str | None = Field(default=None, max_length=4000)
 

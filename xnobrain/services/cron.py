@@ -199,10 +199,21 @@ class CronService:
                 destination = path.relative_to(self.agents._workspace_dir(profile).resolve()).as_posix()
             except (ValueError, OSError) as exc:
                 raise CronServiceError("workspace delivery path is invalid", code="invalid_workspace_path") from exc
-        elif not destination:
-            destination = "email" if target_type == "email" else ""
-        if target_type == "channel" and not destination:
-            raise CronServiceError("channel destination is required", status=422, code="invalid_delivery_target")
+        else:
+            if not destination:
+                raise CronServiceError(
+                    f"{target_type} destination is required", status=422, code="invalid_delivery_target"
+                )
+            option = next((
+                item for item in self.list_delivery_target_options(profile)["options"]
+                if item["target_type"] == target_type and item["id"] == destination
+            ), None)
+            if not option or not option.get("available"):
+                raise CronServiceError(
+                    f"{target_type} delivery target is not configured",
+                    status=422,
+                    code="delivery_target_unavailable",
+                )
 
         target = {
             "id": uuid.uuid4().hex[:12],
@@ -250,6 +261,7 @@ class CronService:
     def delete_job(self, job_id: str, agent_id: str | None = None) -> dict[str, Any]:
         profile, job = self._find_job(job_id, agent_id)
         self._snapshot_store(profile)
+        self._snapshot_job_output(profile, str(job["id"]))
         if not self._native(profile, "remove_job", job["id"]):
             raise CronServiceError("cron job not found", status=404, code="cron_not_found")
         return {"deleted": True}
@@ -307,7 +319,10 @@ class CronService:
         try:
             with cron_jobs.use_cron_store(home):
                 provider = resolve_cron_scheduler()
-                return bool(provider.fire_due(job_id, adapters=None, loop=None))
+                fired = bool(provider.fire_due(job_id, adapters=None, loop=None))
+                if fired:
+                    self.reconcile_deliveries([(profile, self._native(profile, "list_jobs", True))])
+                return fired
         finally:
             reset_hermes_home_override(token)
 
@@ -335,7 +350,7 @@ class CronService:
                 records = [dict(item) for item in job.get("xnobrain_delivery_records") or []]
                 indexed = {(str(item.get("execution_id")), str(item.get("target_id"))): item for item in records}
                 changed = False
-                for execution in reversed(self._executions(profile, str(job["id"]), 50)):
+                for execution in reversed(self._executions(profile, job, 50)):
                     status = str(execution.get("status") or "")
                     if status not in {"completed", "failed", "unknown"}:
                         continue
@@ -488,6 +503,20 @@ class CronService:
         snapshot = self._profile_home(profile) / "snapshots" / "cron" / "jobs" / f"{time.time_ns()}-{digest[:12]}.json"
         self.repository.atomic_write(snapshot, payload, mode=0o440, replace=False)
 
+    def _snapshot_job_output(self, profile: str, job_id: str) -> None:
+        output_dir = self._profile_home(profile) / "cron" / "output" / job_id
+        if not output_dir.is_dir():
+            return
+        snapshot_dir = (
+            self._profile_home(profile) / "snapshots" / "cron" / "output"
+            / job_id / str(time.time_ns())
+        )
+        for source in output_dir.glob("*.md"):
+            if source.is_file():
+                self.repository.atomic_write(
+                    snapshot_dir / source.name, source.read_bytes(), mode=0o440, replace=False
+                )
+
     @staticmethod
     def _native_deliver(targets: list[Mapping[str, Any]]) -> str:
         destinations: list[str] = []
@@ -550,24 +579,54 @@ class CronService:
         result.pop("origin", None)
         return result
 
-    def _executions(self, profile: str, job_id: str, limit: int) -> list[dict[str, Any]]:
+    def _executions(self, profile: str, job: Mapping[str, Any], limit: int) -> list[dict[str, Any]]:
+        job_id = str(job["id"])
         path = self._profile_home(profile) / "cron" / "executions.db"
-        if not path.is_file():
-            return []
-        try:
-            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
-            conn.row_factory = sqlite3.Row
+        rows: list[Any] = []
+        if path.is_file():
             try:
-                rows = conn.execute(
-                    "SELECT id, job_id, status, claimed_at, started_at, finished_at, error "
-                    "FROM executions WHERE job_id=? ORDER BY claimed_at DESC, id DESC LIMIT ?",
-                    (job_id, max(1, min(limit, 100))),
-                ).fetchall()
-            finally:
-                conn.close()
-        except sqlite3.Error:
-            return []
-        return [dict(row) for row in rows]
+                conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
+                conn.row_factory = sqlite3.Row
+                try:
+                    rows = conn.execute(
+                        "SELECT id, job_id, status, claimed_at, started_at, finished_at, error "
+                        "FROM executions WHERE job_id=? ORDER BY claimed_at DESC, id DESC LIMIT ?",
+                        (job_id, max(1, min(limit, 100))),
+                    ).fetchall()
+                finally:
+                    conn.close()
+            except sqlite3.Error:
+                rows = []
+        if rows:
+            return [dict(row) for row in rows]
+
+        # Older/native scheduler paths persist one atomic Markdown artifact per
+        # run but may not create executions.db. Treat those artifacts as the
+        # durable run store so successful results are still reconciled.
+        output_dir = self._profile_home(profile) / "cron" / "output" / job_id
+        artifacts = sorted(
+            (item for item in output_dir.glob("*.md") if item.is_file()),
+            key=lambda item: (item.stat().st_mtime_ns, item.name),
+            reverse=True,
+        )[:max(1, min(limit, 100))]
+        synthesized: list[dict[str, Any]] = []
+        for index, artifact in enumerate(artifacts):
+            finished = datetime.fromtimestamp(artifact.stat().st_mtime, timezone.utc)
+            text = artifact.read_text(encoding="utf-8", errors="replace")
+            failed = "\n## Error\n" in text or (
+                index == 0 and str(job.get("last_status") or "ok") != "ok"
+            )
+            synthesized.append({
+                "id": f"output-{artifact.name}",
+                "job_id": job_id,
+                "status": "failed" if failed else "completed",
+                "claimed_at": _iso(finished),
+                "started_at": _iso(finished),
+                "finished_at": _iso(finished),
+                "error": str(job.get("last_error") or "") if failed and index == 0 else "",
+                "output_path": str(artifact),
+            })
+        return synthesized
 
     def _run_dtos(self, profile: str, job: Mapping[str, Any], limit: int) -> list[dict[str, Any]]:
         records = [dict(item) for item in job.get("xnobrain_delivery_records") or []]
@@ -581,7 +640,7 @@ class CronService:
                 "reason": item.get("reason"),
             })
         result = []
-        for execution in self._executions(profile, str(job["id"]), limit):
+        for execution in self._executions(profile, job, limit):
             state = {"claimed": "running", "running": "running", "completed": "success"}.get(str(execution["status"]), "failed")
             result.append({
                 "id": str(execution["id"]),
@@ -595,6 +654,21 @@ class CronService:
         return result
 
     def _execution_output(self, profile: str, job: Mapping[str, Any], execution: Mapping[str, Any]) -> str | None:
+        output_path = str(execution.get("output_path") or "")
+        if output_path:
+            candidate = Path(output_path)
+            output_root = self._profile_home(profile) / "cron" / "output" / str(job["id"])
+            try:
+                if candidate.resolve().parent != output_root.resolve() or not candidate.is_file():
+                    return None
+            except OSError:
+                return None
+            text = candidate.read_text(encoding="utf-8", errors="replace")
+            if "\n## Response\n" in text:
+                return text.split("\n## Response\n", 1)[1].strip()[:50_000]
+            if "\n## Error\n" in text:
+                return ""
+            return text.strip()[:50_000]
         finished = str(execution.get("finished_at") or "")
         cutoff = None
         try:

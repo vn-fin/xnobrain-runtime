@@ -43,23 +43,62 @@ class MCPIntegrationMixin:
 
 
     def update_mcp(self, raw_name: Any, servers: Mapping[str, Any]) -> dict[str, Any]:
-        try:
-            from hermes_cli.mcp_security import validate_mcp_server_entry
-        except ImportError:  # Source-only tests may not have Hermes on sys.path.
-            def validate_mcp_server_entry(name: str, entry: Mapping[str, Any]) -> list[str]:
-                issues: list[str] = []
-                has_command = bool(str(entry.get("command") or "").strip())
-                has_url = bool(str(entry.get("url") or "").strip())
-                if has_command == has_url:
-                    issues.append(
-                        f"Server {name!r} must define exactly one of command or url"
-                    )
-                if "args" in entry and not isinstance(entry["args"], list):
-                    issues.append(f"Server {name!r} args must be a list")
-                for field in ("env", "headers", "tools"):
-                    if field in entry and not isinstance(entry[field], dict):
-                        issues.append(f"Server {name!r} {field} must be an object")
-                return issues
+        from urllib.parse import urlparse
+
+        def validate_string_map(path: str, value: Any) -> list[str]:
+            if not isinstance(value, Mapping):
+                return [f"{path} must be an object of string values"]
+            return [
+                f"{path}.{key} must be a string"
+                for key, item in value.items()
+                if not isinstance(key, str) or not key.strip() or not isinstance(item, str)
+            ]
+
+        def validate_string_list(path: str, value: Any) -> list[str]:
+            if not isinstance(value, list):
+                return [f"{path} must be an array of non-empty strings"]
+            if any(not isinstance(item, str) or not item.strip() for item in value):
+                return [f"{path} must contain only non-empty strings"]
+            return []
+
+        def validate_mcp_server_entry(name: str, entry: Mapping[str, Any]) -> list[str]:
+            issues: list[str] = []
+            allowed = {"command", "args", "env", "url", "headers", "tools"}
+            for key in entry:
+                if key not in allowed:
+                    issues.append(f"{name}.{key} is not supported")
+
+            command = entry.get("command")
+            url = entry.get("url")
+            has_command = isinstance(command, str) and bool(command.strip())
+            has_url = isinstance(url, str) and bool(url.strip())
+            if has_command == has_url:
+                issues.append(f"{name} must define exactly one non-empty command or url")
+            elif "command" in entry and not has_command:
+                issues.append(f"{name}.command must be a non-empty string")
+            elif has_url:
+                parsed = urlparse(url)
+                if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                    issues.append(f"{name}.url must be an absolute HTTP(S) URL")
+            if "url" in entry and not isinstance(url, str):
+                issues.append(f"{name}.url must be a non-empty string")
+            if "args" in entry:
+                issues.extend(validate_string_list(f"{name}.args", entry["args"]))
+            for field in ("env", "headers"):
+                if field in entry:
+                    issues.extend(validate_string_map(f"{name}.{field}", entry[field]))
+            if "tools" in entry:
+                tools = entry["tools"]
+                if not isinstance(tools, Mapping):
+                    issues.append(f"{name}.tools must be an object")
+                else:
+                    for key in tools:
+                        if key not in {"include", "exclude"}:
+                            issues.append(f"{name}.tools.{key} is not supported")
+                    for key in ("include", "exclude"):
+                        if key in tools:
+                            issues.extend(validate_string_list(f"{name}.tools.{key}", tools[key]))
+            return issues
 
         profile_dir = self._require_profile(self._agent_name(raw_name))
         cleaned = copy.deepcopy(dict(servers))

@@ -70,7 +70,10 @@ export function detectLanguage(path: string): WorkspaceEntry['language'] {
   if (BINARY_EXTS.includes(ext ?? '')) return 'binary';
   if (ext && CODE_BY_EXT[ext]) return CODE_BY_EXT[ext];
   if (ext && TEXT_EXTS.has(ext)) return 'text';
-  return 'text';
+  // An unknown extension is not evidence that a file is safe UTF-8 text.
+  // Keep extensionless files editable, but route unfamiliar formats through
+  // the bounded download fallback instead of silently decoding their bytes.
+  return ext && ext !== basename ? 'binary' : 'text';
 }
 
 export function highlightLanguageForPath(path: string): string {

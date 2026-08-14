@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { FilePenLine, FileText, LoaderCircle, Pencil, X } from 'lucide-react';
 import type { Agent } from '../../types';
 import { TreeIcon } from '../../components/common';
+import { ConfirmDialog } from '../../components/modals';
 
 const CodeViewer = lazy(() => import('../../components/CodeViewer'));
 const NumberedTextEditor = lazy(() => import('../../components/CodeViewer').then((module) => ({
@@ -39,6 +40,16 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [discardOpen, setDiscardOpen] = useState(false);
+
+  const dirty = editing && (creating || draft !== content);
+
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
 
   useEffect(() => {
     if (!agents.some((agent) => agent.id === agentId)) setAgentId(agents[0]?.id ?? '');
@@ -76,14 +87,32 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
     }
   };
 
-  const close = () => {
+  const discardAndClose = () => {
     if (saving) return;
+    setDiscardOpen(false);
     setActiveFile(null);
     setEditing(false);
     setCreating(false);
     setStatus('idle');
     setError('');
   };
+
+  const close = () => {
+    if (saving) return;
+    if (dirty) { setDiscardOpen(true); return; }
+    discardAndClose();
+  };
+
+  useEffect(() => {
+    if (!activeFile || discardOpen) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      close();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  });
 
   const save = async () => {
     if (!activeFile || !agentId || saving || (!creating && draft === content)) return;
@@ -221,6 +250,17 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
             )}
           </div>
         </div>
+      )}
+
+      {discardOpen && activeFile && (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          message={`Your unsaved changes to ${activeFile} will be lost.`}
+          confirmLabel="Discard changes"
+          danger
+          onConfirm={discardAndClose}
+          onCancel={() => setDiscardOpen(false)}
+        />
       )}
     </section>
   );

@@ -146,6 +146,39 @@ def return_failed_task_to_triage(
     return True
 
 
+def return_waiting_task_to_triage(
+    conn: Any,
+    task_id: str,
+    *,
+    actor: str = "xnobrain",
+) -> bool:
+    """Return an unclaimed waiting task to triage without scheduling it."""
+    kb = _module()
+    with kb.write_txn(conn):
+        row = conn.execute(
+            "SELECT status, current_run_id, claim_lock FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        if (
+            row["status"] not in {"todo", "ready", "scheduled"}
+            or row["current_run_id"] is not None
+            or row["claim_lock"] is not None
+        ):
+            return False
+        changed = conn.execute(
+            "UPDATE tasks SET status = 'triage', claim_lock = NULL, "
+            "claim_expires = NULL, worker_pid = NULL, current_run_id = NULL "
+            "WHERE id = ? AND status = ?",
+            (task_id, row["status"]),
+        )
+        if changed.rowcount != 1:
+            return False
+        kb._append_event(conn, task_id, "returned_to_triage", {"actor": actor})
+    return True
+
+
 def task_attachments(conn: Any, task_id: str) -> list[Any]:
     return list(_module().list_attachments(conn, task_id))
 

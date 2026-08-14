@@ -157,7 +157,7 @@ export function RightPanel({
       </div>
 
       <div className="right-tabs">
-        {(['workspace', 'skills', 'cron'] as const).map((tab) => (
+        {(['workspace', 'skills', 'cron', 'runtime'] as const).map((tab) => (
           <button
             key={tab}
             className={rightView === tab ? 'active' : ''}
@@ -172,7 +172,9 @@ export function RightPanel({
               ? <Code2 size={17} />
               : tab === 'skills'
                 ? <Sparkles size={17} />
-                : <Clock3 size={17} />}
+                : tab === 'cron'
+                  ? <Clock3 size={17} />
+                  : <Wrench size={17} />}
             <span>{t(`controls.${tab}`, { defaultValue: tab })}</span>
           </button>
         ))}
@@ -423,7 +425,7 @@ export function RightPanel({
             {approvalError && <p className="runtime-approval-error">{approvalError}</p>}
           </div>
           <div className="button-grid">
-            {AGENT_ACTIONS.map((action) => (
+            {AGENT_ACTIONS.filter((action) => ['create', 'settings', 'delete'].includes(action.id)).map((action) => (
               <button
                 key={action.id}
                 onClick={() => {

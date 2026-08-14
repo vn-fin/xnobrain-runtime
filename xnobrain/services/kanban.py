@@ -24,7 +24,7 @@ from .base import ServiceError
 from .constants import DEFAULT_TEAM_COORDINATOR_PROMPT
 
 
-PRODUCT_STATUSES = ("backlog", "todo", "running", "done", "archived")
+PRODUCT_STATUSES = ("backlog", "todo", "scheduled", "running", "done", "archived")
 PRIORITY_TO_INT = {"low": 0, "medium": 1, "high": 2}
 INT_TO_PRIORITY = {0: "low", 1: "medium", 2: "high"}
 TEAM_META_PREFIX = "[xnobrain:team] "
@@ -40,8 +40,10 @@ def _iso(epoch: int | None) -> str | None:
 def _status(raw: str) -> str:
     if raw == "triage":
         return "backlog"
-    if raw in {"todo", "scheduled"}:
+    if raw == "todo":
         return "todo"
+    if raw == "scheduled":
+        return "scheduled"
     if raw in {"ready", "running", "review"}:
         return "running"
     if raw in {"blocked", "done"}:
@@ -84,12 +86,12 @@ def _allowed_moves(
     """Return product columns reachable without hidden reclaim/reopen work."""
     if raw == "triage":
         return ["todo", "running", "archived"]
-    if raw in {"todo"}:
-        return ["running", "done", "archived"]
+    if raw == "todo":
+        return ["backlog", "running", "done", "archived"]
     if raw in {"ready", "running"}:
         return ["done", "archived"]
     if raw == "scheduled":
-        return ["archived"] if has_schedule else ["running", "done", "archived"]
+        return ["archived"] if has_schedule else ["backlog", "todo", "running", "done", "archived"]
     if raw == "blocked":
         return (
             ["backlog", "todo", "archived"]
@@ -257,7 +259,9 @@ class KanbanService:
             "nodes": projected,
             "task_ids": all_ids,
             "synthesis_task_id": synthesis_id or None,
-            "progress": round(100 * complete_count / len(projected)) if projected else 0,
+            "progress": 100 if status == "done" else (
+                round(100 * complete_count / len(projected)) if projected else 0
+            ),
             "cancelled": cancelled,
         }
 
@@ -862,11 +866,7 @@ class KanbanService:
             board=board,
         )
         kb = self._ready()
-        if status == "todo" and not kb.schedule_task(
-            conn,
-            root_id,
-            reason="Parked team workflow in Todo from XNOBrain",
-        ):
+        if status == "todo" and not kb_adapter.park_task_in_todo(conn, root_id):
             raise ServiceError(
                 "team workflow could not be parked",
                 status=409,
@@ -1179,25 +1179,13 @@ class KanbanService:
                     if raw == "triage":
                         ok = kb.specify_triage_task(conn, task_id, author="user")
                         if ok:
-                            ok = kb.schedule_task(
-                                conn,
-                                task_id,
-                                reason="Parked in Todo from XNOBrain",
-                            )
+                            ok = kb_adapter.park_task_in_todo(conn, task_id)
                     elif raw == "blocked":
                         ok = kb.unblock_task(conn, task_id)
                         if ok:
-                            ok = kb.schedule_task(
-                                conn,
-                                task_id,
-                                reason="Parked in Todo from XNOBrain",
-                            )
+                            ok = kb_adapter.park_task_in_todo(conn, task_id)
                     elif raw in {"todo", "ready"}:
-                        ok = kb.schedule_task(
-                            conn,
-                            task_id,
-                            reason="Parked in Todo from XNOBrain",
-                        )
+                        ok = raw == "todo" or kb_adapter.park_task_in_todo(conn, task_id)
                     else:
                         ok = raw == "scheduled" and not has_schedule
                 elif target == "running":
@@ -1210,11 +1198,15 @@ class KanbanService:
                         if projection["status"] != "todo":
                             ok = projection["status"] == "running"
                         else:
-                            ok = (
-                                kb.unblock_task(conn, task_id)
-                                if raw in {"blocked", "scheduled"}
-                                else False
-                            )
+                            if raw == "todo":
+                                promoted, _ = kb.promote_task(conn, task_id, actor="xnobrain")
+                                ok = promoted
+                            else:
+                                ok = (
+                                    kb.unblock_task(conn, task_id)
+                                    if raw in {"blocked", "scheduled"}
+                                    else raw == "ready"
+                                )
                             if ok:
                                 ok = kb.complete_task(
                                     conn,
@@ -1268,6 +1260,8 @@ class KanbanService:
                 elif target == "backlog":
                     if raw == "blocked" and getattr(task, "last_failure_error", None):
                         ok = kb_adapter.return_failed_task_to_triage(conn, task_id)
+                    elif raw in {"todo", "ready", "scheduled"} and not has_schedule:
+                        ok = kb_adapter.return_waiting_task_to_triage(conn, task_id)
                     else:
                         raise ServiceError(
                             "active tasks cannot be returned to Backlog",

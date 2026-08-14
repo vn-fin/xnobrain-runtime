@@ -26,6 +26,53 @@ function containsRedaction(value: unknown): boolean {
   return false;
 }
 
+export function validateMcpServers(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return 'MCP servers must be a JSON object keyed by server name.';
+  }
+  const stringList = (path: string, item: unknown) => (
+    Array.isArray(item) && item.every((entry) => typeof entry === 'string' && entry.trim())
+      ? '' : `${path} must be an array of non-empty strings.`
+  );
+  const stringMap = (path: string, item: unknown) => (
+    item && typeof item === 'object' && !Array.isArray(item)
+      && Object.entries(item).every(([key, entry]) => key.trim() && typeof entry === 'string')
+      ? '' : `${path} must be an object of string values.`
+  );
+  for (const [name, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!name.trim()) return 'MCP server names must be non-empty strings.';
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return `${name} must be an object.`;
+    const server = raw as Record<string, unknown>;
+    const unsupported = Object.keys(server).find((key) => !['command', 'args', 'env', 'url', 'headers', 'tools'].includes(key));
+    if (unsupported) return `${name}.${unsupported} is not supported.`;
+    const command = typeof server.command === 'string' ? server.command.trim() : '';
+    const url = typeof server.url === 'string' ? server.url.trim() : '';
+    if (Boolean(command) === Boolean(url)) return `${name} must define exactly one non-empty command or URL.`;
+    if ('command' in server && !command) return `${name}.command must be a non-empty string.`;
+    if (url) {
+      try {
+        const parsed = new URL(url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+      } catch { return `${name}.url must be an absolute HTTP(S) URL.`; }
+    } else if ('url' in server) return `${name}.url must be a non-empty string.`;
+    if ('args' in server) { const issue = stringList(`${name}.args`, server.args); if (issue) return issue; }
+    for (const field of ['env', 'headers'] as const) {
+      if (field in server) { const issue = stringMap(`${name}.${field}`, server[field]); if (issue) return issue; }
+    }
+    if ('tools' in server) {
+      const tools = server.tools;
+      if (!tools || typeof tools !== 'object' || Array.isArray(tools)) return `${name}.tools must be an object.`;
+      const toolMap = tools as Record<string, unknown>;
+      const badToolKey = Object.keys(toolMap).find((key) => !['include', 'exclude'].includes(key));
+      if (badToolKey) return `${name}.tools.${badToolKey} is not supported.`;
+      for (const field of ['include', 'exclude'] as const) {
+        if (field in toolMap) { const issue = stringList(`${name}.tools.${field}`, toolMap[field]); if (issue) return issue; }
+      }
+    }
+  }
+  return '';
+}
+
 export function McpSection({ agents }: { agents: Agent[] }) {
   const [agentId, setAgentId] = useState(agents[0]?.id ?? '');
   const [editor, setEditor] = useState(EMPTY_CONFIG);
@@ -84,10 +131,8 @@ export function McpSection({ agents }: { agents: Agent[] }) {
       setError('MCP servers must be valid JSON.');
       return;
     }
-    if (!servers || typeof servers !== 'object' || Array.isArray(servers)) {
-      setError('MCP servers must be a JSON object keyed by server name.');
-      return;
-    }
+    const schemaError = validateMcpServers(servers);
+    if (schemaError) { setError(schemaError); return; }
     if (containsRedaction(servers)) {
       setError('Replace redacted values (***) with ${ENV_VAR} references before saving.');
       return;

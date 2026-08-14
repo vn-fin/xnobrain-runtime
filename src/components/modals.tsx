@@ -148,6 +148,9 @@ export function CreateAgentModal({
   const [environment, setEnvironment] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [nameTouched, setNameTouched] = useState(false);
+  const nameErrorId = useId();
+  const nameMissing = !name.trim();
 
   const close = () => {
     if (busy) return;
@@ -184,6 +187,12 @@ export function CreateAgentModal({
     }
   };
 
+  const create = () => {
+    setNameTouched(true);
+    if (nameMissing) return;
+    onCreate(name.trim(), description.trim());
+  };
+
   return (
     <div className="modal-overlay" onClick={close}>
       <div className="app-modal" role="dialog" aria-modal="true" aria-label={t('modals.createAgent')} onClick={(e) => e.stopPropagation()}>
@@ -199,11 +208,31 @@ export function CreateAgentModal({
         </div>
         {mode === 'new' ? (
           <>
-            <p className="app-modal-sub">{t('modals.createAgentApi')}</p>
             <div className="modal-form">
               <label>
-                {t('modals.name')}
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('modals.namePlaceholder')} autoFocus />
+                {t('modals.name')} *
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onBlur={() => setNameTouched(true)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      create();
+                    }
+                  }}
+                  placeholder={t('modals.namePlaceholder')}
+                  required
+                  aria-required="true"
+                  aria-invalid={nameTouched && nameMissing}
+                  aria-describedby={nameTouched && nameMissing ? nameErrorId : undefined}
+                  autoFocus
+                />
+                {nameTouched && nameMissing && (
+                  <span id={nameErrorId} className="modal-field-error" role="alert">
+                    {t('modals.nameRequired', { defaultValue: 'Display name is required.' })}
+                  </span>
+                )}
               </label>
               <label>
                 {t('modals.description')}
@@ -212,7 +241,7 @@ export function CreateAgentModal({
             </div>
             <div className="modal-actions">
               <button className="conn-btn ghost" onClick={close}>{t('common.cancel')}</button>
-              <button className="conn-btn primary" disabled={!name.trim()} onClick={() => onCreate(name.trim(), description.trim())}>
+              <button className="conn-btn primary" onClick={create}>
                 <Plus size={15} />
                 {t('modals.createAgentBtn')}
               </button>

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Bot, CalendarClock, Check, ChevronDown, Clock3, Columns3, FileText, Mail, MessageCircle, MoreHorizontal, Pause, Play, Plus, RefreshCw, Send, Settings2, Trash2, X } from 'lucide-react';
 import type { CreateCronInput } from '../api/crons';
 import type { Agent, CronBlueprint, CronDeliveryOption, CronDeliveryTargetType, CronDetail, CronJob, CronJobRun } from '../types';
 import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
+import { ConfirmDialog } from './modals';
 
 type Filter = 'all' | 'scheduled' | 'running' | 'stopped';
 
@@ -120,6 +121,13 @@ export function CronView({
   const [targetDestination, setTargetDestination] = useState('reports/automation.md');
   const [targetComposerOpen, setTargetComposerOpen] = useState(false);
   const [detailMenuOpen, setDetailMenuOpen] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; agentId: string; name: string; closeDetail: boolean } | null>(null);
+  const [pendingTargetRemoval, setPendingTargetRemoval] = useState<{ id: string; targetId: string; targetType: string; destination: string; jobName: string } | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const intervalRef = useRef<HTMLInputElement>(null);
   const detailMenuRef = useDismissibleLayer<HTMLDivElement>(detailMenuOpen, () => setDetailMenuOpen(false));
   const routeControlled = routeJobId !== undefined;
 
@@ -217,12 +225,25 @@ export function CronView({
     setPrompt('');
     setInterval('60');
     setAgentId(agents[0]?.id ?? '');
+    setFormErrors({});
     setCreateOpen(false);
   };
 
   const submit = async () => {
     const intervalMinutes = Number.parseInt(interval, 10);
-    if (!agentId || !name.trim() || !prompt.trim() || !Number.isFinite(intervalMinutes) || intervalMinutes < 1) return;
+    const errors: Record<string, string> = {};
+    if (!name.trim()) errors.name = 'Name is required.';
+    if (!prompt.trim()) errors.prompt = 'Prompt is required.';
+    if (!Number.isFinite(intervalMinutes) || intervalMinutes < 1) errors.interval = 'Interval must be at least 1 minute.';
+    if (!agentId) errors.agent = 'Choose an agent.';
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      if (errors.agent) return;
+      if (errors.name) nameRef.current?.focus();
+      else if (errors.prompt) promptRef.current?.focus();
+      else intervalRef.current?.focus();
+      return;
+    }
     await onCreate({ agentId, name: name.trim(), prompt: prompt.trim(), intervalMinutes });
     resetForm();
   };
@@ -241,16 +262,46 @@ export function CronView({
   };
 
   const addTarget = async () => {
-    if (!selectedId || !targetDestination.trim()) return;
-    await onAddTarget(selectedId, { targetType, destination: targetDestination.trim() }, selectedAgentId);
+    const destination = targetDestination.trim();
+    const requiresConfiguredOption = targetType === 'channel' || targetType === 'email';
+    const optionAvailable = deliveryOptions.some((item) => item.targetType === targetType && item.id === destination && item.available);
+    if (!selectedId || !destination || (requiresConfiguredOption && !optionAvailable)) return;
+    await onAddTarget(selectedId, { targetType, destination }, selectedAgentId);
     setTargetComposerOpen(false);
   };
 
   const openTargetComposer = (type: CronDeliveryTargetType = 'file') => {
     setTargetType(type);
-    const option = deliveryOptions.find((item) => item.targetType === type);
+    const option = deliveryOptions.find((item) => item.targetType === type && item.available);
     setTargetDestination(type === 'file' ? 'reports/automation.md' : type === 'kanban' ? 'default' : option?.id ?? '');
     setTargetComposerOpen(true);
+  };
+
+  const configuredTargetSelected = targetType !== 'channel' && targetType !== 'email'
+    ? Boolean(targetDestination.trim())
+    : deliveryOptions.some((item) => item.targetType === targetType && item.id === targetDestination && item.available);
+
+  const confirmDelete = async () => {
+    if (!pendingDelete || confirming) return;
+    setConfirming(true);
+    try {
+      await onDelete(pendingDelete.id, pendingDelete.agentId);
+      if (pendingDelete.closeDetail) closeDetail();
+      setPendingDelete(null);
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const confirmTargetRemoval = async () => {
+    if (!pendingTargetRemoval || confirming) return;
+    setConfirming(true);
+    try {
+      await onRemoveTarget(pendingTargetRemoval.id, pendingTargetRemoval.targetId, selectedAgentId);
+      setPendingTargetRemoval(null);
+    } finally {
+      setConfirming(false);
+    }
   };
 
   return (
@@ -323,7 +374,7 @@ export function CronView({
                         <div className="cron-job-actions">
                           <button disabled={busy} onClick={(event) => { event.stopPropagation(); void onRun(job.id, job.agentId).then(() => openDetail(job.id, job.agentId)); }}><Play size={14} /> {t('cron.runNow', { defaultValue: 'Run now' })}</button>
                           <button disabled={busy} onClick={(event) => { event.stopPropagation(); void onToggle(job.id, job.agentId); }}>{job.state === 'stopped' ? <Play size={14} /> : <Pause size={14} />} {job.state === 'stopped' ? t('cron.start') : t('cron.stop')}</button>
-                          <button className="danger" disabled={busy} onClick={(event) => { event.stopPropagation(); void onDelete(job.id, job.agentId); }}><Trash2 size={14} /> {t('cron.delete')}</button>
+                          <button className="danger" disabled={busy} onClick={(event) => { event.stopPropagation(); setPendingDelete({ id: job.id, agentId: job.agentId, name: job.name, closeDetail: false }); }}><Trash2 size={14} /> {t('cron.delete')}</button>
                         </div>
                       </article>
                     );
@@ -352,7 +403,7 @@ export function CronView({
                     <button className="cron-detail-menu-toggle" onClick={() => setDetailMenuOpen((open) => !open)} aria-label="More actions" aria-expanded={detailMenuOpen}><MoreHorizontal size={18} /></button>
                     {detailMenuOpen && <div className="cron-detail-menu" role="menu">
                       <button role="menuitem" onClick={() => { setDetailMenuOpen(false); void onToggle(selectedId, selectedAgentId); }}>{detail.job.state === 'stopped' ? <><Play size={14} /> Start schedule</> : <><Pause size={14} /> Pause schedule</>}</button>
-                      <button role="menuitem" className="danger" onClick={() => { setDetailMenuOpen(false); void onDelete(selectedId, selectedAgentId).then(closeDetail); }}><Trash2 size={14} /> Delete automation</button>
+                      <button role="menuitem" className="danger" onClick={() => { setDetailMenuOpen(false); setPendingDelete({ id: selectedId, agentId: selectedAgentId, name: detail.job.name, closeDetail: true }); }}><Trash2 size={14} /> Delete automation</button>
                     </div>}
                   </div>
                 </div>}
@@ -397,9 +448,9 @@ export function CronView({
                     </div>
                     {targetComposerOpen && <div className="cron-inline-target-composer">
                       <div><span>Add delivery destination</span><button onClick={() => setTargetComposerOpen(false)} aria-label="Close destination form"><X size={14} /></button></div>
-                      <select value={targetType} onChange={(event) => { const next = event.target.value as CronDeliveryTargetType; setTargetType(next); const option = deliveryOptions.find((item) => item.targetType === next); setTargetDestination(next === 'file' ? 'reports/automation.md' : next === 'kanban' ? 'default' : option?.id ?? ''); }}><option value="file">Workspace file</option><option value="kanban">Kanban board</option><option value="email">Email</option><option value="channel">Channel</option></select>
+                      <select value={targetType} onChange={(event) => { const next = event.target.value as CronDeliveryTargetType; setTargetType(next); const option = deliveryOptions.find((item) => item.targetType === next && item.available); setTargetDestination(next === 'file' ? 'reports/automation.md' : next === 'kanban' ? 'default' : option?.id ?? ''); }}><option value="file">Workspace file</option><option value="kanban">Kanban board</option><option value="email">Email</option><option value="channel">Channel</option></select>
                       {targetType === 'channel' || targetType === 'email' ? <select value={targetDestination} onChange={(event) => setTargetDestination(event.target.value)}><option value="">Choose target</option>{deliveryOptions.filter((item) => item.targetType === targetType).map((item) => <option value={item.id} key={`${item.targetType}-${item.id}`} disabled={!item.available}>{item.name}{item.available ? '' : ' — not configured'}</option>)}</select> : <input value={targetDestination} onChange={(event) => setTargetDestination(event.target.value)} placeholder={targetType === 'file' ? 'reports/digest.md' : 'default'} />}
-                      <button className="primary" disabled={!targetDestination.trim()} onClick={() => void addTarget()}><Plus size={14} /> Add destination</button>
+                      <button className="primary" disabled={!configuredTargetSelected} onClick={() => void addTarget()}><Plus size={14} /> Add destination</button>
                     </div>}
                   </div>
 
@@ -433,7 +484,7 @@ export function CronView({
                       return <div className={`cron-target-row ${target.available ? 'available' : 'unavailable'}`} key={target.id}>
                         <div className="cron-target-row-icon">{icon}</div>
                         <div className="cron-target-row-copy"><strong>{label}</strong><span>{target.destination}</span><small>{target.available ? <><i />Pending</> : <><AlertTriangle size={11} />Delivery target is not configured</>}</small></div>
-                        <button onClick={() => void onRemoveTarget(selectedId, target.id, selectedAgentId)} aria-label={`Remove ${target.targetType} target`}><Trash2 size={14} /></button>
+                        <button onClick={() => setPendingTargetRemoval({ id: selectedId, targetId: target.id, targetType: label, destination: target.destination, jobName: detail.job.name })} aria-label={`Remove ${target.targetType} target`}><Trash2 size={14} /></button>
                       </div>;
                     })}</div>
                     <button className="cron-manage-targets" onClick={() => openTargetComposer()}><Plus size={14} /> Manage delivery targets</button>
@@ -447,13 +498,13 @@ export function CronView({
 
       {createOpen && (
         <div className="cron-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) resetForm(); }}>
-          <form className="cron-modal" role="dialog" aria-modal="true" aria-label={t('cron.createTitle', { defaultValue: 'Schedule a task' })} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          <form className="cron-modal" role="dialog" aria-modal="true" aria-label={t('cron.createTitle', { defaultValue: 'Schedule a task' })} noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
             <div className="cron-modal-heading"><div><p className="cron-eyebrow">{t('cron.eyebrow', { defaultValue: 'Automation' })}</p><h2>{t('cron.createTitle', { defaultValue: 'Schedule a task' })}</h2></div><button type="button" onClick={resetForm} aria-label={t('common.close')}>×</button></div>
-            <label>{t('cron.agent', { defaultValue: 'Agent' })}<select value={agentId} onChange={(event) => setAgentId(event.target.value)}>{agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.title}</option>)}</select></label>
-            <label>{t('cron.name')}<input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('cron.namePlaceholder')} autoFocus /></label>
-            <label>{t('cron.prompt')}<textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={t('cron.promptPlaceholder')} rows={4} /></label>
-            <label>{t('cron.intervalLabel')}<input type="number" min={1} value={interval} onChange={(event) => setInterval(event.target.value)} /></label>
-            <div className="cron-modal-actions"><button type="button" onClick={resetForm}>{t('common.cancel')}</button><button className="primary" type="submit" disabled={pendingId === 'create' || !agentId || !name.trim() || !prompt.trim() || Number(interval) < 1}><Check size={15} />{pendingId === 'create' ? t('cron.creating', { defaultValue: 'Creating…' }) : t('cron.create')}</button></div>
+            <label>{t('cron.agent', { defaultValue: 'Agent' })} *<select required value={agentId} aria-invalid={Boolean(formErrors.agent)} aria-describedby={formErrors.agent ? 'cron-agent-error' : undefined} onChange={(event) => { setAgentId(event.target.value); setFormErrors((current) => ({ ...current, agent: '' })); }}>{agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.title}</option>)}</select>{formErrors.agent && <small id="cron-agent-error" role="alert">{formErrors.agent}</small>}</label>
+            <label>{t('cron.name')} *<input ref={nameRef} required value={name} aria-invalid={Boolean(formErrors.name)} aria-describedby={formErrors.name ? 'cron-name-error' : undefined} onChange={(event) => { setName(event.target.value); setFormErrors((current) => ({ ...current, name: '' })); }} placeholder={t('cron.namePlaceholder')} autoFocus />{formErrors.name && <small id="cron-name-error" role="alert">{formErrors.name}</small>}</label>
+            <label>{t('cron.prompt')} *<textarea ref={promptRef} required value={prompt} aria-invalid={Boolean(formErrors.prompt)} aria-describedby={formErrors.prompt ? 'cron-prompt-error' : undefined} onChange={(event) => { setPrompt(event.target.value); setFormErrors((current) => ({ ...current, prompt: '' })); }} placeholder={t('cron.promptPlaceholder')} rows={4} />{formErrors.prompt && <small id="cron-prompt-error" role="alert">{formErrors.prompt}</small>}</label>
+            <label>{t('cron.intervalLabel')} *<input ref={intervalRef} required type="number" min={1} value={interval} aria-invalid={Boolean(formErrors.interval)} aria-describedby={formErrors.interval ? 'cron-interval-error' : undefined} onChange={(event) => { setInterval(event.target.value); setFormErrors((current) => ({ ...current, interval: '' })); }} />{formErrors.interval && <small id="cron-interval-error" role="alert">{formErrors.interval}</small>}</label>
+            <div className="cron-modal-actions"><button type="button" onClick={resetForm}>{t('common.cancel')}</button><button className="primary" type="submit" disabled={pendingId === 'create'}><Check size={15} />{pendingId === 'create' ? t('cron.creating', { defaultValue: 'Creating…' }) : t('cron.create')}</button></div>
           </form>
         </div>
       )}
@@ -474,6 +525,24 @@ export function CronView({
           </div>
         </div>
       )}
+
+      {pendingDelete && <ConfirmDialog
+        title={`Delete ${pendingDelete.name}?`}
+        message="This permanently deletes the automation, its run history, and stored output artifacts."
+        confirmLabel={confirming ? 'Deleting…' : 'Delete automation'}
+        danger
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => { if (!confirming) setPendingDelete(null); }}
+      />}
+
+      {pendingTargetRemoval && <ConfirmDialog
+        title={`Remove delivery from ${pendingTargetRemoval.jobName}?`}
+        message={`Remove the ${pendingTargetRemoval.targetType} destination ${pendingTargetRemoval.destination}? Future runs will no longer deliver there.`}
+        confirmLabel={confirming ? 'Removing…' : 'Remove destination'}
+        danger
+        onConfirm={() => void confirmTargetRemoval()}
+        onCancel={() => { if (!confirming) setPendingTargetRemoval(null); }}
+      />}
     </section>
   );
 }
