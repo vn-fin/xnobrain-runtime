@@ -426,4 +426,65 @@ describe('live run activity', () => {
     act(() => vi.advanceTimersByTime(1_000));
     expect(screen.getByLabelText('Agent is working for 16s, 2 steps')).toBeVisible();
   });
+  it('reorders queued messages without changing their contents', () => {
+    const conversation: Conversation = {
+      id: 'session-queue', title: 'Queued session', preview: '', startedAt: '2026-08-16T00:00:00Z',
+      model: 'auto', messages: 1, tools: 0,
+    };
+    const agent: Agent = {
+      id: 'agent-queue', name: 'agent-queue', title: 'Queue agent', description: '', status: 'ready',
+      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [conversation],
+    };
+    const onMoveQueued = vi.fn();
+
+    render(<ChatArea
+      agent={agent} agents={[agent]} activeConversation={conversation} providers={[]}
+      runs={[]} messages={[]} usage={null} chatStatus="ready" chatError="" streaming canStop={false}
+      queuedMessages={[
+        { id: 'queued-1', content: 'First queued message' },
+        { id: 'queued-2', content: 'Second queued message' },
+      ]}
+      onMoveQueued={onMoveQueued}
+      onSend={vi.fn()} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={vi.fn()}
+      onSelectModel={vi.fn()} onSelectAgent={vi.fn()} onTestAgent={vi.fn()}
+      onSelectConversation={vi.fn()} onCreateConversation={vi.fn()} onDeleteConversation={vi.fn()}
+      onRenameConversation={vi.fn()} onOpenFile={vi.fn()}
+    />);
+
+    const queue = screen.getByLabelText('2 queued messages');
+    const items = within(queue).getAllByText(/queued message$/).map((node) => node.closest('.queue-item'));
+    expect(within(items[0] as HTMLElement).getByRole('button', { name: 'Move queued message up' })).toBeDisabled();
+    expect(within(items[1] as HTMLElement).getByRole('button', { name: 'Move queued message down' })).toBeDisabled();
+
+    fireEvent.click(within(items[0] as HTMLElement).getByRole('button', { name: 'Move queued message down' }));
+    fireEvent.click(within(items[1] as HTMLElement).getByRole('button', { name: 'Move queued message up' }));
+    expect(onMoveQueued).toHaveBeenNthCalledWith(1, 'queued-1', 'down');
+    expect(onMoveQueued).toHaveBeenNthCalledWith(2, 'queued-2', 'up');
+  });
+
+  it('runs the retry action from a completed assistant message', () => {
+    const onRetry = vi.fn();
+    const conversation: Conversation = {
+      id: 'session-retry', title: 'Retry review', preview: '', model: 'auto', messages: 1, tools: 0,
+    };
+    const agent: Agent = {
+      id: 'agent-1', name: 'agent-1', title: 'Agent', description: '', status: 'ready',
+      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [conversation],
+    };
+    render(<ChatArea
+      agent={agent} agents={[agent]} activeConversation={conversation} providers={[]}
+      runs={[]} messages={[{ id: 'assistant-retry', role: 'assistant', content: 'Completed answer' }]}
+      usage={null} chatStatus="ready" chatError="" streaming={false} canStop={false}
+      onSend={vi.fn()} onStop={vi.fn()} onResolveRunApproval={vi.fn()} onRetry={onRetry}
+      onSelectModel={vi.fn()} onSelectAgent={vi.fn()} onTestAgent={vi.fn()}
+      onSelectConversation={vi.fn()} onCreateConversation={vi.fn()} onDeleteConversation={vi.fn()}
+      onRenameConversation={vi.fn()} onOpenFile={vi.fn()}
+    />);
+
+    fireEvent.click(screen.getByTitle('Retry'));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
 });

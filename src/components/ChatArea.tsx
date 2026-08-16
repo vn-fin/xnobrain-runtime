@@ -149,6 +149,7 @@ export function ChatArea({
   queuedMessages = [],
   onEditQueued,
   onDeleteQueued,
+  onMoveQueued,
   chatStatus,
   chatError,
   streaming,
@@ -1160,7 +1161,7 @@ export function ChatArea({
                 {!message.streaming && (
                   <div className="message-actions">
                     <button title="Copy" onClick={() => void navigator.clipboard?.writeText(message.content)}><Copy size={16} /></button>
-                    <button title="Retry"><RefreshCw size={16} /></button>
+                    <button title="Retry" onClick={onRetry}><RefreshCw size={16} /></button>
                   </div>
                 )}
               </article>
@@ -1305,6 +1306,24 @@ export function ChatArea({
                     <Clock size={13} className="queue-item-icon" />
                     <span className="queue-item-text" title={message.content}>{message.content}</span>
                     <div className="queue-item-actions">
+                      <button
+                        className="icon-button"
+                        title="Move queued message up"
+                        aria-label="Move queued message up"
+                        disabled={!onMoveQueued || queuedMessages[0]?.id === message.id}
+                        onClick={() => onMoveQueued?.(message.id, 'up')}
+                      >
+                        <ChevronUp size={13} />
+                      </button>
+                      <button
+                        className="icon-button"
+                        title="Move queued message down"
+                        aria-label="Move queued message down"
+                        disabled={!onMoveQueued || queuedMessages[queuedMessages.length - 1]?.id === message.id}
+                        onClick={() => onMoveQueued?.(message.id, 'down')}
+                      >
+                        <ChevronDown size={13} />
+                      </button>
                       <button className="icon-button" title={t('common.edit')} onClick={() => { setEditingQueuedId(message.id); setEditingQueuedText(message.content); }}>
                         <Pencil size={13} />
                       </button>

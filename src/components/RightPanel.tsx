@@ -13,15 +13,11 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 import { WorkspacePanel, type WorkspaceController } from './WorkspacePanel';
+import { AgentSettingsModal } from './modals';
 import { CronPanel } from './CronPanel';
 import type { ResponsePagination } from '../api/client';
-import type { Agent, AgentSkill, AgentSkillMap, CronJob, GlobalRuntimeConfig, RightView, WorkspaceView } from '../types';
+import type { Agent, AgentSkill, AgentSkillMap, CronJob, GlobalRuntimeConfig, ProviderConnector, RightView, WorkspaceView } from '../types';
 
-const AGENT_ACTIONS = [
-  { id: 'create', label: 'Create' },
-  { id: 'settings', label: 'Agent settings' },
-  { id: 'delete', label: 'Delete' },
-] as const;
 type WriteApprovalPatch = Partial<Pick<GlobalRuntimeConfig, 'skillsWriteApproval' | 'memoryWriteApproval'>>;
 
 export function RightPanel({
@@ -47,9 +43,8 @@ export function RightPanel({
   onToggleCron,
   onRunCron,
   onDeleteCron,
-  onCreateAgent,
-  onOpenSettings,
-  onDeleteAgent,
+  providers,
+  onSaveAgent,
   workspaceOpenRequest,
   workspace,
   workspaceView,
@@ -83,9 +78,8 @@ export function RightPanel({
   onToggleCron: (id: string) => Promise<void>;
   onRunCron: (id: string) => Promise<void>;
   onDeleteCron: (id: string) => Promise<void>;
-  onCreateAgent: () => void;
-  onOpenSettings: () => void;
-  onDeleteAgent: () => void;
+  providers: ProviderConnector[];
+  onSaveAgent: (updates: Partial<Agent>) => Promise<void> | void;
   workspaceOpenRequest?: { path: string; token: number };
   workspace: WorkspaceController;
   workspaceView: WorkspaceView;
@@ -166,12 +160,12 @@ export function RightPanel({
       </div>
 
       <div className="right-tabs">
-        {(['workspace', 'skills', 'cron', 'runtime'] as const).map((tab) => (
+        {(['workspace', 'skills', 'cron', 'settings'] as const).map((tab) => (
           <button
             key={tab}
             className={rightView === tab ? 'active' : ''}
-            title={t(`controls.${tab}`)}
-            aria-label={t(`controls.${tab}`)}
+            title={tab === 'settings' ? t('agents.settings') : t(`controls.${tab}`)}
+            aria-label={tab === 'settings' ? t('agents.settings') : t(`controls.${tab}`)}
             onClick={() => {
               onRightView(tab);
               onOpen();
@@ -184,13 +178,13 @@ export function RightPanel({
                 : tab === 'cron'
                   ? <Clock3 size={17} />
                   : <Wrench size={17} />}
-            <span>{t(`controls.${tab}`, { defaultValue: tab })}</span>
+            <span>{tab === 'settings' ? t('agents.settings') : t(`controls.${tab}`, { defaultValue: tab })}</span>
           </button>
         ))}
       </div>
 
       {rightView === 'workspace' && (
-        <WorkspacePanel workspace={workspace} agentId={agent.id} workspaceView={workspaceView} checkpointId={checkpointId} versionPath={versionPath} onWorkspaceView={onWorkspaceView} onCheckpoint={onCheckpoint} onVersionPath={onVersionPath} onEnableHistory={() => onRightView('runtime')} openRequest={workspaceOpenRequest} />
+        <WorkspacePanel workspace={workspace} agentId={agent.id} workspaceView={workspaceView} checkpointId={checkpointId} versionPath={versionPath} onWorkspaceView={onWorkspaceView} onCheckpoint={onCheckpoint} onVersionPath={onVersionPath} onEnableHistory={() => onRightView('settings')} openRequest={workspaceOpenRequest} />
       )}
 
       {rightView === 'skills' && (
@@ -369,94 +363,53 @@ export function RightPanel({
         />
       )}
 
-      {rightView === 'runtime' && (
-        <section className="panel-section">
-          <div className="form-grid">
-            <label>
-              Name
-              <input value={agent.title} readOnly />
-            </label>
-            <label>
-              Description
-              <textarea value={agent.description} readOnly />
-            </label>
-            <label>
-              Model
-              <input value={agent.model} readOnly />
-            </label>
-            <label>
-              Reasoning effort
-              <select value={agent.reasoningEffort} disabled>
-                <option>low</option>
-                <option>medium</option>
-                <option>high</option>
-              </select>
-            </label>
-            <label className="inline-check">
-              <input type="checkbox" checked={agent.approvalMode === 'auto'} readOnly />
-              Auto approval
-            </label>
-          </div>
-          <div className="runtime-approval-panel">
-            <div className="runtime-approval-head">
-              <span>
-                <ShieldCheck size={15} />
-                Write approvals
-              </span>
-              <em>{approvalsAvailable ? 'Agent profile file' : 'Unavailable'}</em>
+      {rightView === 'settings' && (
+        <section className="agent-settings-tab-content">
+          <AgentSettingsModal
+            key={agent.id}
+            agent={agent}
+            providers={providers}
+            onSave={onSaveAgent}
+            onClose={() => undefined}
+            embedded
+          />
+          <div className="agent-settings-approvals">
+            <div className="runtime-approval-panel">
+              <div className="runtime-approval-head">
+                <span>
+                  <ShieldCheck size={15} />
+                  Write approvals
+                </span>
+                <em>{approvalsAvailable ? 'Agent profile file' : 'Unavailable'}</em>
+              </div>
+              <label className={approvalsAvailable ? 'runtime-approval-row' : 'runtime-approval-row disabled'}>
+                <div className="runtime-approval-copy">
+                  <strong>New skill writes</strong>
+                  <small>{defaultConfig?.skillsWriteApproval ? 'Approval required' : 'Direct writes'}</small>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={defaultConfig?.skillsWriteApproval ?? true}
+                  disabled={!approvalsAvailable || approvalSaving !== null}
+                  onChange={(e) => void updateWriteApproval('skills', e.target.checked)}
+                />
+                <span className="runtime-switch" />
+              </label>
+              <label className={approvalsAvailable ? 'runtime-approval-row' : 'runtime-approval-row disabled'}>
+                <div className="runtime-approval-copy">
+                  <strong>Memory writes</strong>
+                  <small>{defaultConfig?.memoryWriteApproval ? 'Approval required' : 'Direct writes'}</small>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={defaultConfig?.memoryWriteApproval ?? true}
+                  disabled={!approvalsAvailable || approvalSaving !== null}
+                  onChange={(e) => void updateWriteApproval('memory', e.target.checked)}
+                />
+                <span className="runtime-switch" />
+              </label>
+              {approvalError && <p className="runtime-approval-error">{approvalError}</p>}
             </div>
-            <label className={approvalsAvailable ? 'runtime-approval-row' : 'runtime-approval-row disabled'}>
-              <div className="runtime-approval-copy">
-                <strong>New skill writes</strong>
-                <small>{defaultConfig?.skillsWriteApproval ? 'Approval required' : 'Direct writes'}</small>
-              </div>
-              <input
-                type="checkbox"
-                checked={defaultConfig?.skillsWriteApproval ?? true}
-                disabled={!approvalsAvailable || approvalSaving !== null}
-                onChange={(e) => void updateWriteApproval('skills', e.target.checked)}
-              />
-              <span className="runtime-switch" />
-            </label>
-            <label className={approvalsAvailable ? 'runtime-approval-row' : 'runtime-approval-row disabled'}>
-              <div className="runtime-approval-copy">
-                <strong>Memory writes</strong>
-                <small>{defaultConfig?.memoryWriteApproval ? 'Approval required' : 'Direct writes'}</small>
-              </div>
-              <input
-                type="checkbox"
-                checked={defaultConfig?.memoryWriteApproval ?? true}
-                disabled={!approvalsAvailable || approvalSaving !== null}
-                onChange={(e) => void updateWriteApproval('memory', e.target.checked)}
-              />
-              <span className="runtime-switch" />
-            </label>
-            {approvalError && <p className="runtime-approval-error">{approvalError}</p>}
-          </div>
-          <div className="runtime-approval-panel">
-            <div className="runtime-approval-head"><span><ShieldCheck size={15} /> File restore points</span><em>{agent.checkpointsEnabled ? 'ACTIVE' : 'OFF'}</em></div>
-            <p className="runtime-checkpoint-copy">Preserve this agent's workspace before it changes files or runs destructive commands.</p>
-            <label className="runtime-approval-row">
-              <div className="runtime-approval-copy"><strong>This agent profile only</strong><small>{agent.checkpointsEnabled ? 'New restore points will be recorded' : 'No new restore points while disabled'}</small></div>
-              <input type="checkbox" checked={agent.checkpointsEnabled} onChange={() => onOpenSettings()} />
-              <span className="runtime-switch" />
-            </label>
-            {agent.checkpointsEnabled && <button className="conn-btn ghost" onClick={() => { onWorkspaceView('restore-points'); onRightView('workspace'); }}>View restore points</button>}
-          </div>
-          <div className="button-grid">
-            {AGENT_ACTIONS.map((action) => (
-              <button
-                key={action.id}
-                onClick={() => {
-                  if (action.id === 'create') onCreateAgent();
-                  else if (action.id === 'settings') onOpenSettings();
-                  else if (action.id === 'delete') onDeleteAgent();
-                }}
-              >
-                <Wrench size={15} />
-                {action.label}
-              </button>
-            ))}
           </div>
         </section>
       )}

@@ -6627,6 +6627,19 @@ body.col-resizing {
   width: min(680px, 100%);
 }
 
+.agent-settings-tab-content {
+  min-height: 0;
+  overflow: auto;
+}
+
+.agent-settings-tab-content .agent-settings-embedded {
+  overflow: visible;
+}
+
+.agent-settings-approvals {
+  padding: 0 12px 12px;
+}
+
 .agent-settings-embedded {
   min-height: 0;
   overflow: auto;

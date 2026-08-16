@@ -27,7 +27,7 @@ import { AnalyticsView } from './components/AnalyticsView';
 import { AccountView } from './components/AccountView';
 import { CronView } from './components/CronView';
 import { systemApi, type ImportReport } from './features/system/api';
-import { AuthModal, CreateAgentModal, AgentSettingsModal, ConfirmDialog } from './components/modals';
+import { AuthModal, CreateAgentModal, ConfirmDialog } from './components/modals';
 import { AsyncState } from './components/AsyncState';
 import { useAuth } from './auth';
 import { agentsApi } from './api/agents';
@@ -106,7 +106,6 @@ export default function App() {
   // UI-only modal state
   const [createAgentOpen, setCreateAgentOpen] = useState(false);
   const [mobileManageOpen, setMobileManageOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [deleteAgentId, setDeleteAgentId] = useState<string | null>(null);
@@ -263,7 +262,6 @@ export default function App() {
 
   const handleUpdateAgent = async (updates: Partial<Agent>) => {
     await assistants.updateAgent(router.activeAgentId, updates);
-    setSettingsOpen(false);
   };
 
   const handleCreateConversation = async () => {
@@ -598,9 +596,8 @@ export default function App() {
           onToggleCron={crons.toggleCron}
           onRunCron={crons.runCron}
           onDeleteCron={crons.deleteCron}
-          onCreateAgent={() => setCreateAgentOpen(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onDeleteAgent={() => setDeleteAgentId(activeAgent.id)}
+          providers={runtimeProviders}
+          onSaveAgent={handleUpdateAgent}
           workspaceOpenRequest={workspaceOpenRequest}
           workspace={workspace}
           workspaceView={router.workspaceView}
@@ -625,14 +622,6 @@ export default function App() {
 
       {createAgentOpen && <CreateAgentModal onCreate={handleCreateAgent} onImported={handleImportedProfile} onClose={() => setCreateAgentOpen(false)} />}
 
-      {settingsOpen && (
-        <AgentSettingsModal
-          agent={activeAgent}
-          providers={runtimeProviders}
-          onSave={handleUpdateAgent}
-          onClose={() => setSettingsOpen(false)}
-        />
-      )}
 
       {accountOpen && auth.sessionActive && (
         <div className="modal-overlay" onClick={() => setAccountOpen(false)}>

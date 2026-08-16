@@ -1,6 +1,8 @@
 export const FIREBASE_REFRESH_TOKEN_KEY = 'xnobrain.firebase.refresh-token';
 export const XNO_ACCESS_TOKEN_KEY = 'xnobrain.xno.access-token';
 export const XNO_REFRESH_TOKEN_KEY = 'xnobrain.xno.refresh-token';
+/** Same-origin refresh-token copy used to restore a session in a new tab. */
+export const XNO_SHARED_REFRESH_TOKEN_KEY = 'xnobrain.xno.shared-refresh-token';
 
 const XNO_ACCESS_EXPIRES_AT_KEY = 'xnobrain.xno.access-expires-at';
 const XNO_REFRESH_EXPIRES_AT_KEY = 'xnobrain.xno.refresh-expires-at';
@@ -28,6 +30,23 @@ function storedValue(key: string): string | null {
   }
 }
 
+function sharedStoredValue(key: string): string | null {
+  try {
+    return localStorage.getItem(key)?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function setSharedStoredValue(key: string, value?: string | number | null) {
+  try {
+    if (value === undefined || value === null || value === '') localStorage.removeItem(key);
+    else localStorage.setItem(key, String(value));
+  } catch {
+    // Browsers can disable web storage.
+  }
+}
+
 function setStoredValue(key: string, value?: string | number | null) {
   try {
     if (value === undefined || value === null || value === '') sessionStorage.removeItem(key);
@@ -38,10 +57,24 @@ function setStoredValue(key: string, value?: string | number | null) {
   }
 }
 
+// Migrate an already-open authenticated tab as soon as this module loads. This
+// matters when Vite hot-reloads the app after the user signed in with an older
+// build, before the shared refresh-token key existed.
+const initialSessionRefreshToken = storedValue(XNO_REFRESH_TOKEN_KEY);
+if (initialSessionRefreshToken) setSharedStoredValue(XNO_SHARED_REFRESH_TOKEN_KEY, initialSessionRefreshToken);
+
 function expiryMilliseconds(value: unknown): number | null {
   const expiry = Number(value);
   if (!Number.isFinite(expiry) || expiry <= 0) return null;
   return expiry < 1_000_000_000_000 ? expiry * 1_000 : expiry;
+}
+
+function mirrorSessionRefreshToken() {
+  const sessionRefreshToken = storedValue(XNO_REFRESH_TOKEN_KEY);
+  // Do not let an older tab overwrite a rotated token written by another tab.
+  if (sessionRefreshToken && !sharedStoredValue(XNO_SHARED_REFRESH_TOKEN_KEY)) {
+    setSharedStoredValue(XNO_SHARED_REFRESH_TOKEN_KEY, sessionRefreshToken);
+  }
 }
 
 function unexpiredToken(tokenKey: string, expiryKey: string): string | null {
@@ -58,17 +91,23 @@ function unexpiredToken(tokenKey: string, expiryKey: string): string | null {
 
 export function storedAccessToken() {
   if (accessToken && (accessExpiresAt === null || accessExpiresAt > Date.now() + EXPIRY_SKEW_MS)) {
+    mirrorSessionRefreshToken();
     return accessToken;
   }
   accessToken = null;
   accessExpiresAt = null;
   accessToken = unexpiredToken(XNO_ACCESS_TOKEN_KEY, XNO_ACCESS_EXPIRES_AT_KEY);
   accessExpiresAt = expiryMilliseconds(storedValue(XNO_ACCESS_EXPIRES_AT_KEY));
+  // Migrate sessions created before cross-tab recovery was introduced. The
+  // access token remains tab-scoped; only the refresh token is shared.
+  mirrorSessionRefreshToken();
   return accessToken;
 }
 
 export function storedRefreshToken() {
-  return unexpiredToken(XNO_REFRESH_TOKEN_KEY, XNO_REFRESH_EXPIRES_AT_KEY);
+  const sessionToken = unexpiredToken(XNO_REFRESH_TOKEN_KEY, XNO_REFRESH_EXPIRES_AT_KEY);
+  if (sessionToken) return sessionToken;
+  return sharedStoredValue(XNO_SHARED_REFRESH_TOKEN_KEY);
 }
 
 export function storedAccessTokenExpiresAt() {
@@ -103,8 +142,11 @@ export function setTokenSession(session: {
   refreshExpiresAt?: unknown;
 }) {
   setAccessToken(session.accessToken, session.accessExpiresAt);
-  setStoredValue(XNO_REFRESH_TOKEN_KEY, session.refreshToken.trim());
-  setStoredValue(XNO_REFRESH_EXPIRES_AT_KEY, expiryMilliseconds(session.refreshExpiresAt));
+  const refreshToken = session.refreshToken.trim();
+  const refreshExpiresAt = expiryMilliseconds(session.refreshExpiresAt);
+  setStoredValue(XNO_REFRESH_TOKEN_KEY, refreshToken);
+  setStoredValue(XNO_REFRESH_EXPIRES_AT_KEY, refreshExpiresAt);
+  setSharedStoredValue(XNO_SHARED_REFRESH_TOKEN_KEY, refreshToken);
 }
 
 export function clearTokenSession() {
@@ -114,6 +156,7 @@ export function clearTokenSession() {
   setStoredValue(XNO_REFRESH_TOKEN_KEY, null);
   setStoredValue(XNO_ACCESS_EXPIRES_AT_KEY, null);
   setStoredValue(XNO_REFRESH_EXPIRES_AT_KEY, null);
+  setSharedStoredValue(XNO_SHARED_REFRESH_TOKEN_KEY, null);
 }
 
 export function clearLegacyXnoTokens() {

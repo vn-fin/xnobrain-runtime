@@ -54,6 +54,20 @@ describe('settings routes', () => {
   });
 });
 
+describe('agent inspector routes', () => {
+  it('round-trips the Agent settings tab with its canonical URL', () => {
+    const route = parseRoute('/agents/agent-01', '?panel=settings');
+    expect(route.rightView).toBe('settings');
+    expect(computeUrl({ ...state('profiles'), ...route })).toBe('/agents/agent-01?panel=settings');
+  });
+
+  it('keeps legacy Runtime links working by opening Agent settings', () => {
+    const route = parseRoute('/agents/agent-01', '?panel=runtime');
+    expect(route.rightView).toBe('settings');
+    expect(computeUrl({ ...state('profiles'), ...route })).toBe('/agents/agent-01?panel=settings');
+  });
+});
+
 describe('workspace restore-point routes', () => {
   it('round-trips selected restore points and encoded file paths', () => {
     const url = '/agents/a1/sessions/c1?panel=workspace&workspaceView=versions&path=src%2Fapp.ts&checkpoint=0123456789abcdef0123456789abcdef01234567';

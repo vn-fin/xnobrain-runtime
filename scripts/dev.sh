@@ -2,6 +2,11 @@
 set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+hermes_source_dir="$project_dir/.tools/hermes-agent"
+if [[ -d "$hermes_source_dir/hermes_cli" ]]; then
+  export PYTHONPATH="$hermes_source_dir${PYTHONPATH:+:$PYTHONPATH}"
+fi
+
 python_bin="python3"
 for candidate in \
   "$project_dir/.tools/python/bin/python" \
@@ -16,7 +21,13 @@ done
 
 if ! "$python_bin" -c 'import hermes_cli, jlogger' >/dev/null 2>&1; then
   echo "The project Python environment is incomplete (Hermes or XNOBrain dependencies are missing)." >&2
-  echo "Run ./scripts/install-linux.sh to repair the local toolchain." >&2
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    echo "Repair the macOS project venv with:" >&2
+    echo "  .tools/python/bin/python -m pip install --force-reinstall --no-deps -e .tools/hermes-agent --config-settings editable_mode=compat" >&2
+    echo "  .tools/python/bin/python -m pip install -r requirements.txt" >&2
+  else
+    echo "Run ./scripts/install-linux.sh to repair the local toolchain." >&2
+  fi
   exit 1
 fi
 
@@ -42,17 +53,40 @@ for candidate in \
     break
   fi
 done
-if [[ -z "$router_bin" && "${XNOBRAIN_DEV_SKIP_ROUTER:-0}" != "1" ]]; then
-  echo "9router is not installed. Run ./scripts/install-linux.sh first, or set XNOBRAIN_DEV_SKIP_ROUTER=1 for API-only work." >&2
-  exit 1
-fi
-
 frontend_host="${XNOBRAIN_DEV_WEB_HOST:-0.0.0.0}"
 frontend_port="${XNOBRAIN_DEV_WEB_PORT:-5173}"
 backend_host="${XNOBRAIN_DEV_API_HOST:-0.0.0.0}"
 backend_port="${XNOBRAIN_DEV_API_PORT:-8642}"
 router_host="${XNOBRAIN_DEV_ROUTER_HOST:-127.0.0.1}"
 router_port="${XNOBRAIN_DEV_ROUTER_PORT:-20128}"
+router_url="${NINE_ROUTER_URL:-http://$router_host:$router_port}"
+
+router_is_running() {
+  "$python_bin" - "$router_url" <<'PY'
+import sys
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
+
+try:
+    urlopen(sys.argv[1].rstrip("/") + "/api/providers", timeout=1).close()
+except HTTPError:
+    # An HTTP response, including an authentication error, proves that the
+    # existing 9router process is reachable.
+    raise SystemExit(0)
+except (OSError, URLError):
+    raise SystemExit(1)
+PY
+}
+
+router_already_running=false
+if router_is_running; then
+  router_already_running=true
+  echo "Reusing existing 9router at $router_url"
+elif [[ -z "$router_bin" && "${XNOBRAIN_DEV_SKIP_ROUTER:-0}" != "1" ]]; then
+  echo "9router is not running or installed. Run ./scripts/install-linux.sh first, or set XNOBRAIN_DEV_SKIP_ROUTER=1 for API-only work." >&2
+  exit 1
+fi
+
 : "${HERMES_HOME:?HERMES_HOME is required. Set it in .env}"
 : "${NINE_ROUTER_DATA_DIR:?NINE_ROUTER_DATA_DIR is required. Set it in .env}"
 hermes_home="$HERMES_HOME"
@@ -126,16 +160,18 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cd "$project_dir"
-if [[ -n "$router_bin" ]]; then
+if [[ "$router_already_running" == true || -n "$router_bin" ]]; then
   prepare_router_auth
   NINE_ROUTER_API_KEY="$(< "$router_data_dir/auth/cli-token")"
   : "${NINE_ROUTER_API_KEY:?9router CLI token is empty}"
   export NINE_ROUTER_API_KEY
+fi
+if [[ "$router_already_running" == false && -n "$router_bin" ]]; then
   DATA_DIR="$router_data_dir" \
     PORT="$router_port" \
     HOSTNAME=0.0.0.0 \
-    BASE_URL="http://$router_host:$router_port" \
-    NEXT_PUBLIC_BASE_URL="http://$router_host:$router_port" \
+    BASE_URL="$router_url" \
+    NEXT_PUBLIC_BASE_URL="$router_url" \
     REQUIRE_API_KEY=false \
     NODE_ENV=development \
     "$router_bin" --host "$router_host" --port "$router_port" --no-browser --skip-update &
@@ -146,7 +182,7 @@ HERMES_HOME="$hermes_home" \
   HERMES_ROOT_PROFILE="${HERMES_ROOT_PROFILE:-$hermes_home}" \
   HERMES_PROFILES_ROOT="${HERMES_PROFILES_ROOT:-$hermes_home/profiles}" \
   NINE_ROUTER_DATA_DIR="$router_data_dir" \
-  NINE_ROUTER_URL="${NINE_ROUTER_URL:-http://$router_host:$router_port}" \
+  NINE_ROUTER_URL="$router_url" \
   HERMES_CLI="${HERMES_CLI:-$npm_global_bin/agent}" \
   HERMES_SERVE_HEADLESS=1 \
   BROWSER=/bin/false \
@@ -158,8 +194,4 @@ HERMES_HOME="$hermes_home" \
   "$python_bin" server.py &
 backend_pid=$!
 
-if [[ -n "$router_pid" ]]; then
-  wait -n "$backend_pid" "$router_pid"
-else
-  wait "$backend_pid"
-fi
+wait

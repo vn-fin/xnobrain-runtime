@@ -47,3 +47,8 @@ Shareable links and normal new-tab workflows unexpectedly require another login 
 ## Evidence
 
 - [New application tab displays sign-in](../evidence/new-tab-not-authenticated.png)
+
+
+## Resolution (2026-08-15)
+
+XNO refresh tokens are now copied to a dedicated same-origin `localStorage` key while access tokens remain scoped to `sessionStorage`. A new application tab can therefore refresh the XNO session even when BroadcastChannel handoff is unavailable or the original tab is not ready. Sign-out clears the shared refresh-token copy, and `src/auth.xno.test.tsx` covers restoration from a separate-tab storage state.

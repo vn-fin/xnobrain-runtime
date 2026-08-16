@@ -251,7 +251,9 @@ class CronDeliveryAPITests(unittest.IsolatedAsyncioTestCase):
             (output_dir / "2026-08-14_12-00-00.md").write_text(
                 "# Cron\n\n## Response\nArtifact-backed result", encoding="utf-8"
             )
-            self.assertFalse((profile / "cron" / "executions.db").exists())
+            executions_db = profile / "cron" / "executions.db"
+            executions_db.unlink(missing_ok=True)
+            self.assertFalse(executions_db.exists())
 
             detail = await client.get(
                 f"/xnobrain/api/runtime/v1/cron/jobs/{job_id}?agent_id={agent_id}"

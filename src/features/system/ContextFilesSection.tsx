@@ -79,7 +79,7 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
     modified: '',
   } : null;
 
-  const load = async (file: ContextFileName) => {
+  const loadFile = async (file: ContextFileName) => {
     if (!agentId) return;
     setActiveFile(file);
     setEditing(false);
@@ -99,6 +99,34 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
       setError(value instanceof Error ? value.message : `Could not load ${file}.`);
       setStatus('error');
     }
+  };
+
+  const requestLoad = (file: ContextFileName) => {
+    if (saving) return;
+    if (dirty) {
+      setPendingNavigation(() => () => void loadFile(file));
+      setDiscardOpen(true);
+      return;
+    }
+    void loadFile(file);
+  };
+
+  const requestAgentChange = (nextAgentId: string) => {
+    if (saving || nextAgentId === agentId) return;
+    const change = () => {
+      setAgentId(nextAgentId);
+      setActiveFile(null);
+      setEditing(false);
+      setCreating(false);
+      setStatus('idle');
+      setError('');
+    };
+    if (dirty) {
+      setPendingNavigation(() => change);
+      setDiscardOpen(true);
+      return;
+    }
+    change();
   };
 
   const discardAndClose = () => {
@@ -163,7 +191,7 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
           aria-label="Agent profile"
           value={agentId}
           disabled={agents.length === 0}
-          onChange={(event) => setAgentId(event.target.value)}
+          onChange={(event) => requestAgentChange(event.target.value)}
         >
           {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.title}</option>)}
         </select>
@@ -179,7 +207,7 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
               type="button"
               className="context-file-card"
               aria-label={`Open ${file.name}`}
-              onClick={() => void load(file.name)}
+              onClick={() => requestLoad(file.name)}
             >
               <FileText size={20} />
               <span><strong>{file.name}</strong><small>{file.title}</small></span>
@@ -218,7 +246,7 @@ export function ContextFilesSection({ agents, onLoadFile, onSaveFile }: ContextF
               {status === 'error' && (
                 <div className="context-file-viewer-state context-error" role="alert">
                   <span>{error}</span>
-                  <button className="conn-btn ghost" onClick={() => void load(activeFile)}>Try again</button>
+                  <button className="conn-btn ghost" onClick={() => void loadFile(activeFile)}>Try again</button>
                 </div>
               )}
               {status === 'ready' && (
