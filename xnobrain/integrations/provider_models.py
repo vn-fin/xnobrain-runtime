@@ -7,7 +7,6 @@ from .nine_router_support import (
     OMNIROUTE_PROVIDER_KEY,
     NineRouterAPIError,
     OPENAI_COMPATIBLE_PROVIDERS,
-    OPENCODE_ZEN_ROUTER_ALIAS,
     ROUTER_MODEL_ALIASES,
     ROUTER_PROVIDER_BY_MODEL_OWNER,
 )
@@ -32,10 +31,12 @@ class ProviderModelsMixin:
         active_owners = {
             ROUTER_MODEL_ALIASES[provider]
             for provider in connected_providers
-            if provider in ROUTER_MODEL_ALIASES
+            if provider in ROUTER_MODEL_ALIASES and provider != "opencode"
         }
-        if "opencode" in connected_providers:
-            active_owners.update({OPENCODE_ZEN_ROUTER_ALIAS, "opencode"})
+        # OpenCode's global catalog contains free ``oc/*`` models and other
+        # entries that are not tied to the user's Zen API key. OpenCode models
+        # are therefore supplied exclusively by the connection-specific
+        # catalog below.
         active_owners.update(
             provider for provider in connected_providers
             if provider in OPENAI_COMPATIBLE_PROVIDERS

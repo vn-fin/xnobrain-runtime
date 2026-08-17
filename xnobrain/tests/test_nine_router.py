@@ -743,7 +743,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("api_key", connections["connections"][0])
         self.assertNotIn("apiKey", connections["connections"][0])
 
-    async def test_opencode_zen_models_keep_their_distinct_ocz_prefix(self) -> None:
+    async def test_opencode_zen_models_use_the_connection_catalog(self) -> None:
         node_id = "openai-compatible-chat-zen1"
         manager = FakeNineRouterManager({
             ("GET", "/api/provider-nodes"): {"nodes": [{
@@ -774,6 +774,13 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                     "owned_by": "opencode",
                 },
             ]},
+            ("GET", "/api/providers/zen-account/models"): {
+                "provider": node_id,
+                "models": [{
+                    "id": "gpt-5.6-luna",
+                    "name": "GPT 5.6 Luna",
+                }],
+            },
         })
 
         payload = await manager.list_models(ensure_auto=False)
@@ -781,10 +788,10 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [item["id"] for item in payload["data"]],
-            ["auto", "ocz/gpt-5.6-luna", "oc/deepseek-v4-flash-free"],
+            ["auto", "ocz/gpt-5.6-luna"],
         )
         self.assertEqual(payload["data"][1]["provider"], "opencode")
-        self.assertEqual(payload["data"][2]["provider"], "opencode")
+        self.assertEqual(payload["data"][1]["name"], "GPT 5.6 Luna")
         self.assertEqual(connections["connections"][0]["provider"], "opencode")
         self.assertEqual(connections["connections"][0]["default_model"], "")
         self.assertFalse(any("suggested-models" in path for _, path, _ in manager.requests))
@@ -810,7 +817,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([item["id"] for item in payload["data"]], ["auto"])
 
-    async def test_opencode_owned_models_feed_the_zen_auto_combo(self) -> None:
+    async def test_opencode_free_models_do_not_feed_the_zen_auto_combo(self) -> None:
         node_id = "openai-compatible-chat-zen1"
         manager = FakeNineRouterManager({
             ("GET", "/api/provider-nodes"): {"nodes": [{
@@ -830,6 +837,13 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 "id": "oc/deepseek-v4-flash-free",
                 "owned_by": "opencode",
             }]},
+            ("GET", "/api/providers/zen-account/models"): {
+                "provider": node_id,
+                "models": [{
+                    "id": "gpt-5.6-luna",
+                    "name": "GPT 5.6 Luna",
+                }],
+            },
             ("GET", "/api/combos"): {"combos": []},
             ("POST", "/api/combos"): {"success": True},
         })
@@ -838,14 +852,14 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [item["id"] for item in payload["data"]],
-            ["auto", "oc/deepseek-v4-flash-free"],
+            ["auto", "ocz/gpt-5.6-luna"],
         )
         self.assertIn((
             "POST",
             "/api/combos",
             {
                 "name": "auto",
-                "models": ["ocz/deepseek-v4-flash-free"],
+                "models": ["ocz/gpt-5.6-luna"],
             },
         ), manager.requests)
 
