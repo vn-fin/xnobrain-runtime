@@ -371,15 +371,17 @@ def resolve_timezone(value: str | None) -> tzinfo:
 def bucket_start_iso(value: datetime, bucket: str, zone: tzinfo) -> str:
     local = value.astimezone(zone)
     if bucket == "hour":
-        local = local.replace(minute=0, second=0, microsecond=0)
-    elif bucket == "month":
-        local = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    elif bucket == "week":
-        local = (local - timedelta(days=local.weekday())).replace(
-            hour=0, minute=0, second=0, microsecond=0,
+        local = datetime(
+            local.year, local.month, local.day, local.hour,
+            tzinfo=local.tzinfo, fold=local.fold,
         )
+    elif bucket == "month":
+        local = datetime(local.year, local.month, 1, tzinfo=local.tzinfo)
+    elif bucket == "week":
+        local = local - timedelta(days=local.weekday())
+        local = datetime(local.year, local.month, local.day, tzinfo=local.tzinfo)
     else:
-        local = local.replace(hour=0, minute=0, second=0, microsecond=0)
+        local = datetime(local.year, local.month, local.day, tzinfo=local.tzinfo)
     return local.isoformat().replace("+00:00", "Z")
 
 

@@ -223,18 +223,19 @@ class AnalyticsService:
 
     async def _summary(
         self, items: list[Mapping[str, Any]], start: float, end: float, bucket: str,
+        timezone_name: str,
     ) -> dict[str, Any]:
         key = (
             frozenset(str(item.get("name") or "") for item in items),
-            round(start), round(end), bucket,
+            round(start), round(end), bucket, timezone_name,
         )
         now = time.time()
         cached = self._merged.get(key)
         if cached and now - cached[0] < _MERGED_TTL:
             return cached[1]
         effective = "day" if bucket == "week" else bucket
-        partials = await self._collect_partials(items, start, end, effective)
-        summary = self._merge(partials, start, end, bucket)
+        partials = await self._collect_partials(items, start, end, effective, timezone_name)
+        summary = self._merge(partials, start, end, bucket, timezone_name)
         if len(self._merged) > _CACHE_CAP:
             self._merged.clear()
         self._merged[key] = (now, summary)
@@ -248,11 +249,12 @@ class AnalyticsService:
         start: float,
         end: float,
         bucket: str,
+        timezone_name: str,
     ) -> dict[str, Any]:
         """Single-flight computation shared by parallel dashboard endpoints."""
         key = (
             frozenset(str(item.get("name") or "") for item in items),
-            selected, round(start), round(end), bucket,
+            selected, round(start), round(end), bucket, timezone_name,
         )
         now = time.time()
         cached = self._workspace.get(key)
@@ -263,9 +265,10 @@ class AnalyticsService:
             cached = self._workspace.get(key)
             if cached and now - cached[0] < _MERGED_TTL:
                 return copy.deepcopy(cached[1])
-            live = await self._summary(items, start, end, bucket)
+            live = await self._summary(items, start, end, bucket, timezone_name)
             summary = await self._with_durable_workspace(
                 live, selected=selected, start=start, end=end, bucket=bucket,
+                timezone_name=timezone_name,
             )
             if len(self._workspace) > _CACHE_CAP:
                 self._workspace.clear()
@@ -274,6 +277,7 @@ class AnalyticsService:
 
     async def _collect_partials(
         self, items: list[Mapping[str, Any]], start: float, end: float, effective: str,
+        timezone_name: str,
     ) -> list[dict[str, Any]]:
         async def read_one(item: Mapping[str, Any]) -> dict[str, Any]:
             agent_id = str(item.get("name") or "")
@@ -286,7 +290,7 @@ class AnalyticsService:
                     mtime = db.stat().st_mtime_ns
                 except OSError:
                     mtime = None
-                ckey = (agent_id, round(start), round(end), effective)
+                ckey = (agent_id, round(start), round(end), effective, timezone_name)
                 hit = self._partials.get(ckey)
                 if hit and mtime is not None and hit[0] == mtime:
                     partial = hit[1]
@@ -295,6 +299,7 @@ class AnalyticsService:
                         partial = await asyncio.to_thread(
                             aggregate_profile, profile_dir,
                             start_epoch=start, end_epoch=end, bucket=effective,
+                            timezone_name=timezone_name,
                         )
                     if mtime is not None:
                         if len(self._partials) > _CACHE_CAP:
@@ -312,6 +317,7 @@ class AnalyticsService:
         start: float,
         end: float,
         bucket: str,
+        timezone_name: str,
     ) -> dict[str, Any]:
         """Overlay durable OmniRoute totals for the unfiltered workspace view."""
         if selected:
@@ -364,6 +370,7 @@ class AnalyticsService:
                 start_epoch=start,
                 end_epoch=end,
                 bucket=effective,
+                timezone_name=timezone_name,
             )
         if not router_partial.get("available"):
             return {
@@ -393,6 +400,7 @@ class AnalyticsService:
             start,
             end,
             bucket,
+            timezone_name,
         )
         durable["agents"] = live["agents"]
         # Sessions only exist in XNOBrain's live profile records. Requests,
@@ -418,6 +426,7 @@ class AnalyticsService:
 
     def _merge(
         self, partials: list[dict[str, Any]], start: float, end: float, bucket: str,
+        timezone_name: str,
     ) -> dict[str, Any]:
         totals = _zero_totals()
         models: dict[tuple[str, str], dict[str, Any]] = {}
@@ -436,12 +445,12 @@ class AnalyticsService:
                 mk = (str(row.get("model") or "unknown"), str(row.get("provider") or ""))
                 _accumulate_model(models.setdefault(mk, _zero_model(*mk)), row)
             for row in partial.get("series") or []:
-                label = _fold_bucket(str(row.get("bucket") or ""), bucket)
+                label = _fold_bucket(str(row.get("bucket") or ""), bucket, timezone_name)
                 _accumulate_bucket(series.setdefault(label, _zero_bucket(label)), row)
         return {
-            "range_from": start, "range_to": end,
+            "range_from": _epoch_iso(start), "range_to": _epoch_iso(end),
             "period_days": max(1, round((end - start) / 86400)),
-            "bucket": bucket, "generated_at": _iso(), "timezone": "UTC",
+            "bucket": bucket, "generated_at": _iso(), "timezone": timezone_name,
             "totals": _finish_totals(totals),
             "agents": agents,
             "by_model": [
@@ -451,7 +460,7 @@ class AnalyticsService:
             ],
             "series": [
                 _finish_bucket(series.get(label, _zero_bucket(label)))
-                for label in _dense_buckets(start, end, bucket)
+                for label in _dense_buckets(start, end, bucket, timezone_name)
             ],
         }
 
@@ -522,6 +531,10 @@ class AnalyticsService:
 
 def _iso(value: datetime | None = None) -> str:
     return (value or datetime.now(timezone.utc)).isoformat().replace("+00:00", "Z")
+
+
+def _epoch_iso(value: float) -> str:
+    return _iso(datetime.fromtimestamp(value, tz=timezone.utc))
 
 
 def _num_or_none(value: Any) -> float | None:
@@ -639,52 +652,51 @@ def _apply_cost(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def _fold_bucket(label: str, bucket: str) -> str:
-    """Convert an integration day/hour/month label to the requested granularity.
-
-    Only ``week`` needs folding: the integration returns day-grain labels which we
-    map to their ISO week. Everything else passes through unchanged.
-    """
-    if bucket != "week" or not label:
+def _fold_bucket(label: str, bucket: str, timezone_name: str) -> str:
+    """Normalize an integration bucket to the requested local granularity."""
+    if not label:
         return label
     try:
-        day = datetime.strptime(label, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        stamp = datetime.fromisoformat(label.replace("Z", "+00:00"))
     except ValueError:
-        return label
-    iso = day.isocalendar()
-    return f"{iso[0]}-W{iso[1]:02d}"
+        # Accept legacy labels while old cached/runtime data drains out.
+        try:
+            stamp = datetime.strptime(label, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return label
+    return bucket_start_iso(stamp, bucket, resolve_timezone(timezone_name))
 
 
-def _dense_buckets(start_epoch: float, end_epoch: float, bucket: str) -> list[str]:
-    start = datetime.fromtimestamp(start_epoch, tz=timezone.utc)
-    end = datetime.fromtimestamp(end_epoch, tz=timezone.utc)
+def _dense_buckets(
+    start_epoch: float, end_epoch: float, bucket: str, timezone_name: str,
+) -> list[str]:
+    zone = resolve_timezone(timezone_name)
+    start_utc = datetime.fromtimestamp(start_epoch, tz=timezone.utc)
+    end_utc = datetime.fromtimestamp(end_epoch, tz=timezone.utc)
+    start = start_utc.astimezone(zone)
+    end = end_utc.astimezone(zone)
     labels: list[str] = []
     if bucket == "hour":
-        cur = start.replace(minute=0, second=0, microsecond=0)
-        while cur <= end:
-            labels.append(cur.strftime("%Y-%m-%dT%H"))
+        cur = start_utc.replace(minute=0, second=0, microsecond=0)
+        while cur <= end_utc:
+            labels.append(bucket_start_iso(cur, bucket, zone))
             cur += timedelta(hours=1)
     elif bucket == "week":
         cur = (start - timedelta(days=start.weekday())).replace(
             hour=0, minute=0, second=0, microsecond=0)
-        seen: set[str] = set()
         while cur <= end:
-            iso = cur.isocalendar()
-            label = f"{iso[0]}-W{iso[1]:02d}"
-            if label not in seen:
-                labels.append(label)
-                seen.add(label)
+            labels.append(bucket_start_iso(cur, bucket, zone))
             cur += timedelta(weeks=1)
     elif bucket == "month":
         cur = start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         while cur <= end:
-            labels.append(cur.strftime("%Y-%m"))
+            labels.append(bucket_start_iso(cur, bucket, zone))
             year, month = cur.year + (cur.month // 12), cur.month % 12 + 1
             cur = cur.replace(year=year, month=month)
     else:  # day
         cur = start.replace(hour=0, minute=0, second=0, microsecond=0)
         while cur <= end:
-            labels.append(cur.strftime("%Y-%m-%d"))
+            labels.append(bucket_start_iso(cur, bucket, zone))
             cur += timedelta(days=1)
     # Guard against an unbounded hour range blowing up the response.
     return labels[:1000]

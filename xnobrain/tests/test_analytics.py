@@ -13,6 +13,7 @@ import unittest
 from unittest.mock import patch
 import uuid
 import json
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -337,8 +338,23 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [row["bucket"] for row in result["series"]],
             [
-                (now - timedelta(hours=2)).strftime("%Y-%m-%dT%H"),
-                (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H"),
+                (now - timedelta(hours=2)).replace(minute=0).isoformat().replace("+00:00", "Z"),
+                (now - timedelta(hours=1)).replace(minute=0).isoformat().replace("+00:00", "Z"),
+            ],
+        )
+
+        local = aggregate_router_usage(
+            self.router_data,
+            start_epoch=(now - timedelta(days=1)).timestamp(),
+            end_epoch=now.timestamp(),
+            bucket="hour",
+            timezone_name="Asia/Ho_Chi_Minh",
+        )
+        self.assertEqual(
+            [row["bucket"] for row in local["series"]],
+            [
+                (now - timedelta(hours=2)).astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).replace(minute=0).isoformat(),
+                (now - timedelta(hours=1)).astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).replace(minute=0).isoformat(),
             ],
         )
 
@@ -469,7 +485,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
 
             wide = (await client.get("/xnobrain/api/runtime/v1/analytics/usage?days=90&bucket=week")).json()["data"]
             self.assertEqual(wide["totals"]["input_tokens"], 1099)
-            self.assertTrue(all("-W" in row["bucket"] for row in wide["series"]))
+            self.assertTrue(all("T00:00:00" in row["bucket"] for row in wide["series"]))
 
             bad = await client.get("/xnobrain/api/runtime/v1/analytics/usage?from=2099-01-01&to=2000-01-01")
             self.assertEqual(bad.status_code, 400)
@@ -488,17 +504,20 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         async with self.client() as client:
             response = await client.get(
                 "/xnobrain/api/runtime/v1/analytics/usage?days=1&bucket=hour"
+                "&timezone=Asia%2FHo_Chi_Minh"
             )
 
         self.assertEqual(response.status_code, 200, response.text)
         data = response.json()["data"]
         self.assertEqual(data["bucket"], "hour")
+        self.assertEqual(data["timezone"], "Asia/Ho_Chi_Minh")
+        self.assertTrue(data["range_from"].endswith("Z"))
         self.assertEqual(data["source"]["kind"], "provider_runtime")
         self.assertEqual(
             [row["bucket"] for row in data["series"] if row["total_tokens"]],
             [
-                (now - timedelta(hours=2)).strftime("%Y-%m-%dT%H"),
-                (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H"),
+                (now - timedelta(hours=2)).astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).replace(minute=0).isoformat(),
+                (now - timedelta(hours=1)).astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).replace(minute=0).isoformat(),
             ],
         )
 
