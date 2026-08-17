@@ -5,7 +5,7 @@
 # </Summary>
 set -euo pipefail
 
-base_url="${XNOBRAIN_SMOKE_URL:-http://127.0.0.1:5152}"
+base_url="${XNOBRAIN_SMOKE_URL:-http://127.0.0.1:5173}"
 domain="${XNOBRAIN_DOMAIN:-localhost}"
 api_prefix="/xnobrain/api/runtime/v1"
 

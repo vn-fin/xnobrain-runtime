@@ -54,7 +54,9 @@ Run UI tests and builds in the sibling `xnobrain-ui` repository.
 ## Architecture rules
 
 - Do not add Go, PostgreSQL, an ORM, or another application API process.
-- Keep one FastAPI/Hermes process on port 8642 and one OmniRoute process.
+- Keep one FastAPI/Hermes process on private port 3000 and one OmniRoute
+  process. Traefik is the only published web port in the root development
+  stack.
 - Preserve the original Hermes core and native FastAPI routes. Extend them from
   `xnobrain` instead of copying or forking Hermes.
 - `xnobrain/routes/setup.py` is the only XNOBrain route assembly point.

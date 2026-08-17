@@ -18,12 +18,13 @@ make backend              # API only, using the selected environment
 make check                # Python tests and compile checks
 ```
 
-The UI's Vite proxy targets the canonical `/xnobrain/api/runtime/v1` namespace on port 8642. Swagger is
-at `http://127.0.0.1:8642/xnobrain/api/runtime/swagger_docs`.
+The UI's Vite proxy targets the canonical `/xnobrain/api/runtime/v1` namespace
+on private port 3000. Swagger is at
+`http://127.0.0.1:5173/xnobrain/api/runtime/swagger_docs` through Traefik.
 
 The runtime development script supervises the API and provider runtime and
-stops both on Ctrl-C. Override `XNOBRAIN_DEV_API_PORT` or
-`XNOBRAIN_DEV_ROUTER_PORT` when the default ports are occupied.
+stops both on Ctrl-C. The API uses private port 3000 and the provider runtime
+uses loopback port 20128.
 
 The Python tests use isolated temporary profile roots. For a real chat smoke
 test, use an existing Hermes profile without changing its config and send a

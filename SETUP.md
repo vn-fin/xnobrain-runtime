@@ -15,7 +15,7 @@ make install-local
 make dev
 ```
 
-The runtime API listens on port `8642` and the private provider runtime on
+The runtime API listens on private port `3000` and the private provider runtime on
 port `20128`. UI development and production image instructions are in
 [`../xnobrain-ui/README.md`](../xnobrain-ui/README.md).
 

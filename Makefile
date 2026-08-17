@@ -6,7 +6,7 @@ PYTHON_BIN := $(if $(wildcard $(CURDIR)/.tools/python/bin/python),$(CURDIR)/.too
 CONTAINER_CLI ?= docker
 IMAGE_TAG ?= local
 XNOBRAIN_RUNTIME_IMAGE ?= xnobrain-runtime:$(IMAGE_TAG)
-.PHONY: dev backend test check smoke-api build run image runtime-image bundle load-bundle install install-local brain-app-image dev-app linux-app linux-app-local win-app mac-app rpm-app
+.PHONY: dev backend test check smoke-api build run container-dev stop remove logs image runtime-image bundle load-bundle install install-local brain-app-image dev-app linux-app linux-app-local win-app mac-app rpm-app
 
 dev:
 	bash ./scripts/dev.sh
@@ -29,6 +29,17 @@ build:
 
 run:
 	$(CONTAINER_CLI) compose up -d --build
+
+container-dev: run
+
+stop:
+	$(CONTAINER_CLI) compose stop
+
+remove:
+	$(CONTAINER_CLI) compose down --volumes --remove-orphans
+
+logs:
+	$(CONTAINER_CLI) compose logs -f
 
 image: build
 

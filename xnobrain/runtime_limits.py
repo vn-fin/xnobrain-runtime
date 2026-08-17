@@ -6,9 +6,11 @@ import os
 from typing import Any
 
 
-SESSION_TIMEOUT_ENV = "XNOBRAIN_SESSION_TIMEOUT_SECONDS"
+SESSION_TIMEOUT_ENV = "RUNTIME_SESSION_TIMEOUT_SECONDS"
+COMPAT_SESSION_TIMEOUT_ENV = "XNOBRAIN_SESSION_TIMEOUT_SECONDS"
 LEGACY_SESSION_TIMEOUT_ENV = "HERMES_SESSION_TIMEOUT_SECONDS"
-PARALLEL_AGENTS_ENV = "XNOBRAIN_MAX_PARALLEL_AGENTS"
+PARALLEL_AGENTS_ENV = "RUNTIME_DELEGATION_MAX_CONCURRENT_CHILDREN"
+COMPAT_PARALLEL_AGENTS_ENV = "XNOBRAIN_MAX_PARALLEL_AGENTS"
 LEGACY_PARALLEL_AGENTS_ENV = "DELEGATION_MAX_CONCURRENT_CHILDREN"
 DEFAULT_SESSION_TIMEOUT_SECONDS = 3600
 MAX_SESSION_TIMEOUT_SECONDS = 3600
@@ -27,7 +29,10 @@ def _bounded_int(value: Any, *, default: int, maximum: int) -> int:
 def session_timeout_seconds(requested: Any = None) -> int:
     """Return the requested timeout, or the bounded environment default."""
     configured = _bounded_int(
-        os.getenv(SESSION_TIMEOUT_ENV, os.getenv(LEGACY_SESSION_TIMEOUT_ENV)),
+        os.getenv(
+            SESSION_TIMEOUT_ENV,
+            os.getenv(COMPAT_SESSION_TIMEOUT_ENV, os.getenv(LEGACY_SESSION_TIMEOUT_ENV)),
+        ),
         default=DEFAULT_SESSION_TIMEOUT_SECONDS,
         maximum=MAX_SESSION_TIMEOUT_SECONDS,
     )
@@ -37,7 +42,10 @@ def session_timeout_seconds(requested: Any = None) -> int:
 def max_parallel_agents(configured: Any = None) -> int:
     """Return a delegation slot count constrained to this host's safe cap."""
     value = (
-        os.getenv(PARALLEL_AGENTS_ENV, os.getenv(LEGACY_PARALLEL_AGENTS_ENV))
+        os.getenv(
+            PARALLEL_AGENTS_ENV,
+            os.getenv(COMPAT_PARALLEL_AGENTS_ENV, os.getenv(LEGACY_PARALLEL_AGENTS_ENV)),
+        )
         if configured is None
         else configured
     )

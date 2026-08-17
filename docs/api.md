@@ -29,14 +29,14 @@ Runtime statistics are available as a snapshot at
 Portable profile example:
 
 ```bash
-curl -fsS -X POST http://localhost:5152/xnobrain/api/runtime/v1/bundles/export \
+curl -fsS -X POST http://localhost:5173/xnobrain/api/runtime/v1/bundles/export \
   -H 'Content-Type: application/json' \
   -d '{"agent_ids":["agent-id"]}' -o profiles.zip
-curl -fsS -X POST http://localhost:5152/xnobrain/api/runtime/v1/bundles/inspect \
+curl -fsS -X POST http://localhost:5173/xnobrain/api/runtime/v1/bundles/inspect \
   -F file=@profiles.zip
-curl -fsS -X POST http://localhost:5152/xnobrain/api/runtime/v1/bundles/dry-run \
+curl -fsS -X POST http://localhost:5173/xnobrain/api/runtime/v1/bundles/dry-run \
   -F file=@profiles.zip
-curl -fsS -X POST http://localhost:5152/xnobrain/api/runtime/v1/bundles/apply \
+curl -fsS -X POST http://localhost:5173/xnobrain/api/runtime/v1/bundles/apply \
   -F file=@profiles.zip
 ```
 

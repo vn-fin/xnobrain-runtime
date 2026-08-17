@@ -9,7 +9,7 @@ isolated atomic file-backed profile. No Go API or PostgreSQL service is present.
 
 ```text
 Browser -> Traefik -> React
-                   -> FastAPI :8642 -> Hermes CLI/core -> OmniRoute :20128
+                   -> FastAPI :3000 -> Hermes CLI/core -> OmniRoute :20128
                                       -> default or named profile
 ```
 
@@ -44,6 +44,6 @@ make run
 ```
 
 The UI image is built by `xnobrain-ui`; this repository builds
-`xnobrain-runtime`. Open <http://localhost:5152> and use
-<http://localhost:5152/xnobrain/api/runtime/swagger_docs> for the unified OpenAPI
+`xnobrain-runtime`. Open <http://localhost:5173> and use
+<http://localhost:5173/xnobrain/api/runtime/swagger_docs> for the unified OpenAPI
 documentation.

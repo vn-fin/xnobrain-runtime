@@ -79,7 +79,7 @@ def main() -> None:
     configure_logging()
     reload_enabled = os.getenv("XNOBRAIN_RELOAD", "").lower() in {"1", "true", "yes", "on"}
     host = os.getenv("API_SERVER_HOST", "0.0.0.0")
-    port = int(os.getenv("API_SERVER_PORT", "8642"))
+    port = int(os.getenv("API_SERVER_PORT", "3000"))
     uvicorn.run(
         "xnobrain.server:app" if reload_enabled else app,
         host=host,

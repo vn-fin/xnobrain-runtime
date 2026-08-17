@@ -30,13 +30,13 @@ On Windows, run this in PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1
 ```
 
-Copy the environment template and enter the required `XNOBRAIN_AGENT_HOME` and
-`XNOBRAIN_PROVIDER_DATA_DIR` values. For Docker, use paths inside `/opt/data`:
+Copy the environment template and set `RUNTIME_AGENT_HOME` and
+`RUNTIME_PROVIDER_DATA_DIR`. For Docker, use paths inside `/opt/data`:
 
 ```bash
 cp .env.example .env
-# Edit .env and set XNOBRAIN_AGENT_HOME=/opt/data/agent and
-# XNOBRAIN_PROVIDER_DATA_DIR=/opt/data/provider-runtime.
+# Edit .env and set RUNTIME_AGENT_HOME=/opt/data/agent and
+# RUNTIME_PROVIDER_DATA_DIR=/opt/data/provider-runtime.
 ```
 
 The coordinated stack is started from the workspace root:
@@ -49,9 +49,9 @@ The control-plane Compose stack builds the UI from `xnobrain-ui`, the runtime
 from this repository, and the managed administrator service. It also starts
 the private Honcho API, deriver, PostgreSQL/pgvector, and Redis services.
 
-Open <http://localhost:5152>. Swagger is available at
-<http://localhost:5152/xnobrain/api/runtime/swagger_docs> and the generated OpenAPI
-document at <http://localhost:5152/xnobrain/api/runtime/openapi.json>.
+Open <http://localhost:5173>. Swagger is available at
+<http://localhost:5173/xnobrain/api/runtime/swagger_docs> and the generated OpenAPI
+document at <http://localhost:5173/xnobrain/api/runtime/openapi.json>.
 
 ### Required account UI
 
@@ -122,12 +122,12 @@ sudo systemctl start xnobrain.target
 `xnobrain.target` owns the two long-running processes:
 
 - `xnobrain-api.service` runs the integrated XNOBrain runtime on
-  port `8642`;
+  private port `3000`;
 - the provider-runtime service listens only on loopback port `20128`.
 
 Agent executions are children of the API service. Persistent agent and provider
 data is stored under `/srv/xnobrain-data`. Runtime configuration is read from
-`/etc/xnobrain/xnobrain.env`. The VM firewall must allow port `8642` only
+`/etc/xnobrain/xnobrain.env`. The VM firewall must allow port `3000` only
 from the authenticated workspace gateway; port `20128` must remain private to
 the VM.
 

@@ -50,7 +50,7 @@ Environment overrides:
   XNOBRAIN_PROVIDER_RUNTIME_VERSION, XNOBRAIN_OMNIROUTE_VERSION,
   XNOBRAIN_CODEX_VERSION,
   XNOBRAIN_CLAUDE_CODE_VERSION, XNOBRAIN_AGENT_BROWSER_VERSION,
-  XNOBRAIN_AGENT_HOME, XNOBRAIN_PROVIDER_DATA_DIR (both required)
+  RUNTIME_AGENT_HOME, RUNTIME_PROVIDER_DATA_DIR (both required)
 EOF
 }
 
@@ -65,10 +65,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-hermes_home="${XNOBRAIN_AGENT_HOME:-${HERMES_HOME:-}}"
-router_data_dir="${XNOBRAIN_PROVIDER_DATA_DIR:-${NINE_ROUTER_DATA_DIR:-}}"
-: "${hermes_home:?XNOBRAIN_AGENT_HOME is required. Set it in .env or the environment}"
-: "${router_data_dir:?XNOBRAIN_PROVIDER_DATA_DIR is required. Set it in .env or the environment}"
+hermes_home="${RUNTIME_AGENT_HOME:-}"
+router_data_dir="${RUNTIME_PROVIDER_DATA_DIR:-}"
+: "${hermes_home:?RUNTIME_AGENT_HOME is required. Set it in .env or the environment}"
+: "${router_data_dir:?RUNTIME_PROVIDER_DATA_DIR is required. Set it in .env or the environment}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This installer is for Linux." >&2

@@ -53,11 +53,11 @@ for candidate in \
     break
   fi
 done
-backend_host="${XNOBRAIN_DEV_API_HOST:-0.0.0.0}"
-backend_port="${XNOBRAIN_DEV_API_PORT:-8642}"
-router_host="${XNOBRAIN_DEV_ROUTER_HOST:-127.0.0.1}"
-router_port="${XNOBRAIN_DEV_ROUTER_PORT:-20128}"
-router_url="${OMNIROUTE_URL:-${NINE_ROUTER_URL:-http://$router_host:$router_port}}"
+backend_host=0.0.0.0
+backend_port=3000
+router_host=127.0.0.1
+router_port=20128
+router_url="${OMNIROUTE_URL:-http://$router_host:$router_port}"
 
 router_is_running() {
   "$python_bin" - "$router_url" <<'PY'
@@ -85,10 +85,10 @@ elif [[ -z "$router_bin" && "${XNOBRAIN_DEV_SKIP_ROUTER:-0}" != "1" ]]; then
   exit 1
 fi
 
-hermes_home="${XNOBRAIN_AGENT_HOME:-${HERMES_HOME:-}}"
-router_data_dir="${XNOBRAIN_PROVIDER_DATA_DIR:-${NINE_ROUTER_DATA_DIR:-}}"
-: "${hermes_home:?XNOBRAIN_AGENT_HOME is required. Set it in .env}"
-: "${router_data_dir:?XNOBRAIN_PROVIDER_DATA_DIR is required. Set it in .env}"
+hermes_home="${RUNTIME_AGENT_HOME:-}"
+router_data_dir="${RUNTIME_PROVIDER_DATA_DIR:-}"
+: "${hermes_home:?RUNTIME_AGENT_HOME is required. Set it in .env}"
+: "${router_data_dir:?RUNTIME_PROVIDER_DATA_DIR is required. Set it in .env}"
 backend_pid=""
 router_pid=""
 
@@ -96,7 +96,7 @@ mkdir -p "$router_data_dir/auth"
 
 prepare_router_auth() {
   printf '%s' "$(cat /etc/machine-id 2>/dev/null || hostname)" > "$router_data_dir/machine-id"
-  printf '%s' "${OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}" > "$router_data_dir/auth/cli-secret"
+  printf '%s' "${RUNTIME_PROVIDER_INTERNAL_SECRET:-omniroute-cli-auth-v1}" > "$router_data_dir/auth/cli-secret"
   "$python_bin" - "$router_data_dir" <<'PY'
 import hashlib
 import hmac

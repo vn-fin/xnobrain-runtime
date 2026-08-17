@@ -33,9 +33,9 @@ services:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=xnobrain_edge
-      - --entrypoints.web.address=:5152
+      - --entrypoints.web.address=:5173
     ports:
-      - "${XNOBRAIN_HTTP_PORT:-5152}:5152"
+      - "${XNOBRAIN_DEV_WEB_PORT:-5173}:5173"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
@@ -63,21 +63,30 @@ services:
       HERMES_DESKTOP: "1"
       HOME: /opt/data/home
       XDG_CONFIG_HOME: /opt/data/home/.config
-      HERMES_HOME: ${XNOBRAIN_AGENT_HOME:?Set XNOBRAIN_AGENT_HOME in .env}
-      HERMES_ROOT_PROFILE: ${XNOBRAIN_AGENT_HOME:?Set XNOBRAIN_AGENT_HOME in .env}
-      HERMES_PROFILES_ROOT: ${XNOBRAIN_AGENT_PROFILES_ROOT:-}
-      OMNIROUTE_DATA_DIR: ${XNOBRAIN_PROVIDER_DATA_DIR:?Set XNOBRAIN_PROVIDER_DATA_DIR in .env}
-      OMNIROUTE_CLI_SALT: ${XNOBRAIN_PROVIDER_INTERNAL_SECRET:-omniroute-cli-auth-v1}
-      HONCHO_MEMORY_ENABLE: ${HONCHO_MEMORY_ENABLE:-false}
+      RUNTIME_AGENT_HOME: ${RUNTIME_AGENT_HOME:?Set RUNTIME_AGENT_HOME in .env}
+      RUNTIME_PROVIDER_DATA_DIR: ${RUNTIME_PROVIDER_DATA_DIR:?Set RUNTIME_PROVIDER_DATA_DIR in .env}
+      RUNTIME_PROVIDER_INTERNAL_SECRET: ${RUNTIME_PROVIDER_INTERNAL_SECRET:-omniroute-cli-auth-v1}
+      RUNTIME_HONCHO_MEMORY_ENABLE: ${RUNTIME_HONCHO_MEMORY_ENABLE:-false}
+      RUNTIME_OTEL_TRACES_ENABLED: ${RUNTIME_OTEL_TRACES_ENABLED:-false}
+      RUNTIME_SESSION_TIMEOUT_SECONDS: ${RUNTIME_SESSION_TIMEOUT_SECONDS:-500}
+      RUNTIME_DELEGATION_MAX_CONCURRENT_CHILDREN: ${RUNTIME_DELEGATION_MAX_CONCURRENT_CHILDREN:-3}
+      HERMES_HOME: ${RUNTIME_AGENT_HOME}
+      HERMES_ROOT_PROFILE: ${RUNTIME_AGENT_HOME}
+      HERMES_PROFILES_ROOT: ${RUNTIME_AGENT_PROFILES_ROOT:-}
+      OMNIROUTE_DATA_DIR: ${RUNTIME_PROVIDER_DATA_DIR}
+      OMNIROUTE_CLI_SALT: ${RUNTIME_PROVIDER_INTERNAL_SECRET:-omniroute-cli-auth-v1}
+      HONCHO_MEMORY_ENABLE: ${RUNTIME_HONCHO_MEMORY_ENABLE:-false}
       HONCHO_BASE_URL: http://honcho-api:8000
       HONCHO_ENVIRONMENT: local
       API_SERVER_HOST: 0.0.0.0
-      API_SERVER_PORT: 8642
+      API_SERVER_PORT: 3000
+      XNOBRAIN_SESSION_TIMEOUT_SECONDS: ${RUNTIME_SESSION_TIMEOUT_SECONDS:-500}
+      DELEGATION_MAX_CONCURRENT_CHILDREN: ${RUNTIME_DELEGATION_MAX_CONCURRENT_CHILDREN:-3}
       DATA_DIR: /opt/data/xnobrain
       DEVELOPMENT_ENVIRONMENT: ${DEVELOPMENT_ENVIRONMENT:-development}
       SERVICE_NAME: ${SERVICE_NAME:-xnobrain-runtime-services}
-      OTEL_ENABLED: ${OTEL_ENABLED:-false}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
+      OTEL_ENABLED: ${RUNTIME_OTEL_TRACES_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${RUNTIME_OTEL_EXPORTER_OTLP_ENDPOINT:-}
     volumes:
       - xnobrain_data:/opt/data
     extra_hosts:
@@ -87,12 +96,12 @@ services:
       - traefik.http.routers.xnobrain-api.rule=Host(`${XNOBRAIN_DOMAIN:-localhost}`) && PathPrefix(`/xnobrain/api/runtime`)
       - traefik.http.routers.xnobrain-api.entrypoints=web
       - traefik.http.routers.xnobrain-api.priority=100
-      - traefik.http.services.xnobrain-api.loadbalancer.server.port=8642
+      - traefik.http.services.xnobrain-api.loadbalancer.server.port=3000
     networks:
       - edge
       - control
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8642/xnobrain/api/runtime/v1/health',timeout=2)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/xnobrain/api/runtime/v1/health',timeout=2)"]
       interval: 15s
       timeout: 3s
       retries: 20

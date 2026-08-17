@@ -12,8 +12,8 @@ Traefik -> XNOBrain UI container
 make dev
 ```
 
-Open `http://localhost:5152` for the UI and
-`http://localhost:5152/xnobrain/api/runtime/swagger_docs` for Swagger.
+Open `http://localhost:5173` for the UI and
+`http://localhost:5173/xnobrain/api/runtime/swagger_docs` for Swagger.
 Only Traefik publishes a host port. The runtime's named volume holds profiles,
 teams, notifications, Hermes state, and OmniRoute credentials.
 
@@ -30,11 +30,11 @@ optional `otel` Compose profile starts a local OpenTelemetry collector. It is
 disabled by default and has no outbound exporter:
 
 ```bash
-OTEL_ENABLED=true docker compose --profile otel up -d
+RUNTIME_OTEL_TRACES_ENABLED=true docker compose --profile otel up -d
 ```
 
 The collector receives metadata-only spans from the runtime and writes basic
-summaries to its container logs. `OTEL_EXPORTER_OTLP_ENDPOINT` is restricted to
+summaries to its container logs. `RUNTIME_OTEL_EXPORTER_OTLP_ENDPOINT` is restricted to
 the Compose collector or a loopback address.
 
 Runtime logs use standard human-readable Python logging. Each record includes
