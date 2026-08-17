@@ -17,6 +17,11 @@ class ProviderModelsMixin:
     async def list_models(self, *, ensure_auto: bool = True) -> dict[str, Any]:
         connection_payload = await self.list_connections()
         connections = connection_payload["connections"]
+        provider_nodes = {
+            str(node.get("id") or ""): node
+            for node in await self.list_provider_nodes()
+            if str(node.get("id") or "")
+        }
         connected_providers = {
             str(item.get("provider") or "")
             for item in connections
@@ -51,6 +56,11 @@ class ProviderModelsMixin:
             # as ``openai-compatible-chat-<uuid>/model``. Only the stable public
             # prefix belongs in XNOBrain's provider/model contract.
             if model_id.startswith("openai-compatible-"):
+                continue
+            if any(f"/{node_id}/" in model_id for node_id in provider_nodes):
+                # OmniRoute can add derived aliases such as
+                # ``no-think/<node-id>/model``. The canonical connection model
+                # endpoint below supplies one stable public entry instead.
                 continue
             owner = str(item.get("owned_by") or self._model_owner(model_id)).strip()
             if owner == "combo":
@@ -90,6 +100,47 @@ class ProviderModelsMixin:
             if reasoning_levels:
                 model["reasoning_levels"] = reasoning_levels
             models.append(model)
+        for connection in connections:
+            logical_provider = str(connection.get("provider") or "")
+            if (
+                logical_provider not in OPENAI_COMPATIBLE_PROVIDERS | {"opencode"}
+                or connection.get("active") is False
+                or str(connection.get("test_status") or "").lower() == "error"
+            ):
+                continue
+            try:
+                connection_catalog = await self.models_for_connection(
+                    connection.get("id")
+                )
+            except NineRouterAPIError:
+                continue
+            node = provider_nodes.get(str(connection_catalog.get("provider") or ""))
+            if node is None:
+                continue
+            prefix = str(node.get("prefix") or "").strip()
+            provider = ROUTER_PROVIDER_BY_MODEL_OWNER.get(prefix, prefix)
+            if not prefix or provider != logical_provider:
+                continue
+            for item in connection_catalog.get("models", []):
+                model_id = str(item.get("id") or "").strip()
+                if not model_id:
+                    continue
+                public_model_id = f"{prefix}/{model_id}"
+                if public_model_id in seen:
+                    continue
+                seen.add(public_model_id)
+                model = {
+                    "id": public_model_id,
+                    "provider": provider,
+                    "name": str(item.get("name") or model_id),
+                }
+                context_length = self._model_context_length(item)
+                if context_length is not None:
+                    model["context_length"] = context_length
+                reasoning_levels = self._model_reasoning_levels(item)
+                if reasoning_levels:
+                    model["reasoning_levels"] = reasoning_levels
+                models.append(model)
         if ensure_auto:
             await self._ensure_auto_combo(models)
         return {
@@ -140,6 +191,7 @@ class ProviderModelsMixin:
             item.get("context_length"),
             item.get("context_window"),
             item.get("max_input_tokens"),
+            item.get("inputTokenLimit"),
             capabilities.get("contextWindow"),
         ):
             if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
@@ -153,7 +205,13 @@ class ProviderModelsMixin:
         allowed = {"low", "medium", "high"}
         if isinstance(raw, list):
             return [str(level) for level in raw if str(level) in allowed]
+        raw = item.get("supportedThinkingEfforts")
+        if isinstance(raw, list):
+            return [str(level) for level in raw if str(level) in allowed]
         capabilities = item.get("capabilities")
-        if isinstance(capabilities, Mapping) and capabilities.get("reasoning") is True:
+        if (
+            item.get("supportsThinking") is True
+            or isinstance(capabilities, Mapping) and capabilities.get("reasoning") is True
+        ):
             return ["low", "medium", "high"]
         return []

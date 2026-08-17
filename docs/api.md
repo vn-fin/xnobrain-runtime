@@ -43,6 +43,10 @@ API-key card remains separate from the Grok Build subscription card.
 API-key credentials use one idempotent write contract:
 `POST /xnobrain/api/runtime/v1/providers/{provider_id}/connections` with
 `api_key` and, only for a custom OpenAI-compatible provider, `base_url`.
+Preset providers always use their runtime-defined endpoint and ignore a
+client-supplied base URL. Model inventories for OpenAI-compatible connections
+come from OmniRoute's per-connection model catalog and are exposed under the
+configured stable prefix; OmniRoute's UUID-backed node IDs are never public.
 The runtime derives a SHA-256 fingerprint for the provider-runtime identity;
 submitting the same key updates its existing connection while a different key
 adds another connection. The raw key and full fingerprint are never returned.

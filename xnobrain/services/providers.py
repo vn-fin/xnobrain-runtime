@@ -243,7 +243,10 @@ class ProvidersServiceMixin:
                 router_provider = await self.router.ensure_opencode_zen_provider()
             elif provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
                 definition = OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS[provider]
-                base_url = str(body.get("base_url") or definition["base_url"]).strip()
+                base_url = str(
+                    (body.get("base_url") or "") if provider == "openai-like"
+                    else definition["base_url"]
+                ).strip()
                 if not base_url:
                     raise ServiceError("base_url is required", code="invalid_provider_connection")
                 router_provider = await self.router.ensure_openai_compatible_provider(
@@ -322,7 +325,10 @@ class ProvidersServiceMixin:
             router_provider = await self.router.ensure_opencode_zen_provider()
         elif provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
             definition = OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS[provider]
-            base_url = str(body.get("base_url") or definition["base_url"]).strip()
+            base_url = str(
+                (body.get("base_url") or "") if provider == "openai-like"
+                else definition["base_url"]
+            ).strip()
             if not base_url:
                 raise ServiceError("base_url is required", code="invalid_provider_connection")
             router_provider = await self.router.ensure_openai_compatible_provider(

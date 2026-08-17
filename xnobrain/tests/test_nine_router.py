@@ -631,6 +631,60 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([row["provider"] for row in rows], list(providers))
 
+    async def test_openai_compatible_models_use_omniroute_connection_catalog(self) -> None:
+        node_id = "openai-compatible-chat-groq1"
+        manager = FakeNineRouterManager({
+            ("GET", "/api/provider-nodes"): {"nodes": [{
+                "id": node_id,
+                "prefix": "groq",
+                "name": "Groq",
+                "type": "openai-compatible",
+                "apiType": "chat",
+                "baseUrl": "https://api.groq.com/openai/v1",
+            }]},
+            ("GET", "/api/providers"): {"connections": [{
+                "id": "groq-account",
+                "provider": node_id,
+                "authType": "apikey",
+                "isActive": True,
+                "testStatus": "active",
+            }]},
+            ("GET", "/v1/models?kind=llm"): {"data": [
+                {
+                    "id": f"{node_id}/openai/gpt-oss-120b",
+                    "owned_by": "groq",
+                },
+                {
+                    "id": f"no-think/{node_id}/openai/gpt-oss-120b",
+                    "owned_by": "groq",
+                },
+            ]},
+            ("GET", "/api/providers/groq-account/models"): {
+                "provider": node_id,
+                "models": [{
+                    "id": "openai/gpt-oss-120b",
+                    "name": "GPT OSS 120B",
+                    "inputTokenLimit": 131072,
+                    "supportedThinkingEfforts": ["low", "medium", "high", "xhigh"],
+                }],
+            },
+        })
+
+        models = (await manager.list_models(ensure_auto=False))["data"]
+
+        self.assertEqual(
+            [model["id"] for model in models],
+            ["auto", "groq/openai/gpt-oss-120b"],
+        )
+        self.assertEqual(models[1]["provider"], "groq")
+        self.assertEqual(models[1]["name"], "GPT OSS 120B")
+        self.assertEqual(models[1]["context_length"], 131072)
+        self.assertEqual(models[1]["reasoning_levels"], ["low", "medium", "high"])
+        self.assertIn(
+            ("GET", "/api/providers/groq-account/models", None),
+            manager.requests,
+        )
+
     async def test_models_are_filtered_and_auto_combo_is_created(self) -> None:
         manager = FakeNineRouterManager(
             {

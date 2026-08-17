@@ -105,6 +105,27 @@ class ProviderConnectionsMixin:
         return result
 
 
+    async def models_for_connection(self, connection_id: Any) -> dict[str, Any]:
+        """Read OmniRoute's canonical model catalog for one connection."""
+
+        connection_id = self._safe_id(connection_id, "connection_id")
+        payload = await self._request(
+            "GET", f"/api/providers/{quote(connection_id, safe='')}/models"
+        )
+        if not isinstance(payload, Mapping):
+            return {"provider": "", "models": []}
+        raw_models = payload.get("models", [])
+        rows = raw_models if isinstance(raw_models, list) else []
+        return {
+            "provider": str(payload.get("provider") or ""),
+            "models": [
+                dict(item)
+                for item in rows
+                if isinstance(item, Mapping)
+            ],
+        }
+
+
     async def ensure_openai_compatible_provider(
         self,
         provider: Any,

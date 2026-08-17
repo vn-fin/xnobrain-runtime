@@ -523,7 +523,10 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
             for provider, _ in expected.items():
                 response = await client.post(
                     f"/xnobrain/api/runtime/v1/providers/{provider}/connections",
-                    json={"api_key": f"{provider}-secret"},
+                    json={
+                        "api_key": f"{provider}-secret",
+                        "base_url": "https://untrusted.example/v1",
+                    },
                 )
                 self.assertEqual(response.status_code, 200, response.text)
 
@@ -539,6 +542,27 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [body["provider"] for body in self.router.created_bodies[-3:]],
             [f"openai-compatible-chat-{provider}1" for provider in expected],
+        )
+
+    async def test_custom_openai_compatible_connection_requires_and_uses_base_url(self):
+        async with self.client() as client:
+            missing = await client.post(
+                "/xnobrain/api/runtime/v1/providers/openai-like/connections",
+                json={"api_key": "custom-secret"},
+            )
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/providers/openai-like/connections",
+                json={
+                    "api_key": "custom-secret",
+                    "base_url": "http://localhost:11434/v1",
+                },
+            )
+
+        self.assertEqual(missing.status_code, 400, missing.text)
+        self.assertEqual(created.status_code, 200, created.text)
+        self.assertEqual(
+            self.router.ensured_nodes[-1]["base_url"],
+            "http://localhost:11434/v1",
         )
 
     async def test_connection_usage(self):
