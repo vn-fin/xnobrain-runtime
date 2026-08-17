@@ -80,6 +80,11 @@ def main() -> None:
     reload_enabled = os.getenv("XNOBRAIN_RELOAD", "").lower() in {"1", "true", "yes", "on"}
     host = os.getenv("API_SERVER_HOST", "0.0.0.0")
     port = int(os.getenv("API_SERVER_PORT", "3000"))
+    reload_shutdown_timeout = (
+        max(1, int(os.getenv("RUNTIME_RELOAD_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS", "3")))
+        if reload_enabled
+        else None
+    )
     uvicorn.run(
         "xnobrain.server:app" if reload_enabled else app,
         host=host,
@@ -87,6 +92,7 @@ def main() -> None:
         reload=reload_enabled,
         reload_dirs=[os.path.dirname(os.path.dirname(__file__))] if reload_enabled else None,
         reload_excludes=["node_modules", "node_modules/*"] if reload_enabled else None,
+        timeout_graceful_shutdown=reload_shutdown_timeout,
         log_config=None,
         access_log=False,
     )
