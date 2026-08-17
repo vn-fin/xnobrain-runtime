@@ -29,7 +29,7 @@ class ProviderModelsMixin:
             if provider in ROUTER_MODEL_ALIASES
         }
         if "opencode" in connected_providers:
-            active_owners.add(OPENCODE_ZEN_ROUTER_ALIAS)
+            active_owners.update({OPENCODE_ZEN_ROUTER_ALIAS, "opencode"})
         active_owners.update(
             provider for provider in connected_providers
             if provider in OPENAI_COMPATIBLE_PROVIDERS

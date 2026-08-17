@@ -86,6 +86,22 @@ class NineRouterPinTests(unittest.TestCase):
             self.assertIn(assignment, launcher)
             self.assertNotIn("IFS= read -r OMNIROUTE_API_KEY", launcher)
 
+    def test_launchers_keep_the_private_omniroute_management_api_available(self):
+        for relative_path in (
+            "scripts/dev.sh",
+            "scripts/install-linux.sh",
+            "scripts/prepare-service-data.sh",
+            "runtime/prepare-omniroute-auth.sh",
+        ):
+            launcher = (_REPO / relative_path).read_text(encoding="utf-8")
+            self.assertIn("hmac.new", launcher, relative_path)
+            self.assertIn("requireLogin", launcher, relative_path)
+            self.assertIn("value = 'false'", launcher, relative_path)
+
+        for relative_path in ("scripts/dev.sh", "runtime/container-entrypoint.sh"):
+            launcher = (_REPO / relative_path).read_text(encoding="utf-8")
+            self.assertIn("HOSTNAME=127.0.0.1", launcher, relative_path)
+
     def test_runtime_uses_embedded_memory_configuration(self):
         dockerfile = (_REPO / "Dockerfile.backend").read_text(encoding="utf-8")
         compose = (_REPO / "docker-compose.yaml").read_text(encoding="utf-8")

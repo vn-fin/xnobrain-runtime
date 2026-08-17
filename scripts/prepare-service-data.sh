@@ -35,6 +35,7 @@ printf '%s' "${RUNTIME_OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}" >"$router_dat
 import hashlib
 import hmac
 from pathlib import Path
+import sqlite3
 import sys
 
 root = Path(sys.argv[1])
@@ -43,6 +44,17 @@ secret = (root / "auth" / "cli-secret").read_text().strip()
 (root / "auth" / "cli-token").write_text(
     hmac.new(machine.encode(), secret.encode(), hashlib.sha256).hexdigest()
 )
+database = root / "storage.sqlite"
+if database.is_file():
+    with sqlite3.connect(database) as connection:
+        has_settings = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'key_value'"
+        ).fetchone()
+        if has_settings:
+            connection.execute(
+                "UPDATE key_value SET value = 'false' "
+                "WHERE namespace = 'settings' AND key = 'requireLogin'"
+            )
 PY
 
 chmod 700 "$hermes_home" "$profiles_root" "$router_data_dir" "$router_data_dir/auth"

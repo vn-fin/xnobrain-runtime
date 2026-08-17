@@ -616,10 +616,16 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 "authType": "apikey",
                 "defaultModel": "deepseek-v4-flash-free",
             }]},
-            ("GET", "/v1/models?kind=llm"): {"data": [{
-                "id": "ocz/gpt-5.6-luna",
-                "owned_by": "ocz",
-            }]},
+            ("GET", "/v1/models?kind=llm"): {"data": [
+                {
+                    "id": "ocz/gpt-5.6-luna",
+                    "owned_by": "ocz",
+                },
+                {
+                    "id": "oc/deepseek-v4-flash-free",
+                    "owned_by": "opencode",
+                },
+            ]},
         })
 
         payload = await manager.list_models(ensure_auto=False)
@@ -627,12 +633,52 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [item["id"] for item in payload["data"]],
-            ["auto", "ocz/gpt-5.6-luna"],
+            ["auto", "ocz/gpt-5.6-luna", "oc/deepseek-v4-flash-free"],
         )
         self.assertEqual(payload["data"][1]["provider"], "opencode")
+        self.assertEqual(payload["data"][2]["provider"], "opencode")
         self.assertEqual(connections["connections"][0]["provider"], "opencode")
         self.assertEqual(connections["connections"][0]["default_model"], "")
         self.assertFalse(any("suggested-models" in path for _, path, _ in manager.requests))
+
+    async def test_opencode_owned_models_feed_the_zen_auto_combo(self) -> None:
+        node_id = "openai-compatible-chat-zen1"
+        manager = FakeNineRouterManager({
+            ("GET", "/api/provider-nodes"): {"nodes": [{
+                "id": node_id,
+                "prefix": "ocz",
+                "name": "OpenCode Zen",
+                "type": "openai-compatible",
+                "apiType": "chat",
+                "baseUrl": "https://opencode.ai/zen/v1",
+            }]},
+            ("GET", "/api/providers"): {"connections": [{
+                "id": "zen-account",
+                "provider": node_id,
+                "authType": "apikey",
+            }]},
+            ("GET", "/v1/models?kind=llm"): {"data": [{
+                "id": "oc/deepseek-v4-flash-free",
+                "owned_by": "opencode",
+            }]},
+            ("GET", "/api/combos"): {"combos": []},
+            ("POST", "/api/combos"): {"success": True},
+        })
+
+        payload = await manager.list_models()
+
+        self.assertEqual(
+            [item["id"] for item in payload["data"]],
+            ["auto", "oc/deepseek-v4-flash-free"],
+        )
+        self.assertIn((
+            "POST",
+            "/api/combos",
+            {
+                "name": "auto",
+                "models": ["ocz/deepseek-v4-flash-free"],
+            },
+        ), manager.requests)
 
     async def test_codex_review_models_require_review_quota(self) -> None:
         responses = {
