@@ -20,7 +20,7 @@ vi.mock('../api/conversations', () => ({
 
 describe('streamErrorMessage', () => {
   it('extracts a nested provider message instead of rendering an object', () => {
-    expect(streamErrorMessage({ error: { message: 'Invalid API key' } })).toBe('Invalid API key');
+    expect(streamErrorMessage({ error: { message: 'Invalid API key' } })).toContain('Invalid API key');
   });
 
   it('turns quota failures into an actionable message', () => {
@@ -29,6 +29,16 @@ describe('streamErrorMessage', () => {
 
   it('turns expired subscriptions into an actionable message', () => {
     expect(streamErrorMessage({ detail: 'Subscription has expired' })).toContain('subscription or license has expired');
+  });
+
+  it('turns provider authentication failures into actionable guidance', () => {
+    expect(streamErrorMessage({ error: { message: 'Invalid API key' } })).toContain('Reconnect the provider account');
+    expect(streamErrorMessage({ status: 401, detail: 'Unauthorized' })).toContain('choose another model');
+  });
+
+  it('turns provider timeouts into actionable retry guidance', () => {
+    expect(streamErrorMessage({ error: 'Gateway timeout (504)' })).toContain('Retry');
+    expect(streamErrorMessage({ detail: 'Deadline exceeded' })).toContain('timed out');
   });
 
   it('forwards the persisted title from the existing completion stream', async () => {

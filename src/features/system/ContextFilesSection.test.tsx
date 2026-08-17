@@ -1,5 +1,7 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+afterEach(cleanup);
 import type { Agent } from '../../types';
 import { requestNavigation } from '../../utils/navigationGuard';
 import { ContextFilesSection } from './ContextFilesSection';
@@ -15,7 +17,7 @@ describe('ContextFilesSection dirty guard', () => {
     const proceed = vi.fn();
     render(<ContextFilesSection agents={[agent]} onLoadFile={vi.fn(async () => '# Original')} onSaveFile={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open SOUL.md' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open SOUL.md' })[0]);
     await screen.findByText('# Original');
     fireEvent.click(screen.getByRole('button', { name: /Edit/ }));
     const editor = await screen.findByRole('textbox', { name: 'Edit SOUL.md' });
@@ -32,5 +34,25 @@ describe('ContextFilesSection dirty guard', () => {
     expect(proceed).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: 'Discard changes' }));
     await waitFor(() => expect(proceed).toHaveBeenCalledOnce());
+  });
+
+  it('confirms before switching context files or agent profiles with a dirty draft', async () => {
+    render(<ContextFilesSection agents={[agent, { ...agent, id: 'reviewer', title: 'Reviewer' }]} onLoadFile={vi.fn(async (_id, file) => `# ${file}`)} onSaveFile={vi.fn()} />);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open SOUL.md' })[0]);
+    await screen.findByRole('dialog', { name: 'SOUL.md context file' });
+    fireEvent.click(screen.getByRole('button', { name: /Edit/ }));
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Edit SOUL.md' }), { target: { value: '# Changed' } });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open AGENTS.md' })[0]);
+    expect(screen.getByRole('alertdialog', { name: 'Discard unsaved changes?' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }));
+    expect(screen.getByRole('dialog', { name: 'SOUL.md context file' })).toBeVisible();
+
+    fireEvent.change(screen.getAllByLabelText('Agent profile')[0], { target: { value: 'reviewer' } });
+    expect(screen.getByRole('alertdialog', { name: 'Discard unsaved changes?' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'SOUL.md context file' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByLabelText('Agent profile')[0]).toHaveValue('reviewer'));
   });
 });

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './i18n';
 import LoginScreen from './LoginScreen';
 import { AuthProvider, useAuth } from './auth';
-import { setAccessToken, setTokenSession } from './authStorage';
+import { setAccessToken, setTokenSession, storedAccessToken, XNO_SHARED_REFRESH_TOKEN_KEY } from './authStorage';
 import { AccountView } from './components/AccountView';
 
 vi.mock('./runtime', () => ({
@@ -198,6 +198,62 @@ describe('XNOQuant Firebase authentication adapter', () => {
       }),
     );
     expect(await screen.findByText('Nguyen Tan Kim')).toBeInTheDocument();
+  });
+
+  it('restores an authenticated session in a new tab from the shared refresh token', async () => {
+    setTokenSession({
+      accessToken: 'tab-one-access-token',
+      refreshToken: 'shared-refresh-token',
+      accessExpiresAt: Date.now() + 300_000,
+      refreshExpiresAt: Date.now() + 3_600_000,
+    });
+    // Simulate a session created before the shared recovery key existed.
+    localStorage.removeItem(XNO_SHARED_REFRESH_TOKEN_KEY);
+    // The active tab may still have its access token cached in memory. It must
+    // mirror the session refresh token before another tab is opened.
+    storedAccessToken();
+    expect(localStorage.getItem(XNO_SHARED_REFRESH_TOKEN_KEY)).toBe('shared-refresh-token');
+    setAccessToken(null);
+    // A new same-origin tab has a separate sessionStorage but shares localStorage.
+    sessionStorage.clear();
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: {
+            access_token: 'new-tab-access-token',
+            refresh_token: 'rotated-shared-refresh-token',
+            access_expires_at: Date.now() + 300_000,
+            refresh_expires_at: Date.now() + 3_600_000,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: {
+            user_id: 'user-01',
+            email: 'kim@example.com',
+            fullname: 'Nguyen Tan Kim',
+            roles: ['admin'],
+          },
+        }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<AuthProvider><Trial /></AuthProvider>);
+    expect(await screen.findByText('Nguyen Tan Kim')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://auth.example.com/auth/v1/auth/refresh',
+      expect.objectContaining({
+        body: JSON.stringify({ refresh_token: 'shared-refresh-token' }),
+      }),
+    );
+    expect(localStorage.getItem(XNO_SHARED_REFRESH_TOKEN_KEY)).toBe('rotated-shared-refresh-token');
   });
 
   it('rotates an expired access token through the XNO refresh endpoint', async () => {

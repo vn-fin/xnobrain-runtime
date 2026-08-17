@@ -95,6 +95,12 @@ export function streamErrorMessage(value: unknown): string {
   if (/rate[_ -]?limit|too many requests|\b429\b/.test(normalized)) {
     return `The LLM provider rate limit was reached. Wait and retry, or switch provider account. (${original})`;
   }
+  if (/invalid.*(?:api[ _-]?key|credential|token)|unauthori[sz]ed|authentication.*fail|\b401\b/.test(normalized)) {
+    return `The LLM provider rejected the configured credentials. Reconnect the provider account or choose another model. (${original})`;
+  }
+  if (/timed?[ -]?out|timeout|deadline.*exceed|gateway timeout|\b504\b/.test(normalized)) {
+    return `The LLM provider did not respond before the request timed out. Retry, or choose another model if the problem continues. (${original})`;
+  }
   return original;
 }
 

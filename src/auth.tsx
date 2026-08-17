@@ -189,6 +189,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await jsonResponse(response);
     const next = normalizeUser(data);
     if (!next) throw new Error('The account API returned no active user.');
+    // A newly opened tab can discover sessionStorage after the initial React
+    // state initializer runs. Keep AuthGate in sync once the token is verified.
+    setAccessToken(token);
     setUser(next);
     return next;
   }, [config.auth.mePath, authBaseUrl]);
@@ -304,11 +307,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setAccessToken(null);
         }
       }
-      if (storedRefreshToken()) return refreshXnoSession();
+      // Prefer a live same-browser tab before consuming a refresh token.
+      // Refresh tokens may rotate or be single-use, so refreshing first can
+      // race the authenticated tab and make the new tab look signed out.
       if (await requestCrossTabTokenSession()) {
         const sharedToken = storedAccessToken();
         if (sharedToken) return loadXnoUser(sharedToken);
       }
+      if (storedRefreshToken()) return refreshXnoSession();
       if (!localStorage.getItem(FIREBASE_REFRESH_TOKEN_KEY)) return null;
       const firebaseToken = await refreshFirebaseToken();
       return exchangeFirebaseToken(firebaseToken);
@@ -352,7 +358,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         return undefined;
       }
-      void restoreXnoSession()
+      const restoreWithRetry = async () => {
+        try {
+          return await restoreXnoSession();
+        } catch (error) {
+          // A newly opened tab can race the first auth/API connection. Retry
+          // transient failures once before showing the sign-in screen; never
+          // retry rejected credentials because that would hide a real logout.
+          if (isRejectedCredential(error)) throw error;
+          await new Promise((resolve) => window.setTimeout(resolve, 250));
+          return restoreXnoSession();
+        }
+      };
+      void restoreWithRetry()
         .catch((error) => {
           if (active) {
             if (isRejectedCredential(error)) clearXnoTokens();

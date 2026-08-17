@@ -299,7 +299,7 @@ export function AgentSettingsModal({
 }: {
   agent: Agent;
   providers: ProviderConnector[];
-  onSave: (updates: Partial<Agent>) => void;
+  onSave: (updates: Partial<Agent>) => Promise<void> | void;
   onClose: () => void;
   embedded?: boolean;
 }) {
@@ -319,13 +319,16 @@ export function AgentSettingsModal({
   const [approvalMode, setApprovalMode] = useState<Agent['approvalMode']>(agent.approvalMode);
   const [checkpointsEnabled, setCheckpointsEnabled] = useState(agent.checkpointsEnabled);
   const [confirming, setConfirming] = useState(false);
-  const selectedProvider = providers.find((item) => item.id === provider);
-  const selectedProviderModels = providerModels(selectedProvider);
-  const modelOptions = selectedProviderModels.length
-    ? selectedProviderModels
-    : model ? [model] : [];
+  const modelGroups = providers.map((item) => ({
+    provider: item,
+    models: providerModels(item),
+  })).filter((group) => group.models.length > 0);
+  const selectedModelValue = JSON.stringify([provider, model]);
 
-  const save = () => onSave({ title, description, provider, model, reasoningEffort, approvalMode, checkpointsEnabled });
+  const save = async () => {
+    await onSave({ title, description, provider, model, reasoningEffort, approvalMode, checkpointsEnabled });
+    setConfirming(false);
+  };
 
   return (
     <div className={embedded ? 'agent-settings-embedded' : 'modal-overlay'} onClick={embedded ? undefined : onClose}>
@@ -357,32 +360,28 @@ export function AgentSettingsModal({
                 {t('modals.description')}
                 <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
               </label>
-              <div className="modal-form-row">
-                <label>
-                  {t('modals.provider')}
-                  <select
-                    value={provider}
-                    onChange={(e) => {
-                      const nextProvider = providers.find((item) => item.id === e.target.value);
-                      const nextModels = providerModels(nextProvider);
-                      setProvider(e.target.value);
-                      setModel(nextProvider?.default_model || nextModels[0] || '');
-                    }}
-                  >
-                    {providers.map((p) => (
-                      <option key={p.id} value={p.id}>{p.display_name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  {t('modals.model')}
-                  <select value={model} onChange={(e) => setModel(e.target.value)}>
-                    {modelOptions.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+              <label>
+                {t('modals.model')}
+                <select
+                  value={selectedModelValue}
+                  onChange={(event) => {
+                    const [nextProvider, nextModel] = JSON.parse(event.target.value) as [string, string];
+                    setProvider(nextProvider);
+                    setModel(nextModel);
+                  }}
+                >
+                  {modelGroups.map((group) => (
+                    <optgroup key={group.provider.id} label={group.provider.display_name}>
+                      {group.models.map((item) => (
+                        <option key={`${group.provider.id}:${item}`} value={JSON.stringify([group.provider.id, item])}>{item}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  {modelGroups.length === 0 && model && (
+                    <option value={selectedModelValue}>{model}</option>
+                  )}
+                </select>
+              </label>
               <div className="modal-form-row">
                 <label>
                   {t('modals.reasoningEffort')}
@@ -416,7 +415,7 @@ export function AgentSettingsModal({
                 <span>{t('modals.saveConfirm', { name: title })}</span>
                 <div className="modal-actions">
                   <button className="conn-btn ghost" onClick={() => setConfirming(false)}>{t('modals.back')}</button>
-                  <button className="conn-btn primary" onClick={save}>
+                  <button className="conn-btn primary" onClick={() => void save()}>
                     <Check size={15} />
                     {t('modals.confirmSave')}
                   </button>
@@ -424,7 +423,7 @@ export function AgentSettingsModal({
               </div>
             ) : (
               <div className="modal-actions">
-                <button className="conn-btn ghost" onClick={onClose}>{t('common.cancel')}</button>
+                {!embedded && <button className="conn-btn ghost" onClick={onClose}>{t('common.cancel')}</button>}
                 <button className="conn-btn primary" onClick={() => setConfirming(true)}>{t('common.save')}</button>
               </div>
             )}

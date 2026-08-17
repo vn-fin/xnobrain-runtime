@@ -101,7 +101,8 @@ export function parseRoute(pathname: string, search: string): RouteState {
     agentId = seg[1] ?? '';
     if (seg[2] === 'sessions' || seg[2] === 'conversations') conversationId = seg[3] ?? '';
     const panel = sp.get('panel');
-    if (panel === 'skills' || panel === 'cron' || panel === 'runtime' || panel === 'workspace') rightView = panel;
+    if (panel === 'runtime') rightView = 'settings';
+    else if (panel === 'skills' || panel === 'cron' || panel === 'settings' || panel === 'workspace') rightView = panel;
     const requestedWorkspaceView = sp.get('workspaceView');
     if (requestedWorkspaceView === 'restore-points' || requestedWorkspaceView === 'versions') workspaceView = requestedWorkspaceView;
     checkpointId = sp.get('checkpoint') ?? '';

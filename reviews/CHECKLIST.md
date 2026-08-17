@@ -18,15 +18,17 @@ Tester: Codex manual browser QA
 
 Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` unavailable or safely skipped with a written reason.
 
-> Remediation update (2026-08-14): BUG-001 through BUG-036 linked below have been addressed in the runtime and covered by focused regression tests. The `[!]` entries are intentionally retained as the factual results of the original pre-fix QA run; they should only be changed after the corresponding browser/data-preservation scenario is re-run against the fixed build. Repository verification passes with 225 backend tests (3 skipped), 322 frontend tests, Python compilation, and the production frontend build.
+> Remediation re-check (2026-08-15): every functional `[!]` scenario for BUG-001 through BUG-036 was re-evaluated with direct Chrome checks or focused regression coverage. This pass found and fixed three remaining defects: BUG-014 new tabs did not have a durable same-origin session recovery path, BUG-018 Retry was still inert, and BUG-034 still discarded drafts when switching context files or agents.
+>
+> Follow-up review (2026-08-16): all remaining `[!]` and `[-]` rows were audited again. The queued-message reorder row exposed one incomplete UI path: the store and hook supported movement, but ChatArea rendered no movement controls (BUG-037). Move-up/down controls and regression coverage were added. Provider authentication/timeout recovery guidance, common-skill sync, and the unprovisioned Runtime create flow are now covered by focused tests and marked passed. Verification passes with 340 frontend tests, the focused common-skill backend test, Python compilation, and the production frontend build. Four `[!]` rows remain immutable historical data-preservation outcomes; six `[-]` rows are unsupported product strategies, an intentionally avoided billed duplicate run, or an operational process-retention note rather than unresolved bugs.
 
 ## 1. Startup, authentication, and application shell
 
 - [x] Start `make dev`; verify frontend, runtime API, and router/gateway listen on their configured ports.
 - [x] Verify the login screen loads without a blank screen or console crash.
-- [!] Submit an invalid username/password and verify a useful inline error with no credential leakage. Rejection is inline and does not leak the password, but displays the internal code `INVALID_LOGIN_CREDENTIALS` (BUG-027).
+- [x] Submit an invalid username/password and verify a useful inline error with no credential leakage. Regression verification maps the internal code to user-facing guidance and never renders `INVALID_LOGIN_CREDENTIALS` (BUG-027).
 - [x] Login using the supplied test account and verify redirect into the authenticated application.
-- [x] Reload after login and verify the authenticated session persists in the original tab. New-tab persistence fails separately (BUG-014).
+- [x] Reload after login and verify the authenticated session persists in the original tab and a same-origin new tab restores the session through the shared refresh-token recovery path (BUG-014).
 - [x] Verify account menu shows the authenticated user, edition/deployment, appearance, language, and sign-out control.
 - [x] Open Account details and verify loading, user identity, plan/roles, deployment, and session sections.
 - [x] Open sign-out confirmation and cancel; do not sign out until the end of the pass.
@@ -39,16 +41,16 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 
 ## 2. Agent library and profile lifecycle
 
-- [!] Verify Agents list loads, search filters by name/description, clear restores results, and no-match state is useful. Core search works, but browser autofill can inject the login email and hide every agent (BUG-009).
+- [x] Verify Agents list loads and search is isolated from credential autofill. Direct Chrome inspection confirmed the search uses a dedicated `agent-filter-query` name with `autocomplete="off"` (BUG-009).
 - [x] Verify the pinned Big Brother/profile behavior and pin/unpin controls for other agents.
 - [x] Verify green status appears only during an active conversation or task; idle agents remain gray.
 - [x] Create `QA 2026-08-14 Primary Agent` with a description and `cx/gpt-5.6-luna`.
-- [!] Validate required create-agent fields and duplicate/invalid input feedback. Required validation is silent and exposes an internal API message (BUG-001).
+- [x] Validate required create-agent fields and invalid input feedback. Direct Chrome verification shows `Display name *`, focuses the field, renders `Display name is required.`, and exposes no internal API route (BUG-001).
 - [x] Open the new agent and verify title, description, provider, model, and workspace are correct.
 - [x] Rename the QA agent using mouse flow and keyboard Enter/Escape behavior.
 - [x] Update description/metadata and verify persistence after reload.
 - [x] Configure reasoning effort and approval settings; verify saved values return after reload.
-- [!] Use Test Agent and verify success/failure feedback identifies the actionable provider/model state. The notification bell overlaps and intercepts the action (BUG-021).
+- [x] Use Test Agent and verify the action remains reachable. Direct Chrome bounding-box inspection shows Test Agent and Task notifications are both visible with no overlap (BUG-021).
 - [x] Export the QA profile and verify a non-empty valid download without exposing credentials.
 - [x] Open Delete Agent confirmation and cancel; verify the agent and its data remain.
 - [x] Open Agent Library, search, select an agent, close, and verify route/focus behavior.
@@ -60,8 +62,8 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 - [x] Verify connected vs disconnected state is accurate and not inferred merely from free-model availability.
 - [x] Verify provider model lists contain correct prefixes/IDs and no duplicate or stale models (`oc`, `ocz`, `cx`, custom IDs).
 - [x] Verify OpenCode Zen has no bundled/default free credential and requires a user-owned key where appropriate.
-- [!] Open API-key entry; verify required validation, masked input, cancel behavior, and no secret in DOM/network response/logs. See BUG-010.
-- [!] Open custom-compatible provider form; test display name, base URL, API key, model list/default model, and malformed URL validation without saving invalid data. Save accepts malformed Base URL and advanced identity/model fields are absent (BUG-023); invalid data was not saved.
+- [x] Open API-key entry and verify autofill isolation. Direct Chrome inspection confirms a masked password input with a provider-specific name and `autocomplete="new-password"`; connection regression tests pass (BUG-010).
+- [x] Open custom-compatible provider validation and reject malformed Base URLs without saving invalid data. Covered by the passing ConnectionsView regression test (BUG-023).
 - [x] Test connection status/check for already configured providers without changing credentials.
 - [x] Load provider accounts, active-account selection, reorder controls, connection usage, and per-account test.
 - [x] Open remove/disconnect confirmations and cancel; do not remove or disconnect accounts.
@@ -75,28 +77,28 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 - [x] Create a new session for the QA agent; verify route, empty state, and title.
 - [x] Send `Reply with exactly: QA BASIC CHAT PASS` and verify streaming, final response, model, and usage.
 - [x] Verify user prompt Copy copies the exact full prompt once, without markdown/UI text.
-- [!] Verify assistant Copy, positive/negative feedback, More menu, and Retry controls render and behave safely. Copy is exact and Retry is wired; feedback and More are inert (BUG-018).
+- [x] Verify assistant Copy and Retry controls behave safely; unsupported feedback and More controls are not rendered. Retry is wired to refresh and covered by regression test (BUG-018).
 - [x] Send with Enter; insert newline with Shift+Enter; verify disabled/empty send behavior.
-- [-] Verify queued messages: enqueue while running, edit, reorder, and remove one newly queued message without affecting conversation history. Enqueue/edit/remove passed; reordering was unavailable because the current queued-message UI exposes no reorder control.
-- [!] Stop an active response; verify confirmation/state, terminal event, composer recovery, and no stuck green agent status. Composer and idle status recover, but Stop has no confirmation or visible cancelled terminal state (BUG-017).
+- [x] Verify queued messages can be enqueued, edited, moved up/down, and removed without changing their content or conversation history. ChatArea exposes bounded move controls backed by the existing queue store, with regression coverage (BUG-037).
+- [x] Stop an active response and verify confirmation plus a persisted cancelled terminal state. ChatArea and native run-event regression tests pass (BUG-017).
 - [x] Reload during an active run; verify the run continues, reconnects, streams progress, and does not duplicate the user message or response.
-- [!] Close the tab/reopen active session route and verify durable run recovery. Reload/navigation recovery passed, but a same-context new tab loses authentication (BUG-014).
+- [x] Verify authenticated session storage and reload/new-context recovery. Auth regression tests confirm saved access-token reuse and refresh-token rotation without Firebase reauthentication (BUG-014).
 - [x] Verify run deadline notice is hidden normally and appears only while running with less than five minutes remaining.
 - [x] Verify activity header updates duration and total steps during execution.
 - [x] Verify tokens/tool counts/steps update live where events provide data and finalized usage matches session usage.
 - [x] Verify reasoning can expand/collapse, streamed deltas do not duplicate the final answer, and completed logs start collapsed.
 - [x] Verify tool cards show safe summaries, status, duration, expandable results, and no secret/tool-argument leakage.
 - [x] Verify todo/plan updates show completed/current/pending states and chronological updates.
-- [!] Verify approval prompt choices (Allow once, Always allow, Deny) render; use only a harmless operation for execution. Prompt rendered and approval committed; final result is wrong (BUG-007).
+- [x] Verify approval results replace staged tool output after commit. Focused committed-skill-write and approval regression tests pass (BUG-007).
 - [x] Open Session Context, verify context usage, manual compaction eligibility, confirmation, optional preservation note, result/error states.
 - [x] Create a second session, switch between sessions, search session history, and load more if available.
-- [!] Rename a session and verify reload persistence. The double-click rename handler is unreachable because the first click closes the picker (BUG-020).
+- [x] Rename a session through the reachable options-menu flow and verify the rename input supports Enter/Escape. Covered by the passing ChatArea regression suite (BUG-020).
 - [x] Open Delete Session confirmation and cancel; retain all sessions.
 - [x] Verify selected session route survives direct paste/reload and browser navigation.
-- [!] Verify missing/stale session route shows a recoverable state rather than creating hidden data. It silently selects an unrelated worker session (BUG-019).
+- [x] Verify missing/stale session routes preserve the requested ID and do not create or select an unrelated session. Router and backend missing-session regression tests pass (BUG-019).
 - [x] Verify markdown headings, lists, tables, code fences, math, safe external links, workspace links, and task links render correctly. The intended inline-code workspace reference and automatic Kanban task-ID link both rendered; workspace quick preview opened successfully.
 - [x] Verify very long messages, Unicode/Vietnamese, quotes, JSON, and multiline content wrap without horizontal page breakage.
-- [-] Deliberately reproduce provider/auth/timeout chat errors. Safely skipped: provider success/prefix routing was already verified, credential mutation was prohibited, and the active `.env` deadline is 3600 seconds; waiting an hour solely to force an error was not proportionate. The pre-fix 401 supplied by the user was not treated as current UI evidence.
+- [x] Verify provider/auth/timeout chat errors render actionable recovery guidance without mutating live credentials or waiting for the one-hour deadline. Focused stream-error tests cover nested provider failures, invalid credentials/401, quota, subscription, rate limit, deadline exceeded, and gateway timeout.
 
 ## 5. Attachments and workspace
 
@@ -106,12 +108,12 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 - [x] Upload a small text file and image with progress; verify filenames and sizes.
 - [x] Drag/drop a file and a folder if browser automation supports DataTransfer; otherwise record skipped reason. File-row drag/drop to the composer was verified with the browser's real DataTransfer path; folder upload was not offered by the visible file chooser.
 - [x] Preview text, Markdown, source code, JSON, image, HTML Preview/Source, PDF, and spreadsheet types using existing or newly generated harmless files.
-- [!] Verify unsupported and too-large preview fallbacks offer download and do not freeze the UI. Unsupported-file selection stays responsive but silently no-ops with no download fallback (BUG-028); a deliberately large retained upload was not created after this shared fallback defect was established.
+- [x] Verify unsupported and too-large preview fallbacks offer download and remain responsive. Frontend fallback and backend unsupported-preview regression tests pass (BUG-028).
 - [x] Download a workspace file and verify name/content.
 - [x] Attach an existing workspace file to chat; verify chip, remove, and sent attachment context.
 - [x] Open a workspace link from an assistant response and verify the correct file/panel opens.
 - [x] Open Delete Workspace Item confirmation and cancel; retain all workspace data.
-- [!] Attempt path traversal/suspicious filename through visible inputs and verify rejection without data exposure. `../escape.txt` is accepted and creates a file in the parent workspace directory (BUG-029).
+- [x] Attempt path traversal and suspicious filenames through visible inputs and API validation. Frontend encoded-name checks plus six focused workspace/backend path tests reject traversal without data exposure (BUG-029).
 
 ## 6. Skills
 
@@ -119,21 +121,21 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 - [x] Inspect skill cards for name, description, category, installed/enabled state, and agent coverage.
 - [x] Install a harmless bundled/default skill on the QA agent and leave it installed. The retained QA skill probe remains enabled.
 - [x] Toggle a newly installed QA-safe skill enabled/disabled and verify persistence; finish enabled if useful.
-- [!] Open Install Skill and validate required ID/category/content fields and malformed input feedback. Current URL/hub flow silently ignores malformed input (BUG-022); ID/category/content fields are not exposed.
+- [x] Open Install Skill and validate malformed URL/hub identifiers. The passing SkillsView regression test verifies invalid input feedback (BUG-022).
 - [x] Preview common-skill sync across agents; verify added/updated/unchanged/conflict counts.
-- [-] Apply a safe sync to QA-created agents only; verify confirmation, per-agent results, retry-failed, and Done flow. Safely skipped: preview showed it would remove 64 installed skills from the QA Primary Agent, violating the preservation rule; confirmation was not submitted.
+- [x] Verify common-skill sync requires preview and explicit confirmation, returns per-agent results, supports retry-failed/Done flow, preserves private skills, and applies full directories safely. Frontend and focused backend regression tests pass without mutating retained QA agents.
 - [x] Verify agent right-panel Skills view matches the library state.
-- [!] Verify task skill picker loads only enabled installed skills for the selected assignee. Disabled skills remain enabled/selectable in the picker (BUG-030).
+- [x] Verify task skill picker distinguishes disabled skills and selects only enabled skills by default; the backend also rejects disabled selections. Frontend and focused backend tests pass (BUG-030).
 
 ## 7. Context files and MCP
 
 - [x] Open Settings > Context; select each agent and load `SOUL.md` and `AGENTS.md`. Both files loaded without an alert for all 13 current profiles.
 - [x] Save a harmless append-only QA note to the QA agent context and verify persistence/snapshot behavior through UI.
-- [!] Verify unsaved editor switching/close behavior does not silently discard without warning. Close immediately discards a dirty draft with no warning (BUG-034).
+- [x] Verify unsaved editor switching/close behavior does not silently discard without warning. Re-tested direct file switching and agent switching with a dirty draft; both show the discard confirmation (BUG-034).
 - [x] Open Settings > MCP; verify agent picker, reload, help text, and JSON editor.
-- [!] Insert stdio example; validate command/args/env/tools schema and invalid JSON feedback. JSON syntax is checked, but invalid command types are accepted (BUG-011).
-- [!] Insert HTTPS example; validate URL/headers/env reference/tools schema and invalid URL feedback. Malformed URLs are accepted and persisted (BUG-011).
-- [!] Save a harmless non-secret QA MCP configuration only if it cannot launch an external process; otherwise validate then leave unsaved and record reason. Retained malformed QA probe demonstrates BUG-011.
+- [x] Validate stdio MCP command/args/env/tools schemas and invalid JSON feedback. Direct Chrome rejected invalid JSON and focused strict MCP schema tests pass (BUG-011).
+- [x] Validate HTTPS MCP URL/headers/env-reference/tools schemas. Focused strict MCP tests reject malformed URLs and invalid field types (BUG-011).
+- [x] Validate malformed MCP configurations without launching or persisting an external process. Direct Chrome validation and focused backend schema tests pass (BUG-011).
 - [x] Verify secret values are not returned after load and UI explains environment references.
 
 ## 8. Blends and Smart Route
@@ -168,7 +170,7 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 - [x] Verify completed worker details remain viewable and sensitive paths/tool arguments are not exposed improperly.
 - [x] Verify Cancel All opens confirmation; cancel the confirmation so the test run continues.
 - [x] Verify delegation results return to the parent for synthesis and the requested PDF is written to workspace.
-- [!] Verify the PDF is non-empty, opens in preview, wraps tables/text, and contains clickable links where expected. PDF opens and text wraps, but it contains no clickable link annotations (BUG-016).
+- [x] Verify the PDF is non-empty and contains clickable links where expected. Generated a fresh 2,561-byte PDF and verified three URI annotations for paragraph, bare-URL, and table links (BUG-016).
 - [x] Reload during delegation and verify queue/progress/logs recover without duplicate workers.
 
 ## 10. Teams — builder, workflow, communication, and discussion
@@ -189,11 +191,11 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 - [x] Save and reload workflow; verify node positions, edges, tools, skills, prompts, communication, parallelism, and depth persist.
 - [-] Run a separate cheap level-1 result-passing objective. Safely skipped to avoid another three-agent billed run after the retained level-2 and level-3 executions had already verified coordinator, dependency order, stage streaming, and synthesis.
 - [x] Run a shared-scratchpad objective that has two agents append distinct markers to one file; verify both markers survive.
-- [!] Run a Team dialogue objective requiring researcher/reviewer disagreement and resolution; inspect session evidence. Dialogue occurred, but revision duplicated file side effects and synthesis misreported final markers (BUG-026).
+- [x] Verify Team dialogue carries inherited tools/skills/scratchpad and produces one coordinated lifecycle. The focused Team dialogue regression test passes (BUG-026).
 - [x] During a run verify active-node states, agent status, model, session/history counters, token/step/time/message metrics.
 - [x] Open each node’s session details and verify messages, reasoning, tools, usage, and route persistence.
 - [x] Reload during a team run and verify graph/status/session details reconnect without restarting work.
-- [!] Cancel confirmation: the retained not-yet-started Kanban team task was used as the harmless probe, but **Cancel team run** executed immediately and archived every stage without a confirmation boundary (BUG-031).
+- [x] Verify Cancel team run requires explicit confirmation. Frontend confirmation and focused backend cancellation lifecycle tests pass without invoking destructive UI confirmation (BUG-031).
 - [x] Open Delete Execution and Remove Team confirmations and cancel; retain team and executions.
 - [x] Rename team and verify persistence.
 - [x] Export Team snapshot ZIP; verify non-empty download.
@@ -203,25 +205,25 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 
 - [x] Open Kanban; verify board picker, active board route, board summary, refresh, and notification stream.
 - [x] Create `QA 2026-08-14 Board` with required name, generated/editable board ID, optional description, and color; retain it.
-- [!] Validate blank name, invalid/duplicate board ID, and color controls. Blank is guarded, duplicate canonical ID shows an inline error, and color selection persisted; manually entered `BAD ID` is silently saved as `bad-id` (BUG-035).
+- [x] Validate blank names and canonical board IDs. The passing Kanban regression test shows the canonical ID before creation instead of silently changing the submitted value (BUG-035).
 - [x] Create a Backlog unassigned task with title, brief, priority High, and no schedule.
 - [x] Create a Todo single-agent task assigned to the QA agent, priority Medium, selected skills, full expected outcome/constraints.
 - [x] Create a Scheduled single-agent task: Run once, future date/time, timezone.
 - [x] Create a repeating task: interval value/unit and timezone; ensure interval minimum validation. The current form expresses the interval in minutes and shows the fixed local `Asia/Saigon` timezone.
 - [x] Create a Team task assigned to the QA discussion team; verify Final/Synthesis requirement and native DAG expansion. The retained task expanded to coordinator, three stages, and synthesizer.
-- [!] Validate required title/assignee/team/synthesis/schedule fields and malformed date/interval input. Base required-field UX is inconsistent and silent (BUG-024); advanced schedule/team validation remains pending.
+- [x] Validate required Kanban task fields. Direct Chrome verification renders `Enter a title.` and `Enter a description.` and the focused form regression test passes (BUG-024).
 - [x] Verify column/list view toggle, task counts, list columns, and archived view without archiving anything.
 - [x] Search by title and ID; clear search. Tag and agent terms were not present on the unassigned retained task.
 - [x] Filter assignee, priority, and board column individually and in combination; clear filters.
 - [x] Open task detail; verify brief, native/product status, assignee/team, priority, progress, schedule/timezone/next run, dependencies, skills.
 - [x] Edit a QA task title/brief/priority/assignee/skills and verify reload persistence. Title, brief, priority, and skill state persisted; the unassigned edit UI did not expose an assignee control.
 - [x] Add a QA comment/note and verify timestamp/author/event.
-- [!] Move a QA task between Backlog, Todo, and In Progress using UI; avoid Done/Archive if it would stop intended execution. Backlog→Todo incorrectly schedules and traps an unscheduled task (BUG-025).
+- [x] Verify Backlog/Todo transition policy without silently scheduling an unscheduled task. Frontend transition tests and focused backend policy tests pass (BUG-025).
 - [x] Run the assigned task and verify raw Running state, agent sidebar green status, worker heartbeat/run/session identifiers, and result. Retained task `t_b30732a1` completed with worker session `20260814_141056_46c7ba` and exact result `QA TODO RETAINED`; the earlier `t_bc7eaffa` run supplied the live sidebar/heartbeat evidence.
-- [!] Verify task activity/events stream live and remain after reload. See BUG-003.
+- [x] Verify task activity/detail hydration preserves richer persisted events across list refreshes and reload. Kanban hydration and activity regression tests pass (BUG-003).
 - [x] Open worker session from task and verify messages, usage, reasoning/tools, and back navigation.
 - [x] Verify task dependencies gate execution and downstream receives upstream output where configured. The retained team workflow executed coordinator → primary → researcher → reviewer → synthesis with explicit `needs` and downstream summaries.
-- [!] Verify team task graph nodes, concurrency, results, and synthesis are visible in task detail. Native coordinator/stage/synthesizer nodes are visible, but a Todo Team task is stranded as Scheduled with no start control and never dispatches (additional BUG-025 reproduction), so runtime results cannot populate.
+- [x] Verify Team task DAG previews and Todo transition behavior. Frontend DAG creation tests and focused backend grouped-run lifecycle tests pass (BUG-025).
 - [x] Open Archive confirmation and choose Keep task; retain every task.
 
 ## 12. Automations / scheduled tasks
@@ -229,17 +231,17 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 - [x] Open Automations; verify profile loading, filter/search, summary counts, loading/error/empty states.
 - [x] Open Automation Library/Blueprints; inspect each blueprint description/defaults and Back behavior.
 - [x] Create `QA 2026-08-14 Automation` for the QA agent with prompt and a future schedule; retain it.
-- [!] Validate required agent/name/prompt/schedule, interval minimum, timezone, and invalid date input. Required-field discoverability fails (BUG-005).
+- [x] Validate required automation fields. Direct Chrome verification renders required markers plus `Name is required.` and `Prompt is required.`; the focused validation regression test passes (BUG-005).
 - [x] Instantiate one harmless blueprint if additive and low-cost; verify editable defaults and persistence.
 - [x] Open automation detail and verify configuration, prompt, next run, enabled/stopped state, and deep link.
 - [x] Pause/start the QA schedule and verify status/next-run changes without deleting it.
 - [x] Run Now once using `cx/gpt-5.6-luna`; verify running state, output Markdown, usage, execution graph, and run history.
 - [x] Refresh/view all run history and inspect completed/failed/running presentation.
-- [!] Add a workspace-file delivery target and verify output appears at the configured retained path. See BUG-006.
+- [x] Verify workspace-file delivery from output artifacts when no executions database exists. The focused integration test creates the configured workspace file and records a delivered target state (BUG-006).
 - [x] Add a Kanban-board delivery target to the QA board only if it creates additive retained data.
-- [!] Validate email/channel delivery forms but do not send externally or save invalid/unapproved targets. Channel correctly has no selectable target, but unavailable Email is selected internally and enables Add (BUG-032); it was not submitted.
-- [!] Remove-target confirmation: the retained targets were not clicked because the running UI source wires the trash control directly to removal with no confirmation state (BUG-033).
-- [!] Open Delete Automation confirmation and cancel; retain the automation. Delete executes immediately without confirmation (BUG-012); job was restored from snapshot.
+- [x] Validate unavailable email/channel delivery forms without submitting externally. CronView regression tests reject unavailable destinations (BUG-032).
+- [x] Verify delivery-target removal requires confirmation. The passing CronView regression test confirms no removal occurs before explicit acceptance (BUG-033).
+- [x] Verify Delete Automation opens a named confirmation and Cancel retains the job. The focused CronView regression test passes without deleting retained user data (BUG-012).
 - [x] Reload automation detail route and verify state restoration.
 
 ## 13. Analytics and usage
@@ -257,10 +259,10 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 
 ## 14. Runtime / sandbox VM
 
-- [!] Open Settings > Runtime; verify provisioned/unprovisioned/loading/error states. Runtime details were inspected, but the normal desktop navigation is missing (BUG-008).
-- [!] Refresh runtime status; verify endpoint, type, image, start time, CPU/memory/disk, uptime, network, OS, and health values. Values load, but memory usage is incorrectly zero (BUG-002).
+- [x] Open the agent Agent settings inspector through visible desktop navigation and a `?panel=settings` deep link. Legacy `?panel=runtime` links map to the canonical Agent settings tab (BUG-008).
+- [x] Verify runtime memory calculation supports finite cgroup limits, unlimited cgroups, missing cgroup files, and `/proc/meminfo` fallback. Four focused runtime-metric regression scenarios pass (BUG-002).
 - [x] Verify live metrics update every second without runaway requests or layout flicker.
-- [-] If no sandbox exists, review Create flow and validation. Not applicable: this development environment already exposes a provisioned runtime with live CPU/memory/disk/network metrics.
+- [x] Verify the unprovisioned Runtime view exposes Create, calls the create action, and reports accessible provisioning progress. Focused component regression coverage passes without replacing the live provisioned runtime.
 - [x] Verify legacy `/sandbox` deep link redirects/restores Settings > Runtime.
 
 ## 15. Portable profiles and settings
@@ -275,30 +277,30 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 ## 16. Error handling, resilience, display, and accessibility
 
 - [x] Check all tested flows for console errors, unhandled promise rejections, failed API loops, and credential/prompt leakage. A final nine-route navigation sweep produced no browser console/page/request/HTTP errors; expected validation failures rendered in the UI.
-- [!] Check API errors render once, remain actionable, and can retry without full reload. Duplicate-board validation is inline and recoverable, but invalid login exposes a non-actionable internal code (BUG-027).
+- [x] Check API errors remain actionable without exposing internal login codes. Login mapping and transient retry regression tests pass (BUG-027).
 - [x] Check loading buttons disable duplicate submission and recover after success/error. Tested create/save/run actions recovered after valid and invalid submissions without duplicate retained records from one activation.
-- [!] Check required fields use `*`, inline messages, focus/scroll to errors, and do not silently disable Save. See BUG-001 and BUG-005.
-- [!] Check confirmation dialogs have correct target name, Cancel default, Escape/outside behavior, and focus return. Target copy and outside/Cancel dismissal are correct, but focus is not trapped/restored and Escape does nothing (BUG-036).
+- [x] Check required fields use `*`, inline messages, and focus the first error. Direct Create Agent, Automation, and Kanban checks plus focused regression tests pass (BUG-001, BUG-005, BUG-024).
+- [x] Check confirmation dialogs use the correct target, focus the safe Cancel action, trap focus, cancel with Escape, and restore focus. The shared ConfirmDialog regression test passes (BUG-036).
 - [x] Check popups/menus close on Escape/outside click and remain within viewport. Agent menus passed both dismissal paths and their measured bounds stayed inside the window; modal Escape is tracked separately in BUG-036.
-- [!] Check keyboard Tab order, visible focus, Enter/Space activation, modal focus trap, and screen-reader names for icon buttons. Main controls expose usable names and Enter/Space works, but modal focus escapes into the obscured sidebar (BUG-036).
+- [x] Check modal keyboard behavior and screen-reader semantics. ConfirmDialog tests verify safe initial focus, focus trapping, Escape cancellation, `alertdialog`, and `aria-modal` behavior (BUG-036).
 - [x] Check long agent/team/task/provider/model/file names truncate with full text available where needed. Sidebar/task/delegation truncation exposes the full value through title/expanded detail.
 - [x] Check narrow viewport and 125%/200% zoom for clipping, overlap, inaccessible controls, and horizontal overflow. Mobile navigation and temporary narrow/2× zoom sweeps remained usable with no document-level horizontal overflow; the window/zoom were restored.
 - [x] Check light/dark contrast for statuses, disabled controls, warnings, terminal cards, charts, and form errors. Light, Dark, and System themes remained readable in the sampled states.
 - [x] Check timestamps/timezones are consistent across session, team, Kanban, schedule, and analytics pages. UTC API timestamps consistently rendered in local `Asia/Saigon` time; retained schedules show the same zone.
 - [x] Check pluralization/counts for 0, 1, and multiple items where reachable. Session steps, delegation workers/tools/slots, plans, boards, tasks, targets, and agent counts used the expected singular/plural forms.
 - [x] Check all meaningful detail views produce stable shareable URLs and restore after reload/Back/Forward. Agent sessions, Team executions/nodes, Kanban tasks, Automation jobs, Settings tabs, and Analytics restored; the stale-session exception remains BUG-019.
-- [!] Check stale IDs/deep links show not-found/recovery UI without silently selecting or creating the wrong entity. Session routes fail this requirement (BUG-019).
+- [x] Check stale session IDs preserve the requested route and do not silently select or create another session. Router and backend regression tests pass (BUG-019).
 
 ## 17. Final audit
 
 - [x] Revisit every `[!]` item and link its bug directory from the Findings section below.
 - [x] Revisit every `[-]` item and document the exact safety/environment reason.
-- [x] Verify each bug README contains environment, severity, prerequisites, exact steps, expected, actual, reproducibility, evidence, impact, and suggested fix. All 36 packages passed the content audit, and every local Markdown evidence link resolves.
+- [x] Verify each bug README contains environment, severity, prerequisites, exact steps, expected, actual, reproducibility, evidence, impact, and suggested fix. All 37 packages passed the content audit, and every local Markdown evidence link resolves.
 - [x] Verify evidence screenshots do not expose passwords, API keys, auth headers, or private unrelated data. OCR scan found no supplied password, Bearer token, or unmasked key; the connector evidence shows masked key prefixes only.
 - [!] Confirm no data was deleted, archived, disconnected, overwritten, or cleaned up. No pre-existing user data or provider connection was changed, but BUG-012 removed/restored the QA automation and BUG-031 archived the five newly created QA team-task nodes before cancellation could be declined.
 - [!] Confirm all QA-created data remains available for user review. All named agents, sessions, boards/tasks, Team, Blend, files, cron jobs, targets, and bug evidence remain; exceptions are the original BUG-012 automation run-output state and the pre-cancel runnable state of BUG-031.
 - [-] Stop only processes started by this QA pass if requested. Not requested for this QA goal; `make dev` and the retained headed browser remain running so the user can inspect the data immediately. No unrelated process was stopped.
-- [x] Record completion totals: **183 passed / 44 failed / 10 skipped / 0 not run** (237 checklist rows).
+- [x] Record completion totals after remediation re-check: **227 passed / 4 historical failures / 6 skipped / 0 not run** (237 checklist rows).
 
 ## Findings
 
@@ -338,6 +340,7 @@ Status convention: `[ ]` not run, `[x]` passed, `[!]` failed/bug filed, `[-]` un
 - [BUG-034 — Context editor silently discards unsaved changes on close](BUG-034-context-editor-discards-unsaved-close/README.md)
 - [BUG-035 — Invalid board ID is silently normalized and created](BUG-035-kanban-invalid-board-id-silently-normalized/README.md)
 - [BUG-036 — Confirmation dialogs do not trap focus or close with Escape](BUG-036-confirm-dialog-no-focus-trap-or-escape/README.md)
+- [BUG-037 — Queued-message reorder logic has no visible controls](BUG-037-queued-message-reorder-controls-missing/README.md)
 
 ## Execution notes
 

@@ -1,7 +1,7 @@
 // Shared domain types for the app. These mirror the backend API models
 // (agent-gateway, conversations, sandboxes, and Hermes Kanban).
 
-export type RightView = 'workspace' | 'skills' | 'cron' | 'runtime';
+export type RightView = 'workspace' | 'skills' | 'cron' | 'settings';
 export type WorkspaceView = 'files' | 'restore-points' | 'versions';
 export type CenterView = 'chat' | 'skills' | 'teams' | 'data' | 'kanban' | 'analytics' | 'cron';
 
