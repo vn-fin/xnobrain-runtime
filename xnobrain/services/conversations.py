@@ -77,7 +77,9 @@ class ConversationsServiceMixin:
         result["messages"] = payload["messages"]
         return result
 
-    def conversation_usage(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
+    async def conversation_usage(
+        self, agent_id: str, conversation_id: str,
+    ) -> dict[str, Any]:
         payload = self.agents.get_conversation(agent_id, conversation_id)
         session = dict(payload["conversation"])
         messages = list(payload["messages"])
@@ -113,6 +115,15 @@ class ConversationsServiceMixin:
         tool_steps = sum(1 for message in messages if message.get("role") == "tool")
         actual_cost = session.get("actual_cost_usd")
         cost = number("actual_cost_usd") if actual_cost is not None else number("estimated_cost_usd")
+        cost_source = str(session.get("cost_source") or "")
+        cost_status = str(session.get("cost_status") or "")
+        if actual_cost is None and cost <= 0:
+            cost = await self.analytics.conversation_estimated_cost(
+                agent_id, conversation_id,
+            )
+            if cost > 0:
+                cost_source = "omniroute_attribution"
+                cost_status = "estimated"
         model_config = session.get("model_config")
         context = (
             model_config.get("xnobrain_context")
@@ -164,12 +175,12 @@ class ConversationsServiceMixin:
                 "total": total_tokens,
             },
             "cost": {
-                "source": str(session.get("cost_source") or ""),
-                "status": str(session.get("cost_status") or ""),
+                "source": cost_source,
+                "status": cost_status,
                 "total_usd": cost,
             },
             "context": context_payload,
-            "weekly_budget": self.analytics.get_budget(agent_id),
+            "weekly_budget": await self.analytics.get_budget(agent_id),
         }
 
     def rename_conversation(self, agent_id: str, conversation_id: str, body: Mapping[str, Any]) -> dict[str, Any]:

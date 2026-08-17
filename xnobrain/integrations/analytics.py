@@ -351,6 +351,7 @@ def period_spend(
 
 def profile_model_usage(
     profile_dir: Path, *, since_epoch: float, until_epoch: float,
+    session_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Read detailed per-model usage used for agent cost attribution."""
     db = profile_dir / "state.db"
@@ -376,9 +377,10 @@ def profile_model_usage(
                 JOIN sessions s ON s.id = u.session_id
                 WHERE COALESCE(u.last_seen, s.started_at) > ?
                   AND COALESCE(u.first_seen, s.started_at) <= ?
+                  AND (? IS NULL OR u.session_id = ?)
                 GROUP BY u.model
                 """,
-                (since_epoch, until_epoch),
+                (since_epoch, until_epoch, session_id, session_id),
             ).fetchall()]
         return [dict(row) for row in conn.execute(
             """
@@ -391,9 +393,10 @@ def profile_model_usage(
                    COALESCE(SUM(estimated_cost_usd),0) AS estimated_cost_usd,
                    COALESCE(SUM(actual_cost_usd),0) AS actual_cost_usd
             FROM sessions WHERE started_at > ? AND started_at <= ?
+              AND (? IS NULL OR id = ?)
             GROUP BY model
             """,
-            (since_epoch, until_epoch),
+            (since_epoch, until_epoch, session_id, session_id),
         ).fetchall()]
     except sqlite3.Error:
         return []

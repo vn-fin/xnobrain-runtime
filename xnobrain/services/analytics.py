@@ -24,6 +24,7 @@ from ..integrations.analytics import (
     aggregate_router_usage,
     bucket_start_iso,
     period_spend,
+    profile_model_usage,
 )
 from .base import ServiceError
 
@@ -49,6 +50,9 @@ class AnalyticsService:
         self._merged: dict[tuple, tuple[float, dict[str, Any]]] = {}
         self._workspace: dict[tuple, tuple[float, dict[str, Any]]] = {}
         self._workspace_lock = asyncio.Lock()
+        self._weekly_cost_lock = asyncio.Lock()
+        self._weekly_cost_cache: tuple[float, str, dict[str, float]] | None = None
+        self._weekly_model_rates: dict[str, float] = {}
         self._sem = asyncio.Semaphore(8)
 
     # ---- public API ---------------------------------------------------------
@@ -102,9 +106,14 @@ class AnalyticsService:
         agents_available: int,
     ) -> dict[str, Any]:
         by_path = {str(item.get("name") or ""): item for item in items}
+        attribution_items = items if len(items) == agents_available else None
         for row in summary["agents"]:
             item = by_path.get(row["agent_id"])
-            row["budget"] = self._budget_status(row["agent_id"], item) if item else None
+            row["budget"] = (
+                await self._budget_status(
+                    row["agent_id"], item, attribution_items=attribution_items,
+                ) if item else None
+            )
         summary["agents_selected"] = (
             [str(item.get("name") or "") for item in items] if agent_ids else []
         )
@@ -122,7 +131,7 @@ class AnalyticsService:
             "agent_id": agent_id, "display_name": self._display(item, agent_id),
             "totals": summary["totals"],
         }
-        agent_row["budget"] = self._budget_status(agent_id, item)
+        agent_row["budget"] = await self._budget_status(agent_id, item)
         agent_row["by_model"] = summary["by_model"]
         agent_row["series"] = summary["series"]
         agent_row["range_from"] = _epoch_iso(start_epoch)
@@ -162,11 +171,13 @@ class AnalyticsService:
             "timezone": "UTC",
         }
 
-    def get_budget(self, agent_id: str) -> dict[str, Any]:
+    async def get_budget(self, agent_id: str) -> dict[str, Any]:
         item = self._require_item(agent_id)
-        return self._budget_status(agent_id, item)
+        return await self._budget_status(agent_id, item)
 
-    def set_budget(self, agent_id: str, patch: Mapping[str, Any]) -> dict[str, Any]:
+    async def set_budget(
+        self, agent_id: str, patch: Mapping[str, Any],
+    ) -> dict[str, Any]:
         item = self._require_item(agent_id)
         config, path = self._read_config(agent_id)
         weekly = patch.get("weekly_usd")
@@ -185,11 +196,11 @@ class AnalyticsService:
             self.repository.snapshot(agent_id, "config", "config", path.read_bytes())
         self.repository.atomic_yaml(path, new_config)
         self._merged.clear()
-        return self._budget_status(agent_id, item)
+        return await self._budget_status(agent_id, item)
 
-    def require_chat_budget(self, agent_id: str) -> dict[str, Any]:
+    async def require_chat_budget(self, agent_id: str) -> dict[str, Any]:
         """Reject a new user turn once the agent has spent its weekly limit."""
-        status = self.get_budget(agent_id)
+        status = await self.get_budget(agent_id)
         if not status["accepting_chats"]:
             raise ServiceError(
                 "Weekly budget reached. Increase the agent budget or wait until Sunday.",
@@ -482,7 +493,10 @@ class AnalyticsService:
             ],
         }
 
-    def _budget_status(self, agent_id: str, item: Mapping[str, Any] | None) -> dict[str, Any]:
+    async def _budget_status(
+        self, agent_id: str, item: Mapping[str, Any] | None,
+        *, attribution_items: list[Mapping[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         config, _ = self._read_config(agent_id)
         budget = config.get(_BUDGET_KEY) if isinstance(config.get(_BUDGET_KEY), dict) else {}
         configured_weekly = _num_or_none(budget.get("weekly_usd"))
@@ -492,15 +506,21 @@ class AnalyticsService:
         now = datetime.now(timezone.utc)
         week_start = _sunday_start(now)
         week_end = week_start + timedelta(days=7)
-        spend = (
-            period_spend(
+        if profile_dir is None:
+            spend = 0.0
+        elif basis == "actual":
+            spend = await asyncio.to_thread(
+                period_spend,
                 profile_dir,
                 since_epoch=week_start.timestamp(),
                 until_epoch=now.timestamp(),
                 cost_basis=basis,
             )
-            if profile_dir is not None else 0.0
-        )
+        else:
+            spends = await self._weekly_estimated_spends(
+                week_start, now, items=attribution_items,
+            )
+            spend = spends.get(agent_id, 0.0)
         percent = max(0.0, spend / weekly * 100)
         accepting = spend < weekly
         severity = (
@@ -525,6 +545,124 @@ class AnalyticsService:
             "severity": severity,
             "accepting_chats": accepting,
         }
+
+    async def _weekly_estimated_spends(
+        self, week_start: datetime, now: datetime,
+        *, items: list[Mapping[str, Any]] | None = None,
+    ) -> dict[str, float]:
+        """Attribute OmniRoute model costs across live agents by model usage."""
+        cache_key = _iso(week_start)
+        cached = self._weekly_cost_cache
+        current = time.time()
+        if cached and cached[1] == cache_key and current - cached[0] < 5.0:
+            return cached[2]
+        async with self._weekly_cost_lock:
+            cached = self._weekly_cost_cache
+            current = time.time()
+            if cached and cached[1] == cache_key and current - cached[0] < 5.0:
+                return cached[2]
+
+            items = items if items is not None else self._agents()
+
+            async def read(item: Mapping[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+                agent_id = str(item.get("name") or "")
+                profile_dir = self._profile_dir(item)
+                if not agent_id or profile_dir is None:
+                    return agent_id, []
+                async with self._sem:
+                    rows = await asyncio.to_thread(
+                        profile_model_usage,
+                        profile_dir,
+                        since_epoch=week_start.timestamp(),
+                        until_epoch=now.timestamp(),
+                    )
+                return agent_id, rows
+
+            attributed = dict(await asyncio.gather(*(read(item) for item in items)))
+            stored_by_model: dict[str, dict[str, float]] = {}
+            for agent_id, rows in attributed.items():
+                for row in rows:
+                    model = str(row.get("model") or "").rsplit("/", 1)[-1].lower()
+                    stored_by_model.setdefault(model, {})[agent_id] = (
+                        stored_by_model.setdefault(model, {}).get(agent_id, 0.0)
+                        + float(row.get("estimated_cost_usd") or 0)
+                    )
+            stored = {
+                agent_id: sum(
+                    models.get(agent_id, 0.0) for models in stored_by_model.values()
+                )
+                for agent_id in attributed
+            }
+            try:
+                pricing = await self.router.usage_analytics(
+                    start_iso=_iso(week_start), end_iso=_iso(now),
+                )
+            except Exception:  # noqa: BLE001 - stored Hermes cost remains the fallback
+                pricing = None
+            if not isinstance(pricing, Mapping):
+                result = stored
+                self._weekly_model_rates = {}
+            else:
+                model_costs = {
+                    str(row.get("model") or "").lower(): max(
+                        0.0, _number(row.get("cost")),
+                    )
+                    for row in pricing.get("byModel") or []
+                    if isinstance(row, Mapping) and row.get("model")
+                }
+                weights: dict[str, dict[str, int]] = {}
+                for agent_id, rows in attributed.items():
+                    for row in rows:
+                        model = str(row.get("model") or "").rsplit("/", 1)[-1].lower()
+                        weight = sum(int(row.get(col) or 0) for col in _TOKEN_COLS)
+                        weights.setdefault(model, {})[agent_id] = (
+                            weights.setdefault(model, {}).get(agent_id, 0) + weight
+                        )
+                result = {agent_id: 0.0 for agent_id in attributed}
+                for model, agents in weights.items():
+                    cost = model_costs.get(model)
+                    total_weight = sum(agents.values())
+                    if cost is None or total_weight <= 0:
+                        for agent_id, fallback in stored_by_model.get(model, {}).items():
+                            result[agent_id] += fallback
+                        continue
+                    for agent_id, weight in agents.items():
+                        result[agent_id] += cost * weight / total_weight
+                self._weekly_model_rates = {
+                    model: model_costs[model] / sum(agents.values())
+                    for model, agents in weights.items()
+                    if model in model_costs and sum(agents.values()) > 0
+                }
+            self._weekly_cost_cache = (current, cache_key, result)
+            return result
+
+    async def conversation_estimated_cost(
+        self, agent_id: str, conversation_id: str,
+    ) -> float:
+        """Estimate one conversation from its share of OmniRoute model costs."""
+        item = self._require_item(agent_id)
+        profile_dir = self._profile_dir(item)
+        if profile_dir is None:
+            return 0.0
+        now = datetime.now(timezone.utc)
+        week_start = _sunday_start(now)
+        await self._weekly_estimated_spends(week_start, now)
+        rows = await asyncio.to_thread(
+            profile_model_usage,
+            profile_dir,
+            since_epoch=week_start.timestamp(),
+            until_epoch=now.timestamp(),
+            session_id=conversation_id,
+        )
+        cost = 0.0
+        for row in rows:
+            model = str(row.get("model") or "").rsplit("/", 1)[-1].lower()
+            rate = self._weekly_model_rates.get(model)
+            if rate is None:
+                cost += float(row.get("estimated_cost_usd") or 0)
+                continue
+            cost += rate * sum(int(row.get(col) or 0) for col in _TOKEN_COLS)
+        return round(cost, 6)
 
     def _read_config(self, agent_id: str) -> tuple[dict[str, Any], Path]:
         path = self.repository.profile_path(agent_id) / "config.yaml"

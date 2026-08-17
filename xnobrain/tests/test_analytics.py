@@ -96,18 +96,20 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
     def _insert(self, agent_id, *, model, inp, out, est, act=0.0,
                 started_at=None, provider="anthropic"):
         db = self.profiles / agent_id / "state.db"
+        session_id = uuid.uuid4().hex
         conn = sqlite3.connect(db)
         try:
             conn.execute(
                 f"INSERT INTO sessions ({_SESSION_COLUMNS}) "
                 f"VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (uuid.uuid4().hex, "api", model, provider,
+                (session_id, "api", model, provider,
                  started_at if started_at is not None else time.time() - 3600,
                  inp, out, 0, 0, 0, est, act, 1),
             )
             conn.commit()
         finally:
             conn.close()
+        return session_id
 
     def _insert_router(
         self,
@@ -591,6 +593,52 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(cleared["configured"])
             config = yaml.safe_load((self.profiles / a / "config.yaml").read_text("utf-8"))
             self.assertNotIn("xnobrain_budget", config)
+
+    async def test_weekly_and_conversation_costs_use_omniroute_attribution(self):
+        async with self.client() as client:
+            agent_id = await self._create_agent(client, "Cost Agent")
+            session_id = self._insert(
+                agent_id, model="ocz/deepseek-v4-flash", inp=100, out=10, est=0,
+            )
+            db = self.profiles / agent_id / "state.db"
+            conn = sqlite3.connect(db)
+            try:
+                now = time.time()
+                conn.execute(
+                    "CREATE TABLE session_model_usage ("
+                    "session_id TEXT, model TEXT, api_call_count INTEGER, "
+                    "input_tokens INTEGER, output_tokens INTEGER, "
+                    "cache_read_tokens INTEGER, cache_write_tokens INTEGER DEFAULT 0, "
+                    "reasoning_tokens INTEGER, estimated_cost_usd REAL DEFAULT 0, "
+                    "actual_cost_usd REAL DEFAULT 0, first_seen REAL, last_seen REAL)"
+                )
+                conn.execute(
+                    "INSERT INTO session_model_usage "
+                    "(session_id, model, api_call_count, input_tokens, output_tokens, "
+                    "cache_read_tokens, reasoning_tokens, first_seen, last_seen) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (session_id, "ocz/deepseek-v4-flash", 2, 100, 10, 40, 5,
+                     now - 60, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            async def usage_analytics(**_kwargs):
+                return {
+                    "summary": {"totalCost": 0.5},
+                    "byModel": [{"model": "deepseek-v4-flash", "cost": 0.5}],
+                    "dailyTrend": [],
+                }
+
+            self.analytics.router.usage_analytics = usage_analytics
+            budget = await self.analytics.get_budget(agent_id)
+            conversation_cost = await self.analytics.conversation_estimated_cost(
+                agent_id, session_id,
+            )
+
+            self.assertEqual(budget["spend_usd"], 0.5)
+            self.assertEqual(conversation_cost, 0.5)
 
     async def test_weekly_budget_minimum_and_chat_acceptance_gate(self):
         async with self.client() as client:

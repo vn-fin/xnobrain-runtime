@@ -68,7 +68,7 @@ class ConversationRunService:
         # This is the only enforcement point. Once accepted, a run is allowed
         # to finish even when its cost pushes the weekly total over 100%.
         if self.analytics is not None:
-            self.analytics.require_chat_budget(agent_id)
+            await self.analytics.require_chat_budget(agent_id)
         mode = self._mode(body)
         timeout_seconds = session_timeout_seconds(body.get("timeout_seconds"))
         now = time.time()
