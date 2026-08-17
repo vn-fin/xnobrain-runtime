@@ -189,7 +189,7 @@ class NineRouterConfigTests(unittest.TestCase):
         self.assertEqual(config["model"]["default"], selected)
 
     def test_global_config_defaults_to_automatic_execution(self) -> None:
-        with patch.dict(os.environ, {"RUNTIME_MEMORY_ENABLE": ""}):
+        with patch.dict(os.environ, {"RUNTIME_HONCHO_MEMORY_ENABLE": ""}):
             with TemporaryDirectory() as temp_dir:
                 manager = GlobalConfigManager(root_profile=Path(temp_dir))
                 described = manager.ensure_write_approval_defaults()
@@ -199,7 +199,7 @@ class NineRouterConfigTests(unittest.TestCase):
         self.assertFalse(described["memory_write_approval"])
 
     def test_embedded_memory_uses_the_profile_default(self) -> None:
-        with patch.dict(os.environ, {"RUNTIME_MEMORY_ENABLE": "true"}):
+        with patch.dict(os.environ, {"RUNTIME_HONCHO_MEMORY_ENABLE": "true"}):
             with TemporaryDirectory() as temp_dir:
                 root = Path(temp_dir)
                 global_config = GlobalConfigManager(root_profile=root / "root")

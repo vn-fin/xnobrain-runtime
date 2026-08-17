@@ -95,8 +95,9 @@ class NineRouterPinTests(unittest.TestCase):
         environment = environment_path.read_text(encoding="utf-8")
 
         self.assertNotIn("honcho-ai", dockerfile.lower())
-        self.assertRegex(environment, r"(?m)^RUNTIME_MEMORY_ENABLE=(true|false)$")
-        self.assertNotIn("honcho", compose.lower())
+        self.assertRegex(environment, r"(?m)^RUNTIME_HONCHO_MEMORY_ENABLE=(true|false)$")
+        self.assertRegex(compose, r"(?m)^\s+RUNTIME_HONCHO_MEMORY_ENABLE:")
+        self.assertNotIn("honcho-ai", compose.lower())
         self.assertNotIn("pgvector", compose.lower())
         self.assertNotIn("redis:", compose.lower())
 

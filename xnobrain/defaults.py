@@ -37,6 +37,6 @@ LEGACY_BIG_BROTHER_TOOLSET = "xnobrain-control"
 
 def memory_enabled() -> bool:
     """Return whether the embedded memory subsystem is enabled by default."""
-    return os.environ.get("RUNTIME_MEMORY_ENABLE", "").strip().lower() in {
+    return os.environ.get("RUNTIME_HONCHO_MEMORY_ENABLE", "").strip().lower() in {
         "1", "true", "yes", "on",
     }
