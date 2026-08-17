@@ -43,7 +43,7 @@ const summary: UsageSummary = {
     sessions: 2,
   }],
   quota: { available: false, provider: '', model: '', plan: '', message: '', quotas: [] },
-  source: { kind: 'nine_router', durable: true, label: '', message: '' },
+  source: { kind: 'provider_runtime', durable: true, label: '', message: '' },
   request_status: { total: 2, successful: 2, failed: 0, success_rate: 100 },
   attribution: {
     live_totals: totals,

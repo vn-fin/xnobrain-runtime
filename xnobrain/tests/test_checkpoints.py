@@ -29,7 +29,7 @@ class CheckpointAPITests(unittest.IsolatedAsyncioTestCase):
         self.root.mkdir()
         self.profiles.mkdir()
         (self.root / "config.yaml").write_text(yaml.safe_dump({
-            "model": {"provider": "custom:nine-router", "default": "auto"},
+            "model": {"provider": "custom:xnobrain", "default": "auto"},
             "approvals": {"mode": "off"},
         }), encoding="utf-8")
         self.environment = patch.dict(os.environ, {

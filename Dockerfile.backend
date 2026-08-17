@@ -1,12 +1,14 @@
 # syntax=docker/dockerfile:1.7
-FROM node:22-bookworm AS nine-router-builder
+FROM node:22.23.1-bookworm AS nine-router-builder
 
-ARG NINE_ROUTER_VERSION=v0.5.40
+ARG NINE_ROUTER_VERSION=v0.5.55
+ARG NINE_ROUTER_COMMIT=699edac3273e13d4744bc46f6082618f08560702
 ARG NINE_ROUTER_NEXT_VERSION=16.2.10
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git python3 make g++ \
     && rm -rf /var/lib/apt/lists/* \
-    && git clone --branch "${NINE_ROUTER_VERSION}" --depth 1 https://github.com/decolua/9router.git /src
+    && git clone --branch "${NINE_ROUTER_VERSION}" --depth 1 https://github.com/decolua/9router.git /src \
+    && test "$(git -C /src rev-parse HEAD)" = "${NINE_ROUTER_COMMIT}"
 WORKDIR /src
 RUN --mount=type=cache,target=/root/.npm npm install --save-exact "next@${NINE_ROUTER_NEXT_VERSION}" \
     && NEXT_TELEMETRY_DISABLED=1 npm run build
@@ -14,8 +16,9 @@ RUN --mount=type=cache,target=/root/.npm npm install --save-exact "next@${NINE_R
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG HERMES_BRANCH=main
-ARG NINE_ROUTER_NPM_VERSION=0.5.40
+ARG HERMES_VERSION=v2026.8.16
+ARG HERMES_COMMIT=df4b65147d7ddd74dd449f9067aabbca5aef0ec7
+ARG NINE_ROUTER_NPM_VERSION=0.5.55
 ARG CODEX_CLI_VERSION=0.144.6
 ARG CLAUDE_CODE_VERSION=2.1.216
 
@@ -74,10 +77,12 @@ RUN printf '%s\n' \
 # Install Hermes directly on Ubuntu using its supported root/FHS layout. A
 # disposable build home prevents image build state from becoming user data;
 # runtime profiles remain exclusively under /opt/data.
-RUN curl -fsSL https://hermes-agent.nousresearch.com/install.sh \
+RUN curl -fsSL "https://raw.githubusercontent.com/NousResearch/hermes-agent/${HERMES_COMMIT}/scripts/install.sh" \
       | env HERMES_HOME=/opt/hermes-build-home bash -s -- \
-          --branch "${HERMES_BRANCH}" --skip-setup --non-interactive \
+          --branch "${HERMES_VERSION}" --commit "${HERMES_COMMIT}" \
+          --force-commit --skip-setup --non-interactive \
     && install -m 0755 /opt/hermes-build-home/bin/uv /usr/local/bin/uv \
+    && test "$(git -C /usr/local/lib/hermes-agent rev-parse HEAD)" = "${HERMES_COMMIT}" \
     && uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
       'edge-tts==7.2.7'
 
@@ -119,6 +124,8 @@ COPY --from=nine-router-builder /src/node_modules/node-forge /opt/xnobrain/9rout
 COPY --from=nine-router-builder /src/node_modules/next /opt/xnobrain/9router/node_modules/next
 
 COPY requirements.txt /opt/xnobrain/requirements.txt
+COPY THIRD_PARTY_NOTICES.md /opt/xnobrain/THIRD_PARTY_NOTICES.md
+COPY third_party_licenses /opt/xnobrain/third_party_licenses
 RUN uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
       -r /opt/xnobrain/requirements.txt
 

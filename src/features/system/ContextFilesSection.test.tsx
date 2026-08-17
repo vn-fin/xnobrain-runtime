@@ -8,7 +8,7 @@ import { ContextFilesSection } from './ContextFilesSection';
 
 const agent: Agent = {
   id: 'writer', name: 'writer', title: 'Writer', description: '', status: 'ready',
-  provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+  provider: 'xnobrain', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
   skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [],
 };
 

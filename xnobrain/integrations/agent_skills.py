@@ -28,7 +28,7 @@ class AgentSkillsMixin:
         seen: set[str] = set()
         self._append_skills_from_dir(skills, seen, skills_root, disabled)
         return {
-            "object": "hermes.agent_skills",
+            "object": "xnobrain.agent_skills",
             "agent": name,
             "skills": sorted(skills, key=lambda item: (item["category"], item["name"])),
         }

@@ -3,16 +3,15 @@
 For detailed local, Docker, and native VM installation instructions, see
 [SETUP.md](SETUP.md).
 
-XNOBrain is a self-hosted React workspace for creating and running Hermes
-agents. One Python/FastAPI process extends the original Hermes CLI dashboard
-application and serves the default profile plus every named profile. One
-9router process provides LLM routing. There is no Go service, PostgreSQL,
-Redis, or per-profile API server.
+XNOBrain is a self-hosted React workspace for creating and running AI agents.
+One Python/FastAPI process serves the default profile plus every named profile,
+and one private provider runtime handles LLM routing. There is no per-profile
+API server.
 
 ```text
 browser -> Traefik -> React UI
-                   -> FastAPI + original Hermes core -> profile files
-                                                    -> 9router -> LLMs
+                   -> XNOBrain runtime -> profile files
+                                       -> provider runtime -> LLMs
 ```
 
 ## Start
@@ -30,13 +29,13 @@ On Windows, run this in PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1
 ```
 
-Copy the environment template and enter the required `HERMES_HOME` and
-`NINE_ROUTER_DATA_DIR` values. For Docker, use paths inside `/opt/data`:
+Copy the environment template and enter the required `XNOBRAIN_AGENT_HOME` and
+`XNOBRAIN_PROVIDER_DATA_DIR` values. For Docker, use paths inside `/opt/data`:
 
 ```bash
 cp .env.example .env
-# Edit .env and set HERMES_HOME=/opt/data/hermes and
-# NINE_ROUTER_DATA_DIR=/opt/data/nine-router.
+# Edit .env and set XNOBRAIN_AGENT_HOME=/opt/data/agent and
+# XNOBRAIN_PROVIDER_DATA_DIR=/opt/data/provider-runtime.
 ```
 
 Then start XNOBrain without make:
@@ -48,7 +47,7 @@ docker compose up -d --build
 Compose also starts the private Honcho API, deriver, PostgreSQL/pgvector, and
 Redis services. `HONCHO_MEMORY_ENABLE=true` selects it as the default memory
 provider. Honcho remains reachable only on the internal Compose network and
-uses the runtime's local 9router endpoint for language-model requests.
+uses the private provider endpoint for language-model requests.
 
 Open <http://localhost:5152>. Swagger is available at
 <http://localhost:5152/xnobrain/api/runtime/swagger_docs> and the generated OpenAPI
@@ -85,13 +84,9 @@ responsible for authentication, authorization, and authenticated
 user-to-workspace routing; frontend edition and feature values are
 presentation controls, not security controls.
 
-For a Docker-free Linux development installation, run the project installer. It
-installs the Dockerfile-derived system and office tools, a project-local Hermes
-Python environment under `.tools/python`, Node.js/npm, 9router, and the Codex,
-Claude, and agent-browser CLIs:
 For a Docker-free Linux or macOS development installation, run the project
-installer. It creates a project-local Hermes Python environment under
-`.tools/python` and installs Node.js/npm, 9router, and the agent CLIs. The
+installer. It creates a project-local Python environment under `.tools/python`
+and installs Node.js/npm, the provider runtime, and agent CLIs. The
 macOS target skips the optional office-tool and browser-engine downloads to
 keep the development setup fast:
 
@@ -99,7 +94,7 @@ keep the development setup fast:
 make install-local
 ```
 
-Then start local development (Vite 5173, FastAPI 8642, and 9router 20128):
+Then start local development (Vite 5173, FastAPI 8642, and provider runtime 20128):
 
 ```bash
 npm run dev
@@ -125,14 +120,12 @@ sudo systemctl start xnobrain.target
 
 `xnobrain.target` owns the two long-running processes:
 
-- `xnobrain-api.service` runs FastAPI and the integrated Hermes runtime on
+- `xnobrain-api.service` runs the integrated XNOBrain runtime on
   port `8642`;
-- `xnobrain-9router.service` runs 9router on loopback port `20128`.
+- the provider-runtime service listens only on loopback port `20128`.
 
-Hermes agent executions are children of the API service. The service user's
-home is `/srv/xnobrain-data/home`, so the standard homes are easy to inspect
-at `~/.hermes` (`/srv/xnobrain-data/home/.hermes`) and `~/.9router`
-(`/srv/xnobrain-data/home/.9router`). Runtime configuration is read from
+Agent executions are children of the API service. Persistent agent and provider
+data is stored under `/srv/xnobrain-data`. Runtime configuration is read from
 `/etc/xnobrain/xnobrain.env`. The VM firewall must allow port `8642` only
 from the authenticated workspace gateway; port `20128` must remain private to
 the VM.
@@ -156,7 +149,7 @@ Each release publishes the common frontend to GHCR with immutable and moving
 tags:
 
 ```text
-ghcr.io/vn-fin/xnobrain-runtime/xnobrain-frontend:dev-0.0.13
+ghcr.io/vn-fin/xnobrain-runtime/xnobrain-frontend:dev-0.0.14
 ghcr.io/vn-fin/xnobrain-runtime/xnobrain-frontend:dev-latest
 ```
 
@@ -166,7 +159,7 @@ cloning it with a repository token, installs and health-checks the native
 backend in a temporary Ubuntu VM, and publishes this immutable Incus alias:
 
 ```text
-xnobrain-runtime-dev-0.0.13
+xnobrain-runtime-dev-0.0.14
 ```
 
 Staging and production use the same `.version` value with their own environment
@@ -177,11 +170,11 @@ runtime artifacts.
 
 ## Data safety
 
-Named agent data belongs under `~/.hermes/profiles/<agent-id>/`. Skills are
+Named agent data belongs under the configured agent home. Skills are
 written only to `skills/<skill-id>/SKILL.md` inside that profile. Memory,
 config, and skill mutations create immutable local snapshots, and mutable
 files use temp-file, fsync, and rename. Provider credentials remain owned by
-Hermes/9router. Portable `.zip` exports include every regular file in the
+the local provider runtime. Portable `.zip` exports include every regular file in the
 selected profile directory while redacting credential values; imports discard
 archived credential files and inherit them from the destination installation.
 

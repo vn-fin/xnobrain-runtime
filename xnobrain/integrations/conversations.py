@@ -26,7 +26,7 @@ class ConversationsMixin:
         limit = max(1, min(int(body.get("limit") or 50), 1000))
         rows = self._sessions(profile_dir, limit=limit + 1, offset=(page - 1) * limit)
         return {
-            "object": "hermes.agent_conversations",
+            "object": "xnobrain.agent_conversations",
             "agent": name,
             "conversations": rows[:limit],
             "pagination": {"page": page, "limit": limit, "has_more": len(rows) > limit},
@@ -112,7 +112,7 @@ class ConversationsMixin:
             )
         self._delete_session(profile_dir, session_id)
         return {
-            "object": "hermes.agent_conversation_delete",
+            "object": "xnobrain.agent_conversation_delete",
             "agent": name,
             "id": session_id,
             "deleted": True,
@@ -131,7 +131,7 @@ class ConversationsMixin:
                 status=404,
             )
         return {
-            "object": "hermes.agent_conversation",
+            "object": "xnobrain.agent_conversation",
             "agent": name,
             "conversation": session,
             "messages": self._messages(profile_dir, session_id),

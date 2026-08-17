@@ -16,7 +16,7 @@ const agent: Agent = {
   title: 'Research Lead',
   description: '',
   status: 'ready',
-  provider: 'nine-router',
+  provider: 'xnobrain',
   model: 'auto',
   reasoningEffort: 'medium',
   approvalMode: 'manual',

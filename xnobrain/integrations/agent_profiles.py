@@ -17,6 +17,7 @@ from .hermes_support import (
     METADATA_FILE,
     Mapping,
     NINE_ROUTER_DEFAULT_MODEL,
+    NINE_ROUTER_PROVIDER_KEY,
     Path,
     SKILL_ID_RE,
     TEMPLATE_DIRS,
@@ -373,7 +374,7 @@ class AgentProfilesMixin:
         effort = str(self._get_nested(config, ("agent", "reasoning_effort"), "medium") or "medium").lower()
         approval = self._get_nested(config, ("approvals", "mode"), "off")
         return {
-            "provider": "nine-router",
+            "provider": NINE_ROUTER_PROVIDER_KEY,
             "model": display_nine_router_model(
                 self._get_nested(
                     config,

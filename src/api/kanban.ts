@@ -66,7 +66,7 @@ function relativeTime(value: string | null | undefined): string {
 
 function taskFromApi(raw: RawTask): KanbanTask {
   const kanbanStatus = (raw.kanban_status ?? raw.status ?? 'todo') as KanbanColumnId;
-  const nativeStatus = (raw.status ?? raw.hermes_status ?? 'todo') as KanbanNativeStatus;
+  const nativeStatus = (raw.status ?? 'todo') as KanbanNativeStatus;
   const advertisedStatuses = Array.isArray(raw.allowed_kanban_statuses)
     ? raw.allowed_kanban_statuses.map(String) as KanbanColumnId[]
     : defaultAllowedStatuses(nativeStatus);

@@ -25,7 +25,7 @@ class NineRouterTransportMixin:
         body: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not path.startswith(("/api/", "/v1/")):
-            raise NineRouterAPIError("invalid 9Router path", status=400)
+            raise NineRouterAPIError("invalid provider runtime path", status=400)
         timeout = aiohttp.ClientTimeout(total=30)
         try:
             async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
@@ -47,14 +47,16 @@ class NineRouterTransportMixin:
                         if response.status == 401 and not cli_token and attempt == 0:
                             continue
                         if response.status < 200 or response.status >= 300:
-                            message = self._error_message(payload) or f"9Router returned HTTP {response.status}"
+                            message = self._error_message(payload) or f"Provider runtime returned HTTP {response.status}"
                             raise NineRouterAPIError(message, status=response.status)
                         return dict(payload) if isinstance(payload, Mapping) else {"data": payload}
         except NineRouterAPIError:
             raise
         except (aiohttp.ClientError, TimeoutError) as exc:
             raise NineRouterAPIError(
-                "9Router is unavailable", code="nine_router_unavailable", status=503
+                "Provider runtime is unavailable",
+                code="provider_runtime_unavailable",
+                status=503,
             ) from exc
 
 
@@ -63,7 +65,7 @@ class NineRouterTransportMixin:
         if not isinstance(connection, Mapping):
             connection = {}
         return {
-            "object": "nine_router.provider",
+            "object": "xnobrain.provider_runtime.provider",
             "connection": {
                 "id": str(connection.get("id") or ""),
                 "provider": str(connection.get("provider") or ""),

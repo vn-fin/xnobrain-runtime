@@ -83,7 +83,7 @@ class _TeamRunBase(unittest.IsolatedAsyncioTestCase):
         self.root.mkdir(parents=True)
         self.profiles.mkdir(parents=True)
         (self.root / "config.yaml").write_text(yaml.safe_dump({
-            "model": {"provider": "custom:nine-router", "default": "auto"},
+            "model": {"provider": "custom:xnobrain", "default": "auto"},
             "providers": {}, "agent": {"reasoning_effort": "medium"},
             "approvals": {"mode": "manual"}, "terminal": {"backend": "local"},
         }), encoding="utf-8")

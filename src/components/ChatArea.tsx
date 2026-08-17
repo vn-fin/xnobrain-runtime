@@ -312,7 +312,7 @@ export function ChatArea({
     setConversationMenuId(null);
   });
   const mobileActionsRef = useDismissibleLayer<HTMLDivElement>(mobileActionsOpen, () => setMobileActionsOpen(false));
-  // provider runtime always stores `nine-router`; find the upstream account that owns
+  // The provider runtime stores one internal transport; find the upstream account that owns
   // the selected routed model so the picker can still highlight it.
   const currentProvider = providers.find((provider) =>
     provider.id === agent.provider

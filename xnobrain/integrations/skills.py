@@ -80,7 +80,7 @@ class CommonSkillsMixin:
         for skill in skills:
             skill["enabled"] = skill["skill_id"] not in disabled
         return {
-            "object": "hermes.global_skills",
+            "object": "xnobrain.global_skills",
             "root_profile": str(self.root_profile),
             "skills": skills,
         }

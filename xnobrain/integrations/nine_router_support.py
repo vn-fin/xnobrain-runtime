@@ -16,7 +16,7 @@ from urllib.parse import quote
 import aiohttp
 
 
-NINE_ROUTER_PROVIDER_KEY = "nine-router"
+NINE_ROUTER_PROVIDER_KEY = "xnobrain"
 NINE_ROUTER_PROVIDER = f"custom:{NINE_ROUTER_PROVIDER_KEY}"
 NINE_ROUTER_BASE_URL = "http://127.0.0.1:20128"
 NINE_ROUTER_API_BASE_URL = f"{NINE_ROUTER_BASE_URL}/v1"
@@ -59,7 +59,7 @@ _OAUTH_POST_ACTIONS = frozenset({"exchange", "poll", "manual-code"})
 class NineRouterAPIError(RuntimeError):
     """Expected local 9Router API failure."""
 
-    def __init__(self, message: str, *, code: str = "nine_router_error", status: int = 502):
+    def __init__(self, message: str, *, code: str = "provider_runtime_error", status: int = 502):
         super().__init__(message)
         self.code = code
         self.status = status
@@ -102,7 +102,7 @@ def normalize_nine_router_config(config: dict[str, Any], model: str | None = Non
 
     config["providers"] = {
         NINE_ROUTER_PROVIDER_KEY: {
-            "name": "9Router",
+            "name": "XNOBrain Provider Runtime",
             "api": NINE_ROUTER_API_BASE_URL,
             "api_mode": "chat_completions",
             "default_model": selected_model,

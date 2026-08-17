@@ -14,7 +14,7 @@ import type { Agent } from '../types';
 export type MCPConfig = { servers: Record<string, Record<string, unknown>> };
 
 const ROOT = '/xnobrain/api/runtime/v1';
-const RUNTIME_PROVIDER = 'nine-router';
+const RUNTIME_PROVIDER = 'xnobrain';
 const encoded = (value: string) => encodeURIComponent(value);
 
 function routedConfig(input: AgentConfigUpdateRequestDTO): AgentConfigUpdateRequestDTO {

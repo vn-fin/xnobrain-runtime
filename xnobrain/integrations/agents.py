@@ -48,7 +48,7 @@ class AgentOperationsMixin:
             )
         )
         return {
-            "object": "hermes.agents",
+            "object": "xnobrain.agents",
             "root": str(self.profiles_root),
             "agents": agents,
         }
@@ -161,7 +161,7 @@ class AgentOperationsMixin:
             metadata["description"] = BIG_BROTHER_DESCRIPTION
         config = self._read_config(profile_dir)
         payload = {
-            "object": "hermes.agent",
+            "object": "xnobrain.agent",
             "name": name,
             "profile_name": name,
             "path": str(self._agent_dir(name)),
@@ -478,7 +478,7 @@ class AgentOperationsMixin:
         name = self._agent_name(raw_name)
         if name == BIG_BROTHER_AGENT_ID:
             raise AgentAPIError(
-                "Big Brother is the protected default Hermes profile",
+                "Big Brother is the protected default XNOBrain profile",
                 code="protected_agent",
                 status=409,
             )
@@ -487,7 +487,7 @@ class AgentOperationsMixin:
             shutil.rmtree(self._legacy_agent_dir(name))
         else:
             shutil.rmtree(profile_dir)
-        return {"object": "hermes.agent_delete", "agent": name, "deleted": True}
+        return {"object": "xnobrain.agent_delete", "agent": name, "deleted": True}
 
 
     def update_config(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -521,9 +521,9 @@ class AgentOperationsMixin:
 
         if "provider" in body:
             provider = self._nonempty_string(body["provider"], "provider").lower()
-            if provider not in {"9router", "nine-router", "auto", NINE_ROUTER_PROVIDER}:
+            if provider not in {"xnobrain", "9router", "nine-router", "auto", NINE_ROUTER_PROVIDER}:
                 raise AgentAPIError(
-                    "provider must be nine-router",
+                    "provider must be xnobrain",
                     code="unsupported_provider",
                 )
         if "model" in body:

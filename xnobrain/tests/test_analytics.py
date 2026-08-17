@@ -59,7 +59,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         self.root.mkdir(parents=True)
         self.profiles.mkdir(parents=True)
         (self.root / "config.yaml").write_text(yaml.safe_dump({
-            "model": {"provider": "custom:nine-router", "default": "auto"},
+            "model": {"provider": "custom:xnobrain", "default": "auto"},
             "providers": {}, "agent": {"reasoning_effort": "medium"},
             "approvals": {"mode": "manual"}, "terminal": {"backend": "local"},
         }), encoding="utf-8")
@@ -351,7 +351,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
                 "/xnobrain/api/runtime/v1/analytics/usage?days=30"
             )).json()["data"]
             self.assertEqual(before["totals"]["total_tokens"], 580)
-            self.assertEqual(before["source"]["kind"], "nine_router")
+            self.assertEqual(before["source"]["kind"], "provider_runtime")
             self.assertTrue(before["source"]["durable"])
 
             removed = await client.delete(f"/xnobrain/api/runtime/v1/agents/{deleted}/delete")

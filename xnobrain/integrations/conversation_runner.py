@@ -67,7 +67,7 @@ class ConversationRunnerMixin:
             result = await self._run_profile_command(
                 name,
                 prepared["command"],
-                engine=str(prepared.get("engine") or "hermes"),
+                engine=str(prepared.get("engine") or "xnobrain"),
                 timeout_seconds=prepared["timeout_seconds"],
             )
         finally:
@@ -83,7 +83,7 @@ class ConversationRunnerMixin:
         session_id = self._detect_changed_session(before, after)
         session = self._session(profile_dir, session_id) if session_id else None
         return {
-            "object": "hermes.agent_chat",
+            "object": "xnobrain.agent_chat",
             "agent": name,
             "conversation_id": session_id,
             "session": session,
@@ -92,7 +92,7 @@ class ConversationRunnerMixin:
             "exit_code": result["exit_code"],
             "duration_seconds": round(time.time() - started, 3),
             "provider": prepared.get("provider") or "",
-            "engine": prepared.get("engine") or "hermes",
+            "engine": prepared.get("engine") or "xnobrain",
             "workspace_path": str(self._workspace_dir(name)),
             "profile_path": str(profile_dir),
         }
@@ -147,7 +147,7 @@ class ConversationRunnerMixin:
 
         provider = self._conversation_provider(profile_dir, body)
         model = self._conversation_model(profile_dir, body)
-        engine = "hermes"
+        engine = "xnobrain"
         command = [self._hermes_binary()]
         if conversation_id:
             command.extend(["--resume", conversation_id])

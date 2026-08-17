@@ -84,7 +84,7 @@ describe('manual context compaction', () => {
     };
     const agent: Agent = {
       id: 'agent-one', name: 'agent-one', title: 'Research', description: '', status: 'ready',
-      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      provider: 'xnobrain', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
       skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [conversation],
     };
     const onCompactContext = vi.fn().mockResolvedValue({
@@ -128,7 +128,7 @@ describe('agent feature shortcuts', () => {
     };
     const agent: Agent = {
       id: 'agent-one', name: 'agent-one', title: 'Research', description: '', status: 'ready',
-      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      provider: 'xnobrain', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
       skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [conversation],
     };
     const onSend = vi.fn().mockResolvedValue(undefined);
@@ -172,7 +172,7 @@ describe('agent feature shortcuts', () => {
     };
     const agent: Agent = {
       id: 'agent-one', name: 'agent-one', title: 'Research', description: '', status: 'ready',
-      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      provider: 'xnobrain', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
       skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [conversation],
     };
     const onPauseGoal = vi.fn().mockResolvedValue(undefined);
@@ -253,7 +253,7 @@ describe('user message layout', () => {
     const longPath = '/home/user/workspaces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/SCRATCHPAD.md';
     const agent: Agent = {
       id: 'agent-one', name: 'agent-one', title: 'Research', description: '', status: 'ready',
-      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      provider: 'xnobrain', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
       skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [],
     };
     render(<ChatArea
@@ -291,7 +291,7 @@ describe('conversation picker', () => {
     }));
     const agent: Agent = {
       id: 'agent-one', name: 'agent-one', title: 'Research', description: '', status: 'ready',
-      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      provider: 'xnobrain', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
       skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations,
     };
     const onSelectConversation = vi.fn();
@@ -375,7 +375,7 @@ describe('live run activity', () => {
     };
     const agent: Agent = {
       id: 'agent-one', name: 'agent-one', title: 'Research', description: '', status: 'ready',
-      provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+      provider: 'xnobrain', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
       skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [conversation],
     };
     const activeRun: ChatRun = {

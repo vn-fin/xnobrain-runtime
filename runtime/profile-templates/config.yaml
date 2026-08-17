@@ -1,5 +1,5 @@
 model:
-  provider: custom:nine-router
+  provider: custom:xnobrain
   default: auto
 providers: {}
 agent:

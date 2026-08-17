@@ -372,7 +372,7 @@ class AnalyticsService:
 
         durable = self._merge(
             [{
-                "agent_id": "__nine_router__",
+                "agent_id": "__provider_runtime__",
                 "display_name": "Provider history",
                 "partial": router_partial,
             }],
@@ -385,7 +385,7 @@ class AnalyticsService:
         # tokens, cost, model/provider rows and the time series are durable.
         durable["totals"]["sessions"] = live["totals"]["sessions"]
         durable["source"] = {
-            "kind": "nine_router",
+            "kind": "provider_runtime",
             "durable": True,
             "label": "Provider usage history",
             "message": (

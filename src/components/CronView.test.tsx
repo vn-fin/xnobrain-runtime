@@ -8,7 +8,7 @@ afterEach(cleanup);
 
 const agent: Agent = {
   id: 'agent-1', name: 'agent-1', title: 'Research Lead', description: '', status: 'ready',
-  provider: 'nine-router', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
+  provider: 'xnobrain', model: 'auto', reasoningEffort: 'medium', approvalMode: 'manual',
   skillsWriteApproval: true, memoryWriteApproval: true, workspace: '', skills: [], conversations: [],
 };
 

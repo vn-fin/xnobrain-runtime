@@ -2,12 +2,12 @@
 # Install the complete XNOBrain development runtime on Linux without Docker.
 #
 # The layout is intentionally project-local for executable tooling:
-#   .tools/hermes-agent/  upstream Hermes checkout and runtime
-#   .tools/python        symlink to the Hermes Python environment
+#   .tools/hermes-agent/  internal agent-engine checkout and runtime
+#   .tools/python        symlink to the agent-engine Python environment
 #   .tools/office-python office/document helpers
-#   .tools/npm-global    9router and agent CLIs
+#   .tools/npm-global    provider runtime and agent CLIs
 #
-# Hermes and 9router data live in the explicit locations supplied by the user,
+# Agent and provider data live in the explicit locations supplied by the user,
 # so installing or removing this checkout never removes profiles or keys.
 set -euo pipefail
 
@@ -19,9 +19,10 @@ hermes_install_dir="$tools_dir/hermes-agent"
 office_python_dir="$tools_dir/office-python"
 project_python_link="$tools_dir/python"
 
-hermes_branch="${XNOBRAIN_HERMES_BRANCH:-main}"
+hermes_version="${XNOBRAIN_AGENT_ENGINE_VERSION:-v2026.8.16}"
+hermes_commit="${XNOBRAIN_AGENT_ENGINE_COMMIT:-df4b65147d7ddd74dd449f9067aabbca5aef0ec7}"
 node_version="${XNOBRAIN_NODE_VERSION:-22.23.1}"
-nine_router_version="${XNOBRAIN_NINE_ROUTER_VERSION:-0.5.40}"
+nine_router_version="${XNOBRAIN_PROVIDER_RUNTIME_VERSION:-${XNOBRAIN_NINE_ROUTER_VERSION:-0.5.55}}"
 codex_version="${XNOBRAIN_CODEX_VERSION:-0.144.6}"
 claude_version="${XNOBRAIN_CLAUDE_CODE_VERSION:-2.1.216}"
 agent_browser_version="${XNOBRAIN_AGENT_BROWSER_VERSION:-0.26.0}"
@@ -44,10 +45,11 @@ Options:
   -h, --help              Show this help
 
 Environment overrides:
-  XNOBRAIN_NODE_VERSION, XNOBRAIN_HERMES_BRANCH,
-  XNOBRAIN_NINE_ROUTER_VERSION, XNOBRAIN_CODEX_VERSION,
+  XNOBRAIN_NODE_VERSION, XNOBRAIN_AGENT_ENGINE_VERSION,
+  XNOBRAIN_AGENT_ENGINE_COMMIT,
+  XNOBRAIN_PROVIDER_RUNTIME_VERSION, XNOBRAIN_CODEX_VERSION,
   XNOBRAIN_CLAUDE_CODE_VERSION, XNOBRAIN_AGENT_BROWSER_VERSION,
-  HERMES_HOME, NINE_ROUTER_DATA_DIR (both required)
+  XNOBRAIN_AGENT_HOME, XNOBRAIN_PROVIDER_DATA_DIR (both required)
 EOF
 }
 
@@ -62,10 +64,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-: "${HERMES_HOME:?HERMES_HOME is required. Set it in .env or the environment}"
-: "${NINE_ROUTER_DATA_DIR:?NINE_ROUTER_DATA_DIR is required. Set it in .env or the environment}"
-hermes_home="$HERMES_HOME"
-router_data_dir="$NINE_ROUTER_DATA_DIR"
+hermes_home="${XNOBRAIN_AGENT_HOME:-${HERMES_HOME:-}}"
+router_data_dir="${XNOBRAIN_PROVIDER_DATA_DIR:-${NINE_ROUTER_DATA_DIR:-}}"
+: "${hermes_home:?XNOBRAIN_AGENT_HOME is required. Set it in .env or the environment}"
+: "${router_data_dir:?XNOBRAIN_PROVIDER_DATA_DIR is required. Set it in .env or the environment}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This installer is for Linux." >&2
@@ -98,10 +100,10 @@ if [[ "$check_only" == true ]]; then
   printf 'Linux package manager: %s\n' "${package_manager:-not detected (system package step skipped)}"
   printf 'Project tools: %s\n' "$tools_dir"
   printf 'Project Python: %s\n' "$project_python_link/bin/python"
-  printf 'Hermes home: %s\n' "$hermes_home"
-  printf '9router data: %s\n' "$router_data_dir"
+  printf 'Agent home: %s\n' "$hermes_home"
+  printf 'Provider data: %s\n' "$router_data_dir"
   printf 'Node: %s\n' "$node_version"
-  printf '9router: %s\n' "$nine_router_version"
+  printf 'Provider runtime: %s\n' "$nine_router_version"
   exit 0
 fi
 
@@ -196,18 +198,32 @@ export PATH="$node_bin_dir:$npm_prefix/bin:$tools_dir/python/bin:$office_python_
 node --version
 npm --version
 
-if [[ ! -d "$hermes_install_dir/.git" || ! -x "$hermes_install_dir/venv/bin/python" ]]; then
-  installer_file="$(mktemp)"
-  trap 'rm -f "$installer_file"' EXIT
-  curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o "$installer_file"
-  hermes_args=(--branch "$hermes_branch" --skip-setup --non-interactive --dir "$hermes_install_dir" --hermes-home "$hermes_home")
-  if [[ "$skip_browser" == true ]]; then
-    hermes_args+=(--skip-browser)
-  fi
-  HERMES_HOME="$hermes_home" HERMES_INSTALL_DIR="$hermes_install_dir" \
-    bash "$installer_file" "${hermes_args[@]}"
-  rm -f "$installer_file"
-  trap - EXIT
+installer_file="$(mktemp)"
+trap 'rm -f "$installer_file"' EXIT
+curl -fsSL \
+  "https://raw.githubusercontent.com/NousResearch/hermes-agent/${hermes_commit}/scripts/install.sh" \
+  -o "$installer_file"
+hermes_args=(
+  --branch "$hermes_version"
+  --commit "$hermes_commit"
+  --force-commit
+  --skip-setup
+  --non-interactive
+  --dir "$hermes_install_dir"
+  --hermes-home "$hermes_home"
+)
+if [[ "$skip_browser" == true ]]; then
+  hermes_args+=(--skip-browser)
+fi
+HERMES_HOME="$hermes_home" HERMES_INSTALL_DIR="$hermes_install_dir" \
+  bash "$installer_file" "${hermes_args[@]}"
+rm -f "$installer_file"
+trap - EXIT
+
+installed_hermes_commit="$(git -C "$hermes_install_dir" rev-parse HEAD 2>/dev/null || true)"
+if [[ "$installed_hermes_commit" != "$hermes_commit" ]]; then
+  echo "XNOBrain agent engine revision mismatch." >&2
+  exit 1
 fi
 
 hermes_python="$hermes_install_dir/venv/bin/python"
@@ -316,8 +332,8 @@ trap - EXIT
 # packaged guidance. Existing named profiles remain untouched.
 bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$hermes_home/profiles"
 
-# Match the Docker runtime's private 9router identity. The API adapter and
-# router process read the same files, while credentials remain outside git.
+# Match the Docker runtime's private provider identity. The API adapter and
+# provider process read the same files, while credentials remain outside git.
 if [[ ! -s "$router_data_dir/machine-id" ]]; then
   machine_id="$(cat /etc/machine-id 2>/dev/null || hostname)"
   printf '%s' "$machine_id" > "$router_data_dir/machine-id"
@@ -344,12 +360,10 @@ cat <<EOF
 
 XNOBrain local installation complete.
 
-Project Python: $project_python
-Hermes:         $hermes_install_dir/venv/bin/hermes
-Agent command:  $npm_prefix/bin/agent
-9router:        $npm_prefix/bin/9router
-Data:           $hermes_home
-Router data:    $router_data_dir
+Project Python:  $project_python
+Agent command:   $npm_prefix/bin/agent
+Agent data:      $hermes_home
+Provider data:   $router_data_dir
 
 Start development with:
   cd "$project_dir"

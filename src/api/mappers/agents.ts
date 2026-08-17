@@ -10,9 +10,9 @@ export function mapAgent(dto: AgentDTO): Agent {
     description: dto.description ?? '',
     soul: dto.soul ?? '',
     status: dto.status ?? 'unknown',
-    // nine-router is the only runtime transport and is intentionally omitted
+    // The provider runtime is not a user-selectable provider and is omitted
     // from the public agent DTO because it is not a user-selectable provider.
-    provider: config?.provider ?? 'nine-router',
+    provider: config?.provider ?? 'xnobrain',
     model: config?.model ?? '',
     reasoningEffort: config?.reasoning_effort ?? config?.effort ?? '',
     approvalMode: config?.approval_mode === 'on' || config?.approval_mode === 'manual' ? 'manual' : 'auto',

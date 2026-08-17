@@ -47,7 +47,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.root.mkdir(parents=True)
         self.profiles.mkdir(parents=True)
         (self.root / "config.yaml").write_text(yaml.safe_dump({
-            "model": {"provider": "custom:nine-router", "default": "auto"},
+            "model": {"provider": "custom:xnobrain", "default": "auto"},
             "providers": {}, "agent": {"reasoning_effort": "medium"},
             "approvals": {"mode": "manual"}, "terminal": {"backend": "local"},
         }), encoding="utf-8")
@@ -337,7 +337,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_health_identifies_fastapi_database_free_runtime(self):
         async with self.client() as client:
             response = await client.get("/xnobrain/api/runtime/v1/health")
-            router_response = await client.get("/xnobrain/api/runtime/v1/health/9router")
+            router_response = await client.get("/xnobrain/api/runtime/v1/health/provider-runtime")
             deployment_response = await client.get("/xnobrain/api/runtime/v1/system/deployment")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["data"]["api"], "fastapi")
@@ -351,11 +351,11 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             return_value={"available": False, "error": "connection refused"}
         )
         async with self.client() as client:
-            response = await client.get("/xnobrain/api/runtime/v1/health/9router")
+            response = await client.get("/xnobrain/api/runtime/v1/health/provider-runtime")
         self.assertEqual(response.status_code, 503)
         self.assertEqual(
             response.json()["error"]["code"],
-            "nine_router_unavailable",
+            "provider_runtime_unavailable",
         )
 
     def test_existing_profile_model_is_migrated_to_auto_once(self):
@@ -1329,7 +1329,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(part.status_code, 201, part.text)
         self.assertEqual(completed.status_code, 400, completed.text)
-        self.assertEqual(completed.json()["error"]["code"], "invalid_hermes_profile")
+        self.assertEqual(completed.json()["error"]["code"], "invalid_agent_profile")
         self.assertEqual(applied.status_code, 409, applied.text)
         self.assertFalse((self.profiles / "not-hermes").exists())
 

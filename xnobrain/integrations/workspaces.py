@@ -32,7 +32,7 @@ class WorkspacesMixin:
                 }
             )
         return {
-            "object": "hermes.agent_workspace",
+            "object": "xnobrain.agent_workspace",
             "agent": name,
             "path": str(directory.relative_to(self._workspace_dir(name))),
             "entries": entries,
@@ -54,7 +54,7 @@ class WorkspacesMixin:
             )
         content = file_path.read_bytes()
         return {
-            "object": "hermes.agent_workspace_file",
+            "object": "xnobrain.agent_workspace_file",
             "agent": name,
             "path": str(file_path.relative_to(self._workspace_dir(name))),
             "size_bytes": len(content),
@@ -82,7 +82,7 @@ class WorkspacesMixin:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         self._write_bytes_atomic(file_path, content, mode=0o640)
         return {
-            "object": "hermes.agent_workspace_file",
+            "object": "xnobrain.agent_workspace_file",
             "agent": name,
             "path": str(file_path.relative_to(self._workspace_dir(name))),
             "size_bytes": len(content),
@@ -101,7 +101,7 @@ class WorkspacesMixin:
             shutil.rmtree(target)
         else:
             target.unlink()
-        return {"object": "hermes.agent_workspace_delete", "agent": name, "deleted": True}
+        return {"object": "xnobrain.agent_workspace_delete", "agent": name, "deleted": True}
 
 
     def read_memory(self, raw_name: Any) -> dict[str, Any]:
@@ -109,7 +109,7 @@ class WorkspacesMixin:
         profile_dir = self._require_profile(name)
         mem_dir = profile_dir / "memories"
         return {
-            "object": "hermes.agent_memory",
+            "object": "xnobrain.agent_memory",
             "agent": name,
             "memory": self._read_text(mem_dir / "MEMORY.md"),
             "user": self._read_text(mem_dir / "USER.md"),

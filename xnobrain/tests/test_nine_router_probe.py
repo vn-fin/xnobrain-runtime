@@ -5,7 +5,7 @@ Skips cleanly when no 9router answers on :20128 (the rest of the suite fakes the
 router; this is the only test that talks to a real one). ``test_pins_agree``
 never skips.
 
-Observed against 9router v0.5.40 (2026-07-25):
+Observed against provider runtime v0.5.55 (2026-08-17):
   * GET  /api/providers            -> {"connections": [ {id, provider, authType,
         name, email, priority, isActive, testStatus, lastError, ...,
         providerSpecificData} ]}     (no defaultModel; creds under

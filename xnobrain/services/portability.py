@@ -632,40 +632,40 @@ class PortabilityService:
         agents = manifest.get("agents")
         if not isinstance(agents, list) or not agents:
             raise StoreError(
-                "bundle does not contain a Hermes profile",
-                code="invalid_hermes_profile",
+                "bundle does not contain an XNOBrain agent profile",
+                code="invalid_agent_profile",
             )
         declared: set[str] = set()
         for item in agents:
             if not isinstance(item, Mapping):
                 raise StoreError(
-                    "bundle contains invalid Hermes profile metadata",
-                    code="invalid_hermes_profile",
+                    "bundle contains invalid agent profile metadata",
+                    code="invalid_agent_profile",
                 )
             profile_id = self.repository._id(item.get("id"), "agent id")
             if profile_id in declared:
                 raise StoreError(
-                    "bundle contains duplicate Hermes profiles",
-                    code="invalid_hermes_profile",
+                    "bundle contains duplicate agent profiles",
+                    code="invalid_agent_profile",
                 )
             declared.add(profile_id)
             config_name = f"profiles/{profile_id}/config.yaml"
             if config_name not in files:
                 raise StoreError(
-                    f"profile {profile_id} is not a Hermes profile: config.yaml is missing",
-                    code="invalid_hermes_profile",
+                    f"profile {profile_id} is not an XNOBrain agent profile: config.yaml is missing",
+                    code="invalid_agent_profile",
                 )
             try:
                 config = yaml.safe_load(archive.read(config_name)) or {}
             except (OSError, UnicodeDecodeError, yaml.YAMLError) as error:
                 raise StoreError(
-                    f"profile {profile_id} is not a Hermes profile: config.yaml is invalid",
-                    code="invalid_hermes_profile",
+                    f"profile {profile_id} is not an XNOBrain agent profile: config.yaml is invalid",
+                    code="invalid_agent_profile",
                 ) from error
             if not isinstance(config, Mapping):
                 raise StoreError(
-                    f"profile {profile_id} is not a Hermes profile: config.yaml must be an object",
-                    code="invalid_hermes_profile",
+                    f"profile {profile_id} is not an XNOBrain agent profile: config.yaml must be an object",
+                    code="invalid_agent_profile",
                 )
         return declared
 
@@ -1049,5 +1049,4 @@ class PortabilityService:
                         shutil.rmtree(directory)
                 except OSError:
                     continue
-
 

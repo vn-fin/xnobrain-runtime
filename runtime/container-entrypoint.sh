@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${HERMES_HOME:?HERMES_HOME is required}"
-: "${NINE_ROUTER_DATA_DIR:?NINE_ROUTER_DATA_DIR is required}"
+HERMES_HOME="${XNOBRAIN_AGENT_HOME:-${HERMES_HOME:-}}"
+NINE_ROUTER_DATA_DIR="${XNOBRAIN_PROVIDER_DATA_DIR:-${NINE_ROUTER_DATA_DIR:-}}"
+: "${HERMES_HOME:?XNOBRAIN_AGENT_HOME is required}"
+: "${NINE_ROUTER_DATA_DIR:?XNOBRAIN_PROVIDER_DATA_DIR is required}"
 export HERMES_HOME NINE_ROUTER_DATA_DIR
-export HERMES_ROOT_PROFILE="${HERMES_ROOT_PROFILE:-$HERMES_HOME}"
-export HERMES_PROFILES_ROOT="${HERMES_PROFILES_ROOT:-$HERMES_HOME/profiles}"
+export HERMES_ROOT_PROFILE="${XNOBRAIN_AGENT_HOME:-${HERMES_ROOT_PROFILE:-$HERMES_HOME}}"
+export HERMES_PROFILES_ROOT="${XNOBRAIN_AGENT_PROFILES_ROOT:-${HERMES_PROFILES_ROOT:-$HERMES_HOME/profiles}}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$NINE_ROUTER_DATA_DIR"
 hermes_python="${HERMES_RUNTIME_PYTHON:-/usr/local/lib/hermes-agent/venv/bin/python}"
 if [[ ! -x "$hermes_python" ]]; then
-  echo "Hermes runtime Python not found: $hermes_python" >&2
+  echo "XNOBrain runtime Python not found: $hermes_python" >&2
   exit 1
 fi
 # Hermes keeps its updater under HERMES_HOME/bin. The image provides uv as a
@@ -27,7 +29,7 @@ if [[ "$HERMES_PROFILES_ROOT" != "$HERMES_HOME/profiles" && ! -e "$HERMES_HOME/p
 fi
 /usr/local/bin/xnobrain-prepare-nine-router-auth
 NINE_ROUTER_API_KEY="$(< "$NINE_ROUTER_DATA_DIR/auth/cli-token")"
-: "${NINE_ROUTER_API_KEY:?9router CLI token is empty}"
+: "${NINE_ROUTER_API_KEY:?provider runtime token is empty}"
 export NINE_ROUTER_API_KEY
 touch "$HERMES_HOME/.env"
 chmod 700 "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$NINE_ROUTER_DATA_DIR"

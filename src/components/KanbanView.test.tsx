@@ -13,7 +13,7 @@ const researchAgent: Agent = {
   name: 'research-agent',
   description: 'Finds and writes useful information',
   status: 'active',
-  provider: 'nine-router',
+  provider: 'xnobrain',
   model: 'auto',
   reasoningEffort: 'medium',
   approvalMode: 'auto',

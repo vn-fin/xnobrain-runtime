@@ -22,7 +22,7 @@ class CronDeliveryAdapter:
         try:
             from cron.blueprint_catalog import CATALOG, blueprint_catalog_entry
         except Exception as exc:
-            raise CronDeliveryAdapterError("Hermes automation blueprints are unavailable") from exc
+            raise CronDeliveryAdapterError("Agent automation blueprints are unavailable") from exc
         rows: list[dict[str, Any]] = []
         for blueprint in CATALOG:
             entry = dict(blueprint_catalog_entry(blueprint))
@@ -35,7 +35,7 @@ class CronDeliveryAdapter:
         try:
             from cron.blueprint_catalog import BlueprintFillError, fill_blueprint, get_blueprint
         except Exception as exc:
-            raise CronDeliveryAdapterError("Hermes automation blueprints are unavailable") from exc
+            raise CronDeliveryAdapterError("Agent automation blueprints are unavailable") from exc
         blueprint = get_blueprint(str(blueprint_key or "").strip())
         if blueprint is None:
             raise CronBlueprintNotFound("automation blueprint not found")

@@ -198,7 +198,7 @@ class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
         })
         data = (await manager.list_models())["data"]
         ids = [(row["id"], row["provider"]) for row in data]
-        self.assertEqual(ids[0], ("auto", "nine-router"))
+        self.assertEqual(ids[0], ("auto", "xnobrain"))
         self.assertIn(("duo", "blend"), ids)
         self.assertLess(ids.index(("duo", "blend")), ids.index(("cx/gpt", "codex")))
         # the auto combo POST must not include the blend id (no "/")
@@ -268,7 +268,7 @@ class FakeBlendRouter:
         self._settings["combo_sticky_limit"] = limit
 
     async def list_models(self):
-        data = [{"id": "auto", "provider": "nine-router", "name": "Auto"}]
+        data = [{"id": "auto", "provider": "xnobrain", "name": "Auto"}]
         for combo in self._combos:
             data.append({"id": combo["name"], "provider": "blend", "name": combo["name"]})
         for model in self._models:
@@ -449,7 +449,7 @@ class BlendRouteTests(unittest.IsolatedAsyncioTestCase):
         root.mkdir(parents=True)
         profiles.mkdir(parents=True)
         (root / "config.yaml").write_text(yaml.safe_dump({
-            "model": {"provider": "custom:nine-router", "default": "auto"},
+            "model": {"provider": "custom:xnobrain", "default": "auto"},
             "providers": {}, "agent": {"reasoning_effort": "medium"},
             "approvals": {"mode": "manual"}, "terminal": {"backend": "local"},
         }), encoding="utf-8")
@@ -497,7 +497,7 @@ class BlendRouteTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unavailable_router_returns_503(self):
         async def boom():
-            raise NineRouterAPIError("9Router is unavailable", code="nine_router_unavailable", status=503)
+            raise NineRouterAPIError("9Router is unavailable", code="provider_runtime_unavailable", status=503)
         self.router.list_combos = lambda: boom()
         async with self.client() as client:
             self.assertEqual((await client.get("/xnobrain/api/runtime/v1/blends")).status_code, 503)

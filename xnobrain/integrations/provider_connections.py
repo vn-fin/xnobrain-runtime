@@ -23,13 +23,13 @@ class ProviderConnectionsMixin:
             connections = await self.list_connections()
         except NineRouterAPIError as exc:
             return {
-                "object": "nine_router.status",
+                "object": "xnobrain.provider_runtime.status",
                 "available": False,
                 "base_url": self.base_url,
                 "error": str(exc),
             }
         return {
-            "object": "nine_router.status",
+            "object": "xnobrain.provider_runtime.status",
             "available": True,
             "base_url": self.base_url,
             "provider_count": len(connections["connections"]),
@@ -78,7 +78,7 @@ class ProviderConnectionsMixin:
                     "priority": self._number(item.get("priority")),
                 }
             )
-        return {"object": "nine_router.providers", "connections": connections}
+        return {"object": "xnobrain.provider_runtime.providers", "connections": connections}
 
 
     async def list_provider_nodes(self) -> list[dict[str, str]]:
@@ -210,7 +210,7 @@ class ProviderConnectionsMixin:
         models = (await self.list_models(ensure_auto=False))["data"]
         await self._ensure_auto_combo(models)
         return {
-            "object": "nine_router.provider_delete",
+            "object": "xnobrain.provider_runtime.provider_delete",
             "id": connection_id,
             "deleted": True,
         }
@@ -251,7 +251,7 @@ class ProviderConnectionsMixin:
         if isinstance(payload, Mapping) and isinstance(payload.get("connection"), Mapping):
             return self._filtered_connection_response(payload)
         return {
-            "object": "nine_router.provider_update",
+            "object": "xnobrain.provider_runtime.provider_update",
             "id": connection_id,
             "updated": True,
         }

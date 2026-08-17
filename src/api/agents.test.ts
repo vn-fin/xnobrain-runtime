@@ -29,7 +29,7 @@ describe('agentsApi profile display names', () => {
     expect(profile.id).toBe('a1b2c3');
     expect(profile.name).toBe('Research Lead');
     expect(profile.title).toBe('Research Lead');
-    expect(profile.provider).toBe('nine-router');
+    expect(profile.provider).toBe('xnobrain');
     expect(profile.workspace).toBe('a1b2c3/workspace');
   });
 
@@ -76,7 +76,7 @@ describe('agentsApi profile display names', () => {
     await agentsApi.update('a1b2c3', { provider: 'codex', model: 'cx/gpt-5.4' });
 
     expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
-      provider: 'nine-router',
+      provider: 'xnobrain',
       model: 'cx/gpt-5.4',
     });
   });

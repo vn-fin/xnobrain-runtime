@@ -81,7 +81,7 @@ export type QuotaOverlay = {
 };
 
 export type AnalyticsSource = {
-  kind: 'nine_router' | 'live_profiles';
+  kind: 'provider_runtime' | 'live_profiles';
   durable: boolean;
   label: string;
   message: string;

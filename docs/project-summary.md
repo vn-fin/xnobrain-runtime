@@ -43,6 +43,6 @@ make run
 ```
 
 The two application images are `xnobrain-frontend` and
-`xnobrain-hermes-runtime`. Open <http://localhost:5152> and use
+`xnobrain-runtime`. Open <http://localhost:5152> and use
 <http://localhost:5152/xnobrain/api/runtime/swagger_docs> for the unified OpenAPI
 documentation.

@@ -20,7 +20,7 @@ const agents: Agent[] = ['one', 'two', 'three', 'four'].map((id) => ({
   title: id,
   description: '',
   status: 'ready',
-  provider: 'nine-router',
+  provider: 'xnobrain',
   model: 'auto',
   reasoningEffort: 'medium',
   approvalMode: 'manual',

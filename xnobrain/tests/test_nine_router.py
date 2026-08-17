@@ -464,8 +464,8 @@ class NineRouterConfigTests(unittest.TestCase):
         self.assertEqual(selected, "cx/gpt-5.4")
         self.assertEqual(config["model"]["provider"], NINE_ROUTER_PROVIDER)
         self.assertEqual(config["model"]["base_url"], NINE_ROUTER_API_BASE_URL)
-        self.assertEqual(list(config["providers"]), ["nine-router"])
-        self.assertEqual(config["providers"]["nine-router"]["model"], "cx/gpt-5.4")
+        self.assertEqual(list(config["providers"]), ["xnobrain"])
+        self.assertEqual(config["providers"]["xnobrain"]["model"], "cx/gpt-5.4")
         self.assertNotIn("fallback_providers", config)
         self.assertEqual(config["agent"]["reasoning_effort"], "high")
 
@@ -1849,7 +1849,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 "timeout_seconds": 1,
                 "conversation_id": "proof-session",
                 "model": "auto",
-                "engine": "hermes",
+                "engine": "xnobrain",
             }
 
             payload = b"".join(

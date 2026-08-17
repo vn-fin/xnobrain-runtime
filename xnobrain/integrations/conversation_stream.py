@@ -700,7 +700,7 @@ class ConversationStreamMixin:
                 bool(body.get("resolve_all", False)),
             )
         except ImportError as error:
-            raise AgentAPIError("Hermes approval core is unavailable", code="approval_unavailable", status=503) from error
+            raise AgentAPIError("Agent approval service is unavailable", code="approval_unavailable", status=503) from error
         if resolved == 0:
             raise AgentAPIError("run has no pending approval", code="approval_not_pending", status=409)
         if state is not None:

@@ -66,7 +66,7 @@ class FakeRouter:
             "test_status": "unknown", "last_error": "",
         }
         self._rows.append(row)
-        return {"object": "nine_router.provider", "connection": dict(row)}
+        return {"object": "xnobrain.provider_runtime.provider", "connection": dict(row)}
 
     async def ensure_openai_compatible_provider(
         self, provider, *, display_name, base_url, router_prefix=None,
@@ -94,7 +94,7 @@ class FakeRouter:
                     row["active"] = active
                 if priority is not None:
                     row["priority"] = priority
-                return {"object": "nine_router.provider", "connection": dict(row)}
+                return {"object": "xnobrain.provider_runtime.provider", "connection": dict(row)}
         return {"updated": True}
 
     async def delete_connection(self, connection_id):
@@ -122,7 +122,7 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         root.mkdir(parents=True)
         profiles.mkdir(parents=True)
         (root / "config.yaml").write_text(yaml.safe_dump({
-            "model": {"provider": "custom:nine-router", "default": "auto"},
+            "model": {"provider": "custom:xnobrain", "default": "auto"},
             "providers": {}, "agent": {"reasoning_effort": "medium"},
             "approvals": {"mode": "manual"}, "terminal": {"backend": "local"},
         }), encoding="utf-8")

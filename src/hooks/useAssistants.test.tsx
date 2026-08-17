@@ -11,7 +11,7 @@ const agents: Agent[] = ['agent-one', 'agent-two'].map((id) => ({
   name: id,
   description: '',
   status: 'active',
-  provider: 'nine-router',
+  provider: 'xnobrain',
   model: 'auto',
   reasoningEffort: 'medium',
   approvalMode: 'on',

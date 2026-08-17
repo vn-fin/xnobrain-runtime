@@ -29,7 +29,7 @@ function compatibleProvider(id: 'xai' | 'openrouter' | 'groq', displayName: stri
   return mapConnectionProvider({
     id,
     display_name: displayName,
-    description: `${displayName} through 9router`,
+    description: `${displayName} through the provider runtime`,
     provider_type: id,
     connection_mode: 'api-key',
     connected: false,

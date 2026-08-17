@@ -48,6 +48,6 @@ Set `LOG_LEVEL` in `.env` to change the minimum level.
 Builds produce only:
 
 - `xnobrain-frontend:<tag>`
-- `xnobrain-hermes-runtime:<tag>` (FastAPI, Hermes, and 9router)
+- `xnobrain-runtime:<tag>` (FastAPI, Hermes, and 9router)
 
 `make build` also creates the checksummed split OCI bundle under `bin/images`.

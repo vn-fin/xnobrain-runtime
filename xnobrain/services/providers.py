@@ -105,13 +105,13 @@ class ProvidersServiceMixin:
         current = next(item for item in items if item["id"] == provider)
         return {"provider_id": provider, "connection_mode": current["connection_mode"], "connected": current["connected"], "status": current["status"], "default_model": current["default_model"], "available_models": current["available_models"]}
 
-    async def nine_router_health(self) -> dict[str, Any]:
+    async def provider_runtime_health(self) -> dict[str, Any]:
         status = await self.router.status()
         if not status.get("available"):
             raise ServiceError(
                 "Provider runtime is unavailable",
                 status=503,
-                code="nine_router_unavailable",
+                code="provider_runtime_unavailable",
             )
         return {
             "status": "ok",
@@ -337,7 +337,7 @@ class ProvidersServiceMixin:
             "connection_mode": "api-key",
             "required_client_action": "submit_text",
             "instructions": (
-                "Enter the provider API key. It is stored by 9router, not "
+                "Enter the provider API key. It is stored by the local provider runtime, not "
                 "XNOBrain."
             ),
             "text_label": "API key",
@@ -349,7 +349,7 @@ class ProvidersServiceMixin:
                 "verification_url": "https://opencode.ai/auth",
                 "instructions": (
                     "Sign in to OpenCode, subscribe to Go, then paste the "
-                    "issued API key here. The key is stored by 9router, not "
+                    "issued API key here. The key is stored by the local provider runtime, not "
                     "XNOBrain."
                 ),
             })

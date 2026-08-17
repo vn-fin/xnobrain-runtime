@@ -39,7 +39,7 @@ class LocalRuntimeManager:
                 "id": hostname,
                 "status": "running",
                 "type": "container",
-                "image": os.getenv("XNOBRAIN_RUNTIME_IMAGE", "xnobrain-hermes-runtime"),
+                "image": os.getenv("XNOBRAIN_RUNTIME_IMAGE", "xnobrain-runtime"),
                 "created_at": datetime.fromtimestamp(self.started_at, timezone.utc).isoformat().replace("+00:00", "Z"),
                 "gateway": {"healthy": True, "port": int(os.getenv("API_SERVER_PORT", "8642"))},
                 "resources": {

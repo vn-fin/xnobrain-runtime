@@ -37,6 +37,7 @@ from .nine_router import (
     NINE_ROUTER_DEFAULT_MODEL,
     NINE_ROUTER_KEY_ENV,
     NINE_ROUTER_PROVIDER,
+    NINE_ROUTER_PROVIDER_KEY,
     NineRouterAPIError,
     NineRouterManager,
     display_nine_router_model,

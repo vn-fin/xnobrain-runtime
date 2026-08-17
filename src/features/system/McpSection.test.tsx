@@ -20,7 +20,7 @@ const agent: Agent = {
   name: 'agent-one',
   description: '',
   status: 'active',
-  provider: 'nine-router',
+  provider: 'xnobrain',
   model: 'auto',
   reasoningEffort: 'medium',
   approvalMode: 'on',

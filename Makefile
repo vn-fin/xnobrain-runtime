@@ -5,7 +5,7 @@ PYTHON_BIN := $(if $(wildcard $(CURDIR)/.tools/python/bin/python),$(CURDIR)/.too
 CONTAINER_CLI ?= docker
 IMAGE_TAG ?= local
 XNOBRAIN_FRONTEND_IMAGE ?= xnobrain-frontend:$(IMAGE_TAG)
-XNOBRAIN_RUNTIME_IMAGE ?= xnobrain-hermes-runtime:$(IMAGE_TAG)
+XNOBRAIN_RUNTIME_IMAGE ?= xnobrain-runtime:$(IMAGE_TAG)
 .PHONY: dev backend src test check smoke-api build run image frontend-image runtime-image bundle load-bundle install install-local brain-app-image dev-app linux-app linux-app-local win-app mac-app rpm-app
 
 dev:

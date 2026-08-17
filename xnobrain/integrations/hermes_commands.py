@@ -19,7 +19,7 @@ class HermesCommandsMixin:
         name: str,
         command: list[str],
         *,
-        engine: str = "hermes",
+        engine: str = "xnobrain",
         timeout_seconds: int,
     ) -> dict[str, Any]:
         return await self._run_hermes_command(
@@ -37,7 +37,7 @@ class HermesCommandsMixin:
         cwd: Path,
         command: list[str],
         *,
-        engine: str = "hermes",
+        engine: str = "xnobrain",
         timeout_seconds: int,
     ) -> dict[str, Any]:
         env = self._command_env(hermes_home, engine)

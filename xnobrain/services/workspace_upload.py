@@ -137,7 +137,7 @@ class WorkspaceUploadService:
             )
             if len(received) != total_chunks:
                 return {
-                    "object": "hermes.agent_workspace_upload",
+                    "object": "xnobrain.agent_workspace_upload",
                     "agent": agent_id,
                     "upload_id": upload_id,
                     "path": relative_target,
@@ -155,7 +155,7 @@ class WorkspaceUploadService:
             shutil.rmtree(session)
             self._sync_dir(self.root)
             return {
-                "object": "hermes.agent_workspace_file",
+                "object": "xnobrain.agent_workspace_file",
                 "agent": agent_id,
                 "upload_id": upload_id,
                 "path": relative_target,

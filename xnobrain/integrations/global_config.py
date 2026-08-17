@@ -10,6 +10,7 @@ from .config_support import (
     NINE_ROUTER_API_BASE_URL,
     NINE_ROUTER_DEFAULT_MODEL,
     NINE_ROUTER_PROVIDER,
+    NINE_ROUTER_PROVIDER_KEY,
     Path,
     _MISSING,
     display_nine_router_model,
@@ -94,9 +95,9 @@ class GlobalConfigMixin:
 
         if "provider" in body:
             provider = self._nonempty_string(body["provider"], "provider").lower()
-            if provider not in {"9router", "nine-router", "auto", NINE_ROUTER_PROVIDER}:
+            if provider not in {"xnobrain", "9router", "nine-router", "auto", NINE_ROUTER_PROVIDER}:
                 raise ConfigAPIError(
-                    "provider must be nine-router",
+                    "provider must be xnobrain",
                     code="unsupported_provider",
                 )
             touched = True
@@ -171,7 +172,7 @@ class GlobalConfigMixin:
             )
         )
         self._set_nested(normalized, ("model", "default"), public_model)
-        provider_config = normalized.get("providers", {}).get("nine-router")
+        provider_config = normalized.get("providers", {}).get(NINE_ROUTER_PROVIDER_KEY)
         if isinstance(provider_config, dict):
             for field in ("default_model", "model"):
                 if field in provider_config:
@@ -182,11 +183,11 @@ class GlobalConfigMixin:
         approval = self._get_nested(config, ("approvals", "mode"), "off")
         soul = self._read_text(self.root_profile / "SOUL.md")
         return {
-            "object": "hermes.global_config",
+            "object": "xnobrain.global_config",
             "root_profile": str(self.root_profile),
             "config_path": str(self.root_profile / "config.yaml"),
             "soul_path": str(self.root_profile / "SOUL.md"),
-            "provider": "nine-router",
+            "provider": NINE_ROUTER_PROVIDER_KEY,
             "model": public_model,
             "base_url": NINE_ROUTER_API_BASE_URL,
             "reasoning": effort != "none",
