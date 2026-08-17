@@ -1,0 +1,4 @@
+interface:
+  display_name: "XNOBrain Runtime"
+  short_description: "Implement and verify runtime features"
+  default_prompt: "Use $xnobrain-runtime to implement and verify a XNOBrain runtime feature."

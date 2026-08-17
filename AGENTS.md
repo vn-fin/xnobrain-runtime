@@ -103,3 +103,28 @@ Run UI tests and builds in the sibling `xnobrain-ui` repository.
 - Do not add a static `docs/openapi.yaml`; FastAPI generates OpenAPI at runtime.
 - Keep the runtime Compose build context at this repository root; the UI image
   is built from the sibling `xnobrain-ui` repository.
+
+## Read order and feature workflow
+
+Before runtime work, read `.agents/rules/01-start-here.md`, the applicable
+rules in `.agents/rules/`, and the relevant reference in `docs/`. Use
+`$xnobrain-runtime` for general runtime changes; use the existing
+`$xnobrain-backend`, `$xnobrain-frontend`, `$hermes-agent` extension guidance,
+or `$tauri-app-development` skill when the task is specific to those areas.
+
+For a new feature, identify its service group, trace the route through model,
+operation, service, repository/integration, and tests, then implement a
+focused vertical slice. Update the versioned API contract in `docs/api.md` or
+`docs/contracts/` when the public behavior changes. Add regression tests under
+`xnobrain/tests/`, preserve profile isolation and atomic snapshots, and run a
+focused test followed by `make check`. Runtime UI source belongs in the sibling
+`xnobrain-ui` repository; the separate `app/` tree is out of scope unless the
+request explicitly includes it.
+
+Useful references:
+
+- [`docs/architecture.md`](docs/architecture.md) — runtime layers and profile persistence.
+- [`docs/api.md`](docs/api.md) — public runtime API and generated docs paths.
+- [`docs/contracts/`](docs/contracts/) — cross-repository protocols.
+- [`docs/development.md`](docs/development.md) — local development workflow.
+- [`.agents/rules/`](.agents/rules/) — focused coding and boundary rules.

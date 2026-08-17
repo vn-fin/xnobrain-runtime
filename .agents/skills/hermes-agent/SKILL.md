@@ -9,7 +9,6 @@ description: >-
   and slash/profile commands. Triggers: "hermes tool", "hermes plugin",
   "register a tool", "AIAgent", "run_agent", "hermes core", "extend hermes",
   "toolset", "hermes hook", "hermes slash command".
-version: 1.0.0
 metadata:
   hermes:
     tags: [hermes, core, tools, plugins, extension, python-library, agent-runtime]
