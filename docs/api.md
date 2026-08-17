@@ -9,6 +9,7 @@ grouped by feature:
 - `/xnobrain/api/runtime/v1/agents`, `/profiles`, config, skills, memory, workspaces,
   MCP, providers, and cron
 - `/xnobrain/api/runtime/v1/conversations` for history and structured SSE runs
+- `/xnobrain/api/runtime/v1/analytics` for UTC usage series and per-agent weekly budgets
 - `/xnobrain/api/runtime/v1/teams`, `/bundles`, `/notifications`, limits, and deployment
 - `/xnobrain/api/runtime/v1/sandboxes` for local runtime information/setup
 
@@ -32,6 +33,14 @@ Agent execution activity is available as a compatibility snapshot at
 `activity` event initially and whenever an agent changes between `idle` and
 `running`. The runtime caches the database-backed Kanban portion for ten
 seconds so status monitoring does not continuously scan every board.
+
+Agent budgets use `weekly_usd` at
+`GET|PUT /xnobrain/api/runtime/v1/analytics/agents/{agent_id}/budget`. The
+minimum configured limit is USD 1; clearing the value restores the USD 20
+default. Weeks run Sunday 00:00 through the following Sunday 00:00 UTC, and
+the response returns both boundaries as RFC3339 timestamps. A new chat run is
+accepted only while `spend_usd < weekly_usd`. An accepted run is never stopped
+mid-turn when it takes usage over the limit.
 
 The provider catalog returns subscription connections first in common-use
 order: Claude Code, OpenAI Codex, GitHub Copilot, Cursor, Grok Build, Google

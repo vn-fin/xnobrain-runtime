@@ -25,6 +25,7 @@ from xnobrain.integrations.analytics import (
     aggregate_router_usage,
     period_spend,
 )
+from xnobrain.services.analytics import _sunday_start
 
 
 class FakeRouter:
@@ -263,7 +264,12 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(out["totals"]["estimated_cost_usd"], 0.14, places=6)
         self.assertEqual({row["model"] for row in out["by_model"]}, {"m1"})
 
-        spend = period_spend(profile, since_epoch=now - 30 * 86400, cost_basis="estimated")
+        spend = period_spend(
+            profile,
+            since_epoch=now - 30 * 86400,
+            until_epoch=now,
+            cost_basis="estimated",
+        )
         self.assertAlmostEqual(spend, 0.14, places=6)
 
     def test_aggregate_router_usage_models_providers_and_status(self):
@@ -505,33 +511,87 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-    async def test_budget_advisory_set_get_and_clear(self):
+    async def test_weekly_budget_defaults_thresholds_and_clear(self):
         async with self.client() as client:
             a = await self._create_agent(client, "Agent A")
-            self._insert(a, model="m1", inp=100, out=50, est=0.30)
+            self._insert(a, model="m1", inp=100, out=50, est=14.00)
+
+            default = (await client.get(
+                f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget"
+            )).json()["data"]
+            self.assertEqual(default["weekly_usd"], 20)
+            self.assertFalse(default["configured"])
+            self.assertEqual(default["severity"], "yellow")
+            self.assertTrue(default["accepting_chats"])
+            self.assertTrue(default["period_start"].endswith("Z"))
+            self.assertTrue(default["period_end"].endswith("Z"))
 
             ok = (await client.put(
                 f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget",
-                json={"monthly_usd": 1000})).json()["data"]
+                json={"weekly_usd": 17.5})).json()["data"]
             self.assertEqual(ok["status"], "ok")
-            self.assertTrue(ok["advisory"])
-            self.assertAlmostEqual(ok["spend_usd"], 0.30, places=6)
+            self.assertEqual(ok["severity"], "orange")
+            self.assertTrue(ok["configured"])
+            self.assertAlmostEqual(ok["spend_usd"], 14.00, places=6)
 
             over = (await client.put(
                 f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget",
-                json={"monthly_usd": 0.01})).json()["data"]
+                json={"weekly_usd": 14})).json()["data"]
             self.assertEqual(over["status"], "exceeded")
+            self.assertEqual(over["severity"], "red")
+            self.assertFalse(over["accepting_chats"])
 
-            # config.yaml carries the advisory block; a config snapshot was written
+            # config.yaml carries the weekly block; a config snapshot was written
             config = yaml.safe_load((self.profiles / a / "config.yaml").read_text("utf-8"))
             self.assertIn("xnobrain_budget", config)
 
             cleared = (await client.put(
                 f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget",
-                json={"monthly_usd": None})).json()["data"]
-            self.assertEqual(cleared["status"], "unset")
+                json={"weekly_usd": None})).json()["data"]
+            self.assertEqual(cleared["weekly_usd"], 20)
+            self.assertFalse(cleared["configured"])
             config = yaml.safe_load((self.profiles / a / "config.yaml").read_text("utf-8"))
             self.assertNotIn("xnobrain_budget", config)
+
+    async def test_weekly_budget_minimum_and_chat_acceptance_gate(self):
+        async with self.client() as client:
+            a = await self._create_agent(client, "Agent A")
+            invalid = await client.put(
+                f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget",
+                json={"weekly_usd": 0.99},
+            )
+            self.assertEqual(invalid.status_code, 422)
+
+            self._insert(a, model="m1", inp=100, out=50, est=1.00)
+            budget = await client.put(
+                f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget",
+                json={"weekly_usd": 1},
+            )
+            self.assertEqual(budget.status_code, 200, budget.text)
+            session = await client.post(
+                f"/xnobrain/api/runtime/v1/sessions?agent={a}", json={"title": "Budget gate"},
+            )
+            self.assertEqual(session.status_code, 201, session.text)
+            session_id = session.json()["data"]["id"]
+            usage = await client.get(
+                f"/xnobrain/api/runtime/v1/sessions/{session_id}/usage?agent={a}"
+            )
+            self.assertEqual(usage.status_code, 200, usage.text)
+            self.assertEqual(usage.json()["data"]["weekly_budget"]["weekly_usd"], 1)
+
+            rejected = await client.post(
+                f"/xnobrain/api/runtime/v1/sessions/{session_id}/runs?agent={a}",
+                json={"input": "hello", "model": "auto"},
+            )
+            self.assertEqual(rejected.status_code, 402, rejected.text)
+            self.assertIn("Weekly budget reached", rejected.json()["message"])
+
+    def test_week_starts_sunday_at_midnight_utc(self):
+        value = datetime(2026, 8, 19, 18, 45, tzinfo=timezone.utc)  # Wednesday
+        self.assertEqual(
+            _sunday_start(value),
+            datetime(2026, 8, 16, 0, 0, tzinfo=timezone.utc),
+        )
 
     async def test_usage_is_read_only(self):
         async with self.client() as client:

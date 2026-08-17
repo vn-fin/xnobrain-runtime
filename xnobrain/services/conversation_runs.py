@@ -35,9 +35,10 @@ class _ActiveConversationRun:
 class ConversationRunService:
     """Own chat execution independently from any browser SSE connection."""
 
-    def __init__(self, repository, agents):
+    def __init__(self, repository, agents, analytics=None):
         self.repository = repository
         self.agents = agents
+        self.analytics = analytics
         self._active: dict[str, _ActiveConversationRun] = {}
         self._by_conversation: dict[tuple[str, str], str] = {}
 
@@ -64,6 +65,10 @@ class ConversationRunService:
                 status=409,
                 code="conversation_running",
             )
+        # This is the only enforcement point. Once accepted, a run is allowed
+        # to finish even when its cost pushes the weekly total over 100%.
+        if self.analytics is not None:
+            self.analytics.require_chat_budget(agent_id)
         mode = self._mode(body)
         timeout_seconds = session_timeout_seconds(body.get("timeout_seconds"))
         now = time.time()

@@ -169,6 +169,7 @@ class ConversationsServiceMixin:
                 "total_usd": cost,
             },
             "context": context_payload,
+            "weekly_budget": self.analytics.get_budget(agent_id),
         }
 
     def rename_conversation(self, agent_id: str, conversation_id: str, body: Mapping[str, Any]) -> dict[str, Any]:

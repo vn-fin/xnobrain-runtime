@@ -1,4 +1,4 @@
-"""Usage analytics and advisory budgets, computed on read.
+"""Usage analytics and enforced weekly budgets, computed on read.
 
 The unfiltered workspace view uses OmniRoute's durable usage ledger, so deleting a
 conversation or agent cannot erase historical totals. Current profile
@@ -33,6 +33,7 @@ _TOKEN_COLS = (
     "cache_write_tokens", "reasoning_tokens",
 )
 _BUDGET_KEY = "xnobrain_budget"
+DEFAULT_WEEKLY_BUDGET_USD = 20.0
 _MERGED_TTL = 20.0
 _CACHE_CAP = 512
 
@@ -168,26 +169,34 @@ class AnalyticsService:
     def set_budget(self, agent_id: str, patch: Mapping[str, Any]) -> dict[str, Any]:
         item = self._require_item(agent_id)
         config, path = self._read_config(agent_id)
-        monthly = patch.get("monthly_usd")
-        daily = patch.get("daily_usd")
+        weekly = patch.get("weekly_usd")
         new_config = dict(config)
-        if monthly is None and daily is None:
+        if weekly is None:
             new_config.pop(_BUDGET_KEY, None)
         else:
             new_config[_BUDGET_KEY] = {
-                "monthly_usd": _num_or_none(monthly),
-                "daily_usd": _num_or_none(daily),
-                "warn_threshold_percent": int(patch.get("warn_threshold_percent", 80)),
+                "weekly_usd": _num_or_none(weekly),
                 "cost_basis": (
                     "actual" if str(patch.get("cost_basis")) == "actual" else "estimated"
                 ),
-                "currency": str(patch.get("currency") or "USD"),
+                "currency": "USD",
             }
         if path.is_file():
             self.repository.snapshot(agent_id, "config", "config", path.read_bytes())
         self.repository.atomic_yaml(path, new_config)
         self._merged.clear()
         return self._budget_status(agent_id, item)
+
+    def require_chat_budget(self, agent_id: str) -> dict[str, Any]:
+        """Reject a new user turn once the agent has spent its weekly limit."""
+        status = self.get_budget(agent_id)
+        if not status["accepting_chats"]:
+            raise ServiceError(
+                "Weekly budget reached. Increase the agent budget or wait until Sunday.",
+                status=402,
+                code="weekly_budget_exceeded",
+            )
+        return status
 
     # ---- internals ----------------------------------------------------------
 
@@ -457,43 +466,45 @@ class AnalyticsService:
     def _budget_status(self, agent_id: str, item: Mapping[str, Any] | None) -> dict[str, Any]:
         config, _ = self._read_config(agent_id)
         budget = config.get(_BUDGET_KEY) if isinstance(config.get(_BUDGET_KEY), dict) else {}
-        monthly = _num_or_none(budget.get("monthly_usd"))
-        daily = _num_or_none(budget.get("daily_usd"))
+        configured_weekly = _num_or_none(budget.get("weekly_usd"))
+        weekly = configured_weekly or DEFAULT_WEEKLY_BUDGET_USD
         basis = "actual" if str(budget.get("cost_basis")) == "actual" else "estimated"
-        warn = int(budget.get("warn_threshold_percent") or 80)
-        currency = str(budget.get("currency") or "USD")
-        base = {
-            "monthly_usd": monthly, "daily_usd": daily,
-            "warn_threshold_percent": warn, "cost_basis": basis,
-            "currency": currency, "advisory": True,
-        }
-        if monthly is None and daily is None:
-            return {**base, "period_start": None, "spend_usd": 0.0,
-                    "daily_spend_usd": 0.0, "percent_used": 0, "status": "unset"}
         profile_dir = self._profile_dir(item or {})
         now = datetime.now(timezone.utc)
-        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = _sunday_start(now)
+        week_end = week_start + timedelta(days=7)
         spend = (
-            period_spend(profile_dir, since_epoch=month_start.timestamp(), cost_basis=basis)
+            period_spend(
+                profile_dir,
+                since_epoch=week_start.timestamp(),
+                until_epoch=now.timestamp(),
+                cost_basis=basis,
+            )
             if profile_dir is not None else 0.0
         )
-        daily_spend = (
-            period_spend(profile_dir, since_epoch=day_start.timestamp(), cost_basis=basis)
-            if profile_dir is not None else 0.0
+        percent = max(0.0, spend / weekly * 100)
+        accepting = spend < weekly
+        severity = (
+            "red" if percent >= 90
+            else "orange" if percent >= 80
+            else "yellow" if percent >= 70
+            else "normal"
         )
-        percent = 0
-        exceeded = False
-        if monthly:
-            percent = round(spend / monthly * 100)
-            exceeded = spend >= monthly
-        if daily and daily_spend >= daily:
-            exceeded = True
-        status = "exceeded" if exceeded else ("warning" if percent >= warn else "ok")
         return {
-            **base, "period_start": _iso(month_start),
-            "spend_usd": round(spend, 6), "daily_spend_usd": round(daily_spend, 6),
-            "percent_used": max(0, min(999, percent)), "status": status,
+            "weekly_usd": weekly,
+            "configured": configured_weekly is not None,
+            "default_weekly_usd": DEFAULT_WEEKLY_BUDGET_USD,
+            "cost_basis": basis,
+            "currency": "USD",
+            "period_start": _iso(week_start),
+            "period_end": _iso(week_end),
+            "week_starts_on": "sunday",
+            "spend_usd": round(spend, 6),
+            "remaining_usd": round(max(0.0, weekly - spend), 6),
+            "percent_used": round(percent, 2),
+            "status": "ok" if accepting else "exceeded",
+            "severity": severity,
+            "accepting_chats": accepting,
         }
 
     def _read_config(self, agent_id: str) -> tuple[dict[str, Any], Path]:
@@ -525,6 +536,12 @@ def _iso(value: datetime | None = None) -> str:
 
 def _epoch_iso(value: float) -> str:
     return _iso(datetime.fromtimestamp(value, tz=timezone.utc))
+
+
+def _sunday_start(value: datetime) -> datetime:
+    current = value.astimezone(timezone.utc)
+    midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    return midnight - timedelta(days=(midnight.weekday() + 1) % 7)
 
 
 def _num_or_none(value: Any) -> float | None:

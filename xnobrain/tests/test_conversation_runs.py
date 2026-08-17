@@ -40,6 +40,14 @@ class FakeAgents:
         self.finished.set()
 
 
+class FakeAnalytics:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def require_chat_budget(self, agent_id: str) -> None:
+        self.calls.append(agent_id)
+
+
 class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.temp = TemporaryDirectory()
@@ -48,7 +56,8 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         (profiles / "agent-one").mkdir(parents=True)
         self.repository = FileRepository(root / "data", profiles)
         self.agents = FakeAgents()
-        self.service = ConversationRunService(self.repository, self.agents)
+        self.analytics = FakeAnalytics()
+        self.service = ConversationRunService(self.repository, self.agents, self.analytics)
 
     async def asyncTearDown(self) -> None:
         await self.service.shutdown()
@@ -94,6 +103,17 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(completed["usage"], {"total_tokens": 12})
         self.assertEqual(self.agents.received["run_id"], record["id"])
         self.assertEqual(self.agents.received["conversation_id"], "session-one")
+
+    async def test_budget_is_checked_once_when_the_run_is_accepted(self) -> None:
+        record = await self.service.start_run(
+            "agent-one", "session-one", {"input": "hello", "model": "test/model"},
+        )
+        self.assertEqual(self.analytics.calls, ["agent-one"])
+
+        self.agents.release.set()
+        await asyncio.wait_for(self.agents.finished.wait(), timeout=1)
+        await self.wait_for_revision(record["id"], 3)
+        self.assertEqual(self.analytics.calls, ["agent-one"])
 
     async def test_interactive_and_explicit_timeout_policy(self) -> None:
         first = await self.service.start_run(

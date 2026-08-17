@@ -321,10 +321,12 @@ def aggregate_router_usage(
     }
 
 
-def period_spend(profile_dir: Path, *, since_epoch: float, cost_basis: str) -> float:
-    """Single read-only SUM of the chosen cost column since ``since_epoch``.
+def period_spend(
+    profile_dir: Path, *, since_epoch: float, until_epoch: float, cost_basis: str,
+) -> float:
+    """Single read-only SUM of the chosen cost column for an inclusive window.
 
-    Used for advisory budget evaluation. Returns 0.0 on any error.
+    Used for budget evaluation. Returns 0.0 on any error.
     """
     column = "actual_cost_usd" if cost_basis == "actual" else "estimated_cost_usd"
     db = profile_dir / "state.db"
@@ -336,8 +338,9 @@ def period_spend(profile_dir: Path, *, since_epoch: float, cost_basis: str) -> f
         return 0.0
     try:
         row = conn.execute(
-            f"SELECT COALESCE(SUM({column}),0) AS spend FROM sessions WHERE started_at > ?",
-            (since_epoch,),
+            f"SELECT COALESCE(SUM({column}),0) AS spend "
+            "FROM sessions WHERE started_at >= ? AND started_at <= ?",
+            (since_epoch, until_epoch),
         ).fetchone()
         return float(row["spend"] if row is not None else 0.0)
     except sqlite3.Error:
