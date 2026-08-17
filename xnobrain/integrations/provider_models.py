@@ -1,10 +1,10 @@
-"""Grouped ProviderModels behavior for 9router."""
+"""Provider model operations backed by OmniRoute."""
 
 from .nine_router_support import (
     Any,
     Mapping,
-    NINE_ROUTER_DEFAULT_MODEL,
-    NINE_ROUTER_PROVIDER_KEY,
+    OMNIROUTE_DEFAULT_MODEL,
+    OMNIROUTE_PROVIDER_KEY,
     NineRouterAPIError,
     OPENAI_COMPATIBLE_PROVIDERS,
     OPENCODE_ZEN_ROUTER_ALIAS,
@@ -43,7 +43,7 @@ class ProviderModelsMixin:
             if not isinstance(item, Mapping):
                 continue
             model_id = str(item.get("id") or "").strip()
-            if not model_id or model_id == NINE_ROUTER_DEFAULT_MODEL or model_id in seen:
+            if not model_id or model_id == OMNIROUTE_DEFAULT_MODEL or model_id in seen:
                 continue
             owner = str(item.get("owned_by") or self._model_owner(model_id)).strip()
             if owner == "combo":
@@ -87,12 +87,12 @@ class ProviderModelsMixin:
             await self._ensure_auto_combo(models)
         return {
             "object": "list",
-            "provider": NINE_ROUTER_PROVIDER_KEY,
-            "default_model": NINE_ROUTER_DEFAULT_MODEL,
+            "provider": OMNIROUTE_PROVIDER_KEY,
+            "default_model": OMNIROUTE_DEFAULT_MODEL,
             "data": [
                 {
-                    "id": NINE_ROUTER_DEFAULT_MODEL,
-                    "provider": NINE_ROUTER_PROVIDER_KEY,
+                    "id": OMNIROUTE_DEFAULT_MODEL,
+                    "provider": OMNIROUTE_PROVIDER_KEY,
                     "name": "Auto",
                 },
                 *blends,

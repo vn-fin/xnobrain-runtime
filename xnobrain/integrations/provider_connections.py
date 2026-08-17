@@ -1,4 +1,4 @@
-"""Grouped ProviderConnections behavior for 9router."""
+"""Provider connection operations backed by OmniRoute."""
 
 from .nine_router_support import (
     API_KEY_ROUTER_PROVIDERS,
@@ -157,7 +157,7 @@ class ProviderConnectionsMixin:
 
 
     async def openai_compatible_provider_id(self, provider: Any) -> str:
-        """Resolve a logical compatible-provider name to 9router's node id."""
+        """Resolve a logical compatible-provider name to OmniRoute's node id."""
         provider = self._provider(
             provider,
             OPENAI_COMPATIBLE_PROVIDERS | {"opencode"},
@@ -225,7 +225,7 @@ class ProviderConnectionsMixin:
     ) -> dict[str, Any]:
         """PUT one connection's isActive/priority. Never touches credentials.
 
-        9router re-normalizes priority (verified: sending 5 stored 1), so the
+        OmniRoute re-normalizes priority, so the
         caller must read back the stored value rather than trust the request.
         """
 

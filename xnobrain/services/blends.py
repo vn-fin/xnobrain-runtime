@@ -1,6 +1,6 @@
-"""Model Blends — user-named 9router combos exposed as one virtual model.
+"""Model Blends — user-named OmniRoute combos exposed as one virtual model.
 
-Pure proxy: 9router's SQLite is the source of truth for combos and per-combo
+Pure proxy: OmniRoute's SQLite is the source of truth for combos and per-combo
 strategies. XNOBrain stores nothing. This service owns the policy layer (name
 guards, ``auto`` read-only, strategy validation, DTO shaping); the adapter owns
 the HTTP translation to ``/api/combos*`` and ``/api/settings``.
@@ -12,14 +12,14 @@ from collections.abc import Mapping
 import re
 from typing import Any
 
-from ..integrations.nine_router import NINE_ROUTER_DEFAULT_MODEL, NINE_ROUTER_PROVIDER_KEY
+from ..integrations.nine_router import OMNIROUTE_DEFAULT_MODEL, OMNIROUTE_PROVIDER_KEY
 from .base import ServiceError
 
 
 class BlendService:
-    """Rules for user-named model blends over 9router combos."""
+    """Rules for user-named model blends over OmniRoute combos."""
 
-    RESERVED = NINE_ROUTER_DEFAULT_MODEL  # "auto"
+    RESERVED = OMNIROUTE_DEFAULT_MODEL  # "auto"
     NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
     MAX_MODELS = 24
     STRATEGIES = ("fallback", "round-robin", "fusion", "smart-route")
@@ -49,8 +49,8 @@ class BlendService:
                 "reasoning_levels": list(item.get("reasoning_levels") or []),
             }
             for item in data
-            if item.get("provider") not in {"blend", NINE_ROUTER_PROVIDER_KEY}
-            and item.get("id") != NINE_ROUTER_DEFAULT_MODEL
+            if item.get("provider") not in {"blend", OMNIROUTE_PROVIDER_KEY}
+            and item.get("id") != OMNIROUTE_DEFAULT_MODEL
         ]
         return {"data": models}
 
@@ -303,7 +303,7 @@ class BlendService:
         }
 
     def _smart_route_models(self, smart: Mapping[str, Any]) -> list[str]:
-        # 9router combo membership is unique, while XNOBrain's policy may use
+        # OmniRoute combo membership is unique, while XNOBrain's policy may use
         # the same model in multiple difficulty tiers with different reasoning.
         return list(dict.fromkeys(
             str(row["model"])

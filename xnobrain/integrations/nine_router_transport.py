@@ -1,16 +1,17 @@
-"""Grouped NineRouterTransport behavior for 9router."""
+"""Transport helpers for the local OmniRoute provider runtime."""
 
 from .nine_router_support import (
     Any,
     Mapping,
-    NINE_ROUTER_DEFAULT_MODEL,
-    NINE_ROUTER_PROVIDER_KEY,
+    OMNIROUTE_DEFAULT_MODEL,
+    OMNIROUTE_PROVIDER_KEY,
     NineRouterAPIError,
     Path,
     ROUTER_PROVIDER_BY_MODEL_OWNER,
     _SAFE_ID_RE,
     aiohttp,
     hashlib,
+    hmac,
     os,
     secrets,
     socket,
@@ -33,7 +34,7 @@ class NineRouterTransportMixin:
                     headers = {"Accept": "application/json"}
                     cli_token = self._cli_token()
                     if cli_token:
-                        headers["x-9r-cli-token"] = cli_token
+                        headers["x-omniroute-cli-token"] = cli_token
                     async with session.request(
                         method,
                         self.base_url + path,
@@ -89,7 +90,7 @@ class NineRouterTransportMixin:
 
 
     def _provider_for_model(self, model_id: str) -> str:
-        if not model_id or model_id == NINE_ROUTER_DEFAULT_MODEL:
+        if not model_id or model_id == OMNIROUTE_DEFAULT_MODEL:
             return ""
         owner = model_id.split("/", 1)[0]
         return ROUTER_PROVIDER_BY_MODEL_OWNER.get(owner, "")
@@ -169,7 +170,7 @@ class NineRouterTransportMixin:
 
 
     def _model_owner(self, model_id: str) -> str:
-        return model_id.split("/", 1)[0] if "/" in model_id else NINE_ROUTER_PROVIDER_KEY
+        return model_id.split("/", 1)[0] if "/" in model_id else OMNIROUTE_PROVIDER_KEY
 
 
     def _cli_token(self) -> str:
@@ -177,12 +178,14 @@ class NineRouterTransportMixin:
             self.data_dir / "machine-id", self._native_machine_id()
         )
         cli_secret = self._read_or_create_secret(
-            self.data_dir / "auth" / "cli-secret", secrets.token_hex(32)
+            self.data_dir / "auth" / "cli-secret", "omniroute-cli-auth-v1"
         )
-        if not machine_id or not cli_secret:
+        if not machine_id:
             return ""
-        raw = f"{machine_id}9r-cli-auth{cli_secret}".encode()
-        return hashlib.sha256(raw).hexdigest()[:16]
+        # OmniRoute's local management auth uses HMAC-SHA256(machine id, salt).
+        return hmac.new(
+            machine_id.encode(), cli_secret.encode(), hashlib.sha256
+        ).hexdigest()
 
 
     def _native_machine_id(self) -> str:
@@ -195,7 +198,7 @@ class NineRouterTransportMixin:
             if value.strip():
                 break
         normalized = "".join(value.split()).lower() or socket.gethostname().lower()
-        return hashlib.sha256(normalized.encode()).hexdigest()
+        return normalized
 
 
     def _read_or_create_secret(self, path: Path, generated: str) -> str:

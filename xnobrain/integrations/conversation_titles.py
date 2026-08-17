@@ -1,8 +1,8 @@
-"""Grouped ConversationTitles behavior for 9router."""
+"""Conversation title operations backed by OmniRoute."""
 
 from .nine_router_support import (
     Mapping,
-    NINE_ROUTER_DEFAULT_MODEL,
+    OMNIROUTE_DEFAULT_MODEL,
 )
 
 
@@ -13,7 +13,7 @@ class ConversationTitlesMixin:
             "POST",
             "/v1/chat/completions",
             {
-                "model": model or NINE_ROUTER_DEFAULT_MODEL,
+                "model": model or OMNIROUTE_DEFAULT_MODEL,
                 "messages": [
                     {
                         "role": "system",

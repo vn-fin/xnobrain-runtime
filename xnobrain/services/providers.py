@@ -270,7 +270,7 @@ class ProvidersServiceMixin:
             priority = max(0, min(999, int(priority)))
         await self.router.update_connection(connection_id, active=active, priority=priority)
         self._cache.invalidate("providers")
-        # 9router owns priority normalization, so return the stored row, not the request.
+        # OmniRoute owns priority normalization, so return the stored row, not the request.
         refreshed = await self._owned_connection(provider, connection_id)
         return {"provider_id": provider, "connection": refreshed}
 

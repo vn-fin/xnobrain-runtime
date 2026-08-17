@@ -1,4 +1,4 @@
-"""Grouped ProviderUsage behavior for 9router."""
+"""Provider usage normalization backed by OmniRoute."""
 
 from .nine_router_support import (
     Any,
@@ -74,7 +74,7 @@ class ProviderUsageMixin:
     def _quota_list(
         self, payload: Any, *, provider: str = "", model_id: str = ""
     ) -> list[dict[str, Any]]:
-        """Normalize a 9router usage payload's quota windows.
+        """Normalize an OmniRoute usage payload's quota windows.
 
         When ``model_id`` is given the windows are filtered to that model
         (the ``usage(model)`` view); otherwise every window is returned (the

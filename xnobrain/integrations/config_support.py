@@ -17,10 +17,10 @@ import yaml
 
 from ..defaults import CUSTOM_SKILL_CATEGORY, honcho_memory_enabled
 from .nine_router import (
-    NINE_ROUTER_API_BASE_URL,
-    NINE_ROUTER_DEFAULT_MODEL,
-    NINE_ROUTER_PROVIDER,
-    NINE_ROUTER_PROVIDER_KEY,
+    OMNIROUTE_API_BASE_URL,
+    OMNIROUTE_DEFAULT_MODEL,
+    OMNIROUTE_PROVIDER,
+    OMNIROUTE_PROVIDER_KEY,
     display_nine_router_model,
     normalize_nine_router_config,
 )

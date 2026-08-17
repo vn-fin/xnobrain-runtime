@@ -8,7 +8,7 @@ from .hermes_support import (
     BIG_BROTHER_DISPLAY_NAME,
     CUSTOM_SKILL_CATEGORY,
     Mapping,
-    NINE_ROUTER_PROVIDER,
+    OMNIROUTE_PROVIDER,
     PROFILES_REGISTRY_FILE,
     PROFILE_STATE_DIRS,
     Path,
@@ -521,7 +521,7 @@ class AgentOperationsMixin:
 
         if "provider" in body:
             provider = self._nonempty_string(body["provider"], "provider").lower()
-            if provider not in {"xnobrain", "9router", "nine-router", "auto", NINE_ROUTER_PROVIDER}:
+            if provider not in {"xnobrain", "omniroute", "auto", OMNIROUTE_PROVIDER}:
                 raise AgentAPIError(
                     "provider must be xnobrain",
                     code="unsupported_provider",

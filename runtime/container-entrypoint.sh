@@ -2,15 +2,15 @@
 set -euo pipefail
 
 HERMES_HOME="${XNOBRAIN_AGENT_HOME:-${HERMES_HOME:-}}"
-NINE_ROUTER_DATA_DIR="${XNOBRAIN_PROVIDER_DATA_DIR:-${NINE_ROUTER_DATA_DIR:-}}"
+OMNIROUTE_DATA_DIR="${XNOBRAIN_PROVIDER_DATA_DIR:-${OMNIROUTE_DATA_DIR:-${NINE_ROUTER_DATA_DIR:-}}}"
 : "${HERMES_HOME:?XNOBRAIN_AGENT_HOME is required}"
-: "${NINE_ROUTER_DATA_DIR:?XNOBRAIN_PROVIDER_DATA_DIR is required}"
-export HERMES_HOME NINE_ROUTER_DATA_DIR
+: "${OMNIROUTE_DATA_DIR:?XNOBRAIN_PROVIDER_DATA_DIR is required}"
+export HERMES_HOME OMNIROUTE_DATA_DIR
 export HERMES_ROOT_PROFILE="${XNOBRAIN_AGENT_HOME:-${HERMES_ROOT_PROFILE:-$HERMES_HOME}}"
 export HERMES_PROFILES_ROOT="${XNOBRAIN_AGENT_PROFILES_ROOT:-${HERMES_PROFILES_ROOT:-$HERMES_HOME/profiles}}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 
-mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$NINE_ROUTER_DATA_DIR"
+mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$OMNIROUTE_DATA_DIR"
 hermes_python="${HERMES_RUNTIME_PYTHON:-/usr/local/lib/hermes-agent/venv/bin/python}"
 if [[ ! -x "$hermes_python" ]]; then
   echo "XNOBrain runtime Python not found: $hermes_python" >&2
@@ -27,12 +27,12 @@ fi
 if [[ "$HERMES_PROFILES_ROOT" != "$HERMES_HOME/profiles" && ! -e "$HERMES_HOME/profiles" ]]; then
   ln -s "$HERMES_PROFILES_ROOT" "$HERMES_HOME/profiles"
 fi
-/usr/local/bin/xnobrain-prepare-nine-router-auth
-NINE_ROUTER_API_KEY="$(< "$NINE_ROUTER_DATA_DIR/auth/cli-token")"
-: "${NINE_ROUTER_API_KEY:?provider runtime token is empty}"
-export NINE_ROUTER_API_KEY
+/usr/local/bin/xnobrain-prepare-omniroute-auth
+OMNIROUTE_API_KEY="$(< "$OMNIROUTE_DATA_DIR/auth/cli-token")"
+: "${OMNIROUTE_API_KEY:?provider runtime token is empty}"
+export OMNIROUTE_API_KEY
 touch "$HERMES_HOME/.env"
-chmod 700 "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$NINE_ROUTER_DATA_DIR"
+chmod 700 "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$OMNIROUTE_DATA_DIR"
 chmod 600 "$HERMES_HOME/.env"
 
 XNOBRAIN_PROFILE_TEMPLATES_DIR=/opt/xnobrain/profile-templates \
@@ -58,14 +58,15 @@ XNOBRAIN_PROFILE_TEMPLATES_DIR=/opt/xnobrain/profile-templates \
 XNOBRAIN_SKILL_OVERRIDES_DIR=/opt/xnobrain/skill-overrides \
   /usr/local/bin/xnobrain-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 
-DATA_DIR="$NINE_ROUTER_DATA_DIR" \
+DATA_DIR="$OMNIROUTE_DATA_DIR" \
 PORT=20128 \
+API_PORT=20128 \
+DASHBOARD_PORT=20128 \
 HOSTNAME=0.0.0.0 \
-BASE_URL=http://127.0.0.1:20128 \
-NEXT_PUBLIC_BASE_URL=http://127.0.0.1:20128 \
 REQUIRE_API_KEY=false \
 NODE_ENV=production \
-node /opt/xnobrain/9router/server.js &
+OMNIROUTE_NO_UPDATE_NOTIFIER=1 \
+omniroute serve --port 20128 --no-open &
 router_pid=$!
 "$hermes_python" /opt/xnobrain/server.py &
 api_pid=$!

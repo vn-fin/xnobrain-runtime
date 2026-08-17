@@ -4,7 +4,7 @@ from .hermes_support import (
     AgentAPIError,
     Any,
     Mapping,
-    NINE_ROUTER_DEFAULT_MODEL,
+    OMNIROUTE_DEFAULT_MODEL,
     NineRouterAPIError,
     PROVIDER_ERROR_OUTPUT_RE,
     Path,
@@ -84,7 +84,7 @@ class ConversationStreamMixin:
         chat_id = "chatcmpl-" + (conversation_id or uuid.uuid4().hex)
         run_id = str(prepared.get("run_id") or ("run_" + uuid.uuid4().hex))
 
-        if model == NINE_ROUTER_DEFAULT_MODEL:
+        if model == OMNIROUTE_DEFAULT_MODEL:
             try:
                 await self.nine_router.ensure_auto_combo()
             except NineRouterAPIError as exc:

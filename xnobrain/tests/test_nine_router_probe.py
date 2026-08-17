@@ -29,7 +29,7 @@ import aiohttp
 
 from xnobrain.integrations.nine_router import NineRouterManager
 
-BASE = os.environ.get("NINE_ROUTER_URL", "http://127.0.0.1:20128")
+BASE = os.environ.get("OMNIROUTE_URL", "http://127.0.0.1:20128")
 _REPO = Path(__file__).resolve().parents[2]
 
 
@@ -50,14 +50,13 @@ class NineRouterPinTests(unittest.TestCase):
         installer = (_REPO / "scripts" / "install-linux.sh").read_text(encoding="utf-8")
         versions = set()
         for pattern in (
-            r"ARG NINE_ROUTER_VERSION=v?([0-9]+\.[0-9]+\.[0-9]+)",
-            r"ARG NINE_ROUTER_NPM_VERSION=v?([0-9]+\.[0-9]+\.[0-9]+)",
+            r"ARG OMNIROUTE_VERSION=v?([0-9]+\.[0-9]+\.[0-9]+)",
         ):
             match = re.search(pattern, dockerfile)
             self.assertIsNotNone(match, f"missing pin: {pattern}")
             versions.add(match.group(1))
         match = re.search(
-            r"XNOBRAIN_NINE_ROUTER_VERSION:-v?([0-9]+\.[0-9]+\.[0-9]+)", installer)
+            r"XNOBRAIN_OMNIROUTE_VERSION:-v?([0-9]+\.[0-9]+\.[0-9]+)", installer)
         self.assertIsNotNone(match, "missing installer pin")
         versions.add(match.group(1))
         self.assertEqual(len(versions), 1, f"pins disagree: {versions}")
@@ -76,16 +75,16 @@ class NineRouterPinTests(unittest.TestCase):
     def test_launchers_accept_router_token_without_trailing_newline(self):
         expected = {
             "scripts/dev.sh": (
-                'NINE_ROUTER_API_KEY="$(< "$router_data_dir/auth/cli-token")"'
+                'OMNIROUTE_API_KEY="$(< "$router_data_dir/auth/cli-token")"'
             ),
             "runtime/container-entrypoint.sh": (
-                'NINE_ROUTER_API_KEY="$(< "$NINE_ROUTER_DATA_DIR/auth/cli-token")"'
+                'OMNIROUTE_API_KEY="$(< "$OMNIROUTE_DATA_DIR/auth/cli-token")"'
             ),
         }
         for relative_path, assignment in expected.items():
             launcher = (_REPO / relative_path).read_text(encoding="utf-8")
             self.assertIn(assignment, launcher)
-            self.assertNotIn("IFS= read -r NINE_ROUTER_API_KEY", launcher)
+            self.assertNotIn("IFS= read -r OMNIROUTE_API_KEY", launcher)
 
     def test_runtime_packages_the_local_honcho_client_and_services(self):
         dockerfile = (_REPO / "Dockerfile.backend").read_text(encoding="utf-8")

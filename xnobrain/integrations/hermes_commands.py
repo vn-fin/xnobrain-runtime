@@ -5,8 +5,8 @@ from .hermes_support import (
     AgentAPIError,
     Any,
     Mapping,
-    NINE_ROUTER_KEY_ENV,
-    NINE_ROUTER_PROVIDER,
+    OMNIROUTE_KEY_ENV,
+    OMNIROUTE_PROVIDER,
     Path,
     asyncio,
     os,
@@ -91,9 +91,17 @@ class HermesCommandsMixin:
     @staticmethod
     def _ensure_router_api_key() -> None:
         """Load the private local-router credential when launchers omit it."""
-        if os.environ.get(NINE_ROUTER_KEY_ENV):
+        if os.environ.get(OMNIROUTE_KEY_ENV):
             return
-        data_dir = str(os.environ.get("NINE_ROUTER_DATA_DIR") or "").strip()
+        legacy_key = os.environ.get("NINE_ROUTER_API_KEY")
+        if legacy_key:
+            os.environ[OMNIROUTE_KEY_ENV] = legacy_key
+            return
+        data_dir = str(
+            os.environ.get("OMNIROUTE_DATA_DIR")
+            or os.environ.get("NINE_ROUTER_DATA_DIR")
+            or ""
+        ).strip()
         if not data_dir:
             return
         try:
@@ -103,7 +111,8 @@ class HermesCommandsMixin:
         except OSError:
             return
         if api_key:
-            os.environ[NINE_ROUTER_KEY_ENV] = api_key
+            os.environ[OMNIROUTE_KEY_ENV] = api_key
+            os.environ.setdefault("NINE_ROUTER_API_KEY", api_key)
 
 
     def _hermes_binary(self) -> str:
@@ -142,4 +151,4 @@ class HermesCommandsMixin:
 
 
     def _conversation_provider(self, profile_dir: Path, body: Mapping[str, Any]) -> str:
-        return NINE_ROUTER_PROVIDER
+        return OMNIROUTE_PROVIDER

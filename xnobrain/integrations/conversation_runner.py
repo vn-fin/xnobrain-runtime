@@ -8,7 +8,7 @@ from .hermes_support import (
     BIG_BROTHER_AGENT_ID,
     MAX_TEXT_CHARS,
     Mapping,
-    NINE_ROUTER_DEFAULT_MODEL,
+    OMNIROUTE_DEFAULT_MODEL,
     Path,
     json,
     route_nine_router_model,
@@ -53,7 +53,7 @@ class ConversationRunnerMixin:
 
     async def chat(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         prepared = self._prepare_chat_command(raw_name, body, require_conversation=False)
-        if prepared["model"] == NINE_ROUTER_DEFAULT_MODEL:
+        if prepared["model"] == OMNIROUTE_DEFAULT_MODEL:
             await self.nine_router.ensure_auto_combo()
         else:
             await self._resolve_prepared_smart_route(prepared)
@@ -213,7 +213,7 @@ class ConversationRunnerMixin:
         route_name = str(prepared.get("model") or "").strip()
         # Blend names cannot contain '/', while routed provider model IDs do.
         # Avoid a settings lookup on every ordinary model request.
-        if not route_name or route_name == NINE_ROUTER_DEFAULT_MODEL or "/" in route_name:
+        if not route_name or route_name == OMNIROUTE_DEFAULT_MODEL or "/" in route_name:
             return
         decision = await self.nine_router.resolve_smart_route(
             route_name,
@@ -267,7 +267,7 @@ class ConversationRunnerMixin:
             # [DONE] but no OpenAI finish_reason. Hermes correctly treats that
             # shape as a dropped stream and requests continuations, duplicating
             # the answer. The blocking response is complete, so use it until
-            # 9router normalizes OpenCode's terminal event.
+            # OmniRoute normalizes OpenCode's terminal event.
             agent._disable_streaming = True
 
 
@@ -647,7 +647,7 @@ class ConversationRunnerMixin:
             ).strip()
             # An auto/blend route can choose models with different windows.
             # Do not report Hermes' generic fallback as a model-specific limit.
-            if actual_model.lower() in {"", "auto", NINE_ROUTER_DEFAULT_MODEL.lower()}:
+            if actual_model.lower() in {"", "auto", OMNIROUTE_DEFAULT_MODEL.lower()}:
                 context_limit = 0
                 context_threshold = 0
             context = {

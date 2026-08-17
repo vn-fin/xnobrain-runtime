@@ -1,8 +1,8 @@
 [Unit]
 Description=XNOBrain FastAPI and Hermes runtime
 Documentation=https://github.com/vn-fin/xnobrain
-After=network-online.target xnobrain-prepare.service xnobrain-9router.service
-Wants=network-online.target xnobrain-9router.service
+After=network-online.target xnobrain-prepare.service xnobrain-omniroute.service
+Wants=network-online.target xnobrain-omniroute.service
 Requires=xnobrain-prepare.service
 ConditionPathExists=/etc/xnobrain/xnobrain.env
 PartOf=xnobrain.target

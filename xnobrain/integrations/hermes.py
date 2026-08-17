@@ -18,7 +18,7 @@ from .hermes_support import (
     Any,
     DEFAULT_PROFILES_ROOT,
     DEFAULT_ROOT_PROFILE,
-    NineRouterManager,
+    OmniRouteManager,
     Path,
     asyncio,  # noqa: F401 - retained for existing runtime monkeypatches
     os,
@@ -69,7 +69,7 @@ class AgentManager(
         )
         # The embedded streaming runner uses this process environment directly,
         # while one-shot commands inherit it in _command_env(). Native launchers
-        # may prepare 9router's token file without exporting it first.
+        # Native launchers may prepare OmniRoute's token file without exporting it first.
         self._ensure_router_api_key()
         configured_template = (
             profile_template
@@ -83,7 +83,7 @@ class AgentManager(
             if configured_template.is_dir()
             else bundled_template
         )
-        self.nine_router = NineRouterManager()
+        self.nine_router = OmniRouteManager()
         self._active_runs: dict[str, dict[str, Any]] = {}
         self._active_agent_counts: dict[str, int] = {}
         self._stopped_runs: set[str] = set()

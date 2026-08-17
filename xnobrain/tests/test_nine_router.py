@@ -469,7 +469,7 @@ class NineRouterConfigTests(unittest.TestCase):
         self.assertNotIn("fallback_providers", config)
         self.assertEqual(config["agent"]["reasoning_effort"], "high")
 
-    def test_cli_token_matches_native_nine_router_algorithm(self) -> None:
+    def test_cli_token_matches_native_omniroute_algorithm(self) -> None:
         with TemporaryDirectory() as temp_dir:
             data_dir = Path(temp_dir)
             (data_dir / "auth").mkdir()
@@ -478,7 +478,10 @@ class NineRouterConfigTests(unittest.TestCase):
 
             manager = NineRouterManager(data_dir=data_dir)
 
-            self.assertEqual(manager._cli_token(), "35499f2df791a8a0")
+            self.assertEqual(
+                manager._cli_token(),
+                "d7551ed0c406d076237bb8dee3bb6ecee3bc004608867fc0cf76fc87e4644185",
+            )
 
 
 class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):

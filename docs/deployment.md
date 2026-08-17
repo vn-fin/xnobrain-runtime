@@ -15,7 +15,7 @@ make dev
 Open `http://localhost:5152` for the UI and
 `http://localhost:5152/xnobrain/api/runtime/swagger_docs` for Swagger.
 Only Traefik publishes a host port. The runtime's named volume holds profiles,
-teams, notifications, Hermes state, and 9router credentials.
+teams, notifications, Hermes state, and OmniRoute credentials.
 
 The runtime defaults to 4 CPUs and 4 GB RAM and requests a 100 GB writable
 root disk. Increase `XNOBRAIN_RUNTIME_CPUS`,

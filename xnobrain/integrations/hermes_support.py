@@ -34,12 +34,12 @@ from ..defaults import (
     honcho_memory_enabled,
 )
 from .nine_router import (
-    NINE_ROUTER_DEFAULT_MODEL,
-    NINE_ROUTER_KEY_ENV,
-    NINE_ROUTER_PROVIDER,
-    NINE_ROUTER_PROVIDER_KEY,
+    OMNIROUTE_DEFAULT_MODEL,
+    OMNIROUTE_KEY_ENV,
+    OMNIROUTE_PROVIDER,
+    OMNIROUTE_PROVIDER_KEY,
     NineRouterAPIError,
-    NineRouterManager,
+    OmniRouteManager,
     display_nine_router_model,
     normalize_nine_router_config,
     route_nine_router_model,
@@ -73,7 +73,7 @@ DEFAULT_CONVERSATION_TITLE_RE = re.compile(
 METADATA_FILE = "agent.json"
 PROFILES_REGISTRY_FILE = "profiles.yaml"
 CREDENTIAL_FILES = (".env", "auth.json")
-AGENT_CREDENTIAL_ENV_KEYS = (NINE_ROUTER_KEY_ENV,)
+AGENT_CREDENTIAL_ENV_KEYS = (OMNIROUTE_KEY_ENV, "NINE_ROUTER_API_KEY")
 TEMPLATE_FILES = ("config.yaml", "SOUL.md", "AGENTS.md", "mcp.json")
 TEMPLATE_DIRS = ("memories", "plugins")
 PROFILE_STATE_DIRS = (

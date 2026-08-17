@@ -1,6 +1,6 @@
 [Unit]
 Description=Prepare XNOBrain persistent data volume
-Before=xnobrain-9router.service xnobrain-api.service
+Before=xnobrain-omniroute.service xnobrain-api.service
 ConditionPathExists=/etc/xnobrain/xnobrain.env
 PartOf=xnobrain.target
 

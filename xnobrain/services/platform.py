@@ -15,8 +15,8 @@ from ..integrations import (
     AgentManager,
     ConfigAPIError,
     GlobalConfigManager,
-    NineRouterAPIError,
-    NineRouterManager,
+    OmniRouteAPIError,
+    OmniRouteManager,
 )
 from ..repositories import FileRepository, StoreError
 from .agents import AgentsServiceMixin
@@ -60,7 +60,7 @@ class PlatformService(
         repository: FileRepository,
         agents: AgentManager,
         config: GlobalConfigManager,
-        router: NineRouterManager,
+        router: OmniRouteManager,
         runtime,
     ):
         self.repository = repository

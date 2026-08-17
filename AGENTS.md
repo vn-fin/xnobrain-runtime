@@ -33,7 +33,7 @@ correctness.
 ## Project context
 
 - Backend: Python, FastAPI, Pydantic, the original Hermes agent runtime, and
-  9router.
+  OmniRoute.
 - Runtime: one combined backend/agent image and one provider runtime process.
 - Local persistence: atomic files below `DATA_DIR`; no application database.
 - Optional managed features: the separate Enterprise API configured through
@@ -54,12 +54,12 @@ Run UI tests and builds in the sibling `xnobrain-ui` repository.
 ## Architecture rules
 
 - Do not add Go, PostgreSQL, an ORM, or another application API process.
-- Keep one FastAPI/Hermes process on port 8642 and one 9router process.
+- Keep one FastAPI/Hermes process on port 8642 and one OmniRoute process.
 - Preserve the original Hermes core and native FastAPI routes. Extend them from
   `xnobrain` instead of copying or forking Hermes.
 - `xnobrain/routes/setup.py` is the only XNOBrain route assembly point.
 - Handlers own HTTP translation, services own rules, repositories own atomic
-  files, integrations adapt Hermes CLI and 9router, and models are Pydantic.
+  files, integrations adapt Hermes CLI and OmniRoute, and models are Pydantic.
 - Use one consistently named service-group file per backend layer. Keep
   registries, `services/platform.py`, and repository facades limited to
   composition. MCP is its own group and does not belong to workspace.

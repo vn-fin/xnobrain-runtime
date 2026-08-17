@@ -9,7 +9,7 @@ isolated atomic file-backed profile. No Go API or PostgreSQL service is present.
 
 ```text
 Browser -> Traefik -> React
-                   -> FastAPI :8642 -> Hermes CLI/core -> 9router :20128
+                   -> FastAPI :8642 -> Hermes CLI/core -> OmniRoute :20128
                                       -> default or named profile
 ```
 
@@ -30,7 +30,7 @@ by default and writes metadata-only span summaries to its container logs.
 
 ## Privacy and persistence
 
-XNOBrain-owned state is stored under `DATA_DIR`; Hermes and 9router retain
+XNOBrain-owned state is stored under `DATA_DIR`; Hermes and OmniRoute retain
 their native embedded local state. Portable bundles include complete regular
 profile-file trees with secret values redacted. Telemetry excludes credentials,
 prompts, responses, memories, skills, tool arguments, and logs. There is no ORM

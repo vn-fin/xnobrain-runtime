@@ -140,10 +140,10 @@ make smoke-api
 
 ### Versioned runtime releases
 
-`.version` is the image-version source of truth for every environment. Dev
+The workspace root `.version` is the image-version source of truth for every environment. Dev
 publishes from `main` only when that file changes. Staging and production
 publish on every push to their environment branch, so merging `main` into
-`staging` or `prod` deploys the version recorded in the merged `.version`.
+`staging` or `prod` deploys the version recorded in the merged workspace `.version`.
 Manual dispatch remains available to retry the same version.
 
 Each release publishes the UI image to GHCR with immutable and moving
@@ -163,7 +163,7 @@ backend in a temporary Ubuntu VM, and publishes this immutable Incus alias:
 xnobrain-runtime-dev-0.0.14
 ```
 
-Staging and production use the same `.version` value with their own environment
+Staging and production use the same workspace `.version` value with their own environment
 prefix. Re-running an existing environment/version skips the native VM build
 after verifying the alias property. The managed control plane selects a release
 by configuring the runtime image name and semantic version; it does not build

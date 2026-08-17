@@ -22,7 +22,7 @@ project_python_link="$tools_dir/python"
 hermes_version="${XNOBRAIN_AGENT_ENGINE_VERSION:-v2026.8.16}"
 hermes_commit="${XNOBRAIN_AGENT_ENGINE_COMMIT:-df4b65147d7ddd74dd449f9067aabbca5aef0ec7}"
 node_version="${XNOBRAIN_NODE_VERSION:-22.23.1}"
-nine_router_version="${XNOBRAIN_PROVIDER_RUNTIME_VERSION:-${XNOBRAIN_NINE_ROUTER_VERSION:-0.5.55}}"
+omniroute_version="${XNOBRAIN_PROVIDER_RUNTIME_VERSION:-${XNOBRAIN_OMNIROUTE_VERSION:-3.8.49}}"
 codex_version="${XNOBRAIN_CODEX_VERSION:-0.144.6}"
 claude_version="${XNOBRAIN_CLAUDE_CODE_VERSION:-2.1.216}"
 agent_browser_version="${XNOBRAIN_AGENT_BROWSER_VERSION:-0.26.0}"
@@ -47,7 +47,8 @@ Options:
 Environment overrides:
   XNOBRAIN_NODE_VERSION, XNOBRAIN_AGENT_ENGINE_VERSION,
   XNOBRAIN_AGENT_ENGINE_COMMIT,
-  XNOBRAIN_PROVIDER_RUNTIME_VERSION, XNOBRAIN_CODEX_VERSION,
+  XNOBRAIN_PROVIDER_RUNTIME_VERSION, XNOBRAIN_OMNIROUTE_VERSION,
+  XNOBRAIN_CODEX_VERSION,
   XNOBRAIN_CLAUDE_CODE_VERSION, XNOBRAIN_AGENT_BROWSER_VERSION,
   XNOBRAIN_AGENT_HOME, XNOBRAIN_PROVIDER_DATA_DIR (both required)
 EOF
@@ -103,7 +104,7 @@ if [[ "$check_only" == true ]]; then
   printf 'Agent home: %s\n' "$hermes_home"
   printf 'Provider data: %s\n' "$router_data_dir"
   printf 'Node: %s\n' "$node_version"
-  printf 'Provider runtime: %s\n' "$nine_router_version"
+  printf 'Provider runtime: %s\n' "$omniroute_version"
   exit 0
 fi
 
@@ -282,25 +283,24 @@ fi
 npm_script_args=()
 if npm install --help 2>&1 | grep -q -- '--allow-scripts'; then
   npm_script_args+=(
-    --allow-scripts=9router
+    --allow-scripts=omniroute
     --allow-scripts=agent-browser
     --allow-scripts=@anthropic-ai/claude-code
   )
 fi
 npm install --global --prefix "$npm_prefix" --no-audit --no-fund --include=optional \
   "${npm_script_args[@]}" \
-  "9router@${nine_router_version}" \
+  "omniroute@${omniroute_version}" \
   "@openai/codex@${codex_version}" \
   "@anthropic-ai/claude-code@${claude_version}" \
   "agent-browser@${agent_browser_version}" \
   pnpm
 
-nine_router_app="$npm_prefix/lib/node_modules/9router/app"
 for required_path in \
-  "$nine_router_app/custom-server.js" \
-  "$nine_router_app/node_modules/next/dist/server/dev/browser-logs/file-logger.js"; do
+  "$npm_prefix/bin/omniroute" \
+  "$npm_prefix/lib/node_modules/omniroute/bin/omniroute.mjs"; do
   if [[ ! -f "$required_path" ]]; then
-    echo "Installed 9router runtime is incomplete: $required_path" >&2
+    echo "Installed OmniRoute runtime is incomplete: $required_path" >&2
     exit 1
   fi
 done
@@ -315,15 +315,12 @@ bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$hermes_h
 
 # Match the Docker runtime's private provider identity. The API adapter and
 # provider process read the same files, while credentials remain outside git.
-if [[ ! -s "$router_data_dir/machine-id" ]]; then
-  machine_id="$(cat /etc/machine-id 2>/dev/null || hostname)"
-  printf '%s' "$machine_id" > "$router_data_dir/machine-id"
-fi
-if [[ ! -s "$router_data_dir/auth/cli-secret" ]]; then
-  "$project_python" -c 'import secrets, sys; print(secrets.token_hex(32), end="")' > "$router_data_dir/auth/cli-secret"
-fi
+machine_id="$(cat /etc/machine-id 2>/dev/null || hostname)"
+printf '%s' "$machine_id" > "$router_data_dir/machine-id"
+printf '%s' "${OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}" > "$router_data_dir/auth/cli-secret"
 "$project_python" - "$router_data_dir" <<'PY'
 import hashlib
+import hmac
 from pathlib import Path
 import sys
 
@@ -331,7 +328,7 @@ root = Path(sys.argv[1])
 machine = (root / "machine-id").read_text().strip()
 secret = (root / "auth" / "cli-secret").read_text().strip()
 (root / "auth" / "cli-token").write_text(
-    hashlib.sha256(f"{machine}9r-cli-auth{secret}".encode()).hexdigest()[:16]
+    hmac.new(machine.encode(), secret.encode(), hashlib.sha256).hexdigest()
 )
 PY
 chmod 700 "$hermes_home" "$router_data_dir" "$router_data_dir/auth"

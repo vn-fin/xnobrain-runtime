@@ -1,11 +1,11 @@
-"""Grouped BlendsIntegration behavior for 9router."""
+"""Model blend operations backed by OmniRoute."""
 
 import re
 
 from .nine_router_support import (
     Any,
     Mapping,
-    NINE_ROUTER_DEFAULT_MODEL,
+    OMNIROUTE_DEFAULT_MODEL,
     NineRouterAPIError,
     display_nine_router_model,
     quote,
@@ -29,7 +29,7 @@ class BlendsIntegrationMixin:
         owners: set[str] = set()
         for item in models:
             model_id = str(item.get("id") or "").strip()
-            if (not model_id or model_id == NINE_ROUTER_DEFAULT_MODEL
+            if (not model_id or model_id == OMNIROUTE_DEFAULT_MODEL
                     or "/" not in model_id or str(item.get("provider") or "") == "blend"):
                 continue
             owner = str(item.get("provider") or self._model_owner(model_id)).strip()
@@ -45,7 +45,7 @@ class BlendsIntegrationMixin:
             (
                 item
                 for item in combos if isinstance(item, Mapping)
-                and str(item.get("name") or "") == NINE_ROUTER_DEFAULT_MODEL
+                and str(item.get("name") or "") == OMNIROUTE_DEFAULT_MODEL
             ),
             None,
         )
@@ -60,7 +60,7 @@ class BlendsIntegrationMixin:
             await self._request(
                 "POST",
                 "/api/combos",
-                {"name": NINE_ROUTER_DEFAULT_MODEL, "models": selected},
+                {"name": OMNIROUTE_DEFAULT_MODEL, "models": selected},
             )
             return True
         if list(existing.get("models") or []) == selected:
@@ -148,10 +148,10 @@ class BlendsIntegrationMixin:
         fusion_tuning: Mapping[str, Any] | None = None,
         smart_route: Mapping[str, Any] | None = None,
     ) -> None:
-        # 9router replaces the whole comboStrategies map on PATCH, so read then
+        # OmniRoute replaces the whole comboStrategies map on PATCH, so read then
         # merge then write the entire map (findings.md §6).
         strategies = dict((await self.combo_settings())["combo_strategies"])
-        # Smart Route is a XNOBrain strategy. Keep upstream 9router on its
+        # Smart Route is a XNOBrain strategy. Keep upstream OmniRoute on its
         # safe ordered-fallback behavior if a request bypasses XNOBrain, and
         # persist the routing policy as an ignored per-combo extension.
         entry: dict[str, Any] = {

@@ -1,7 +1,7 @@
-"""Read-only usage aggregation over Hermes and 9router SQLite ledgers.
+"""Read-only usage aggregation over Hermes and OmniRoute SQLite ledgers.
 
 This adapter never writes runtime state. It opens SQLite files with ``?mode=ro``:
-profile ``state.db`` files provide current-agent attribution, while 9router's
+profile ``state.db`` files provide current-agent attribution, while OmniRoute's
 ``usageHistory`` is the durable workspace ledger that survives conversation and
 agent deletion. It holds no policy and does no HTTP.
 """
@@ -125,9 +125,9 @@ def aggregate_router_usage(
     end_epoch: float,
     bucket: str = "day",
 ) -> dict[str, Any]:
-    """Aggregate 9router's durable ``usageHistory`` ledger.
+    """Aggregate OmniRoute's durable ``usageHistory`` ledger.
 
-    The table is owned by 9router and contains no XNOBrain agent identifier.
+    The table is owned by OmniRoute and contains no XNOBrain agent identifier.
     Consequently this function deliberately returns workspace totals, provider
     and model breakdowns, and request status only; agent attribution continues
     to come from profile databases.
@@ -323,7 +323,7 @@ def _token_metadata(value: str) -> dict[str, Any]:
 
 
 def _provider_node_prefixes(conn: sqlite3.Connection) -> dict[str, str]:
-    """Map 9router's UUID-backed custom provider IDs to stable prefixes."""
+    """Map OmniRoute's UUID-backed custom provider IDs to stable prefixes."""
     try:
         exists = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='providerNodes'"
@@ -371,7 +371,7 @@ def _add_router_row(
     row["output_tokens"] += output_tokens
     row["estimated_cost_usd"] += cost
     # The existing merge helpers use ``sessions`` as the count field. For
-    # 9router rows it represents requests; the public UI labels it accordingly.
+    # OmniRoute rows it represents requests; the public UI labels it accordingly.
     row["sessions"] += 1
 
 

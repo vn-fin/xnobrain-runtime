@@ -1,8 +1,8 @@
 """Usage analytics and advisory budgets, computed on read.
 
-The unfiltered workspace view uses 9router's durable usage ledger, so deleting a
+The unfiltered workspace view uses OmniRoute's durable usage ledger, so deleting a
 conversation or agent cannot erase historical totals. Current profile
-``state.db`` files remain the live attribution source because 9router has no
+``state.db`` files remain the live attribution source because OmniRoute has no
 agent identifier. Agent-filtered views therefore intentionally use live profile
 data. Budget config is the only mutation and is written to the agent's
 ``config.yaml`` with a snapshot first.
@@ -299,7 +299,7 @@ class AnalyticsService:
         end: float,
         bucket: str,
     ) -> dict[str, Any]:
-        """Overlay durable 9router totals for the unfiltered workspace view."""
+        """Overlay durable OmniRoute totals for the unfiltered workspace view."""
         if selected:
             return {
                 **live,

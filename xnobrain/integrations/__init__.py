@@ -1,8 +1,8 @@
-"""Adapters for Hermes and the local 9router process."""
+"""Adapters for Hermes and the local OmniRoute provider runtime."""
 
 from .config import ConfigAPIError, GlobalConfigManager
 from .hermes import AgentAPIError, AgentManager
-from .nine_router import NineRouterAPIError, NineRouterManager
+from .omniroute import OmniRouteAPIError, OmniRouteManager
 from .runtime import LocalRuntimeManager
 from .cron_delivery import (
     CronBlueprintInvalid,
@@ -16,6 +16,8 @@ __all__ = [
     "AgentManager",
     "ConfigAPIError",
     "GlobalConfigManager",
+    "OmniRouteAPIError",
+    "OmniRouteManager",
     "NineRouterAPIError",
     "NineRouterManager",
     "LocalRuntimeManager",
@@ -24,3 +26,7 @@ __all__ = [
     "CronDeliveryAdapter",
     "CronDeliveryAdapterError",
 ]
+
+# Compatibility aliases for extensions upgrading from pre-OmniRoute images.
+NineRouterAPIError = OmniRouteAPIError
+NineRouterManager = OmniRouteManager
