@@ -277,16 +277,16 @@ Record<string, ConnectionUsage>`, plus per-row pending flags. API methods in
 `src/api/providers.ts` (typed, no `any`). Details per file in
 [implementation.md](implementation.md) Phase 4.
 
-## Backward compatibility
+## API-key upsert contract
 
-- All nine existing provider routes keep their paths, verbs, operations, and
-  response shapes; `providers()` adds only `connection_count`.
 - "Connected" is now defined as **≥1 active connection** everywhere
   (service + UI badge). With zero or one connection this is identical to
   today's behavior.
-- `update_provider()` (PATCH `/update`) keeps working and remains equivalent
-  to `POST .../connections` for API-key providers; the UI's shared key panel
-  migrates to the new endpoint, but the old route is not removed.
+- `POST .../connections` is the only API-key write operation. It derives an
+  internal SHA-256 identity from the key, updates when that identity already
+  exists, and inserts otherwise. The request accepts no user label.
+- The former provider-level `PATCH /update` route is removed. Per-connection
+  test and delete routes remain the credential lifecycle operations.
 - Existing tests (`FakeRouter` in
   [`xnobrain/tests/test_fastapi.py`](../../xnobrain/tests/test_fastapi.py),
   `FakeNineRouterManager` in
@@ -296,10 +296,11 @@ Record<string, ConnectionUsage>`, plus per-row pending flags. API methods in
 
 ## Security invariants
 
-1. XNOBrain never sees, stores, returns, or logs API keys or OAuth tokens.
-   The create path passes the key through to 9router in one request body and
+1. XNOBrain handles API keys only for the current authenticated request; it
+   never persists, returns, or logs them. The upsert path passes the key
+   through to 9router in one request body and
    the response is rebuilt from an allowlist (`_filtered_connection_response`
-   — keep it). `ConnectionCreate.api_key` must never appear in logs: handlers
+   — keep it). `ConnectionUpsert.api_key` must never appear in logs: handlers
    do not log bodies (existing behavior — preserve).
 2. `credentials.env` continues to carry only `NINE_ROUTER_API_KEY`, as today.
 3. All state for this feature lives in 9router's DB; XNOBrain writes no
