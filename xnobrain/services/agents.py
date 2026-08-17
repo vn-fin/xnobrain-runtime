@@ -48,6 +48,10 @@ from .helpers import cached_method
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError
 from .workspace_upload import WorkspaceUploadError
 
+
+AGENT_ACTIVITY_KANBAN_TTL_SECONDS = 10.0
+
+
 class AgentsServiceMixin:
     def list_profiles(self) -> list[dict[str, Any]]:
         """Use Hermes' native profile inventory, including the default profile."""
@@ -82,11 +86,15 @@ class AgentsServiceMixin:
     def agent_activity(self) -> dict[str, Any]:
         """Report real executions, not the profile's configured enabled state."""
         active = self.agents.active_agent_ids()
-        try:
-            active.update(self.kanban.active_agent_ids())
-        except ServiceError:
-            # Conversation activity remains useful while Kanban is unavailable.
-            pass
+        now = time.monotonic()
+        if now - self._agent_activity_kanban_checked_at >= AGENT_ACTIVITY_KANBAN_TTL_SECONDS:
+            try:
+                self._agent_activity_kanban_ids = self.kanban.active_agent_ids()
+            except ServiceError:
+                # Conversation activity remains useful while Kanban is unavailable.
+                self._agent_activity_kanban_ids = set()
+            self._agent_activity_kanban_checked_at = now
+        active.update(self._agent_activity_kanban_ids)
         return {
             "agents": {
                 item["id"]: "running" if item["id"] in active else "idle"

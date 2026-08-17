@@ -724,6 +724,50 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(activity[task_agent], "running")
         self.assertEqual(activity[BIG_BROTHER_AGENT_ID], "idle")
 
+    async def test_agent_activity_caches_the_database_backed_kanban_scan(self):
+        service = self.composition.service
+        service._agent_activity_kanban_checked_at = float("-inf")
+        with patch.object(
+            service.kanban,
+            "active_agent_ids",
+            return_value=set(),
+        ) as kanban_activity:
+            service.agent_activity()
+            service.agent_activity()
+
+        kanban_activity.assert_called_once_with()
+
+    async def test_agent_activity_stream_emits_initial_state_and_changes_only(self):
+        class ConnectedRequest:
+            async def is_disconnected(self):
+                return False
+
+        idle = {"agents": {BIG_BROTHER_AGENT_ID: "idle"}, "updated_at": 1.0}
+        running = {"agents": {BIG_BROTHER_AGENT_ID: "running"}, "updated_at": 2.0}
+        with (
+            patch.object(
+                self.composition.service,
+                "agent_activity",
+                side_effect=(idle, idle, running),
+            ),
+            patch(
+                "xnobrain.handlers.streaming.asyncio.sleep",
+                new=AsyncMock(),
+            ) as sleep,
+        ):
+            response = await self.composition.handlers.agent_activity_stream(
+                ConnectedRequest()
+            )
+            initial = await anext(response.body_iterator)
+            changed = await anext(response.body_iterator)
+            await response.body_iterator.aclose()
+
+        self.assertEqual(response.media_type, "text/event-stream")
+        self.assertIn("event: activity\n", initial)
+        self.assertEqual(json.loads(initial.split("data: ", 1)[1]), idle)
+        self.assertEqual(json.loads(changed.split("data: ", 1)[1]), running)
+        self.assertEqual(sleep.await_count, 2)
+
     async def test_write_approvals_default_off_and_allow_always_disables_the_selected_gate(self):
         async with self.client() as client:
             created = await client.post("/xnobrain/api/runtime/v1/agents", json={"display_name": "Safe Writer"})

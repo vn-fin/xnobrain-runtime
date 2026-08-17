@@ -12,6 +12,36 @@ from ..services import EXPECTED_ERRORS
 
 class StreamingHandlers:
 
+    async def agent_activity_stream(self, request: Request) -> StreamingResponse:
+        """Emit activity changes while keeping idle connections inexpensive."""
+        async def events():
+            sequence = 0
+            previous: dict[str, str] | None = None
+            last_emit = asyncio.get_running_loop().time()
+            while not await request.is_disconnected():
+                snapshot = self.service.agent_activity()
+                activity = snapshot["agents"]
+                if activity != previous:
+                    payload = json.dumps(snapshot, separators=(",", ":"))
+                    yield f"id: {sequence}\nevent: activity\ndata: {payload}\n\n"
+                    previous = dict(activity)
+                    sequence += 1
+                    last_emit = asyncio.get_running_loop().time()
+                elif asyncio.get_running_loop().time() - last_emit >= 15.0:
+                    yield ": keep-alive\n\n"
+                    last_emit = asyncio.get_running_loop().time()
+                await asyncio.sleep(1)
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     async def stream(self, request: Request, body: dict[str, Any]) -> StreamingResponse:
             agent = str(request.query_params.get("agent") or "").strip()
             conversation_id = request.path_params["conversation_id"]

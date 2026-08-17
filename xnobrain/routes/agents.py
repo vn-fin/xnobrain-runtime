@@ -6,6 +6,13 @@ from .definition import route
 ROUTES = (
     route("GET", "/agents", "agents_list", tags=("Agents",)),
     route("GET", "/agents/activity", "agents_activity", tags=("Agents",)),
+    route(
+        "GET",
+        "/agents/activity/stream",
+        "agents_activity_stream",
+        special="agent_activity_stream",
+        tags=("Agents",),
+    ),
     route("POST", "/agents", "agents_create", AgentCreate, tags=("Agents",)),
     route("GET", "/profiles", "profiles_list", tags=("Profiles",)),
     route("GET", "/agents/{agent_id}/detail", "agents_get", tags=("Agents",)),

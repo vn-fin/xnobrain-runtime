@@ -26,6 +26,13 @@ Runtime statistics are available as a snapshot at
 `/xnobrain/api/runtime/v1/sandboxes/detail` and as one-second SSE updates at
 `/xnobrain/api/runtime/v1/sandboxes/detail/stream`.
 
+Agent execution activity is available as a compatibility snapshot at
+`/xnobrain/api/runtime/v1/agents/activity`. UI clients should use the
+`/xnobrain/api/runtime/v1/agents/activity/stream` SSE endpoint, which emits an
+`activity` event initially and whenever an agent changes between `idle` and
+`running`. The runtime caches the database-backed Kanban portion for ten
+seconds so status monitoring does not continuously scan every board.
+
 Portable profile example:
 
 ```bash

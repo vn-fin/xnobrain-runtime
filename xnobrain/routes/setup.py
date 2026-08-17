@@ -63,6 +63,9 @@ def _endpoint(handlers: Any, route: Route):
     elif route.special == "sandbox_stream":
         async def endpoint(request: Request) -> Response:
             return await handlers.sandbox_detail_stream(request)
+    elif route.special == "agent_activity_stream":
+        async def endpoint(request: Request) -> Response:
+            return await handlers.agent_activity_stream(request)
     elif route.special == "kanban_stream":
         async def endpoint(request: Request) -> Response:
             return await handlers.kanban_event_stream(request)
@@ -86,7 +89,7 @@ def _endpoint(handlers: Any, route: Route):
 
 def setup_routes(app: Any, handlers: Any) -> None:
     for route in ROUTES:
-        raw_response = route.special in {"stream", "workspace_upload", "workspace_upload_chunk", "workspace_file", "workspace_preview", "workspace_workbook", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "kanban_stream", "team_run_stream", "conversation_run_stream"}
+        raw_response = route.special in {"stream", "workspace_upload", "workspace_upload_chunk", "workspace_file", "workspace_preview", "workspace_workbook", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "agent_activity_stream", "kanban_stream", "team_run_stream", "conversation_run_stream"}
         app.add_api_route(
             route.path,
             _endpoint(handlers, route),

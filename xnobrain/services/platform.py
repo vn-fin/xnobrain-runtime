@@ -85,6 +85,8 @@ class PlatformService(
         self.team_runs = TeamRunService(repository, agents, self)
         self._oauth_attempts: dict[str, dict[str, str]] = {}
         self._cache = MemoryCache()
+        self._agent_activity_kanban_ids: set[str] = set()
+        self._agent_activity_kanban_checked_at = float("-inf")
         self.config.ensure_write_approval_defaults()
         self._ensure_existing_write_approval_defaults()
         self.mcp = MCPService(
