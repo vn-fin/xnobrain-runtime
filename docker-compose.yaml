@@ -42,31 +42,6 @@ services:
       - edge
     restart: unless-stopped
 
-  frontend:
-    image: ${XNOBRAIN_FRONTEND_IMAGE:-xnobrain-frontend:local}
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-      args:
-        API_BASE_URL: ""
-        AUTH_BASE_URL: ${XNOBRAIN_AUTH_BASE_URL:?Set XNOBRAIN_AUTH_BASE_URL in .env}
-        API_CONTROL_BASE_URL: ${XNOBRAIN_BRAIN_CONTROL_BASE_URL:?Set XNOBRAIN_BRAIN_CONTROL_BASE_URL in .env}
-        APP_NAME: ${XNOBRAIN_APP_NAME:-XNOBrain}
-        APP_DESCRIPTION: ${XNOBRAIN_APP_DESCRIPTION:-Your private AI workspace for agents, conversations, skills, and automation.}
-        APP_EDITION: ${XNOBRAIN_WEB_EDITION:-enterprise}
-        AUTH_MODE: required
-        AUTH_PROVIDER: xno-firebase
-        FIREBASE_API_KEY: ${XNOBRAIN_FIREBASE_API_KEY:?Set XNOBRAIN_FIREBASE_API_KEY in .env}
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.xnobrain-ui.rule=Host(`${XNOBRAIN_DOMAIN:-localhost}`)
-      - traefik.http.routers.xnobrain-ui.entrypoints=web
-      - traefik.http.routers.xnobrain-ui.priority=1
-      - traefik.http.services.xnobrain-ui.loadbalancer.server.port=8080
-    networks:
-      - edge
-    restart: unless-stopped
-
   runtime:
     image: ${XNOBRAIN_RUNTIME_IMAGE:-xnobrain-runtime:local}
     build:

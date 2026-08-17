@@ -1,7 +1,8 @@
 # XNOBrain project summary
 
-XNOBrain is a self-hosted workspace for Hermes agents. It consists of a React UI and one runtime/backend image that
-contains FastAPI, the original Hermes CLI/core, and 9router. Each agent uses an
+XNOBrain is a self-hosted workspace for AI agents. It consists of a separate
+React UI and one runtime/backend image that contains FastAPI, the agent engine,
+and provider runtime. Each agent uses an
 isolated atomic file-backed profile. No Go API or PostgreSQL service is present.
 
 ## Runtime flow
@@ -42,7 +43,7 @@ make check
 make run
 ```
 
-The two application images are `xnobrain-frontend` and
+The UI image is built by `xnobrain-ui`; this repository builds
 `xnobrain-runtime`. Open <http://localhost:5152> and use
 <http://localhost:5152/xnobrain/api/runtime/swagger_docs> for the unified OpenAPI
 documentation.

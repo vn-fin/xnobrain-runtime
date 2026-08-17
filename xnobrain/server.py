@@ -86,7 +86,7 @@ def main() -> None:
         port=port,
         reload=reload_enabled,
         reload_dirs=[os.path.dirname(os.path.dirname(__file__))] if reload_enabled else None,
-        reload_excludes=["src", "src/*", "node_modules", "node_modules/*"] if reload_enabled else None,
+        reload_excludes=["node_modules", "node_modules/*"] if reload_enabled else None,
         log_config=None,
         access_log=False,
     )

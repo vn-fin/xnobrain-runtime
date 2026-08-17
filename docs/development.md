@@ -1,30 +1,29 @@
 # Development and verification
 
-The repository root is the Vite project root: application code is in `src/`,
-static assets are in `public/`, and the committed production build is emitted
-to `dist/`. Node dependencies are installed into the root `node_modules/`.
-The Python application remains in the separate `xnobrain/` package.
+The UI lives in the sibling `xnobrain-ui` repository. This repository contains
+the Python application in the `xnobrain/` package and the agent/provider
+installation tooling.
 
 On Linux or macOS, install the local toolchain with `make install-local`. It
 creates `.tools/python` for the project, installs Hermes and the Python
 requirements, and provisions Node.js/npm, 9router, and the agent CLIs. The
 macOS target skips the optional office-tool and browser-engine downloads to
-keep setup fast. Copy `.env.example` to `.env` when local overrides are needed.
+keep setup fast. Copy the workspace root `../.env.example` to `../.env` when
+local overrides are needed.
 
 ```bash
-npm run dev               # Vite 5173 + reload FastAPI 8642 + 9router 20128
-make dev                  # same supervised local stack
+make -C ../xnobrain-ui dev # Vite UI on 5173
+make dev                  # runtime API and provider runtime
 make backend              # API only, using the selected environment
-make check                # Python tests/compile + frontend tests/build
+make check                # Python tests and compile checks
 ```
 
-Vite proxies the canonical `/xnobrain/api/runtime/v1` namespace to port 8642. Swagger is
+The UI's Vite proxy targets the canonical `/xnobrain/api/runtime/v1` namespace on port 8642. Swagger is
 at `http://127.0.0.1:8642/xnobrain/api/runtime/swagger_docs`.
 
-The development script supervises Vite, FastAPI, and 9router and stops all
-three on Ctrl-C. The backend watches Python files and reloads automatically;
-the frontend uses Vite's normal HMR. Override `XNOBRAIN_DEV_WEB_PORT` or
-`XNOBRAIN_DEV_API_PORT` when the default ports are occupied.
+The runtime development script supervises the API and provider runtime and
+stops both on Ctrl-C. Override `XNOBRAIN_DEV_API_PORT` or
+`XNOBRAIN_DEV_ROUTER_PORT` when the default ports are occupied.
 
 The Python tests use isolated temporary profile roots. For a real chat smoke
 test, use an existing Hermes profile without changing its config and send a

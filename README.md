@@ -1,7 +1,8 @@
 # XNOBrain
 
-For detailed local, Docker, and native VM installation instructions, see
-[SETUP.md](SETUP.md).
+For the complete local stack and browser UI, see the workspace root and
+[`xnobrain-ui`](../xnobrain-ui/README.md). This repository documents the
+Python/API runtime and native agent/provider installation.
 
 XNOBrain is a self-hosted React workspace for creating and running AI agents.
 One Python/FastAPI process serves the default profile plus every named profile,
@@ -38,16 +39,15 @@ cp .env.example .env
 # XNOBRAIN_PROVIDER_DATA_DIR=/opt/data/provider-runtime.
 ```
 
-Then start XNOBrain without make:
+The coordinated stack is started from the workspace root:
 
 ```bash
-docker compose up -d --build
+make dev
 ```
 
-Compose also starts the private Honcho API, deriver, PostgreSQL/pgvector, and
-Redis services. `HONCHO_MEMORY_ENABLE=true` selects it as the default memory
-provider. Honcho remains reachable only on the internal Compose network and
-uses the private provider endpoint for language-model requests.
+The control-plane Compose stack builds the UI from `xnobrain-ui`, the runtime
+from this repository, and the managed administrator service. It also starts
+the private Honcho API, deriver, PostgreSQL/pgvector, and Redis services.
 
 Open <http://localhost:5152>. Swagger is available at
 <http://localhost:5152/xnobrain/api/runtime/swagger_docs> and the generated OpenAPI
@@ -84,22 +84,23 @@ responsible for authentication, authorization, and authenticated
 user-to-workspace routing; frontend edition and feature values are
 presentation controls, not security controls.
 
-For a Docker-free Linux or macOS development installation, run the project
+For a Docker-free Linux or macOS runtime installation, run the project
 installer. It creates a project-local Python environment under `.tools/python`
-and installs Node.js/npm, the provider runtime, and agent CLIs. The
-macOS target skips the optional office-tool and browser-engine downloads to
-keep the development setup fast:
+and installs the provider runtime and agent CLIs. The macOS target skips the
+optional office-tool and browser-engine downloads to keep the installation fast:
 
 ```bash
 make install-local
 ```
 
-Then start local development (Vite 5173, FastAPI 8642, and provider runtime 20128):
+Then start the runtime API and provider runtime:
 
 ```bash
-npm run dev
-# or: make dev
+make -C xnobrain-runtime dev
 ```
+
+Run the React/Vite UI separately with `make -C xnobrain-ui dev`, or start the
+full Docker stack with `make dev` from the workspace root.
 
 The existing `setup-linux.sh` remains the Docker/Compose installer. For
 API-only work after the local install, use
@@ -145,12 +146,12 @@ publish on every push to their environment branch, so merging `main` into
 `staging` or `prod` deploys the version recorded in the merged `.version`.
 Manual dispatch remains available to retry the same version.
 
-Each release publishes the common frontend to GHCR with immutable and moving
+Each release publishes the UI image to GHCR with immutable and moving
 tags:
 
 ```text
-ghcr.io/vn-fin/xnobrain-runtime/xnobrain-frontend:dev-0.0.14
-ghcr.io/vn-fin/xnobrain-runtime/xnobrain-frontend:dev-latest
+ghcr.io/vn-fin/xnobrain-ui/xnobrain-ui:dev-0.0.14
+ghcr.io/vn-fin/xnobrain-ui/xnobrain-ui:dev-latest
 ```
 
 The same workflow deploys one VM-builder service to the environment Swarm. It

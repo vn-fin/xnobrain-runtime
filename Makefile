@@ -1,12 +1,12 @@
 -include .env
+-include ../.env
 export
 
 PYTHON_BIN := $(if $(wildcard $(CURDIR)/.tools/python/bin/python),$(CURDIR)/.tools/python/bin/python,$(if $(wildcard $(HOME)/.local/lib/hermes-agent/venv/bin/python),$(HOME)/.local/lib/hermes-agent/venv/bin/python,python3))
 CONTAINER_CLI ?= docker
 IMAGE_TAG ?= local
-XNOBRAIN_FRONTEND_IMAGE ?= xnobrain-frontend:$(IMAGE_TAG)
 XNOBRAIN_RUNTIME_IMAGE ?= xnobrain-runtime:$(IMAGE_TAG)
-.PHONY: dev backend src test check smoke-api build run image frontend-image runtime-image bundle load-bundle install install-local brain-app-image dev-app linux-app linux-app-local win-app mac-app rpm-app
+.PHONY: dev backend test check smoke-api build run image runtime-image bundle load-bundle install install-local brain-app-image dev-app linux-app linux-app-local win-app mac-app rpm-app
 
 dev:
 	bash ./scripts/dev.sh
@@ -14,32 +14,23 @@ dev:
 backend:
 	HERMES_SERVE_HEADLESS=1 BROWSER=/bin/false DISPLAY= WAYLAND_DISPLAY= $(PYTHON_BIN) server.py
 
-src:
-	npm run dev:frontend
-
 test:
 	$(PYTHON_BIN) -m unittest discover -s xnobrain/tests -t . -p 'test_*.py'
-	npm test
 
 check:
 	$(PYTHON_BIN) -m unittest discover -s xnobrain/tests -t . -p 'test_*.py'
 	$(PYTHON_BIN) -m compileall -q xnobrain server.py
-	npm test
-	npm run build
 
 smoke-api:
 	./scripts/SmokeAPI.sh
 
 build:
-	$(CONTAINER_CLI) compose build frontend runtime
+	$(CONTAINER_CLI) compose build runtime
 
 run:
 	$(CONTAINER_CLI) compose up -d --build
 
 image: build
-
-frontend-image:
-	$(CONTAINER_CLI) compose build frontend
 
 runtime-image:
 	$(CONTAINER_CLI) compose build runtime

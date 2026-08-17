@@ -7,7 +7,6 @@ output_dir="${BUNDLE_OUTPUT_DIR:-bin/images}"
 part_size="${IMAGE_BUNDLE_PART_SIZE:-47m}"
 bundle="xnobrain-images-${image_tag}"
 images=(
-  "${XNOBRAIN_FRONTEND_IMAGE:-xnobrain-frontend:${image_tag}}"
   "${XNOBRAIN_RUNTIME_IMAGE:-xnobrain-runtime:${image_tag}}"
 )
 

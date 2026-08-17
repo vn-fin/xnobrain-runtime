@@ -1,6 +1,7 @@
 # XNOBrain Agent Guide
 
-XNOBrain is an open-source FastAPI/Hermes and React application. Read this
+XNOBrain is an open-source FastAPI/Hermes runtime. The React UI lives in the
+sibling `xnobrain-ui` repository. Read this
 file, `.agents/rules/01-start-here.md`, and applicable additional `.agents/rules/`
 files before every task. For roadmap work,
 also read the assigned specification and referenced versioned contracts.
@@ -33,9 +34,7 @@ correctness.
 
 - Backend: Python, FastAPI, Pydantic, the original Hermes agent runtime, and
   9router.
-- Frontend: React, TypeScript, and Vite under `src/`.
-- Runtime: one combined backend/Hermes Docker image, one UI image, and one
-  9router process.
+- Runtime: one combined backend/agent image and one provider runtime process.
 - Local persistence: atomic files below `DATA_DIR`; no application database.
 - Optional managed features: the separate Enterprise API configured through
   `ENTERPRISE_API_URL`.
@@ -46,12 +45,11 @@ correctness.
 - Run backend tests: `make test`
 - Run all repository checks: `make check`
 - Run the backend directly: `make backend`
-- Run the frontend directly: `make src`
 - Build Docker images: `make build`
 - Run the API smoke test: `make smoke-api`
 
 Prefer a focused Python test or `npm test -- <test>` during iteration.
-Use `npm run build` for the final frontend type/build verification.
+Run UI tests and builds in the sibling `xnobrain-ui` repository.
 
 ## Architecture rules
 
@@ -86,7 +84,8 @@ Use `npm run build` for the final frontend type/build verification.
 
 - Local OSS access is unlimited. Enterprise behavior is optional; an Enterprise
   API outage must not restrict local features.
-- This repository builds the combined backend/runtime image and UI image.
+- This repository builds the combined backend/agent runtime image. The UI image
+  is built by `xnobrain-ui`.
 - Managed control-plane services remain in `xnobrain-enterprise`; coordinate
   versioned contracts when a feature changes both repositories.
 - Incus and cloud runtime packaging are maintained in this repository. The
@@ -97,5 +96,5 @@ Use `npm run build` for the final frontend type/build verification.
 
 - Use the `.yaml` extension for Compose files.
 - Do not add a static `docs/openapi.yaml`; FastAPI generates OpenAPI at runtime.
-- Keep Compose build contexts at the repository root and use the root frontend
-  and backend Dockerfiles.
+- Keep the runtime Compose build context at this repository root; the UI image
+  is built from the sibling `xnobrain-ui` repository.

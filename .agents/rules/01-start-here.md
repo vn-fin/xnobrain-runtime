@@ -11,7 +11,6 @@
 - `xnobrain/repositories`: atomic profile/team/notification persistence.
 - `xnobrain/integrations`: original Hermes CLI and 9router adapters.
 - `xnobrain/telemetry.py`: metadata-only OpenTelemetry setup.
-- `src`: Vite, React, and TypeScript UI.
 - `runtime`: the combined FastAPI/Hermes/9router image.
 - `docs/contracts`: versioned cross-repository protocols.
 

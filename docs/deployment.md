@@ -1,14 +1,15 @@
 # Deployment
 
-The default Compose stack has two application containers plus Traefik:
+The runtime repository builds the API/agent container. The workspace root
+Compose stack adds the UI, control plane, and Traefik:
 
 ```text
-Traefik -> frontend container
-        -> combined FastAPI + Hermes + 9router container
+Traefik -> XNOBrain UI container
+        -> XNOBrain runtime API container
 ```
 
 ```bash
-docker compose up -d --build
+make dev
 ```
 
 Open `http://localhost:5152` for the UI and
@@ -45,9 +46,8 @@ the timestamp, level, logger name, and message, for example:
 
 Set `LOG_LEVEL` in `.env` to change the minimum level.
 
-Builds produce only:
+This repository's runtime build produces only:
 
-- `xnobrain-frontend:<tag>`
-- `xnobrain-runtime:<tag>` (FastAPI, Hermes, and 9router)
+- `xnobrain-runtime:<tag>` (FastAPI, agent engine, and provider runtime)
 
-`make build` also creates the checksummed split OCI bundle under `bin/images`.
+The UI image is built by `xnobrain-ui`.

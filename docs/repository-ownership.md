@@ -2,7 +2,8 @@
 
 | Repository | Builds | Persistent data |
 |---|---|---|
-| `xnobrain` | React image and combined FastAPI/Hermes/9router Docker image | Local profiles, skills, memory, sessions, cron, teams, and provider configuration |
+| `xnobrain-runtime` | Combined FastAPI/agent/provider runtime image | Local profiles, skills, memory, sessions, cron, teams, and provider configuration |
+| `xnobrain-ui` | React/Vite UI image | Browser application assets and client API contracts |
 | `xnobrain-enterprise` | Enterprise API and managed/Incus cloud packaging | Accounts, tenants, plans, managed metadata, and hosted telemetry |
 
 The OSS server communicates with Enterprise only through the public HTTP and

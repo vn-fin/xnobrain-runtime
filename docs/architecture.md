@@ -1,12 +1,13 @@
 # Architecture
 
 XNOBrain is a Python modular monolith layered onto the original Hermes CLI
-FastAPI application. The browser reaches the React UI and API through Traefik.
+FastAPI application. The sibling `xnobrain-ui` image serves the React UI, and
+the browser reaches the UI and API through Traefik.
 The runtime container starts exactly two processes: FastAPI on 8642 and 9router
 on 20128.
 
 ```text
-Traefik -> React
+Traefik -> xnobrain-ui (React)
         -> FastAPI (Hermes native routes + XNOBrain routes)
              -> services -> repositories -> profile/config files
              -> integrations -> Hermes CLI/core

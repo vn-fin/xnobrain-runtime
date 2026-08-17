@@ -309,25 +309,6 @@ if [[ "$skip_browser" == false ]]; then
   "$npm_prefix/bin/agent-browser" install --with-deps
 fi
 
-frontend_npmrc="$project_dir/.npmrc"
-frontend_npmrc_created=false
-if npm install --help 2>&1 | grep -q -- '--allow-scripts' && [[ ! -e "$frontend_npmrc" ]]; then
-  # npm only accepts allow-scripts for a project install through .npmrc.
-  printf '%s\n' 'allow-scripts=esbuild,msw' > "$frontend_npmrc"
-  frontend_npmrc_created=true
-fi
-cleanup_frontend_npmrc() {
-  if [[ "$frontend_npmrc_created" == true ]]; then
-    rm -f "$frontend_npmrc"
-  fi
-}
-if [[ "$frontend_npmrc_created" == true ]]; then
-  trap cleanup_frontend_npmrc EXIT
-fi
-npm --prefix "$project_dir" ci --no-audit --no-fund
-cleanup_frontend_npmrc
-trap - EXIT
-
 # Install an independent seed for future profiles and refresh Big Brother's
 # packaged guidance. Existing named profiles remain untouched.
 bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$hermes_home/profiles"
@@ -366,8 +347,6 @@ Agent data:      $hermes_home
 Provider data:   $router_data_dir
 
 Start development with:
-  cd "$project_dir"
-  npm run dev
-or:
+  cd "$(dirname "$project_dir")"
   make dev
 EOF

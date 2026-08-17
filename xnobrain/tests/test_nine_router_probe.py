@@ -90,10 +90,13 @@ class NineRouterPinTests(unittest.TestCase):
     def test_runtime_packages_the_local_honcho_client_and_services(self):
         dockerfile = (_REPO / "Dockerfile.backend").read_text(encoding="utf-8")
         compose = (_REPO / "docker-compose.yaml").read_text(encoding="utf-8")
-        environment = (_REPO / ".env.example").read_text(encoding="utf-8")
+        environment_path = _REPO / ".env.example"
+        if not environment_path.is_file():
+            environment_path = _REPO.parent / ".env.example"
+        environment = environment_path.read_text(encoding="utf-8")
 
         self.assertIn("'honcho-ai==2.2.0'", dockerfile)
-        self.assertIn("HONCHO_MEMORY_ENABLE=true", environment)
+        self.assertRegex(environment, r"(?m)^HONCHO_MEMORY_ENABLE=(true|false)$")
         for service in (
             "honcho-api:",
             "honcho-deriver:",

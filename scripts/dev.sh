@@ -53,8 +53,6 @@ for candidate in \
     break
   fi
 done
-frontend_host="${XNOBRAIN_DEV_WEB_HOST:-0.0.0.0}"
-frontend_port="${XNOBRAIN_DEV_WEB_PORT:-5173}"
 backend_host="${XNOBRAIN_DEV_API_HOST:-0.0.0.0}"
 backend_port="${XNOBRAIN_DEV_API_PORT:-8642}"
 router_host="${XNOBRAIN_DEV_ROUTER_HOST:-127.0.0.1}"
@@ -87,35 +85,10 @@ elif [[ -z "$router_bin" && "${XNOBRAIN_DEV_SKIP_ROUTER:-0}" != "1" ]]; then
   exit 1
 fi
 
-: "${HERMES_HOME:?HERMES_HOME is required. Set it in .env}"
-: "${NINE_ROUTER_DATA_DIR:?NINE_ROUTER_DATA_DIR is required. Set it in .env}"
-hermes_home="$HERMES_HOME"
-router_data_dir="$NINE_ROUTER_DATA_DIR"
-
-required_cloud_variables=(
-  XNOBRAIN_AUTH_BASE_URL
-  XNOBRAIN_BRAIN_CONTROL_BASE_URL
-  XNOBRAIN_FIREBASE_API_KEY
-)
-for variable_name in "${required_cloud_variables[@]}"; do
-  if [[ -z "${!variable_name:-}" ]]; then
-    echo "$variable_name is required. Copy .env.example to .env and configure the cloud APIs." >&2
-    exit 1
-  fi
-done
-
-if [[ ! -x "$project_dir/node_modules/.bin/vite" ]]; then
-  npm --prefix "$project_dir" install
-fi
-VITE_API_BASE_URL= \
-  VITE_APP_EDITION="${XNOBRAIN_WEB_EDITION:-enterprise}" \
-  VITE_AUTH_MODE=required \
-  VITE_AUTH_PROVIDER=xno-firebase \
-  VITE_AUTH_API_URL="$XNOBRAIN_AUTH_BASE_URL" \
-  VITE_CONTROL_API_BASE_URL="$XNOBRAIN_BRAIN_CONTROL_BASE_URL" \
-  VITE_FIREBASE_API_KEY="$XNOBRAIN_FIREBASE_API_KEY" \
-  npm --prefix "$project_dir" run dev:frontend -- --host "$frontend_host" --port "$frontend_port" &
-frontend_pid=$!
+hermes_home="${XNOBRAIN_AGENT_HOME:-${HERMES_HOME:-}}"
+router_data_dir="${XNOBRAIN_PROVIDER_DATA_DIR:-${NINE_ROUTER_DATA_DIR:-}}"
+: "${hermes_home:?XNOBRAIN_AGENT_HOME is required. Set it in .env}"
+: "${router_data_dir:?XNOBRAIN_PROVIDER_DATA_DIR is required. Set it in .env}"
 backend_pid=""
 router_pid=""
 
@@ -154,8 +127,6 @@ cleanup() {
     kill "$backend_pid" 2>/dev/null || true
     wait "$backend_pid" 2>/dev/null || true
   fi
-  kill "$frontend_pid" 2>/dev/null || true
-  wait "$frontend_pid" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
