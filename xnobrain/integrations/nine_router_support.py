@@ -12,7 +12,7 @@ import socket
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import aiohttp
 

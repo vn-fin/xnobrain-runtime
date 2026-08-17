@@ -4,10 +4,23 @@ from .nine_router_support import (
     Any,
     Mapping,
     quote,
+    urlencode,
 )
 
 
 class ProviderUsageMixin:
+    async def usage_analytics(
+        self, *, start_iso: str, end_iso: str,
+    ) -> dict[str, Any]:
+        """Return OmniRoute's pricing-aware analytics for an exact UTC window."""
+
+        query = urlencode({
+            "range": "custom",
+            "startDate": start_iso,
+            "endDate": end_iso,
+        })
+        return await self._request("GET", f"/api/usage/analytics?{query}")
+
     async def usage(self, model: Any) -> dict[str, Any]:
         """Return filtered quota windows for the provider behind one model."""
 

@@ -349,6 +349,58 @@ def period_spend(
         conn.close()
 
 
+def profile_model_usage(
+    profile_dir: Path, *, since_epoch: float, until_epoch: float,
+) -> list[dict[str, Any]]:
+    """Read detailed per-model usage used for agent cost attribution."""
+    db = profile_dir / "state.db"
+    if not db.is_file():
+        return []
+    try:
+        conn = _open_ro(db)
+    except sqlite3.Error:
+        return []
+    try:
+        if _table_exists(conn, "session_model_usage"):
+            return [dict(row) for row in conn.execute(
+                """
+                SELECT COALESCE(u.model,'unknown') AS model,
+                       COALESCE(SUM(u.input_tokens),0) AS input_tokens,
+                       COALESCE(SUM(u.output_tokens),0) AS output_tokens,
+                       COALESCE(SUM(u.cache_read_tokens),0) AS cache_read_tokens,
+                       COALESCE(SUM(u.cache_write_tokens),0) AS cache_write_tokens,
+                       COALESCE(SUM(u.reasoning_tokens),0) AS reasoning_tokens,
+                       COALESCE(SUM(u.estimated_cost_usd),0) AS estimated_cost_usd,
+                       COALESCE(SUM(u.actual_cost_usd),0) AS actual_cost_usd
+                FROM session_model_usage u
+                JOIN sessions s ON s.id = u.session_id
+                WHERE COALESCE(u.last_seen, s.started_at) > ?
+                  AND COALESCE(u.first_seen, s.started_at) <= ?
+                GROUP BY u.model
+                """,
+                (since_epoch, until_epoch),
+            ).fetchall()]
+        return [dict(row) for row in conn.execute(
+            """
+            SELECT COALESCE(model,'unknown') AS model,
+                   COALESCE(SUM(input_tokens),0) AS input_tokens,
+                   COALESCE(SUM(output_tokens),0) AS output_tokens,
+                   COALESCE(SUM(cache_read_tokens),0) AS cache_read_tokens,
+                   COALESCE(SUM(cache_write_tokens),0) AS cache_write_tokens,
+                   COALESCE(SUM(reasoning_tokens),0) AS reasoning_tokens,
+                   COALESCE(SUM(estimated_cost_usd),0) AS estimated_cost_usd,
+                   COALESCE(SUM(actual_cost_usd),0) AS actual_cost_usd
+            FROM sessions WHERE started_at > ? AND started_at <= ?
+            GROUP BY model
+            """,
+            (since_epoch, until_epoch),
+        ).fetchall()]
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+
 def _zero_totals() -> dict[str, Any]:
     return {
         "input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0,

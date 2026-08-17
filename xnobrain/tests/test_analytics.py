@@ -25,7 +25,7 @@ from xnobrain.integrations.analytics import (
     aggregate_router_usage,
     period_spend,
 )
-from xnobrain.services.analytics import _sunday_start
+from xnobrain.services.analytics import _apply_omniroute_costs, _sunday_start
 
 
 class FakeRouter:
@@ -296,6 +296,45 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             {row["provider"] for row in result["by_provider"]}, {"codex", "claude"})
         self.assertEqual(result["request_status"]["successful"], 1)
         self.assertEqual(result["request_status"]["failed"], 1)
+
+    def test_omniroute_costs_override_zero_ledger_costs(self):
+        partial = {
+            "totals": {"estimated_cost_usd": 0.0},
+            "by_model": [{
+                "model": "ocz/deepseek-v4-flash", "provider": "opencode",
+                "input_tokens": 370_000, "output_tokens": 400,
+                "estimated_cost_usd": 0.0, "actual_cost_usd": 0.0,
+                "sessions": 34,
+            }],
+            "by_provider": [],
+            "series": [
+                {"bucket": "2026-08-17T08:00:00Z", "input_tokens": 100_000,
+                 "output_tokens": 100, "estimated_cost_usd": 0.0,
+                 "actual_cost_usd": 0.0, "sessions": 10},
+                {"bucket": "2026-08-17T09:00:00Z", "input_tokens": 270_000,
+                 "output_tokens": 300, "estimated_cost_usd": 0.0,
+                 "actual_cost_usd": 0.0, "sessions": 24},
+            ],
+        }
+        omni = {
+            "summary": {"totalCost": 0.015577},
+            "byModel": [{"model": "deepseek-v4-flash", "cost": 0.015577}],
+            "dailyTrend": [{"date": "2026-08-17", "cost": 0.015577}],
+        }
+
+        _apply_omniroute_costs(partial, omni, "hour")
+
+        self.assertAlmostEqual(partial["totals"]["estimated_cost_usd"], 0.015577)
+        self.assertAlmostEqual(
+            partial["by_model"][0]["estimated_cost_usd"], 0.015577,
+        )
+        self.assertAlmostEqual(
+            sum(row["estimated_cost_usd"] for row in partial["series"]),
+            0.015577,
+        )
+        self.assertAlmostEqual(
+            partial["by_provider"][0]["estimated_cost_usd"], 0.015577,
+        )
 
     def test_aggregate_router_usage_resolves_zen_node_id_and_model_prefix(self):
         node_id = "openai-compatible-chat-65582489-b7cd"

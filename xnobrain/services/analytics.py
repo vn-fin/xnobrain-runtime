@@ -365,14 +365,30 @@ class AnalyticsService:
             }
 
         effective = "day" if bucket == "week" else bucket
+        analytics_method = getattr(self.router, "usage_analytics", None)
+        pricing_request = (
+            analytics_method(start_iso=_epoch_iso(start), end_iso=_epoch_iso(end))
+            if callable(analytics_method) else None
+        )
         async with self._sem:
-            router_partial = await asyncio.to_thread(
+            ledger_request = asyncio.to_thread(
                 aggregate_router_usage,
                 Path(data_dir),
                 start_epoch=start,
                 end_epoch=end,
                 bucket=effective,
             )
+            if pricing_request is None:
+                router_partial = await ledger_request
+                pricing = None
+            else:
+                router_partial, pricing = await asyncio.gather(
+                    ledger_request, pricing_request, return_exceptions=True,
+                )
+                if isinstance(router_partial, BaseException):
+                    raise router_partial
+                if isinstance(pricing, BaseException):
+                    pricing = None
         if not router_partial.get("available"):
             return {
                 **live,
@@ -391,6 +407,9 @@ class AnalyticsService:
                 },
                 "attribution": _attribution(live["totals"], live["totals"], durable=False),
             }
+
+        if isinstance(pricing, Mapping):
+            _apply_omniroute_costs(router_partial, pricing, effective)
 
         durable = self._merge(
             [{
@@ -625,6 +644,92 @@ def _providers_from_models(rows: list[Mapping[str, Any]]) -> list[dict[str, Any]
     result = [_finish_model(row) for row in providers.values()]
     result.sort(key=lambda row: -(row["input_tokens"] + row["output_tokens"]))
     return result
+
+
+def _apply_omniroute_costs(
+    partial: dict[str, Any], pricing: Mapping[str, Any], bucket: str,
+) -> None:
+    """Overlay costs computed by OmniRoute without duplicating its pricing rules."""
+    summary = pricing.get("summary")
+    if not isinstance(summary, Mapping) or "totalCost" not in summary:
+        return
+
+    total_cost = max(0.0, _number(summary.get("totalCost")))
+    partial["totals"]["estimated_cost_usd"] = total_cost
+
+    model_costs: dict[str, float] = {}
+    for row in pricing.get("byModel") or []:
+        if isinstance(row, Mapping):
+            name = str(row.get("model") or "").strip().lower()
+            if name:
+                model_costs[name] = model_costs.get(name, 0.0) + max(
+                    0.0, _number(row.get("cost")),
+                )
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in partial.get("by_model") or []:
+        name = str(row.get("model") or "").rsplit("/", 1)[-1].lower()
+        grouped.setdefault(name, []).append(row)
+    for name, rows in grouped.items():
+        cost = model_costs.get(name)
+        if cost is None:
+            continue
+        _distribute_cost(rows, cost)
+
+    partial["by_provider"] = _providers_from_models(partial.get("by_model") or [])
+
+    daily_costs = {
+        str(row.get("date") or ""): max(0.0, _number(row.get("cost")))
+        for row in pricing.get("dailyTrend") or []
+        if isinstance(row, Mapping) and row.get("date")
+    }
+    series = partial.get("series") or []
+    if bucket == "hour":
+        rows_by_day: dict[str, list[dict[str, Any]]] = {}
+        for row in series:
+            rows_by_day.setdefault(str(row.get("bucket") or "")[:10], []).append(row)
+        for day, rows in rows_by_day.items():
+            if day in daily_costs:
+                _distribute_cost(rows, daily_costs[day])
+    else:
+        folded: dict[str, float] = {}
+        for day, cost in daily_costs.items():
+            try:
+                stamp = datetime.fromisoformat(day).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            label = bucket_start_iso(stamp, bucket, timezone.utc)
+            folded[label] = folded.get(label, 0.0) + cost
+        for row in series:
+            label = str(row.get("bucket") or "")
+            if label in folded:
+                row["estimated_cost_usd"] = folded[label]
+
+
+def _distribute_cost(rows: list[dict[str, Any]], cost: float) -> None:
+    """Allocate an authoritative aggregate while preserving its exact sum."""
+    if not rows:
+        return
+    weights = [
+        int(row.get("input_tokens") or 0) + int(row.get("output_tokens") or 0)
+        for row in rows
+    ]
+    denominator = sum(weights)
+    allocated = 0.0
+    for index, row in enumerate(rows):
+        share = (
+            cost - allocated
+            if index == len(rows) - 1
+            else cost * (weights[index] / denominator if denominator else 1 / len(rows))
+        )
+        row["estimated_cost_usd"] = share
+        allocated += share
+
+
+def _number(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _attribution(
