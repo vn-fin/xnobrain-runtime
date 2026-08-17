@@ -712,6 +712,10 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                     "owned_by": "ocz",
                 },
                 {
+                    "id": f"{node_id}/gpt-5.6-luna",
+                    "owned_by": "ocz",
+                },
+                {
                     "id": "oc/deepseek-v4-flash-free",
                     "owned_by": "opencode",
                 },
@@ -730,6 +734,27 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(connections["connections"][0]["provider"], "opencode")
         self.assertEqual(connections["connections"][0]["default_model"], "")
         self.assertFalse(any("suggested-models" in path for _, path, _ in manager.requests))
+
+    async def test_failed_connection_does_not_expose_provider_models(self) -> None:
+        manager = FakeNineRouterManager({
+            ("GET", "/api/provider-nodes"): {"nodes": []},
+            ("GET", "/api/providers"): {"connections": [{
+                "id": "invalid-openai-key",
+                "provider": "openai",
+                "authType": "apikey",
+                "isActive": True,
+                "testStatus": "error",
+                "lastError": "Invalid API key",
+            }]},
+            ("GET", "/v1/models?kind=llm"): {"data": [{
+                "id": "openai/gpt-5",
+                "owned_by": "openai",
+            }]},
+        })
+
+        payload = await manager.list_models(ensure_auto=False)
+
+        self.assertEqual([item["id"] for item in payload["data"]], ["auto"])
 
     async def test_opencode_owned_models_feed_the_zen_auto_combo(self) -> None:
         node_id = "openai-compatible-chat-zen1"

@@ -21,6 +21,7 @@ class ProviderModelsMixin:
             str(item.get("provider") or "")
             for item in connections
             if item.get("active") is not False
+            and str(item.get("test_status") or "").lower() != "error"
         }
         codex_review_available = await self._codex_review_available(connections)
         active_owners = {
@@ -44,6 +45,12 @@ class ProviderModelsMixin:
                 continue
             model_id = str(item.get("id") or "").strip()
             if not model_id or model_id == OMNIROUTE_DEFAULT_MODEL or model_id in seen:
+                continue
+            # OmniRoute exposes custom nodes under both their configured public
+            # prefix (for example ``ocz/model``) and an implementation ID such
+            # as ``openai-compatible-chat-<uuid>/model``. Only the stable public
+            # prefix belongs in XNOBrain's provider/model contract.
+            if model_id.startswith("openai-compatible-"):
                 continue
             owner = str(item.get("owned_by") or self._model_owner(model_id)).strip()
             if owner == "combo":
