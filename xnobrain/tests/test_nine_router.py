@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import sqlite3
@@ -485,6 +486,41 @@ class NineRouterConfigTests(unittest.TestCase):
 
 
 class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_api_key_upsert_uses_sha256_identity_and_returns_short_label(self) -> None:
+        api_key = "sk-secret-value"
+        fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+        internal_name = f"xnobrain-api-key:{fingerprint}"
+        manager = FakeNineRouterManager({
+            ("POST", "/api/providers"): {"connection": {
+                "id": "openai-1", "provider": "openai", "authType": "apikey",
+                "name": internal_name, "apiKey": "must-not-leak",
+            }},
+            ("GET", "/api/providers"): {"connections": [{
+                "id": "openai-1", "provider": "openai", "authType": "apikey",
+                "name": internal_name, "apiKey": "must-not-leak",
+            }]},
+            ("GET", "/v1/models?kind=llm"): {"data": [{
+                "id": "openai/gpt-5", "owned_by": "openai",
+            }]},
+            ("GET", "/api/combos"): {"combos": [{
+                "id": "auto", "name": "auto", "models": ["openai/gpt-5"],
+            }]},
+        })
+
+        result = await manager.upsert_api_key_connection({
+            "provider": "openai", "api_key": api_key,
+        })
+        listed = await manager.list_connections()
+
+        self.assertIn(("POST", "/api/providers", {
+            "provider": "openai",
+            "apiKey": api_key,
+            "name": internal_name,
+        }), manager.requests)
+        self.assertEqual(result["connection"]["name"], f"API key • {fingerprint[:8]}")
+        self.assertEqual(listed["connections"][0]["name"], f"API key • {fingerprint[:8]}")
+        self.assertNotIn(api_key, str(result))
+
     async def test_cursor_import_uses_router_contract_and_filters_credentials(self) -> None:
         manager = FakeNineRouterManager({
             ("POST", "/api/oauth/cursor/import"): {

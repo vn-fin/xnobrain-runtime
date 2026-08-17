@@ -7,6 +7,7 @@ exercised without a live 9router.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 import tempfile
@@ -48,6 +49,7 @@ class FakeRouter:
         self.oauth_calls: list[tuple[str, str, str, dict | None]] = []
         self.authorized_device_providers: set[str] = set()
         self.imported_cursor_credentials: list[tuple[str, str]] = []
+        self.api_key_connection_ids: dict[tuple[str, str], str] = {}
 
     async def list_connections(self):
         self.list_connections_calls += 1
@@ -60,12 +62,21 @@ class FakeRouter:
         self.list_models_calls += 1
         return {"data": []}
 
-    async def create_api_key_connection(self, body):
+    async def upsert_api_key_connection(self, body):
         self.created_bodies.append(dict(body))  # captures the key but never returns it
+        fingerprint = hashlib.sha256(body["api_key"].encode("utf-8")).hexdigest()
+        identity = (body["provider"], fingerprint)
+        connection_id = self.api_key_connection_ids.get(identity)
+        if connection_id:
+            row = next(item for item in self._rows if item["id"] == connection_id)
+            row["active"] = True
+            return {"object": "xnobrain.provider_runtime.provider", "connection": dict(row)}
+        connection_id = f"api-key-{len(self.api_key_connection_ids) + 1}"
+        self.api_key_connection_ids[identity] = connection_id
         row = {
-            "id": f"openai-{len(self._rows)}", "provider": body["provider"],
-            "auth_type": "api-key", "name": body.get("name") or "", "email": "",
-            "active": True, "priority": 0, "default_model": body.get("default_model") or "",
+            "id": connection_id, "provider": body["provider"],
+            "auth_type": "api-key", "name": f"API key • {fingerprint[:8]}", "email": "",
+            "active": True, "priority": 0, "default_model": "",
             "test_status": "unknown", "last_error": "",
         }
         self._rows.append(row)
@@ -188,6 +199,22 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
     def _assert_connection_shape(self, connection):
         self.assertEqual(set(connection), _ALLOWED_CONNECTION_KEYS)
 
+    def test_openapi_exposes_one_api_key_upsert_without_label(self):
+        document = self.app.openapi()
+        paths = document["paths"]
+        collection = "/xnobrain/api/runtime/v1/providers/{provider_id}/connections"
+        item = collection + "/{connection_id}"
+        self.assertIn("post", paths[collection])
+        self.assertIn("delete", paths[item])
+        self.assertIn("post", paths[item + "/test"])
+        self.assertNotIn(
+            "/xnobrain/api/runtime/v1/providers/{provider_id}/update",
+            paths,
+        )
+        schema = document["components"]["schemas"]["ConnectionUpsert"]
+        self.assertEqual(set(schema["properties"]), {"api_key", "base_url"})
+        self.assertFalse(schema["additionalProperties"])
+
     async def test_list_connections_sorted_and_connected(self):
         async with self.client() as client:
             data = (await client.get("/xnobrain/api/runtime/v1/providers/codex/connections")).json()["data"]
@@ -206,16 +233,33 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
                 method = client.post if path.endswith("/test") else client.get
                 self.assertEqual((await method(path)).status_code, 404)
 
-    async def test_add_api_key_account_never_leaks_key(self):
+    async def test_api_key_upsert_never_leaks_key_or_accepts_a_label(self):
         async with self.client() as client:
             response = await client.post(
                 "/xnobrain/api/runtime/v1/providers/openai/connections",
-                json={"api_key": "sk-secret123", "name": "second"})
-        self.assertEqual(response.status_code, 201)
+                json={"api_key": "sk-secret123"})
+            label = await client.post(
+                "/xnobrain/api/runtime/v1/providers/openai/connections",
+                json={"api_key": "sk-other", "name": "second"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(label.status_code, 422)
         self.assertNotIn("sk-secret123", response.text)
         self._assert_connection_shape(response.json()["data"]["connection"])
         # the key WAS passed through to the router (proving it reached 9router)
         self.assertEqual(self.router.created_bodies[-1]["api_key"], "sk-secret123")
+
+    async def test_same_api_key_updates_one_connection_and_new_key_adds_another(self):
+        path = "/xnobrain/api/runtime/v1/providers/openai/connections"
+        async with self.client() as client:
+            first = await client.post(path, json={"api_key": "sk-same"})
+            repeated = await client.post(path, json={"api_key": "sk-same"})
+            different = await client.post(path, json={"api_key": "sk-different"})
+            listed = await client.get(path)
+
+        self.assertEqual(first.json()["data"]["connection"]["id"], repeated.json()["data"]["connection"]["id"])
+        self.assertNotEqual(first.json()["data"]["connection"]["id"], different.json()["data"]["connection"]["id"])
+        self.assertEqual(len(listed.json()["data"]["connections"]), 2)
 
     async def test_oauth_provider_rejects_api_key_add(self):
         async with self.client() as client:
@@ -319,7 +363,7 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("oc-go-secret", completed.text)
         self.assertEqual(
             self.router.created_bodies[-1],
-            {"provider": "opencode-go", "api_key": "oc-go-secret", "default_model": None},
+            {"provider": "opencode-go", "api_key": "oc-go-secret"},
         )
 
     async def test_opencode_zen_connect_stays_direct_api_key(self):
@@ -352,7 +396,6 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
             {
                 "provider": "openai-compatible-chat-opencode1",
                 "api_key": "zen-secret",
-                "default_model": None,
             },
         )
 
@@ -422,17 +465,17 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
             await client.get("/xnobrain/api/runtime/v1/providers")
             created = await client.post(
                 "/xnobrain/api/runtime/v1/providers/openai/connections",
-                json={"api_key": "sk-secret123", "name": "second"},
+                json={"api_key": "sk-secret123"},
             )
             refreshed = await client.get("/xnobrain/api/runtime/v1/providers")
 
-        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.status_code, 200)
         openai = next(item for item in refreshed.json()["data"] if item["id"] == "openai")
         self.assertTrue(openai["connected"])
         self.assertEqual(openai["connection_count"], 1)
         self.assertEqual(self.router.list_models_calls, 2)
 
-    async def test_provider_update_and_delete_invalidate_the_cached_list(self):
+    async def test_provider_connection_update_and_delete_invalidate_the_cached_list(self):
         async with self.client() as client:
             await client.get("/xnobrain/api/runtime/v1/providers")
             updated = await client.patch(
@@ -478,8 +521,8 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         }
         async with self.client() as client:
             for provider, _ in expected.items():
-                response = await client.patch(
-                    f"/xnobrain/api/runtime/v1/providers/{provider}/update",
+                response = await client.post(
+                    f"/xnobrain/api/runtime/v1/providers/{provider}/connections",
                     json={"api_key": f"{provider}-secret"},
                 )
                 self.assertEqual(response.status_code, 200, response.text)

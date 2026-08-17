@@ -162,30 +162,6 @@ class ProviderConnectionsMixin:
         )
 
 
-    async def openai_compatible_provider_id(self, provider: Any) -> str:
-        """Resolve a logical compatible-provider name to OmniRoute's node id."""
-        provider = self._provider(
-            provider,
-            OPENAI_COMPATIBLE_PROVIDERS | {"opencode"},
-        )
-        prefix = (
-            OPENCODE_ZEN_ROUTER_ALIAS
-            if provider == "opencode"
-            else provider
-        )
-        current = next(
-            (node for node in await self.list_provider_nodes() if node["prefix"] == prefix),
-            None,
-        )
-        if current is None:
-            raise NineRouterAPIError(
-                "provider base URL must be configured first",
-                code="invalid_provider_connection",
-                status=400,
-            )
-        return self._safe_id(current["id"], "provider_node_id")
-
-
     async def upsert_api_key_connection(self, body: Mapping[str, Any]) -> dict[str, Any]:
         raw_provider = str(body.get("provider") or "").strip()
         if raw_provider.startswith("openai-compatible-"):

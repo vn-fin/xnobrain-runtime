@@ -40,6 +40,17 @@ authorization. Cursor uses OmniRoute's validated credential-import flow because
 the pinned provider runtime does not expose browser OAuth for Cursor. The xAI
 API-key card remains separate from the Grok Build subscription card.
 
+API-key credentials use one idempotent write contract:
+`POST /xnobrain/api/runtime/v1/providers/{provider_id}/connections` with
+`api_key` and, only for a custom OpenAI-compatible provider, `base_url`.
+The runtime derives a SHA-256 fingerprint for the provider-runtime identity;
+submitting the same key updates its existing connection while a different key
+adds another connection. The raw key and full fingerprint are never returned.
+The previous `PATCH /providers/{provider_id}/update` route has been removed.
+Individual keys are tested with
+`POST /providers/{provider_id}/connections/{connection_id}/test` and removed
+with `DELETE /providers/{provider_id}/connections/{connection_id}`.
+
 Portable profile example:
 
 ```bash
