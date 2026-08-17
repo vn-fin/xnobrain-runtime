@@ -14,7 +14,6 @@ import json
 import sqlite3
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 _ROUTER_PREFIXES = {
@@ -49,17 +48,16 @@ def aggregate_profile(
     start_epoch: float,
     end_epoch: float,
     bucket: str = "day",
-    timezone_name: str = "UTC",
 ) -> dict[str, Any]:
     """Return ``{"totals", "by_model", "series"}`` for one profile's ``state.db``.
 
     ``bucket`` is one of ``hour|day|month`` (the service folds ``week`` -> ``day``).
     Series bucket timestamps are RFC3339 values at the start of each bucket in
-    ``timezone_name``.
+    UTC.
     Every query is bounded by the half-open ``(start, end]`` window. Any missing
     column, lock, or corruption degrades to zeroes rather than raising.
     """
-    zone = resolve_timezone(timezone_name)
+    zone = timezone.utc
     win = (start_epoch, end_epoch)
     empty: dict[str, Any] = {"totals": _zero_totals(), "by_model": [], "series": []}
     db = profile_dir / "state.db"
@@ -139,7 +137,6 @@ def aggregate_router_usage(
     start_epoch: float,
     end_epoch: float,
     bucket: str = "day",
-    timezone_name: str = "UTC",
 ) -> dict[str, Any]:
     """Aggregate OmniRoute's durable current or legacy usage ledger.
 
@@ -281,7 +278,7 @@ def aggregate_router_usage(
         )
         _add_router_row(provider_row, input_tokens, output_tokens, cost)
 
-        label = _timestamp_bucket(str(row["timestamp"] or ""), bucket, timezone_name)
+        label = _timestamp_bucket(str(row["timestamp"] or ""), bucket)
         if label:
             bucket_row = series.setdefault(
                 label,
@@ -361,13 +358,6 @@ def _epoch_iso(value: float) -> str:
     return datetime.fromtimestamp(value, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def resolve_timezone(value: str | None) -> tzinfo:
-    try:
-        return ZoneInfo(str(value or "UTC"))
-    except (ZoneInfoNotFoundError, ValueError):
-        return timezone.utc
-
-
 def bucket_start_iso(value: datetime, bucket: str, zone: tzinfo) -> str:
     local = value.astimezone(zone)
     if bucket == "hour":
@@ -437,14 +427,14 @@ def _qualified_router_model(model: str, prefix: str) -> str:
     return f"{prefix}/{normalized}"
 
 
-def _timestamp_bucket(value: str, bucket: str, timezone_name: str = "UTC") -> str:
+def _timestamp_bucket(value: str, bucket: str) -> str:
     try:
         stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return ""
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
-    return bucket_start_iso(stamp, bucket, resolve_timezone(timezone_name))
+    return bucket_start_iso(stamp, bucket, timezone.utc)
 
 
 def _add_router_row(

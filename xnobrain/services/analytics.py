@@ -24,7 +24,6 @@ from ..integrations.analytics import (
     aggregate_router_usage,
     bucket_start_iso,
     period_spend,
-    resolve_timezone,
 )
 from .base import ServiceError
 
@@ -66,24 +65,24 @@ class AnalyticsService:
 
     async def usage_summary(
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
-        bucket: str, timezone_name: str = "UTC",
+        bucket: str,
     ) -> dict[str, Any]:
         items, available = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket, timezone_name=timezone_name,
+            start=start_epoch, end=end_epoch, bucket=bucket,
         )
         return await self._decorate_overview(summary, items, agent_ids, available)
 
     async def usage_overview(
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
-        bucket: str, timezone_name: str = "UTC",
+        bucket: str,
     ) -> dict[str, Any]:
         """Return dashboard totals and attribution without chart payloads."""
         items, available = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket, timezone_name=timezone_name,
+            start=start_epoch, end=end_epoch, bucket=bucket,
         )
         complete = await self._decorate_overview(
             summary, items, agent_ids, available,
@@ -114,10 +113,10 @@ class AnalyticsService:
 
     async def agent_usage(
         self, agent_id: str, *, start_epoch: float, end_epoch: float,
-        bucket: str, timezone_name: str = "UTC",
+        bucket: str,
     ) -> dict[str, Any]:
         item = self._require_item(agent_id)
-        summary = await self._summary([item], start_epoch, end_epoch, bucket, timezone_name)
+        summary = await self._summary([item], start_epoch, end_epoch, bucket)
         agent_row = summary["agents"][0] if summary["agents"] else {
             "agent_id": agent_id, "display_name": self._display(item, agent_id),
             "totals": summary["totals"],
@@ -128,38 +127,38 @@ class AnalyticsService:
         agent_row["range_from"] = _epoch_iso(start_epoch)
         agent_row["range_to"] = _epoch_iso(end_epoch)
         agent_row["bucket"] = bucket
-        agent_row["timezone"] = timezone_name
+        agent_row["timezone"] = "UTC"
         return agent_row
 
     async def models_breakdown(
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
-        bucket: str, timezone_name: str = "UTC",
+        bucket: str,
     ) -> dict[str, Any]:
         items, _ = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket, timezone_name=timezone_name,
+            start=start_epoch, end=end_epoch, bucket=bucket,
         )
         return {
             "range_from": _epoch_iso(start_epoch), "range_to": _epoch_iso(end_epoch),
             "by_model": summary["by_model"], "totals": summary["totals"],
             "by_provider": summary["by_provider"], "source": summary["source"],
-            "timezone": timezone_name,
+            "timezone": "UTC",
         }
 
     async def timeseries(
         self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
-        bucket: str, timezone_name: str = "UTC",
+        bucket: str,
     ) -> dict[str, Any]:
         items, _ = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket, timezone_name=timezone_name,
+            start=start_epoch, end=end_epoch, bucket=bucket,
         )
         return {
             "range_from": _epoch_iso(start_epoch), "range_to": _epoch_iso(end_epoch),
             "bucket": bucket, "series": summary["series"], "source": summary["source"],
-            "timezone": timezone_name,
+            "timezone": "UTC",
         }
 
     def get_budget(self, agent_id: str) -> dict[str, Any]:
@@ -223,19 +222,18 @@ class AnalyticsService:
 
     async def _summary(
         self, items: list[Mapping[str, Any]], start: float, end: float, bucket: str,
-        timezone_name: str,
     ) -> dict[str, Any]:
         key = (
             frozenset(str(item.get("name") or "") for item in items),
-            round(start), round(end), bucket, timezone_name,
+            round(start), round(end), bucket,
         )
         now = time.time()
         cached = self._merged.get(key)
         if cached and now - cached[0] < _MERGED_TTL:
             return cached[1]
         effective = "day" if bucket == "week" else bucket
-        partials = await self._collect_partials(items, start, end, effective, timezone_name)
-        summary = self._merge(partials, start, end, bucket, timezone_name)
+        partials = await self._collect_partials(items, start, end, effective)
+        summary = self._merge(partials, start, end, bucket)
         if len(self._merged) > _CACHE_CAP:
             self._merged.clear()
         self._merged[key] = (now, summary)
@@ -249,12 +247,11 @@ class AnalyticsService:
         start: float,
         end: float,
         bucket: str,
-        timezone_name: str,
     ) -> dict[str, Any]:
         """Single-flight computation shared by parallel dashboard endpoints."""
         key = (
             frozenset(str(item.get("name") or "") for item in items),
-            selected, round(start), round(end), bucket, timezone_name,
+            selected, round(start), round(end), bucket,
         )
         now = time.time()
         cached = self._workspace.get(key)
@@ -265,10 +262,9 @@ class AnalyticsService:
             cached = self._workspace.get(key)
             if cached and now - cached[0] < _MERGED_TTL:
                 return copy.deepcopy(cached[1])
-            live = await self._summary(items, start, end, bucket, timezone_name)
+            live = await self._summary(items, start, end, bucket)
             summary = await self._with_durable_workspace(
                 live, selected=selected, start=start, end=end, bucket=bucket,
-                timezone_name=timezone_name,
             )
             if len(self._workspace) > _CACHE_CAP:
                 self._workspace.clear()
@@ -277,7 +273,6 @@ class AnalyticsService:
 
     async def _collect_partials(
         self, items: list[Mapping[str, Any]], start: float, end: float, effective: str,
-        timezone_name: str,
     ) -> list[dict[str, Any]]:
         async def read_one(item: Mapping[str, Any]) -> dict[str, Any]:
             agent_id = str(item.get("name") or "")
@@ -290,7 +285,7 @@ class AnalyticsService:
                     mtime = db.stat().st_mtime_ns
                 except OSError:
                     mtime = None
-                ckey = (agent_id, round(start), round(end), effective, timezone_name)
+                ckey = (agent_id, round(start), round(end), effective)
                 hit = self._partials.get(ckey)
                 if hit and mtime is not None and hit[0] == mtime:
                     partial = hit[1]
@@ -299,7 +294,6 @@ class AnalyticsService:
                         partial = await asyncio.to_thread(
                             aggregate_profile, profile_dir,
                             start_epoch=start, end_epoch=end, bucket=effective,
-                            timezone_name=timezone_name,
                         )
                     if mtime is not None:
                         if len(self._partials) > _CACHE_CAP:
@@ -317,7 +311,6 @@ class AnalyticsService:
         start: float,
         end: float,
         bucket: str,
-        timezone_name: str,
     ) -> dict[str, Any]:
         """Overlay durable OmniRoute totals for the unfiltered workspace view."""
         if selected:
@@ -370,7 +363,6 @@ class AnalyticsService:
                 start_epoch=start,
                 end_epoch=end,
                 bucket=effective,
-                timezone_name=timezone_name,
             )
         if not router_partial.get("available"):
             return {
@@ -400,7 +392,6 @@ class AnalyticsService:
             start,
             end,
             bucket,
-            timezone_name,
         )
         durable["agents"] = live["agents"]
         # Sessions only exist in XNOBrain's live profile records. Requests,
@@ -426,7 +417,6 @@ class AnalyticsService:
 
     def _merge(
         self, partials: list[dict[str, Any]], start: float, end: float, bucket: str,
-        timezone_name: str,
     ) -> dict[str, Any]:
         totals = _zero_totals()
         models: dict[tuple[str, str], dict[str, Any]] = {}
@@ -445,12 +435,12 @@ class AnalyticsService:
                 mk = (str(row.get("model") or "unknown"), str(row.get("provider") or ""))
                 _accumulate_model(models.setdefault(mk, _zero_model(*mk)), row)
             for row in partial.get("series") or []:
-                label = _fold_bucket(str(row.get("bucket") or ""), bucket, timezone_name)
+                label = _fold_bucket(str(row.get("bucket") or ""), bucket)
                 _accumulate_bucket(series.setdefault(label, _zero_bucket(label)), row)
         return {
             "range_from": _epoch_iso(start), "range_to": _epoch_iso(end),
             "period_days": max(1, round((end - start) / 86400)),
-            "bucket": bucket, "generated_at": _iso(), "timezone": timezone_name,
+            "bucket": bucket, "generated_at": _iso(), "timezone": "UTC",
             "totals": _finish_totals(totals),
             "agents": agents,
             "by_model": [
@@ -460,7 +450,7 @@ class AnalyticsService:
             ],
             "series": [
                 _finish_bucket(series.get(label, _zero_bucket(label)))
-                for label in _dense_buckets(start, end, bucket, timezone_name)
+                for label in _dense_buckets(start, end, bucket)
             ],
         }
 
@@ -652,8 +642,8 @@ def _apply_cost(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def _fold_bucket(label: str, bucket: str, timezone_name: str) -> str:
-    """Normalize an integration bucket to the requested local granularity."""
+def _fold_bucket(label: str, bucket: str) -> str:
+    """Normalize an integration bucket to the requested UTC granularity."""
     if not label:
         return label
     try:
@@ -664,13 +654,11 @@ def _fold_bucket(label: str, bucket: str, timezone_name: str) -> str:
             stamp = datetime.strptime(label, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         except ValueError:
             return label
-    return bucket_start_iso(stamp, bucket, resolve_timezone(timezone_name))
+    return bucket_start_iso(stamp, bucket, timezone.utc)
 
 
-def _dense_buckets(
-    start_epoch: float, end_epoch: float, bucket: str, timezone_name: str,
-) -> list[str]:
-    zone = resolve_timezone(timezone_name)
+def _dense_buckets(start_epoch: float, end_epoch: float, bucket: str) -> list[str]:
+    zone = timezone.utc
     start_utc = datetime.fromtimestamp(start_epoch, tz=timezone.utc)
     end_utc = datetime.fromtimestamp(end_epoch, tz=timezone.utc)
     start = start_utc.astimezone(zone)
