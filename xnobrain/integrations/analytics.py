@@ -2,8 +2,9 @@
 
 This adapter never writes runtime state. It opens SQLite files with ``?mode=ro``:
 profile ``state.db`` files provide current-agent attribution, while OmniRoute's
-``usageHistory`` is the durable workspace ledger that survives conversation and
-agent deletion. It holds no policy and does no HTTP.
+OmniRoute's current ``storage.sqlite/usage_history`` ledger (and the legacy
+``db/data.sqlite/usageHistory`` ledger) survives conversation and agent
+deletion. This adapter holds no policy and does no HTTP.
 """
 
 from __future__ import annotations
@@ -125,7 +126,7 @@ def aggregate_router_usage(
     end_epoch: float,
     bucket: str = "day",
 ) -> dict[str, Any]:
-    """Aggregate OmniRoute's durable ``usageHistory`` ledger.
+    """Aggregate OmniRoute's durable current or legacy usage ledger.
 
     The table is owned by OmniRoute and contains no XNOBrain agent identifier.
     Consequently this function deliberately returns workspace totals, provider
@@ -142,8 +143,18 @@ def aggregate_router_usage(
             "total": 0, "successful": 0, "failed": 0, "success_rate": 0.0,
         },
     }
-    db = data_dir / "db" / "data.sqlite"
-    if not db.is_file():
+    db = next(
+        (
+            candidate
+            for candidate in (
+                data_dir / "storage.sqlite",
+                data_dir / "db" / "data.sqlite",
+            )
+            if candidate.is_file()
+        ),
+        None,
+    )
+    if db is None:
         return empty
     try:
         conn = _open_ro(db)
@@ -152,26 +163,42 @@ def aggregate_router_usage(
     start_iso = _epoch_iso(start_epoch)
     end_iso = _epoch_iso(end_epoch)
     try:
-        exists = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='usageHistory'"
-        ).fetchone()
-        if exists is None:
-            return empty
         node_prefixes = _provider_node_prefixes(conn)
-        rows = conn.execute(
-            """
-            SELECT timestamp, COALESCE(provider,'unknown') AS provider,
-                   COALESCE(model,'unknown') AS model,
-                   COALESCE(promptTokens,0) AS prompt_tokens,
-                   COALESCE(completionTokens,0) AS completion_tokens,
-                   COALESCE(cost,0) AS cost,
-                   COALESCE(status,'') AS status,
-                   COALESCE(tokens,'') AS tokens
-            FROM usageHistory
-            WHERE timestamp > ? AND timestamp <= ?
-            """,
-            (start_iso, end_iso),
-        ).fetchall()
+        if _table_exists(conn, "usage_history"):
+            rows = conn.execute(
+                """
+                SELECT timestamp, COALESCE(provider,'unknown') AS provider,
+                       COALESCE(model,'unknown') AS model,
+                       COALESCE(tokens_input,0) AS prompt_tokens,
+                       COALESCE(tokens_output,0) AS completion_tokens,
+                       COALESCE(tokens_cache_read,0) AS cache_read_tokens,
+                       COALESCE(tokens_cache_creation,0) AS cache_write_tokens,
+                       COALESCE(tokens_reasoning,0) AS reasoning_tokens,
+                       0.0 AS cost, COALESCE(status,'') AS status,
+                       COALESCE(success,1) AS success, '' AS tokens
+                FROM usage_history
+                WHERE timestamp > ? AND timestamp <= ?
+                """,
+                (start_iso, end_iso),
+            ).fetchall()
+        elif _table_exists(conn, "usageHistory"):
+            rows = conn.execute(
+                """
+                SELECT timestamp, COALESCE(provider,'unknown') AS provider,
+                       COALESCE(model,'unknown') AS model,
+                       COALESCE(promptTokens,0) AS prompt_tokens,
+                       COALESCE(completionTokens,0) AS completion_tokens,
+                       0 AS cache_read_tokens, 0 AS cache_write_tokens,
+                       0 AS reasoning_tokens, COALESCE(cost,0) AS cost,
+                       COALESCE(status,'') AS status, NULL AS success,
+                       COALESCE(tokens,'') AS tokens
+                FROM usageHistory
+                WHERE timestamp > ? AND timestamp <= ?
+                """,
+                (start_iso, end_iso),
+            ).fetchall()
+        else:
+            return empty
     except sqlite3.Error:
         return empty
     finally:
@@ -188,20 +215,23 @@ def aggregate_router_usage(
         cost = float(row["cost"] or 0)
         token_meta = _token_metadata(str(row["tokens"] or ""))
         cache_read = int(
-            token_meta.get("cachedTokens")
+            row["cache_read_tokens"]
+            or token_meta.get("cachedTokens")
             or token_meta.get("cached_tokens")
             or token_meta.get("cache_read_tokens")
             or 0
         )
         cache_write = int(
-            token_meta.get("cacheCreationTokens")
+            row["cache_write_tokens"]
+            or token_meta.get("cacheCreationTokens")
             or token_meta.get("cache_creation_tokens")
             or token_meta.get("cache_creation_input_tokens")
             or token_meta.get("cache_write_tokens")
             or 0
         )
         reasoning = int(
-            token_meta.get("reasoningTokens")
+            row["reasoning_tokens"]
+            or token_meta.get("reasoningTokens")
             or token_meta.get("reasoning_tokens")
             or 0
         )
@@ -248,7 +278,11 @@ def aggregate_router_usage(
             )
             _add_router_row(bucket_row, input_tokens, output_tokens, cost)
 
-        if _successful_status(str(row["status"] or "")):
+        if (
+            bool(row["success"])
+            if row["success"] is not None
+            else _successful_status(str(row["status"] or ""))
+        ):
             successful += 1
 
     request_total = len(rows)
@@ -322,13 +356,24 @@ def _token_metadata(value: str) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone() is not None
+
+
 def _provider_node_prefixes(conn: sqlite3.Connection) -> dict[str, str]:
     """Map OmniRoute's UUID-backed custom provider IDs to stable prefixes."""
     try:
-        exists = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='providerNodes'"
-        ).fetchone()
-        if exists is None:
+        if _table_exists(conn, "provider_nodes"):
+            return {
+                str(row["id"] or ""): str(row["prefix"] or "").strip()
+                for row in conn.execute(
+                    "SELECT id, prefix FROM provider_nodes WHERE prefix IS NOT NULL"
+                ).fetchall()
+                if str(row["prefix"] or "").strip()
+            }
+        if not _table_exists(conn, "providerNodes"):
             return {}
         rows = conn.execute("SELECT id, data FROM providerNodes").fetchall()
     except sqlite3.Error:

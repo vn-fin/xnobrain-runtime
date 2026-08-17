@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -175,6 +175,66 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         finally:
             conn.close()
 
+    def _insert_current_router(
+        self,
+        *,
+        model: str,
+        inp: int,
+        out: int,
+        provider: str = "codex",
+        provider_prefix: str | None = None,
+        success: bool = True,
+        timestamp: str | None = None,
+    ):
+        db = self.router_data / "storage.sqlite"
+        self.router_data.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(db)
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS usage_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    provider TEXT, model TEXT, connection_id TEXT,
+                    tokens_input INTEGER DEFAULT 0,
+                    tokens_output INTEGER DEFAULT 0,
+                    tokens_cache_read INTEGER DEFAULT 0,
+                    tokens_cache_creation INTEGER DEFAULT 0,
+                    tokens_reasoning INTEGER DEFAULT 0,
+                    status TEXT, success INTEGER DEFAULT 1,
+                    timestamp TEXT NOT NULL
+                )
+                """
+            )
+            stamp = timestamp or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            if provider_prefix:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS provider_nodes (
+                        id TEXT PRIMARY KEY, prefix TEXT
+                    )
+                    """
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO provider_nodes (id, prefix) VALUES (?,?)",
+                    (provider, provider_prefix),
+                )
+            conn.execute(
+                """
+                INSERT INTO usage_history (
+                    provider, model, connection_id, tokens_input, tokens_output,
+                    tokens_cache_read, tokens_cache_creation, tokens_reasoning,
+                    status, success, timestamp
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    provider, model, "", inp, out, 0, 0, 0,
+                    "success" if success else "error", int(success), stamp,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     # ---- unit: the read-only aggregator ------------------------------------
 
     def test_aggregate_profile_windows_and_buckets(self):
@@ -252,6 +312,35 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["by_model"][0]["provider"], "opencode")
         self.assertEqual(result["by_model"][0]["model"], "ocz/gpt-5.6-luna")
         self.assertNotIn(node_id, str(result))
+
+    def test_current_omniroute_usage_groups_recent_requests_by_hour(self):
+        now = datetime.now(timezone.utc).replace(minute=30, second=0, microsecond=0)
+        node_id = "openai-compatible-chat-current"
+        self._insert_current_router(
+            model="gemini-2.5-flash", provider=node_id, provider_prefix="gemini",
+            inp=100, out=20, timestamp=(now - timedelta(hours=2)).isoformat().replace("+00:00", "Z"),
+        )
+        self._insert_current_router(
+            model="gemini-2.5-flash", provider=node_id, provider_prefix="gemini",
+            inp=200, out=40, timestamp=(now - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        )
+
+        result = aggregate_router_usage(
+            self.router_data,
+            start_epoch=(now - timedelta(days=1)).timestamp(),
+            end_epoch=now.timestamp(),
+            bucket="hour",
+        )
+
+        self.assertTrue(result["available"])
+        self.assertEqual(result["totals"]["input_tokens"], 300)
+        self.assertEqual(
+            [row["bucket"] for row in result["series"]],
+            [
+                (now - timedelta(hours=2)).strftime("%Y-%m-%dT%H"),
+                (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H"),
+            ],
+        )
 
     # ---- integration: routes end-to-end ------------------------------------
 
@@ -384,6 +473,34 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
 
             bad = await client.get("/xnobrain/api/runtime/v1/analytics/usage?from=2099-01-01&to=2000-01-01")
             self.assertEqual(bad.status_code, 400)
+
+    async def test_24h_hour_route_uses_current_omniroute_history(self):
+        now = datetime.now(timezone.utc).replace(minute=20, second=0, microsecond=0)
+        self._insert_current_router(
+            model="gpt-5", inp=100, out=10,
+            timestamp=(now - timedelta(hours=2)).isoformat().replace("+00:00", "Z"),
+        )
+        self._insert_current_router(
+            model="gpt-5", inp=200, out=20,
+            timestamp=(now - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        )
+
+        async with self.client() as client:
+            response = await client.get(
+                "/xnobrain/api/runtime/v1/analytics/usage?days=1&bucket=hour"
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()["data"]
+        self.assertEqual(data["bucket"], "hour")
+        self.assertEqual(data["source"]["kind"], "provider_runtime")
+        self.assertEqual(
+            [row["bucket"] for row in data["series"] if row["total_tokens"]],
+            [
+                (now - timedelta(hours=2)).strftime("%Y-%m-%dT%H"),
+                (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H"),
+            ],
+        )
 
     async def test_budget_advisory_set_get_and_clear(self):
         async with self.client() as client:
