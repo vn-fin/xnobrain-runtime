@@ -42,7 +42,7 @@ request GET "$api_prefix/sandboxes/stats" >/dev/null
 request GET "$api_prefix/sandboxes/health" >/dev/null
 
 providers="$(request GET "$api_prefix/providers")"
-for provider in claude codex antigravity openai anthropic gemini deepseek moonshot qwen openai-like; do
+for provider in claude codex github cursor grok-cli antigravity openai anthropic gemini deepseek moonshot qwen openai-like; do
   request GET "$api_prefix/providers/$provider/connect" >/dev/null
   request GET "$api_prefix/providers/$provider/models" >/dev/null
   request GET "$api_prefix/providers/$provider/models/auto/reasoning" >/dev/null
@@ -91,7 +91,8 @@ jq -e '.data | type == "array"' <<<"$notifications" >/dev/null
 jq -e '.data | type == "array"' <<<"$default_skills" >/dev/null
 
 jq -e '
-  ["claude", "codex", "antigravity", "openai", "anthropic", "gemini",
+  ["claude", "codex", "github", "cursor", "grok-cli", "antigravity",
+   "openai", "anthropic", "gemini",
    "deepseek", "moonshot", "qwen", "openai-like"] as $required
   | ($required - [.data[].id]) | length == 0
 ' <<<"$providers" >/dev/null

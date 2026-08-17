@@ -485,6 +485,60 @@ class NineRouterConfigTests(unittest.TestCase):
 
 
 class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cursor_import_uses_router_contract_and_filters_credentials(self) -> None:
+        manager = FakeNineRouterManager({
+            ("POST", "/api/oauth/cursor/import"): {
+                "success": True,
+                "connection": {
+                    "id": "cursor-1",
+                    "provider": "cursor",
+                    "authType": "oauth",
+                    "accessToken": "must-not-leak",
+                },
+            },
+            ("GET", "/api/providers"): {"connections": [{
+                "id": "cursor-1", "provider": "cursor", "authType": "oauth",
+            }]},
+            ("GET", "/v1/models?kind=llm"): {"data": [{
+                "id": "cu/claude-4", "owned_by": "cu",
+            }]},
+            ("GET", "/api/combos"): {"combos": [{
+                "id": "auto", "name": "auto", "models": ["cu/claude-4"],
+            }]},
+        })
+
+        result = await manager.import_cursor_credentials("cursor-secret", "machine-1")
+
+        self.assertIn((
+            "POST",
+            "/api/oauth/cursor/import",
+            {"accessToken": "cursor-secret", "machineId": "machine-1"},
+        ), manager.requests)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["connection"]["id"], "cursor-1")
+        self.assertNotIn("accessToken", result["connection"])
+
+    async def test_subscription_model_aliases_map_to_logical_providers(self) -> None:
+        manager = FakeNineRouterManager({
+            ("GET", "/api/providers"): {"connections": [
+                {"id": "github-1", "provider": "github", "authType": "oauth"},
+                {"id": "cursor-1", "provider": "cursor", "authType": "oauth"},
+                {"id": "grok-1", "provider": "grok-cli", "authType": "oauth"},
+            ]},
+            ("GET", "/v1/models?kind=llm"): {"data": [
+                {"id": "gh/gpt-5", "owned_by": "gh"},
+                {"id": "cu/claude-4", "owned_by": "cu"},
+                {"id": "gc/grok-code", "owned_by": "gc"},
+            ]},
+        })
+
+        models = (await manager.list_models(ensure_auto=False))["data"]
+
+        self.assertEqual(
+            [model["provider"] for model in models[1:]],
+            ["github", "cursor", "grok-cli"],
+        )
+
     async def test_openai_compatible_node_is_created_and_connections_use_logical_provider(self) -> None:
         node_id = "openai-compatible-chat-deepseek1"
         manager = FakeNineRouterManager({

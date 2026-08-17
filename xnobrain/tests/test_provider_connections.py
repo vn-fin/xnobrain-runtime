@@ -45,6 +45,9 @@ class FakeRouter:
         self.list_connections_calls = 0
         self.list_models_calls = 0
         self.list_connections_failures = 0
+        self.oauth_calls: list[tuple[str, str, str, dict | None]] = []
+        self.authorized_device_providers: set[str] = set()
+        self.imported_cursor_credentials: list[tuple[str, str]] = []
 
     async def list_connections(self):
         self.list_connections_calls += 1
@@ -111,6 +114,41 @@ class FakeRouter:
             "quotas": [{"name": "session", "used": 20, "total": 100,
                         "remaining_percent": 80, "reset_at": "", "unlimited": False}],
         }
+
+    async def oauth(self, provider, action, *, method, query_string="", body=None):
+        self.oauth_calls.append((provider, action, method, dict(body) if body else None))
+        if action == "device-code":
+            return {
+                "device_code": f"{provider}-device-secret",
+                "user_code": "ABCD-1234",
+                "verification_uri": f"https://login.example/{provider}",
+                "interval": 5,
+            }
+        if action == "poll" and provider in self.authorized_device_providers:
+            self._rows.append({
+                "id": f"{provider}-1", "provider": provider,
+                "auth_type": "oauth", "name": provider, "email": "",
+                "active": True, "priority": 0, "default_model": "",
+                "test_status": "active", "last_error": "",
+            })
+            return {"success": True, "connection": {"id": f"{provider}-1"}}
+        if action == "poll":
+            return {"success": False, "pending": True, "error": "authorization_pending"}
+        return {
+            "authUrl": f"https://login.example/{provider}",
+            "codeVerifier": "verifier",
+            "state": "state",
+        }
+
+    async def import_cursor_credentials(self, access_token, machine_id=None):
+        self.imported_cursor_credentials.append((access_token, machine_id or ""))
+        row = {
+            "id": "cursor-1", "provider": "cursor", "auth_type": "oauth",
+            "name": "Cursor", "email": "", "active": True, "priority": 0,
+            "default_model": "", "test_status": "active", "last_error": "",
+        }
+        self._rows.append(row)
+        return {"success": True, "connection": {"id": "cursor-1", "provider": "cursor"}}
 
 
 class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
@@ -185,6 +223,84 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
                 "/xnobrain/api/runtime/v1/providers/codex/connections", json={"api_key": "x"})
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"]["code"], "oauth_connect_required")
+
+    async def test_subscription_providers_are_common_first(self):
+        async with self.client() as client:
+            providers = (await client.get(
+                "/xnobrain/api/runtime/v1/providers"
+            )).json()["data"]
+
+        subscription_ids = [
+            item["id"] for item in providers if item["connection_mode"] != "api-key"
+        ]
+        self.assertEqual(
+            subscription_ids,
+            ["claude", "codex", "github", "cursor", "grok-cli", "antigravity"],
+        )
+        labels = {item["id"]: item["display_name"] for item in providers}
+        self.assertEqual(labels["github"], "GitHub Copilot")
+        self.assertEqual(labels["cursor"], "Cursor")
+        self.assertEqual(labels["grok-cli"], "Grok Build")
+
+    async def test_device_code_subscription_starts_and_completes_on_status_poll(self):
+        async with self.client() as client:
+            started = await client.post(
+                "/xnobrain/api/runtime/v1/providers/github/connect"
+            )
+            self.router.authorized_device_providers.add("github")
+            completed = await client.get(
+                "/xnobrain/api/runtime/v1/providers/github/connect"
+            )
+
+        info = started.json()["data"]
+        self.assertEqual(info["connection_mode"], "device-code")
+        self.assertEqual(info["user_code"], "ABCD-1234")
+        self.assertEqual(info["poll_interval_seconds"], 5)
+        self.assertTrue(completed.json()["data"]["connected"])
+        self.assertEqual(
+            self.router.oauth_calls[-1],
+            (
+                "github",
+                "poll",
+                "POST",
+                {"deviceCode": "github-device-secret", "codeVerifier": ""},
+            ),
+        )
+
+    async def test_grok_build_uses_the_device_code_subscription_flow(self):
+        async with self.client() as client:
+            started = await client.post(
+                "/xnobrain/api/runtime/v1/providers/grok-cli/connect"
+            )
+
+        info = started.json()["data"]
+        self.assertEqual(info["verification_url"], "https://login.example/grok-cli")
+        self.assertEqual(
+            self.router.oauth_calls[-1][:3],
+            ("grok-cli", "device-code", "GET"),
+        )
+
+    async def test_cursor_import_accepts_credential_json_without_echoing_it(self):
+        credential = '{"accessToken":"cursor-secret","machineId":"machine-1"}'
+        async with self.client() as client:
+            started = await client.post(
+                "/xnobrain/api/runtime/v1/providers/cursor/connect"
+            )
+            completed = await client.put(
+                "/xnobrain/api/runtime/v1/providers/cursor/connect",
+                json={"text": credential},
+            )
+
+        self.assertEqual(
+            started.json()["data"]["required_client_action"],
+            "submit_text",
+        )
+        self.assertEqual(completed.status_code, 200, completed.text)
+        self.assertNotIn("cursor-secret", completed.text)
+        self.assertEqual(
+            self.router.imported_cursor_credentials,
+            [("cursor-secret", "machine-1")],
+        )
 
     async def test_opencode_go_connect_guides_auth_then_accepts_issued_key(self):
         async with self.client() as client:

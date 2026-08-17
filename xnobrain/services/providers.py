@@ -33,9 +33,11 @@ from ..repositories import StoreError
 from .base import ServiceError, iso, utc_now
 from .constants import (
     API_KEY_PROVIDERS,
+    DEVICE_CODE_PROVIDERS,
     DEFAULT_TEAM_COORDINATOR_PROMPT,
     DEFAULT_TEAM_SYNTHESIS_PROMPT,
     EVERY_SCHEDULE,
+    IMPORT_TOKEN_PROVIDERS,
     NO_AUTH_PROVIDERS,
     OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
     PROVIDER_DEFINITIONS,
@@ -81,6 +83,7 @@ class ProvidersServiceMixin:
                 "connection_mode": (
                     "no-auth" if no_auth
                     else "api-key" if provider in API_KEY_PROVIDERS
+                    else "device-code" if provider in DEVICE_CODE_PROVIDERS
                     else "cli"
                 ),
                 "base_url": definition.get("base_url", ""),
@@ -101,6 +104,33 @@ class ProvidersServiceMixin:
 
     async def provider_status(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
+        attempt = self._oauth_attempts.get(provider)
+        if attempt and attempt.get("flow") == "device-code":
+            payload = await self.router.oauth(
+                provider,
+                "poll",
+                method="POST",
+                body={
+                    "deviceCode": attempt["device_code"],
+                    "codeVerifier": attempt.get("code_verifier"),
+                },
+            )
+            if payload.get("success"):
+                self._oauth_attempts.pop(provider, None)
+                self._cache.invalidate("providers")
+            elif not payload.get("pending") and payload.get("error") not in {
+                "authorization_pending", "slow_down",
+            }:
+                self._oauth_attempts.pop(provider, None)
+                raise ServiceError(
+                    str(
+                        payload.get("errorDescription")
+                        or payload.get("error")
+                        or "provider authorization failed"
+                    ),
+                    status=400,
+                    code="oauth_authorization_failed",
+                )
         items = await self.providers()
         current = next(item for item in items if item["id"] == provider)
         return {"provider_id": provider, "connection_mode": current["connection_mode"], "connected": current["connected"], "status": current["status"], "default_model": current["default_model"], "available_models": current["available_models"]}
@@ -124,6 +154,55 @@ class ProvidersServiceMixin:
         self._require_connection_auth(provider)
         if provider in API_KEY_PROVIDERS:
             return self._api_key_info(provider)
+        if provider in IMPORT_TOKEN_PROVIDERS:
+            return {
+                "provider_id": provider,
+                "connection_mode": "cli",
+                "required_client_action": "submit_text",
+                "login_url": "https://cursor.com/dashboard",
+                "verification_url": "https://cursor.com/dashboard",
+                "instructions": (
+                    "Sign in to Cursor, then paste the Cursor access token. You may also paste "
+                    "JSON containing accessToken and the optional machineId."
+                ),
+                "text_label": "Cursor access token or credential JSON",
+                "status": "waiting_for_user",
+            }
+        if provider in DEVICE_CODE_PROVIDERS:
+            payload = await self.router.oauth(provider, "device-code", method="GET")
+            device_code = str(payload.get("device_code") or "").strip()
+            user_code = str(payload.get("user_code") or "").strip()
+            verification_url = str(
+                payload.get("verification_uri_complete")
+                or payload.get("verification_uri")
+                or payload.get("verification_url")
+                or ""
+            ).strip()
+            if not device_code or not user_code or not verification_url:
+                raise ServiceError(
+                    "Provider runtime returned an incomplete device authorization",
+                    status=502,
+                    code="router_error",
+                )
+            self._oauth_attempts[provider] = {
+                "flow": "device-code",
+                "device_code": device_code,
+                "code_verifier": str(payload.get("codeVerifier") or ""),
+            }
+            return {
+                "provider_id": provider,
+                "connection_mode": "device-code",
+                "required_client_action": "open_url_and_enter_code",
+                "login_url": verification_url,
+                "verification_url": verification_url,
+                "user_code": user_code,
+                "poll_interval_seconds": max(2, int(payload.get("interval") or 5)),
+                "instructions": (
+                    "Open the verification page, enter the code, and approve access."
+                ),
+                "text_label": "",
+                "status": "waiting_for_user",
+            }
         redirect = "http://localhost:1455/auth/callback" if provider == "codex" else "http://localhost:20128/callback"
         payload = await self.router.oauth(provider, "authorize", method="GET", query_string=f"redirect_uri={redirect}")
         self._oauth_attempts[provider] = {"code_verifier": str(payload.get("codeVerifier") or ""), "state": str(payload.get("state") or ""), "redirect_uri": redirect}
@@ -138,6 +217,26 @@ class ProvidersServiceMixin:
         value = str(body.get("text") or body.get("response_text") or body.get("token") or body.get("api_key") or "").strip()
         if not value:
             raise ServiceError("provider credential or callback is required")
+        if provider in IMPORT_TOKEN_PROVIDERS:
+            access_token, machine_id = self._cursor_credentials(value)
+            result = await self.router.import_cursor_credentials(
+                access_token,
+                machine_id,
+            )
+            if not result.get("success"):
+                raise ServiceError(
+                    "Cursor credential import failed",
+                    status=400,
+                    code="oauth_authorization_failed",
+                )
+            self._cache.invalidate("providers")
+            return {
+                "provider_id": provider,
+                "connection_mode": "cli",
+                "connected": True,
+                "status": "connected",
+                "connection": result.get("connection", {}),
+            }
         if provider in API_KEY_PROVIDERS:
             router_provider = provider
             if provider == "opencode":
@@ -354,3 +453,35 @@ class ProvidersServiceMixin:
                 ),
             })
         return info
+
+    @staticmethod
+    def _cursor_credentials(value: str) -> tuple[str, str]:
+        if not value.lstrip().startswith("{"):
+            return value.strip(), ""
+        try:
+            document = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ServiceError(
+                "Cursor credential JSON is invalid",
+                code="invalid_provider_connection",
+            ) from exc
+        if not isinstance(document, dict):
+            raise ServiceError(
+                "Cursor credential JSON must be an object",
+                code="invalid_provider_connection",
+            )
+        access_token = str(
+            document.get("accessToken")
+            or document.get("access_token")
+            or document.get("token")
+            or ""
+        ).strip()
+        if not access_token:
+            raise ServiceError(
+                "Cursor credential JSON must contain accessToken",
+                code="invalid_provider_connection",
+            )
+        machine_id = str(
+            document.get("machineId") or document.get("machine_id") or ""
+        ).strip()
+        return access_token, machine_id

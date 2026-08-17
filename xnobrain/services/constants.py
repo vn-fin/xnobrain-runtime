@@ -11,15 +11,27 @@ OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS = {
     "qwen": {"display_name": "Qwen", "description": "Qwen models through Alibaba Cloud's OpenAI-compatible API.", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"},
     "openai-like": {"display_name": "OpenAI-compatible", "description": "Connect any OpenAI-compatible endpoint with a base URL and API key.", "base_url": ""},
 }
+SUBSCRIPTION_PROVIDER_DEFINITIONS = {
+    "claude": {"display_name": "Claude Code", "description": "Use an existing Claude Code subscription."},
+    "codex": {"display_name": "OpenAI Codex", "description": "Use an existing ChatGPT or Codex subscription."},
+    "github": {"display_name": "GitHub Copilot", "description": "Use an existing GitHub Copilot subscription."},
+    "cursor": {"display_name": "Cursor", "description": "Use an existing Cursor subscription."},
+    "grok-cli": {"display_name": "Grok Build", "description": "Use an existing xAI Grok Build subscription."},
+    "antigravity": {"display_name": "Google Antigravity", "description": "Use an existing Google Antigravity account."},
+}
 PROVIDER_DEFINITIONS = {
+    **SUBSCRIPTION_PROVIDER_DEFINITIONS,
     "opencode-go": {"display_name": "OpenCode Go", "description": "OpenCode Go models from your coding subscription.", "base_url": ""},
     "opencode": {"display_name": "OpenCode Zen", "description": "OpenCode Zen models using your Zen API key.", "base_url": ""},
     **OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
 }
 SUPPORTED_PROVIDERS = (
-    "claude", "codex", "antigravity", "openai", "anthropic", "gemini",
+    "claude", "codex", "github", "cursor", "grok-cli", "antigravity",
+    "openai", "anthropic", "gemini",
     "opencode-go", "opencode", *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
 )
+DEVICE_CODE_PROVIDERS = frozenset({"github", "grok-cli"})
+IMPORT_TOKEN_PROVIDERS = frozenset({"cursor"})
 API_KEY_PROVIDERS = frozenset({"openai", "anthropic", "gemini", "opencode-go", "opencode", *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS})
 NO_AUTH_PROVIDERS = frozenset()
 FREE_MODEL_PROVIDERS = frozenset()

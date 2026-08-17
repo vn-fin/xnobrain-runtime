@@ -294,3 +294,29 @@ class ProviderConnectionsMixin:
         if method != "GET" and bool(payload.get("success")):
             await self.ensure_auto_combo()
         return dict(payload)
+
+    async def import_cursor_credentials(
+        self,
+        access_token: Any,
+        machine_id: Any = None,
+    ) -> dict[str, Any]:
+        """Import a Cursor subscription without exposing the credential again."""
+        token = str(access_token or "").strip()
+        if not token:
+            raise NineRouterAPIError(
+                "Cursor access token is required",
+                code="invalid_provider_connection",
+                status=400,
+            )
+        body = {"accessToken": token}
+        normalized_machine_id = str(machine_id or "").strip()
+        if normalized_machine_id:
+            body["machineId"] = normalized_machine_id
+        payload = await self._request("POST", "/api/oauth/cursor/import", body)
+        if bool(payload.get("success")):
+            await self.ensure_auto_combo()
+        connection = self._filtered_connection_response(payload)["connection"]
+        return {
+            "success": bool(payload.get("success")),
+            "connection": connection,
+        }

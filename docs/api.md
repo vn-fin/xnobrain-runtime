@@ -33,6 +33,13 @@ Agent execution activity is available as a compatibility snapshot at
 `running`. The runtime caches the database-backed Kanban portion for ten
 seconds so status monitoring does not continuously scan every board.
 
+The provider catalog returns subscription connections first in common-use
+order: Claude Code, OpenAI Codex, GitHub Copilot, Cursor, Grok Build, Google
+Antigravity, and OpenCode Go. GitHub Copilot and Grok Build use device-code
+authorization. Cursor uses OmniRoute's validated credential-import flow because
+the pinned provider runtime does not expose browser OAuth for Cursor. The xAI
+API-key card remains separate from the Grok Build subscription card.
+
 Portable profile example:
 
 ```bash

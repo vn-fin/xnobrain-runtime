@@ -35,10 +35,13 @@ OPENCODE_ZEN_ROUTER_ALIAS = "ocz"
 OPENCODE_ZEN_API_BASE_URL = "https://opencode.ai/zen/v1"
 
 SUPPORTED_ROUTER_PROVIDERS = frozenset({
-    "claude", "codex", "antigravity", "openai", "anthropic", "gemini",
+    "claude", "codex", "github", "cursor", "grok-cli", "antigravity",
+    "openai", "anthropic", "gemini",
     "opencode-go", "opencode",
 })
-OAUTH_ROUTER_PROVIDERS = frozenset({"claude", "codex", "antigravity"})
+OAUTH_ROUTER_PROVIDERS = frozenset({
+    "claude", "codex", "github", "grok-cli", "antigravity",
+})
 API_KEY_ROUTER_PROVIDERS = frozenset({
     "openai", "anthropic", "gemini", "opencode-go",
 })
@@ -48,6 +51,9 @@ OPENAI_COMPATIBLE_PROVIDERS = frozenset(
 ROUTER_MODEL_ALIASES = {
     "claude": "cc",
     "codex": "cx",
+    "github": "gh",
+    "cursor": "cu",
+    "grok-cli": "gc",
     "antigravity": "ag",
     "openai": "openai",
     "anthropic": "anthropic",

@@ -83,7 +83,7 @@ class PlatformService(
         self.conversation_runs = ConversationRunService(repository, agents)
         from .team_runs import TeamRunService
         self.team_runs = TeamRunService(repository, agents, self)
-        self._oauth_attempts: dict[str, dict[str, str]] = {}
+        self._oauth_attempts: dict[str, dict[str, Any]] = {}
         self._cache = MemoryCache()
         self._agent_activity_kanban_ids: set[str] = set()
         self._agent_activity_kanban_checked_at = float("-inf")
