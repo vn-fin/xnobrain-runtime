@@ -3,6 +3,7 @@
 from .nine_router_support import (
     API_KEY_ROUTER_PROVIDERS,
     Any,
+    hashlib,
     Mapping,
     NineRouterAPIError,
     OAUTH_ROUTER_PROVIDERS,
@@ -15,6 +16,8 @@ from .nine_router_support import (
     _OAUTH_POST_ACTIONS,
     quote,
 )
+
+_API_KEY_FINGERPRINT_PREFIX = "xnobrain-api-key:"
 
 
 class ProviderConnectionsMixin:
@@ -64,12 +67,15 @@ class ProviderConnectionsMixin:
                 default_model.endswith("-free") or default_model == "big-pickle"
             ):
                 default_model = ""
+            name = str(item.get("name") or item.get("displayName") or provider)
+            if name.startswith(_API_KEY_FINGERPRINT_PREFIX):
+                name = f"API key • {name.removeprefix(_API_KEY_FINGERPRINT_PREFIX)[:8]}"
             connections.append(
                 {
                     "id": str(item.get("id") or ""),
                     "provider": provider,
                     "auth_type": str(item.get("authType") or ""),
-                    "name": str(item.get("name") or item.get("displayName") or provider),
+                    "name": name,
                     "active": item.get("isActive") is not False,
                     "default_model": default_model,
                     "test_status": str(item.get("testStatus") or "unknown"),
@@ -180,7 +186,7 @@ class ProviderConnectionsMixin:
         return self._safe_id(current["id"], "provider_node_id")
 
 
-    async def create_api_key_connection(self, body: Mapping[str, Any]) -> dict[str, Any]:
+    async def upsert_api_key_connection(self, body: Mapping[str, Any]) -> dict[str, Any]:
         raw_provider = str(body.get("provider") or "").strip()
         if raw_provider.startswith("openai-compatible-"):
             provider = self._safe_id(raw_provider, "provider")
@@ -191,17 +197,20 @@ class ProviderConnectionsMixin:
             raise NineRouterAPIError(
                 "api_key is required", code="invalid_provider_connection", status=400
             )
+        fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
         request_body: dict[str, Any] = {
             "provider": provider,
             "apiKey": api_key,
-            "name": str(body.get("name") or body.get("display_name") or provider).strip(),
+            "name": _API_KEY_FINGERPRINT_PREFIX + fingerprint,
         }
         default_model = str(body.get("default_model") or body.get("defaultModel") or "").strip()
         if default_model:
             request_body["defaultModel"] = default_model
         payload = await self._request("POST", "/api/providers", request_body)
         await self.ensure_auto_combo()
-        return self._filtered_connection_response(payload)
+        result = self._filtered_connection_response(payload)
+        result["connection"]["name"] = f"API key • {fingerprint[:8]}"
+        return result
 
 
     async def delete_connection(self, connection_id: Any) -> dict[str, Any]:

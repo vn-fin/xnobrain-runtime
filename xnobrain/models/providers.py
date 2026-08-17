@@ -14,10 +14,11 @@ class ProviderCredential(BaseModel):
     default_model: str | None = None
 
 
-class ConnectionCreate(BaseModel):
+class ConnectionUpsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     api_key: str = Field(min_length=1, max_length=4096)
-    name: str | None = Field(default=None, max_length=128)
-    default_model: str | None = Field(default=None, max_length=128)
+    base_url: str | None = Field(default=None, max_length=2048)
 
 
 class ConnectionPatch(BaseModel):

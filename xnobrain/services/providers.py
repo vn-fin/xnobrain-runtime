@@ -251,10 +251,9 @@ class ProvidersServiceMixin:
                     display_name=definition["display_name"],
                     base_url=base_url,
                 )
-            await self.router.create_api_key_connection({
+            await self.router.upsert_api_key_connection({
                 "provider": router_provider,
                 "api_key": value,
-                "default_model": body.get("default_model"),
             })
             self._cache.invalidate("providers")
             return {**self._api_key_info(provider), "connected": True, "status": "connected"}
@@ -274,33 +273,6 @@ class ProvidersServiceMixin:
         self._oauth_attempts.pop(provider, None)
         self._cache.invalidate("providers")
         return {"provider_id": provider, "connection_mode": "cli", "connected": True, "status": "connected"}
-
-    async def update_provider(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        self._provider(provider)
-        self._require_connection_auth(provider)
-        if provider not in API_KEY_PROVIDERS:
-            raise ServiceError("OAuth providers must be updated through connect")
-        router_provider = provider
-        if provider == "opencode":
-            router_provider = await self.router.ensure_opencode_zen_provider()
-        elif provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
-            definition = OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS[provider]
-            base_url = str(body.get("base_url") or definition["base_url"]).strip()
-            if not base_url:
-                raise ServiceError("base_url is required", code="invalid_provider_connection")
-            router_provider = await self.router.ensure_openai_compatible_provider(
-                provider,
-                display_name=definition["display_name"],
-                base_url=base_url,
-            )
-        result = await self.router.create_api_key_connection({
-            "provider": router_provider,
-            "api_key": body.get("api_key"),
-            "name": body.get("display_name") or PROVIDER_DEFINITIONS.get(provider, {}).get("display_name"),
-            "default_model": body.get("default_model"),
-        })
-        self._cache.invalidate("providers")
-        return {"provider_id": provider, "connected": True, "status": "connected", "connection": result}
 
     async def disconnect_provider(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
@@ -337,7 +309,7 @@ class ProvidersServiceMixin:
             "connections": connections,
         }
 
-    async def add_provider_connection(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
+    async def upsert_provider_connection(self, provider: str, body: Mapping[str, Any]) -> dict[str, Any]:
         self._provider(provider)
         self._require_connection_auth(provider)
         if provider not in API_KEY_PROVIDERS:
@@ -349,12 +321,18 @@ class ProvidersServiceMixin:
         if provider == "opencode":
             router_provider = await self.router.ensure_opencode_zen_provider()
         elif provider in OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS:
-            router_provider = await self.router.openai_compatible_provider_id(provider)
-        result = await self.router.create_api_key_connection({
+            definition = OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS[provider]
+            base_url = str(body.get("base_url") or definition["base_url"]).strip()
+            if not base_url:
+                raise ServiceError("base_url is required", code="invalid_provider_connection")
+            router_provider = await self.router.ensure_openai_compatible_provider(
+                provider,
+                display_name=definition["display_name"],
+                base_url=base_url,
+            )
+        result = await self.router.upsert_api_key_connection({
             "provider": router_provider,
             "api_key": body.get("api_key"),
-            "name": body.get("name"),
-            "default_model": body.get("default_model"),
         })
         self._cache.invalidate("providers")
         return {"provider_id": provider, "connected": True, "connection": result["connection"]}
