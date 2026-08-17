@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 import time
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 def csv(value: Any) -> list[str]:
@@ -44,3 +45,12 @@ def time_range(query: Any) -> dict[str, float]:
 def bucket(query: Any) -> str:
     value = str(query.get("bucket") or "day")
     return value if value in {"hour", "day", "week", "month"} else "day"
+
+
+def user_timezone(query: Any) -> str:
+    value = str(query.get("timezone") or "UTC").strip() or "UTC"
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError("timezone must be a valid IANA timezone") from None
+    return value

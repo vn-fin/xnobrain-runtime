@@ -19,7 +19,13 @@ from typing import Any, Mapping
 
 import yaml
 
-from ..integrations.analytics import aggregate_profile, aggregate_router_usage, period_spend
+from ..integrations.analytics import (
+    aggregate_profile,
+    aggregate_router_usage,
+    bucket_start_iso,
+    period_spend,
+    resolve_timezone,
+)
 from .base import ServiceError
 
 
@@ -59,23 +65,25 @@ class AnalyticsService:
         return {"agents": rows}
 
     async def usage_summary(
-        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
+        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
+        bucket: str, timezone_name: str = "UTC",
     ) -> dict[str, Any]:
         items, available = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket,
+            start=start_epoch, end=end_epoch, bucket=bucket, timezone_name=timezone_name,
         )
         return await self._decorate_overview(summary, items, agent_ids, available)
 
     async def usage_overview(
-        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
+        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
+        bucket: str, timezone_name: str = "UTC",
     ) -> dict[str, Any]:
         """Return dashboard totals and attribution without chart payloads."""
         items, available = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket,
+            start=start_epoch, end=end_epoch, bucket=bucket, timezone_name=timezone_name,
         )
         complete = await self._decorate_overview(
             summary, items, agent_ids, available,
@@ -105,10 +113,11 @@ class AnalyticsService:
         return summary
 
     async def agent_usage(
-        self, agent_id: str, *, start_epoch: float, end_epoch: float, bucket: str,
+        self, agent_id: str, *, start_epoch: float, end_epoch: float,
+        bucket: str, timezone_name: str = "UTC",
     ) -> dict[str, Any]:
         item = self._require_item(agent_id)
-        summary = await self._summary([item], start_epoch, end_epoch, bucket)
+        summary = await self._summary([item], start_epoch, end_epoch, bucket, timezone_name)
         agent_row = summary["agents"][0] if summary["agents"] else {
             "agent_id": agent_id, "display_name": self._display(item, agent_id),
             "totals": summary["totals"],
@@ -116,36 +125,41 @@ class AnalyticsService:
         agent_row["budget"] = self._budget_status(agent_id, item)
         agent_row["by_model"] = summary["by_model"]
         agent_row["series"] = summary["series"]
-        agent_row["range_from"] = start_epoch
-        agent_row["range_to"] = end_epoch
+        agent_row["range_from"] = _epoch_iso(start_epoch)
+        agent_row["range_to"] = _epoch_iso(end_epoch)
         agent_row["bucket"] = bucket
+        agent_row["timezone"] = timezone_name
         return agent_row
 
     async def models_breakdown(
-        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
+        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
+        bucket: str, timezone_name: str = "UTC",
     ) -> dict[str, Any]:
         items, _ = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket,
+            start=start_epoch, end=end_epoch, bucket=bucket, timezone_name=timezone_name,
         )
         return {
-            "range_from": start_epoch, "range_to": end_epoch,
+            "range_from": _epoch_iso(start_epoch), "range_to": _epoch_iso(end_epoch),
             "by_model": summary["by_model"], "totals": summary["totals"],
             "by_provider": summary["by_provider"], "source": summary["source"],
+            "timezone": timezone_name,
         }
 
     async def timeseries(
-        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float, bucket: str,
+        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
+        bucket: str, timezone_name: str = "UTC",
     ) -> dict[str, Any]:
         items, _ = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket,
+            start=start_epoch, end=end_epoch, bucket=bucket, timezone_name=timezone_name,
         )
         return {
-            "range_from": start_epoch, "range_to": end_epoch,
+            "range_from": _epoch_iso(start_epoch), "range_to": _epoch_iso(end_epoch),
             "bucket": bucket, "series": summary["series"], "source": summary["source"],
+            "timezone": timezone_name,
         }
 
     def get_budget(self, agent_id: str) -> dict[str, Any]:

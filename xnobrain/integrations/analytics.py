@@ -9,16 +9,14 @@ deletion. This adapter holds no policy and does no HTTP.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 import json
 import sqlite3
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
-# strftime formats per granularity (UTC). ``week`` is handled by the service:
-# it asks for ``day`` grain here and folds into ISO weeks in Python.
-_BUCKET_FMT = {"hour": "%Y-%m-%dT%H", "day": "%Y-%m-%d", "month": "%Y-%m"}
 _ROUTER_PREFIXES = {
     "claude": "cc",
     "codex": "cx",
@@ -51,15 +49,17 @@ def aggregate_profile(
     start_epoch: float,
     end_epoch: float,
     bucket: str = "day",
+    timezone_name: str = "UTC",
 ) -> dict[str, Any]:
     """Return ``{"totals", "by_model", "series"}`` for one profile's ``state.db``.
 
     ``bucket`` is one of ``hour|day|month`` (the service folds ``week`` -> ``day``).
-    ``fmt`` comes from a fixed dict, never user input, so interpolating it is safe.
+    Series bucket timestamps are RFC3339 values at the start of each bucket in
+    ``timezone_name``.
     Every query is bounded by the half-open ``(start, end]`` window. Any missing
     column, lock, or corruption degrades to zeroes rather than raising.
     """
-    fmt = _BUCKET_FMT.get(bucket, _BUCKET_FMT["day"])
+    zone = resolve_timezone(timezone_name)
     win = (start_epoch, end_epoch)
     empty: dict[str, Any] = {"totals": _zero_totals(), "by_model": [], "series": []}
     db = profile_dir / "state.db"
@@ -99,20 +99,34 @@ def aggregate_profile(
             """,
             win,
         ).fetchall()]
-        series = [dict(row) for row in conn.execute(
-            f"""
-            SELECT strftime('{fmt}', started_at, 'unixepoch') AS bucket,
-                   COALESCE(SUM(input_tokens),0)        AS input_tokens,
-                   COALESCE(SUM(output_tokens),0)       AS output_tokens,
-                   COALESCE(SUM(estimated_cost_usd),0)  AS estimated_cost_usd,
-                   COALESCE(SUM(actual_cost_usd),0)     AS actual_cost_usd,
-                   COUNT(*)                             AS sessions
+        series: dict[str, dict[str, Any]] = {}
+        for row in conn.execute(
+            """
+            SELECT started_at,
+                   COALESCE(input_tokens,0)       AS input_tokens,
+                   COALESCE(output_tokens,0)      AS output_tokens,
+                   COALESCE(estimated_cost_usd,0) AS estimated_cost_usd,
+                   COALESCE(actual_cost_usd,0)    AS actual_cost_usd
             FROM sessions WHERE started_at > ? AND started_at <= ?
-            GROUP BY bucket ORDER BY bucket
             """,
             win,
-        ).fetchall()]
-        return {"totals": totals, "by_model": by_model, "series": series}
+        ).fetchall():
+            label = epoch_bucket(float(row["started_at"]), bucket, zone)
+            bucket_row = series.setdefault(
+                label,
+                {
+                    "bucket": label, "input_tokens": 0, "output_tokens": 0,
+                    "estimated_cost_usd": 0.0, "actual_cost_usd": 0.0,
+                    "sessions": 0,
+                },
+            )
+            bucket_row["input_tokens"] += int(row["input_tokens"] or 0)
+            bucket_row["output_tokens"] += int(row["output_tokens"] or 0)
+            bucket_row["estimated_cost_usd"] += float(row["estimated_cost_usd"] or 0)
+            bucket_row["actual_cost_usd"] += float(row["actual_cost_usd"] or 0)
+            bucket_row["sessions"] += 1
+        series_rows = [series[key] for key in sorted(series)]
+        return {"totals": totals, "by_model": by_model, "series": series_rows}
     except sqlite3.Error:
         return empty
     finally:
@@ -125,6 +139,7 @@ def aggregate_router_usage(
     start_epoch: float,
     end_epoch: float,
     bucket: str = "day",
+    timezone_name: str = "UTC",
 ) -> dict[str, Any]:
     """Aggregate OmniRoute's durable current or legacy usage ledger.
 
@@ -266,7 +281,7 @@ def aggregate_router_usage(
         )
         _add_router_row(provider_row, input_tokens, output_tokens, cost)
 
-        label = _timestamp_bucket(str(row["timestamp"] or ""), bucket)
+        label = _timestamp_bucket(str(row["timestamp"] or ""), bucket, timezone_name)
         if label:
             bucket_row = series.setdefault(
                 label,
@@ -346,6 +361,32 @@ def _epoch_iso(value: float) -> str:
     return datetime.fromtimestamp(value, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def resolve_timezone(value: str | None) -> tzinfo:
+    try:
+        return ZoneInfo(str(value or "UTC"))
+    except (ZoneInfoNotFoundError, ValueError):
+        return timezone.utc
+
+
+def bucket_start_iso(value: datetime, bucket: str, zone: tzinfo) -> str:
+    local = value.astimezone(zone)
+    if bucket == "hour":
+        local = local.replace(minute=0, second=0, microsecond=0)
+    elif bucket == "month":
+        local = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif bucket == "week":
+        local = (local - timedelta(days=local.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+    else:
+        local = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return local.isoformat().replace("+00:00", "Z")
+
+
+def epoch_bucket(value: float, bucket: str, zone: tzinfo) -> str:
+    return bucket_start_iso(datetime.fromtimestamp(value, tz=timezone.utc), bucket, zone)
+
+
 def _token_metadata(value: str) -> dict[str, Any]:
     if not value:
         return {}
@@ -394,19 +435,14 @@ def _qualified_router_model(model: str, prefix: str) -> str:
     return f"{prefix}/{normalized}"
 
 
-def _timestamp_bucket(value: str, bucket: str) -> str:
+def _timestamp_bucket(value: str, bucket: str, timezone_name: str = "UTC") -> str:
     try:
         stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return ""
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
-    stamp = stamp.astimezone(timezone.utc)
-    if bucket == "hour":
-        return stamp.strftime("%Y-%m-%dT%H")
-    if bucket == "month":
-        return stamp.strftime("%Y-%m")
-    return stamp.strftime("%Y-%m-%d")
+    return bucket_start_iso(stamp, bucket, resolve_timezone(timezone_name))
 
 
 def _add_router_row(
