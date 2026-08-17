@@ -3,12 +3,12 @@ set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 python_bin="$project_dir/.tools/python/bin/python"
-service_home="${HOME:-/srv/xnobrain-data/home}"
-: "${HERMES_HOME:?HERMES_HOME is required in the service environment file}"
-: "${OMNIROUTE_DATA_DIR:?OMNIROUTE_DATA_DIR is required in the service environment file}"
-hermes_home="$HERMES_HOME"
-profiles_root="${HERMES_PROFILES_ROOT:-$hermes_home/profiles}"
-router_data_dir="$OMNIROUTE_DATA_DIR"
+service_home="${RUNTIME_HOME:-/srv/xnobrain-data/home}"
+: "${RUNTIME_HERMES_HOME:?RUNTIME_HERMES_HOME is required in the service environment file}"
+: "${RUNTIME_OMNIROUTE_DATA_DIR:?RUNTIME_OMNIROUTE_DATA_DIR is required in the service environment file}"
+hermes_home="$RUNTIME_HERMES_HOME"
+profiles_root="${RUNTIME_HERMES_PROFILES_ROOT:-$hermes_home/profiles}"
+router_data_dir="$RUNTIME_OMNIROUTE_DATA_DIR"
 lock_file="$router_data_dir/.prepare.lock"
 
 if [[ ! -x "$python_bin" ]]; then
@@ -20,7 +20,7 @@ mkdir -p \
   "$hermes_home" \
   "$profiles_root" \
   "$router_data_dir/auth" \
-  "${DATA_DIR:-/srv/xnobrain-data/xnobrain}" \
+  "${RUNTIME_DATA_DIR:-/srv/xnobrain-data/xnobrain}" \
   "$service_home"
 
 exec 9>"$lock_file"
@@ -30,7 +30,7 @@ bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$profiles
 
 machine_id="$(cat /etc/machine-id 2>/dev/null || hostname)"
 printf '%s' "$machine_id" >"$router_data_dir/machine-id"
-printf '%s' "${OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}" >"$router_data_dir/auth/cli-secret"
+printf '%s' "${RUNTIME_OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}" >"$router_data_dir/auth/cli-secret"
 "$python_bin" - "$router_data_dir" <<'PY'
 import hashlib
 import hmac
@@ -51,12 +51,12 @@ chmod 600 \
   "$router_data_dir/auth/cli-secret" \
   "$router_data_dir/auth/cli-token"
 
-if [[ "${EUID}" -eq 0 && -n "${XNOBRAIN_SERVICE_USER:-}" ]]; then
+if [[ "${EUID}" -eq 0 && -n "${RUNTIME_SERVICE_USER:-}" ]]; then
   chown -R \
-    "$XNOBRAIN_SERVICE_USER:$XNOBRAIN_SERVICE_USER" \
+    "$RUNTIME_SERVICE_USER:$RUNTIME_SERVICE_USER" \
     "$service_home" \
     "$hermes_home" \
     "$profiles_root" \
     "$router_data_dir" \
-    "${DATA_DIR:-/srv/xnobrain-data/xnobrain}"
+    "${RUNTIME_DATA_DIR:-/srv/xnobrain-data/xnobrain}"
 fi

@@ -189,7 +189,7 @@ class NineRouterConfigTests(unittest.TestCase):
         self.assertEqual(config["model"]["default"], selected)
 
     def test_global_config_defaults_to_automatic_execution(self) -> None:
-        with patch.dict(os.environ, {"HONCHO_MEMORY_ENABLE": ""}):
+        with patch.dict(os.environ, {"RUNTIME_MEMORY_ENABLE": ""}):
             with TemporaryDirectory() as temp_dir:
                 manager = GlobalConfigManager(root_profile=Path(temp_dir))
                 described = manager.ensure_write_approval_defaults()
@@ -198,8 +198,8 @@ class NineRouterConfigTests(unittest.TestCase):
         self.assertFalse(described["skills_write_approval"])
         self.assertFalse(described["memory_write_approval"])
 
-    def test_honcho_memory_is_enabled_for_global_and_agent_defaults(self) -> None:
-        with patch.dict(os.environ, {"HONCHO_MEMORY_ENABLE": "true"}):
+    def test_embedded_memory_uses_the_profile_default(self) -> None:
+        with patch.dict(os.environ, {"RUNTIME_MEMORY_ENABLE": "true"}):
             with TemporaryDirectory() as temp_dir:
                 root = Path(temp_dir)
                 global_config = GlobalConfigManager(root_profile=root / "root")
@@ -216,8 +216,8 @@ class NineRouterConfigTests(unittest.TestCase):
                     )
                 )
 
-        self.assertEqual(described["config"]["memory"]["provider"], "honcho")
-        self.assertEqual(agent_config["memory"]["provider"], "honcho")
+        self.assertNotIn("provider", described["config"]["memory"])
+        self.assertNotIn("provider", agent_config["memory"])
 
     def test_profile_normalization_preserves_custom_prompt_and_removes_managed_overlay(self) -> None:
         with TemporaryDirectory() as temp_dir:

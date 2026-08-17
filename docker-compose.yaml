@@ -1,29 +1,5 @@
 name: xnobrain
 
-x-honcho-environment: &honcho-environment
-  DB_CONNECTION_URI: postgresql+psycopg://postgres:postgres@honcho-database:5432/postgres
-  CACHE_URL: redis://honcho-redis:6379/0?suppress=true
-  CACHE_ENABLED: "true"
-  AUTH_USE_AUTH: "false"
-  TELEMETRY_ENABLED: "false"
-  EMBED_MESSAGES: "false"
-  LLM_OPENAI_API_KEY: xnobrain-local-honcho
-  DERIVER_MODEL_CONFIG__MODEL: auto
-  DERIVER_MODEL_CONFIG__OVERRIDES__BASE_URL: http://runtime:20128/v1
-  SUMMARY_MODEL_CONFIG__MODEL: auto
-  SUMMARY_MODEL_CONFIG__OVERRIDES__BASE_URL: http://runtime:20128/v1
-  DREAM_ENABLED: "false"
-  DIALECTIC_LEVELS__minimal__MODEL_CONFIG__MODEL: auto
-  DIALECTIC_LEVELS__minimal__MODEL_CONFIG__OVERRIDES__BASE_URL: http://runtime:20128/v1
-  DIALECTIC_LEVELS__low__MODEL_CONFIG__MODEL: auto
-  DIALECTIC_LEVELS__low__MODEL_CONFIG__OVERRIDES__BASE_URL: http://runtime:20128/v1
-  DIALECTIC_LEVELS__medium__MODEL_CONFIG__MODEL: auto
-  DIALECTIC_LEVELS__medium__MODEL_CONFIG__OVERRIDES__BASE_URL: http://runtime:20128/v1
-  DIALECTIC_LEVELS__high__MODEL_CONFIG__MODEL: auto
-  DIALECTIC_LEVELS__high__MODEL_CONFIG__OVERRIDES__BASE_URL: http://runtime:20128/v1
-  DIALECTIC_LEVELS__max__MODEL_CONFIG__MODEL: auto
-  DIALECTIC_LEVELS__max__MODEL_CONFIG__OVERRIDES__BASE_URL: http://runtime:20128/v1
-
 services:
   traefik:
     # v3.6.16 raises the provider floor to Docker API v1.40 for Engine 29+.
@@ -56,37 +32,22 @@ services:
     # Enforced when the Docker storage driver supports per-container quotas.
     storage_opt:
       size: ${XNOBRAIN_RUNTIME_DISK_SIZE:-100G}
-    depends_on:
-      honcho-api:
-        condition: service_healthy
     environment:
-      HERMES_DESKTOP: "1"
-      HOME: /opt/data/home
-      XDG_CONFIG_HOME: /opt/data/home/.config
-      RUNTIME_AGENT_HOME: ${RUNTIME_AGENT_HOME:?Set RUNTIME_AGENT_HOME in .env}
-      RUNTIME_PROVIDER_DATA_DIR: ${RUNTIME_PROVIDER_DATA_DIR:?Set RUNTIME_PROVIDER_DATA_DIR in .env}
-      RUNTIME_PROVIDER_INTERNAL_SECRET: ${RUNTIME_PROVIDER_INTERNAL_SECRET:-omniroute-cli-auth-v1}
-      RUNTIME_HONCHO_MEMORY_ENABLE: ${RUNTIME_HONCHO_MEMORY_ENABLE:-false}
+      RUNTIME_HERMES_HOME: ${RUNTIME_HERMES_HOME:?Set RUNTIME_HERMES_HOME in .env}
+      RUNTIME_HERMES_ROOT_PROFILE: ${RUNTIME_HERMES_ROOT_PROFILE:-${RUNTIME_HERMES_HOME}}
+      RUNTIME_HERMES_PROFILES_ROOT: ${RUNTIME_HERMES_PROFILES_ROOT:-${RUNTIME_HERMES_HOME}/profiles}
+      RUNTIME_OMNIROUTE_DATA_DIR: ${RUNTIME_OMNIROUTE_DATA_DIR:?Set RUNTIME_OMNIROUTE_DATA_DIR in .env}
+      RUNTIME_OMNIROUTE_CLI_SALT: ${RUNTIME_OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}
+      RUNTIME_MEMORY_ENABLE: ${RUNTIME_MEMORY_ENABLE:-false}
       RUNTIME_OTEL_TRACES_ENABLED: ${RUNTIME_OTEL_TRACES_ENABLED:-false}
       RUNTIME_SESSION_TIMEOUT_SECONDS: ${RUNTIME_SESSION_TIMEOUT_SECONDS:-500}
       RUNTIME_DELEGATION_MAX_CONCURRENT_CHILDREN: ${RUNTIME_DELEGATION_MAX_CONCURRENT_CHILDREN:-3}
-      HERMES_HOME: ${RUNTIME_AGENT_HOME}
-      HERMES_ROOT_PROFILE: ${RUNTIME_AGENT_HOME}
-      HERMES_PROFILES_ROOT: ${RUNTIME_AGENT_PROFILES_ROOT:-}
-      OMNIROUTE_DATA_DIR: ${RUNTIME_PROVIDER_DATA_DIR}
-      OMNIROUTE_CLI_SALT: ${RUNTIME_PROVIDER_INTERNAL_SECRET:-omniroute-cli-auth-v1}
-      HONCHO_MEMORY_ENABLE: ${RUNTIME_HONCHO_MEMORY_ENABLE:-false}
-      HONCHO_BASE_URL: http://honcho-api:8000
-      HONCHO_ENVIRONMENT: local
-      API_SERVER_HOST: 0.0.0.0
-      API_SERVER_PORT: 3000
-      XNOBRAIN_SESSION_TIMEOUT_SECONDS: ${RUNTIME_SESSION_TIMEOUT_SECONDS:-500}
-      DELEGATION_MAX_CONCURRENT_CHILDREN: ${RUNTIME_DELEGATION_MAX_CONCURRENT_CHILDREN:-3}
-      DATA_DIR: /opt/data/xnobrain
-      DEVELOPMENT_ENVIRONMENT: ${DEVELOPMENT_ENVIRONMENT:-development}
-      SERVICE_NAME: ${SERVICE_NAME:-xnobrain-runtime-services}
-      OTEL_ENABLED: ${RUNTIME_OTEL_TRACES_ENABLED:-false}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${RUNTIME_OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      RUNTIME_API_SERVER_HOST: 0.0.0.0
+      RUNTIME_API_SERVER_PORT: 3000
+      RUNTIME_DATA_DIR: /opt/data/xnobrain
+      RUNTIME_DEVELOPMENT_ENVIRONMENT: ${RUNTIME_DEVELOPMENT_ENVIRONMENT:-development}
+      RUNTIME_SERVICE_NAME: ${RUNTIME_SERVICE_NAME:-xnobrain-runtime-services}
+      RUNTIME_OTEL_EXPORTER_OTLP_ENDPOINT: ${RUNTIME_OTEL_EXPORTER_OTLP_ENDPOINT:-}
     volumes:
       - xnobrain_data:/opt/data
     extra_hosts:
@@ -105,71 +66,6 @@ services:
       interval: 15s
       timeout: 3s
       retries: 20
-    restart: unless-stopped
-
-  honcho-api:
-    image: ghcr.io/plastic-labs/honcho@sha256:4feacec81be1356b44dca55a45198066189070593e4c62319184ffcd341ce641
-    entrypoint: ["sh", "docker/entrypoint.sh"]
-    environment: *honcho-environment
-    depends_on:
-      honcho-database:
-        condition: service_healthy
-      honcho-redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
-    networks:
-      - control
-    restart: unless-stopped
-
-  honcho-deriver:
-    image: ghcr.io/plastic-labs/honcho@sha256:4feacec81be1356b44dca55a45198066189070593e4c62319184ffcd341ce641
-    entrypoint: ["/app/.venv/bin/python", "-m", "src.deriver"]
-    environment: *honcho-environment
-    depends_on:
-      honcho-api:
-        condition: service_healthy
-      runtime:
-        condition: service_healthy
-    networks:
-      - control
-    restart: unless-stopped
-
-  honcho-database:
-    image: pgvector/pgvector:pg15
-    command: ["postgres", "-c", "max_connections=200"]
-    environment:
-      POSTGRES_DB: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      PGDATA: /var/lib/postgresql/data/pgdata
-    volumes:
-      - ./runtime/honcho-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-      - honcho_pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-    networks:
-      - control
-    restart: unless-stopped
-
-  honcho-redis:
-    image: redis:8.2
-    volumes:
-      - honcho_redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-    networks:
-      - control
     restart: unless-stopped
 
   otel-collector:
@@ -191,7 +87,3 @@ networks:
 volumes:
   xnobrain_data:
     name: xnobrain_xnobrain_data
-  honcho_pgdata:
-    name: xnobrain_honcho_pgdata
-  honcho_redis_data:
-    name: xnobrain_honcho_redis_data

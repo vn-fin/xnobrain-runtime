@@ -92,7 +92,7 @@ chmod 0755 "$install_root/scripts/prepare-service-data.sh"
 systemctl daemon-reload
 systemctl enable xnobrain.target
 if [[ "$start_services" == true ]]; then
-  for variable_name in HERMES_HOME OMNIROUTE_DATA_DIR; do
+  for variable_name in RUNTIME_HERMES_HOME RUNTIME_OMNIROUTE_DATA_DIR; do
     if ! grep -Eq "^${variable_name}=[^[:space:]].*" /etc/xnobrain/xnobrain.env; then
       echo "$variable_name is required in /etc/xnobrain/xnobrain.env before services can start." >&2
       exit 1

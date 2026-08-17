@@ -86,7 +86,7 @@ class NineRouterPinTests(unittest.TestCase):
             self.assertIn(assignment, launcher)
             self.assertNotIn("IFS= read -r OMNIROUTE_API_KEY", launcher)
 
-    def test_runtime_packages_the_local_honcho_client_and_services(self):
+    def test_runtime_uses_embedded_memory_configuration(self):
         dockerfile = (_REPO / "Dockerfile.backend").read_text(encoding="utf-8")
         compose = (_REPO / "docker-compose.yaml").read_text(encoding="utf-8")
         environment_path = _REPO / ".env.example"
@@ -94,17 +94,11 @@ class NineRouterPinTests(unittest.TestCase):
             environment_path = _REPO.parent / ".env.example"
         environment = environment_path.read_text(encoding="utf-8")
 
-        self.assertIn("'honcho-ai==2.2.0'", dockerfile)
-        self.assertRegex(environment, r"(?m)^HONCHO_MEMORY_ENABLE=(true|false)$")
-        for service in (
-            "honcho-api:",
-            "honcho-deriver:",
-            "honcho-database:",
-            "honcho-redis:",
-        ):
-            self.assertIn(service, compose)
-        self.assertIn("HONCHO_BASE_URL: http://honcho-api:8000", compose)
-        self.assertIn("TELEMETRY_ENABLED: \"false\"", compose)
+        self.assertNotIn("honcho-ai", dockerfile.lower())
+        self.assertRegex(environment, r"(?m)^RUNTIME_MEMORY_ENABLE=(true|false)$")
+        self.assertNotIn("honcho", compose.lower())
+        self.assertNotIn("pgvector", compose.lower())
+        self.assertNotIn("redis:", compose.lower())
 
 
 class NineRouterLiveProbeTests(unittest.IsolatedAsyncioTestCase):

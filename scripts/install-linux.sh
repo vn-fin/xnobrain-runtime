@@ -50,7 +50,7 @@ Environment overrides:
   XNOBRAIN_PROVIDER_RUNTIME_VERSION, XNOBRAIN_OMNIROUTE_VERSION,
   XNOBRAIN_CODEX_VERSION,
   XNOBRAIN_CLAUDE_CODE_VERSION, XNOBRAIN_AGENT_BROWSER_VERSION,
-  RUNTIME_AGENT_HOME, RUNTIME_PROVIDER_DATA_DIR (both required)
+  RUNTIME_HERMES_HOME, RUNTIME_OMNIROUTE_DATA_DIR (both required)
 EOF
 }
 
@@ -65,10 +65,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-hermes_home="${RUNTIME_AGENT_HOME:-}"
-router_data_dir="${RUNTIME_PROVIDER_DATA_DIR:-}"
-: "${hermes_home:?RUNTIME_AGENT_HOME is required. Set it in .env or the environment}"
-: "${router_data_dir:?RUNTIME_PROVIDER_DATA_DIR is required. Set it in .env or the environment}"
+hermes_home="${RUNTIME_HERMES_HOME:-}"
+router_data_dir="${RUNTIME_OMNIROUTE_DATA_DIR:-}"
+: "${hermes_home:?RUNTIME_HERMES_HOME is required. Set it in .env or the environment}"
+: "${router_data_dir:?RUNTIME_OMNIROUTE_DATA_DIR is required. Set it in .env or the environment}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This installer is for Linux." >&2
@@ -123,8 +123,9 @@ install_apt_packages() {
     libreoffice-script-provider-python libreoffice-writer locales lsb-release
     lsof man-db manpages mtr-tiny mythes-en-us nano net-tools netcat-openbsd
     ocrmypdf odt2txt openssh-client pandoc pdftk-java pkg-config poppler-utils
-    procps psmisc python3 python3-dev python3-pip python3-uno python3-venv qpdf
-    redis-tools ripgrep rsync socat software-properties-common sqlite3 strace
+    postgresql postgresql-contrib procps psmisc python3 python3-dev python3-pip
+    python3-uno python3-venv qpdf redis-server redis-tools ripgrep rsync socat
+    software-properties-common sqlite3 strace
     sudo tar tcpdump tesseract-ocr tesseract-ocr-eng tesseract-ocr-vie tmux
     traceroute tree ttf-mscorefonts-installer unoconv unzip vim weasyprint
     wget wkhtmltopdf wv xlsx2csv xz-utils zip
@@ -139,14 +140,14 @@ EOF
 install_dnf_packages() {
   sudo dnf install -y \
     ca-certificates curl gcc gcc-c++ git make openssh-clients \
-    python3 python3-devel python3-pip python3-tkinter ripgrep \
-    rsync sqlite tar unzip util-linux-user wget xz zip
+    postgresql-server redis python3 python3-devel python3-pip python3-tkinter \
+    ripgrep rsync sqlite tar unzip util-linux-user wget xz zip
 }
 
 install_pacman_packages() {
   sudo pacman -Sy --needed --noconfirm \
-    base-devel ca-certificates curl git make openssh python python-pip \
-    ripgrep rsync sqlite tar unzip wget xz zip
+    base-devel ca-certificates curl git make openssh postgresql python python-pip \
+    redis ripgrep rsync sqlite tar unzip wget xz zip
 }
 
 if [[ "$skip_system_packages" == false ]]; then
@@ -317,7 +318,7 @@ bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$hermes_h
 # provider process read the same files, while credentials remain outside git.
 machine_id="$(cat /etc/machine-id 2>/dev/null || hostname)"
 printf '%s' "$machine_id" > "$router_data_dir/machine-id"
-printf '%s' "${OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}" > "$router_data_dir/auth/cli-secret"
+printf '%s' "${RUNTIME_OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}" > "$router_data_dir/auth/cli-secret"
 "$project_python" - "$router_data_dir" <<'PY'
 import hashlib
 import hmac

@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-: "${OMNIROUTE_DATA_DIR:?OMNIROUTE_DATA_DIR is required}"
-router_data_dir="$OMNIROUTE_DATA_DIR"
+: "${RUNTIME_OMNIROUTE_DATA_DIR:?RUNTIME_OMNIROUTE_DATA_DIR is required}"
+router_data_dir="$RUNTIME_OMNIROUTE_DATA_DIR"
 mkdir -p "$router_data_dir"
 
 DATA_DIR="$router_data_dir" \

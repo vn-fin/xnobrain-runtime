@@ -9,7 +9,7 @@ Type=oneshot
 User=root
 Group=root
 EnvironmentFile=/etc/xnobrain/xnobrain.env
-Environment=XNOBRAIN_SERVICE_USER=xnobrain
+Environment=RUNTIME_SERVICE_USER=xnobrain
 ExecStart=/opt/xnobrain/scripts/prepare-service-data.sh
 RemainAfterExit=yes
 

@@ -35,8 +35,8 @@ DEFAULT_PROFILE_MODEL = "auto"
 LEGACY_BIG_BROTHER_TOOLSET = "xnobrain-control"
 
 
-def honcho_memory_enabled() -> bool:
-    """Return whether profiles should default to the local Honcho provider."""
-    return os.environ.get("HONCHO_MEMORY_ENABLE", "").strip().lower() in {
+def memory_enabled() -> bool:
+    """Return whether the embedded memory subsystem is enabled by default."""
+    return os.environ.get("RUNTIME_MEMORY_ENABLE", "").strip().lower() in {
         "1", "true", "yes", "on",
     }

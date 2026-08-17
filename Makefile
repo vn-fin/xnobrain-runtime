@@ -37,6 +37,7 @@ stop:
 
 remove:
 	$(CONTAINER_CLI) compose down --volumes --remove-orphans
+	-$(CONTAINER_CLI) volume rm -f xnobrain_honcho_pgdata xnobrain_honcho_redis_data
 
 logs:
 	$(CONTAINER_CLI) compose logs -f

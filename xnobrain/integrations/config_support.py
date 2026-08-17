@@ -15,7 +15,7 @@ from typing import Any, Mapping
 
 import yaml
 
-from ..defaults import CUSTOM_SKILL_CATEGORY, honcho_memory_enabled
+from ..defaults import CUSTOM_SKILL_CATEGORY
 from .nine_router import (
     OMNIROUTE_API_BASE_URL,
     OMNIROUTE_DEFAULT_MODEL,

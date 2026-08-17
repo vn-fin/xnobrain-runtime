@@ -22,7 +22,7 @@ Environment=REQUIRE_API_KEY=false
 Environment=NODE_ENV=production
 Environment=OMNIROUTE_NO_UPDATE_NOTIFIER=1
 ExecStartPre=/opt/xnobrain/scripts/prepare-service-data.sh
-ExecStart=/usr/bin/env DATA_DIR=${OMNIROUTE_DATA_DIR} PORT=20128 API_PORT=20128 DASHBOARD_PORT=20128 HOSTNAME=127.0.0.1 REQUIRE_API_KEY=false NODE_ENV=production OMNIROUTE_NO_UPDATE_NOTIFIER=1 /opt/xnobrain/.tools/npm-global/bin/omniroute serve --port 20128 --no-open
+ExecStart=/usr/bin/env DATA_DIR=${RUNTIME_OMNIROUTE_DATA_DIR} PORT=20128 API_PORT=20128 DASHBOARD_PORT=20128 HOSTNAME=127.0.0.1 REQUIRE_API_KEY=false NODE_ENV=production OMNIROUTE_NO_UPDATE_NOTIFIER=1 /opt/xnobrain/.tools/npm-global/bin/omniroute serve --port 20128 --no-open
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=30

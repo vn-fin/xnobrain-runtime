@@ -31,7 +31,6 @@ from ..defaults import (
     BIG_BROTHER_SKILL_CATEGORY,
     BIG_BROTHER_SKILL_ID,
     CUSTOM_SKILL_CATEGORY,
-    honcho_memory_enabled,
 )
 from .nine_router import (
     OMNIROUTE_DEFAULT_MODEL,

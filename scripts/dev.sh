@@ -85,10 +85,10 @@ elif [[ -z "$router_bin" && "${XNOBRAIN_DEV_SKIP_ROUTER:-0}" != "1" ]]; then
   exit 1
 fi
 
-hermes_home="${RUNTIME_AGENT_HOME:-}"
-router_data_dir="${RUNTIME_PROVIDER_DATA_DIR:-}"
-: "${hermes_home:?RUNTIME_AGENT_HOME is required. Set it in .env}"
-: "${router_data_dir:?RUNTIME_PROVIDER_DATA_DIR is required. Set it in .env}"
+hermes_home="${RUNTIME_HERMES_HOME:-}"
+router_data_dir="${RUNTIME_OMNIROUTE_DATA_DIR:-}"
+: "${hermes_home:?RUNTIME_HERMES_HOME is required. Set it in .env}"
+: "${router_data_dir:?RUNTIME_OMNIROUTE_DATA_DIR is required. Set it in .env}"
 backend_pid=""
 router_pid=""
 
@@ -96,7 +96,7 @@ mkdir -p "$router_data_dir/auth"
 
 prepare_router_auth() {
   printf '%s' "$(cat /etc/machine-id 2>/dev/null || hostname)" > "$router_data_dir/machine-id"
-  printf '%s' "${RUNTIME_PROVIDER_INTERNAL_SECRET:-omniroute-cli-auth-v1}" > "$router_data_dir/auth/cli-secret"
+  printf '%s' "${RUNTIME_OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}" > "$router_data_dir/auth/cli-secret"
   "$python_bin" - "$router_data_dir" <<'PY'
 import hashlib
 import hmac

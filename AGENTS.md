@@ -57,6 +57,9 @@ Run UI tests and builds in the sibling `xnobrain-ui` repository.
 - Keep one FastAPI/Hermes process on private port 3000 and one OmniRoute
   process. Traefik is the only published web port in the root development
   stack.
+- Runtime Compose and installer settings use the `RUNTIME_*` prefix. Memory
+  dependencies are installed with the runtime image/installer; do not add
+  separate memory, Redis, or vector-database services to Compose.
 - Preserve the original Hermes core and native FastAPI routes. Extend them from
   `xnobrain` instead of copying or forking Hermes.
 - `xnobrain/routes/setup.py` is the only XNOBrain route assembly point.

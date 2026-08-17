@@ -30,13 +30,13 @@ On Windows, run this in PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1
 ```
 
-Copy the environment template and set `RUNTIME_AGENT_HOME` and
-`RUNTIME_PROVIDER_DATA_DIR`. For Docker, use paths inside `/opt/data`:
+Copy the environment template and set `RUNTIME_HERMES_HOME` and
+`RUNTIME_OMNIROUTE_DATA_DIR`. For Docker, use paths inside `/opt/data`:
 
 ```bash
 cp .env.example .env
-# Edit .env and set RUNTIME_AGENT_HOME=/opt/data/agent and
-# RUNTIME_PROVIDER_DATA_DIR=/opt/data/provider-runtime.
+# Edit .env and set RUNTIME_HERMES_HOME=/opt/data/agent and
+# RUNTIME_OMNIROUTE_DATA_DIR=/opt/data/provider-runtime.
 ```
 
 The coordinated stack is started from the workspace root:

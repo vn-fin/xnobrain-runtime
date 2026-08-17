@@ -17,7 +17,7 @@ Environment=PATH=/opt/xnobrain/.tools/node/bin:/opt/xnobrain/.tools/npm-global/b
 Environment=HERMES_CLI=/opt/xnobrain/.tools/npm-global/bin/agent
 Environment=HERMES_RUNTIME_PYTHON=/opt/xnobrain/.tools/hermes-agent/venv/bin/python
 ExecStartPre=/opt/xnobrain/scripts/prepare-service-data.sh
-ExecStart=/opt/xnobrain/.tools/python/bin/python /opt/xnobrain/server.py
+ExecStart=/usr/bin/env HOME=${RUNTIME_HOME} HERMES_HOME=${RUNTIME_HERMES_HOME} HERMES_ROOT_PROFILE=${RUNTIME_HERMES_HOME} HERMES_PROFILES_ROOT=${RUNTIME_HERMES_PROFILES_ROOT} OMNIROUTE_DATA_DIR=${RUNTIME_OMNIROUTE_DATA_DIR} OMNIROUTE_URL=${RUNTIME_OMNIROUTE_URL} API_SERVER_HOST=${RUNTIME_API_SERVER_HOST} API_SERVER_PORT=${RUNTIME_API_SERVER_PORT} DATA_DIR=${RUNTIME_DATA_DIR} DEVELOPMENT_ENVIRONMENT=${RUNTIME_DEVELOPMENT_ENVIRONMENT} SERVICE_NAME=${RUNTIME_SERVICE_NAME} OTEL_ENABLED=${RUNTIME_OTEL_TRACES_ENABLED} OTEL_EXPORTER_OTLP_ENDPOINT=${RUNTIME_OTEL_EXPORTER_OTLP_ENDPOINT} /opt/xnobrain/.tools/python/bin/python /opt/xnobrain/server.py
 Restart=on-failure
 RestartSec=3
 TimeoutStartSec=60

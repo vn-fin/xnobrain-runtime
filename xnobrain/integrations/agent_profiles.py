@@ -23,7 +23,6 @@ from .hermes_support import (
     TEMPLATE_DIRS,
     TEMPLATE_FILES,
     display_nine_router_model,
-    honcho_memory_enabled,
     json,
     normalize_nine_router_config,
     os,
@@ -335,8 +334,6 @@ class AgentProfilesMixin:
                 section = {}
                 config[subsystem] = section
             section.setdefault("write_approval", False)
-            if subsystem == "memory" and honcho_memory_enabled():
-                section.setdefault("provider", "honcho")
         agent_config = config.get("agent")
         if not isinstance(agent_config, dict):
             agent_config = {}

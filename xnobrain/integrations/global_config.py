@@ -15,7 +15,6 @@ from .config_support import (
     _MISSING,
     display_nine_router_model,
     hashlib,
-    honcho_memory_enabled,
     normalize_nine_router_config,
     os,
     tempfile,
@@ -49,9 +48,6 @@ class GlobalConfigMixin:
                 changed = True
             if "write_approval" not in section:
                 section["write_approval"] = False
-                changed = True
-            if subsystem == "memory" and honcho_memory_enabled() and "provider" not in section:
-                section["provider"] = "honcho"
                 changed = True
         if changed:
             self._write_config(config)
