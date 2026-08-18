@@ -102,10 +102,25 @@ class ConversationStreamMixin:
 
         title_task: asyncio.Task[str] | None = None
         if self._conversation_has_default_title(profile_dir, conversation_id):
+            title_model = model
+            smart_route_name = str(prepared.get("smart_route") or "").strip()
+            if smart_route_name:
+                try:
+                    title_route = await self.nine_router.resolve_smart_route(
+                        smart_route_name,
+                        "hello",
+                        required_context_tokens=(
+                            8_192 + max(1, len(str(prepared.get("message") or "")) // 4)
+                        ),
+                    )
+                except NineRouterAPIError:
+                    title_route = None
+                if title_route is not None:
+                    title_model = str(title_route.get("model") or title_model)
             # Run the tiny title request beside the chat so it adds no serial
             # model wait to the normal completion path.
             title_task = asyncio.create_task(
-                self._summarize_conversation_title(prepared.get("message"), model)
+                self._summarize_conversation_title(prepared.get("message"), title_model)
             )
 
         loop = asyncio.get_running_loop()

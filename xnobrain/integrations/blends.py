@@ -11,9 +11,18 @@ from .nine_router_support import (
     quote,
     route_nine_router_model,
 )
+from .provider_models import default_reasoning_level
 
 
 class BlendsIntegrationMixin:
+    _SMART_ROUTE_CONFIG_KEY = "xnobrainSmartRoute"
+    _NATIVE_COMBO_STRATEGIES = {
+        "fallback": "priority",
+        "round-robin": "round-robin",
+        "fusion": "fusion",
+        "smart-route": "priority",
+    }
+
     async def ensure_auto_combo(self) -> None:
         models = (await self.list_models(ensure_auto=False))["data"]
         if not await self._ensure_auto_combo(models):
@@ -63,7 +72,11 @@ class BlendsIntegrationMixin:
                 {"name": OMNIROUTE_DEFAULT_MODEL, "models": selected},
             )
             return True
-        if list(existing.get("models") or []) == selected:
+        existing_models = [
+            str(model.get("model") or "") if isinstance(model, Mapping) else str(model)
+            for model in (existing.get("models") or [])
+        ]
+        if existing_models == selected:
             return True
         combo_id = self._safe_id(existing.get("id"), "combo_id")
         await self._request(
@@ -78,14 +91,20 @@ class BlendsIntegrationMixin:
     def _normalize_combo(item: Any) -> dict[str, Any]:
         item = item if isinstance(item, Mapping) else {}
         models = item.get("models")
+        config = item.get("config")
         return {
             "id": str(item.get("id") or ""),
             "name": str(item.get("name") or ""),
             "kind": str(item.get("kind") or "") if item.get("kind") is not None else "",
             "models": [
-                display_nine_router_model(model)
+                normalized
                 for model in models
+                if (normalized := display_nine_router_model(
+                    model.get("model") if isinstance(model, Mapping) else model
+                ))
             ] if isinstance(models, list) else [],
+            "strategy": str(item.get("strategy") or ""),
+            "config": dict(config) if isinstance(config, Mapping) else {},
             "created_at": str(item.get("createdAt") or ""),
             "updated_at": str(item.get("updatedAt") or ""),
         }
@@ -130,14 +149,44 @@ class BlendsIntegrationMixin:
 
 
     async def combo_settings(self) -> dict[str, Any]:
-        """Return only the three combo-related settings keys — never the rest."""
+        """Return the service's combo view without exposing unrelated settings."""
         payload = await self._request("GET", "/api/settings")
         settings = payload if isinstance(payload, Mapping) else {}
         strategies = settings.get("comboStrategies")
         sticky = settings.get("comboStickyRoundRobinLimit")
+        combo_strategies = dict(strategies) if isinstance(strategies, Mapping) else {}
+
+        # OmniRoute stores strategy and runtime config on each combo. Keep the
+        # legacy settings map as a compatibility fallback for older releases,
+        # but prefer the current per-combo contract whenever it is available.
+        for combo in await self.list_combos():
+            native = str(combo.get("strategy") or "")
+            config = combo.get("config")
+            config = config if isinstance(config, Mapping) else {}
+            smart = config.get(self._SMART_ROUTE_CONFIG_KEY)
+            if not native and not config:
+                continue
+            entry: dict[str, Any] = {
+                "fallbackStrategy": {
+                    "priority": "fallback",
+                    "round-robin": "round-robin",
+                    "fusion": "fusion",
+                }.get(native, "fallback"),
+            }
+            if config.get("judgeModel") is not None:
+                entry["judgeModel"] = config["judgeModel"]
+            if isinstance(config.get("fusionTuning"), Mapping):
+                entry["fusionTuning"] = dict(config["fusionTuning"])
+            if isinstance(smart, Mapping):
+                entry["smartRoute"] = dict(smart)
+            combo_strategies[str(combo.get("name") or "")] = entry
         return {
-            "combo_strategy": str(settings.get("comboStrategy") or "fallback"),
-            "combo_strategies": dict(strategies) if isinstance(strategies, Mapping) else {},
+            "combo_strategy": {
+                "priority": "fallback",
+                "round-robin": "round-robin",
+                "fusion": "fusion",
+            }.get(str(settings.get("comboStrategy") or "fallback"), "fallback"),
+            "combo_strategies": combo_strategies,
             "combo_sticky_limit": int(sticky) if isinstance(sticky, (int, float)) else None,
         }
 
@@ -148,23 +197,27 @@ class BlendsIntegrationMixin:
         fusion_tuning: Mapping[str, Any] | None = None,
         smart_route: Mapping[str, Any] | None = None,
     ) -> None:
-        # OmniRoute replaces the whole comboStrategies map on PATCH, so read then
-        # merge then write the entire map (findings.md §6).
-        strategies = dict((await self.combo_settings())["combo_strategies"])
-        # Smart Route is a XNOBrain strategy. Keep upstream OmniRoute on its
-        # safe ordered-fallback behavior if a request bypasses XNOBrain, and
-        # persist the routing policy as an ignored per-combo extension.
-        entry: dict[str, Any] = {
-            "fallbackStrategy": "fallback" if smart_route is not None else strategy,
-        }
+        combo = next((row for row in await self.list_combos() if row["name"] == name), None)
+        if combo is None:
+            raise NineRouterAPIError("combo not found", code="combo_not_found", status=404)
+        config = dict(combo.get("config") or {})
+        config.pop(self._SMART_ROUTE_CONFIG_KEY, None)
+        config.pop("judgeModel", None)
+        config.pop("fusionTuning", None)
         if judge_model is not None:
-            entry["judgeModel"] = judge_model
+            config["judgeModel"] = route_nine_router_model(judge_model)
         if fusion_tuning is not None:
-            entry["fusionTuning"] = dict(fusion_tuning)
+            config["fusionTuning"] = dict(fusion_tuning)
         if smart_route is not None:
-            entry["smartRoute"] = dict(smart_route)
-        strategies[name] = entry
-        await self._request("PATCH", "/api/settings", {"comboStrategies": strategies})
+            config[self._SMART_ROUTE_CONFIG_KEY] = dict(smart_route)
+        native = self._NATIVE_COMBO_STRATEGIES.get(strategy)
+        if native is None:
+            raise NineRouterAPIError("unsupported combo strategy", status=400)
+        await self._request(
+            "PUT",
+            f"/api/combos/{quote(combo['id'], safe='')}",
+            {"strategy": native, "config": config},
+        )
 
 
     async def resolve_smart_route(
@@ -228,20 +281,18 @@ class BlendsIntegrationMixin:
         selected = groups[selected_tier][0]
         reasoning = str(selected.get("reasoning") or "auto")
         if reasoning == "auto":
-            reasoning = {"quick": "low", "normal": "medium", "difficult": "high"}[selected_tier]
-            supported = selected.get("reasoning_levels") or []
-            if supported and reasoning not in supported:
-                preference = {
-                    "quick": ("low", "medium", "high"),
-                    "normal": ("medium", "low", "high"),
-                    "difficult": ("high", "medium", "low"),
-                }[selected_tier]
-                reasoning = next(level for level in preference if level in supported)
+            try:
+                live = await self.reasoning_for_model(str(selected["model"]))
+            except NineRouterAPIError:
+                live = {}
+            supported = live.get("reasoning") or selected.get("reasoning_levels") or []
+            reasoning = default_reasoning_level(supported)
         return {
             "model": route_nine_router_model(selected["model"]),
             "reasoning": reasoning,
             "tier": selected_tier,
             "route": name,
+            "context_length": selected.get("context_length"),
         }
 
 
@@ -268,7 +319,10 @@ class BlendsIntegrationMixin:
                 "context_length": context_length,
                 "reasoning_levels": [
                     str(level) for level in (item.get("reasoning_levels") or [])
-                    if str(level) in {"low", "medium", "high"}
+                    if str(level) in {
+                        "none", "minimal", "low", "medium", "high",
+                        "xhigh", "max", "ultra",
+                    }
                 ],
             })
         return rows
@@ -329,10 +383,18 @@ class BlendsIntegrationMixin:
 
 
     async def clear_combo_strategy(self, name: str) -> None:
-        strategies = dict((await self.combo_settings())["combo_strategies"])
-        if name in strategies:
-            strategies.pop(name, None)
-            await self._request("PATCH", "/api/settings", {"comboStrategies": strategies})
+        combo = next((row for row in await self.list_combos() if row["name"] == name), None)
+        if combo is None:
+            return
+        config = dict(combo.get("config") or {})
+        config.pop(self._SMART_ROUTE_CONFIG_KEY, None)
+        config.pop("judgeModel", None)
+        config.pop("fusionTuning", None)
+        await self._request(
+            "PUT",
+            f"/api/combos/{quote(combo['id'], safe='')}",
+            {"strategy": "priority", "config": config},
+        )
 
 
     async def set_combo_sticky_limit(self, limit: int) -> None:

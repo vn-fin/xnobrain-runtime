@@ -29,6 +29,7 @@ from ..defaults import (
     LEGACY_BIG_BROTHER_TOOLSET,
 )
 from ..integrations import AgentAPIError, ConfigAPIError, NineRouterAPIError
+from ..integrations.provider_models import default_reasoning_level
 from ..repositories import StoreError
 from .base import ServiceError, iso, utc_now
 from .constants import (
@@ -149,11 +150,18 @@ class ProvidersServiceMixin:
             "provider_id": provider,
             "default_model": "auto",
             "models": [
-                {"id": "auto", "reasoning": reasoning},
+                {
+                    "id": "auto",
+                    "reasoning": reasoning,
+                    "default_reasoning": default_reasoning_level(reasoning),
+                },
                 *[
                     {
                         "id": item["id"],
                         "reasoning": list(item.get("reasoning_levels", [])),
+                        "default_reasoning": default_reasoning_level(
+                            item.get("reasoning_levels", [])
+                        ),
                     }
                     for item in items
                 ],
@@ -172,6 +180,7 @@ class ProvidersServiceMixin:
             "provider_id": provider,
             "model": model,
             "reasoning": current["reasoning"],
+            "default_reasoning": current["default_reasoning"],
         }
 
     async def provider_runtime_health(self) -> dict[str, Any]:

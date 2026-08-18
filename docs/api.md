@@ -38,9 +38,13 @@ Agent budgets use `weekly_usd` at
 `GET|PUT /xnobrain/api/runtime/v1/analytics/agents/{agent_id}/budget`. The
 minimum configured limit is USD 1; clearing the value restores the USD 20
 default. Weeks run Sunday 00:00 through the following Sunday 00:00 UTC, and
-the response returns both boundaries as RFC3339 timestamps. A new chat run is
-accepted only while `spend_usd < weekly_usd`. An accepted run is never stopped
-mid-turn when it takes usage over the limit.
+the response returns both boundaries as RFC3339 timestamps. A new conversation
+run or team task is accepted only while every participating agent has
+`spend_usd < weekly_usd`. The check happens once at top-level execution
+acceptance; event streams, ordinary API routes, and internal team/sub-agent
+calls do not repeat it. Rejection uses HTTP `429` with code
+`weekly_budget_exceeded`. An accepted execution is never stopped mid-run when
+it takes usage over the limit.
 
 The provider catalog returns subscription connections first in common-use
 order: Claude Code, OpenAI Codex, GitHub Copilot, Cursor, Grok Build, Google
@@ -63,9 +67,24 @@ not exposed as usable subscription models. When OmniRoute publishes reasoning
 effort aliases beside a base model, the runtime collapses those aliases into one
 base-model row and derives its ordered `reasoning` values from the live catalog.
 `GET /providers/{provider_id}/models/{model}/reasoning` returns those same
-provider/model-specific values; model IDs containing `/` are supported.
+provider/model-specific values plus `default_reasoning`; model IDs containing
+`/` are supported. `default_reasoning` is derived from the live ordered model
+catalog: the second supported level is preferred, the only level is used when
+there is one, and models without reasoning metadata return `auto`. Agent and
+Smart Route reasoning may be stored as `auto`; concrete model execution
+resolves it through this metadata instead of a hard-coded effort.
 OpenCode Zen exposes only models returned for an active Zen API-key
 connection; the legacy global `oc/*` free-model catalog is not listed.
+Smart Route blends resolve at model-inference boundaries rather than only once
+for an entire agent run. The initial user turn is classified once and reused;
+later model continuations after tool results, goal-continuation prompts, and
+delegated tasks are classified independently. Mixed-difficulty delegation
+batches are grouped into cost-homogeneous execution waves, while explicit
+delegation provider/model overrides remain authoritative. If a later routing
+classification is temporarily unavailable, the active model continues instead
+of failing the run. Supported reasoning values come from provider model
+metadata and may include `none`, `minimal`, `xhigh`, `max`, and `ultra` in
+addition to `low`, `medium`, and `high`.
 The runtime derives a SHA-256 fingerprint for the provider-runtime identity;
 submitting the same key updates its existing connection while a different key
 adds another connection. The raw key and full fingerprint are never returned.

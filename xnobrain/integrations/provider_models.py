@@ -1,5 +1,7 @@
 """Provider model operations backed by OmniRoute."""
 
+import time
+
 from .nine_router_support import (
     Any,
     Mapping,
@@ -15,6 +17,15 @@ from .nine_router_support import (
 _REASONING_LEVELS = (
     "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
 )
+
+
+def default_reasoning_level(levels: Any) -> str:
+    """Choose the model catalog's second effort, or its only effort."""
+
+    ordered = [str(level).strip().lower() for level in levels or [] if str(level).strip()]
+    if len(ordered) >= 2:
+        return ordered[1]
+    return ordered[0] if ordered else "auto"
 
 
 class ProviderModelsMixin:
@@ -190,6 +201,27 @@ class ProviderModelsMixin:
                 *models,
             ],
         }
+
+
+    async def reasoning_for_model(self, model: str) -> dict[str, Any]:
+        """Return live reasoning metadata for one public model ID."""
+
+        now = time.monotonic()
+        cached = getattr(self, "_model_reasoning_catalog_cache", None)
+        if cached and now - cached[0] < 30:
+            catalog = cached[1]
+        else:
+            catalog = {
+                str(item.get("id") or ""): list(item.get("reasoning_levels") or [])
+                for item in (await self.list_models(ensure_auto=False))["data"]
+            }
+            self._model_reasoning_catalog_cache = (now, catalog)
+        levels = list(catalog.get(str(model or ""), []))
+        result = {
+            "reasoning": levels,
+            "default_reasoning": default_reasoning_level(levels),
+        }
+        return result
 
 
     async def _codex_review_available(self, connections: list[dict[str, Any]]) -> bool:

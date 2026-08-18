@@ -322,11 +322,13 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
             rows[1]["reasoning"],
             ["low", "medium", "high", "xhigh", "max", "ultra"],
         )
+        self.assertEqual(rows[1]["default_reasoning"], "medium")
         self.assertEqual(reasoning.status_code, 200)
         self.assertEqual(reasoning.json()["data"], {
             "provider_id": "codex",
             "model": "cx/gpt-5.6-sol",
             "reasoning": ["low", "medium", "high", "xhigh", "max", "ultra"],
+            "default_reasoning": "medium",
         })
         self.assertEqual(unsupported.status_code, 404)
 

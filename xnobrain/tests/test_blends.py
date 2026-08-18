@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -22,11 +22,33 @@ from xnobrain.tests.test_nine_router import FakeNineRouterManager
 # --- adapter tests (responses-map fake) --------------------------------------
 
 class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_model_reasoning_default_uses_live_order(self):
+        manager = FakeNineRouterManager({})
+        manager.list_models = AsyncMock(return_value={
+            "data": [{
+                "id": "cx/live",
+                "reasoning_levels": ["minimal", "medium", "ultra"],
+            }],
+        })
+
+        metadata = await manager.reasoning_for_model("cx/live")
+
+        self.assertEqual(metadata, {
+            "reasoning": ["minimal", "medium", "ultra"],
+            "default_reasoning": "medium",
+        })
+        manager.list_models.assert_awaited_once_with(ensure_auto=False)
+
     async def test_list_combos_normalizes_rows(self):
         manager = FakeNineRouterManager({
             ("GET", "/api/combos"): {"combos": [
                 {"id": "c1", "name": "duo", "kind": "auto",
-                 "models": ["cx/a", "cx/b"], "createdAt": "t0", "updatedAt": "t1"},
+                 "models": [
+                     {"id": "m1", "kind": "model", "model": "cx/a", "providerId": "cx"},
+                     "cx/b",
+                 ],
+                 "strategy": "round-robin", "config": {"sticky": True},
+                 "createdAt": "t0", "updatedAt": "t1"},
                 "not-a-mapping",
             ]},
         })
@@ -34,23 +56,26 @@ class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(combos), 1)
         self.assertEqual(combos[0], {
             "id": "c1", "name": "duo", "kind": "auto",
-            "models": ["cx/a", "cx/b"], "created_at": "t0", "updated_at": "t1"})
+            "models": ["cx/a", "cx/b"], "strategy": "round-robin",
+            "config": {"sticky": True}, "created_at": "t0", "updated_at": "t1"})
 
     async def test_update_combo_sends_only_provided_keys(self):
         manager = FakeNineRouterManager({("PUT", "/api/combos/c1"): {"id": "c1", "name": "duo"}})
         await manager.update_combo("c1", models=["cx/a"])
         self.assertIn(("PUT", "/api/combos/c1", {"models": ["cx/a"]}), manager.requests)
 
-    async def test_set_combo_strategy_writes_whole_merged_map(self):
+    async def test_set_combo_strategy_updates_current_combo_contract(self):
         manager = FakeNineRouterManager({
-            ("GET", "/api/settings"): {"comboStrategies": {"other": {"fallbackStrategy": "fusion"}}},
-            ("PATCH", "/api/settings"): {},
+            ("GET", "/api/combos"): {"combos": [{
+                "id": "c1", "name": "duo", "models": [],
+                "strategy": "priority", "config": {"preserved": True},
+            }]},
+            ("PUT", "/api/combos/c1"): {},
         })
         await manager.set_combo_strategy("duo", strategy="round-robin")
         self.assertIn((
-            "PATCH", "/api/settings",
-            {"comboStrategies": {"other": {"fallbackStrategy": "fusion"},
-                                 "duo": {"fallbackStrategy": "round-robin"}}},
+            "PUT", "/api/combos/c1",
+            {"strategy": "round-robin", "config": {"preserved": True}},
         ), manager.requests)
 
     async def test_set_smart_route_keeps_upstream_fallback_and_stores_policy(self):
@@ -61,18 +86,54 @@ class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
             "uncertainTier": "difficult",
         }
         manager = FakeNineRouterManager({
-            ("GET", "/api/settings"): {"comboStrategies": {}},
-            ("PATCH", "/api/settings"): {},
+            ("GET", "/api/combos"): {"combos": [{
+                "id": "c1", "name": "smart", "models": [],
+                "strategy": "priority", "config": {},
+            }]},
+            ("PUT", "/api/combos/c1"): {},
         })
         await manager.set_combo_strategy("smart", strategy="smart-route", smart_route=policy)
         patch_body = next(
             body for method, path, body in manager.requests
-            if method == "PATCH" and path == "/api/settings"
+            if method == "PUT" and path == "/api/combos/c1"
         )
+        self.assertEqual(patch_body["strategy"], "priority")
+        self.assertEqual(patch_body["config"]["xnobrainSmartRoute"], policy)
+
+    async def test_combo_settings_reads_strategy_and_smart_route_from_combo(self):
+        policy = {
+            "quick": [{"model": "cx/a", "reasoning": "low"}],
+            "normal": [{"model": "cx/b", "reasoning": "medium"}],
+            "difficult": [{"model": "cx/c", "reasoning": "high"}],
+        }
+        manager = FakeNineRouterManager({
+            ("GET", "/api/settings"): {},
+            ("GET", "/api/combos"): {"combos": [{
+                "id": "c1", "name": "smart", "models": [],
+                "strategy": "priority",
+                "config": {"xnobrainSmartRoute": policy},
+            }]},
+        })
+
+        settings = await manager.combo_settings()
+
         self.assertEqual(
-            patch_body["comboStrategies"]["smart"]["fallbackStrategy"], "fallback"
+            settings["combo_strategies"]["smart"],
+            {"fallbackStrategy": "fallback", "smartRoute": policy},
         )
-        self.assertEqual(patch_body["comboStrategies"]["smart"]["smartRoute"], policy)
+
+    async def test_combo_settings_keeps_legacy_entry_when_combo_has_no_current_metadata(self):
+        legacy = {"fallbackStrategy": "round-robin"}
+        manager = FakeNineRouterManager({
+            ("GET", "/api/settings"): {"comboStrategies": {"duo": legacy}},
+            ("GET", "/api/combos"): {"combos": [{
+                "id": "c1", "name": "duo", "models": ["cx/a"],
+            }]},
+        })
+
+        settings = await manager.combo_settings()
+
+        self.assertEqual(settings["combo_strategies"]["duo"], legacy)
 
     async def test_resolve_smart_route_classifies_and_applies_reasoning(self):
         policy = {
@@ -93,6 +154,7 @@ class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
         route = await manager.resolve_smart_route("smart", "Design a distributed system")
         self.assertEqual(route, {
             "model": "cx/c", "reasoning": "high", "tier": "difficult", "route": "smart",
+            "context_length": 200_000,
         })
         classifier_body = next(
             body for method, path, body in manager.requests
@@ -100,6 +162,46 @@ class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(classifier_body["max_tokens"], 32)
         self.assertEqual(classifier_body["reasoning_effort"], "low")
+
+    async def test_auto_reasoning_uses_second_live_model_level_for_every_tier(self):
+        policy = {
+            "quick": [{
+                "model": "cx/shared",
+                "reasoning": "auto",
+                "reasoning_levels": ["minimal", "medium", "ultra"],
+            }],
+            "normal": [{
+                "model": "cx/shared",
+                "reasoning": "auto",
+                "reasoning_levels": ["minimal", "medium", "ultra"],
+            }],
+            "difficult": [{
+                "model": "cx/shared",
+                "reasoning": "auto",
+                "reasoning_levels": ["minimal", "medium", "ultra"],
+            }],
+        }
+        manager = FakeNineRouterManager({
+            ("GET", "/api/settings"): {
+                "comboStrategies": {"smart": {"smartRoute": policy}},
+            },
+            ("POST", "/v1/chat/completions"): {
+                "choices": [{"message": {"content": "difficult"}}],
+            },
+        })
+        manager.list_models = AsyncMock(return_value={
+            "data": [{
+                "id": "cx/shared",
+                "reasoning_levels": ["none", "high", "max"],
+            }],
+        })
+
+        quick = await manager.resolve_smart_route("smart", "hello")
+        difficult = await manager.resolve_smart_route("smart", "Design the architecture")
+
+        self.assertEqual(quick["reasoning"], "high")
+        self.assertEqual(difficult["reasoning"], "high")
+        manager.list_models.assert_awaited_once_with(ensure_auto=False)
 
     async def test_resolve_smart_route_sends_obvious_greeting_to_quick_without_classifier(self):
         policy = {
@@ -141,6 +243,26 @@ class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
             (normal["model"], normal["tier"], normal["reasoning"]),
             ("cx/shared", "normal", "medium"),
         )
+
+    async def test_resolve_smart_route_preserves_extended_reasoning_levels(self):
+        policy = {
+            "quick": [{"model": "cx/a", "reasoning": "minimal"}],
+            "normal": [{"model": "cx/b", "reasoning": "xhigh"}],
+            "difficult": [{"model": "cx/c", "reasoning": "ultra"}],
+        }
+        manager = FakeNineRouterManager({
+            ("GET", "/api/settings"): {
+                "comboStrategies": {"smart": {"smartRoute": policy}},
+            },
+            ("POST", "/v1/chat/completions"): {
+                "choices": [{"message": {"content": "difficult"}}],
+            },
+        })
+
+        route = await manager.resolve_smart_route("smart", "Prove the theorem")
+
+        self.assertEqual(route["model"], "cx/c")
+        self.assertEqual(route["reasoning"], "ultra")
 
     async def test_model_metadata_reads_nine_router_capabilities(self):
         manager = FakeNineRouterManager({
@@ -294,7 +416,11 @@ def _service(fail_settings=False):
         models=[
             {"id": "cx/a", "context_length": 32_000, "reasoning_levels": ["low", "medium"]},
             {"id": "cx/b", "context_length": 128_000, "reasoning_levels": ["low", "medium", "high"]},
-            {"id": "cx/c", "context_length": 200_000, "reasoning_levels": ["medium", "high"]},
+            {
+                "id": "cx/c",
+                "context_length": 200_000,
+                "reasoning_levels": ["medium", "high", "xhigh", "max", "ultra"],
+            },
             {"id": "plainmodel"},
         ],
     )
@@ -405,6 +531,20 @@ class BlendServiceTests(unittest.IsolatedAsyncioTestCase):
         entry = router._settings["combo_strategies"]["smart"]
         self.assertEqual(entry["fallbackStrategy"], "fallback")
         self.assertIn("smartRoute", entry)
+
+    async def test_smart_route_accepts_provider_extended_reasoning(self):
+        service, _ = _service()
+        dto = await service.create_blend({
+            "name": "smart-ultra",
+            "strategy": "smart-route",
+            "smart_route": {
+                "quick": [{"model": "cx/a", "reasoning": "low"}],
+                "normal": [{"model": "cx/b", "reasoning": "high"}],
+                "difficult": [{"model": "cx/c", "reasoning": "ultra"}],
+            },
+        })
+
+        self.assertEqual(dto["smart_route"]["difficult"][0]["reasoning"], "ultra")
 
     async def test_smart_route_requires_every_group(self):
         service, _ = _service()
@@ -534,7 +674,7 @@ class BlendRouteTests(unittest.IsolatedAsyncioTestCase):
                 }],
             )
 
-            smart_route["difficult"] = [{"model": "cx/c", "reasoning": "high"}]
+            smart_route["difficult"] = [{"model": "cx/c", "reasoning": "ultra"}]
             created = await client.post("/xnobrain/api/runtime/v1/blends", json={
                 "name": "smart-valid",
                 "models": ["cx/a", "cx/b", "cx/c"],

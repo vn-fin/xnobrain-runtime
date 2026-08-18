@@ -24,7 +24,9 @@ class BlendService:
     MAX_MODELS = 24
     STRATEGIES = ("fallback", "round-robin", "fusion", "smart-route")
     SMART_TIERS = ("quick", "normal", "difficult")
-    REASONING_LEVELS = ("auto", "low", "medium", "high")
+    REASONING_LEVELS = (
+        "auto", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+    )
 
     def __init__(self, router: Any):
         self.router = router

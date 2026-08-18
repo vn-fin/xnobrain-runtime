@@ -28,7 +28,9 @@ class ConnectionPatch(BaseModel):
 
 class SmartRouteModel(BaseModel):
     model: str = Field(min_length=1, max_length=256)
-    reasoning: Literal["auto", "low", "medium", "high"] = "auto"
+    reasoning: Literal[
+        "auto", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+    ] = "auto"
 
 
 class SmartRouteConfig(BaseModel):

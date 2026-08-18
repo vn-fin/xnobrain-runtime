@@ -26,6 +26,7 @@ import yaml
 from xnobrain.app import XNOBrainApplication
 from xnobrain.integrations import AgentManager, GlobalConfigManager
 from xnobrain.repositories.files import TEAM_RUN_RETENTION
+from xnobrain.services.base import ServiceError
 
 
 _HERMES_BINARY = shutil.which(os.environ.get("HERMES_CLI", "hermes"))
@@ -156,6 +157,63 @@ class _TeamRunBase(unittest.IsolatedAsyncioTestCase):
 
 
 class TeamRunLifecycleTests(_TeamRunBase):
+    async def test_budget_is_checked_once_per_participant_before_team_task_starts(self):
+        async with self.client() as client:
+            team_id, ids = await self._make_team(client)
+            budget_gate = AsyncMock()
+            with (
+                patch.object(
+                    self.composition.service.analytics,
+                    "require_execution_budget",
+                    budget_gate,
+                ),
+                patch.object(self.composition.service.team_runs, "_drive", new=AsyncMock()),
+            ):
+                started = await client.post(
+                    f"/xnobrain/api/runtime/v1/teams/{team_id}/runs",
+                    json=self._dag_body(),
+                )
+                await asyncio.sleep(0)
+
+            self.assertEqual(started.status_code, 202, started.text)
+            self.assertEqual(
+                sorted(call.args[0] for call in budget_gate.await_args_list),
+                sorted(ids),
+            )
+
+    async def test_budget_rejection_prevents_any_team_task_call(self):
+        async with self.client() as client:
+            team_id, ids = await self._make_team(client)
+
+            async def reject_reviewer(agent_id):
+                if agent_id == ids[2]:
+                    raise ServiceError(
+                        "Weekly budget reached. Increase the agent budget or wait until Sunday.",
+                        status=429,
+                        code="weekly_budget_exceeded",
+                    )
+
+            budget_gate = AsyncMock(side_effect=reject_reviewer)
+            chat = AsyncMock()
+            with (
+                patch.object(
+                    self.composition.service.analytics,
+                    "require_execution_budget",
+                    budget_gate,
+                ),
+                patch.object(self.composition.service.agents, "chat", chat),
+            ):
+                rejected = await client.post(
+                    f"/xnobrain/api/runtime/v1/teams/{team_id}/runs",
+                    json=self._dag_body(),
+                )
+
+            self.assertEqual(rejected.status_code, 429, rejected.text)
+            self.assertEqual(rejected.json()["error"]["code"], "weekly_budget_exceeded")
+            chat.assert_not_awaited()
+            self.assertEqual(self.composition.service.team_runs._active, {})
+            self.assertEqual(self.composition.repository.list_team_runs(team_id), [])
+
     async def test_team_defaults_to_all_enabled_skills_and_reuses_a_profile_across_nodes(self):
         async with self.client() as client:
             ids = []

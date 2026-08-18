@@ -44,7 +44,7 @@ class FakeAnalytics:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    async def require_chat_budget(self, agent_id: str) -> None:
+    async def require_execution_budget(self, agent_id: str) -> None:
         self.calls.append(agent_id)
 
 

@@ -39,10 +39,11 @@ class _ActiveRun:
 class TeamRunService:
     """Run registry + background engine around ``PlatformService``'s DAG workflow."""
 
-    def __init__(self, repository, agents, platform):
+    def __init__(self, repository, agents, platform, analytics=None):
         self.repository = repository
         self.agents = agents
         self.platform = platform
+        self.analytics = analytics
         self._active: dict[str, _ActiveRun] = {}
         self._by_team: dict[str, str] = {}
 
@@ -54,6 +55,7 @@ class TeamRunService:
             raise ServiceError("team is disabled", status=409, code="team_disabled")
         workflow = self.platform._build_team_workflow(team, body)
         self._guard_capacity(str(team["id"]))
+        await self._require_execution_budgets(team, workflow)
         record = self._new_record(team, body, workflow, mode="async")
         self.repository.put_team_run(record)
         entry = self._register(record, task=None)
@@ -68,6 +70,7 @@ class TeamRunService:
             raise ServiceError("team is disabled", status=409, code="team_disabled")
         workflow = self.platform._build_team_workflow(team, body)
         self._guard_capacity(str(team["id"]))
+        await self._require_execution_budgets(team, workflow)
         record = self._new_record(team, body, workflow, mode="sync")
         self.repository.put_team_run(record)
         self._register(record, task=asyncio.current_task())
@@ -122,6 +125,22 @@ class TeamRunService:
 
     def registry_entry(self, run_id: str) -> _ActiveRun | None:
         return self._active.get(run_id)
+
+    async def _require_execution_budgets(
+        self,
+        team: Mapping[str, Any],
+        workflow: list[Mapping[str, Any]],
+    ) -> None:
+        """Gate a team task once, before any coordinator or worker call starts."""
+        if self.analytics is None:
+            return
+        agent_ids = {
+            str(team["orchestrator_id"]),
+            str(team.get("synthesis_agent_id") or team["orchestrator_id"]),
+            *(str(step["agent_id"]) for step in workflow),
+        }
+        for agent_id in sorted(agent_ids):
+            await self.analytics.require_execution_budget(agent_id)
 
     def sanitized(self, record: Mapping[str, Any]) -> dict[str, Any]:
         """Full record with only whitelisted keys (records are built clean, so

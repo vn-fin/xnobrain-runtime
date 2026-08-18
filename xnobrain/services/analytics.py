@@ -198,16 +198,20 @@ class AnalyticsService:
         self._merged.clear()
         return await self._budget_status(agent_id, item)
 
-    async def require_chat_budget(self, agent_id: str) -> dict[str, Any]:
-        """Reject a new user turn once the agent has spent its weekly limit."""
+    async def require_execution_budget(self, agent_id: str) -> dict[str, Any]:
+        """Reject a new top-level execution once weekly spend reaches its limit."""
         status = await self.get_budget(agent_id)
         if not status["accepting_chats"]:
             raise ServiceError(
                 "Weekly budget reached. Increase the agent budget or wait until Sunday.",
-                status=402,
+                status=429,
                 code="weekly_budget_exceeded",
             )
         return status
+
+    async def require_chat_budget(self, agent_id: str) -> dict[str, Any]:
+        """Compatibility alias for callers using the former chat-only name."""
+        return await self.require_execution_budget(agent_id)
 
     # ---- internals ----------------------------------------------------------
 

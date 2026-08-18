@@ -1,6 +1,7 @@
 """Conversation preparation and embedded Hermes runner methods."""
 
 import asyncio
+import threading
 
 from .hermes_support import (
     AgentAPIError,
@@ -259,6 +260,254 @@ class ConversationRunnerMixin:
 
 
     @staticmethod
+    def _smart_route_step_input(messages: Any) -> str:
+        """Build a bounded classifier input for the next model inference."""
+
+        rows = messages if isinstance(messages, list) else []
+        selected: list[str] = []
+        remaining = 6_000
+        for item in reversed(rows[-8:]):
+            if not isinstance(item, Mapping) or remaining <= 0:
+                continue
+            role = str(item.get("role") or "message")
+            name = str(item.get("name") or "").strip()
+            content = item.get("content")
+            if isinstance(content, str):
+                text = content
+            else:
+                try:
+                    text = json.dumps(content, ensure_ascii=False, default=str)
+                except (TypeError, ValueError):
+                    text = str(content or "")
+            text = text.strip()
+            if not text:
+                continue
+            label = f"{role} {name}".strip()
+            piece = f"{label}: {text}"[-remaining:]
+            selected.append(piece)
+            remaining -= len(piece)
+        selected.reverse()
+        return (
+            "Classify the difficulty of the agent's next inference step from "
+            "this recent execution context:\n" + "\n".join(selected)
+        )
+
+
+    @staticmethod
+    def _smart_route_context_tokens(messages: Any) -> int:
+        try:
+            serialized = json.dumps(messages, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            serialized = str(messages or "")
+        return 8_192 + max(1, len(serialized) // 4)
+
+
+    def _resolve_smart_route_from_worker(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        loop_thread_id: int,
+        route_name: str,
+        message: str,
+        *,
+        required_context_tokens: int,
+    ) -> dict[str, Any] | None:
+        """Resolve through the runtime loop from Hermes' executor thread."""
+
+        if threading.get_ident() == loop_thread_id:
+            # Test adapters can execute inline on the event-loop thread. Never
+            # block that loop waiting on a coroutine scheduled onto itself.
+            return None
+        future = asyncio.run_coroutine_threadsafe(
+            self.nine_router.resolve_smart_route(
+                route_name,
+                message,
+                required_context_tokens=required_context_tokens,
+            ),
+            loop,
+        )
+        try:
+            return future.result(timeout=65)
+        except Exception:
+            future.cancel()
+            # Routing is an optimization after the initial turn decision. A
+            # transient classifier failure must not fail an active agent run.
+            return None
+
+
+    def _resolve_smart_route_batch_from_worker(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        loop_thread_id: int,
+        route_name: str,
+        tasks: list[Mapping[str, Any]],
+    ) -> list[dict[str, Any] | None]:
+        """Classify delegated tasks concurrently, preserving their order."""
+
+        if threading.get_ident() == loop_thread_id:
+            return [None] * len(tasks)
+
+        async def resolve_all() -> list[dict[str, Any] | None]:
+            async def resolve_one(task: Mapping[str, Any]) -> dict[str, Any] | None:
+                goal = str(task.get("goal") or "")
+                context = str(task.get("context") or "")
+                message = f"Delegated task: {goal}\nContext: {context}".strip()
+                try:
+                    return await self.nine_router.resolve_smart_route(
+                        route_name,
+                        message,
+                        required_context_tokens=(
+                            8_192 + max(1, len(message) // 4)
+                        ),
+                    )
+                except Exception:
+                    return None
+
+            return list(await asyncio.gather(*(resolve_one(task) for task in tasks)))
+
+        future = asyncio.run_coroutine_threadsafe(resolve_all(), loop)
+        try:
+            return future.result(timeout=65)
+        except Exception:
+            future.cancel()
+            return [None] * len(tasks)
+
+
+    @staticmethod
+    def _apply_smart_route_decision(
+        agent: Any,
+        decision: Mapping[str, Any],
+        *,
+        update_context: bool = True,
+    ) -> None:
+        model = str(decision.get("model") or "").strip()
+        if model:
+            agent.model = model
+            if model.split("/", 1)[0] in {"oc", "ocg", "ocz"}:
+                agent._disable_streaming = True
+        reasoning = str(decision.get("reasoning") or "").strip().lower()
+        if reasoning:
+            from hermes_constants import parse_reasoning_effort
+
+            parsed = parse_reasoning_effort(reasoning)
+            if parsed is not None:
+                agent.reasoning_config = parsed
+        context_length = decision.get("context_length")
+        compressor = getattr(agent, "context_compressor", None)
+        update_model = getattr(compressor, "update_model", None)
+        if (
+            update_context
+            and model
+            and callable(update_model)
+            and isinstance(context_length, (int, float))
+            and context_length > 0
+        ):
+            update_model(
+                model=model,
+                context_length=int(context_length),
+                base_url=str(getattr(agent, "base_url", "") or ""),
+                api_key=getattr(agent, "api_key", ""),
+                provider=str(getattr(agent, "provider", "") or ""),
+                api_mode=str(getattr(agent, "api_mode", "") or ""),
+            )
+
+
+    def _install_smart_route_step_routing(
+        self,
+        agent: Any,
+        loop: asyncio.AbstractEventLoop,
+        loop_thread_id: int,
+        route_name: str,
+        *,
+        apply_reasoning: bool = True,
+        reuse_initial_decision: bool = True,
+    ) -> None:
+        """Re-evaluate a Smart Route after each new tool/agent context step."""
+
+        route_marker = (route_name, apply_reasoning, reuse_initial_decision)
+        if getattr(agent, "_xnobrain_smart_step_route", None) == route_marker:
+            return
+        original_build_api_kwargs = getattr(agent, "_build_api_kwargs", None)
+        if not callable(original_build_api_kwargs):
+            return
+        reuse_initial = reuse_initial_decision
+        last_step_input = ""
+
+        def build_smart_route_api_kwargs(api_messages: list[Any]) -> dict[str, Any]:
+            nonlocal reuse_initial, last_step_input
+            step_input = self._smart_route_step_input(api_messages)
+            if reuse_initial:
+                # _resolve_prepared_smart_route already classified the first
+                # inference. Avoid paying for it twice.
+                reuse_initial = False
+                last_step_input = step_input
+            elif step_input != last_step_input:
+                last_step_input = step_input
+                decision = self._resolve_smart_route_from_worker(
+                    loop,
+                    loop_thread_id,
+                    route_name,
+                    step_input,
+                    required_context_tokens=self._smart_route_context_tokens(
+                        api_messages
+                    ),
+                )
+                if decision is not None:
+                    if not apply_reasoning:
+                        decision = {**decision, "reasoning": ""}
+                    self._apply_smart_route_decision(agent, decision)
+            return original_build_api_kwargs(api_messages)
+
+        agent._build_api_kwargs = build_smart_route_api_kwargs
+        agent._xnobrain_smart_step_route = route_marker
+
+
+    def _install_smart_route_child_routing(
+        self,
+        agent: Any,
+        loop: asyncio.AbstractEventLoop,
+        loop_thread_id: int,
+        route_name: str,
+        *,
+        delegation_model_pinned: bool = False,
+        delegation_reasoning_pinned: bool = False,
+    ) -> None:
+        """Route every registered child and nested child at inference steps."""
+
+        if getattr(agent, "_xnobrain_smart_children", False):
+            return
+        current = getattr(agent, "_active_children", None)
+        if not isinstance(current, list):
+            return
+        manager = self
+
+        class SmartRouteChildren(list):
+            def append(self, child: Any) -> None:
+                if not delegation_model_pinned:
+                    manager._install_smart_route_step_routing(
+                        child,
+                        loop,
+                        loop_thread_id,
+                        route_name,
+                        apply_reasoning=not delegation_reasoning_pinned,
+                        reuse_initial_decision=(
+                            int(getattr(agent, "_delegate_depth", 0) or 0) == 0
+                        ),
+                    )
+                    manager._install_smart_route_child_routing(
+                        child,
+                        loop,
+                        loop_thread_id,
+                        route_name,
+                        delegation_model_pinned=delegation_model_pinned,
+                        delegation_reasoning_pinned=delegation_reasoning_pinned,
+                    )
+                super().append(child)
+
+        agent._active_children = SmartRouteChildren(current)
+        agent._xnobrain_smart_children = True
+
+
+    @staticmethod
     def _apply_provider_runtime_compatibility(agent: Any, model: str) -> None:
         """Apply narrow workarounds for known router/provider wire defects."""
         owner = str(model or "").strip().split("/", 1)[0]
@@ -299,6 +548,32 @@ class ConversationRunnerMixin:
         )
         conversation_id = str(prepared["conversation_id"])
         manager = self
+        runtime_loop = asyncio.get_running_loop()
+        runtime_loop_thread_id = threading.get_ident()
+        smart_route_name = str(prepared.get("smart_route") or "").strip()
+        active_smart_decision: dict[str, Any] = {
+            "model": str(prepared.get("model") or ""),
+            "reasoning": str(prepared.get("route_reasoning") or ""),
+            "tier": str(prepared.get("smart_route_tier") or ""),
+        }
+        configured_reasoning = str(
+            self._get_nested(
+                self._read_config(profile_dir),
+                ("agent", "reasoning_effort"),
+                "medium",
+            )
+            or "medium"
+        ).strip().lower()
+        if configured_reasoning == "auto" and not smart_route_name:
+            try:
+                metadata = await self.nine_router.reasoning_for_model(
+                    active_smart_decision["model"]
+                )
+            except NineRouterAPIError:
+                metadata = {}
+            active_smart_decision["reasoning"] = str(
+                metadata.get("default_reasoning") or ""
+            )
 
         class RunScopedAPIServerAdapter(APIServerAdapter):
             @staticmethod
@@ -321,8 +596,15 @@ class ConversationRunnerMixin:
                 agent = super()._create_agent(*args, **kwargs)
                 manager._apply_provider_runtime_compatibility(
                     agent,
-                    str(prepared.get("model") or ""),
+                    str(active_smart_decision.get("model") or prepared.get("model") or ""),
                 )
+                if smart_route_name:
+                    manager._install_smart_route_step_routing(
+                        agent,
+                        runtime_loop,
+                        runtime_loop_thread_id,
+                        smart_route_name,
+                    )
                 # Hermes' API-server surface normally dispatches top-level
                 # delegations in the background and relies on GatewayRunner to
                 # feed the completed result back into the parent conversation.
@@ -333,18 +615,80 @@ class ConversationRunnerMixin:
                 # the parent can synthesize the workers' results reliably.
                 from tools.delegate_tool import (
                     _get_max_concurrent_children,
+                    _load_config,
                     _strip_model_hidden_task_fields,
                     delegate_task,
                 )
+                delegation_config = _load_config()
+                delegation_model_pinned = any(
+                    str(delegation_config.get(key) or "").strip()
+                    for key in (
+                        "model",
+                        "provider",
+                        "base_url",
+                        "api_mode",
+                        "acp_command",
+                    )
+                )
+                delegation_reasoning_pinned = (
+                    "reasoning_effort" in delegation_config
+                    and delegation_config.get("reasoning_effort") is not None
+                )
+
+                if smart_route_name:
+                    manager._install_smart_route_child_routing(
+                        agent,
+                        runtime_loop,
+                        runtime_loop_thread_id,
+                        smart_route_name,
+                        delegation_model_pinned=delegation_model_pinned,
+                        delegation_reasoning_pinned=delegation_reasoning_pinned,
+                    )
 
                 def dispatch_delegate_sync(function_args: Mapping[str, Any]) -> str:
                     tasks = _strip_model_hidden_task_fields(function_args.get("tasks"))
                     slots = max_parallel_agents(_get_max_concurrent_children())
                     max_batch_tasks = 20
-                    if not isinstance(tasks, list) or len(tasks) <= slots:
+                    if not isinstance(tasks, list):
+                        if not smart_route_name:
+                            return delegate_task(
+                                goal=function_args.get("goal"),
+                                context=function_args.get("context"),
+                                tasks=tasks,
+                                max_iterations=function_args.get("max_iterations"),
+                                role=function_args.get("role"),
+                                output_schema=function_args.get("output_schema"),
+                                background=False,
+                                parent_agent=agent,
+                            )
+                        goal = str(function_args.get("goal") or "").strip()
+                        if not goal:
+                            return delegate_task(
+                                goal=function_args.get("goal"),
+                                context=function_args.get("context"),
+                                tasks=tasks,
+                                max_iterations=function_args.get("max_iterations"),
+                                role=function_args.get("role"),
+                                output_schema=function_args.get("output_schema"),
+                                background=False,
+                                parent_agent=agent,
+                            )
+                        tasks = [{
+                            "goal": goal,
+                            "context": function_args.get("context"),
+                            "role": function_args.get("role"),
+                        }]
+                    if not smart_route_name and len(tasks) <= slots:
                         return delegate_task(
-                            goal=function_args.get("goal"),
-                            context=function_args.get("context"),
+                            tasks=tasks,
+                            max_iterations=function_args.get("max_iterations"),
+                            role=function_args.get("role"),
+                            output_schema=function_args.get("output_schema"),
+                            background=False,
+                            parent_agent=agent,
+                        )
+                    if not tasks:
+                        return delegate_task(
                             tasks=tasks,
                             max_iterations=function_args.get("max_iterations"),
                             role=function_args.get("role"),
@@ -360,11 +704,65 @@ class ConversationRunnerMixin:
                             ),
                         })
 
-                    # Hermes currently treats max_concurrent_children as both
-                    # a slot count and a hard batch-size limit. XNOBrain keeps
-                    # the configured number of execution slots, queues the
-                    # remainder, and presents the model with one consolidated
-                    # tool result. Each wave is still internally parallel.
+                    decisions = (
+                        manager._resolve_smart_route_batch_from_worker(
+                            runtime_loop,
+                            runtime_loop_thread_id,
+                            smart_route_name,
+                            tasks,
+                        )
+                        if smart_route_name and not delegation_model_pinned
+                        else [None] * len(tasks)
+                    )
+                    grouped: dict[tuple[str, str], list[tuple[int, Any]]] = {}
+                    decision_by_group: dict[tuple[str, str], Mapping[str, Any] | None] = {}
+                    for task_index, task in enumerate(tasks):
+                        decision = decisions[task_index] if task_index < len(decisions) else None
+                        key = (
+                            str((decision or {}).get("model") or agent.model),
+                            str((decision or {}).get("reasoning") or ""),
+                        )
+                        grouped.setdefault(key, []).append((task_index, task))
+                        decision_by_group[key] = decision
+                    batches: list[tuple[Mapping[str, Any] | None, list[tuple[int, Any]]]] = []
+                    for key, entries in grouped.items():
+                        for offset in range(0, len(entries), slots):
+                            batches.append((decision_by_group[key], entries[offset:offset + slots]))
+
+                    original_model = agent.model
+                    original_reasoning = getattr(agent, "reasoning_config", None)
+
+                    def run_batch(
+                        decision: Mapping[str, Any] | None,
+                        entries: list[tuple[int, Any]],
+                    ) -> str:
+                        if decision is not None:
+                            manager._apply_smart_route_decision(
+                                agent,
+                                decision,
+                                update_context=False,
+                            )
+                        try:
+                            return delegate_task(
+                                tasks=[task for _, task in entries],
+                                max_iterations=function_args.get("max_iterations"),
+                                role=function_args.get("role"),
+                                output_schema=function_args.get("output_schema"),
+                                background=False,
+                                parent_agent=agent,
+                            )
+                        finally:
+                            agent.model = original_model
+                            agent.reasoning_config = original_reasoning
+
+                    if len(batches) == 1 and [index for index, _ in batches[0][1]] == list(range(len(tasks))):
+                        return run_batch(*batches[0])
+
+                    # Hermes treats max_concurrent_children as both a slot
+                    # count and a batch-size limit. XNOBrain queues overflow,
+                    # and Smart Route additionally groups workers by their own
+                    # model/reasoning decision. A mixed-difficulty batch may
+                    # therefore execute in a few cost-homogeneous waves.
                     original_callback = getattr(agent, "tool_progress_callback", None)
                     started = time.monotonic()
                     combined_results: list[dict[str, Any]] = []
@@ -382,8 +780,8 @@ class ConversationRunnerMixin:
                                 queue_position=max(0, task_index - slots + 1),
                             )
 
-                    for offset in range(0, len(tasks), slots):
-                        chunk = tasks[offset:offset + slots]
+                    for decision, entries in batches:
+                        index_map = [index for index, _ in entries]
 
                         def relay_chunk_progress(
                             event_type: str,
@@ -395,8 +793,8 @@ class ConversationRunnerMixin:
                             if not callable(original_callback):
                                 return
                             local_index = event_kwargs.get("task_index")
-                            if isinstance(local_index, int):
-                                event_kwargs["task_index"] = offset + local_index
+                            if isinstance(local_index, int) and 0 <= local_index < len(index_map):
+                                event_kwargs["task_index"] = index_map[local_index]
                             event_kwargs["task_count"] = len(tasks)
                             event_kwargs["concurrency"] = slots
                             original_callback(
@@ -409,13 +807,7 @@ class ConversationRunnerMixin:
 
                         agent.tool_progress_callback = relay_chunk_progress
                         try:
-                            raw_result = delegate_task(
-                                tasks=chunk,
-                                max_iterations=function_args.get("max_iterations"),
-                                role=function_args.get("role"),
-                                background=False,
-                                parent_agent=agent,
-                            )
+                            raw_result = run_batch(decision, entries)
                         finally:
                             agent.tool_progress_callback = original_callback
 
@@ -430,13 +822,18 @@ class ConversationRunnerMixin:
                                     "status": "error",
                                     "error": str(item),
                                 }
-                                entry["task_index"] = offset + int(entry.get("task_index", local_index))
+                                reported = int(entry.get("task_index", local_index))
+                                entry["task_index"] = (
+                                    index_map[reported]
+                                    if 0 <= reported < len(index_map)
+                                    else index_map[local_index]
+                                )
                                 combined_results.append(entry)
                         else:
                             error = str(decoded.get("error") or raw_result) if isinstance(decoded, Mapping) else str(raw_result)
-                            for local_index in range(len(chunk)):
+                            for task_index in index_map:
                                 combined_results.append({
-                                    "task_index": offset + local_index,
+                                    "task_index": task_index,
                                     "status": "error",
                                     "summary": None,
                                     "error": error,
@@ -474,12 +871,15 @@ class ConversationRunnerMixin:
                             "at once and automatically queues the remainder. Do not split a larger "
                             "batch merely to match the concurrency limit."
                         )
-                route_reasoning = str(prepared.get("route_reasoning") or "")
-                if route_reasoning in {"low", "medium", "high"}:
-                    agent.reasoning_config = {
-                        "enabled": True,
-                        "effort": route_reasoning,
-                    }
+                route_reasoning = str(active_smart_decision.get("reasoning") or "")
+                if route_reasoning:
+                    manager._apply_smart_route_decision(
+                        agent,
+                        {
+                            "model": str(active_smart_decision.get("model") or ""),
+                            "reasoning": route_reasoning,
+                        },
+                    )
                 manager._apply_runtime_help_guidance_override(
                     agent,
                     profile_dir,
@@ -603,6 +1003,20 @@ class ConversationRunnerMixin:
             first_turn = True
             while prompt:
                 history = await adapter._conversation_history_for_session(conversation_id)
+                if smart_route_name and not first_turn:
+                    try:
+                        decision = await self.nine_router.resolve_smart_route(
+                            smart_route_name,
+                            prompt,
+                            required_context_tokens=self._smart_route_context_tokens(
+                                [*history, {"role": "user", "content": prompt}]
+                            ),
+                        )
+                    except NineRouterAPIError:
+                        decision = None
+                    if decision is not None:
+                        active_smart_decision.update(decision)
+                        selected_model = str(decision.get("model") or selected_model)
                 result, turn_usage = await adapter._run_agent(
                     user_message=prompt,
                     conversation_history=history,
@@ -657,8 +1071,8 @@ class ConversationRunnerMixin:
                 "auto_compaction": auto_compaction,
                 "model": actual_model,
                 "route": str(prepared.get("smart_route") or ""),
-                "route_tier": str(prepared.get("smart_route_tier") or ""),
-                "reasoning": str(prepared.get("route_reasoning") or ""),
+                "route_tier": str(active_smart_decision.get("tier") or ""),
+                "reasoning": str(active_smart_decision.get("reasoning") or ""),
             }
             usage.update({
                 "context_used": context["used"],

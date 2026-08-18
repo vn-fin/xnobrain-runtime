@@ -670,7 +670,8 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
                 f"/xnobrain/api/runtime/v1/sessions/{session_id}/runs?agent={a}",
                 json={"input": "hello", "model": "auto"},
             )
-            self.assertEqual(rejected.status_code, 402, rejected.text)
+            self.assertEqual(rejected.status_code, 429, rejected.text)
+            self.assertEqual(rejected.json()["error"]["code"], "weekly_budget_exceeded")
             self.assertIn("Weekly budget reached", rejected.json()["message"])
 
     def test_week_starts_sunday_at_midnight_utc(self):

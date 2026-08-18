@@ -7,12 +7,13 @@ import hashlib
 import json
 import os
 import sqlite3
+import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import yaml
 
@@ -52,6 +53,164 @@ class FakeNineRouterManager(NineRouterManager):
 
 
 class NineRouterConfigTests(unittest.TestCase):
+    def test_global_config_accepts_model_derived_auto_reasoning(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "config.yaml").write_text("model: {}\n", encoding="utf-8")
+            manager = GlobalConfigManager(root_profile=root)
+
+            config = manager.update_config({"reasoning_effort": "auto"})
+
+        self.assertEqual(config["reasoning_effort"], "auto")
+
+    def test_smart_route_step_input_is_bounded_and_uses_recent_execution(self) -> None:
+        messages = [
+            {"role": "user", "content": "old context " * 2_000},
+            {"role": "assistant", "content": "I will inspect it."},
+            {"role": "tool", "name": "read_file", "content": "small result"},
+        ]
+
+        value = AgentManager._smart_route_step_input(messages)
+
+        self.assertLessEqual(len(value), 6_100)
+        self.assertIn("tool read_file: small result", value)
+        self.assertTrue(value.startswith("Classify the difficulty"))
+
+    def test_smart_route_decision_updates_model_and_extended_reasoning(self) -> None:
+        compressor = SimpleNamespace(update_model=Mock())
+        agent = SimpleNamespace(
+            model="cx/old",
+            reasoning_config=None,
+            context_compressor=compressor,
+            base_url="http://omniroute",
+            api_key="token",
+            provider="custom",
+            api_mode="chat_completions",
+        )
+
+        AgentManager._apply_smart_route_decision(
+            agent,
+            {
+                "model": "cx/new",
+                "reasoning": "ultra",
+                "context_length": 200_000,
+            },
+        )
+
+        self.assertEqual(agent.model, "cx/new")
+        self.assertEqual(agent.reasoning_config, {"enabled": True, "effort": "ultra"})
+        compressor.update_model.assert_called_once_with(
+            model="cx/new",
+            context_length=200_000,
+            base_url="http://omniroute",
+            api_key="token",
+            provider="custom",
+            api_mode="chat_completions",
+        )
+
+        AgentManager._apply_smart_route_decision(
+            agent,
+            {"model": "cx/new", "reasoning": "none"},
+        )
+        self.assertEqual(agent.reasoning_config, {"enabled": False})
+
+    def test_smart_route_reuses_initial_decision_then_routes_new_inference_step(self) -> None:
+        manager = object.__new__(AgentManager)
+        agent = SimpleNamespace(model="cx/deep", reasoning_config={"enabled": True, "effort": "high"})
+        agent._build_api_kwargs = lambda messages: {
+            "model": agent.model,
+            "messages": messages,
+            "reasoning": agent.reasoning_config,
+        }
+        first_messages = [{"role": "user", "content": "Implement the feature"}]
+        next_messages = [
+            *first_messages,
+            {"role": "assistant", "content": "", "tool_calls": [{"name": "read_file"}]},
+            {"role": "tool", "name": "read_file", "content": "One-line config value"},
+        ]
+
+        with patch.object(
+            manager,
+            "_resolve_smart_route_from_worker",
+            return_value={"model": "cx/fast", "reasoning": "low", "tier": "quick"},
+        ) as resolve:
+            manager._install_smart_route_step_routing(
+                agent,
+                None,
+                0,
+                "smart",
+            )
+            first = agent._build_api_kwargs(first_messages)
+            retry = agent._build_api_kwargs(first_messages)
+            following = agent._build_api_kwargs(next_messages)
+
+        self.assertEqual(first["model"], "cx/deep")
+        self.assertEqual(retry["model"], "cx/deep")
+        self.assertEqual(following["model"], "cx/fast")
+        self.assertEqual(following["reasoning"], {"enabled": True, "effort": "low"})
+        self.assertEqual(resolve.call_count, 1)
+
+    def test_smart_route_installs_step_routing_on_nested_children(self) -> None:
+        manager = object.__new__(AgentManager)
+        parent = SimpleNamespace(_active_children=[])
+        child = SimpleNamespace(
+            model="cx/fast",
+            reasoning_config={"enabled": True, "effort": "low"},
+            _delegate_depth=1,
+            _active_children=[],
+        )
+        child._build_api_kwargs = lambda messages: {
+            "model": child.model,
+            "messages": messages,
+        }
+        original_builder = child._build_api_kwargs
+
+        manager._install_smart_route_child_routing(parent, None, 0, "smart")
+        parent._active_children.append(child)
+
+        self.assertTrue(parent._xnobrain_smart_children)
+        self.assertTrue(child._xnobrain_smart_children)
+        self.assertIsNot(child._build_api_kwargs, original_builder)
+
+        grandchild = SimpleNamespace(
+            model="cx/fast",
+            reasoning_config={"enabled": True, "effort": "low"},
+            _delegate_depth=2,
+            _active_children=[],
+        )
+        grandchild._build_api_kwargs = lambda messages: {"model": grandchild.model}
+        with patch.object(
+            manager,
+            "_resolve_smart_route_from_worker",
+            return_value={"model": "cx/deep", "reasoning": "high"},
+        ) as resolve:
+            child._active_children.append(grandchild)
+            result = grandchild._build_api_kwargs(
+                [{"role": "user", "content": "Review the architecture"}]
+            )
+
+        self.assertEqual(result["model"], "cx/deep")
+        resolve.assert_called_once()
+
+    def test_smart_route_does_not_wrap_backend_pinned_children(self) -> None:
+        manager = object.__new__(AgentManager)
+        parent = SimpleNamespace(_active_children=[])
+        child = SimpleNamespace(_active_children=[])
+        child._build_api_kwargs = lambda messages: {"messages": messages}
+        original_builder = child._build_api_kwargs
+
+        manager._install_smart_route_child_routing(
+            parent,
+            None,
+            0,
+            "smart",
+            delegation_model_pinned=True,
+        )
+        parent._active_children.append(child)
+
+        self.assertIs(child._build_api_kwargs, original_builder)
+        self.assertFalse(hasattr(child, "_xnobrain_smart_children"))
+
     def test_cancelled_run_persists_visible_terminal_message(self) -> None:
         class SessionDB:
             def __init__(self):
@@ -486,6 +645,38 @@ class NineRouterConfigTests(unittest.TestCase):
 
 
 class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_smart_route_classifies_delegated_tasks_independently(self) -> None:
+        class Router:
+            async def resolve_smart_route(
+                self, name, message, *, required_context_tokens=0,
+            ):
+                await asyncio.sleep(0)
+                difficult = "architecture" in message.lower()
+                return {
+                    "model": "cx/deep" if difficult else "cx/fast",
+                    "reasoning": "high" if difficult else "low",
+                    "tier": "difficult" if difficult else "quick",
+                    "route": name,
+                }
+
+        manager = object.__new__(AgentManager)
+        manager.nine_router = Router()
+        loop = asyncio.get_running_loop()
+
+        decisions = await asyncio.to_thread(
+            manager._resolve_smart_route_batch_from_worker,
+            loop,
+            threading.get_ident(),
+            "smart",
+            [
+                {"goal": "Format this JSON"},
+                {"goal": "Review the system architecture"},
+            ],
+        )
+
+        self.assertEqual([item["model"] for item in decisions], ["cx/fast", "cx/deep"])
+        self.assertEqual([item["tier"] for item in decisions], ["quick", "difficult"])
+
     async def test_api_key_upsert_uses_sha256_identity_and_returns_short_label(self) -> None:
         api_key = "sk-secret-value"
         fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
