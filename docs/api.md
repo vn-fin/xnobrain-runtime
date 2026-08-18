@@ -56,6 +56,14 @@ Preset providers always use their runtime-defined endpoint and ignore a
 client-supplied base URL. Model inventories for OpenAI-compatible connections
 come from OmniRoute's per-connection model catalog and are exposed under the
 configured stable prefix; OmniRoute's UUID-backed node IDs are never public.
+Subscription providers also expose only the union of models returned by
+OmniRoute for their active, non-error connections. Their stable public model
+prefixes are preserved, and models found only in OmniRoute's global catalog are
+not exposed as usable subscription models. When OmniRoute publishes reasoning
+effort aliases beside a base model, the runtime collapses those aliases into one
+base-model row and derives its ordered `reasoning` values from the live catalog.
+`GET /providers/{provider_id}/models/{model}/reasoning` returns those same
+provider/model-specific values; model IDs containing `/` are supported.
 OpenCode Zen exposes only models returned for an active Zen API-key
 connection; the legacy global `oc/*` free-model catalog is not listed.
 The runtime derives a SHA-256 fingerprint for the provider-runtime identity;

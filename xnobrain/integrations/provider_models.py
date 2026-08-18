@@ -9,6 +9,11 @@ from .nine_router_support import (
     OPENAI_COMPATIBLE_PROVIDERS,
     ROUTER_MODEL_ALIASES,
     ROUTER_PROVIDER_BY_MODEL_OWNER,
+    SUBSCRIPTION_ROUTER_PROVIDERS,
+)
+
+_REASONING_LEVELS = (
+    "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
 )
 
 
@@ -31,7 +36,8 @@ class ProviderModelsMixin:
         active_owners = {
             ROUTER_MODEL_ALIASES[provider]
             for provider in connected_providers
-            if provider in ROUTER_MODEL_ALIASES and provider != "opencode"
+            if provider in ROUTER_MODEL_ALIASES
+            and provider not in SUBSCRIPTION_ROUTER_PROVIDERS | {"opencode"}
         }
         # OpenCode's global catalog contains free ``oc/*`` models and other
         # entries that are not tied to the user's Zen API key. OpenCode models
@@ -103,10 +109,14 @@ class ProviderModelsMixin:
             models.append(model)
         for connection in connections:
             logical_provider = str(connection.get("provider") or "")
+            subscription = logical_provider in SUBSCRIPTION_ROUTER_PROVIDERS
             if (
-                logical_provider not in OPENAI_COMPATIBLE_PROVIDERS | {"opencode"}
-                or connection.get("active") is False
-                or str(connection.get("test_status") or "").lower() == "error"
+                not subscription
+                and logical_provider not in OPENAI_COMPATIBLE_PROVIDERS | {"opencode"}
+            ):
+                continue
+            if connection.get("active") is False or (
+                str(connection.get("test_status") or "").lower() == "error"
             ):
                 continue
             try:
@@ -115,19 +125,41 @@ class ProviderModelsMixin:
                 )
             except NineRouterAPIError:
                 continue
-            node = provider_nodes.get(str(connection_catalog.get("provider") or ""))
-            if node is None:
-                continue
-            prefix = str(node.get("prefix") or "").strip()
-            provider = ROUTER_PROVIDER_BY_MODEL_OWNER.get(prefix, prefix)
-            if not prefix or provider != logical_provider:
-                continue
-            for item in connection_catalog.get("models", []):
+            catalog_provider = str(connection_catalog.get("provider") or "").strip()
+            if subscription:
+                prefix = ROUTER_MODEL_ALIASES[logical_provider]
+                provider = logical_provider
+                if catalog_provider and catalog_provider not in {logical_provider, prefix}:
+                    continue
+            else:
+                node = provider_nodes.get(catalog_provider)
+                if node is None:
+                    continue
+                prefix = str(node.get("prefix") or "").strip()
+                provider = ROUTER_PROVIDER_BY_MODEL_OWNER.get(prefix, prefix)
+                if not prefix or provider != logical_provider:
+                    continue
+            connection_models = self._connection_catalog_models(
+                connection_catalog.get("models", []),
+                collapse_reasoning_aliases=subscription,
+            )
+            for item in connection_models:
                 model_id = str(item.get("id") or "").strip()
                 if not model_id:
                     continue
+                if subscription:
+                    for catalog_prefix in (prefix, logical_provider):
+                        if model_id.startswith(f"{catalog_prefix}/"):
+                            model_id = model_id.removeprefix(f"{catalog_prefix}/")
+                            break
                 public_model_id = f"{prefix}/{model_id}"
                 if public_model_id in seen:
+                    continue
+                if (
+                    provider == "codex"
+                    and public_model_id.lower().endswith("-review")
+                    and not codex_review_available
+                ):
                     continue
                 seen.add(public_model_id)
                 model = {
@@ -203,12 +235,13 @@ class ProviderModelsMixin:
     @staticmethod
     def _model_reasoning_levels(item: Mapping[str, Any]) -> list[str]:
         raw = item.get("reasoning_levels") or item.get("supported_reasoning")
-        allowed = {"low", "medium", "high"}
         if isinstance(raw, list):
-            return [str(level) for level in raw if str(level) in allowed]
+            values = {str(level).strip().lower() for level in raw}
+            return [level for level in _REASONING_LEVELS if level in values]
         raw = item.get("supportedThinkingEfforts")
         if isinstance(raw, list):
-            return [str(level) for level in raw if str(level) in allowed]
+            values = {str(level).strip().lower() for level in raw}
+            return [level for level in _REASONING_LEVELS if level in values]
         capabilities = item.get("capabilities")
         if (
             item.get("supportsThinking") is True
@@ -216,3 +249,68 @@ class ProviderModelsMixin:
         ):
             return ["low", "medium", "high"]
         return []
+
+
+    @classmethod
+    def _connection_catalog_models(
+        cls,
+        raw_models: Any,
+        *,
+        collapse_reasoning_aliases: bool,
+    ) -> list[dict[str, Any]]:
+        """Normalize a connection catalog without naming specific model families.
+
+        Some subscription providers publish reasoning choices as model aliases such
+        as ``model-high``. Collapse only a group with a real base model and either
+        multiple effort aliases or explicit reasoning metadata on the base. This
+        keeps genuinely distinct models whose names happen to end in ``-max``.
+        """
+
+        rows = (
+            [dict(item) for item in raw_models if isinstance(item, Mapping)]
+            if isinstance(raw_models, list)
+            else []
+        )
+        if not collapse_reasoning_aliases:
+            return rows
+
+        by_id = {
+            str(item.get("id") or "").strip(): item
+            for item in rows
+            if str(item.get("id") or "").strip()
+        }
+        aliases: dict[str, dict[str, str]] = {}
+        for model_id in by_id:
+            for level in _REASONING_LEVELS:
+                suffix = f"-{level}"
+                if not model_id.endswith(suffix):
+                    continue
+                base_id = model_id.removesuffix(suffix)
+                if base_id in by_id:
+                    aliases.setdefault(base_id, {})[level] = model_id
+                break
+
+        collapsible = {
+            base_id
+            for base_id, variants in aliases.items()
+            if len(variants) >= 2 or cls._model_reasoning_levels(by_id[base_id])
+        }
+        collapsed_ids = {
+            alias_id
+            for base_id in collapsible
+            for alias_id in aliases[base_id].values()
+        }
+        result = []
+        for item in rows:
+            model_id = str(item.get("id") or "").strip()
+            if model_id in collapsed_ids:
+                continue
+            normalized = dict(item)
+            if model_id in collapsible:
+                explicit = set(cls._model_reasoning_levels(item))
+                explicit.update(aliases[model_id])
+                normalized["reasoning_levels"] = [
+                    level for level in _REASONING_LEVELS if level in explicit
+                ]
+            result.append(normalized)
+        return result

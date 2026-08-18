@@ -135,6 +135,45 @@ class ProvidersServiceMixin:
         current = next(item for item in items if item["id"] == provider)
         return {"provider_id": provider, "connection_mode": current["connection_mode"], "connected": current["connected"], "status": current["status"], "default_model": current["default_model"], "available_models": current["available_models"]}
 
+    async def provider_models(self, provider: str) -> dict[str, Any]:
+        self._provider(provider)
+        items = [
+            item for item in (await self.router.list_models())["data"]
+            if item.get("provider") == provider
+        ]
+        reasoning = []
+        for level in ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"):
+            if any(level in item.get("reasoning_levels", []) for item in items):
+                reasoning.append(level)
+        return {
+            "provider_id": provider,
+            "default_model": "auto",
+            "models": [
+                {"id": "auto", "reasoning": reasoning},
+                *[
+                    {
+                        "id": item["id"],
+                        "reasoning": list(item.get("reasoning_levels", [])),
+                    }
+                    for item in items
+                ],
+            ],
+        }
+
+    async def provider_model_reasoning(self, provider: str, model: str) -> dict[str, Any]:
+        catalog = await self.provider_models(provider)
+        current = next(
+            (item for item in catalog["models"] if item["id"] == model),
+            None,
+        )
+        if current is None:
+            raise ServiceError("provider model not found", status=404, code="not_found")
+        return {
+            "provider_id": provider,
+            "model": model,
+            "reasoning": current["reasoning"],
+        }
+
     async def provider_runtime_health(self) -> dict[str, Any]:
         status = await self.router.status()
         if not status.get("available"):

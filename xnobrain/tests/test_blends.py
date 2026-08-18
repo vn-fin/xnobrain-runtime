@@ -147,10 +147,14 @@ class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
             ("GET", "/api/providers"): {"connections": [
                 {"id": "codex-1", "provider": "codex", "authType": "oauth"},
             ]},
-            ("GET", "/v1/models?kind=llm"): {"data": [{
-                "id": "cx/gpt", "owned_by": "cx",
-                "capabilities": {"contextWindow": 372_000, "reasoning": True},
-            }]},
+            ("GET", "/v1/models?kind=llm"): {"data": []},
+            ("GET", "/api/providers/codex-1/models"): {
+                "provider": "codex",
+                "models": [{
+                    "id": "gpt",
+                    "capabilities": {"contextWindow": 372_000, "reasoning": True},
+                }],
+            },
             ("GET", "/api/combos"): {"combos": []},
             ("POST", "/api/combos"): {},
         })
@@ -191,8 +195,10 @@ class BlendAdapterTests(unittest.IsolatedAsyncioTestCase):
             ("GET", "/api/providers"): {"connections": [
                 {"id": "codex-1", "provider": "codex", "authType": "oauth"}]},
             ("GET", "/v1/models?kind=llm"): {"data": [
-                {"id": "cx/gpt", "owned_by": "cx"},
                 {"id": "duo", "owned_by": "combo"}]},
+            ("GET", "/api/providers/codex-1/models"): {
+                "provider": "codex", "models": [{"id": "gpt"}],
+            },
             ("GET", "/api/combos"): {"combos": []},
             ("POST", "/api/combos"): {},
         })

@@ -283,9 +283,9 @@ class GlobalConfigMixin:
 
 
     def _set_reasoning_effort(self, config: dict[str, Any], effort: str) -> None:
-        if effort not in {"none", "minimal", "low", "medium", "high", "xhigh"}:
+        if effort not in {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}:
             raise ConfigAPIError(
-                "effort must be one of: minimal, low, medium, high, xhigh",
+                "effort must be one of: none, minimal, low, medium, high, xhigh, max, ultra",
                 code="invalid_reasoning_effort",
             )
         self._set_nested(config, ("agent", "reasoning_effort"), effort)

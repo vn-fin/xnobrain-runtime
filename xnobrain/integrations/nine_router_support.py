@@ -42,6 +42,9 @@ SUPPORTED_ROUTER_PROVIDERS = frozenset({
 OAUTH_ROUTER_PROVIDERS = frozenset({
     "claude", "codex", "github", "grok-cli", "antigravity",
 })
+SUBSCRIPTION_ROUTER_PROVIDERS = frozenset({
+    "claude", "codex", "github", "cursor", "grok-cli", "antigravity",
+})
 API_KEY_ROUTER_PROVIDERS = frozenset({
     "openai", "anthropic", "gemini", "opencode-go",
 })

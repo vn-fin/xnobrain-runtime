@@ -46,6 +46,18 @@ class FakeRouter:
         self.list_connections_calls = 0
         self.list_models_calls = 0
         self.list_connections_failures = 0
+        self._models = [
+            {
+                "id": "cx/gpt-5.6-sol",
+                "provider": "codex",
+                "reasoning_levels": ["low", "medium", "high", "xhigh", "max", "ultra"],
+            },
+            {
+                "id": "cx/gpt-5.3-codex-spark",
+                "provider": "codex",
+                "reasoning_levels": [],
+            },
+        ]
         self.oauth_calls: list[tuple[str, str, str, dict | None]] = []
         self.authorized_device_providers: set[str] = set()
         self.imported_cursor_credentials: list[tuple[str, str]] = []
@@ -60,7 +72,7 @@ class FakeRouter:
 
     async def list_models(self):
         self.list_models_calls += 1
-        return {"data": []}
+        return {"data": [dict(item) for item in self._models]}
 
     async def upsert_api_key_connection(self, body):
         self.created_bodies.append(dict(body))  # captures the key but never returns it
@@ -285,6 +297,38 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(labels["github"], "GitHub Copilot")
         self.assertEqual(labels["cursor"], "Cursor")
         self.assertEqual(labels["grok-cli"], "Grok Build")
+
+    async def test_provider_models_and_reasoning_follow_router_metadata(self):
+        async with self.client() as client:
+            models = await client.get(
+                "/xnobrain/api/runtime/v1/providers/codex/models"
+            )
+            reasoning = await client.get(
+                "/xnobrain/api/runtime/v1/providers/codex/models/"
+                "cx%2Fgpt-5.6-sol/reasoning"
+            )
+            unsupported = await client.get(
+                "/xnobrain/api/runtime/v1/providers/codex/models/"
+                "cx%2Fmissing/reasoning"
+            )
+
+        self.assertEqual(models.status_code, 200)
+        rows = models.json()["data"]["models"]
+        self.assertEqual(
+            [item["id"] for item in rows],
+            ["auto", "cx/gpt-5.6-sol", "cx/gpt-5.3-codex-spark"],
+        )
+        self.assertEqual(
+            rows[1]["reasoning"],
+            ["low", "medium", "high", "xhigh", "max", "ultra"],
+        )
+        self.assertEqual(reasoning.status_code, 200)
+        self.assertEqual(reasoning.json()["data"], {
+            "provider_id": "codex",
+            "model": "cx/gpt-5.6-sol",
+            "reasoning": ["low", "medium", "high", "xhigh", "max", "ultra"],
+        })
+        self.assertEqual(unsupported.status_code, 404)
 
     async def test_device_code_subscription_starts_and_completes_on_status_poll(self):
         async with self.client() as client:

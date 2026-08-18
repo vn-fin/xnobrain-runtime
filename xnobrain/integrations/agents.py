@@ -537,9 +537,9 @@ class AgentOperationsMixin:
                 effort = "none"
             elif effort == "none":
                 effort = "medium"
-            if effort not in {"none", "minimal", "low", "medium", "high", "xhigh"}:
+            if effort not in {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}:
                 raise AgentAPIError(
-                    "effort must be one of: minimal, low, medium, high, xhigh",
+                    "effort must be one of: none, minimal, low, medium, high, xhigh, max, ultra",
                     code="invalid_agent_config",
                 )
             self._set_nested(config, ("agent", "reasoning_effort"), effort)

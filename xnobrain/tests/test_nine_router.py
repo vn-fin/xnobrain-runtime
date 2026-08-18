@@ -536,8 +536,11 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 "id": "cursor-1", "provider": "cursor", "authType": "oauth",
             }]},
             ("GET", "/v1/models?kind=llm"): {"data": [{
-                "id": "cu/claude-4", "owned_by": "cu",
+                "id": "cu/not-entitled", "owned_by": "cursor",
             }]},
+            ("GET", "/api/providers/cursor-1/models"): {
+                "provider": "cursor", "models": [{"id": "claude-4"}],
+            },
             ("GET", "/api/combos"): {"combos": [{
                 "id": "auto", "name": "auto", "models": ["cu/claude-4"],
             }]},
@@ -554,26 +557,47 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["connection"]["id"], "cursor-1")
         self.assertNotIn("accessToken", result["connection"])
 
-    async def test_subscription_model_aliases_map_to_logical_providers(self) -> None:
+    async def test_subscription_models_use_connection_catalogs_and_stable_aliases(self) -> None:
         manager = FakeNineRouterManager({
             ("GET", "/api/providers"): {"connections": [
                 {"id": "github-1", "provider": "github", "authType": "oauth"},
                 {"id": "cursor-1", "provider": "cursor", "authType": "oauth"},
                 {"id": "grok-1", "provider": "grok-cli", "authType": "oauth"},
+                {"id": "codex-off", "provider": "codex", "authType": "oauth", "isActive": False},
             ]},
             ("GET", "/v1/models?kind=llm"): {"data": [
-                {"id": "gh/gpt-5", "owned_by": "gh"},
-                {"id": "cu/claude-4", "owned_by": "cu"},
-                {"id": "gc/grok-code", "owned_by": "gc"},
+                {"id": "gh/not-entitled", "owned_by": "github"},
+                {"id": "cx/not-available", "owned_by": "codex"},
             ]},
+            ("GET", "/api/providers/github-1/models"): {
+                "provider": "github", "models": [
+                    {"id": "gpt-5"},
+                    {"id": "gpt-5-low"},
+                    {"id": "gpt-5-high"},
+                    {"id": "gpt-5-codex-max"},
+                ],
+            },
+            ("GET", "/api/providers/cursor-1/models"): {
+                "provider": "cursor", "models": [{"id": "cu/claude-4"}],
+            },
+            ("GET", "/api/providers/grok-1/models"): {
+                "provider": "grok-cli", "models": [{"id": "grok-code"}],
+            },
         })
 
         models = (await manager.list_models(ensure_auto=False))["data"]
 
         self.assertEqual(
-            [model["provider"] for model in models[1:]],
-            ["github", "cursor", "grok-cli"],
+            [(model["id"], model["provider"]) for model in models[1:]],
+            [
+                ("gh/gpt-5", "github"),
+                ("gh/gpt-5-codex-max", "github"),
+                ("cu/claude-4", "cursor"),
+                ("gc/grok-code", "grok-cli"),
+            ],
         )
+        github = models[1]
+        self.assertEqual(github["reasoning_levels"], ["low", "high"])
 
     async def test_openai_compatible_node_is_created_and_connections_use_logical_provider(self) -> None:
         node_id = "openai-compatible-chat-deepseek1"
@@ -679,7 +703,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(models[1]["provider"], "groq")
         self.assertEqual(models[1]["name"], "GPT OSS 120B")
         self.assertEqual(models[1]["context_length"], 131072)
-        self.assertEqual(models[1]["reasoning_levels"], ["low", "medium", "high"])
+        self.assertEqual(models[1]["reasoning_levels"], ["low", "medium", "high", "xhigh"])
         self.assertIn(
             ("GET", "/api/providers/groq-account/models", None),
             manager.requests,
@@ -706,11 +730,19 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 },
                 ("GET", "/v1/models?kind=llm"): {
                     "data": [
-                        {"id": "cc/claude-opus-4-1", "owned_by": "cc"},
-                        {"id": "cx/gpt-5.4", "owned_by": "cx"},
+                        {"id": "cc/not-entitled", "owned_by": "claude"},
+                        {"id": "cx/not-entitled", "owned_by": "codex"},
                         {"id": "ag/gemini-3-pro", "owned_by": "ag"},
                         {"id": "openai/gpt-5.4", "owned_by": "openai"},
                     ]
+                },
+                ("GET", "/api/providers/claude-1/models"): {
+                    "provider": "claude",
+                    "models": [{"id": "claude-opus-4-1"}],
+                },
+                ("GET", "/api/providers/codex-1/models"): {
+                    "provider": "codex",
+                    "models": [{"id": "gpt-5.4"}],
                 },
                 ("GET", "/api/combos"): {"combos": []},
                 ("POST", "/api/combos"): {"success": True},
@@ -871,9 +903,15 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 "authType": "oauth",
             }]},
             ("GET", "/v1/models?kind=llm"): {"data": [
-                {"id": "cx/gpt-5.3-codex-spark", "owned_by": "cx"},
-                {"id": "cx/gpt-5.3-codex-spark-review", "owned_by": "cx"},
+                {"id": "cx/not-entitled", "owned_by": "codex"},
             ]},
+            ("GET", "/api/providers/codex-1/models"): {
+                "provider": "codex",
+                "models": [
+                    {"id": "gpt-5.3-codex-spark"},
+                    {"id": "gpt-5.3-codex-spark-review"},
+                ],
+            },
         }
         without_review = FakeNineRouterManager({
             **responses,

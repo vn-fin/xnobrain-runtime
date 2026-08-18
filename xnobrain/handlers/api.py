@@ -12,12 +12,11 @@ from fastapi.responses import JSONResponse, Response
 from ..services import EXPECTED_ERRORS, PlatformService
 from .operations import resolve as resolve_operation
 from .portability import PortabilityHandlers
-from .providers import ProviderHandlers
 from .streaming import StreamingHandlers
 from .workspaces import WorkspaceHandlers
 
 
-class APIHandlers(WorkspaceHandlers, PortabilityHandlers, StreamingHandlers, ProviderHandlers):
+class APIHandlers(WorkspaceHandlers, PortabilityHandlers, StreamingHandlers):
     """Expose the stable XNOBrain contract without duplicating Hermes APIs."""
 
     def __init__(self, service: PlatformService):
