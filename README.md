@@ -9,6 +9,13 @@ One Python/FastAPI process serves the default profile plus every named profile,
 and one private provider runtime handles LLM routing. There is no per-profile
 API server.
 
+The production OCI image compiles the XNOBrain API endpoint to the single
+Nuitka executable `/usr/local/bin/xnobrain-endpoint`; it does not copy the
+XNOBrain Python source tree into the final stage. The image still contains the
+upstream Hermes Python environment and office Python tools because agent CLI,
+skill synchronization, and document tooling execute independently of the API
+endpoint.
+
 ```text
 browser -> Traefik -> React UI
                    -> XNOBrain runtime -> profile files

@@ -14,6 +14,7 @@ export API_SERVER_PORT="${RUNTIME_API_SERVER_PORT:-3000}"
 export DATA_DIR="${RUNTIME_DATA_DIR:-/opt/data/xnobrain}"
 export DEVELOPMENT_ENVIRONMENT="${RUNTIME_DEVELOPMENT_ENVIRONMENT:-development}"
 export SERVICE_NAME="${RUNTIME_SERVICE_NAME:-xnobrain-runtime-services}"
+export XNOBRAIN_PROFILE_TEMPLATE="${XNOBRAIN_PROFILE_TEMPLATE:-/opt/xnobrain/profile-templates}"
 export OTEL_ENABLED="${RUNTIME_OTEL_TRACES_ENABLED:-false}"
 export OTEL_EXPORTER_OTLP_ENDPOINT="${RUNTIME_OTEL_EXPORTER_OTLP_ENDPOINT:-}"
 export OMNIROUTE_CLI_SALT="${RUNTIME_OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}"
@@ -76,7 +77,7 @@ NODE_ENV=production \
 OMNIROUTE_NO_UPDATE_NOTIFIER=1 \
 omniroute serve --port 20128 --no-open &
 router_pid=$!
-"$hermes_python" /opt/xnobrain/server.py &
+/usr/local/bin/xnobrain-endpoint &
 api_pid=$!
 
 cleanup() {

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 FROM node:22.23.1-bookworm AS node-runtime
 
-FROM ubuntu:24.04
+FROM ubuntu:24.04 AS runtime-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG HERMES_VERSION=v2026.8.16
@@ -101,22 +101,44 @@ COPY requirements.txt /opt/xnobrain/requirements.txt
 COPY THIRD_PARTY_NOTICES.md /opt/xnobrain/THIRD_PARTY_NOTICES.md
 COPY third_party_licenses /opt/xnobrain/third_party_licenses
 RUN uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
-      -r /opt/xnobrain/requirements.txt
+      -r /opt/xnobrain/requirements.txt \
+    && rm /opt/xnobrain/requirements.txt
 
-COPY xnobrain /opt/xnobrain/xnobrain
-COPY server.py /opt/xnobrain/server.py
+FROM runtime-base AS endpoint-builder
+
+WORKDIR /opt/xnobrain-build
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends patchelf \
+    && rm -rf /var/lib/apt/lists/* \
+    && uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
+      'nuitka==4.1.3'
+COPY xnobrain ./xnobrain
+COPY server.py ./server.py
+RUN /usr/local/lib/hermes-agent/venv/bin/python -m nuitka \
+      --mode=onefile \
+      --assume-yes-for-downloads \
+      --output-dir=/opt/xnobrain-dist \
+      --output-filename=xnobrain-endpoint \
+      --onefile-tempdir-spec="/tmp/xnobrain-endpoint-${HERMES_COMMIT}" \
+      --include-package=xnobrain \
+      --include-package=hermes_cli \
+      --include-package-data=xnobrain \
+      --nofollow-import-to='*.tests' \
+      server.py \
+    && test -x /opt/xnobrain-dist/xnobrain-endpoint
+
+FROM runtime-base
+
+COPY --from=endpoint-builder /opt/xnobrain-dist/xnobrain-endpoint /usr/local/bin/xnobrain-endpoint
 COPY runtime/profile-templates /opt/xnobrain/profile-templates
 COPY runtime/skill-overrides /opt/xnobrain/skill-overrides
 COPY scripts/apply-profile-templates.sh /usr/local/bin/xnobrain-apply-profile-templates
 COPY runtime/container-entrypoint.sh /usr/local/bin/xnobrain-runtime
 COPY runtime/prepare-omniroute-auth.sh /usr/local/bin/xnobrain-prepare-omniroute-auth
-RUN find /opt/xnobrain/xnobrain -type d -name __pycache__ -prune -exec rm -rf {} + \
-    && find /opt/xnobrain/xnobrain -type f -name '*.pyc' -delete \
-    && install -d -m 0700 /opt/data /opt/data/home /opt/data/home/.config \
+RUN install -d -m 0700 /opt/data /opt/data/home /opt/data/home/.config \
     && chmod 0755 /usr/local/bin/xnobrain-runtime /usr/local/bin/xnobrain-prepare-omniroute-auth /usr/local/bin/xnobrain-apply-profile-templates \
+      /usr/local/bin/xnobrain-endpoint \
     && ln -sfn /usr/local/lib/hermes-agent/venv/bin/hermes /usr/local/bin/agent \
-    && /usr/local/lib/hermes-agent/venv/bin/python -m compileall -q \
-      /opt/xnobrain/xnobrain /opt/xnobrain/server.py \
     && apt-get update
 
 ENV PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr/local/bin:${PATH}" \
