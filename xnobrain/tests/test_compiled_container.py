@@ -11,7 +11,7 @@ class CompiledContainerTests(unittest.TestCase):
     def test_runtime_endpoint_is_a_nuitka_onefile_executable(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
 
-        self.assertIn("'nuitka==4.1.3'", dockerfile)
+        self.assertIn("'nuitka[onefile]==4.1.3'", dockerfile)
         self.assertIn("--mode=onefile", dockerfile)
         self.assertIn(
             "COPY --from=endpoint-builder /opt/xnobrain-dist/xnobrain-endpoint",
