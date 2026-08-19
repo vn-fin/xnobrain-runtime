@@ -141,7 +141,7 @@ make smoke-api
 ### Versioned runtime releases
 
 This repository has no publish or deployment workflow. `xnobrain-release`
-records an exact runtime commit, builds `Dockerfile.backend`, publishes the OCI
+records an immutable runtime repository tag, builds `Dockerfile.backend`, publishes the OCI
 image to GHCR, and deploys the coordinated stack. The workspace root
 `.version`, the immutable release manifest, and `xnobrain-release/latest.json`
 are the coordinated version sources.

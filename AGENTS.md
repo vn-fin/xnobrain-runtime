@@ -1,6 +1,6 @@
 # XNOBrain Agent Guide
 
-XNOBrain is an open-source FastAPI/Hermes runtime. The React UI lives in the
+XNOBrain is a private, proprietary FastAPI/Hermes runtime. The React UI lives in the
 sibling `xnobrain-ui` repository. Read this
 file, `.agents/rules/01-start-here.md`, and applicable additional `.agents/rules/`
 files before every task. For roadmap work,
