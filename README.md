@@ -140,34 +140,26 @@ make smoke-api
 
 ### Versioned runtime releases
 
-The workspace root `.version` is the image-version source of truth for every environment. Dev
-publishes from `main` only when that file changes. Staging and production
-publish on every push to their environment branch, so merging `main` into
-`staging` or `prod` deploys the version recorded in the merged workspace `.version`.
-Manual dispatch remains available to retry the same version.
+This repository has no publish or deployment workflow. `xnobrain-release`
+records an exact runtime commit, builds `Dockerfile.backend`, publishes the OCI
+image to GHCR, and deploys the coordinated stack. The workspace root
+`.version`, the immutable release manifest, and `xnobrain-release/latest.json`
+are the coordinated version sources.
 
-Each release publishes the UI image to GHCR with immutable and moving
-tags:
-
-```text
-ghcr.io/vn-fin/xnobrain-ui/xnobrain-ui:dev-0.0.14
-ghcr.io/vn-fin/xnobrain-ui/xnobrain-ui:dev-latest
-```
-
-The same workflow deploys one VM-builder service to the environment Swarm. It
-runs on a node labelled `incus=true`, embeds the checked-out source instead of
-cloning it with a repository token, installs and health-checks the native
-backend in a temporary Ubuntu VM, and publishes this immutable Incus alias:
+Each release publishes an immutable runtime OCI tag:
 
 ```text
-xnobrain-runtime-dev-0.0.14
+ghcr.io/vn-fin/xnobrain-runtime/xnobrain-runtime:0.0.15
 ```
 
-Staging and production use the same workspace `.version` value with their own environment
-prefix. Re-running an existing environment/version skips the native VM build
-after verifying the alias property. The managed control plane selects a release
-by configuring the runtime image name and semantic version; it does not build
-runtime artifacts.
+The UI, control API, and Incus gateway receive the same release version. No
+component repository publishes a mutable `latest` tag.
+
+```text
+ghcr.io/vn-fin/xnobrain-ui/xnobrain-ui:0.0.15
+ghcr.io/vn-fin/xnobrain-control/brain-control-api:0.0.15
+ghcr.io/vn-fin/xnobrain-control/incus-gateway:0.0.15
+```
 
 ## Data safety
 
