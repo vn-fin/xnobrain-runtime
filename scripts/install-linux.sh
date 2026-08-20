@@ -5,7 +5,7 @@
 #   .tools/hermes-agent/  internal agent-engine checkout and runtime
 #   .tools/python        symlink to the agent-engine Python environment
 #   .tools/office-python office/document helpers
-#   .tools/npm-global    provider runtime and agent CLIs
+#   .tools/npm-global    provider runtime and browser tooling
 #
 # Agent and provider data live in the explicit locations supplied by the user,
 # so installing or removing this checkout never removes profiles or keys.
@@ -23,9 +23,10 @@ hermes_version="${XNOBRAIN_AGENT_ENGINE_VERSION:-v2026.8.16}"
 hermes_commit="${XNOBRAIN_AGENT_ENGINE_COMMIT:-df4b65147d7ddd74dd449f9067aabbca5aef0ec7}"
 node_version="${XNOBRAIN_NODE_VERSION:-22.23.1}"
 omniroute_version="${XNOBRAIN_PROVIDER_RUNTIME_VERSION:-${XNOBRAIN_OMNIROUTE_VERSION:-3.8.49}}"
-codex_version="${XNOBRAIN_CODEX_VERSION:-0.144.6}"
-claude_version="${XNOBRAIN_CLAUDE_CODE_VERSION:-2.1.216}"
 agent_browser_version="${XNOBRAIN_AGENT_BROWSER_VERSION:-0.26.0}"
+# Optional delegated coding CLIs are not required by Hermes or OmniRoute:
+# codex_version="${XNOBRAIN_CODEX_VERSION:-0.144.6}"
+# claude_version="${XNOBRAIN_CLAUDE_CODE_VERSION:-2.1.216}"
 skip_system_packages=false
 skip_office_tools=false
 skip_browser=false
@@ -48,8 +49,7 @@ Environment overrides:
   XNOBRAIN_NODE_VERSION, XNOBRAIN_AGENT_ENGINE_VERSION,
   XNOBRAIN_AGENT_ENGINE_COMMIT,
   XNOBRAIN_PROVIDER_RUNTIME_VERSION, XNOBRAIN_OMNIROUTE_VERSION,
-  XNOBRAIN_CODEX_VERSION,
-  XNOBRAIN_CLAUDE_CODE_VERSION, XNOBRAIN_AGENT_BROWSER_VERSION,
+  XNOBRAIN_AGENT_BROWSER_VERSION,
   RUNTIME_HERMES_HOME, RUNTIME_OMNIROUTE_DATA_DIR (both required)
 EOF
 }
@@ -281,7 +281,7 @@ if [[ "$skip_office_tools" == false ]]; then
     python-docx python-magic python-pptx pyyaml reportlab xlrd xlwt xlsxwriter
 fi
 
-# npm 11 can deny package lifecycle scripts by policy. These three packages use
+# npm 11 can deny package lifecycle scripts by policy. These packages use
 # postinstall only to fetch/build their runnable CLI payloads; opt them in
 # explicitly when the installed npm supports the flag (older npm runs scripts
 # by default).
@@ -290,16 +290,18 @@ if npm install --help 2>&1 | grep -q -- '--allow-scripts'; then
   npm_script_args+=(
     --allow-scripts=omniroute
     --allow-scripts=agent-browser
-    --allow-scripts=@anthropic-ai/claude-code
   )
 fi
 npm install --global --prefix "$npm_prefix" --no-audit --no-fund --include=optional \
   "${npm_script_args[@]}" \
   "omniroute@${omniroute_version}" \
-  "@openai/codex@${codex_version}" \
-  "@anthropic-ai/claude-code@${claude_version}" \
   "agent-browser@${agent_browser_version}" \
   pnpm
+
+# Optional delegation tools; provider connections named "codex" and "claude"
+# are implemented by OmniRoute and do not need these standalone executables:
+# npm install --global --prefix "$npm_prefix" "@openai/codex@${codex_version}"
+# npm install --global --prefix "$npm_prefix" "@anthropic-ai/claude-code@${claude_version}"
 
 for required_path in \
   "$npm_prefix/bin/omniroute" \

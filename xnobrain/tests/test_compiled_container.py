@@ -55,6 +55,29 @@ class CompiledContainerTests(unittest.TestCase):
         ):
             self.assertNotIn(package, package_block)
 
+    def test_runtime_packages_required_node_tools_in_separate_layers(self):
+        dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
+        installer = (ROOT / "scripts" / "install-linux.sh").read_text(
+            encoding="utf-8"
+        )
+
+        active_dockerfile = "\n".join(
+            line for line in dockerfile.splitlines() if not line.lstrip().startswith("#")
+        )
+        active_installer = "\n".join(
+            line for line in installer.splitlines() if not line.lstrip().startswith("#")
+        )
+
+        self.assertGreaterEqual(
+            active_dockerfile.count("--mount=type=cache,target=/root/.npm"), 3
+        )
+        self.assertIn("--mount=type=cache,target=/root/.cache/uv", active_dockerfile)
+        self.assertIn("rm -rf /opt/hermes-build-home", active_dockerfile)
+        self.assertNotIn("@openai/codex", active_dockerfile)
+        self.assertNotIn("@anthropic-ai/claude-code", active_dockerfile)
+        self.assertNotIn("@openai/codex", active_installer)
+        self.assertNotIn("@anthropic-ai/claude-code", active_installer)
+
 
 if __name__ == "__main__":
     unittest.main()
