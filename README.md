@@ -52,9 +52,9 @@ The coordinated stack is started from the workspace root:
 make dev
 ```
 
-The control-plane Compose stack builds the UI from `xnobrain-ui`, the runtime
-from this repository, and the managed administrator service. It also starts
-the private Honcho API, deriver, PostgreSQL/pgvector, and Redis services.
+The coordinated root stack builds the UI from `xnobrain-ui`, the runtime from
+this repository, and the Go control plane. Runtime profiles and memory are
+file-backed; the runtime image does not start PostgreSQL or Redis services.
 
 Open <http://localhost:5173>. Swagger is available at
 <http://localhost:5173/xnobrain/api/runtime/swagger_docs> and the generated OpenAPI

@@ -33,6 +33,28 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertIn("/usr/local/bin/xnobrain-endpoint &", entrypoint)
         self.assertNotIn("/opt/xnobrain/server.py", entrypoint)
 
+    def test_runtime_keeps_office_conversion_without_unused_servers(self):
+        dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
+        package_block = dockerfile.split("apt-get install -y --no-install-recommends", 1)[1]
+        package_block = package_block.split("&& install -d /etc/fonts/conf.d", 1)[0]
+
+        for package in (
+            "libreoffice-writer",
+            "libreoffice-calc",
+            "libreoffice-impress",
+            "python3-uno",
+            "weasyprint",
+        ):
+            self.assertIn(package, package_block)
+        for package in (
+            "postgresql ",
+            "postgresql-contrib",
+            "redis-server",
+            "redis-tools",
+            "wkhtmltopdf",
+        ):
+            self.assertNotIn(package, package_block)
+
 
 if __name__ == "__main__":
     unittest.main()

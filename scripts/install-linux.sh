@@ -111,25 +111,29 @@ fi
 install_apt_packages() {
   # This list follows Dockerfile.backend's Ubuntu office/engineering image.
   local packages=(
-    antiword apt-transport-https bash-completion build-essential ca-certificates
+    antiword bash-completion build-essential ca-certificates
     catdoc csvkit curl default-jre-headless dnsutils docx2txt ffmpeg file
     fontconfig fonts-crosextra-caladea fonts-crosextra-carlito fonts-dejavu
     fonts-freefont-ttf fonts-liberation fonts-liberation2 fonts-noto
     fonts-noto-cjk fonts-noto-color-emoji fonts-urw-base35 ghostscript git
-    gnumeric gnupg graphicsmagick htop hunspell-en-us hunspell-vi hyphen-en-us
+    gnupg htop hunspell-en-us hunspell-vi hyphen-en-us
     imagemagick img2pdf iproute2 iputils-ping jq less libffi-dev
-    libimage-exiftool-perl libreoffice libreoffice-base libreoffice-calc
-    libreoffice-draw libreoffice-impress libreoffice-java-common libreoffice-math
-    libreoffice-script-provider-python libreoffice-writer locales lsb-release
-    lsof man-db manpages mtr-tiny mythes-en-us nano net-tools netcat-openbsd
+    libimage-exiftool-perl libreoffice-calc libreoffice-draw libreoffice-impress
+    libreoffice-math libreoffice-writer locales lsb-release
+    lsof mtr-tiny mythes-en-us nano netcat-openbsd
     ocrmypdf odt2txt openssh-client pandoc pdftk-java pkg-config poppler-utils
-    postgresql postgresql-contrib procps psmisc python3 python3-dev python3-pip
-    python3-uno python3-venv qpdf redis-server redis-tools ripgrep rsync socat
+    procps psmisc python3 python3-dev python3-pip
+    python3-uno python3-venv qpdf ripgrep rsync socat
     software-properties-common sqlite3 strace
     sudo tar tcpdump tesseract-ocr tesseract-ocr-eng tesseract-ocr-vie tmux
     traceroute tree ttf-mscorefonts-installer unoconv unzip vim weasyprint
-    wget wkhtmltopdf wv xlsx2csv xz-utils zip
+    wget wv xlsx2csv xz-utils zip
   )
+  # Intentionally excluded with the Docker image: postgresql,
+  # postgresql-contrib, redis-server, redis-tools, the libreoffice meta/base/
+  # Java/script-provider packages, gnumeric, graphicsmagick, wkhtmltopdf,
+  # apt-transport-https, man-db, manpages, and net-tools. Restore individual
+  # entries above if a verified native-install regression requires one.
   sudo debconf-set-selections <<'EOF'
 ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true
 EOF
@@ -140,14 +144,14 @@ EOF
 install_dnf_packages() {
   sudo dnf install -y \
     ca-certificates curl gcc gcc-c++ git make openssh-clients \
-    postgresql-server redis python3 python3-devel python3-pip python3-tkinter \
+    python3 python3-devel python3-pip python3-tkinter \
     ripgrep rsync sqlite tar unzip util-linux-user wget xz zip
 }
 
 install_pacman_packages() {
   sudo pacman -Sy --needed --noconfirm \
-    base-devel ca-certificates curl git make openssh postgresql python python-pip \
-    redis ripgrep rsync sqlite tar unzip wget xz zip
+    base-devel ca-certificates curl git make openssh python python-pip \
+    ripgrep rsync sqlite tar unzip wget xz zip
 }
 
 if [[ "$skip_system_packages" == false ]]; then
