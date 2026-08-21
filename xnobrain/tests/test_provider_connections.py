@@ -59,6 +59,7 @@ class FakeRouter:
             },
         ]
         self.oauth_calls: list[tuple[str, str, str, dict | None]] = []
+        self.oauth_queries: list[tuple[str, str, str]] = []
         self.authorized_device_providers: set[str] = set()
         self.imported_cursor_credentials: list[tuple[str, str]] = []
         self.api_key_connection_ids: dict[tuple[str, str], str] = {}
@@ -140,13 +141,22 @@ class FakeRouter:
 
     async def oauth(self, provider, action, *, method, query_string="", body=None):
         self.oauth_calls.append((provider, action, method, dict(body) if body else None))
+        self.oauth_queries.append((provider, action, query_string))
         if action == "device-code":
-            return {
+            payload = {
                 "device_code": f"{provider}-device-secret",
                 "user_code": "ABCD-1234",
                 "verification_uri": f"https://login.example/{provider}",
                 "interval": 5,
             }
+            if provider in {"kiro", "amazon-q"}:
+                payload.update({
+                    "_clientId": "aws-client",
+                    "_clientSecret": "aws-secret",
+                    "_region": "us-east-1",
+                    "_authMethod": "builder-id",
+                })
+            return payload
         if action == "poll" and provider in self.authorized_device_providers:
             self._rows.append({
                 "id": f"{provider}-1", "provider": provider,
@@ -291,12 +301,18 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(
             subscription_ids,
-            ["claude", "codex", "github", "cursor", "grok-cli", "antigravity"],
+            [
+                "codex", "claude", "github", "cursor", "grok-cli", "xai-oauth",
+                "kimi-coding", "cline", "kilocode", "kiro", "amazon-q",
+                "clinepass", "antigravity",
+            ],
         )
         labels = {item["id"]: item["display_name"] for item in providers}
         self.assertEqual(labels["github"], "GitHub Copilot")
         self.assertEqual(labels["cursor"], "Cursor")
         self.assertEqual(labels["grok-cli"], "Grok Build")
+        self.assertEqual(labels["xai-oauth"], "xAI Grok")
+        self.assertEqual(labels["amazon-q"], "Amazon Q Developer")
 
     async def test_provider_models_and_reasoning_follow_router_metadata(self):
         async with self.client() as client:
@@ -368,6 +384,50 @@ class ProviderConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.router.oauth_calls[-1][:3],
             ("grok-cli", "device-code", "GET"),
+        )
+
+    async def test_kiro_device_flow_preserves_aws_client_data_for_polling(self):
+        async with self.client() as client:
+            await client.post("/xnobrain/api/runtime/v1/providers/kiro/connect")
+            await client.get("/xnobrain/api/runtime/v1/providers/kiro/connect")
+
+        self.assertEqual(
+            self.router.oauth_calls[-1],
+            (
+                "kiro",
+                "poll",
+                "POST",
+                {
+                    "deviceCode": "kiro-device-secret",
+                    "codeVerifier": "",
+                    "extraData": {
+                        "_clientId": "aws-client",
+                        "_clientSecret": "aws-secret",
+                        "_region": "us-east-1",
+                        "_authMethod": "builder-id",
+                    },
+                },
+            ),
+        )
+
+    async def test_xai_subscription_uses_fixed_loopback_callback(self):
+        async with self.client() as client:
+            started = await client.post(
+                "/xnobrain/api/runtime/v1/providers/xai-oauth/connect"
+            )
+
+        self.assertEqual(started.status_code, 200)
+        self.assertEqual(
+            self.router.oauth_calls[-1][:3],
+            ("xai-oauth", "authorize", "GET"),
+        )
+        self.assertEqual(
+            self.router.oauth_queries[-1],
+            (
+                "xai-oauth",
+                "authorize",
+                "redirect_uri=http://127.0.0.1:56121/callback",
+            ),
         )
 
     async def test_cursor_import_accepts_credential_json_without_echoing_it(self):

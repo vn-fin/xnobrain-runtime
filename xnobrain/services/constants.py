@@ -12,11 +12,18 @@ OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS = {
     "openai-like": {"display_name": "OpenAI-compatible", "description": "Connect any OpenAI-compatible endpoint with a base URL and API key.", "base_url": ""},
 }
 SUBSCRIPTION_PROVIDER_DEFINITIONS = {
-    "claude": {"display_name": "Claude Code", "description": "Use an existing Claude Code subscription."},
     "codex": {"display_name": "OpenAI Codex", "description": "Use an existing ChatGPT or Codex subscription."},
+    "claude": {"display_name": "Claude Code", "description": "Use an existing Claude Code subscription."},
     "github": {"display_name": "GitHub Copilot", "description": "Use an existing GitHub Copilot subscription."},
     "cursor": {"display_name": "Cursor", "description": "Use an existing Cursor subscription."},
     "grok-cli": {"display_name": "Grok Build", "description": "Use an existing xAI Grok Build subscription."},
+    "xai-oauth": {"display_name": "xAI Grok", "description": "Use an existing SuperGrok or X Premium+ subscription."},
+    "kimi-coding": {"display_name": "Kimi Code", "description": "Use an existing Kimi Coding Plan subscription."},
+    "cline": {"display_name": "Cline", "description": "Use an existing Cline account."},
+    "kilocode": {"display_name": "Kilo Code", "description": "Use an existing Kilo Code account."},
+    "kiro": {"display_name": "Kiro", "description": "Use an existing Kiro or AWS Builder ID account."},
+    "amazon-q": {"display_name": "Amazon Q Developer", "description": "Use an existing Amazon Q Developer or AWS Builder ID account."},
+    "clinepass": {"display_name": "ClinePass", "description": "Use an existing ClinePass subscription."},
     "antigravity": {"display_name": "Google Antigravity", "description": "Use an existing Google Antigravity account."},
 }
 PROVIDER_DEFINITIONS = {
@@ -26,11 +33,15 @@ PROVIDER_DEFINITIONS = {
     **OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
 }
 SUPPORTED_PROVIDERS = (
-    "claude", "codex", "github", "cursor", "grok-cli", "antigravity",
+    "codex", "claude", "github", "cursor", "grok-cli", "xai-oauth",
+    "kimi-coding", "cline", "kilocode", "kiro", "amazon-q", "clinepass",
+    "antigravity",
     "openai", "anthropic", "gemini",
     "opencode-go", "opencode", *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
 )
-DEVICE_CODE_PROVIDERS = frozenset({"github", "grok-cli"})
+DEVICE_CODE_PROVIDERS = frozenset({
+    "github", "grok-cli", "kimi-coding", "kilocode", "kiro", "amazon-q",
+})
 IMPORT_TOKEN_PROVIDERS = frozenset({"cursor"})
 API_KEY_PROVIDERS = frozenset({"openai", "anthropic", "gemini", "opencode-go", "opencode", *OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS})
 NO_AUTH_PROVIDERS = frozenset()

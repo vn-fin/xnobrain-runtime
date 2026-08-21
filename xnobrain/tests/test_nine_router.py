@@ -770,6 +770,13 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 {"id": "github-1", "provider": "github", "authType": "oauth"},
                 {"id": "cursor-1", "provider": "cursor", "authType": "oauth"},
                 {"id": "grok-1", "provider": "grok-cli", "authType": "oauth"},
+                {"id": "xai-1", "provider": "xai-oauth", "authType": "oauth"},
+                {"id": "kimi-1", "provider": "kimi-coding", "authType": "oauth"},
+                {"id": "cline-1", "provider": "cline", "authType": "oauth"},
+                {"id": "kilo-1", "provider": "kilocode", "authType": "oauth"},
+                {"id": "kiro-1", "provider": "kiro", "authType": "oauth"},
+                {"id": "amazon-q-1", "provider": "amazon-q", "authType": "oauth"},
+                {"id": "clinepass-1", "provider": "clinepass", "authType": "oauth"},
                 {"id": "codex-off", "provider": "codex", "authType": "oauth", "isActive": False},
             ]},
             ("GET", "/v1/models?kind=llm"): {"data": [
@@ -790,6 +797,27 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             ("GET", "/api/providers/grok-1/models"): {
                 "provider": "grok-cli", "models": [{"id": "grok-code"}],
             },
+            ("GET", "/api/providers/xai-1/models"): {
+                "provider": "xai-oauth", "models": [{"id": "grok-4.5"}],
+            },
+            ("GET", "/api/providers/kimi-1/models"): {
+                "provider": "kimi-coding", "models": [{"id": "k3"}],
+            },
+            ("GET", "/api/providers/cline-1/models"): {
+                "provider": "cline", "models": [{"id": "cline-auto"}],
+            },
+            ("GET", "/api/providers/kilo-1/models"): {
+                "provider": "kilocode", "models": [{"id": "kilo-auto"}],
+            },
+            ("GET", "/api/providers/kiro-1/models"): {
+                "provider": "kiro", "models": [{"id": "claude-sonnet"}],
+            },
+            ("GET", "/api/providers/amazon-q-1/models"): {
+                "provider": "amazon-q", "models": [{"id": "q-developer"}],
+            },
+            ("GET", "/api/providers/clinepass-1/models"): {
+                "provider": "clinepass", "models": [{"id": "cline-pass/glm"}],
+            },
         })
 
         models = (await manager.list_models(ensure_auto=False))["data"]
@@ -801,6 +829,13 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 ("gh/gpt-5-codex-max", "github"),
                 ("cu/claude-4", "cursor"),
                 ("gc/grok-code", "grok-cli"),
+                ("xao/grok-4.5", "xai-oauth"),
+                ("kmc/k3", "kimi-coding"),
+                ("cl/cline-auto", "cline"),
+                ("kc/kilo-auto", "kilocode"),
+                ("kr/claude-sonnet", "kiro"),
+                ("aq/q-developer", "amazon-q"),
+                ("cp/cline-pass/glm", "clinepass"),
             ],
         )
         github = models[1]

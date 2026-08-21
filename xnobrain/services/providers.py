@@ -107,14 +107,17 @@ class ProvidersServiceMixin:
         self._provider(provider)
         attempt = self._oauth_attempts.get(provider)
         if attempt and attempt.get("flow") == "device-code":
+            poll_body = {
+                "deviceCode": attempt["device_code"],
+                "codeVerifier": attempt.get("code_verifier"),
+            }
+            if attempt.get("extra_data"):
+                poll_body["extraData"] = attempt["extra_data"]
             payload = await self.router.oauth(
                 provider,
                 "poll",
                 method="POST",
-                body={
-                    "deviceCode": attempt["device_code"],
-                    "codeVerifier": attempt.get("code_verifier"),
-                },
+                body=poll_body,
             )
             if payload.get("success"):
                 self._oauth_attempts.pop(provider, None)
@@ -236,6 +239,11 @@ class ProvidersServiceMixin:
                 "flow": "device-code",
                 "device_code": device_code,
                 "code_verifier": str(payload.get("codeVerifier") or ""),
+                "extra_data": {
+                    key: payload[key]
+                    for key in ("_clientId", "_clientSecret", "_region", "_authMethod")
+                    if payload.get(key) is not None
+                },
             }
             return {
                 "provider_id": provider,
@@ -251,7 +259,10 @@ class ProvidersServiceMixin:
                 "text_label": "",
                 "status": "waiting_for_user",
             }
-        redirect = "http://localhost:1455/auth/callback" if provider == "codex" else "http://localhost:20128/callback"
+        redirect = {
+            "codex": "http://localhost:1455/auth/callback",
+            "xai-oauth": "http://127.0.0.1:56121/callback",
+        }.get(provider, "http://localhost:20128/callback")
         payload = await self.router.oauth(provider, "authorize", method="GET", query_string=f"redirect_uri={redirect}")
         self._oauth_attempts[provider] = {"code_verifier": str(payload.get("codeVerifier") or ""), "state": str(payload.get("state") or ""), "redirect_uri": redirect}
         url = str(payload.get("authUrl") or "")

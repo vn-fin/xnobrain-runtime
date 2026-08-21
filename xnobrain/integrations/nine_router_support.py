@@ -35,15 +35,20 @@ OPENCODE_ZEN_ROUTER_ALIAS = "ocz"
 OPENCODE_ZEN_API_BASE_URL = "https://opencode.ai/zen/v1"
 
 SUPPORTED_ROUTER_PROVIDERS = frozenset({
-    "claude", "codex", "github", "cursor", "grok-cli", "antigravity",
+    "claude", "codex", "github", "cursor", "grok-cli", "xai-oauth",
+    "kimi-coding", "cline", "kilocode", "kiro", "amazon-q", "clinepass",
+    "antigravity",
     "openai", "anthropic", "gemini",
     "opencode-go", "opencode",
 })
 OAUTH_ROUTER_PROVIDERS = frozenset({
-    "claude", "codex", "github", "grok-cli", "antigravity",
+    "claude", "codex", "github", "grok-cli", "xai-oauth", "kimi-coding",
+    "cline", "kilocode", "kiro", "amazon-q", "clinepass", "antigravity",
 })
 SUBSCRIPTION_ROUTER_PROVIDERS = frozenset({
-    "claude", "codex", "github", "cursor", "grok-cli", "antigravity",
+    "claude", "codex", "github", "cursor", "grok-cli", "xai-oauth",
+    "kimi-coding", "cline", "kilocode", "kiro", "amazon-q", "clinepass",
+    "antigravity",
 })
 API_KEY_ROUTER_PROVIDERS = frozenset({
     "openai", "anthropic", "gemini", "opencode-go",
@@ -57,6 +62,13 @@ ROUTER_MODEL_ALIASES = {
     "github": "gh",
     "cursor": "cu",
     "grok-cli": "gc",
+    "xai-oauth": "xao",
+    "kimi-coding": "kmc",
+    "cline": "cl",
+    "kilocode": "kc",
+    "kiro": "kr",
+    "amazon-q": "aq",
+    "clinepass": "cp",
     "antigravity": "ag",
     "openai": "openai",
     "anthropic": "anthropic",

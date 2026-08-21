@@ -46,12 +46,16 @@ calls do not repeat it. Rejection uses HTTP `429` with code
 `weekly_budget_exceeded`. An accepted execution is never stopped mid-run when
 it takes usage over the limit.
 
-The provider catalog returns subscription connections first in common-use
-order: Claude Code, OpenAI Codex, GitHub Copilot, Cursor, Grok Build, Google
-Antigravity, and OpenCode Go. GitHub Copilot and Grok Build use device-code
-authorization. Cursor uses OmniRoute's validated credential-import flow because
-the pinned provider runtime does not expose browser OAuth for Cursor. The xAI
-API-key card remains separate from the Grok Build subscription card.
+The provider catalog returns subscription connections first in curated
+common-use order: OpenAI Codex, Claude Code, GitHub Copilot, Cursor, Grok Build,
+xAI Grok, Kimi Code, Cline, Kilo Code, Kiro, Amazon Q Developer, ClinePass, and
+Google Antigravity. GitHub Copilot, Grok Build, Kimi Code, Kilo Code, Kiro, and
+Amazon Q use device-code authorization. Cline and ClinePass use the Cline
+browser authorization flow. xAI Grok uses xAI's fixed-loopback PKCE flow and is
+distinct from both the Grok Build subscription and the xAI API-key card. Cursor
+uses OmniRoute's validated credential-import flow because the pinned provider
+runtime does not expose browser OAuth for Cursor. OpenCode Go remains a guided
+coding-plan key flow.
 
 API-key credentials use one idempotent write contract:
 `POST /xnobrain/api/runtime/v1/providers/{provider_id}/connections` with
