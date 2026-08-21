@@ -67,6 +67,20 @@ XNOBRAIN_PROFILE_TEMPLATES_DIR=/opt/xnobrain/profile-templates \
 XNOBRAIN_SKILL_OVERRIDES_DIR=/opt/xnobrain/skill-overrides \
   /usr/local/bin/xnobrain-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 
+# OmniRoute 3.8.49 ships this TLS helper in both its source and distribution
+# trees. Some OCI-to-Incus conversions omit the source-tree copy, so restore it
+# from the byte-identical distribution copy before starting the provider.
+omniroute_tls_source=/usr/local/lib/node_modules/omniroute/scripts/dev/tls-options.mjs
+omniroute_tls_fallback=/opt/xnobrain/omniroute-compat/tls-options.mjs
+if [[ ! -f "$omniroute_tls_source" && -f "$omniroute_tls_fallback" ]]; then
+  install -D -m 0644 "$omniroute_tls_fallback" "$omniroute_tls_source"
+fi
+omniroute_next_server=/usr/local/lib/node_modules/omniroute/dist/node_modules/next/dist/server
+omniroute_next_dev_archive=/opt/xnobrain/omniroute-compat/next-server-dev.tar
+if [[ ! -f "$omniroute_next_server/dev/hot-reloader-types.js" && -f "$omniroute_next_dev_archive" ]]; then
+  tar -C "$omniroute_next_server" -xf "$omniroute_next_dev_archive"
+fi
+
 DATA_DIR="$OMNIROUTE_DATA_DIR" \
 PORT=20128 \
 API_PORT=20128 \

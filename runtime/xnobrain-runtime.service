@@ -1,0 +1,14 @@
+[Unit]
+Description=XNOBrain workspace runtime
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/xnobrain-systemd-entrypoint
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target
