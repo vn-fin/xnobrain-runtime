@@ -78,6 +78,23 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertNotIn("@openai/codex", active_installer)
         self.assertNotIn("@anthropic-ai/claude-code", active_installer)
 
+    def test_incus_container_enables_dhcp_dns_resolution(self):
+        dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
+
+        self.assertIn("systemd-resolved", dockerfile)
+        self.assertIn("multi-user.target.wants/systemd-resolved.service", dockerfile)
+        self.assertIn("sysinit.target.wants/xnobrain-resolv-conf.service", dockerfile)
+
+        service = (ROOT / "runtime" / "xnobrain-resolv-conf.service").read_text(
+            encoding="utf-8"
+        )
+        script = (ROOT / "runtime" / "prepare-resolv-conf.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Before=systemd-resolved.service", service)
+        self.assertIn("ln -sfn", script)
+        self.assertIn("/run/systemd/resolve/stub-resolv.conf", script)
+
 
 if __name__ == "__main__":
     unittest.main()

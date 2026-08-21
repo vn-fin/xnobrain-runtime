@@ -643,6 +643,22 @@ class NineRouterConfigTests(unittest.TestCase):
                 "d7551ed0c406d076237bb8dee3bb6ecee3bc004608867fc0cf76fc87e4644185",
             )
 
+    def test_management_headers_preserve_loopback_cli_auth(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            (data_dir / "auth").mkdir()
+            (data_dir / "machine-id").write_text("machine-123\n", encoding="utf-8")
+            (data_dir / "auth" / "cli-secret").write_text("secret-456\n", encoding="utf-8")
+
+            headers = NineRouterManager(data_dir=data_dir)._request_headers()
+
+        self.assertEqual(headers["Accept"], "application/json")
+        self.assertEqual(headers["x-forwarded-for"], "")
+        self.assertEqual(
+            headers["x-omniroute-cli-token"],
+            "d7551ed0c406d076237bb8dee3bb6ecee3bc004608867fc0cf76fc87e4644185",
+        )
+
 
 class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
     async def test_smart_route_classifies_delegated_tasks_independently(self) -> None:

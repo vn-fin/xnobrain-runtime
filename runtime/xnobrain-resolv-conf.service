@@ -1,0 +1,13 @@
+[Unit]
+Description=Prepare DNS resolver configuration for XNOBrain Incus containers
+DefaultDependencies=no
+After=local-fs.target
+Before=systemd-resolved.service network-online.target xnobrain-runtime.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/xnobrain-prepare-resolv-conf
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

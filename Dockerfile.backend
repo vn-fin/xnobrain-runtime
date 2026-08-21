@@ -224,15 +224,23 @@ COPY runtime/systemd-entrypoint.sh /usr/local/bin/xnobrain-systemd-entrypoint
 COPY runtime/xnobrain-runtime.service /etc/systemd/system/xnobrain-runtime.service
 COPY runtime/10-incus-eth0.network /etc/systemd/network/10-incus-eth0.network
 COPY runtime/prepare-omniroute-auth.sh /usr/local/bin/xnobrain-prepare-omniroute-auth
+COPY runtime/prepare-resolv-conf.sh /usr/local/bin/xnobrain-prepare-resolv-conf
+COPY runtime/xnobrain-resolv-conf.service /etc/systemd/system/xnobrain-resolv-conf.service
 RUN install -d -m 0700 /opt/data /opt/data/home /opt/data/home/.config \
-    && chmod 0755 /usr/local/bin/xnobrain-runtime /usr/local/bin/xnobrain-systemd-entrypoint /usr/local/bin/xnobrain-prepare-omniroute-auth /usr/local/bin/xnobrain-apply-profile-templates \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      systemd-resolved \
+    && chmod 0755 /usr/local/bin/xnobrain-runtime /usr/local/bin/xnobrain-systemd-entrypoint /usr/local/bin/xnobrain-prepare-omniroute-auth /usr/local/bin/xnobrain-prepare-resolv-conf /usr/local/bin/xnobrain-apply-profile-templates \
       /usr/local/bin/xnobrain-endpoint \
     && ln -sfn /usr/local/lib/hermes-agent/venv/bin/hermes /usr/local/bin/agent \
     && ln -sfn /etc/systemd/system/xnobrain-runtime.service \
       /etc/systemd/system/multi-user.target.wants/xnobrain-runtime.service \
     && ln -sfn /usr/lib/systemd/system/systemd-networkd.service \
       /etc/systemd/system/multi-user.target.wants/systemd-networkd.service \
-    && apt-get update
+    && ln -sfn /usr/lib/systemd/system/systemd-resolved.service \
+      /etc/systemd/system/multi-user.target.wants/systemd-resolved.service \
+    && ln -sfn /etc/systemd/system/xnobrain-resolv-conf.service \
+      /etc/systemd/system/sysinit.target.wants/xnobrain-resolv-conf.service
 
 ENV PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr/local/bin:${PATH}" \
     RUN_ENV=${RUN_ENV} \

@@ -18,7 +18,10 @@ class StreamingHandlers:
             sequence = 0
             previous: dict[str, str] | None = None
             last_emit = asyncio.get_running_loop().time()
-            while not await request.is_disconnected():
+            # StreamingResponse cancels this iterator when the transport closes.
+            # Request.is_disconnected() can consume a stale disconnect message
+            # behind reverse proxies and terminate a healthy SSE stream early.
+            while True:
                 snapshot = self.service.agent_activity()
                 activity = snapshot["agents"]
                 if activity != previous:
@@ -66,7 +69,7 @@ class StreamingHandlers:
             """Stream one important runtime snapshot per second until disconnect."""
             async def events():
                 sequence = 0
-                while not await request.is_disconnected():
+                while True:
                     detail = self.service.sandbox("detail")
                     payload = json.dumps(detail, separators=(",", ":"))
                     yield f"id: {sequence}\nevent: stats\ndata: {payload}\n\n"
@@ -96,7 +99,7 @@ class StreamingHandlers:
                 nonlocal cursor
                 connected = {"board_slug": board, "cursor": cursor}
                 yield f"id: {cursor}\nevent: connected\ndata: {json.dumps(connected, separators=(',', ':'))}\n\n"
-                while not await request.is_disconnected():
+                while True:
                     try:
                         rows = self.service.kanban.board_events(board, after_id=cursor)
                         for item in rows:
@@ -135,7 +138,7 @@ class StreamingHandlers:
                 nonlocal cursor
                 connected = {"run_id": run_id, "team_id": team_id, "revision": cursor}
                 yield f"id: {cursor}\nevent: connected\ndata: {json.dumps(connected, separators=(',', ':'))}\n\n"
-                while not await request.is_disconnected():
+                while True:
                     try:
                         record = runs.get_run(team_id, run_id)
                     except EXPECTED_ERRORS as error:
@@ -185,8 +188,6 @@ class StreamingHandlers:
                     async for item in self.service.conversation_runs.events(
                         agent_id, conversation_id, run_id, cursor,
                     ):
-                        if await request.is_disconnected():
-                            return
                         sequence = int(item.get("sequence") or 0)
                         name = str(item.get("event") or "message")
                         payload = json.dumps(item.get("data"), ensure_ascii=False, separators=(",", ":"))

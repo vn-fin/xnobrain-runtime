@@ -11,7 +11,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from zipfile import ZipFile
 
 from fastapi import FastAPI
@@ -767,6 +767,31 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(initial.split("data: ", 1)[1]), idle)
         self.assertEqual(json.loads(changed.split("data: ", 1)[1]), running)
         self.assertEqual(sleep.await_count, 2)
+
+    async def test_agent_activity_stream_does_not_use_proxy_disconnect_probe(self):
+        request = Mock()
+        request.is_disconnected = AsyncMock(return_value=True)
+
+        response = await self.composition.handlers.agent_activity_stream(request)
+        initial = await anext(response.body_iterator)
+        await response.body_iterator.aclose()
+
+        self.assertIn("event: activity\n", initial)
+        request.is_disconnected.assert_not_awaited()
+
+    async def test_kanban_stream_does_not_use_proxy_disconnect_probe(self):
+        request = Mock()
+        request.path_params = {"board_slug": "default"}
+        request.headers = {}
+        request.query_params = {}
+        request.is_disconnected = AsyncMock(return_value=True)
+
+        response = await self.composition.handlers.kanban_event_stream(request)
+        initial = await anext(response.body_iterator)
+        await response.body_iterator.aclose()
+
+        self.assertIn("event: connected\n", initial)
+        request.is_disconnected.assert_not_awaited()
 
     async def test_write_approvals_default_off_and_allow_always_disables_the_selected_gate(self):
         async with self.client() as client:

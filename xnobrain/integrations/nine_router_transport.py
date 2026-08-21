@@ -19,6 +19,20 @@ from .nine_router_support import (
 
 
 class NineRouterTransportMixin:
+    def _request_headers(self) -> dict[str, str]:
+        headers = {
+            "Accept": "application/json",
+            # OmniRoute 3.8.49's standalone Next server otherwise injects a
+            # loopback x-forwarded-for value. Its route-level CLI-token check
+            # treats any non-empty forwarding header as an external proxy even
+            # after the authz middleware has verified the real loopback peer.
+            "x-forwarded-for": "",
+        }
+        cli_token = self._cli_token()
+        if cli_token:
+            headers["x-omniroute-cli-token"] = cli_token
+        return headers
+
     async def _request(
         self,
         method: str,
@@ -31,10 +45,8 @@ class NineRouterTransportMixin:
         try:
             async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
                 for attempt in range(2):
-                    headers = {"Accept": "application/json"}
-                    cli_token = self._cli_token()
-                    if cli_token:
-                        headers["x-omniroute-cli-token"] = cli_token
+                    headers = self._request_headers()
+                    cli_token = headers.get("x-omniroute-cli-token", "")
                     async with session.request(
                         method,
                         self.base_url + path,
