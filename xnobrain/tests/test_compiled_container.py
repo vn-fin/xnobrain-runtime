@@ -8,19 +8,21 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class CompiledContainerTests(unittest.TestCase):
-    def test_runtime_endpoint_is_a_single_renamed_onefile_build(self):
+    def test_runtime_compiles_only_the_first_party_package(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
 
-        self.assertIn("'nuitka[onefile]==4.1.3'", dockerfile)
-        self.assertIn("--mode=onefile", dockerfile)
-        self.assertIn("--output-filename=xnobrain-endpoint", dockerfile)
+        self.assertIn("'nuitka==4.1.3'", dockerfile)
+        self.assertIn("--mode=package", dockerfile)
+        self.assertIn("--lto=no", dockerfile)
         self.assertIn(
-            "COPY --from=endpoint-builder /opt/xnobrain-dist/xnobrain-endpoint "
-            "/usr/local/bin/app.so",
+            "COPY --from=endpoint-builder /opt/xnobrain-dist/xnobrain*.so "
+            "/opt/xnobrain-compiled/",
             dockerfile,
         )
+        self.assertIn("runtime/compiled-endpoint.sh /usr/local/bin/app.so", dockerfile)
         self.assertNotIn("BUILD_MODE", dockerfile)
-        self.assertNotIn("--mode=module", dockerfile)
+        self.assertNotIn("--mode=onefile", dockerfile)
+        self.assertNotIn("--include-package=hermes_cli", dockerfile)
         final_stage = dockerfile.split("FROM runtime-base AS runtime\n", 1)[1]
         self.assertNotIn("COPY xnobrain ", final_stage)
         self.assertNotIn("COPY server.py ", final_stage)
