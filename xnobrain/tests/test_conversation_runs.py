@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from xnobrain.repositories import FileRepository
 from xnobrain.services.conversation_runs import ConversationRunService
@@ -18,6 +20,7 @@ class FakeAgents:
     def __init__(self) -> None:
         self.release = asyncio.Event()
         self.finished = asyncio.Event()
+        self.cancelled = asyncio.Event()
         self.received: dict = {}
 
     def get_conversation(self, agent_id: str, conversation_id: str) -> dict:
@@ -26,18 +29,22 @@ class FakeAgents:
     async def chat_stream(self, agent_id: str, body: dict):
         self.received = {"agent_id": agent_id, **dict(body)}
         run_id = body["run_id"]
-        yield sse({"event": "run.started", "run_id": run_id, "timestamp": 100.0})
-        yield sse({"event": "tool.started", "run_id": run_id, "timestamp": 101.0, "tool": "terminal"})
-        await self.release.wait()
-        yield sse({
-            "event": "run.completed",
-            "run_id": run_id,
-            "timestamp": 102.0,
-            "output": "report ready",
-            "usage": {"total_tokens": 12},
-        })
-        yield b"data: [DONE]\n\n"
-        self.finished.set()
+        try:
+            yield sse({"event": "run.started", "run_id": run_id, "timestamp": 100.0})
+            yield sse({"event": "tool.started", "run_id": run_id, "timestamp": 101.0, "tool": "terminal"})
+            await self.release.wait()
+            yield sse({
+                "event": "run.completed",
+                "run_id": run_id,
+                "timestamp": 102.0,
+                "output": "report ready",
+                "usage": {"total_tokens": 12},
+            })
+            yield b"data: [DONE]\n\n"
+            self.finished.set()
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
 
 
 class FakeAnalytics:
@@ -50,6 +57,11 @@ class FakeAnalytics:
 
 class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
+        self.timeout_env = patch.dict(
+            os.environ,
+            {"RUNTIME_SESSION_TIMEOUT_SECONDS": "60"},
+        )
+        self.timeout_env.start()
         self.temp = TemporaryDirectory()
         root = Path(self.temp.name)
         profiles = root / "profiles"
@@ -62,6 +74,7 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         await self.service.shutdown()
         self.temp.cleanup()
+        self.timeout_env.stop()
 
     async def wait_for_revision(self, run_id: str, revision: int) -> dict:
         for _ in range(100):
@@ -115,6 +128,19 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.wait_for_revision(record["id"], 3)
         self.assertEqual(self.analytics.calls, ["agent-one"])
 
+    async def test_cancel_closes_the_running_agent_stream(self) -> None:
+        record = await self.service.start_run(
+            "agent-one", "session-one", {"input": "run a long command", "model": "test/model"},
+        )
+        await self.wait_for_revision(record["id"], 2)
+
+        cancelled = await self.service.cancel_run(
+            "agent-one", "session-one", record["id"],
+        )
+
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertTrue(self.agents.cancelled.is_set())
+
     async def test_interactive_and_explicit_timeout_policy(self) -> None:
         first = await self.service.start_run(
             "agent-one", "session-one", {"input": "Say hello", "model": "test/model"},
@@ -126,10 +152,10 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         second = await self.service.start_run(
             "agent-one",
             "session-one",
-            {"input": "Say hello", "model": "test/model", "run_mode": "background", "timeout_seconds": 7200},
+            {"input": "Say hello", "model": "test/model", "run_mode": "background", "timeout_seconds": 172800},
         )
         self.assertEqual(second["mode"], "background")
-        self.assertEqual(second["timeout_seconds"], 3600)
+        self.assertEqual(second["timeout_seconds"], 86400)
         await self.service.cancel_run("agent-one", "session-one", second["id"])
 
 

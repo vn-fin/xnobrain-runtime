@@ -661,6 +661,70 @@ class NineRouterConfigTests(unittest.TestCase):
 
 
 class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stop_interrupts_the_running_hermes_agent(self) -> None:
+        manager = object.__new__(AgentManager)
+        manager._active_runs = {}
+        manager._stopped_runs = set()
+        manager._active_agent_counts = {}
+        manager._registry_lock = threading.Lock()
+
+        started = asyncio.Event()
+        interrupted = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        class Agent:
+            def interrupt(self, message: str) -> None:
+                self.message = message
+                loop.call_soon_threadsafe(interrupted.set)
+
+        agent = Agent()
+
+        async def run_session_agent(
+            _prepared,
+            *,
+            run_id,
+            stream_delta_callback,
+            tool_progress_callback,
+            approval_notify_callback,
+            agent_ref,
+        ):
+            agent_ref[0] = agent
+            started.set()
+            await interrupted.wait()
+            return (
+                {"final_response": "", "interrupted": True, "messages": []},
+                {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            )
+
+        run_id = "run_" + "a" * 32
+        prepared = {
+            "name": "news",
+            "profile_dir": Path("/tmp/profile"),
+            "workspace_dir": Path("/tmp/workspace"),
+            "conversation_id": "session-one",
+            "message": "Run until stopped",
+            "model": "cx/test",
+            "timeout_seconds": 86400,
+            "run_id": run_id,
+        }
+
+        with (
+            patch.object(manager, "_run_session_agent", side_effect=run_session_agent),
+            patch.object(manager, "_conversation_has_default_title", return_value=False),
+        ):
+            stream = manager._chat_stream_events(prepared)
+            first = await anext(stream)
+            self.assertIn(b'"event":"run.started"', first)
+            await asyncio.wait_for(started.wait(), timeout=1)
+
+            stopped = await manager.stop_run(run_id)
+            payload = b"".join([event async for event in stream])
+
+        self.assertEqual(stopped["status"], "stopping")
+        self.assertEqual(agent.message, "run stopped by user")
+        self.assertIn(b'"event":"run.cancelled"', payload)
+        self.assertNotIn(b'"event":"run.completed"', payload)
+
     async def test_smart_route_classifies_delegated_tasks_independently(self) -> None:
         class Router:
             async def resolve_smart_route(
