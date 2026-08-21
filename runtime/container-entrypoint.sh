@@ -91,7 +91,7 @@ NODE_ENV=production \
 OMNIROUTE_NO_UPDATE_NOTIFIER=1 \
 omniroute serve --port 20128 --no-open &
 router_pid=$!
-/usr/local/bin/xnobrain-endpoint &
+/usr/local/bin/app.so &
 api_pid=$!
 
 cleanup() {
