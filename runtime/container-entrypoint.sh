@@ -91,6 +91,32 @@ NODE_ENV=production \
 OMNIROUTE_NO_UPDATE_NOTIFIER=1 \
 omniroute serve --port 20128 --no-open &
 router_pid=$!
+
+# OmniRoute may restore a previously configured dashboard password while it
+# initializes its persistent database. Wait for that initialization to finish,
+# then reapply XNOBrain's loopback-only management setting. Starting FastAPI
+# only after this succeeds prevents provider operations from briefly returning
+# 401 after a workspace restart.
+router_ready=false
+for _ in {1..60}; do
+  if ! kill -0 "$router_pid" 2>/dev/null; then
+    wait "$router_pid"
+    exit $?
+  fi
+  if curl -fsS http://127.0.0.1:20128/api/health/ping >/dev/null 2>&1; then
+    /usr/local/bin/xnobrain-prepare-omniroute-auth
+    if curl -fsS http://127.0.0.1:20128/api/providers >/dev/null 2>&1; then
+      router_ready=true
+      break
+    fi
+  fi
+  sleep 1
+done
+if [[ "$router_ready" != true ]]; then
+  echo "XNOBrain provider runtime management API did not become ready" >&2
+  exit 1
+fi
+
 /usr/local/bin/app.so &
 api_pid=$!
 
