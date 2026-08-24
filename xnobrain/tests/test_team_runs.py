@@ -13,8 +13,8 @@ import inspect
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -29,7 +29,6 @@ from xnobrain.repositories.files import TEAM_RUN_RETENTION
 from xnobrain.services.base import ServiceError
 
 
-_HERMES_BINARY = shutil.which(os.environ.get("HERMES_CLI", "hermes"))
 _STEP_SCHEMA_KEYS = {
     "id", "agent_id", "role", "task", "needs", "allowed_tools", "skills", "status",
     "summary", "summary_chars", "error", "conversation_id", "started_at", "ended_at",
@@ -68,9 +67,19 @@ class CompatibilityTests(unittest.TestCase):
         source = inspect.getsource(AgentManager._run_hermes_command)
         self.assertIn("CancelledError", source)
 
-    @unittest.skipUnless(_HERMES_BINARY, "hermes binary is not installed")
     def test_hermes_cli_still_accepts_the_composed_flags(self):
-        help_text = subprocess.run([_HERMES_BINARY, "--help"], capture_output=True, text=True, timeout=30).stdout
+        help_text = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from hermes_cli.main import main; main()",
+                "--help",
+            ],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=30,
+        ).stdout
         for flag in ("-z", "--resume", "--toolsets", "--skills", "--model"):
             self.assertIn(flag, help_text, flag)
 

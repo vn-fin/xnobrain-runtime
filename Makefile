@@ -3,6 +3,8 @@
 export
 
 PYTHON_BIN := $(if $(wildcard $(CURDIR)/.tools/python/bin/python),$(CURDIR)/.tools/python/bin/python,$(if $(wildcard $(HOME)/.local/lib/hermes-agent/venv/bin/python),$(HOME)/.local/lib/hermes-agent/venv/bin/python,python3))
+HERMES_SOURCE_DIR ?= $(CURDIR)/.tools/hermes-agent
+TEST_PYTHONPATH := $(if $(wildcard $(HERMES_SOURCE_DIR)/hermes_cli),$(HERMES_SOURCE_DIR)$(if $(PYTHONPATH),:$(PYTHONPATH)),$(PYTHONPATH))
 CONTAINER_CLI ?= docker
 IMAGE_TAG ?= local
 XNOBRAIN_RUNTIME_IMAGE ?= xnobrain-runtime:$(IMAGE_TAG)
@@ -15,10 +17,10 @@ backend:
 	HERMES_SERVE_HEADLESS=1 BROWSER=/bin/false DISPLAY= WAYLAND_DISPLAY= $(PYTHON_BIN) server.py
 
 test:
-	$(PYTHON_BIN) -m unittest discover -s xnobrain/tests -t . -p 'test_*.py'
+	PYTHONPATH="$(TEST_PYTHONPATH)" $(PYTHON_BIN) -m unittest discover -s xnobrain/tests -t . -p 'test_*.py'
 
 check:
-	$(PYTHON_BIN) -m unittest discover -s xnobrain/tests -t . -p 'test_*.py'
+	PYTHONPATH="$(TEST_PYTHONPATH)" $(PYTHON_BIN) -m unittest discover -s xnobrain/tests -t . -p 'test_*.py'
 	$(PYTHON_BIN) -m compileall -q xnobrain server.py
 
 smoke-api:
