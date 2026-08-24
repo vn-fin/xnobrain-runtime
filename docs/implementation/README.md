@@ -8,7 +8,8 @@ New work targets the single `xnobrain` Python package described in
 `docs/architecture.md`:
 
 - one FastAPI process extending the original Hermes CLI application;
-- one 9router process;
+- no local LLM router process or provider credential storage;
+- direct workload-authenticated calls to the centralized router;
 - React routed through Traefik;
 - atomic file-backed profile state and no application database;
 - optional Enterprise features through `ENTERPRISE_API_URL`;

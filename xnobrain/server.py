@@ -16,7 +16,7 @@ def create_app():
     """Extend Hermes CLI's original FastAPI app with XNOBrain routes."""
     from hermes_cli.web_server import app
     from .app import XNOBrainApplication
-    from .integrations import AgentManager, GlobalConfigManager, OmniRouteManager
+    from .integrations import AgentManager, GlobalConfigManager, LLMRouterClient
 
     if not getattr(app.state, "xnobrain_registered", False):
         cors_origins = [
@@ -33,7 +33,7 @@ def create_app():
                 allow_headers=["*"],
             )
 
-        composition = XNOBrainApplication(AgentManager(), GlobalConfigManager(), OmniRouteManager())
+        composition = XNOBrainApplication(AgentManager(), GlobalConfigManager(), LLMRouterClient())
         composition.register(app)
         from .openapi_docs import configure_openapi_docs
         configure_openapi_docs(app)

@@ -7,15 +7,16 @@ from .config_support import (
     MAX_CONFIG_STRING_CHARS,
     MAX_TEXT_CHARS,
     Mapping,
-    OMNIROUTE_API_BASE_URL,
-    OMNIROUTE_DEFAULT_MODEL,
-    OMNIROUTE_PROVIDER,
-    OMNIROUTE_PROVIDER_KEY,
+    LLM_ROUTER_API_BASE_URL,
+    LLM_ROUTER_DEFAULT_MODEL,
+    LLM_ROUTER_PROVIDER,
+    LLM_ROUTER_PROVIDER_KEY,
     Path,
     _MISSING,
-    display_nine_router_model,
+    _SAFE_ID_RE,
+    display_llm_model,
     hashlib,
-    normalize_nine_router_config,
+    normalize_llm_router_config,
     os,
     tempfile,
     time,
@@ -61,6 +62,7 @@ class GlobalConfigMixin:
         allowed = {
             "provider",
             "model",
+            "assignment_id",
             "reasoning",
             "effort",
             "reasoning_effort",
@@ -91,7 +93,7 @@ class GlobalConfigMixin:
 
         if "provider" in body:
             provider = self._nonempty_string(body["provider"], "provider").lower()
-            if provider not in {"xnobrain", "omniroute", "auto", OMNIROUTE_PROVIDER}:
+            if provider not in {"xnobrain", "auto", LLM_ROUTER_PROVIDER}:
                 raise ConfigAPIError(
                     "provider must be xnobrain",
                     code="unsupported_provider",
@@ -99,6 +101,17 @@ class GlobalConfigMixin:
             touched = True
         if "model" in body:
             self._set_nested(config, ("model", "default"), self._nonempty_string(body["model"], "model"))
+            touched = True
+        if "assignment_id" in body:
+            assignment_id = str(body.get("assignment_id") or "").strip()
+            if assignment_id and not _SAFE_ID_RE.fullmatch(assignment_id):
+                raise ConfigAPIError("assignment_id is invalid", code="invalid_agent_config")
+            if assignment_id:
+                self._set_nested(config, ("model", "assignment_id"), assignment_id)
+            else:
+                model_config = config.get("model")
+                if isinstance(model_config, dict):
+                    model_config.pop("assignment_id", None)
             touched = True
         if "reasoning" in body or "effort" in body or "reasoning_effort" in body:
             effort = body.get("effort", body.get("reasoning_effort", _MISSING))
@@ -143,7 +156,7 @@ class GlobalConfigMixin:
             self._write_text(self.root_profile / "SOUL.md", soul, field="soul")
 
         selected_model = body.get("model") if "model" in body else None
-        normalize_nine_router_config(config, selected_model)
+        normalize_llm_router_config(config, selected_model)
         if touched or soul is not _MISSING:
             if (self.root_profile / "config.yaml").is_file():
                 self._snapshot_config()
@@ -159,20 +172,20 @@ class GlobalConfigMixin:
 
     def _describe(self, config: Mapping[str, Any]) -> dict[str, Any]:
         normalized = self._sanitize_config_value(config, "config")
-        normalize_nine_router_config(normalized)
-        public_model = display_nine_router_model(
+        normalize_llm_router_config(normalized)
+        public_model = display_llm_model(
             self._get_nested(
                 normalized,
                 ("model", "default"),
-                OMNIROUTE_DEFAULT_MODEL,
+                LLM_ROUTER_DEFAULT_MODEL,
             )
         )
         self._set_nested(normalized, ("model", "default"), public_model)
-        provider_config = normalized.get("providers", {}).get(OMNIROUTE_PROVIDER_KEY)
+        provider_config = normalized.get("providers", {}).get(LLM_ROUTER_PROVIDER_KEY)
         if isinstance(provider_config, dict):
             for field in ("default_model", "model"):
                 if field in provider_config:
-                    provider_config[field] = display_nine_router_model(
+                    provider_config[field] = display_llm_model(
                         provider_config[field]
                     )
         effort = str(self._get_nested(config, ("agent", "reasoning_effort"), "medium") or "medium").lower()
@@ -183,9 +196,12 @@ class GlobalConfigMixin:
             "root_profile": str(self.root_profile),
             "config_path": str(self.root_profile / "config.yaml"),
             "soul_path": str(self.root_profile / "SOUL.md"),
-            "provider": OMNIROUTE_PROVIDER_KEY,
+            "provider": LLM_ROUTER_PROVIDER_KEY,
             "model": public_model,
-            "base_url": OMNIROUTE_API_BASE_URL,
+            "assignment_id": str(
+                self._get_nested(normalized, ("model", "assignment_id"), "") or ""
+            ),
+            "base_url": LLM_ROUTER_API_BASE_URL,
             "reasoning": effort != "none",
             "effort": effort,
             "reasoning_effort": effort,
@@ -204,9 +220,9 @@ class GlobalConfigMixin:
             "system_prompt": soul,
             "soul": soul,
             "router": {
-                "provider": OMNIROUTE_PROVIDER,
-                "base_url": OMNIROUTE_API_BASE_URL,
-                "default_model": OMNIROUTE_DEFAULT_MODEL,
+                "provider": LLM_ROUTER_PROVIDER,
+                "base_url": LLM_ROUTER_API_BASE_URL,
+                "default_model": LLM_ROUTER_DEFAULT_MODEL,
             },
             "config": normalized,
             "updated_at": time.time(),

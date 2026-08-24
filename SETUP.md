@@ -15,8 +15,9 @@ make install-local
 make dev
 ```
 
-The runtime API listens on private port `3000` and the private provider runtime on
-port `20128`. UI development and production image instructions are in
+The runtime API listens on private port `3000` and calls the configured
+centralized LLM router directly for model requests. UI development and
+production image instructions are in
 [`../xnobrain-ui/README.md`](../xnobrain-ui/README.md).
 
 Run `make check` in this repository for Python tests and compilation checks.

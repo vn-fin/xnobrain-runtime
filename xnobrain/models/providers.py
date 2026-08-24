@@ -2,28 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class ProviderCredential(BaseModel):
-    model_config = ConfigDict(extra="allow")
-    text: str | None = None
-    response_text: str | None = None
-    token: str | None = None
-    api_key: str | None = None
-    default_model: str | None = None
-
-
-class ConnectionUpsert(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    api_key: str = Field(min_length=1, max_length=4096)
-    base_url: str | None = Field(default=None, max_length=2048)
-
-
-class ConnectionPatch(BaseModel):
-    active: bool | None = None
-    priority: int | None = Field(default=None, ge=0, le=999)
+from pydantic import BaseModel, Field
 
 
 class SmartRouteModel(BaseModel):

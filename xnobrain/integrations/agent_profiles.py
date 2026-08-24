@@ -16,15 +16,15 @@ from .hermes_support import (
     MAX_TEXT_CHARS,
     METADATA_FILE,
     Mapping,
-    OMNIROUTE_DEFAULT_MODEL,
-    OMNIROUTE_PROVIDER_KEY,
+    LLM_ROUTER_DEFAULT_MODEL,
+    LLM_ROUTER_PROVIDER_KEY,
     Path,
     SKILL_ID_RE,
     TEMPLATE_DIRS,
     TEMPLATE_FILES,
-    display_nine_router_model,
+    display_llm_model,
     json,
-    normalize_nine_router_config,
+    normalize_llm_router_config,
     os,
     re,
     secrets,
@@ -230,7 +230,7 @@ class AgentProfilesMixin:
         self._set_nested(config, ("terminal", "backend"), self._get_nested(config, ("terminal", "backend"), "local"))
         self._set_nested(config, ("terminal", "cwd"), str(workspace_dir))
         self._normalize_agent_skill_config(config)
-        normalize_nine_router_config(config)
+        normalize_llm_router_config(config)
         self._write_yaml_atomic(profile_dir / "config.yaml", config)
 
 
@@ -322,7 +322,7 @@ class AgentProfilesMixin:
         selected_model = None
         if model is not None:
             selected_model = self._nonempty_string(model, "model")
-        normalize_nine_router_config(config, selected_model)
+        normalize_llm_router_config(config, selected_model)
         approvals = config.get("approvals")
         if not isinstance(approvals, dict):
             approvals = {}
@@ -371,13 +371,16 @@ class AgentProfilesMixin:
         effort = str(self._get_nested(config, ("agent", "reasoning_effort"), "medium") or "medium").lower()
         approval = self._get_nested(config, ("approvals", "mode"), "off")
         return {
-            "provider": OMNIROUTE_PROVIDER_KEY,
-            "model": display_nine_router_model(
+            "provider": LLM_ROUTER_PROVIDER_KEY,
+            "model": display_llm_model(
                 self._get_nested(
                     config,
                     ("model", "default"),
-                    OMNIROUTE_DEFAULT_MODEL,
+                    LLM_ROUTER_DEFAULT_MODEL,
                 )
+            ),
+            "assignment_id": str(
+                self._get_nested(config, ("model", "assignment_id"), "") or ""
             ),
             "reasoning": effort != "none",
             "effort": effort,

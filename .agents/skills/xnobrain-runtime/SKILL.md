@@ -17,7 +17,7 @@ Read `AGENTS.md`, `.agents/rules/01-start-here.md`,
    handlers, services, and repositories. Keep composition modules as
    composition only.
 3. Keep HTTP translation in handlers, business rules in services, atomic file
-   persistence in repositories, and Hermes/OmniRoute adaptation in integrations.
+   persistence in repositories, and Hermes/central-router adaptation in integrations.
 4. Preserve profile isolation, traversal/symlink checks, snapshots, atomic
    writes, streaming events, approval behavior, and optional dependency
    failure semantics.

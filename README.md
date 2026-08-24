@@ -2,12 +2,14 @@
 
 For the complete local stack and browser UI, see the workspace root and
 [`xnobrain-ui`](../xnobrain-ui/README.md). This repository documents the
-Python/API runtime and native agent/provider installation.
+Python/API runtime and native agent installation.
 
 XNOBrain is a self-hosted React workspace for creating and running AI agents.
-One Python/FastAPI process serves the default profile plus every named profile,
-and one private provider runtime handles LLM routing. There is no per-profile
-API server.
+One Python/FastAPI process serves the default profile plus every named profile.
+Managed LLM calls use the configured centralized router directly with a
+workload token issued by Control. The workspace does not install or start
+OmniRoute and stores no provider credentials or router usage database. There
+is no per-profile API server.
 
 The production OCI image compiles the XNOBrain API endpoint to the single
 Nuitka-compiled first-party package launched by `/usr/local/bin/app.so`; it
@@ -20,7 +22,9 @@ endpoint.
 ```text
 browser -> Traefik -> React UI
                    -> XNOBrain runtime -> profile files
-                                       -> provider runtime -> LLMs
+                                       -> central router -> LLMs
+                                              |
+                                              -> Control token introspection
 ```
 
 ## Start
@@ -38,13 +42,12 @@ On Windows, run this in PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1
 ```
 
-Copy the environment template and set `RUNTIME_HERMES_HOME` and
-`RUNTIME_OMNIROUTE_DATA_DIR`. For Docker, use paths inside `/opt/data`:
+Copy the environment template and set `RUNTIME_HERMES_HOME`,
+`RUNTIME_LLM_ROUTER_URL`, and a provisioned workload token:
 
 ```bash
 cp .env.example .env
-# Edit .env and set RUNTIME_HERMES_HOME=/opt/data/agent and
-# RUNTIME_OMNIROUTE_DATA_DIR=/opt/data/provider-runtime.
+# Do not store a production workload token in a committed file.
 ```
 
 The coordinated stack is started from the workspace root:
@@ -94,14 +97,14 @@ presentation controls, not security controls.
 
 For a Docker-free Linux or macOS runtime installation, run the project
 installer. It creates a project-local Python environment under `.tools/python`
-and installs the provider runtime and agent CLIs. The macOS target skips the
+and installs Hermes and agent tooling. The macOS target skips the
 optional office-tool and browser-engine downloads to keep the installation fast:
 
 ```bash
 make install-local
 ```
 
-Then start the runtime API and provider runtime:
+Then start the runtime API:
 
 ```bash
 make -C xnobrain-runtime dev
@@ -110,9 +113,7 @@ make -C xnobrain-runtime dev
 Run the React/Vite UI separately with `make -C xnobrain-ui dev`, or start the
 full Docker stack with `make dev` from the workspace root.
 
-The existing `setup-linux.sh` remains the Docker/Compose installer. For
-API-only work after the local install, use
-`XNOBRAIN_DEV_SKIP_ROUTER=1 make dev`.
+The existing `setup-linux.sh` remains the Docker/Compose installer.
 
 ### Native VM services
 
@@ -127,17 +128,14 @@ sudoedit /etc/xnobrain/xnobrain.env
 sudo systemctl start xnobrain.target
 ```
 
-`xnobrain.target` owns the two long-running processes:
+`xnobrain.target` owns one long-running workspace process:
 
 - `xnobrain-api.service` runs the integrated XNOBrain runtime on
   private port `3000`;
-- the provider-runtime service listens only on loopback port `20128`.
-
-Agent executions are children of the API service. Persistent agent and provider
-data is stored under `/srv/xnobrain-data`. Runtime configuration is read from
+Agent executions are children of the API service. Persistent agent data is
+stored under `/srv/xnobrain-data`. Runtime configuration is read from
 `/etc/xnobrain/xnobrain.env`. The VM firewall must allow port `3000` only
-from the authenticated workspace gateway; port `20128` must remain private to
-the VM.
+from the authenticated workspace gateway.
 
 Validation:
 
@@ -174,8 +172,8 @@ ghcr.io/vn-fin/xnobrain-control/incus-gateway:0.0.15
 Named agent data belongs under the configured agent home. Skills are
 written only to `skills/<skill-id>/SKILL.md` inside that profile. Memory,
 config, and skill mutations create immutable local snapshots, and mutable
-files use temp-file, fsync, and rename. Provider credentials remain owned by
-the local provider runtime. Portable `.zip` exports include every regular file in the
+files use temp-file, fsync, and rename. Provider credentials remain encrypted
+in centralized router infrastructure and never enter the workspace. Portable `.zip` exports include every regular file in the
 selected profile directory while redacting credential values; imports discard
 archived credential files and inherit them from the destination installation.
 

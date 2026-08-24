@@ -24,7 +24,7 @@
   call. Resolve path and query fields lazily inside the selected operation.
 - Service group files own validation, orchestration, and business rules.
 - Repository group files own atomic persistence for that group.
-- Integration files adapt Hermes, 9router, or another external runtime.
+- Integration files adapt Hermes, the centralized LLM router, or another external runtime.
 - Local layers call one another directly. Do not call the local HTTP API.
 
 ## Composition boundaries
@@ -37,7 +37,7 @@
 - Composition modules must not accumulate feature-specific implementation.
 - Large external-runtime adapters use a compatibility facade plus focused
   capability mixins. Keep `integrations/hermes.py`, `integrations/config.py`,
-  `integrations/nine_router.py`, and `integrations/kanban.py` limited to public
+  `integrations/llm_router.py`, and `integrations/kanban.py` limited to public
   compatibility exports and composition.
 - Shared integration support modules may own constants, errors, imports, and
   pure validation helpers, but must not regain feature workflows. Put agent,

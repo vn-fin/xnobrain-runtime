@@ -22,9 +22,13 @@ are:
 
 ## Runtime ownership
 
-`xnobrain` owns the React application and combined Python/FastAPI/Hermes/9router
-runtime. It owns local agents, profiles, skills, memory, MCP, providers, teams,
+`xnobrain-runtime` owns the Python/FastAPI/Hermes runtime. It owns local agents,
+profiles, skills, memory, MCP, personal blends, teams,
 conversations, Kanban, and cron without an application database.
+
+Provider connections, credentials, centralized usage, and organization limits
+belong to Control and the centralized router. Runtime contains no router process
+or router database and only makes workload-authenticated inference calls.
 
 `xnobrain-enterprise` owns the Go control plane, PostgreSQL, authentication, tenants,
 plans, billing-grade quota state, RBAC, audit, fleet management, encrypted collaboration

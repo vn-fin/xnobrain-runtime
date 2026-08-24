@@ -9,7 +9,7 @@ skill `.agents/skills/tauri-app-development/SKILL.md` before app work.
 - Put every app-specific TypeScript, React, Rust, test, manifest, installer,
   packaging, helper, and document under `app/`.
 - Do not change `../src/`, `../xnobrain/`, `../server.py`, the Hermes runtime,
-  9router integration, Docker images, or existing Web UI behavior to make an
+  centralized-router integration, Docker images, or existing Web UI behavior to make an
   app feature work.
 - Consume the existing product only through its released HTTP/SSE contracts or
   an unmodified production Web build. Do not import files from `../src/` and do
@@ -22,8 +22,8 @@ skill `.agents/skills/tauri-app-development/SKILL.md` before app work.
   must also offer the system browser. Never copy, fork, or import the Web UI.
 - In Docker Web, Traefik is the only service allowed to publish a host port.
   Keep its container entrypoint fixed and bind the selected external port to
-  loopback. Frontend, FastAPI/Hermes, 9router, and observability services stay
-  Docker-internal.
+  loopback. Frontend, FastAPI/Hermes, and observability services stay
+  Docker-internal. The runtime calls the separately deployed centralized router.
 - The Full Managed edition is the app version. App-only installer and
   management UI belongs under `app/src/`.
 

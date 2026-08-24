@@ -18,7 +18,7 @@ from .hermes_support import (
     Any,
     DEFAULT_PROFILES_ROOT,
     DEFAULT_ROOT_PROFILE,
-    OmniRouteManager,
+    LLMRouterClient,
     Path,
     asyncio,  # noqa: F401 - retained for existing runtime monkeypatches
     os,
@@ -68,8 +68,7 @@ class AgentManager(
             or self.root_profile.parent / "legacy-agents"
         )
         # The embedded streaming runner uses this process environment directly,
-        # while one-shot commands inherit it in _command_env(). Native launchers
-        # Native launchers may prepare OmniRoute's token file without exporting it first.
+        # while one-shot commands inherit it in _command_env().
         self._ensure_router_api_key()
         configured_template = (
             profile_template
@@ -83,7 +82,7 @@ class AgentManager(
             if configured_template.is_dir()
             else bundled_template
         )
-        self.nine_router = OmniRouteManager()
+        self.llm_router = LLMRouterClient()
         self._active_runs: dict[str, dict[str, Any]] = {}
         self._active_agent_counts: dict[str, int] = {}
         self._stopped_runs: set[str] = set()

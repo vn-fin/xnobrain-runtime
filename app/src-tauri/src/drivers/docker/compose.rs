@@ -3,7 +3,6 @@ use crate::domain::RuntimeManifest;
 pub struct ComposeSpec<'a> {
     pub manifest: &'a RuntimeManifest,
     pub port: u16,
-    pub internal_secret: &'a str,
 }
 
 impl ComposeSpec<'_> {
@@ -56,7 +55,6 @@ services:
       HERMES_DESKTOP: "1"
       HOME: /opt/data/home
       XDG_CONFIG_HOME: /opt/data/home/.config
-      NINE_ROUTER_INTERNAL_SECRET: "{internal_secret}"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: 8642
       DATA_DIR: /opt/data/xnobrain
@@ -100,7 +98,6 @@ volumes:
             auth_provider = self.manifest.web_build.auth_provider,
             firebase_api_key_sha256 = self.manifest.web_build.firebase_api_key_sha256,
             port = self.port,
-            internal_secret = self.internal_secret,
         )
     }
 
@@ -142,7 +139,6 @@ mod tests {
         let compose = ComposeSpec {
             manifest: &manifest,
             port: 6200,
-            internal_secret: "test-secret",
         }
         .render();
 
@@ -167,11 +163,11 @@ mod tests {
         assert_eq!(compose.matches("pull_policy: always").count(), 3);
         assert!(compose.contains("http://127.0.0.1:8642/api/brain/v1/health"));
         assert!(!compose.contains("build:"));
+        assert!(!compose.contains("NINE_ROUTER"));
 
         let dynamic = ComposeSpec {
             manifest: &manifest,
             port: 6200,
-            internal_secret: "test-secret",
         }
         .render_traefik_dynamic();
         assert!(dynamic.contains("xnobrain-web-app-ui"));

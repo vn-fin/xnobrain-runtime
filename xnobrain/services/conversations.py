@@ -28,7 +28,7 @@ from ..defaults import (
     DEFAULT_PROFILE_MODEL,
     LEGACY_BIG_BROTHER_TOOLSET,
 )
-from ..integrations import AgentAPIError, ConfigAPIError, NineRouterAPIError
+from ..integrations import AgentAPIError, ConfigAPIError, LLMRouterAPIError
 from ..repositories import StoreError
 from .base import ServiceError, iso, utc_now
 from .constants import (
@@ -122,7 +122,7 @@ class ConversationsServiceMixin:
                 agent_id, conversation_id,
             )
             if cost > 0:
-                cost_source = "omniroute_attribution"
+                cost_source = "profile_ledger"
                 cost_status = "estimated"
         model_config = session.get("model_config")
         context = (

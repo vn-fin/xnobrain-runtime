@@ -4,8 +4,8 @@ from .hermes_support import (
     AgentAPIError,
     Any,
     Mapping,
-    OMNIROUTE_DEFAULT_MODEL,
-    NineRouterAPIError,
+    LLM_ROUTER_DEFAULT_MODEL,
+    LLMRouterAPIError,
     PROVIDER_ERROR_OUTPUT_RE,
     Path,
     _todo_updated_event,
@@ -84,10 +84,10 @@ class ConversationStreamMixin:
         chat_id = "chatcmpl-" + (conversation_id or uuid.uuid4().hex)
         run_id = str(prepared.get("run_id") or ("run_" + uuid.uuid4().hex))
 
-        if model == OMNIROUTE_DEFAULT_MODEL:
+        if model == LLM_ROUTER_DEFAULT_MODEL:
             try:
-                await self.nine_router.ensure_auto_combo()
-            except NineRouterAPIError as exc:
+                await self.llm_router.ensure_auto_combo()
+            except LLMRouterAPIError as exc:
                 yield self._chat_sse_error(str(exc))
                 yield self._chat_sse_done(chat_id, created, model, conversation_id)
                 return
@@ -95,7 +95,7 @@ class ConversationStreamMixin:
             try:
                 await self._resolve_prepared_smart_route(prepared)
                 model = str(prepared.get("model") or model)
-            except NineRouterAPIError as exc:
+            except LLMRouterAPIError as exc:
                 yield self._chat_sse_error(str(exc))
                 yield self._chat_sse_done(chat_id, created, model, conversation_id)
                 return
@@ -106,14 +106,14 @@ class ConversationStreamMixin:
             smart_route_name = str(prepared.get("smart_route") or "").strip()
             if smart_route_name:
                 try:
-                    title_route = await self.nine_router.resolve_smart_route(
+                    title_route = await self.llm_router.resolve_smart_route(
                         smart_route_name,
                         "hello",
                         required_context_tokens=(
                             8_192 + max(1, len(str(prepared.get("message") or "")) // 4)
                         ),
                     )
-                except NineRouterAPIError:
+                except LLMRouterAPIError:
                     title_route = None
                 if title_route is not None:
                     title_model = str(title_route.get("model") or title_model)

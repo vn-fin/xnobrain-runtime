@@ -15,7 +15,10 @@ make dev
 Open `http://localhost:5173` for the UI and
 `http://localhost:5173/xnobrain/api/runtime/swagger_docs` for Swagger.
 Only Traefik publishes a host port. The runtime's named volume holds profiles,
-teams, notifications, Hermes state, and OmniRoute credentials.
+teams, notifications, Hermes state, and local personal blends. It does not hold
+provider credentials or an OmniRoute database. The runtime calls
+`RUNTIME_LLM_ROUTER_URL` with `RUNTIME_LLM_WORKLOAD_TOKEN`; Control issues the
+token and the centralized router introspects it.
 
 The runtime defaults to 4 CPUs and 4 GB RAM and requests a 100 GB writable
 root disk. Increase `XNOBRAIN_RUNTIME_CPUS`,
@@ -48,6 +51,6 @@ Set `LOG_LEVEL` in `.env` to change the minimum level.
 
 This repository's runtime build produces only:
 
-- `xnobrain-runtime:<tag>` (FastAPI, agent engine, and provider runtime)
+- `xnobrain-runtime:<tag>` (FastAPI, agent engine, and centralized-router client)
 
 The UI image is built by `xnobrain-ui`.

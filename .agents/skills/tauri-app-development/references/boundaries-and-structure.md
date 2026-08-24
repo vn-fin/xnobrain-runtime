@@ -17,7 +17,7 @@ Read-only dependencies for app tasks:
 
 - `src/`: existing Web UI.
 - `xnobrain/`, `server.py`: existing FastAPI/Hermes backend.
-- `runtime/`, Dockerfiles, Compose files, and Hermes/9router integration.
+- `runtime/`, Dockerfiles, Compose files, and Hermes/central-router integration.
 - `docs/contracts/`: released contracts the app may consume.
 
 Never import core TypeScript or Python source into the app. Communicate through

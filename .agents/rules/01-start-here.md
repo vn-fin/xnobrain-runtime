@@ -9,9 +9,9 @@
 - `xnobrain/models`: Pydantic request/response contracts used by Swagger.
 - `xnobrain/services`: application rules and orchestration.
 - `xnobrain/repositories`: atomic profile/team/notification persistence.
-- `xnobrain/integrations`: original Hermes CLI and 9router adapters.
+- `xnobrain/integrations`: original Hermes CLI and centralized LLM gateway adapters.
 - `xnobrain/telemetry.py`: metadata-only OpenTelemetry setup.
-- `runtime`: the combined FastAPI/Hermes/9router image.
+- `runtime`: the FastAPI/Hermes managed workspace image.
 - `docs/contracts`: versioned cross-repository protocols.
 
 ## Design rules
@@ -24,7 +24,7 @@
   symlink escapes.
 - Use temp-file-plus-fsync-plus-rename for mutable persistent files.
 - Do not log secrets, headers, prompts, request/response bodies, or tool output.
-- Local features must continue working when 9router, telemetry, or the optional
-  Enterprise API is unavailable.
+- Local profile and agent-management features must continue working when the
+  centralized LLM gateway, telemetry, or optional Enterprise API is unavailable.
 - Follow `.agents/rules/04-backend-service-groups.md`: one owning service group
   per file, consistently named across backend layers.

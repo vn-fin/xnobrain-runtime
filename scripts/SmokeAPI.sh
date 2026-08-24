@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # <Summary>
-# Exercises every safe public read/status API and all provider connection-start
-# contracts through Traefik without changing credentials or user data.
+# Exercises safe public read/status APIs through Traefik without changing
+# credentials or user data. Provider administration belongs to Control.
 # </Summary>
 set -euo pipefail
 
@@ -43,18 +43,8 @@ request GET "$api_prefix/sandboxes/health" >/dev/null
 
 providers="$(request GET "$api_prefix/providers")"
 for provider in claude codex github cursor grok-cli antigravity openai anthropic gemini deepseek moonshot qwen openai-like; do
-  request GET "$api_prefix/providers/$provider/connect" >/dev/null
   request GET "$api_prefix/providers/$provider/models" >/dev/null
   request GET "$api_prefix/providers/$provider/models/auto/reasoning" >/dev/null
-  request POST "$api_prefix/providers/$provider/test" >/dev/null
-done
-for provider in claude codex antigravity; do
-  started="$(request POST "$api_prefix/providers/$provider/connect")"
-  jq -e '.data.login_url | type == "string" and length > 0' <<<"$started" >/dev/null
-done
-for provider in openai anthropic gemini deepseek moonshot qwen openai-like; do
-  started="$(request POST "$api_prefix/providers/$provider/connect")"
-  jq -e '.data.required_client_action == "submit_text"' <<<"$started" >/dev/null
 done
 
 agent_id="$(jq -r '.data[0].id // empty' <<<"$agents")"

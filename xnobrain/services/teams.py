@@ -29,7 +29,7 @@ from ..defaults import (
     DEFAULT_PROFILE_MODEL,
     LEGACY_BIG_BROTHER_TOOLSET,
 )
-from ..integrations import AgentAPIError, ConfigAPIError, NineRouterAPIError
+from ..integrations import AgentAPIError, ConfigAPIError, LLMRouterAPIError
 from ..repositories import StoreError
 from .base import ServiceError, iso, utc_now
 from .constants import (

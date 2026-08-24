@@ -9,10 +9,10 @@ from .hermes_support import (
     BIG_BROTHER_AGENT_ID,
     MAX_TEXT_CHARS,
     Mapping,
-    OMNIROUTE_DEFAULT_MODEL,
+    LLM_ROUTER_DEFAULT_MODEL,
     Path,
     json,
-    route_nine_router_model,
+    route_llm_model,
     re,
     time,
 )
@@ -54,8 +54,8 @@ class ConversationRunnerMixin:
 
     async def chat(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         prepared = self._prepare_chat_command(raw_name, body, require_conversation=False)
-        if prepared["model"] == OMNIROUTE_DEFAULT_MODEL:
-            await self.nine_router.ensure_auto_combo()
+        if prepared["model"] == LLM_ROUTER_DEFAULT_MODEL:
+            await self.llm_router.ensure_auto_combo()
         else:
             await self._resolve_prepared_smart_route(prepared)
         name = prepared["name"]
@@ -155,7 +155,7 @@ class ConversationRunnerMixin:
         if body.get("model"):
             command.extend([
                 "--model",
-                route_nine_router_model(
+                route_llm_model(
                     self._nonempty_string(body["model"], "model")
                 ),
             ])
@@ -214,9 +214,9 @@ class ConversationRunnerMixin:
         route_name = str(prepared.get("model") or "").strip()
         # Blend names cannot contain '/', while routed provider model IDs do.
         # Avoid a settings lookup on every ordinary model request.
-        if not route_name or route_name == OMNIROUTE_DEFAULT_MODEL or "/" in route_name:
+        if not route_name or route_name == LLM_ROUTER_DEFAULT_MODEL or "/" in route_name:
             return
-        decision = await self.nine_router.resolve_smart_route(
+        decision = await self.llm_router.resolve_blend_route(
             route_name,
             str(prepared.get("message") or ""),
             required_context_tokens=self._estimated_route_context(prepared),
@@ -318,7 +318,7 @@ class ConversationRunnerMixin:
             # block that loop waiting on a coroutine scheduled onto itself.
             return None
         future = asyncio.run_coroutine_threadsafe(
-            self.nine_router.resolve_smart_route(
+            self.llm_router.resolve_smart_route(
                 route_name,
                 message,
                 required_context_tokens=required_context_tokens,
@@ -352,7 +352,7 @@ class ConversationRunnerMixin:
                 context = str(task.get("context") or "")
                 message = f"Delegated task: {goal}\nContext: {context}".strip()
                 try:
-                    return await self.nine_router.resolve_smart_route(
+                    return await self.llm_router.resolve_smart_route(
                         route_name,
                         message,
                         required_context_tokens=(
@@ -516,7 +516,7 @@ class ConversationRunnerMixin:
             # [DONE] but no OpenAI finish_reason. Hermes correctly treats that
             # shape as a dropped stream and requests continuations, duplicating
             # the answer. The blocking response is complete, so use it until
-            # OmniRoute normalizes OpenCode's terminal event.
+            # the centralized router normalizes OpenCode's terminal event.
             agent._disable_streaming = True
 
 
@@ -566,10 +566,10 @@ class ConversationRunnerMixin:
         ).strip().lower()
         if configured_reasoning == "auto" and not smart_route_name:
             try:
-                metadata = await self.nine_router.reasoning_for_model(
+                metadata = await self.llm_router.reasoning_for_model(
                     active_smart_decision["model"]
                 )
-            except NineRouterAPIError:
+            except LLMRouterAPIError:
                 metadata = {}
             active_smart_decision["reasoning"] = str(
                 metadata.get("default_reasoning") or ""
@@ -1005,14 +1005,14 @@ class ConversationRunnerMixin:
                 history = await adapter._conversation_history_for_session(conversation_id)
                 if smart_route_name and not first_turn:
                     try:
-                        decision = await self.nine_router.resolve_smart_route(
+                        decision = await self.llm_router.resolve_smart_route(
                             smart_route_name,
                             prompt,
                             required_context_tokens=self._smart_route_context_tokens(
                                 [*history, {"role": "user", "content": prompt}]
                             ),
                         )
-                    except NineRouterAPIError:
+                    except LLMRouterAPIError:
                         decision = None
                     if decision is not None:
                         active_smart_decision.update(decision)
@@ -1061,7 +1061,7 @@ class ConversationRunnerMixin:
             ).strip()
             # An auto/blend route can choose models with different windows.
             # Do not report Hermes' generic fallback as a model-specific limit.
-            if actual_model.lower() in {"", "auto", OMNIROUTE_DEFAULT_MODEL.lower()}:
+            if actual_model.lower() in {"", "auto", LLM_ROUTER_DEFAULT_MODEL.lower()}:
                 context_limit = 0
                 context_threshold = 0
             context = {

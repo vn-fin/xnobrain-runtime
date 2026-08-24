@@ -16,13 +16,14 @@ from typing import Any, Mapping
 import yaml
 
 from ..defaults import CUSTOM_SKILL_CATEGORY
-from .nine_router import (
-    OMNIROUTE_API_BASE_URL,
-    OMNIROUTE_DEFAULT_MODEL,
-    OMNIROUTE_PROVIDER,
-    OMNIROUTE_PROVIDER_KEY,
-    display_nine_router_model,
-    normalize_nine_router_config,
+from .llm_router import (
+    _SAFE_ID_RE,
+    LLM_ROUTER_API_BASE_URL,
+    LLM_ROUTER_DEFAULT_MODEL,
+    LLM_ROUTER_PROVIDER,
+    LLM_ROUTER_PROVIDER_KEY,
+    display_llm_model,
+    normalize_llm_router_config,
 )
 
 

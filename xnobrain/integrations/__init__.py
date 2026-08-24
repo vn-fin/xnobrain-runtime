@@ -1,8 +1,8 @@
-"""Adapters for Hermes and the local OmniRoute provider runtime."""
+"""Adapters for Hermes and the external centralized LLM router."""
 
 from .config import ConfigAPIError, GlobalConfigManager
 from .hermes import AgentAPIError, AgentManager
-from .omniroute import OmniRouteAPIError, OmniRouteManager
+from .llm_router import LLMRouterAPIError, LLMRouterClient
 from .runtime import LocalRuntimeManager
 from .cron_delivery import (
     CronBlueprintInvalid,
@@ -16,17 +16,11 @@ __all__ = [
     "AgentManager",
     "ConfigAPIError",
     "GlobalConfigManager",
-    "OmniRouteAPIError",
-    "OmniRouteManager",
-    "NineRouterAPIError",
-    "NineRouterManager",
+    "LLMRouterAPIError",
+    "LLMRouterClient",
     "LocalRuntimeManager",
     "CronBlueprintInvalid",
     "CronBlueprintNotFound",
     "CronDeliveryAdapter",
     "CronDeliveryAdapterError",
 ]
-
-# Compatibility aliases for extensions upgrading from pre-OmniRoute images.
-NineRouterAPIError = OmniRouteAPIError
-NineRouterManager = OmniRouteManager

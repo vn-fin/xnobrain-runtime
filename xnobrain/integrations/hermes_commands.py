@@ -5,8 +5,8 @@ from .hermes_support import (
     AgentAPIError,
     Any,
     Mapping,
-    OMNIROUTE_KEY_ENV,
-    OMNIROUTE_PROVIDER,
+    LLM_ROUTER_KEY_ENV,
+    LLM_ROUTER_PROVIDER,
     Path,
     asyncio,
     os,
@@ -93,7 +93,7 @@ class HermesCommandsMixin:
         """Map the provisioned workload token to Hermes' provider key env."""
         token = os.environ.get("RUNTIME_LLM_WORKLOAD_TOKEN", "").strip()
         if token:
-            os.environ[OMNIROUTE_KEY_ENV] = token
+            os.environ[LLM_ROUTER_KEY_ENV] = token
 
 
     def _hermes_binary(self) -> str:
@@ -132,4 +132,4 @@ class HermesCommandsMixin:
 
 
     def _conversation_provider(self, profile_dir: Path, body: Mapping[str, Any]) -> str:
-        return OMNIROUTE_PROVIDER
+        return LLM_ROUTER_PROVIDER

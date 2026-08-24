@@ -1,7 +1,6 @@
 use std::{fs, path::PathBuf, sync::Mutex, time::Duration};
 
 use tauri::ipc::Channel;
-use uuid::Uuid;
 
 use crate::{
     domain::{
@@ -140,17 +139,14 @@ impl InstallerService {
             "Preparing XNOBrain",
             "Creating secure local configuration",
         )?;
-        let secret = Uuid::new_v4().simple().to_string();
         let compose = ComposeSpec {
             manifest: &self.manifest,
             port: request.port,
-            internal_secret: &secret,
         }
         .render();
         let traefik_dynamic = ComposeSpec {
             manifest: &self.manifest,
             port: request.port,
-            internal_secret: &secret,
         }
         .render_traefik_dynamic();
         ensure_single_traefik_port(&compose, request.port)?;

@@ -28,7 +28,7 @@ from ..defaults import (
     DEFAULT_PROFILE_MODEL,
     LEGACY_BIG_BROTHER_TOOLSET,
 )
-from ..integrations import AgentAPIError, ConfigAPIError, NineRouterAPIError
+from ..integrations import AgentAPIError, ConfigAPIError, LLMRouterAPIError
 from ..repositories import StoreError
 from .base import ServiceError, iso, utc_now
 from .constants import (
@@ -708,9 +708,11 @@ class PortabilityService:
             root_model = root_config.get("model")
             model = config.setdefault("model", {})
             if isinstance(root_model, dict) and isinstance(model, dict):
-                for key in ("provider", "base_url"):
+                for key in ("provider", "base_url", "assignment_id"):
                     if key in root_model:
                         model[key] = deepcopy(root_model[key])
+                    elif key == "assignment_id":
+                        model.pop(key, None)
         config["approval_mode"] = "manual"
         approvals = config.setdefault("approvals", {})
         if isinstance(approvals, dict):
@@ -1049,4 +1051,3 @@ class PortabilityService:
                         shutil.rmtree(directory)
                 except OSError:
                     continue
-

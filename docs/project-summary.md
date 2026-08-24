@@ -2,14 +2,14 @@
 
 XNOBrain is a self-hosted workspace for AI agents. It consists of a separate
 React UI and one runtime/backend image that contains FastAPI, the agent engine,
-and provider runtime. Each agent uses an
+and connects directly to the centralized LLM router. Each agent uses an
 isolated atomic file-backed profile. No Go API or PostgreSQL service is present.
 
 ## Runtime flow
 
 ```text
 Browser -> Traefik -> React
-                   -> FastAPI :3000 -> Hermes CLI/core -> OmniRoute :20128
+                   -> FastAPI :3000 -> Hermes CLI/core -> central router
                                       -> default or named profile
 ```
 
@@ -20,8 +20,8 @@ runtime image.
 
 ## Feature boundary
 
-XNOBrain provides unlimited local agents, profiles, prompts/config, skills,
-memory, MCP, conversations and SSE runs, approvals, cron, providers, teams,
+XNOBrain provides local agents, profiles, prompts/config, skills,
+memory, MCP, conversations and SSE runs, approvals, cron, model catalogs, teams,
 workspace files, immutable snapshots, and portable bundles. It has no managed
 control plane or Enterprise API integration.
 
@@ -30,8 +30,8 @@ by default and writes metadata-only span summaries to its container logs.
 
 ## Privacy and persistence
 
-XNOBrain-owned state is stored under `DATA_DIR`; Hermes and OmniRoute retain
-their native embedded local state. Portable bundles include complete regular
+XNOBrain-owned state is stored under `DATA_DIR`; Hermes retains its native
+profile state while router policy, credentials, and usage stay centralized. Portable bundles include complete regular
 profile-file trees with secret values redacted. Telemetry excludes credentials,
 prompts, responses, memories, skills, tool arguments, and logs. There is no ORM
 and no Community application database.

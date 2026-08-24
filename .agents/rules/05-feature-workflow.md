@@ -5,7 +5,7 @@
 2. Keep public changes under `/xnobrain/api/runtime/<version>` and update
    `docs/api.md`, contract docs, UI consumers, and smoke tests when required.
 3. Put business rules in services, atomic persistence in repositories, and
-   Hermes/OmniRoute calls in integrations. Keep composition modules small.
+   Hermes/central-router calls in integrations. Keep composition modules small.
 4. Preserve profile isolation, path validation, snapshots, atomic writes,
    streaming events, approvals, and optional-dependency failure behavior.
 5. Add focused tests in `xnobrain/tests/`, run them, then run `make check`.

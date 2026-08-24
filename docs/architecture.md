@@ -3,15 +3,15 @@
 XNOBrain is a Python modular monolith layered onto the original Hermes CLI
 FastAPI application. The sibling `xnobrain-ui` image serves the React UI, and
 the browser reaches the UI and API through Traefik.
-The runtime container starts exactly two processes: FastAPI on 8642 and OmniRoute
-on 20128.
+The managed runtime container starts exactly one application process: FastAPI
+and Hermes on port 8642. OmniRoute is not installed in the workspace.
 
 ```text
 Traefik -> xnobrain-ui (React)
         -> FastAPI (Hermes native routes + XNOBrain routes)
              -> services -> repositories -> profile/config files
              -> integrations -> Hermes CLI/core
-             -> integrations -> OmniRoute
+             -> integrations -> centralized LLM router
 ```
 
 XNOBrain route assembly is centralized in `xnobrain/routes/setup.py`.
@@ -41,7 +41,8 @@ files are discarded, approvals reset to manual, and cron jobs are paused.
 New named profiles are seeded from the installer-managed
 `HERMES_ROOT_PROFILE/profile-template`, whose default model is `auto`. They do
 not copy the mutable default profile's persona, memory, plugins, or workspace.
-Provider credentials and enabled global skills are inherited separately.
+Enabled global skills are inherited separately. Provider credentials are never
+copied into a profile or workspace.
 
 ## Local runtime boundary
 
@@ -50,7 +51,10 @@ FastAPI process. Streaming emits structured `run.started`, `message.delta`,
 terminal run events, and supports process interruption. Hermes' approval core
 remains the resolver for pending approvals.
 
-There is no managed control-plane dependency, login, or API proxy. The optional
+Managed LLM inference calls the centralized router directly with a Control-issued
+workload token. Runtime does not host the router, retain provider credentials, or
+read router usage storage. Profile files, tools, memory, and other local agent behavior
+remain local. The optional
 OpenTelemetry collector is local-only and disabled by default. When
 `OTEL_ENABLED=true`, the runtime exports metadata-only spans only to the
 Compose collector or a loopback endpoint.

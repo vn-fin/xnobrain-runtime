@@ -107,7 +107,7 @@ Not included in the MVP:
 ## Repository boundary
 
 Plan 013 is implemented entirely in `app/`. App development must not modify
-the core backend (`xnobrain/`, `server.py`, Hermes/9router runtime), the Web UI
+the core backend (`xnobrain/`, `server.py`, Hermes/central-router integration), the Web UI
 (`src/`), or their existing behavior. The app consumes released HTTP/SSE
 contracts and may display an unmodified production Web build. If a missing
 public contract is discovered, record it and schedule an explicitly authorized
@@ -146,6 +146,7 @@ and open it normally; they do not install Node, Rust, or run Make.
   `127.0.0.1`, secrets are not logged, and update/image signatures are
   verified.
 - Container inspection shows one published port owned by Traefik and zero
-  published ports on frontend, runtime, 9router, or observability services.
+  published ports on frontend, runtime, or observability services. No router
+  process or router credential store is installed in the workspace stack.
 - Automated tests and the manual platform matrix in
   [validation.md](validation.md) pass with recorded evidence.

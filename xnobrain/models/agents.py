@@ -19,6 +19,9 @@ class ConfigPatch(BaseModel):
     model_config = ConfigDict(extra="allow")
     provider: str | None = None
     model: str | None = None
+    assignment_id: str | None = Field(
+        default=None, max_length=256, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$"
+    )
     reasoning_effort: str | None = None
     approval_mode: str | None = None
     skills_write_approval: bool | None = None

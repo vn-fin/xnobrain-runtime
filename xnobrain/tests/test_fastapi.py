@@ -27,7 +27,7 @@ from xnobrain.defaults import (
     BIG_BROTHER_SKILL_CATEGORY,
     BIG_BROTHER_SKILL_ID,
 )
-from xnobrain.integrations import AgentManager, GlobalConfigManager
+from xnobrain.integrations import AgentManager, GlobalConfigManager, LLMRouterAPIError
 from xnobrain.services import ServiceError
 from xnobrain.services.workspace_preview import WorkspacePreview
 from xnobrain.services.workspace_upload import WORKSPACE_UPLOAD_CHUNK_BYTES
@@ -346,9 +346,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         deployment = deployment_response.json()["data"]
         self.assertFalse(deployment["database"])
 
-    async def test_nine_router_health_reports_dependency_failure(self):
-        self.composition.service.router.status = AsyncMock(
-            return_value={"available": False, "error": "connection refused"}
+    async def test_llm_router_health_reports_dependency_failure(self):
+        self.composition.service.router.list_models = AsyncMock(
+            side_effect=LLMRouterAPIError("connection refused", status=503)
         )
         async with self.client() as client:
             response = await client.get("/xnobrain/api/runtime/v1/health/provider-runtime")

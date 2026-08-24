@@ -1,11 +1,9 @@
-"""Usage analytics and enforced weekly budgets, computed on read.
+"""Runtime-local usage analytics and agent budgets, computed on read.
 
-The unfiltered workspace view uses OmniRoute's durable usage ledger, so deleting a
-conversation or agent cannot erase historical totals. Current profile
-``state.db`` files remain the live attribution source because OmniRoute has no
-agent identifier. Agent-filtered views therefore intentionally use live profile
-data. Budget config is the only mutation and is written to the agent's
-``config.yaml`` with a snapshot first.
+Current profile ``state.db`` files are the only Runtime usage source. Central
+router usage, organization attribution, and organization limits belong to
+Control and the router's PostgreSQL store. Budget config is the only mutation
+here and is written to the agent's ``config.yaml`` with a snapshot first.
 """
 
 from __future__ import annotations
@@ -21,7 +19,6 @@ import yaml
 
 from ..integrations.analytics import (
     aggregate_profile,
-    aggregate_router_usage,
     bucket_start_iso,
     period_spend,
     profile_model_usage,
@@ -52,7 +49,6 @@ class AnalyticsService:
         self._workspace_lock = asyncio.Lock()
         self._weekly_cost_lock = asyncio.Lock()
         self._weekly_cost_cache: tuple[float, str, dict[str, float]] | None = None
-        self._weekly_model_rates: dict[str, float] = {}
         self._sem = asyncio.Semaphore(8)
 
     # ---- public API ---------------------------------------------------------
@@ -336,127 +332,31 @@ class AnalyticsService:
         end: float,
         bucket: str,
     ) -> dict[str, Any]:
-        """Overlay durable OmniRoute totals for the unfiltered workspace view."""
-        if selected:
-            return {
-                **live,
-                "source": {
-                    "kind": "live_profiles",
-                    "durable": False,
-                    "label": "Current agent profiles",
-                    "message": (
-                        "Agent filters use live profile attribution. Usage from deleted "
-                        "conversations or agents cannot be assigned to this selection."
-                    ),
-                },
-                "by_provider": _providers_from_models(live["by_model"]),
-                "request_status": {
-                    "total": int(live["totals"]["api_calls"]),
-                    "successful": int(live["totals"]["api_calls"]),
-                    "failed": 0,
-                    "success_rate": 100.0 if live["totals"]["api_calls"] else 0.0,
-                },
-                "attribution": _attribution(live["totals"], live["totals"], durable=False),
-            }
-
-        data_dir = getattr(self.router, "data_dir", None)
-        if data_dir is None:
-            return {
-                **live,
-                "source": {
-                    "kind": "live_profiles",
-                    "durable": False,
-                    "label": "Current agent profiles",
-                    "message": "Provider usage history is unavailable; totals use live profiles.",
-                },
-                "by_provider": _providers_from_models(live["by_model"]),
-                "request_status": {
-                    "total": int(live["totals"]["api_calls"]),
-                    "successful": int(live["totals"]["api_calls"]),
-                    "failed": 0,
-                    "success_rate": 100.0 if live["totals"]["api_calls"] else 0.0,
-                },
-                "attribution": _attribution(live["totals"], live["totals"], durable=False),
-            }
-
-        effective = "day" if bucket == "week" else bucket
-        analytics_method = getattr(self.router, "usage_analytics", None)
-        pricing_request = (
-            analytics_method(start_iso=_epoch_iso(start), end_iso=_epoch_iso(end))
-            if callable(analytics_method) else None
+        """Decorate profile totals without reading any router-owned state."""
+        api_calls = int(live["totals"]["api_calls"])
+        message = (
+            "Agent filters use live profile attribution. Usage from deleted "
+            "conversations or agents cannot be assigned to this selection."
+            if selected
+            else "Runtime totals use current agent profiles. Central usage is available in Control."
         )
-        async with self._sem:
-            ledger_request = asyncio.to_thread(
-                aggregate_router_usage,
-                Path(data_dir),
-                start_epoch=start,
-                end_epoch=end,
-                bucket=effective,
-            )
-            if pricing_request is None:
-                router_partial = await ledger_request
-                pricing = None
-            else:
-                router_partial, pricing = await asyncio.gather(
-                    ledger_request, pricing_request, return_exceptions=True,
-                )
-                if isinstance(router_partial, BaseException):
-                    raise router_partial
-                if isinstance(pricing, BaseException):
-                    pricing = None
-        if not router_partial.get("available"):
-            return {
-                **live,
-                "source": {
-                    "kind": "live_profiles",
-                    "durable": False,
-                    "label": "Current agent profiles",
-                    "message": "Provider usage history is unavailable; totals use live profiles.",
-                },
-                "by_provider": _providers_from_models(live["by_model"]),
-                "request_status": {
-                    "total": int(live["totals"]["api_calls"]),
-                    "successful": int(live["totals"]["api_calls"]),
-                    "failed": 0,
-                    "success_rate": 100.0 if live["totals"]["api_calls"] else 0.0,
-                },
-                "attribution": _attribution(live["totals"], live["totals"], durable=False),
-            }
-
-        if isinstance(pricing, Mapping):
-            _apply_omniroute_costs(router_partial, pricing, effective)
-
-        durable = self._merge(
-            [{
-                "agent_id": "__provider_runtime__",
-                "display_name": "Provider history",
-                "partial": router_partial,
-            }],
-            start,
-            end,
-            bucket,
-        )
-        durable["agents"] = live["agents"]
-        # Sessions only exist in XNOBrain's live profile records. Requests,
-        # tokens, cost, model/provider rows and the time series are durable.
-        durable["totals"]["sessions"] = live["totals"]["sessions"]
-        durable["source"] = {
-            "kind": "provider_runtime",
-            "durable": True,
-            "label": "Provider usage history",
-            "message": (
-                "Workspace totals include historical usage after conversations or "
-                "agents are deleted. Agent attribution includes current profiles only."
-            ),
+        return {
+            **live,
+            "source": {
+                "kind": "live_profiles",
+                "durable": False,
+                "label": "Current agent profiles",
+                "message": message,
+            },
+            "by_provider": _providers_from_models(live["by_model"]),
+            "request_status": {
+                "total": api_calls,
+                "successful": api_calls,
+                "failed": 0,
+                "success_rate": 100.0 if api_calls else 0.0,
+            },
+            "attribution": _attribution(live["totals"], live["totals"], durable=False),
         }
-        durable["by_provider"] = [
-            _finish_model(dict(row)) for row in router_partial.get("by_provider") or []
-        ]
-        durable["request_status"] = router_partial["request_status"]
-        durable["attribution"] = _attribution(
-            live["totals"], durable["totals"], durable=True,
-        )
-        return durable
 
     def _merge(
         self, partials: list[dict[str, Any]], start: float, end: float, bucket: str,
@@ -554,7 +454,7 @@ class AnalyticsService:
         self, week_start: datetime, now: datetime,
         *, items: list[Mapping[str, Any]] | None = None,
     ) -> dict[str, float]:
-        """Attribute OmniRoute model costs across live agents by model usage."""
+        """Read the locally recorded estimated costs for each live agent."""
         cache_key = _iso(week_start)
         cached = self._weekly_cost_cache
         current = time.time()
@@ -583,74 +483,23 @@ class AnalyticsService:
                 return agent_id, rows
 
             attributed = dict(await asyncio.gather(*(read(item) for item in items)))
-            stored_by_model: dict[str, dict[str, float]] = {}
-            for agent_id, rows in attributed.items():
-                for row in rows:
-                    model = str(row.get("model") or "").rsplit("/", 1)[-1].lower()
-                    stored_by_model.setdefault(model, {})[agent_id] = (
-                        stored_by_model.setdefault(model, {}).get(agent_id, 0.0)
-                        + float(row.get("estimated_cost_usd") or 0)
-                    )
-            stored = {
-                agent_id: sum(
-                    models.get(agent_id, 0.0) for models in stored_by_model.values()
-                )
-                for agent_id in attributed
+            result = {
+                agent_id: sum(float(row.get("estimated_cost_usd") or 0) for row in rows)
+                for agent_id, rows in attributed.items()
             }
-            try:
-                pricing = await self.router.usage_analytics(
-                    start_iso=_iso(week_start), end_iso=_iso(now),
-                )
-            except Exception:  # noqa: BLE001 - stored Hermes cost remains the fallback
-                pricing = None
-            if not isinstance(pricing, Mapping):
-                result = stored
-                self._weekly_model_rates = {}
-            else:
-                model_costs = {
-                    str(row.get("model") or "").lower(): max(
-                        0.0, _number(row.get("cost")),
-                    )
-                    for row in pricing.get("byModel") or []
-                    if isinstance(row, Mapping) and row.get("model")
-                }
-                weights: dict[str, dict[str, int]] = {}
-                for agent_id, rows in attributed.items():
-                    for row in rows:
-                        model = str(row.get("model") or "").rsplit("/", 1)[-1].lower()
-                        weight = sum(int(row.get(col) or 0) for col in _TOKEN_COLS)
-                        weights.setdefault(model, {})[agent_id] = (
-                            weights.setdefault(model, {}).get(agent_id, 0) + weight
-                        )
-                result = {agent_id: 0.0 for agent_id in attributed}
-                for model, agents in weights.items():
-                    cost = model_costs.get(model)
-                    total_weight = sum(agents.values())
-                    if cost is None or total_weight <= 0:
-                        for agent_id, fallback in stored_by_model.get(model, {}).items():
-                            result[agent_id] += fallback
-                        continue
-                    for agent_id, weight in agents.items():
-                        result[agent_id] += cost * weight / total_weight
-                self._weekly_model_rates = {
-                    model: model_costs[model] / sum(agents.values())
-                    for model, agents in weights.items()
-                    if model in model_costs and sum(agents.values()) > 0
-                }
             self._weekly_cost_cache = (current, cache_key, result)
             return result
 
     async def conversation_estimated_cost(
         self, agent_id: str, conversation_id: str,
     ) -> float:
-        """Estimate one conversation from its share of OmniRoute model costs."""
+        """Return the estimated cost recorded in one conversation ledger."""
         item = self._require_item(agent_id)
         profile_dir = self._profile_dir(item)
         if profile_dir is None:
             return 0.0
         now = datetime.now(timezone.utc)
         week_start = _sunday_start(now)
-        await self._weekly_estimated_spends(week_start, now)
         rows = await asyncio.to_thread(
             profile_model_usage,
             profile_dir,
@@ -658,15 +507,7 @@ class AnalyticsService:
             until_epoch=now.timestamp(),
             session_id=conversation_id,
         )
-        cost = 0.0
-        for row in rows:
-            model = str(row.get("model") or "").rsplit("/", 1)[-1].lower()
-            rate = self._weekly_model_rates.get(model)
-            if rate is None:
-                cost += float(row.get("estimated_cost_usd") or 0)
-                continue
-            cost += rate * sum(int(row.get(col) or 0) for col in _TOKEN_COLS)
-        return round(cost, 6)
+        return round(sum(float(row.get("estimated_cost_usd") or 0) for row in rows), 6)
 
     def _read_config(self, agent_id: str) -> tuple[dict[str, Any], Path]:
         path = self.repository.profile_path(agent_id) / "config.yaml"
@@ -679,14 +520,14 @@ class AnalyticsService:
         return (data if isinstance(data, dict) else {}), path
 
     async def _quota_overlay(self) -> dict[str, Any]:
-        # Best-effort: a router outage (or any error) must degrade to
-        # "unavailable" rather than fail the whole analytics response.
-        try:
-            result = await self.router.usage("auto")
-            return result if isinstance(result, dict) else {"available": False, "quotas": []}
-        except Exception:  # noqa: BLE001 - overlay is advisory, never load-bearing
-            return {"available": False, "provider": "", "model": "auto",
-                    "plan": "", "message": "", "quotas": []}
+        return {
+            "available": False,
+            "provider": "",
+            "model": "auto",
+            "plan": "",
+            "message": "Central limits are available from Control.",
+            "quotas": [],
+        }
 
 
 # ---- module helpers ---------------------------------------------------------
@@ -786,92 +627,6 @@ def _providers_from_models(rows: list[Mapping[str, Any]]) -> list[dict[str, Any]
     result = [_finish_model(row) for row in providers.values()]
     result.sort(key=lambda row: -(row["input_tokens"] + row["output_tokens"]))
     return result
-
-
-def _apply_omniroute_costs(
-    partial: dict[str, Any], pricing: Mapping[str, Any], bucket: str,
-) -> None:
-    """Overlay costs computed by OmniRoute without duplicating its pricing rules."""
-    summary = pricing.get("summary")
-    if not isinstance(summary, Mapping) or "totalCost" not in summary:
-        return
-
-    total_cost = max(0.0, _number(summary.get("totalCost")))
-    partial["totals"]["estimated_cost_usd"] = total_cost
-
-    model_costs: dict[str, float] = {}
-    for row in pricing.get("byModel") or []:
-        if isinstance(row, Mapping):
-            name = str(row.get("model") or "").strip().lower()
-            if name:
-                model_costs[name] = model_costs.get(name, 0.0) + max(
-                    0.0, _number(row.get("cost")),
-                )
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for row in partial.get("by_model") or []:
-        name = str(row.get("model") or "").rsplit("/", 1)[-1].lower()
-        grouped.setdefault(name, []).append(row)
-    for name, rows in grouped.items():
-        cost = model_costs.get(name)
-        if cost is None:
-            continue
-        _distribute_cost(rows, cost)
-
-    partial["by_provider"] = _providers_from_models(partial.get("by_model") or [])
-
-    daily_costs = {
-        str(row.get("date") or ""): max(0.0, _number(row.get("cost")))
-        for row in pricing.get("dailyTrend") or []
-        if isinstance(row, Mapping) and row.get("date")
-    }
-    series = partial.get("series") or []
-    if bucket == "hour":
-        rows_by_day: dict[str, list[dict[str, Any]]] = {}
-        for row in series:
-            rows_by_day.setdefault(str(row.get("bucket") or "")[:10], []).append(row)
-        for day, rows in rows_by_day.items():
-            if day in daily_costs:
-                _distribute_cost(rows, daily_costs[day])
-    else:
-        folded: dict[str, float] = {}
-        for day, cost in daily_costs.items():
-            try:
-                stamp = datetime.fromisoformat(day).replace(tzinfo=timezone.utc)
-            except ValueError:
-                continue
-            label = bucket_start_iso(stamp, bucket, timezone.utc)
-            folded[label] = folded.get(label, 0.0) + cost
-        for row in series:
-            label = str(row.get("bucket") or "")
-            if label in folded:
-                row["estimated_cost_usd"] = folded[label]
-
-
-def _distribute_cost(rows: list[dict[str, Any]], cost: float) -> None:
-    """Allocate an authoritative aggregate while preserving its exact sum."""
-    if not rows:
-        return
-    weights = [
-        int(row.get("input_tokens") or 0) + int(row.get("output_tokens") or 0)
-        for row in rows
-    ]
-    denominator = sum(weights)
-    allocated = 0.0
-    for index, row in enumerate(rows):
-        share = (
-            cost - allocated
-            if index == len(rows) - 1
-            else cost * (weights[index] / denominator if denominator else 1 / len(rows))
-        )
-        row["estimated_cost_usd"] = share
-        allocated += share
-
-
-def _number(value: Any) -> float:
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _attribution(

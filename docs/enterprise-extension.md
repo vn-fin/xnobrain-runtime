@@ -10,7 +10,14 @@ The recommended downstream project is a thin private composition named `xnobrain
 
 ## Ownership split
 
-The shared open-source runtime continues to own profile isolation, safe paths, snapshots, conversations, Hermes invocation, 9router delegation, quota middleware, service-level enforcement, and raw-SQL storage. The enterprise project owns authentication, tenant and plan resolution, billing entitlements, distributed quota reservations, RBAC, audit events, secret management, managed container orchestration, and telemetry retention. Neither project may introduce an ORM.
+The shared runtime continues to own profile isolation, safe paths, snapshots,
+conversations, Hermes invocation, personal blends, and service-level enforcement.
+It calls the centralized LLM router directly with a workload token and does not
+host router state. Control owns authentication, tenant and plan resolution,
+billing entitlements, provider-connection administration, distributed quota
+reservations, RBAC, audit events, managed container orchestration, and telemetry
+retention. Router credentials and usage remain in the centralized router's
+PostgreSQL-backed store. Neither project may introduce an ORM in Runtime.
 
 Use separate versioned images:
 

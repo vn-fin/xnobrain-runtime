@@ -8,12 +8,13 @@ from .hermes_support import (
     BIG_BROTHER_DISPLAY_NAME,
     CUSTOM_SKILL_CATEGORY,
     Mapping,
-    OMNIROUTE_PROVIDER,
+    LLM_ROUTER_PROVIDER,
     PROFILES_REGISTRY_FILE,
     PROFILE_STATE_DIRS,
     Path,
+    _SAFE_ID_RE,
     datetime,
-    normalize_nine_router_config,
+    normalize_llm_router_config,
     os,
     shutil,
     sqlite3,
@@ -499,6 +500,7 @@ class AgentOperationsMixin:
         allowed = {
             "provider",
             "model",
+            "assignment_id",
             "reasoning",
             "effort",
             "approval_mode",
@@ -521,7 +523,7 @@ class AgentOperationsMixin:
 
         if "provider" in body:
             provider = self._nonempty_string(body["provider"], "provider").lower()
-            if provider not in {"xnobrain", "omniroute", "auto", OMNIROUTE_PROVIDER}:
+            if provider not in {"xnobrain", "auto", LLM_ROUTER_PROVIDER}:
                 raise AgentAPIError(
                     "provider must be xnobrain",
                     code="unsupported_provider",
@@ -529,6 +531,19 @@ class AgentOperationsMixin:
         if "model" in body:
             model = self._nonempty_string(body["model"], "model")
             self._set_nested(config, ("model", "default"), model)
+        if "assignment_id" in body:
+            assignment_id = str(body.get("assignment_id") or "").strip()
+            if assignment_id and not _SAFE_ID_RE.fullmatch(assignment_id):
+                raise AgentAPIError(
+                    "assignment_id is invalid",
+                    code="invalid_agent_config",
+                )
+            if assignment_id:
+                self._set_nested(config, ("model", "assignment_id"), assignment_id)
+            else:
+                model_config = config.get("model")
+                if isinstance(model_config, dict):
+                    model_config.pop("assignment_id", None)
         if isinstance(body.get("config"), Mapping):
             self._deep_merge(config, dict(body["config"]))
         if "reasoning" in body or "effort" in body:
@@ -584,7 +599,7 @@ class AgentOperationsMixin:
             self._set_nested(config, ("terminal", "backend"), self._get_nested(config, ("terminal", "backend"), "local"))
             self._set_nested(config, ("terminal", "cwd"), str(self._workspace_dir(name)))
         self._normalize_agent_skill_config(config)
-        normalize_nine_router_config(
+        normalize_llm_router_config(
             config,
             str(body["model"]).strip() if "model" in body else None,
         )

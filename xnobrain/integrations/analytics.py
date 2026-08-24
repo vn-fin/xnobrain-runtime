@@ -1,39 +1,16 @@
-"""Read-only usage aggregation over Hermes and OmniRoute SQLite ledgers.
+"""Read-only usage aggregation over Hermes profile ledgers.
 
-This adapter never writes runtime state. It opens SQLite files with ``?mode=ro``:
-profile ``state.db`` files provide current-agent attribution, while OmniRoute's
-OmniRoute's current ``storage.sqlite/usage_history`` ledger (and the legacy
-``db/data.sqlite/usageHistory`` ledger) survives conversation and agent
-deletion. This adapter holds no policy and does no HTTP.
+This adapter never writes runtime state. It opens only profile ``state.db``
+files with ``?mode=ro``. Central router usage and organization attribution are
+owned by Control and the router's PostgreSQL store, not by Runtime.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone, tzinfo
-import json
 import sqlite3
 from pathlib import Path
 from typing import Any
-
-
-_ROUTER_PREFIXES = {
-    "claude": "cc",
-    "codex": "cx",
-    "antigravity": "ag",
-    "openai": "openai",
-    "anthropic": "anthropic",
-    "gemini": "gemini",
-    "opencode-go": "ocg",
-    "opencode": "oc",
-}
-_PROVIDER_BY_PREFIX = {
-    "cc": "claude",
-    "cx": "codex",
-    "ag": "antigravity",
-    "oc": "opencode",
-    "ocg": "opencode-go",
-    "ocz": "opencode",
-}
 
 
 def _open_ro(path: Path) -> sqlite3.Connection:
@@ -129,196 +106,6 @@ def aggregate_profile(
         return empty
     finally:
         conn.close()
-
-
-def aggregate_router_usage(
-    data_dir: Path,
-    *,
-    start_epoch: float,
-    end_epoch: float,
-    bucket: str = "day",
-) -> dict[str, Any]:
-    """Aggregate OmniRoute's durable current or legacy usage ledger.
-
-    The table is owned by OmniRoute and contains no XNOBrain agent identifier.
-    Consequently this function deliberately returns workspace totals, provider
-    and model breakdowns, and request status only; agent attribution continues
-    to come from profile databases.
-    """
-    empty: dict[str, Any] = {
-        "available": False,
-        "totals": _zero_totals(),
-        "by_model": [],
-        "by_provider": [],
-        "series": [],
-        "request_status": {
-            "total": 0, "successful": 0, "failed": 0, "success_rate": 0.0,
-        },
-    }
-    db = next(
-        (
-            candidate
-            for candidate in (
-                data_dir / "storage.sqlite",
-                data_dir / "db" / "data.sqlite",
-            )
-            if candidate.is_file()
-        ),
-        None,
-    )
-    if db is None:
-        return empty
-    try:
-        conn = _open_ro(db)
-    except sqlite3.Error:
-        return empty
-    start_iso = _epoch_iso(start_epoch)
-    end_iso = _epoch_iso(end_epoch)
-    try:
-        node_prefixes = _provider_node_prefixes(conn)
-        if _table_exists(conn, "usage_history"):
-            rows = conn.execute(
-                """
-                SELECT timestamp, COALESCE(provider,'unknown') AS provider,
-                       COALESCE(model,'unknown') AS model,
-                       COALESCE(tokens_input,0) AS prompt_tokens,
-                       COALESCE(tokens_output,0) AS completion_tokens,
-                       COALESCE(tokens_cache_read,0) AS cache_read_tokens,
-                       COALESCE(tokens_cache_creation,0) AS cache_write_tokens,
-                       COALESCE(tokens_reasoning,0) AS reasoning_tokens,
-                       0.0 AS cost, COALESCE(status,'') AS status,
-                       COALESCE(success,1) AS success, '' AS tokens
-                FROM usage_history
-                WHERE timestamp > ? AND timestamp <= ?
-                """,
-                (start_iso, end_iso),
-            ).fetchall()
-        elif _table_exists(conn, "usageHistory"):
-            rows = conn.execute(
-                """
-                SELECT timestamp, COALESCE(provider,'unknown') AS provider,
-                       COALESCE(model,'unknown') AS model,
-                       COALESCE(promptTokens,0) AS prompt_tokens,
-                       COALESCE(completionTokens,0) AS completion_tokens,
-                       0 AS cache_read_tokens, 0 AS cache_write_tokens,
-                       0 AS reasoning_tokens, COALESCE(cost,0) AS cost,
-                       COALESCE(status,'') AS status, NULL AS success,
-                       COALESCE(tokens,'') AS tokens
-                FROM usageHistory
-                WHERE timestamp > ? AND timestamp <= ?
-                """,
-                (start_iso, end_iso),
-            ).fetchall()
-        else:
-            return empty
-    except sqlite3.Error:
-        return empty
-    finally:
-        conn.close()
-
-    totals = _zero_totals()
-    models: dict[tuple[str, str], dict[str, Any]] = {}
-    providers: dict[str, dict[str, Any]] = {}
-    series: dict[str, dict[str, Any]] = {}
-    successful = 0
-    for row in rows:
-        input_tokens = int(row["prompt_tokens"] or 0)
-        output_tokens = int(row["completion_tokens"] or 0)
-        cost = float(row["cost"] or 0)
-        token_meta = _token_metadata(str(row["tokens"] or ""))
-        cache_read = int(
-            row["cache_read_tokens"]
-            or token_meta.get("cachedTokens")
-            or token_meta.get("cached_tokens")
-            or token_meta.get("cache_read_tokens")
-            or 0
-        )
-        cache_write = int(
-            row["cache_write_tokens"]
-            or token_meta.get("cacheCreationTokens")
-            or token_meta.get("cache_creation_tokens")
-            or token_meta.get("cache_creation_input_tokens")
-            or token_meta.get("cache_write_tokens")
-            or 0
-        )
-        reasoning = int(
-            row["reasoning_tokens"]
-            or token_meta.get("reasoningTokens")
-            or token_meta.get("reasoning_tokens")
-            or 0
-        )
-        totals["input_tokens"] += input_tokens
-        totals["output_tokens"] += output_tokens
-        totals["cache_read_tokens"] += cache_read
-        totals["cache_write_tokens"] += cache_write
-        totals["reasoning_tokens"] += reasoning
-        totals["estimated_cost_usd"] += cost
-        totals["api_calls"] += 1
-
-        raw_provider = str(row["provider"] or "unknown")
-        prefix = node_prefixes.get(raw_provider) or _ROUTER_PREFIXES.get(raw_provider, "")
-        provider = _PROVIDER_BY_PREFIX.get(prefix, prefix or raw_provider)
-        model = _qualified_router_model(str(row["model"] or "unknown"), prefix)
-        model_row = models.setdefault(
-            (model, provider),
-            {
-                "model": model, "provider": provider, "input_tokens": 0,
-                "output_tokens": 0, "estimated_cost_usd": 0.0,
-                "actual_cost_usd": 0.0, "sessions": 0,
-            },
-        )
-        _add_router_row(model_row, input_tokens, output_tokens, cost)
-        provider_row = providers.setdefault(
-            provider,
-            {
-                "provider": provider, "input_tokens": 0, "output_tokens": 0,
-                "estimated_cost_usd": 0.0, "actual_cost_usd": 0.0,
-                "sessions": 0,
-            },
-        )
-        _add_router_row(provider_row, input_tokens, output_tokens, cost)
-
-        label = _timestamp_bucket(str(row["timestamp"] or ""), bucket)
-        if label:
-            bucket_row = series.setdefault(
-                label,
-                {
-                    "bucket": label, "input_tokens": 0, "output_tokens": 0,
-                    "estimated_cost_usd": 0.0, "actual_cost_usd": 0.0,
-                    "sessions": 0,
-                },
-            )
-            _add_router_row(bucket_row, input_tokens, output_tokens, cost)
-
-        if (
-            bool(row["success"])
-            if row["success"] is not None
-            else _successful_status(str(row["status"] or ""))
-        ):
-            successful += 1
-
-    request_total = len(rows)
-    failed = request_total - successful
-    return {
-        "available": True,
-        "totals": totals,
-        "by_model": sorted(
-            models.values(),
-            key=lambda item: -(item["input_tokens"] + item["output_tokens"]),
-        ),
-        "by_provider": sorted(
-            providers.values(),
-            key=lambda item: -(item["input_tokens"] + item["output_tokens"]),
-        ),
-        "series": [series[key] for key in sorted(series)],
-        "request_status": {
-            "total": request_total,
-            "successful": successful,
-            "failed": failed,
-            "success_rate": round(successful / request_total * 100, 1)
-            if request_total else 0.0,
-        },
-    }
 
 
 def period_spend(
@@ -437,77 +224,7 @@ def epoch_bucket(value: float, bucket: str, zone: tzinfo) -> str:
     return bucket_start_iso(datetime.fromtimestamp(value, tz=timezone.utc), bucket, zone)
 
 
-def _token_metadata(value: str) -> dict[str, Any]:
-    if not value:
-        return {}
-    try:
-        parsed = json.loads(value)
-    except (TypeError, ValueError):
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
     ).fetchone() is not None
-
-
-def _provider_node_prefixes(conn: sqlite3.Connection) -> dict[str, str]:
-    """Map OmniRoute's UUID-backed custom provider IDs to stable prefixes."""
-    try:
-        if _table_exists(conn, "provider_nodes"):
-            return {
-                str(row["id"] or ""): str(row["prefix"] or "").strip()
-                for row in conn.execute(
-                    "SELECT id, prefix FROM provider_nodes WHERE prefix IS NOT NULL"
-                ).fetchall()
-                if str(row["prefix"] or "").strip()
-            }
-        if not _table_exists(conn, "providerNodes"):
-            return {}
-        rows = conn.execute("SELECT id, data FROM providerNodes").fetchall()
-    except sqlite3.Error:
-        return {}
-    result: dict[str, str] = {}
-    for row in rows:
-        data = _token_metadata(str(row["data"] or ""))
-        prefix = str(data.get("prefix") or "").strip()
-        if prefix:
-            result[str(row["id"] or "")] = prefix
-    return result
-
-
-def _qualified_router_model(model: str, prefix: str) -> str:
-    normalized = model.strip() or "unknown"
-    if not prefix or "/" in normalized or normalized == "unknown":
-        return normalized
-    return f"{prefix}/{normalized}"
-
-
-def _timestamp_bucket(value: str, bucket: str) -> str:
-    try:
-        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return ""
-    if stamp.tzinfo is None:
-        stamp = stamp.replace(tzinfo=timezone.utc)
-    return bucket_start_iso(stamp, bucket, timezone.utc)
-
-
-def _add_router_row(
-    row: dict[str, Any], input_tokens: int, output_tokens: int, cost: float,
-) -> None:
-    row["input_tokens"] += input_tokens
-    row["output_tokens"] += output_tokens
-    row["estimated_cost_usd"] += cost
-    # The existing merge helpers use ``sessions`` as the count field. For
-    # OmniRoute rows it represents requests; the public UI labels it accordingly.
-    row["sessions"] += 1
-
-
-def _successful_status(value: str) -> bool:
-    normalized = value.strip().lower()
-    if not normalized:
-        return True
-    return normalized in {"ok", "success", "successful", "completed", "complete", "200"}

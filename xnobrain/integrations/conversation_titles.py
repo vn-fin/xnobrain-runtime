@@ -1,19 +1,19 @@
-"""Conversation title operations backed by OmniRoute."""
+"""Conversation title operations backed by the centralized LLM router."""
 
-from .nine_router_support import (
+from .llm_router_support import (
     Mapping,
-    OMNIROUTE_DEFAULT_MODEL,
+    LLM_ROUTER_DEFAULT_MODEL,
 )
 
 
 class ConversationTitlesMixin:
     async def generate_conversation_title(self, message: str, model: str) -> str:
-        """Generate one small title through the same local model router."""
+        """Generate one small title through the centralized model router."""
         payload = await self._request(
             "POST",
-            "/v1/chat/completions",
+            "/chat/completions",
             {
-                "model": model or OMNIROUTE_DEFAULT_MODEL,
+                "model": model or LLM_ROUTER_DEFAULT_MODEL,
                 "messages": [
                     {
                         "role": "system",

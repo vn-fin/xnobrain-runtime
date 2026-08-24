@@ -15,8 +15,8 @@ from ..integrations import (
     AgentManager,
     ConfigAPIError,
     GlobalConfigManager,
-    OmniRouteAPIError,
-    OmniRouteManager,
+    LLMRouterAPIError,
+    LLMRouterClient,
 )
 from ..repositories import FileRepository, StoreError
 from .agents import AgentsServiceMixin
@@ -60,7 +60,7 @@ class PlatformService(
         repository: FileRepository,
         agents: AgentManager,
         config: GlobalConfigManager,
-        router: OmniRouteManager,
+        router: LLMRouterClient,
         runtime,
     ):
         self.repository = repository
@@ -83,7 +83,6 @@ class PlatformService(
         self.conversation_runs = ConversationRunService(repository, agents, self.analytics)
         from .team_runs import TeamRunService
         self.team_runs = TeamRunService(repository, agents, self, self.analytics)
-        self._oauth_attempts: dict[str, dict[str, Any]] = {}
         self._cache = MemoryCache()
         self._agent_activity_kanban_ids: set[str] = set()
         self._agent_activity_kanban_checked_at = float("-inf")

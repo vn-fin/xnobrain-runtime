@@ -46,30 +46,19 @@ calls do not repeat it. Rejection uses HTTP `429` with code
 `weekly_budget_exceeded`. An accepted execution is never stopped mid-run when
 it takes usage over the limit.
 
-The provider catalog returns subscription connections first in curated
-common-use order: OpenAI Codex, Claude Code, GitHub Copilot, Cursor, Grok Build,
-xAI Grok, Kimi Code, Cline, Kilo Code, Kiro, Amazon Q Developer, ClinePass, and
-Google Antigravity. GitHub Copilot, Grok Build, Kimi Code, Kilo Code, Kiro, and
-Amazon Q use device-code authorization. Cline and ClinePass use the Cline
-browser authorization flow. xAI Grok uses xAI's fixed-loopback PKCE flow and is
-distinct from both the Grok Build subscription and the xAI API-key card. Cursor
-uses OmniRoute's validated credential-import flow because the pinned provider
-runtime does not expose browser OAuth for Cursor. OpenCode Go remains a guided
-coding-plan key flow.
+Runtime analytics read only the current profiles' Hermes `state.db` ledgers.
+Runtime does not open a router SQLite database or call router management usage
+APIs. Central personal/organization limits and durable usage history are served
+by Control from the centralized router data path.
 
-API-key credentials use one idempotent write contract:
-`POST /xnobrain/api/runtime/v1/providers/{provider_id}/connections` with
-`api_key` and, only for a custom OpenAI-compatible provider, `base_url`.
-Preset providers always use their runtime-defined endpoint and ignore a
-client-supplied base URL. Model inventories for OpenAI-compatible connections
-come from OmniRoute's per-connection model catalog and are exposed under the
-configured stable prefix; OmniRoute's UUID-backed node IDs are never public.
-Subscription providers also expose only the union of models returned by
-OmniRoute for their active, non-error connections. Their stable public model
-prefixes are preserved, and models found only in OmniRoute's global catalog are
-not exposed as usable subscription models. When OmniRoute publishes reasoning
-effort aliases beside a base model, the runtime collapses those aliases into one
-base-model row and derives its ordered `reasoning` values from the live catalog.
+Provider connections, credentials, connection tests, and organization limits
+are administered through the authenticated Control API. Runtime exposes no
+provider-connection mutation routes and its workload token cannot be used with
+router management paths.
+
+`GET /providers` and `GET /providers/{provider_id}/models` are read-only views
+of the model catalog authorized for the current workload. Runtime obtains that
+catalog from the centralized router's OpenAI-compatible `GET /models` endpoint.
 `GET /providers/{provider_id}/models/{model}/reasoning` returns those same
 provider/model-specific values plus `default_reasoning`; model IDs containing
 `/` are supported. `default_reasoning` is derived from the live ordered model
@@ -77,8 +66,6 @@ catalog: the second supported level is preferred, the only level is used when
 there is one, and models without reasoning metadata return `auto`. Agent and
 Smart Route reasoning may be stored as `auto`; concrete model execution
 resolves it through this metadata instead of a hard-coded effort.
-OpenCode Zen exposes only models returned for an active Zen API-key
-connection; the legacy global `oc/*` free-model catalog is not listed.
 Smart Route blends resolve at model-inference boundaries rather than only once
 for an entire agent run. The initial user turn is classified once and reused;
 later model continuations after tool results, goal-continuation prompts, and
@@ -89,13 +76,6 @@ classification is temporarily unavailable, the active model continues instead
 of failing the run. Supported reasoning values come from provider model
 metadata and may include `none`, `minimal`, `xhigh`, `max`, and `ultra` in
 addition to `low`, `medium`, and `high`.
-The runtime derives a SHA-256 fingerprint for the provider-runtime identity;
-submitting the same key updates its existing connection while a different key
-adds another connection. The raw key and full fingerprint are never returned.
-The previous `PATCH /providers/{provider_id}/update` route has been removed.
-Individual keys are tested with
-`POST /providers/{provider_id}/connections/{connection_id}/test` and removed
-with `DELETE /providers/{provider_id}/connections/{connection_id}`.
 
 Portable profile example:
 

@@ -32,16 +32,17 @@ from ..defaults import (
     BIG_BROTHER_SKILL_ID,
     CUSTOM_SKILL_CATEGORY,
 )
-from .nine_router import (
-    OMNIROUTE_DEFAULT_MODEL,
-    OMNIROUTE_KEY_ENV,
-    OMNIROUTE_PROVIDER,
-    OMNIROUTE_PROVIDER_KEY,
-    NineRouterAPIError,
-    OmniRouteManager,
-    display_nine_router_model,
-    normalize_nine_router_config,
-    route_nine_router_model,
+from .llm_router import (
+    _SAFE_ID_RE,
+    LLM_ROUTER_DEFAULT_MODEL,
+    LLM_ROUTER_KEY_ENV,
+    LLM_ROUTER_PROVIDER,
+    LLM_ROUTER_PROVIDER_KEY,
+    LLMRouterAPIError,
+    LLMRouterClient,
+    display_llm_model,
+    normalize_llm_router_config,
+    route_llm_model,
 )
 
 
@@ -72,7 +73,7 @@ DEFAULT_CONVERSATION_TITLE_RE = re.compile(
 METADATA_FILE = "agent.json"
 PROFILES_REGISTRY_FILE = "profiles.yaml"
 CREDENTIAL_FILES = (".env", "auth.json")
-AGENT_CREDENTIAL_ENV_KEYS = (OMNIROUTE_KEY_ENV, "NINE_ROUTER_API_KEY")
+AGENT_CREDENTIAL_ENV_KEYS = (LLM_ROUTER_KEY_ENV,)
 TEMPLATE_FILES = ("config.yaml", "SOUL.md", "AGENTS.md", "mcp.json")
 TEMPLATE_DIRS = ("memories", "plugins")
 PROFILE_STATE_DIRS = (

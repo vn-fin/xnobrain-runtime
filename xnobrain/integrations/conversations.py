@@ -11,7 +11,7 @@ from .hermes_support import (
     asyncio,
     json,
     re,
-    route_nine_router_model,
+    route_llm_model,
     sqlite3,
     time,
 )
@@ -375,7 +375,7 @@ class ConversationsMixin:
     async def _summarize_conversation_title(self, message: Any, model: str) -> str:
         try:
             generated = await asyncio.wait_for(
-                self.nine_router.generate_conversation_title(str(message or ""), model),
+                self.llm_router.generate_conversation_title(str(message or ""), model),
                 timeout=20,
             )
             return self._clean_generated_title(generated) or self._title_from_first_message(message)
@@ -442,7 +442,7 @@ class ConversationsMixin:
 
     def _conversation_model(self, profile_dir: Path, body: Mapping[str, Any]) -> str:
         if body.get("model"):
-            return route_nine_router_model(
+            return route_llm_model(
                 self._nonempty_string(body["model"], "model")
             )
         config = self._read_config(profile_dir)

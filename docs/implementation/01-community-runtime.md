@@ -17,7 +17,7 @@ Self-hosted Free runs persistently with no database, Redis, Kafka, login, or net
 | Daily/monthly usage | `profiles/<agent-id>/cron/usage/<period>.json` or a user-level aggregate with one explicit owner |
 | Notifications and missed runs | `DATA_DIR/notifications/<id>.json` |
 | Runtime IP/port/PID | `DATA_DIR/runtime/endpoint.json`, disposable and rewritten at startup |
-| Provider credentials | 9router-owned storage; never Studio files |
+| Provider credentials | Centralized router storage; never Runtime profile files |
 
 ## Design requirements
 

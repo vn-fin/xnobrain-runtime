@@ -1,4 +1,4 @@
-"""Tests for the platform 9router integration adapter."""
+"""Tests for the centralized LLM router client."""
 
 from __future__ import annotations
 
@@ -27,18 +27,18 @@ from xnobrain.integrations.conversation_stream import (
     _commit_resolved_write_result,
     _persist_cancelled_terminal,
 )
-from xnobrain.integrations.nine_router import (
-    NINE_ROUTER_API_BASE_URL,
-    NINE_ROUTER_PROVIDER,
-    NineRouterAPIError,
-    NineRouterManager,
-    normalize_nine_router_config,
+from xnobrain.integrations.llm_router import (
+    LLM_ROUTER_API_BASE_URL,
+    LLM_ROUTER_PROVIDER,
+    LLMRouterAPIError,
+    LLMRouterClient,
+    normalize_llm_router_config,
 )
 
 
-class FakeNineRouterManager(NineRouterManager):
+class FakeLLMRouterClient(LLMRouterClient):
     def __init__(self, responses: dict[tuple[str, str], dict[str, Any]]):
-        super().__init__(base_url="http://127.0.0.1:20128")
+        super().__init__(base_url="https://router.test/v1")
         self.responses = responses
         self.requests: list[tuple[str, str, dict[str, Any] | None]] = []
 
@@ -52,7 +52,7 @@ class FakeNineRouterManager(NineRouterManager):
         return self.responses.get((method, path), {})
 
 
-class NineRouterConfigTests(unittest.TestCase):
+class LLMRouterConfigTests(unittest.TestCase):
     def test_global_config_accepts_model_derived_auto_reasoning(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -82,7 +82,7 @@ class NineRouterConfigTests(unittest.TestCase):
             model="cx/old",
             reasoning_config=None,
             context_compressor=compressor,
-            base_url="http://omniroute",
+            base_url="http://central-router",
             api_key="token",
             provider="custom",
             api_mode="chat_completions",
@@ -102,7 +102,7 @@ class NineRouterConfigTests(unittest.TestCase):
         compressor.update_model.assert_called_once_with(
             model="cx/new",
             context_length=200_000,
-            base_url="http://omniroute",
+            base_url="http://central-router",
             api_key="token",
             provider="custom",
             api_mode="chat_completions",
@@ -265,20 +265,15 @@ class NineRouterConfigTests(unittest.TestCase):
         self.assertNotIn("pending_id", committed)
         self.assertEqual(db.replacement, ("session-1", messages, True))
 
-    def test_agent_manager_loads_private_router_key_from_prepared_token(self) -> None:
+    def test_agent_manager_forwards_only_the_provisioned_workload_token(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            router_data = root / "nine-router"
-            (router_data / "auth").mkdir(parents=True)
-            (router_data / "auth" / "cli-token").write_text(
-                "private-router-token\n", encoding="utf-8"
-            )
             with patch.dict(
                 os.environ,
-                {"NINE_ROUTER_DATA_DIR": str(router_data)},
+                {"RUNTIME_LLM_WORKLOAD_TOKEN": "workload-token"},
                 clear=False,
             ):
-                os.environ.pop("NINE_ROUTER_API_KEY", None)
+                os.environ.pop("LLM_ROUTER_API_KEY", None)
                 manager = AgentManager(
                     root_profile=root / "root",
                     profiles_root=root / "profiles",
@@ -286,17 +281,18 @@ class NineRouterConfigTests(unittest.TestCase):
                 )
 
                 self.assertEqual(
-                    os.environ.get("NINE_ROUTER_API_KEY"),
-                    "private-router-token",
+                    os.environ.get("RUNTIME_LLM_WORKLOAD_TOKEN"),
+                    "workload-token",
                 )
                 self.assertEqual(
                     manager._command_env(root / "root", "hermes").get(
-                        "NINE_ROUTER_API_KEY"
+                        "RUNTIME_LLM_WORKLOAD_TOKEN"
                     ),
-                    "private-router-token",
+                    "workload-token",
                 )
+                self.assertIsNone(os.environ.get("LLM_ROUTER_API_KEY"))
 
-    def test_explicit_router_key_takes_precedence_over_token_file(self) -> None:
+    def test_local_router_token_file_is_ignored(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             router_data = root / "nine-router"
@@ -307,21 +303,20 @@ class NineRouterConfigTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "NINE_ROUTER_DATA_DIR": str(router_data),
-                    "NINE_ROUTER_API_KEY": "configured-token",
+                    "LLM_ROUTER_DATA_DIR": str(router_data),
                 },
                 clear=False,
             ):
+                os.environ.pop("RUNTIME_LLM_WORKLOAD_TOKEN", None)
+                os.environ.pop("LLM_ROUTER_API_KEY", None)
                 AgentManager(
                     root_profile=root / "root",
                     profiles_root=root / "profiles",
                     legacy_agents_root=root / "legacy",
                 )
 
-                self.assertEqual(
-                    os.environ.get("NINE_ROUTER_API_KEY"),
-                    "configured-token",
-                )
+                self.assertIsNone(os.environ.get("RUNTIME_LLM_WORKLOAD_TOKEN"))
+                self.assertIsNone(os.environ.get("LLM_ROUTER_API_KEY"))
 
     def test_opencode_models_use_blocking_provider_response(self) -> None:
         for model in (
@@ -340,7 +335,7 @@ class NineRouterConfigTests(unittest.TestCase):
     def test_legacy_opencode_free_model_routes_through_user_zen_connection(self) -> None:
         config: dict[str, Any] = {}
 
-        selected = normalize_nine_router_config(
+        selected = normalize_llm_router_config(
             config,
             "oc/deepseek-v4-flash-free",
         )
@@ -619,48 +614,76 @@ class NineRouterConfigTests(unittest.TestCase):
             "agent": {"reasoning_effort": "high"},
         }
 
-        selected = normalize_nine_router_config(config, "cx/gpt-5.4")
+        selected = normalize_llm_router_config(config, "cx/gpt-5.4")
 
         self.assertEqual(selected, "cx/gpt-5.4")
-        self.assertEqual(config["model"]["provider"], NINE_ROUTER_PROVIDER)
-        self.assertEqual(config["model"]["base_url"], NINE_ROUTER_API_BASE_URL)
+        self.assertEqual(config["model"]["provider"], LLM_ROUTER_PROVIDER)
+        self.assertEqual(config["model"]["base_url"], LLM_ROUTER_API_BASE_URL)
         self.assertEqual(list(config["providers"]), ["xnobrain"])
         self.assertEqual(config["providers"]["xnobrain"]["model"], "cx/gpt-5.4")
         self.assertNotIn("fallback_providers", config)
         self.assertEqual(config["agent"]["reasoning_effort"], "high")
 
-    def test_cli_token_matches_native_omniroute_algorithm(self) -> None:
-        with TemporaryDirectory() as temp_dir:
-            data_dir = Path(temp_dir)
-            (data_dir / "auth").mkdir()
-            (data_dir / "machine-id").write_text("machine-123\n", encoding="utf-8")
-            (data_dir / "auth" / "cli-secret").write_text("secret-456\n", encoding="utf-8")
-
-            manager = NineRouterManager(data_dir=data_dir)
-
-            self.assertEqual(
-                manager._cli_token(),
-                "d7551ed0c406d076237bb8dee3bb6ecee3bc004608867fc0cf76fc87e4644185",
-            )
-
-    def test_management_headers_preserve_loopback_cli_auth(self) -> None:
-        with TemporaryDirectory() as temp_dir:
-            data_dir = Path(temp_dir)
-            (data_dir / "auth").mkdir()
-            (data_dir / "machine-id").write_text("machine-123\n", encoding="utf-8")
-            (data_dir / "auth" / "cli-secret").write_text("secret-456\n", encoding="utf-8")
-
-            headers = NineRouterManager(data_dir=data_dir)._request_headers()
-
+    def test_management_headers_use_provisioned_workload_identity(self) -> None:
+        with patch.dict(os.environ, {"RUNTIME_LLM_WORKLOAD_TOKEN": "workload-test-token"}):
+            headers = LLMRouterClient(base_url="https://control.test/llm")._request_headers()
         self.assertEqual(headers["Accept"], "application/json")
-        self.assertEqual(headers["x-forwarded-for"], "")
+        self.assertEqual(headers["Authorization"], "Bearer workload-test-token")
+        self.assertNotIn("x-omniroute-cli-token", headers)
+
+    def test_normalize_adds_only_the_selected_assignment_scope_header(self) -> None:
+        config = {
+            "model": {
+                "default": "openai/gpt-5",
+                "assignment_id": "llma_organization",
+            }
+        }
+
+        normalize_llm_router_config(config)
+
+        provider = config["providers"]["xnobrain"]
         self.assertEqual(
-            headers["x-omniroute-cli-token"],
-            "d7551ed0c406d076237bb8dee3bb6ecee3bc004608867fc0cf76fc87e4644185",
+            provider["extra_headers"],
+            {"x-xnobrain-assignment-id": "llma_organization"},
         )
+        self.assertNotIn("Authorization", provider["extra_headers"])
 
 
-class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
+class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_title_generation_uses_the_configured_v1_router_base_once(self) -> None:
+        manager = FakeLLMRouterClient({
+            ("POST", "/chat/completions"): {
+                "choices": [{"message": {"content": "Managed routing"}}],
+            },
+        })
+
+        title = await manager.generate_conversation_title("hello", "openai/gpt-5")
+
+        self.assertEqual(title, "Managed routing")
+        self.assertEqual(manager.requests[0][0:2], ("POST", "/chat/completions"))
+
+    async def test_runtime_catalog_uses_only_the_workload_models_endpoint(self) -> None:
+        manager = FakeLLMRouterClient({
+            ("GET", "/models?kind=llm"): {
+                "data": [{
+                    "id": "openai/gpt-5",
+                    "owned_by": "openai",
+                    "capabilities": {"reasoning": ["low", "high"]},
+                }],
+            },
+        })
+
+        models = await manager.list_models()
+
+        self.assertEqual([item["id"] for item in models["data"]], ["auto", "openai/gpt-5"])
+        self.assertEqual(manager.requests, [("GET", "/models?kind=llm", None)])
+
+    async def test_transport_rejects_router_management_paths(self) -> None:
+        manager = LLMRouterClient(base_url="https://router.invalid")
+
+        with self.assertRaises(LLMRouterAPIError):
+            await manager._request("GET", "/api/providers")
+
     async def test_stop_interrupts_the_running_hermes_agent(self) -> None:
         manager = object.__new__(AgentManager)
         manager._active_runs = {}
@@ -740,7 +763,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 }
 
         manager = object.__new__(AgentManager)
-        manager.nine_router = Router()
+        manager.llm_router = Router()
         loop = asyncio.get_running_loop()
 
         decisions = await asyncio.to_thread(
@@ -757,11 +780,12 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["model"] for item in decisions], ["cx/fast", "cx/deep"])
         self.assertEqual([item["tier"] for item in decisions], ["quick", "difficult"])
 
+    @unittest.skip("provider administration moved to Control")
     async def test_api_key_upsert_uses_sha256_identity_and_returns_short_label(self) -> None:
         api_key = "sk-secret-value"
         fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
         internal_name = f"xnobrain-api-key:{fingerprint}"
-        manager = FakeNineRouterManager({
+        manager = FakeLLMRouterClient({
             ("POST", "/api/providers"): {"connection": {
                 "id": "openai-1", "provider": "openai", "authType": "apikey",
                 "name": internal_name, "apiKey": "must-not-leak",
@@ -792,8 +816,9 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(listed["connections"][0]["name"], f"API key • {fingerprint[:8]}")
         self.assertNotIn(api_key, str(result))
 
+    @unittest.skip("provider administration moved to Control")
     async def test_cursor_import_uses_router_contract_and_filters_credentials(self) -> None:
-        manager = FakeNineRouterManager({
+        manager = FakeLLMRouterClient({
             ("POST", "/api/oauth/cursor/import"): {
                 "success": True,
                 "connection": {
@@ -828,8 +853,9 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["connection"]["id"], "cursor-1")
         self.assertNotIn("accessToken", result["connection"])
 
+    @unittest.skip("connection catalogs are no longer accessible to Runtime")
     async def test_subscription_models_use_connection_catalogs_and_stable_aliases(self) -> None:
-        manager = FakeNineRouterManager({
+        manager = FakeLLMRouterClient({
             ("GET", "/api/providers"): {"connections": [
                 {"id": "github-1", "provider": "github", "authType": "oauth"},
                 {"id": "cursor-1", "provider": "cursor", "authType": "oauth"},
@@ -905,9 +931,10 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         github = models[1]
         self.assertEqual(github["reasoning_levels"], ["low", "high"])
 
+    @unittest.skip("provider administration moved to Control")
     async def test_openai_compatible_node_is_created_and_connections_use_logical_provider(self) -> None:
         node_id = "openai-compatible-chat-deepseek1"
-        manager = FakeNineRouterManager({
+        manager = FakeLLMRouterClient({
             ("GET", "/api/provider-nodes"): {"nodes": []},
             ("POST", "/api/provider-nodes"): {"node": {"id": node_id}},
         })
@@ -938,6 +965,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         rows = (await manager.list_connections())["connections"]
         self.assertEqual(rows[0]["provider"], "deepseek")
 
+    @unittest.skip("provider administration moved to Control")
     async def test_new_openai_compatible_nodes_are_exposed_as_logical_providers(self) -> None:
         providers = ("xai", "openrouter", "groq")
         nodes = [{
@@ -948,7 +976,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             "apiType": "chat",
             "baseUrl": f"https://{provider}.example/v1",
         } for provider in providers]
-        manager = FakeNineRouterManager({
+        manager = FakeLLMRouterClient({
             ("GET", "/api/provider-nodes"): {"nodes": nodes},
             ("GET", "/api/providers"): {"connections": [{
                 "id": f"{provider}-account",
@@ -961,9 +989,10 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([row["provider"] for row in rows], list(providers))
 
-    async def test_openai_compatible_models_use_omniroute_connection_catalog(self) -> None:
+    @unittest.skip("connection catalogs are no longer accessible to Runtime")
+    async def test_openai_compatible_models_use_router_connection_catalog(self) -> None:
         node_id = "openai-compatible-chat-groq1"
-        manager = FakeNineRouterManager({
+        manager = FakeLLMRouterClient({
             ("GET", "/api/provider-nodes"): {"nodes": [{
                 "id": node_id,
                 "prefix": "groq",
@@ -1015,8 +1044,9 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             manager.requests,
         )
 
+    @unittest.skip("router combos and connection catalogs are no longer Runtime-owned")
     async def test_models_are_filtered_and_auto_combo_is_created(self) -> None:
-        manager = FakeNineRouterManager(
+        manager = FakeLLMRouterClient(
             {
                 ("GET", "/api/providers"): {
                     "connections": [
@@ -1081,9 +1111,10 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("api_key", connections["connections"][0])
         self.assertNotIn("apiKey", connections["connections"][0])
 
+    @unittest.skip("connection catalogs are no longer accessible to Runtime")
     async def test_opencode_zen_models_use_the_connection_catalog(self) -> None:
         node_id = "openai-compatible-chat-zen1"
-        manager = FakeNineRouterManager({
+        manager = FakeLLMRouterClient({
             ("GET", "/api/provider-nodes"): {"nodes": [{
                 "id": node_id,
                 "prefix": "ocz",
@@ -1134,8 +1165,9 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(connections["connections"][0]["default_model"], "")
         self.assertFalse(any("suggested-models" in path for _, path, _ in manager.requests))
 
+    @unittest.skip("connection status is enforced by the workload-scoped router catalog")
     async def test_failed_connection_does_not_expose_provider_models(self) -> None:
-        manager = FakeNineRouterManager({
+        manager = FakeLLMRouterClient({
             ("GET", "/api/provider-nodes"): {"nodes": []},
             ("GET", "/api/providers"): {"connections": [{
                 "id": "invalid-openai-key",
@@ -1155,9 +1187,10 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([item["id"] for item in payload["data"]], ["auto"])
 
+    @unittest.skip("router combos and connection catalogs are no longer Runtime-owned")
     async def test_opencode_free_models_do_not_feed_the_zen_auto_combo(self) -> None:
         node_id = "openai-compatible-chat-zen1"
-        manager = FakeNineRouterManager({
+        manager = FakeLLMRouterClient({
             ("GET", "/api/provider-nodes"): {"nodes": [{
                 "id": node_id,
                 "prefix": "ocz",
@@ -1201,6 +1234,7 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             },
         ), manager.requests)
 
+    @unittest.skip("quota and entitlement enforcement moved to Control and the router")
     async def test_codex_review_models_require_review_quota(self) -> None:
         responses = {
             ("GET", "/api/providers"): {"connections": [{
@@ -1219,14 +1253,14 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
                 ],
             },
         }
-        without_review = FakeNineRouterManager({
+        without_review = FakeLLMRouterClient({
             **responses,
             ("GET", "/api/usage/codex-1"): {
                 "plan": "plus",
                 "quotas": {"session": {"used": 1, "total": 100}},
             },
         })
-        with_review = FakeNineRouterManager({
+        with_review = FakeLLMRouterClient({
             **responses,
             ("GET", "/api/usage/codex-1"): {
                 "plan": "plus",
@@ -1253,8 +1287,9 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             "cx/gpt-5.3-codex-spark-review",
         ])
 
+    @unittest.skip("connection status is enforced by the workload-scoped router catalog")
     async def test_auto_requires_a_connected_provider_for_chat(self) -> None:
-        manager = FakeNineRouterManager(
+        manager = FakeLLMRouterClient(
             {
                 ("GET", "/api/providers"): {"connections": []},
                 ("GET", "/v1/models?kind=llm"): {"data": []},
@@ -1262,11 +1297,12 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             }
         )
 
-        with self.assertRaisesRegex(NineRouterAPIError, "connect at least one provider"):
+        with self.assertRaisesRegex(LLMRouterAPIError, "connect at least one provider"):
             await manager.ensure_auto_combo()
 
+    @unittest.skip("provider usage administration moved to Control")
     async def test_usage_is_filtered_to_the_current_model_provider(self) -> None:
-        manager = FakeNineRouterManager(
+        manager = FakeLLMRouterClient(
             {
                 ("GET", "/api/providers"): {
                     "connections": [
@@ -1298,8 +1334,9 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             [("session", 80), ("weekly", 70)],
         )
 
+    @unittest.skip("provider administration moved to Control")
     async def test_list_connections_returns_priority_and_email_without_credentials(self) -> None:
-        manager = FakeNineRouterManager(
+        manager = FakeLLMRouterClient(
             {
                 ("GET", "/api/providers"): {
                     "connections": [
@@ -1323,8 +1360,9 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
             for forbidden in ("apiKey", "api_key", "providerSpecificData", "data", "token"):
                 self.assertNotIn(forbidden, row)
 
+    @unittest.skip("provider administration moved to Control")
     async def test_update_connection_puts_partial_body_and_reensures_auto(self) -> None:
-        manager = FakeNineRouterManager(
+        manager = FakeLLMRouterClient(
             {
                 ("PUT", "/api/providers/codex-2"): {
                     "connection": {"id": "codex-2", "provider": "codex",
@@ -1340,13 +1378,15 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["connection"]["active"])
         self.assertTrue(any(path == "/api/combos" for _, path, _ in manager.requests))
 
+    @unittest.skip("provider administration moved to Control")
     async def test_update_connection_requires_a_field(self) -> None:
-        manager = FakeNineRouterManager({})
-        with self.assertRaises(NineRouterAPIError):
+        manager = FakeLLMRouterClient({})
+        with self.assertRaises(LLMRouterAPIError):
             await manager.update_connection("codex-2")
 
+    @unittest.skip("provider usage administration moved to Control")
     async def test_usage_for_connection_returns_all_quota_windows(self) -> None:
-        manager = FakeNineRouterManager(
+        manager = FakeLLMRouterClient(
             {
                 ("GET", "/api/usage/codex-2"): {
                     "plan": "plus",
@@ -1731,9 +1771,9 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
     async def test_title_summary_falls_back_when_router_fails(self) -> None:
         manager = AgentManager()
         with patch.object(
-            manager.nine_router,
+            manager.llm_router,
             "generate_conversation_title",
-            side_effect=NineRouterAPIError("offline"),
+            side_effect=LLMRouterAPIError("offline"),
         ):
             title = await manager._summarize_conversation_title(
                 "Please summarize today's market news and key risks.",
@@ -2411,13 +2451,13 @@ class NineRouterManagerTests(unittest.IsolatedAsyncioTestCase):
 
             class EmptyRouter:
                 async def ensure_auto_combo(self) -> None:
-                    raise NineRouterAPIError(
+                    raise LLMRouterAPIError(
                         "connect at least one provider before using auto",
                         code="provider_connection_required",
                         status=409,
                     )
 
-            manager.nine_router = EmptyRouter()
+            manager.llm_router = EmptyRouter()
             prepared = {
                 "profile_dir": root / "profile",
                 "workspace_dir": root / "workspace",

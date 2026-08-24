@@ -49,8 +49,7 @@ backend_port=3000
 
 hermes_home="${RUNTIME_HERMES_HOME:-}"
 : "${hermes_home:?RUNTIME_HERMES_HOME is required. Set it in .env}"
-: "${RUNTIME_LLM_GATEWAY_URL:?RUNTIME_LLM_GATEWAY_URL is required. Set it in .env}"
-: "${RUNTIME_LLM_MANAGEMENT_URL:?RUNTIME_LLM_MANAGEMENT_URL is required. Set it in .env}"
+: "${RUNTIME_LLM_ROUTER_URL:?RUNTIME_LLM_ROUTER_URL is required. Set it in .env}"
 : "${RUNTIME_LLM_WORKLOAD_TOKEN:?RUNTIME_LLM_WORKLOAD_TOKEN is required. Set it in .env}"
 backend_pid=""
 
@@ -67,7 +66,6 @@ cd "$project_dir"
 HERMES_HOME="$hermes_home" \
   HERMES_ROOT_PROFILE="${HERMES_ROOT_PROFILE:-$hermes_home}" \
   HERMES_PROFILES_ROOT="${HERMES_PROFILES_ROOT:-$hermes_home/profiles}" \
-  OMNIROUTE_API_KEY="$RUNTIME_LLM_WORKLOAD_TOKEN" \
   HERMES_CLI="${HERMES_CLI:-$npm_global_bin/agent}" \
   HERMES_SERVE_HEADLESS=1 \
   BROWSER=/bin/false \

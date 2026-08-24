@@ -312,7 +312,7 @@ XNOBrain local installation complete.
 Project Python:  $project_python
 Agent command:   $npm_prefix/bin/agent
 Agent data:      $hermes_home
-LLM gateway:     configured at runtime by RUNTIME_LLM_GATEWAY_URL
+LLM router:      configured at runtime by RUNTIME_LLM_ROUTER_URL
 
 Start development with:
   cd "$(dirname "$project_dir")"

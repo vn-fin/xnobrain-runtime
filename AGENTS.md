@@ -32,9 +32,9 @@ correctness.
 
 ## Project context
 
-- Backend: Python, FastAPI, Pydantic, the original Hermes agent runtime, and
-  OmniRoute.
-- Runtime: one combined backend/agent image and one provider runtime process.
+- Backend: Python, FastAPI, Pydantic, and the original Hermes agent runtime.
+- Managed runtime: one backend/agent process; LLM calls use the centralized
+  control gateway and router infrastructure.
 - Local persistence: atomic files below `DATA_DIR`; no application database.
 - Optional managed features: the separate Enterprise API configured through
   `ENTERPRISE_API_URL`.
@@ -54,9 +54,9 @@ Run UI tests and builds in the sibling `xnobrain-ui` repository.
 ## Architecture rules
 
 - Do not add Go, PostgreSQL, an ORM, or another application API process.
-- Keep one FastAPI/Hermes process on private port 3000 and one OmniRoute
-  process. Traefik is the only published web port in the root development
-  stack.
+- Keep one FastAPI/Hermes process on private port 3000. Do not install or start
+  OmniRoute inside managed workspace images. Traefik is the only published web
+  port in the root development stack.
 - Runtime Compose and installer settings use the `RUNTIME_*` prefix. Memory
   dependencies are installed with the runtime image/installer; do not add
   separate memory, Redis, or vector-database services to Compose.
@@ -64,7 +64,8 @@ Run UI tests and builds in the sibling `xnobrain-ui` repository.
   `xnobrain` instead of copying or forking Hermes.
 - `xnobrain/routes/setup.py` is the only XNOBrain route assembly point.
 - Handlers own HTTP translation, services own rules, repositories own atomic
-  files, integrations adapt Hermes CLI and OmniRoute, and models are Pydantic.
+  files, integrations adapt Hermes CLI and the control LLM gateway, and models
+  are Pydantic.
 - Use one consistently named service-group file per backend layer. Keep
   registries, `services/platform.py`, and repository facades limited to
   composition. MCP is its own group and does not belong to workspace.

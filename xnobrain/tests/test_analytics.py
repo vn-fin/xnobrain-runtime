@@ -6,13 +6,13 @@ import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import shutil
 import sqlite3
 import tempfile
 import time
 import unittest
 from unittest.mock import patch
 import uuid
-import json
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -22,10 +22,9 @@ from xnobrain.app import XNOBrainApplication
 from xnobrain.integrations import AgentManager, GlobalConfigManager
 from xnobrain.integrations.analytics import (
     aggregate_profile,
-    aggregate_router_usage,
     period_spend,
 )
-from xnobrain.services.analytics import _apply_omniroute_costs, _sunday_start
+from xnobrain.services.analytics import _sunday_start
 
 
 class FakeRouter:
@@ -56,7 +55,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         base = Path(self.temporary.name)
         self.root = base / "root"
         self.profiles = base / "profiles"
-        self.router_data = base / "nine-router"
+        self.router_data = base / "central-router-placeholder"
         self.root.mkdir(parents=True)
         self.profiles.mkdir(parents=True)
         (self.root / "config.yaml").write_text(yaml.safe_dump({
@@ -111,133 +110,6 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             conn.close()
         return session_id
 
-    def _insert_router(
-        self,
-        *,
-        model: str,
-        inp: int,
-        out: int,
-        cost: float,
-        provider: str = "codex",
-        provider_prefix: str | None = None,
-        status: str = "success",
-        timestamp: str | None = None,
-    ):
-        db_dir = self.router_data / "db"
-        db_dir.mkdir(parents=True, exist_ok=True)
-        db = db_dir / "data.sqlite"
-        conn = sqlite3.connect(db)
-        try:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS usageHistory (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT, provider TEXT, model TEXT,
-                    connectionId TEXT, apiKey TEXT, endpoint TEXT,
-                    promptTokens INTEGER, completionTokens INTEGER,
-                    cost REAL, status TEXT, tokens TEXT, meta TEXT
-                )
-                """
-            )
-            stamp = timestamp or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-            if provider_prefix:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS providerNodes (
-                        id TEXT PRIMARY KEY, type TEXT, name TEXT, data TEXT,
-                        createdAt TEXT, updatedAt TEXT
-                    )
-                    """
-                )
-                conn.execute(
-                    "INSERT OR REPLACE INTO providerNodes "
-                    "(id, type, name, data, createdAt, updatedAt) "
-                    "VALUES (?,?,?,?,?,?)",
-                    (
-                        provider,
-                        "openai-compatible",
-                        provider_prefix,
-                        json.dumps({"prefix": provider_prefix}),
-                        stamp,
-                        stamp,
-                    ),
-                )
-            conn.execute(
-                """
-                INSERT INTO usageHistory (
-                    timestamp, provider, model, connectionId, apiKey, endpoint,
-                    promptTokens, completionTokens, cost, status, tokens, meta
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    stamp, provider, model, "", "", "/v1/chat/completions",
-                    inp, out, cost, status, "{}", "{}",
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-    def _insert_current_router(
-        self,
-        *,
-        model: str,
-        inp: int,
-        out: int,
-        provider: str = "codex",
-        provider_prefix: str | None = None,
-        success: bool = True,
-        timestamp: str | None = None,
-    ):
-        db = self.router_data / "storage.sqlite"
-        self.router_data.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(db)
-        try:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS usage_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    provider TEXT, model TEXT, connection_id TEXT,
-                    tokens_input INTEGER DEFAULT 0,
-                    tokens_output INTEGER DEFAULT 0,
-                    tokens_cache_read INTEGER DEFAULT 0,
-                    tokens_cache_creation INTEGER DEFAULT 0,
-                    tokens_reasoning INTEGER DEFAULT 0,
-                    status TEXT, success INTEGER DEFAULT 1,
-                    timestamp TEXT NOT NULL
-                )
-                """
-            )
-            stamp = timestamp or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-            if provider_prefix:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS provider_nodes (
-                        id TEXT PRIMARY KEY, prefix TEXT
-                    )
-                    """
-                )
-                conn.execute(
-                    "INSERT OR REPLACE INTO provider_nodes (id, prefix) VALUES (?,?)",
-                    (provider, provider_prefix),
-                )
-            conn.execute(
-                """
-                INSERT INTO usage_history (
-                    provider, model, connection_id, tokens_input, tokens_output,
-                    tokens_cache_read, tokens_cache_creation, tokens_reasoning,
-                    status, success, timestamp
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    provider, model, "", inp, out, 0, 0, 0,
-                    "success" if success else "error", int(success), stamp,
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
     # ---- unit: the read-only aggregator ------------------------------------
 
     def test_aggregate_profile_windows_and_buckets(self):
@@ -273,122 +145,6 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             cost_basis="estimated",
         )
         self.assertAlmostEqual(spend, 0.14, places=6)
-
-    def test_aggregate_router_usage_models_providers_and_status(self):
-        self._insert_router(model="gpt-5", inp=200, out=50, cost=0.25)
-        self._insert_router(
-            model="claude", provider="claude", inp=100, out=20,
-            cost=0.10, status="error",
-        )
-        result = aggregate_router_usage(
-            self.router_data,
-            start_epoch=time.time() - 86400,
-            end_epoch=time.time() + 1,
-            bucket="day",
-        )
-        self.assertTrue(result["available"])
-        self.assertEqual(result["totals"]["input_tokens"], 300)
-        self.assertEqual(result["totals"]["output_tokens"], 70)
-        self.assertEqual(result["totals"]["api_calls"], 2)
-        self.assertEqual(
-            {row["model"] for row in result["by_model"]},
-            {"cx/gpt-5", "cc/claude"},
-        )
-        self.assertEqual(
-            {row["provider"] for row in result["by_provider"]}, {"codex", "claude"})
-        self.assertEqual(result["request_status"]["successful"], 1)
-        self.assertEqual(result["request_status"]["failed"], 1)
-
-    def test_omniroute_costs_override_zero_ledger_costs(self):
-        partial = {
-            "totals": {"estimated_cost_usd": 0.0},
-            "by_model": [{
-                "model": "ocz/deepseek-v4-flash", "provider": "opencode",
-                "input_tokens": 370_000, "output_tokens": 400,
-                "estimated_cost_usd": 0.0, "actual_cost_usd": 0.0,
-                "sessions": 34,
-            }],
-            "by_provider": [],
-            "series": [
-                {"bucket": "2026-08-17T08:00:00Z", "input_tokens": 100_000,
-                 "output_tokens": 100, "estimated_cost_usd": 0.0,
-                 "actual_cost_usd": 0.0, "sessions": 10},
-                {"bucket": "2026-08-17T09:00:00Z", "input_tokens": 270_000,
-                 "output_tokens": 300, "estimated_cost_usd": 0.0,
-                 "actual_cost_usd": 0.0, "sessions": 24},
-            ],
-        }
-        omni = {
-            "summary": {"totalCost": 0.015577},
-            "byModel": [{"model": "deepseek-v4-flash", "cost": 0.015577}],
-            "dailyTrend": [{"date": "2026-08-17", "cost": 0.015577}],
-        }
-
-        _apply_omniroute_costs(partial, omni, "hour")
-
-        self.assertAlmostEqual(partial["totals"]["estimated_cost_usd"], 0.015577)
-        self.assertAlmostEqual(
-            partial["by_model"][0]["estimated_cost_usd"], 0.015577,
-        )
-        self.assertAlmostEqual(
-            sum(row["estimated_cost_usd"] for row in partial["series"]),
-            0.015577,
-        )
-        self.assertAlmostEqual(
-            partial["by_provider"][0]["estimated_cost_usd"], 0.015577,
-        )
-
-    def test_aggregate_router_usage_resolves_zen_node_id_and_model_prefix(self):
-        node_id = "openai-compatible-chat-65582489-b7cd"
-        self._insert_router(
-            model="gpt-5.6-luna",
-            provider=node_id,
-            provider_prefix="ocz",
-            inp=120,
-            out=8,
-            cost=0.01,
-        )
-
-        result = aggregate_router_usage(
-            self.router_data,
-            start_epoch=time.time() - 86400,
-            end_epoch=time.time() + 1,
-        )
-
-        self.assertEqual(result["by_provider"][0]["provider"], "opencode")
-        self.assertEqual(result["by_model"][0]["provider"], "opencode")
-        self.assertEqual(result["by_model"][0]["model"], "ocz/gpt-5.6-luna")
-        self.assertNotIn(node_id, str(result))
-
-    def test_current_omniroute_usage_groups_recent_requests_by_hour(self):
-        now = datetime.now(timezone.utc).replace(minute=30, second=0, microsecond=0)
-        node_id = "openai-compatible-chat-current"
-        self._insert_current_router(
-            model="gemini-2.5-flash", provider=node_id, provider_prefix="gemini",
-            inp=100, out=20, timestamp=(now - timedelta(hours=2)).isoformat().replace("+00:00", "Z"),
-        )
-        self._insert_current_router(
-            model="gemini-2.5-flash", provider=node_id, provider_prefix="gemini",
-            inp=200, out=40, timestamp=(now - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
-        )
-
-        result = aggregate_router_usage(
-            self.router_data,
-            start_epoch=(now - timedelta(days=1)).timestamp(),
-            end_epoch=now.timestamp(),
-            bucket="hour",
-        )
-
-        self.assertTrue(result["available"])
-        self.assertEqual(result["totals"]["input_tokens"], 300)
-        self.assertEqual(
-            [row["bucket"] for row in result["series"]],
-            [
-                (now - timedelta(hours=2)).replace(minute=0).isoformat().replace("+00:00", "Z"),
-                (now - timedelta(hours=1)).replace(minute=0).isoformat().replace("+00:00", "Z"),
-            ],
-        )
-
 
     # ---- integration: routes end-to-end ------------------------------------
 
@@ -429,18 +185,20 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_parallel_dashboard_endpoints_share_one_computation(self):
         async with self.client() as client:
-            await self._create_agent(client, "Agent A")
-            self._insert_router(
-                model="gpt-5",
+            agent_id = await self._create_agent(client, "Agent A")
+            self._insert(
+                agent_id,
+                model="cx/gpt-5",
+                provider="codex",
                 inp=200,
                 out=50,
-                cost=0.25,
-                timestamp="2026-07-15T12:00:00Z",
+                est=0.25,
+                started_at=datetime(2026, 7, 15, 12, tzinfo=timezone.utc).timestamp(),
             )
             query = "?from=2026-07-01&to=2026-08-01&bucket=hour"
             with patch(
-                "xnobrain.services.analytics.aggregate_router_usage",
-                wraps=aggregate_router_usage,
+                "xnobrain.services.analytics.aggregate_profile",
+                wraps=aggregate_profile,
             ) as aggregate:
                 overview_response, models_response, series_response = await asyncio.gather(
                     client.get(f"/xnobrain/api/runtime/v1/analytics/overview{query}"),
@@ -459,7 +217,8 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(models["by_model"][0]["model"], "cx/gpt-5")
             self.assertEqual(models["by_provider"][0]["provider"], "codex")
             self.assertEqual(series["bucket"], "hour")
-            self.assertEqual(aggregate.call_count, 1)
+            # The root profile and the created profile are each read once.
+            self.assertEqual(aggregate.call_count, 2)
 
     async def test_agent_multiselect_scopes_totals_and_reads(self):
         async with self.client() as client:
@@ -477,33 +236,32 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(data["agents"][0]["agent_id"], a)
             self.assertEqual(data["agents"][0]["totals"]["input_tokens"], 100)
 
-    async def test_workspace_usage_survives_agent_deletion(self):
+    async def test_workspace_usage_uses_only_current_runtime_profiles(self):
         async with self.client() as client:
             deleted = await self._create_agent(client, "Disposable")
             kept = await self._create_agent(client, "Kept")
             self._insert(deleted, model="gpt-5", inp=100, out=20, est=0.10)
-            self._insert_router(model="gpt-5", inp=500, out=80, cost=0.42)
 
             before = (await client.get(
                 "/xnobrain/api/runtime/v1/analytics/usage?days=30"
             )).json()["data"]
-            self.assertEqual(before["totals"]["total_tokens"], 580)
-            self.assertEqual(before["source"]["kind"], "provider_runtime")
-            self.assertTrue(before["source"]["durable"])
+            self.assertEqual(before["totals"]["total_tokens"], 120)
+            self.assertEqual(before["source"]["kind"], "live_profiles")
+            self.assertFalse(before["source"]["durable"])
 
-            removed = await client.delete(f"/xnobrain/api/runtime/v1/agents/{deleted}/delete")
-            self.assertEqual(removed.status_code, 200, removed.text)
+            shutil.rmtree(self.profiles / deleted)
+            self.analytics.agents.sync_profiles_registry()
 
             after = (await client.get(
                 "/xnobrain/api/runtime/v1/analytics/usage?days=30"
             )).json()["data"]
-            self.assertEqual(after["totals"]["total_tokens"], 580)
-            self.assertEqual(after["totals"]["cost_usd"], 0.42)
+            self.assertEqual(after["totals"]["total_tokens"], 0)
+            self.assertEqual(after["totals"]["cost_usd"], 0)
             self.assertEqual(
                 {row["agent_id"] for row in after["agents"]},
                 {"big-brother", kept},
             )
-            self.assertTrue(after["attribution"]["deleted_usage_included"])
+            self.assertFalse(after["attribution"]["deleted_usage_included"])
 
     async def test_time_range_and_bucket(self):
         async with self.client() as client:
@@ -522,18 +280,19 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             bad = await client.get("/xnobrain/api/runtime/v1/analytics/usage?from=2099-01-01&to=2000-01-01")
             self.assertEqual(bad.status_code, 400)
 
-    async def test_24h_hour_route_uses_current_omniroute_history(self):
+    async def test_24h_hour_route_uses_current_profile_history(self):
         now = datetime.now(timezone.utc).replace(minute=20, second=0, microsecond=0)
-        self._insert_current_router(
-            model="gpt-5", inp=100, out=10,
-            timestamp=(now - timedelta(hours=2)).isoformat().replace("+00:00", "Z"),
-        )
-        self._insert_current_router(
-            model="gpt-5", inp=200, out=20,
-            timestamp=(now - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
-        )
 
         async with self.client() as client:
+            agent_id = await self._create_agent(client, "Hourly")
+            self._insert(
+                agent_id, model="gpt-5", inp=100, out=10, est=0.1,
+                started_at=(now - timedelta(hours=2)).timestamp(),
+            )
+            self._insert(
+                agent_id, model="gpt-5", inp=200, out=20, est=0.2,
+                started_at=(now - timedelta(hours=1)).timestamp(),
+            )
             response = await client.get(
                 "/xnobrain/api/runtime/v1/analytics/usage?days=1&bucket=hour"
             )
@@ -543,7 +302,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["bucket"], "hour")
         self.assertEqual(data["timezone"], "UTC")
         self.assertTrue(data["range_from"].endswith("Z"))
-        self.assertEqual(data["source"]["kind"], "provider_runtime")
+        self.assertEqual(data["source"]["kind"], "live_profiles")
         self.assertEqual(
             [row["bucket"] for row in data["series"] if row["total_tokens"]],
             [
@@ -594,7 +353,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             config = yaml.safe_load((self.profiles / a / "config.yaml").read_text("utf-8"))
             self.assertNotIn("xnobrain_budget", config)
 
-    async def test_weekly_and_conversation_costs_use_omniroute_attribution(self):
+    async def test_weekly_and_conversation_costs_use_profile_ledger(self):
         async with self.client() as client:
             agent_id = await self._create_agent(client, "Cost Agent")
             session_id = self._insert(
@@ -615,23 +374,14 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
                 conn.execute(
                     "INSERT INTO session_model_usage "
                     "(session_id, model, api_call_count, input_tokens, output_tokens, "
-                    "cache_read_tokens, reasoning_tokens, first_seen, last_seen) "
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    "cache_read_tokens, reasoning_tokens, estimated_cost_usd, "
+                    "first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?)",
                     (session_id, "ocz/deepseek-v4-flash", 2, 100, 10, 40, 5,
-                     now - 60, now),
+                     0.5, now - 60, now),
                 )
                 conn.commit()
             finally:
                 conn.close()
-
-            async def usage_analytics(**_kwargs):
-                return {
-                    "summary": {"totalCost": 0.5},
-                    "byModel": [{"model": "deepseek-v4-flash", "cost": 0.5}],
-                    "dailyTrend": [],
-                }
-
-            self.analytics.router.usage_analytics = usage_analytics
             budget = await self.analytics.get_budget(agent_id)
             conversation_cost = await self.analytics.conversation_estimated_cost(
                 agent_id, session_id,

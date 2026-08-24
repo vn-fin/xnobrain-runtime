@@ -32,21 +32,46 @@ class CompiledContainerTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("/usr/local/bin/app.so &", entrypoint)
+        self.assertIn("exec /usr/local/bin/app.so", entrypoint)
         self.assertNotIn("/opt/xnobrain/server.py", entrypoint)
 
-    def test_container_uses_central_gateway_without_local_router(self):
+    def test_runtime_uses_only_a_generic_central_router_client(self):
         entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(
             encoding="utf-8"
         )
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
+        compose = (ROOT / "docker-compose.yaml").read_text(encoding="utf-8")
+        systemd_target = (ROOT / "deploy" / "systemd" / "xnobrain.target").read_text(
+            encoding="utf-8"
+        )
+        installer = (ROOT / "scripts" / "install-linux.sh").read_text(
+            encoding="utf-8"
+        )
 
-        self.assertIn("RUNTIME_LLM_GATEWAY_URL is required", entrypoint)
+        self.assertIn("RUNTIME_LLM_ROUTER_URL is required", entrypoint)
         self.assertIn("RUNTIME_LLM_WORKLOAD_TOKEN is required", entrypoint)
         self.assertIn("exec /usr/local/bin/app.so", entrypoint)
         self.assertNotIn("omniroute serve", entrypoint)
         self.assertNotIn("omniroute@", dockerfile)
         self.assertNotIn("20128", dockerfile)
+        self.assertNotIn("omniroute:", compose)
+        self.assertNotIn("xnobrain-omniroute.service", systemd_target)
+        self.assertNotIn("9router@", installer)
+        self.assertFalse(
+            (ROOT / "deploy" / "systemd" / "xnobrain-omniroute.service").exists()
+        )
+        self.assertFalse((ROOT / "runtime" / "prepare-omniroute-auth.sh").exists())
+        self.assertFalse(
+            (ROOT / "third_party_licenses" / "provider-runtime.LICENSE").exists()
+        )
+        for legacy_module in (
+            "omniroute.py",
+            "nine_router.py",
+            "nine_router_support.py",
+            "nine_router_transport.py",
+        ):
+            self.assertFalse((ROOT / "xnobrain" / "integrations" / legacy_module).exists())
+        self.assertTrue((ROOT / "xnobrain" / "integrations" / "llm_router.py").is_file())
 
     def test_runtime_keeps_office_conversion_without_unused_servers(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
