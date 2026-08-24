@@ -2,10 +2,8 @@
 set -euo pipefail
 
 HERMES_HOME="${RUNTIME_HERMES_HOME:-}"
-OMNIROUTE_DATA_DIR="${RUNTIME_OMNIROUTE_DATA_DIR:-}"
 : "${HERMES_HOME:?RUNTIME_HERMES_HOME is required}"
-: "${OMNIROUTE_DATA_DIR:?RUNTIME_OMNIROUTE_DATA_DIR is required}"
-export HERMES_HOME OMNIROUTE_DATA_DIR
+export HERMES_HOME
 export HERMES_ROOT_PROFILE="${RUNTIME_HERMES_ROOT_PROFILE:-$HERMES_HOME}"
 export HERMES_PROFILES_ROOT="${RUNTIME_HERMES_PROFILES_ROOT:-$HERMES_HOME/profiles}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -17,9 +15,14 @@ export SERVICE_NAME="${RUNTIME_SERVICE_NAME:-xnobrain-runtime-services}"
 export XNOBRAIN_PROFILE_TEMPLATE="${XNOBRAIN_PROFILE_TEMPLATE:-/opt/xnobrain/profile-templates}"
 export OTEL_ENABLED="${RUNTIME_OTEL_TRACES_ENABLED:-false}"
 export OTEL_EXPORTER_OTLP_ENDPOINT="${RUNTIME_OTEL_EXPORTER_OTLP_ENDPOINT:-}"
-export OMNIROUTE_CLI_SALT="${RUNTIME_OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}"
+export RUNTIME_LLM_GATEWAY_URL="${RUNTIME_LLM_GATEWAY_URL:-}"
+export RUNTIME_LLM_MANAGEMENT_URL="${RUNTIME_LLM_MANAGEMENT_URL:-}"
+export OMNIROUTE_API_KEY="${RUNTIME_LLM_WORKLOAD_TOKEN:-${OMNIROUTE_API_KEY:-}}"
+: "${RUNTIME_LLM_GATEWAY_URL:?RUNTIME_LLM_GATEWAY_URL is required}"
+: "${RUNTIME_LLM_MANAGEMENT_URL:?RUNTIME_LLM_MANAGEMENT_URL is required}"
+: "${OMNIROUTE_API_KEY:?RUNTIME_LLM_WORKLOAD_TOKEN is required}"
 
-mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$OMNIROUTE_DATA_DIR"
+mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 hermes_python="${HERMES_RUNTIME_PYTHON:-/usr/local/lib/hermes-agent/venv/bin/python}"
 if [[ ! -x "$hermes_python" ]]; then
   echo "XNOBrain runtime Python not found: $hermes_python" >&2
@@ -36,12 +39,8 @@ fi
 if [[ "$HERMES_PROFILES_ROOT" != "$HERMES_HOME/profiles" && ! -e "$HERMES_HOME/profiles" ]]; then
   ln -s "$HERMES_PROFILES_ROOT" "$HERMES_HOME/profiles"
 fi
-/usr/local/bin/xnobrain-prepare-omniroute-auth
-OMNIROUTE_API_KEY="$(< "$OMNIROUTE_DATA_DIR/auth/cli-token")"
-: "${OMNIROUTE_API_KEY:?provider runtime token is empty}"
-export OMNIROUTE_API_KEY
 touch "$HERMES_HOME/.env"
-chmod 700 "$HERMES_HOME" "$HERMES_PROFILES_ROOT" "$OMNIROUTE_DATA_DIR"
+chmod 700 "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 chmod 600 "$HERMES_HOME/.env"
 
 XNOBRAIN_PROFILE_TEMPLATES_DIR=/opt/xnobrain/profile-templates \
@@ -67,64 +66,4 @@ XNOBRAIN_PROFILE_TEMPLATES_DIR=/opt/xnobrain/profile-templates \
 XNOBRAIN_SKILL_OVERRIDES_DIR=/opt/xnobrain/skill-overrides \
   /usr/local/bin/xnobrain-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 
-# OmniRoute 3.8.49 ships this TLS helper in both its source and distribution
-# trees. Some OCI-to-Incus conversions omit the source-tree copy, so restore it
-# from the byte-identical distribution copy before starting the provider.
-omniroute_tls_source=/usr/local/lib/node_modules/omniroute/scripts/dev/tls-options.mjs
-omniroute_tls_fallback=/opt/xnobrain/omniroute-compat/tls-options.mjs
-if [[ ! -f "$omniroute_tls_source" && -f "$omniroute_tls_fallback" ]]; then
-  install -D -m 0644 "$omniroute_tls_fallback" "$omniroute_tls_source"
-fi
-omniroute_next_server=/usr/local/lib/node_modules/omniroute/dist/node_modules/next/dist/server
-omniroute_next_dev_archive=/opt/xnobrain/omniroute-compat/next-server-dev.tar
-if [[ ! -f "$omniroute_next_server/dev/hot-reloader-types.js" && -f "$omniroute_next_dev_archive" ]]; then
-  tar -C "$omniroute_next_server" -xf "$omniroute_next_dev_archive"
-fi
-
-DATA_DIR="$OMNIROUTE_DATA_DIR" \
-PORT=20128 \
-API_PORT=20128 \
-DASHBOARD_PORT=20128 \
-HOSTNAME=127.0.0.1 \
-REQUIRE_API_KEY=false \
-NODE_ENV=production \
-OMNIROUTE_NO_UPDATE_NOTIFIER=1 \
-omniroute serve --port 20128 --no-open &
-router_pid=$!
-
-# OmniRoute may restore a previously configured dashboard password while it
-# initializes its persistent database. Wait for that initialization to finish,
-# then reapply XNOBrain's loopback-only management setting. Starting FastAPI
-# only after this succeeds prevents provider operations from briefly returning
-# 401 after a workspace restart.
-router_ready=false
-for _ in {1..60}; do
-  if ! kill -0 "$router_pid" 2>/dev/null; then
-    wait "$router_pid"
-    exit $?
-  fi
-  if curl -fsS http://127.0.0.1:20128/api/health/ping >/dev/null 2>&1; then
-    /usr/local/bin/xnobrain-prepare-omniroute-auth
-    if curl -fsS http://127.0.0.1:20128/api/providers >/dev/null 2>&1; then
-      router_ready=true
-      break
-    fi
-  fi
-  sleep 1
-done
-if [[ "$router_ready" != true ]]; then
-  echo "XNOBrain provider runtime management API did not become ready" >&2
-  exit 1
-fi
-
-/usr/local/bin/app.so &
-api_pid=$!
-
-cleanup() {
-  kill "$router_pid" 2>/dev/null || true
-  kill "$api_pid" 2>/dev/null || true
-  wait "$router_pid" "$api_pid" 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
-
-wait -n "$router_pid" "$api_pid"
+exec /usr/local/bin/app.so

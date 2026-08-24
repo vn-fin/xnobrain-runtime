@@ -5,9 +5,9 @@
 #   .tools/hermes-agent/  internal agent-engine checkout and runtime
 #   .tools/python        symlink to the agent-engine Python environment
 #   .tools/office-python office/document helpers
-#   .tools/npm-global    provider runtime and browser tooling
+#   .tools/npm-global    browser and package tooling
 #
-# Agent and provider data live in the explicit locations supplied by the user,
+# Agent data lives in the explicit location supplied by the user,
 # so installing or removing this checkout never removes profiles or keys.
 set -euo pipefail
 
@@ -22,9 +22,8 @@ project_python_link="$tools_dir/python"
 hermes_version="${XNOBRAIN_AGENT_ENGINE_VERSION:-v2026.8.16}"
 hermes_commit="${XNOBRAIN_AGENT_ENGINE_COMMIT:-df4b65147d7ddd74dd449f9067aabbca5aef0ec7}"
 node_version="${XNOBRAIN_NODE_VERSION:-22.23.1}"
-omniroute_version="${XNOBRAIN_PROVIDER_RUNTIME_VERSION:-${XNOBRAIN_OMNIROUTE_VERSION:-3.8.49}}"
 agent_browser_version="${XNOBRAIN_AGENT_BROWSER_VERSION:-0.26.0}"
-# Optional delegated coding CLIs are not required by Hermes or OmniRoute:
+# Optional delegated coding CLIs are not required by Hermes:
 # codex_version="${XNOBRAIN_CODEX_VERSION:-0.144.6}"
 # claude_version="${XNOBRAIN_CLAUDE_CODE_VERSION:-2.1.216}"
 skip_system_packages=false
@@ -48,9 +47,8 @@ Options:
 Environment overrides:
   XNOBRAIN_NODE_VERSION, XNOBRAIN_AGENT_ENGINE_VERSION,
   XNOBRAIN_AGENT_ENGINE_COMMIT,
-  XNOBRAIN_PROVIDER_RUNTIME_VERSION, XNOBRAIN_OMNIROUTE_VERSION,
   XNOBRAIN_AGENT_BROWSER_VERSION,
-  RUNTIME_HERMES_HOME, RUNTIME_OMNIROUTE_DATA_DIR (both required)
+  RUNTIME_HERMES_HOME (required)
 EOF
 }
 
@@ -66,9 +64,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 hermes_home="${RUNTIME_HERMES_HOME:-}"
-router_data_dir="${RUNTIME_OMNIROUTE_DATA_DIR:-}"
 : "${hermes_home:?RUNTIME_HERMES_HOME is required. Set it in .env or the environment}"
-: "${router_data_dir:?RUNTIME_OMNIROUTE_DATA_DIR is required. Set it in .env or the environment}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This installer is for Linux." >&2
@@ -102,9 +98,7 @@ if [[ "$check_only" == true ]]; then
   printf 'Project tools: %s\n' "$tools_dir"
   printf 'Project Python: %s\n' "$project_python_link/bin/python"
   printf 'Agent home: %s\n' "$hermes_home"
-  printf 'Provider data: %s\n' "$router_data_dir"
   printf 'Node: %s\n' "$node_version"
-  printf 'Provider runtime: %s\n' "$omniroute_version"
   exit 0
 fi
 
@@ -162,7 +156,7 @@ if [[ "$skip_system_packages" == false ]]; then
   esac
 fi
 
-mkdir -p "$tools_dir" "$npm_prefix/bin" "$hermes_home" "$router_data_dir/auth"
+mkdir -p "$tools_dir" "$npm_prefix/bin" "$hermes_home"
 
 arch="$(uname -m)"
 case "$arch" in
@@ -288,29 +282,18 @@ fi
 npm_script_args=()
 if npm install --help 2>&1 | grep -q -- '--allow-scripts'; then
   npm_script_args+=(
-    --allow-scripts=omniroute
     --allow-scripts=agent-browser
   )
 fi
 npm install --global --prefix "$npm_prefix" --no-audit --no-fund --include=optional \
   "${npm_script_args[@]}" \
-  "omniroute@${omniroute_version}" \
   "agent-browser@${agent_browser_version}" \
   pnpm
 
 # Optional delegation tools; provider connections named "codex" and "claude"
-# are implemented by OmniRoute and do not need these standalone executables:
+# are managed centrally and do not need these standalone executables:
 # npm install --global --prefix "$npm_prefix" "@openai/codex@${codex_version}"
 # npm install --global --prefix "$npm_prefix" "@anthropic-ai/claude-code@${claude_version}"
-
-for required_path in \
-  "$npm_prefix/bin/omniroute" \
-  "$npm_prefix/lib/node_modules/omniroute/bin/omniroute.mjs"; do
-  if [[ ! -f "$required_path" ]]; then
-    echo "Installed OmniRoute runtime is incomplete: $required_path" >&2
-    exit 1
-  fi
-done
 
 if [[ "$skip_browser" == false ]]; then
   "$npm_prefix/bin/agent-browser" install --with-deps
@@ -320,38 +303,7 @@ fi
 # packaged guidance. Existing named profiles remain untouched.
 bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$hermes_home/profiles"
 
-# Match the Docker runtime's private provider identity. The API adapter and
-# provider process read the same files, while credentials remain outside git.
-machine_id="$(cat /etc/machine-id 2>/dev/null || hostname)"
-printf '%s' "$machine_id" > "$router_data_dir/machine-id"
-printf '%s' "${RUNTIME_OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}" > "$router_data_dir/auth/cli-secret"
-"$project_python" - "$router_data_dir" <<'PY'
-import hashlib
-import hmac
-from pathlib import Path
-import sqlite3
-import sys
-
-root = Path(sys.argv[1])
-machine = (root / "machine-id").read_text().strip()
-secret = (root / "auth" / "cli-secret").read_text().strip()
-(root / "auth" / "cli-token").write_text(
-    hmac.new(machine.encode(), secret.encode(), hashlib.sha256).hexdigest()
-)
-database = root / "storage.sqlite"
-if database.is_file():
-    with sqlite3.connect(database) as connection:
-        has_settings = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'key_value'"
-        ).fetchone()
-        if has_settings:
-            connection.execute(
-                "UPDATE key_value SET value = 'false' "
-                "WHERE namespace = 'settings' AND key = 'requireLogin'"
-            )
-PY
-chmod 700 "$hermes_home" "$router_data_dir" "$router_data_dir/auth"
-chmod 600 "$router_data_dir/machine-id" "$router_data_dir/auth/cli-secret" "$router_data_dir/auth/cli-token"
+chmod 700 "$hermes_home"
 
 cat <<EOF
 
@@ -360,7 +312,7 @@ XNOBrain local installation complete.
 Project Python:  $project_python
 Agent command:   $npm_prefix/bin/agent
 Agent data:      $hermes_home
-Provider data:   $router_data_dir
+LLM gateway:     configured at runtime by RUNTIME_LLM_GATEWAY_URL
 
 Start development with:
   cd "$(dirname "$project_dir")"

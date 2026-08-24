@@ -44,94 +44,18 @@ else
   export PATH="$npm_global_bin:$hermes_bin:$office_bin:$PATH"
 fi
 
-router_bin=""
-for candidate in \
-  "$npm_global_bin/omniroute" \
-  "$(command -v omniroute 2>/dev/null || true)"; do
-  if [[ -x "$candidate" ]]; then
-    router_bin="$candidate"
-    break
-  fi
-done
 backend_host=0.0.0.0
 backend_port=3000
-router_host=127.0.0.1
-router_port=20128
-router_url="${OMNIROUTE_URL:-http://$router_host:$router_port}"
-
-router_is_running() {
-  "$python_bin" - "$router_url" <<'PY'
-import sys
-from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
-
-try:
-    urlopen(sys.argv[1].rstrip("/") + "/api/providers", timeout=1).close()
-except HTTPError:
-    # An HTTP response, including an authentication error, proves that the
-    # An HTTP response proves the existing provider runtime is reachable.
-    raise SystemExit(0)
-except (OSError, URLError):
-    raise SystemExit(1)
-PY
-}
-
-router_already_running=false
-if router_is_running; then
-  router_already_running=true
-  echo "Reusing existing provider runtime at $router_url"
-elif [[ -z "$router_bin" && "${XNOBRAIN_DEV_SKIP_ROUTER:-0}" != "1" ]]; then
-  echo "OmniRoute is not running or installed. Run ./scripts/install-linux.sh first, or set XNOBRAIN_DEV_SKIP_ROUTER=1 for API-only work." >&2
-  exit 1
-fi
 
 hermes_home="${RUNTIME_HERMES_HOME:-}"
-router_data_dir="${RUNTIME_OMNIROUTE_DATA_DIR:-}"
 : "${hermes_home:?RUNTIME_HERMES_HOME is required. Set it in .env}"
-: "${router_data_dir:?RUNTIME_OMNIROUTE_DATA_DIR is required. Set it in .env}"
+: "${RUNTIME_LLM_GATEWAY_URL:?RUNTIME_LLM_GATEWAY_URL is required. Set it in .env}"
+: "${RUNTIME_LLM_MANAGEMENT_URL:?RUNTIME_LLM_MANAGEMENT_URL is required. Set it in .env}"
+: "${RUNTIME_LLM_WORKLOAD_TOKEN:?RUNTIME_LLM_WORKLOAD_TOKEN is required. Set it in .env}"
 backend_pid=""
-router_pid=""
-
-mkdir -p "$router_data_dir/auth"
-
-prepare_router_auth() {
-  printf '%s' "$(cat /etc/machine-id 2>/dev/null || hostname)" > "$router_data_dir/machine-id"
-  printf '%s' "${RUNTIME_OMNIROUTE_CLI_SALT:-omniroute-cli-auth-v1}" > "$router_data_dir/auth/cli-secret"
-  "$python_bin" - "$router_data_dir" <<'PY'
-import hashlib
-import hmac
-from pathlib import Path
-import sqlite3
-import sys
-
-root = Path(sys.argv[1])
-machine = (root / "machine-id").read_text().strip()
-secret = (root / "auth" / "cli-secret").read_text().strip()
-(root / "auth" / "cli-token").write_text(
-    hmac.new(machine.encode(), secret.encode(), hashlib.sha256).hexdigest()
-)
-database = root / "storage.sqlite"
-if database.is_file():
-    with sqlite3.connect(database) as connection:
-        has_settings = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'key_value'"
-        ).fetchone()
-        if has_settings:
-            connection.execute(
-                "UPDATE key_value SET value = 'false' "
-                "WHERE namespace = 'settings' AND key = 'requireLogin'"
-            )
-PY
-  chmod 700 "$router_data_dir" "$router_data_dir/auth"
-  chmod 600 "$router_data_dir/machine-id" "$router_data_dir/auth/cli-secret" "$router_data_dir/auth/cli-token"
-}
 
 cleanup() {
   trap - EXIT INT TERM
-  if [[ -n "$router_pid" ]]; then
-    kill "$router_pid" 2>/dev/null || true
-    wait "$router_pid" 2>/dev/null || true
-  fi
   if [[ -n "$backend_pid" ]]; then
     kill "$backend_pid" 2>/dev/null || true
     wait "$backend_pid" 2>/dev/null || true
@@ -140,30 +64,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cd "$project_dir"
-if [[ "$router_already_running" == true || -n "$router_bin" ]]; then
-  prepare_router_auth
-  OMNIROUTE_API_KEY="$(< "$router_data_dir/auth/cli-token")"
-  : "${OMNIROUTE_API_KEY:?provider runtime token is empty}"
-  export OMNIROUTE_API_KEY
-fi
-if [[ "$router_already_running" == false && -n "$router_bin" ]]; then
-  DATA_DIR="$router_data_dir" \
-    PORT="$router_port" \
-    API_PORT="$router_port" \
-    DASHBOARD_PORT="$router_port" \
-    HOSTNAME=127.0.0.1 \
-    REQUIRE_API_KEY=false \
-    OMNIROUTE_NO_UPDATE_NOTIFIER=1 \
-    NODE_ENV=development \
-    "$router_bin" serve --port "$router_port" --no-open &
-  router_pid=$!
-fi
-
 HERMES_HOME="$hermes_home" \
   HERMES_ROOT_PROFILE="${HERMES_ROOT_PROFILE:-$hermes_home}" \
   HERMES_PROFILES_ROOT="${HERMES_PROFILES_ROOT:-$hermes_home/profiles}" \
-  OMNIROUTE_DATA_DIR="$router_data_dir" \
-  OMNIROUTE_URL="$router_url" \
+  OMNIROUTE_API_KEY="$RUNTIME_LLM_WORKLOAD_TOKEN" \
   HERMES_CLI="${HERMES_CLI:-$npm_global_bin/agent}" \
   HERMES_SERVE_HEADLESS=1 \
   BROWSER=/bin/false \

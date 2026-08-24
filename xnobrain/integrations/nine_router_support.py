@@ -1,4 +1,4 @@
-"""Client adapter for the local OmniRoute provider runtime."""
+"""Client adapter for the centralized managed LLM gateway."""
 # ruff: noqa: F401
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ import aiohttp
 
 OMNIROUTE_PROVIDER_KEY = "xnobrain"
 OMNIROUTE_PROVIDER = f"custom:{OMNIROUTE_PROVIDER_KEY}"
-OMNIROUTE_BASE_URL = "http://127.0.0.1:20128"
-OMNIROUTE_API_BASE_URL = f"{OMNIROUTE_BASE_URL}/v1"
+OMNIROUTE_BASE_URL = os.environ.get("RUNTIME_LLM_MANAGEMENT_URL", "").rstrip("/")
+OMNIROUTE_API_BASE_URL = os.environ.get("RUNTIME_LLM_GATEWAY_URL", "").rstrip("/")
 OMNIROUTE_KEY_ENV = "OMNIROUTE_API_KEY"
 OMNIROUTE_DEFAULT_MODEL = "auto"
 # Compatibility names keep existing profile migrations and third-party imports

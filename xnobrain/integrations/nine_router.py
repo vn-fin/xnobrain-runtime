@@ -23,15 +23,13 @@ class OmniRouteManager(
     def __init__(self, *, base_url: str | None = None, data_dir: str | Path | None = None):
         self.base_url = str(
             base_url
-            or os.environ.get("OMNIROUTE_URL")
-            or os.environ.get("NINE_ROUTER_URL")
+            or os.environ.get("RUNTIME_LLM_MANAGEMENT_URL")
             or OMNIROUTE_BASE_URL
         ).rstrip("/")
         self.data_dir = Path(
             data_dir
-            or os.environ.get("OMNIROUTE_DATA_DIR")
-            or os.environ.get("NINE_ROUTER_DATA_DIR")
-            or Path.home() / ".omniroute"
+            or os.environ.get("RUNTIME_DATA_DIR")
+            or Path.home() / ".xnobrain"
         )
 
 

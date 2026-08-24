@@ -35,23 +35,18 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertIn("/usr/local/bin/app.so &", entrypoint)
         self.assertNotIn("/opt/xnobrain/server.py", entrypoint)
 
-    def test_container_waits_for_private_provider_management_api(self):
+    def test_container_uses_central_gateway_without_local_router(self):
         entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(
             encoding="utf-8"
         )
+        dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
 
-        router_start = entrypoint.index("omniroute serve --port 20128 --no-open &")
-        post_start_auth = entrypoint.index(
-            "/usr/local/bin/xnobrain-prepare-omniroute-auth", router_start
-        )
-        provider_probe = entrypoint.index(
-            "http://127.0.0.1:20128/api/providers", post_start_auth
-        )
-        api_start = entrypoint.index("/usr/local/bin/app.so &")
-
-        self.assertLess(router_start, post_start_auth)
-        self.assertLess(post_start_auth, provider_probe)
-        self.assertLess(provider_probe, api_start)
+        self.assertIn("RUNTIME_LLM_GATEWAY_URL is required", entrypoint)
+        self.assertIn("RUNTIME_LLM_WORKLOAD_TOKEN is required", entrypoint)
+        self.assertIn("exec /usr/local/bin/app.so", entrypoint)
+        self.assertNotIn("omniroute serve", entrypoint)
+        self.assertNotIn("omniroute@", dockerfile)
+        self.assertNotIn("20128", dockerfile)
 
     def test_runtime_keeps_office_conversion_without_unused_servers(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")

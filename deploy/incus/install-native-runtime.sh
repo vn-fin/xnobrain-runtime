@@ -54,7 +54,6 @@ echo "Installing the native XNOBrain backend..."
 runuser -u "$service_user" -- env \
   HOME="$data_root/home" \
   HERMES_HOME="$data_root/hermes/root" \
-  OMNIROUTE_DATA_DIR="$data_root/omniroute" \
   UV_PYTHON_INSTALL_DIR="$install_root/.tools/uv-python" \
   bash -c 'cd "$1" && exec bash "$1/scripts/install-linux.sh" --skip-browser' \
   xnobrain-installer "$install_root"
@@ -89,7 +88,6 @@ trap - EXIT
 "$install_root/scripts/install-systemd-services.sh"
 sed -i \
   -e "s|^HERMES_HOME=.*|HERMES_HOME=$data_root/hermes/root|" \
-  -e "s|^OMNIROUTE_DATA_DIR=.*|OMNIROUTE_DATA_DIR=$data_root/omniroute|" \
   -e "s|^DATA_DIR=.*|DATA_DIR=$data_root/xnobrain|" \
   /etc/xnobrain/xnobrain.env
 if grep -q '^HERMES_PROFILES_ROOT=' /etc/xnobrain/xnobrain.env; then

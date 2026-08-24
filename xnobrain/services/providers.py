@@ -262,7 +262,7 @@ class ProvidersServiceMixin:
         redirect = {
             "codex": "http://localhost:1455/auth/callback",
             "xai-oauth": "http://127.0.0.1:56121/callback",
-        }.get(provider, "http://localhost:20128/callback")
+        }.get(provider, "")
         payload = await self.router.oauth(provider, "authorize", method="GET", query_string=f"redirect_uri={redirect}")
         self._oauth_attempts[provider] = {"code_verifier": str(payload.get("codeVerifier") or ""), "state": str(payload.get("state") or ""), "redirect_uri": redirect}
         url = str(payload.get("authUrl") or "")

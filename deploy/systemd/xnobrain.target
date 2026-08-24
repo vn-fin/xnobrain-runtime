@@ -1,7 +1,7 @@
 [Unit]
 Description=XNOBrain workspace runtime
-Wants=xnobrain-prepare.service xnobrain-omniroute.service xnobrain-api.service
-After=xnobrain-prepare.service xnobrain-omniroute.service xnobrain-api.service
+Wants=xnobrain-prepare.service xnobrain-api.service
+After=xnobrain-prepare.service xnobrain-api.service
 
 [Install]
 WantedBy=multi-user.target

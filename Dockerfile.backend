@@ -6,18 +6,17 @@ FROM ubuntu:24.04 AS runtime-base
 ARG DEBIAN_FRONTEND=noninteractive
 ARG HERMES_VERSION=v2026.8.16
 ARG HERMES_COMMIT=df4b65147d7ddd74dd449f9067aabbca5aef0ec7
-ARG OMNIROUTE_VERSION=3.8.49
 ARG CODEX_CLI_VERSION=0.144.6
 ARG CLAUDE_CODE_VERSION=2.1.216
 # These optional delegation-tool pins preserve build compatibility, but the
-# packages are not installed below because Hermes and OmniRoute do not need
+# packages are not installed below because Hermes does not need
 # the standalone Codex or Claude executables.
 
 ENV TZ=Etc/UTC \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONUNBUFFERED=1
 
-# Use the supported Node 22 runtime for Hermes, OmniRoute, and agent CLIs. The
+# Use the supported Node 22 runtime for Hermes and agent CLIs. The
 # binary is built on an older glibc than Ubuntu 24.04, so it remains portable.
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-runtime /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
@@ -118,25 +117,13 @@ RUN python3 -m venv /opt/hermes-office-tools \
 # The npm cache speeds up rebuilds but is not shipped in any image layer.
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g --no-audit --no-fund --include=optional \
-      "omniroute@${OMNIROUTE_VERSION}"
-
-# Preserve byte-identical recovery copies outside node_modules. Incus' OCI
-# converter has omitted these two files from some imported layered images.
-RUN install -D -m 0644 \
-      /usr/local/lib/node_modules/omniroute/dist/tls-options.mjs \
-      /opt/xnobrain/omniroute-compat/tls-options.mjs \
-    && tar -C /usr/local/lib/node_modules/omniroute/dist/node_modules/next/dist/server \
-      -cf /opt/xnobrain/omniroute-compat/next-server-dev.tar dev
-
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g --no-audit --no-fund --include=optional \
       "agent-browser@${AGENT_BROWSER_VERSION}"
 
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g --no-audit --no-fund --include=optional pnpm
 
 # Optional delegation tools (about 592 MB uncompressed); Hermes itself does
-# not call them, and Codex/Claude provider accounts are handled by OmniRoute.
+# not call them; managed provider accounts are handled by the central router.
 # RUN --mount=type=cache,target=/root/.npm npm install -g --no-audit --no-fund \
 #       "@openai/codex@${CODEX_CLI_VERSION}"
 # RUN --mount=type=cache,target=/root/.npm npm install -g --no-audit --no-fund \
@@ -185,14 +172,13 @@ COPY runtime/container-entrypoint.sh /usr/local/bin/xnobrain-runtime
 COPY runtime/systemd-entrypoint.sh /usr/local/bin/xnobrain-systemd-entrypoint
 COPY runtime/xnobrain-runtime.service /etc/systemd/system/xnobrain-runtime.service
 COPY runtime/10-incus-eth0.network /etc/systemd/network/10-incus-eth0.network
-COPY runtime/prepare-omniroute-auth.sh /usr/local/bin/xnobrain-prepare-omniroute-auth
 COPY runtime/prepare-resolv-conf.sh /usr/local/bin/xnobrain-prepare-resolv-conf
 COPY runtime/xnobrain-resolv-conf.service /etc/systemd/system/xnobrain-resolv-conf.service
 RUN install -d -m 0700 /opt/data /opt/data/home /opt/data/home/.config \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       systemd-resolved \
-    && chmod 0755 /usr/local/bin/xnobrain-runtime /usr/local/bin/xnobrain-systemd-entrypoint /usr/local/bin/xnobrain-prepare-omniroute-auth /usr/local/bin/xnobrain-prepare-resolv-conf /usr/local/bin/xnobrain-apply-profile-templates \
+    && chmod 0755 /usr/local/bin/xnobrain-runtime /usr/local/bin/xnobrain-systemd-entrypoint /usr/local/bin/xnobrain-prepare-resolv-conf /usr/local/bin/xnobrain-apply-profile-templates \
       /usr/local/bin/app.so \
     && ln -sfn /usr/local/lib/hermes-agent/venv/bin/hermes /usr/local/bin/agent \
     && ln -sfn /etc/systemd/system/xnobrain-runtime.service \
@@ -216,7 +202,7 @@ ENV PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr
     API_SERVER_PORT=3000
 
 VOLUME ["/opt/data"]
-EXPOSE 3000 20128
+EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=3s --retries=10 CMD curl --fail --silent --show-error --max-time 2 http://127.0.0.1:3000/xnobrain/api/runtime/v1/health >/dev/null || exit 1
 USER root
 ENTRYPOINT ["/usr/local/bin/xnobrain-runtime"]

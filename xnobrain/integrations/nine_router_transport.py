@@ -1,4 +1,4 @@
-"""Transport helpers for the local OmniRoute provider runtime."""
+"""Transport helpers for the centralized managed LLM gateway."""
 
 from .nine_router_support import (
     Any,
@@ -22,15 +22,10 @@ class NineRouterTransportMixin:
     def _request_headers(self) -> dict[str, str]:
         headers = {
             "Accept": "application/json",
-            # OmniRoute 3.8.49's standalone Next server otherwise injects a
-            # loopback x-forwarded-for value. Its route-level CLI-token check
-            # treats any non-empty forwarding header as an external proxy even
-            # after the authz middleware has verified the real loopback peer.
-            "x-forwarded-for": "",
         }
-        cli_token = self._cli_token()
-        if cli_token:
-            headers["x-omniroute-cli-token"] = cli_token
+        workload_token = os.environ.get("RUNTIME_LLM_WORKLOAD_TOKEN", "").strip()
+        if workload_token:
+            headers["Authorization"] = f"Bearer {workload_token}"
         return headers
 
     async def _request(
@@ -46,7 +41,6 @@ class NineRouterTransportMixin:
             async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
                 for attempt in range(2):
                     headers = self._request_headers()
-                    cli_token = headers.get("x-omniroute-cli-token", "")
                     async with session.request(
                         method,
                         self.base_url + path,
@@ -57,8 +51,6 @@ class NineRouterTransportMixin:
                             payload = await response.json(content_type=None)
                         except Exception:
                             payload = {"error": (await response.text()).strip()}
-                        if response.status == 401 and not cli_token and attempt == 0:
-                            continue
                         if response.status < 200 or response.status >= 300:
                             message = self._error_message(payload) or f"Provider runtime returned HTTP {response.status}"
                             raise NineRouterAPIError(message, status=response.status)
@@ -186,18 +178,7 @@ class NineRouterTransportMixin:
 
 
     def _cli_token(self) -> str:
-        machine_id = self._read_or_create_secret(
-            self.data_dir / "machine-id", self._native_machine_id()
-        )
-        cli_secret = self._read_or_create_secret(
-            self.data_dir / "auth" / "cli-secret", "omniroute-cli-auth-v1"
-        )
-        if not machine_id:
-            return ""
-        # OmniRoute's local management auth uses HMAC-SHA256(machine id, salt).
-        return hmac.new(
-            machine_id.encode(), cli_secret.encode(), hashlib.sha256
-        ).hexdigest()
+        return os.environ.get("RUNTIME_LLM_WORKLOAD_TOKEN", "").strip()
 
 
     def _native_machine_id(self) -> str:

@@ -40,8 +40,6 @@ fi
 for path in \
   "$install_root/.tools/python/bin/python" \
   "$install_root/.tools/node/bin/node" \
-  "$install_root/.tools/npm-global/bin/omniroute" \
-  "$install_root/.tools/npm-global/lib/node_modules/omniroute/bin/omniroute.mjs" \
   "$install_root/.tools/hermes-agent/venv/bin/hermes"; do
   if [[ ! -e "$path" ]]; then
     echo "Required runtime path not found: $path" >&2
@@ -80,7 +78,6 @@ fi
 
 for unit in \
   xnobrain-prepare.service \
-  xnobrain-omniroute.service \
   xnobrain-api.service \
   xnobrain.target; do
   install -m 0644 \
@@ -92,7 +89,7 @@ chmod 0755 "$install_root/scripts/prepare-service-data.sh"
 systemctl daemon-reload
 systemctl enable xnobrain.target
 if [[ "$start_services" == true ]]; then
-  for variable_name in RUNTIME_HERMES_HOME RUNTIME_OMNIROUTE_DATA_DIR; do
+  for variable_name in RUNTIME_HERMES_HOME RUNTIME_LLM_GATEWAY_URL RUNTIME_LLM_MANAGEMENT_URL RUNTIME_LLM_WORKLOAD_TOKEN; do
     if ! grep -Eq "^${variable_name}=[^[:space:]].*" /etc/xnobrain/xnobrain.env; then
       echo "$variable_name is required in /etc/xnobrain/xnobrain.env before services can start." >&2
       exit 1

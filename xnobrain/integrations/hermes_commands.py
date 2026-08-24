@@ -90,29 +90,10 @@ class HermesCommandsMixin:
 
     @staticmethod
     def _ensure_router_api_key() -> None:
-        """Load the private local-router credential when launchers omit it."""
-        if os.environ.get(OMNIROUTE_KEY_ENV):
-            return
-        legacy_key = os.environ.get("NINE_ROUTER_API_KEY")
-        if legacy_key:
-            os.environ[OMNIROUTE_KEY_ENV] = legacy_key
-            return
-        data_dir = str(
-            os.environ.get("OMNIROUTE_DATA_DIR")
-            or os.environ.get("NINE_ROUTER_DATA_DIR")
-            or ""
-        ).strip()
-        if not data_dir:
-            return
-        try:
-            api_key = (Path(data_dir) / "auth" / "cli-token").read_text(
-                encoding="utf-8"
-            ).strip()
-        except OSError:
-            return
-        if api_key:
-            os.environ[OMNIROUTE_KEY_ENV] = api_key
-            os.environ.setdefault("NINE_ROUTER_API_KEY", api_key)
+        """Map the provisioned workload token to Hermes' provider key env."""
+        token = os.environ.get("RUNTIME_LLM_WORKLOAD_TOKEN", "").strip()
+        if token:
+            os.environ[OMNIROUTE_KEY_ENV] = token
 
 
     def _hermes_binary(self) -> str:
