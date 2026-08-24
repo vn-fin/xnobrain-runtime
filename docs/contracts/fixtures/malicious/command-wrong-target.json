@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "command_id": "cmd_wrong_target_01",
+  "type": "organization.run.step.cancel",
+  "issued_at": "2026-08-24T11:59:00Z",
+  "expires_at": "2026-08-24T12:01:00Z",
+  "device_id": "dev_other_01",
+  "workspace_id": "wsp_fixture_01",
+  "agent_registration_id": "agr_fixture_01",
+  "signature": "JmxbaGc7i22qOv_SVcjdQnqgM7VPPQCObXphtHqn39E"
+}

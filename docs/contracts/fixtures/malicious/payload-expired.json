@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "payload_id": "pay_expired_01",
+  "issued_at": "2026-08-24T10:00:00Z",
+  "expires_at": "2026-08-24T10:10:00Z",
+  "recipient_device_id": "dev_fixture_01",
+  "recipient_workspace_id": "wsp_fixture_01",
+  "recipient_registration_id": "agr_fixture_01",
+  "ciphertext": "ZW5jcnlwdGVk"
+}

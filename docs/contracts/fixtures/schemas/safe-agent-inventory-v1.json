@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.xnobrain.local/safe-agent-inventory-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "device_id", "workspace_id", "agents"],
+  "properties": {
+    "version": {"const": 1},
+    "device_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "workspace_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "agents": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["agent_id", "workspace_id", "name"],
+        "properties": {
+          "agent_id": {"type": "string", "minLength": 1, "maxLength": 128},
+          "workspace_id": {"type": "string", "minLength": 1, "maxLength": 128},
+          "name": {"type": "string", "minLength": 1, "maxLength": 200}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{"agent_registration_id":"agr_fixture_01","command_id":"cmd_cancel_01","device_id":"dev_fixture_01","expires_at":"2026-08-24T12:01:00Z","issued_at":"2026-08-24T11:59:00Z","type":"organization.run.step.cancel","version":1,"workspace_id":"wsp_fixture_01"}

@@ -1,5 +1,7 @@
 # Runtime dependencies for the unified FastAPI + Hermes container.
 aiohttp>=3.10,<4
+grpcio>=1.78,<2
+protobuf>=6.33,<8
 PyYAML>=6,<7
 fastapi>=0.115,<1
 httpx>=0.27,<1

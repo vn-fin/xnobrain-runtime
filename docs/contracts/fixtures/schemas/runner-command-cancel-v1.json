@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.xnobrain.local/runner-command-cancel-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "command_id",
+    "type",
+    "issued_at",
+    "expires_at",
+    "device_id",
+    "workspace_id",
+    "agent_registration_id",
+    "signature"
+  ],
+  "properties": {
+    "version": {"const": 1},
+    "command_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "type": {"const": "organization.run.step.cancel"},
+    "issued_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "device_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "workspace_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "agent_registration_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "signature": {"type": "string", "minLength": 43, "maxLength": 128}
+  }
+}

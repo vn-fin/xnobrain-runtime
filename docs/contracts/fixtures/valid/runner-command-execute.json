@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "command_id": "cmd_execute_01",
+  "type": "organization.run.step.execute",
+  "issued_at": "2026-08-24T11:59:00Z",
+  "expires_at": "2026-08-24T12:01:00Z",
+  "device_id": "dev_fixture_01",
+  "workspace_id": "wsp_fixture_01",
+  "agent_registration_id": "agr_fixture_01",
+  "payload_ciphertext": "ZW5jcnlwdGVk",
+  "payload_sha256": "260b36c264af21ae688b487385d7638b18d4f95eaf6abfdd0eb9e8af614d0026",
+  "signature": "yBX-IkbClqwxjGCz56dR55fJr6IzYFDKhVFiZfJUvWs"
+}

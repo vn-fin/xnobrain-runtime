@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.xnobrain.local/collaboration-payload-envelope-v1.json",
+  "type": "object",
+  "required": [
+    "version",
+    "payload_id",
+    "issued_at",
+    "expires_at",
+    "recipient_device_id",
+    "recipient_workspace_id",
+    "recipient_registration_id",
+    "ciphertext"
+  ],
+  "properties": {
+    "version": {"const": 1},
+    "payload_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "issued_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "recipient_device_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "recipient_workspace_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "recipient_registration_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "ciphertext": {"type": "string", "minLength": 1, "maxLength": 1048576},
+    "ciphertext_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

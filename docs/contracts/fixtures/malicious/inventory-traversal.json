@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "device_id": "dev_fixture_01",
+  "workspace_id": "wsp_fixture_01",
+  "agents": [
+    {
+      "agent_id": "agt_fixture_01",
+      "workspace_id": "../wsp_other",
+      "name": "Traversal attempt"
+    }
+  ]
+}

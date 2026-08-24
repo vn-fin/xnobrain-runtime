@@ -1,24 +1,25 @@
 # Deployment
 
-The runtime repository builds the API/agent container. The workspace root
-Compose stack adds the UI, control plane, and Traefik:
+The runtime repository builds the API/agent container consumed by managed
+Incus workspaces. Browser traffic never connects to Runtime directly:
 
 ```text
-Traefik -> XNOBrain UI container
-        -> XNOBrain runtime API container
+browser HTTP -> Traefik -> Control
+                         -> node gateway gRPC
+                         -> Runtime gRPC :3001
+                         -> local FastAPI/Hermes :8642
+Runtime/Hermes HTTP -> centralized router -> LLM providers
 ```
 
-```bash
-make dev
-```
-
-Open `http://localhost:5173` for the UI and
-`http://localhost:5173/xnobrain/api/runtime/swagger_docs` for Swagger.
-Only Traefik publishes a host port. The runtime's named volume holds profiles,
-teams, notifications, Hermes state, and local personal blends. It does not hold
-provider credentials or an OmniRoute database. The runtime calls
+Only the public UI/Control ingress is exposed. Runtime's workspace volume holds
+profiles, teams, notifications, Hermes state, and local personal blends. It
+does not hold provider credentials or an OmniRoute database. Runtime calls
 `RUNTIME_LLM_ROUTER_URL` with `RUNTIME_LLM_WORKLOAD_TOKEN`; Control issues the
 token and the centralized router introspects it.
+
+Control provisions `RUNTIME_GRPC_ENABLED=true`, private port `3001`, and a
+per-workspace `RUNTIME_INTERNAL_SERVICE_TOKEN`. The node gateway derives that
+same credential and never sends it to the browser or logs.
 
 The runtime defaults to 4 CPUs and 4 GB RAM and requests a 100 GB writable
 root disk. Increase `XNOBRAIN_RUNTIME_CPUS`,
@@ -28,9 +29,8 @@ the root-disk request only on storage drivers with per-container quota support;
 durable profile data in the named volume follows the Docker host's volume
 capacity.
 
-The stack is local-only: it does not include or call an Enterprise API. The
-optional `otel` Compose profile starts a local OpenTelemetry collector. It is
-disabled by default and has no outbound exporter:
+The optional `otel` profile starts a local OpenTelemetry collector for Runtime
+development. It is disabled by default and has no outbound exporter:
 
 ```bash
 RUNTIME_OTEL_TRACES_ENABLED=true docker compose --profile otel up -d

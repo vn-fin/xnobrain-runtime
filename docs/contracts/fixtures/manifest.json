@@ -1,0 +1,93 @@
+{
+  "clock_now": "2026-08-24T12:00:00Z",
+  "target": {
+    "device_id": "dev_fixture_01",
+    "workspace_id": "wsp_fixture_01",
+    "agent_registration_id": "agr_fixture_01"
+  },
+  "fixtures": [
+    {
+      "id": "valid-runner-command-execute",
+      "path": "valid/runner-command-execute.json",
+      "schema": "runner-command-execute-v1.json",
+      "expect": "accept"
+    },
+    {
+      "id": "valid-runner-command-cancel",
+      "path": "valid/runner-command-cancel.json",
+      "schema": "runner-command-cancel-v1.json",
+      "expect": "accept"
+    },
+    {
+      "id": "malicious-command-altered-signature",
+      "path": "malicious/command-altered-signature.json",
+      "schema": "runner-command-execute-v1.json",
+      "expect": "reject",
+      "reason": "command_signature_invalid"
+    },
+    {
+      "id": "malicious-command-wrong-target",
+      "path": "malicious/command-wrong-target.json",
+      "schema": "runner-command-cancel-v1.json",
+      "expect": "reject",
+      "reason": "command_target_mismatch"
+    },
+    {
+      "id": "malicious-command-expired",
+      "path": "malicious/command-expired.json",
+      "schema": "runner-command-cancel-v1.json",
+      "expect": "reject",
+      "reason": "command_expired"
+    },
+    {
+      "id": "malicious-command-replay",
+      "path": "malicious/command-replay.json",
+      "schema": "runner-command-execute-v1.json",
+      "expect": "reject",
+      "reason": "command_replayed",
+      "after": "valid-runner-command-execute"
+    },
+    {
+      "id": "malicious-payload-wrong-recipient",
+      "path": "malicious/payload-wrong-recipient.json",
+      "schema": "collaboration-payload-envelope-v1.json",
+      "expect": "reject",
+      "reason": "command_target_mismatch"
+    },
+    {
+      "id": "malicious-payload-expired",
+      "path": "malicious/payload-expired.json",
+      "schema": "collaboration-payload-envelope-v1.json",
+      "expect": "reject",
+      "reason": "command_expired"
+    },
+    {
+      "id": "malicious-payload-prohibited-fields",
+      "path": "malicious/payload-prohibited-fields.json",
+      "schema": "collaboration-payload-envelope-v1.json",
+      "expect": "reject",
+      "reason": "payload_invalid"
+    },
+    {
+      "id": "malicious-inventory-traversal",
+      "path": "malicious/inventory-traversal.json",
+      "schema": "safe-agent-inventory-v1.json",
+      "expect": "reject",
+      "reason": "command_target_mismatch"
+    },
+    {
+      "id": "malicious-payload-duplicate-key",
+      "path": "malicious/payload-duplicate-key.json",
+      "schema": "collaboration-payload-envelope-v1.json",
+      "expect": "reject",
+      "reason": "validation_failed"
+    },
+    {
+      "id": "malicious-payload-trailing-data",
+      "path": "malicious/payload-trailing-data.json",
+      "schema": "collaboration-payload-envelope-v1.json",
+      "expect": "reject",
+      "reason": "validation_failed"
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from .blends import BlendsIntegrationMixin
 from .conversation_titles import ConversationTitlesMixin
@@ -18,9 +19,17 @@ class LLMRouterClient(
     ConversationTitlesMixin,
     LLMRouterTransportMixin,
 ):
-    def __init__(self, *, base_url: str | None = None):
+    def __init__(
+        self,
+        *,
+        base_url: str | None = None,
+        data_dir: str | Path | None = None,
+    ):
         self.base_url = str(
             base_url
             or os.environ.get("RUNTIME_LLM_ROUTER_URL")
             or LLM_ROUTER_BASE_URL
         ).rstrip("/")
+        # Provider credentials and router state remain centralized. This local
+        # directory contains only Runtime-owned blend definitions/counters.
+        self.data_dir = Path(data_dir or os.environ.get("DATA_DIR") or "/opt/data/xnobrain")
