@@ -56,10 +56,12 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertNotIn("20128", dockerfile)
         self.assertNotIn("omniroute:", compose)
         self.assertNotIn("xnobrain-omniroute.service", systemd_target)
+        self.assertNotIn("xnobrain-router.service", systemd_target)
         self.assertNotIn("9router@", installer)
         self.assertFalse(
             (ROOT / "deploy" / "systemd" / "xnobrain-omniroute.service").exists()
         )
+        self.assertFalse((ROOT / "deploy" / "systemd" / "xnobrain-router.service").exists())
         self.assertFalse((ROOT / "runtime" / "prepare-omniroute-auth.sh").exists())
         self.assertFalse(
             (ROOT / "third_party_licenses" / "provider-runtime.LICENSE").exists()
