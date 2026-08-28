@@ -15,7 +15,7 @@ class ProvidersServiceMixin:
     """Expose only the workload-scoped model catalog.
 
     Connections and credentials are administered by Control. The runtime's
-    workload token is intentionally never sent to router management APIs.
+    API key is intentionally never sent to router management APIs.
     """
 
     async def providers(self) -> list[dict[str, Any]]:

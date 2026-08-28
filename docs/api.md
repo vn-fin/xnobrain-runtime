@@ -53,7 +53,7 @@ by Control from the centralized router data path.
 
 Provider connections, credentials, connection tests, and organization limits
 are administered through the authenticated Control API. Runtime exposes no
-provider-connection mutation routes and its workload token cannot be used with
+provider-connection mutation routes and its API key cannot be used with
 router management paths.
 
 `GET /providers` and `GET /providers/{provider_id}/models` are read-only views

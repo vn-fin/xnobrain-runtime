@@ -269,7 +269,7 @@ class LLMRouterConfigTests(unittest.TestCase):
             root = Path(temp_dir)
             with patch.dict(
                 os.environ,
-                {"RUNTIME_LLM_WORKLOAD_TOKEN": "workload-token"},
+                {"RUNTIME_LLM_API_KEY": "api-key"},
                 clear=False,
             ):
                 os.environ.pop("LLM_ROUTER_API_KEY", None)
@@ -280,14 +280,14 @@ class LLMRouterConfigTests(unittest.TestCase):
                 )
 
                 self.assertEqual(
-                    os.environ.get("RUNTIME_LLM_WORKLOAD_TOKEN"),
-                    "workload-token",
+                    os.environ.get("RUNTIME_LLM_API_KEY"),
+                    "api-key",
                 )
                 self.assertEqual(
                     manager._command_env(root / "root", "hermes").get(
-                        "RUNTIME_LLM_WORKLOAD_TOKEN"
+                        "RUNTIME_LLM_API_KEY"
                     ),
-                    "workload-token",
+                    "api-key",
                 )
                 self.assertIsNone(os.environ.get("LLM_ROUTER_API_KEY"))
 
@@ -598,10 +598,10 @@ class LLMRouterConfigTests(unittest.TestCase):
         self.assertEqual(config["agent"]["reasoning_effort"], "high")
 
     def test_router_headers_use_provisioned_workload_identity(self) -> None:
-        with patch.dict(os.environ, {"RUNTIME_LLM_WORKLOAD_TOKEN": "workload-test-token"}):
+        with patch.dict(os.environ, {"RUNTIME_LLM_API_KEY": "api-key-test-token"}):
             headers = LLMRouterClient(base_url="https://control.test/llm")._request_headers()
         self.assertEqual(headers["Accept"], "application/json")
-        self.assertEqual(headers["Authorization"], "Bearer workload-test-token")
+        self.assertEqual(headers["Authorization"], "Bearer api-key-test-token")
 
     def test_normalize_adds_only_the_selected_assignment_scope_header(self) -> None:
         config = {

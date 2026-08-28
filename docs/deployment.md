@@ -13,8 +13,8 @@ Runtime/Hermes HTTP -> centralized router -> LLM providers
 
 Only the public UI/Control ingress is exposed. Runtime's workspace volume holds
 profiles, teams, notifications, Hermes state, and local personal blends. It
-does not hold provider credentials or an OmniRoute database. Runtime calls
-`RUNTIME_LLM_ROUTER_URL` with `RUNTIME_LLM_WORKLOAD_TOKEN`; Control issues the
+does not hold provider credentials or an router database. Runtime calls
+`RUNTIME_LLM_ROUTER_URL` with `RUNTIME_LLM_API_KEY`; Control provisions the
 token and the centralized router introspects it.
 
 Control provisions `RUNTIME_GRPC_ENABLED=true`, private port `3001`, and a

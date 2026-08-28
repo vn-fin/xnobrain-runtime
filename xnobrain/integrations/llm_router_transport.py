@@ -16,7 +16,7 @@ class LLMRouterTransportMixin:
         headers = {
             "Accept": "application/json",
         }
-        workload_token = os.environ.get("RUNTIME_LLM_WORKLOAD_TOKEN", "").strip()
+        workload_token = os.environ.get("RUNTIME_LLM_API_KEY", "").strip()
         if workload_token:
             headers["Authorization"] = f"Bearer {workload_token}"
         return headers

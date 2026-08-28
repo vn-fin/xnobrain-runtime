@@ -90,8 +90,8 @@ class HermesCommandsMixin:
 
     @staticmethod
     def _ensure_router_api_key() -> None:
-        """Map the provisioned workload token to Hermes' provider key env."""
-        token = os.environ.get("RUNTIME_LLM_WORKLOAD_TOKEN", "").strip()
+        """Map the provisioned API key to Hermes' provider key env."""
+        token = os.environ.get("RUNTIME_LLM_API_KEY", "").strip()
         if token:
             os.environ[LLM_ROUTER_KEY_ENV] = token
 

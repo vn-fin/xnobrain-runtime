@@ -55,7 +55,7 @@ Run UI tests and builds in the sibling `xnobrain-ui` repository.
 
 - Do not add Go, PostgreSQL, an ORM, or another application API process.
 - Keep one FastAPI/Hermes process on private port 3000. Do not install or start
-  OmniRoute inside managed workspace images. Traefik is the only published web
+  router inside managed workspace images. Traefik is the only published web
   port in the root development stack.
 - Runtime Compose and installer settings use the `RUNTIME_*` prefix. Memory
   dependencies are installed with the runtime image/installer; do not add

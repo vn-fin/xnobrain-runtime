@@ -7,8 +7,8 @@ Python/API runtime and native agent installation.
 XNOBrain is a self-hosted React workspace for creating and running AI agents.
 One Python/FastAPI process serves the default profile plus every named profile.
 Managed LLM calls use the configured centralized router directly with a
-workload token issued by Control. The workspace does not install or start
-OmniRoute and stores no provider credentials or router usage database. There
+API key issued by Control. The workspace does not install or start
+router and stores no provider credentials or router usage database. There
 is no per-profile API server.
 
 The production OCI image compiles the XNOBrain API endpoint to the single
@@ -43,11 +43,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1
 ```
 
 Copy the environment template and set `RUNTIME_HERMES_HOME`,
-`RUNTIME_LLM_ROUTER_URL`, and a provisioned workload token:
+`RUNTIME_LLM_ROUTER_URL`, and a provisioned API key:
 
 ```bash
 cp .env.example .env
-# Do not store a production workload token in a committed file.
+# Do not store a production API key in a committed file.
 ```
 
 The coordinated stack is started from the workspace root:

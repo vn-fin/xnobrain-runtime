@@ -12,7 +12,7 @@ The recommended downstream project is a thin private composition named `xnobrain
 
 The shared runtime continues to own profile isolation, safe paths, snapshots,
 conversations, Hermes invocation, personal blends, and service-level enforcement.
-It calls the centralized LLM router directly with a workload token and does not
+It calls the centralized LLM router directly with an API key and does not
 host router state. Control owns authentication, tenant and plan resolution,
 billing entitlements, provider-connection administration, distributed quota
 reservations, RBAC, audit events, managed container orchestration, and telemetry

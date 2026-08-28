@@ -50,7 +50,7 @@ backend_port=3000
 hermes_home="${RUNTIME_HERMES_HOME:-}"
 : "${hermes_home:?RUNTIME_HERMES_HOME is required. Set it in .env}"
 : "${RUNTIME_LLM_ROUTER_URL:?RUNTIME_LLM_ROUTER_URL is required. Set it in .env}"
-: "${RUNTIME_LLM_WORKLOAD_TOKEN:?RUNTIME_LLM_WORKLOAD_TOKEN is required. Set it in .env}"
+: "${RUNTIME_LLM_API_KEY:?RUNTIME_LLM_API_KEY is required. Set it in .env}"
 backend_pid=""
 
 cleanup() {

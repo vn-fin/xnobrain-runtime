@@ -4,7 +4,7 @@ XNOBrain is a Python modular monolith layered onto the original Hermes CLI
 FastAPI application. The sibling `xnobrain-ui` image serves the React UI, and
 the browser reaches the UI and API through Traefik.
 The managed runtime container starts exactly one application process: FastAPI
-and Hermes on port 8642. OmniRoute is not installed in the workspace.
+and Hermes on port 8642. router is not installed in the workspace.
 
 ```text
 Traefik -> xnobrain-ui (React)
@@ -52,7 +52,7 @@ terminal run events, and supports process interruption. Hermes' approval core
 remains the resolver for pending approvals.
 
 Managed LLM inference calls the centralized router directly with a Control-issued
-workload token. Runtime does not host the router, retain provider credentials, or
+API key. Runtime does not host the router, retain provider credentials, or
 read router usage storage. Profile files, tools, memory, and other local agent behavior
 remain local. The optional
 OpenTelemetry collector is local-only and disabled by default. When

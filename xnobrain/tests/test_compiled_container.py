@@ -49,7 +49,7 @@ class CompiledContainerTests(unittest.TestCase):
         )
 
         self.assertIn("RUNTIME_LLM_ROUTER_URL is required", entrypoint)
-        self.assertIn("RUNTIME_LLM_WORKLOAD_TOKEN is required", entrypoint)
+        self.assertIn("RUNTIME_LLM_API_KEY is required", entrypoint)
         self.assertIn("exec /usr/local/bin/app.so", entrypoint)
         self.assertNotIn("omniroute serve", entrypoint)
         self.assertNotIn("omniroute@", dockerfile)
