@@ -1,4 +1,0 @@
-interface:
-  display_name: "XNOBrain Local Dev"
-  short_description: "Run the local XNOBrain Compose development loop"
-  default_prompt: "Use $xnobrain-local-dev to run and validate the local Docker Compose workflow."
