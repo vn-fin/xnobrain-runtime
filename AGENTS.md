@@ -129,3 +129,18 @@ Useful references:
 - [`docs/contracts/`](docs/contracts/) — cross-repository protocols.
 - [`docs/development.md`](docs/development.md) — local development workflow.
 - [`.agents/rules/`](.agents/rules/) — focused coding and boundary rules.
+
+## Agent skill onboarding
+
+Use the smallest applicable repository skill before editing:
+
+- `$xnobrain-runtime` for runtime, FastAPI, Hermes, packaging, and runtime tests.
+- `$xnobrain-local-dev` for the root coordinated Docker Compose loop, live reload,
+  rebuilds, health checks, and Incus smoke tests.
+- `$xnobrain-release-deploy` for immutable runtime/component image publishing and
+  digest-pinned Docker/Incus or Swarm deployment coordinated from the workspace root.
+
+For changes crossing repositories, also use `$xnobrain-workspace`. Read the root
+`AGENTS.md` and the selected skill completely. Do not deploy or publish unless the
+requested environment and mutation are explicitly authorized, and report skipped
+Docker/GHCR/Incus checks honestly.

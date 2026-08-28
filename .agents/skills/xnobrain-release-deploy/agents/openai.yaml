@@ -1,0 +1,4 @@
+interface:
+  display_name: "XNOBrain Release Deploy"
+  short_description: "Publish and deploy immutable XNOBrain images"
+  default_prompt: "Use $xnobrain-release-deploy to build, publish, and validate an immutable XNOBrain deployment."
