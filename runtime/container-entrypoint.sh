@@ -41,6 +41,7 @@ chmod 700 "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 chmod 600 "$HERMES_HOME/.env"
 
 XNOBRAIN_PROFILE_TEMPLATES_DIR=/opt/xnobrain/profile-templates \
+XNOBRAIN_REQUIRED_SKILLS_DIR=/opt/xnobrain/required-skills \
   /usr/local/bin/xnobrain-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 
 # Keep the persistent default and named profiles in sync with the skills bundled
@@ -61,6 +62,7 @@ done
 # initial template pass. Reapply XNOBrain's link-preserving helper now.
 XNOBRAIN_PROFILE_TEMPLATES_DIR=/opt/xnobrain/profile-templates \
 XNOBRAIN_SKILL_OVERRIDES_DIR=/opt/xnobrain/skill-overrides \
+XNOBRAIN_REQUIRED_SKILLS_DIR=/opt/xnobrain/required-skills \
   /usr/local/bin/xnobrain-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 
 exec /usr/local/bin/app.so

@@ -5,6 +5,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_dir="$(cd -- "$script_dir/.." && pwd)"
 templates_dir="${XNOBRAIN_PROFILE_TEMPLATES_DIR:-$project_dir/runtime/profile-templates}"
 skill_overrides_dir="${XNOBRAIN_SKILL_OVERRIDES_DIR:-$project_dir/runtime/skill-overrides}"
+required_skills_dir="${XNOBRAIN_REQUIRED_SKILLS_DIR:-$project_dir/runtime/required-skills}"
 hermes_home="${1:-${HERMES_HOME:-$HOME/.hermes}}"
 profiles_root="${2:-$hermes_home/profiles}"
 backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -47,6 +48,29 @@ done
 apply_file "$hermes_home" "$templates_dir/SOUL.md" "$hermes_home/SOUL.md" "SOUL.md"
 apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/AGENTS.md" "AGENTS.md"
 apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/workspace/AGENTS.md" "workspace/AGENTS.md"
+
+# Every runtime profile receives product-owned operating guidance. Remove upstream
+# delegation/branding skills that require standalone coding agents or reveal the
+# embedded implementation. The runtime-skill replacement is authoritative.
+install_required_skills() {
+  local profile_dir="$1"
+  local source="$required_skills_dir/runtime-skill/SKILL.md"
+  [[ -f "$source" ]] || {
+    echo "Required runtime skill is missing: $source" >&2
+    return 1
+  }
+  local retired
+  for retired in hermes-agent codex claude-code opencode; do
+    rm -rf -- "$profile_dir/skills/$retired"
+  done
+  apply_file     "$profile_dir"     "$source"     "$profile_dir/skills/runtime-skill/SKILL.md"     "skills/runtime-skill/SKILL.md"
+}
+install_required_skills "$profile_template"
+install_required_skills "$hermes_home"
+for profile_dir in "$profiles_root"/*; do
+  [[ -d "$profile_dir" ]] || continue
+  install_required_skills "$profile_dir"
+done
 
 # The upstream PDF helper renders visible URLs as plain text. Apply the
 # runtime-owned compatible helper after skill synchronization so every profile

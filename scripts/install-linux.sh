@@ -293,7 +293,8 @@ fi
 
 # Install an independent seed for future profiles and refresh Big Brother's
 # packaged guidance. Existing named profiles remain untouched.
-bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$hermes_home/profiles"
+XNOBRAIN_REQUIRED_SKILLS_DIR="$project_dir/runtime/required-skills" \
+  bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$hermes_home/profiles"
 
 chmod 700 "$hermes_home"
 

@@ -16,6 +16,7 @@ class ProfileTemplateInstallerTests(unittest.TestCase):
         repository = Path(__file__).resolve().parents[2]
         script = repository / "scripts" / "apply-profile-templates.sh"
         templates = repository / "runtime" / "profile-templates"
+        required_skills = repository / "runtime" / "required-skills"
 
         with TemporaryDirectory() as temporary:
             root = Path(temporary) / "hermes"
@@ -26,6 +27,7 @@ class ProfileTemplateInstallerTests(unittest.TestCase):
             environment = {
                 **os.environ,
                 "XNOBRAIN_PROFILE_TEMPLATES_DIR": str(templates),
+                "XNOBRAIN_REQUIRED_SKILLS_DIR": str(required_skills),
             }
             subprocess.run(
                 ["bash", str(script), str(root), str(root / "profiles")],
@@ -59,6 +61,13 @@ class ProfileTemplateInstallerTests(unittest.TestCase):
                 (named / "SOUL.md").read_text(encoding="utf-8"),
                 "Worker-owned soul\n",
             )
+            for profile in (root, named, template):
+                runtime_skill = profile / "skills" / "runtime-skill" / "SKILL.md"
+                self.assertTrue(runtime_skill.is_file())
+                self.assertIn("name: runtime-skill", runtime_skill.read_text(encoding="utf-8"))
+            for retired in ("hermes-agent", "codex", "claude-code", "opencode"):
+                self.assertFalse((root / "skills" / retired).exists())
+                self.assertFalse((named / "skills" / retired).exists())
 
             (root / "SOUL.md").write_text(
                 "Big Brother changed this after install\n",
