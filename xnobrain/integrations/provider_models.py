@@ -39,7 +39,12 @@ class ProviderModelsMixin:
             model_id = str(item.get("id") or "").strip()
             if not model_id or model_id == LLM_ROUTER_DEFAULT_MODEL or model_id in seen:
                 continue
-            owner = str(item.get("owned_by") or self._model_owner(model_id)).strip()
+            # GoRouter's OpenAI envelope uses owned_by="gorouter" for every
+            # route. Provider ownership is encoded in the stable public model
+            # prefix (for example ocz/, cx/, or anthropic/), so prefer it and
+            # use owned_by only for legacy unprefixed model IDs.
+            model_owner = self._model_owner(model_id)
+            owner = model_owner if "/" in model_id else str(item.get("owned_by") or model_owner).strip()
             provider = ROUTER_PROVIDER_BY_MODEL_OWNER.get(owner, owner)
             seen.add(model_id)
             model: dict[str, Any] = {

@@ -5,6 +5,7 @@ import unittest
 from xnobrain.routes.providers import ROUTES
 from xnobrain.services.helpers import MemoryCache
 from xnobrain.services.providers import ProvidersServiceMixin
+from xnobrain.integrations.llm_router import LLMRouterClient
 
 
 class _Router:
@@ -63,6 +64,15 @@ class ProviderCatalogTests(unittest.IsolatedAsyncioTestCase):
             "llma_org",
         )
         self.assertEqual(service.router.requests, [("GET", "/models?kind=llm")])
+
+    async def test_catalog_maps_gorouter_owned_models_by_public_prefix(self):
+        class Router(LLMRouterClient):
+            async def _request(self, *_args, **_kwargs):
+                return {"data": [{"id": "ocz/gpt-5.6-luna", "owned_by": "gorouter"}]}
+
+        catalog = await Router().list_models()
+
+        self.assertEqual(catalog["data"][1]["provider"], "opencode")
 
     async def test_reasoning_catalog_remains_read_only(self):
         service = _Service()
