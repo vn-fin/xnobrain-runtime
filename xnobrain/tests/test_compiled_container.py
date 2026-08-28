@@ -115,10 +115,14 @@ class CompiledContainerTests(unittest.TestCase):
         )
         self.assertIn("--mount=type=cache,target=/root/.cache/uv", active_dockerfile)
         self.assertIn("rm -rf /opt/hermes-build-home", active_dockerfile)
-        self.assertNotIn("@openai/codex", active_dockerfile)
-        self.assertNotIn("@anthropic-ai/claude-code", active_dockerfile)
-        self.assertNotIn("@openai/codex", active_installer)
-        self.assertNotIn("@anthropic-ai/claude-code", active_installer)
+        for standalone_cli in (
+            "@openai/codex",
+            "@anthropic-ai/claude-code",
+            "opencode-ai",
+            "opencode@",
+        ):
+            self.assertNotIn(standalone_cli, dockerfile.lower())
+            self.assertNotIn(standalone_cli, installer.lower())
 
     def test_incus_container_enables_dhcp_dns_resolution(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")

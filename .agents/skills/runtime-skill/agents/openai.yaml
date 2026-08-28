@@ -1,0 +1,4 @@
+interface:
+  display_name: "XNOBrain Runtime Skill"
+  short_description: "Extend the embedded XNOBrain agent runtime"
+  default_prompt: "Use $runtime-skill to implement and validate an XNOBrain runtime extension."

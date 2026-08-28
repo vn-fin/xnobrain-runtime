@@ -149,7 +149,7 @@ operator opt-in: `plugins.entries.<plugin_id>.allow_tool_override: true` in
 
 ```bash
 # 1. Does it import and register?
-python3 agents/skills/hermes-agent/scripts/verify_extension.py --tool hello
+python3 .agents/skills/runtime-skill/scripts/verify_extension.py --tool hello
 
 # 2. Does Hermes still assemble all tools?
 cd .tools/hermes-agent && uv run pytest tests/test_model_tools.py -q

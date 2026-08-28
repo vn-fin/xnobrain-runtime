@@ -6,12 +6,6 @@ FROM ubuntu:24.04 AS runtime-base
 ARG DEBIAN_FRONTEND=noninteractive
 ARG HERMES_VERSION=v2026.8.16
 ARG HERMES_COMMIT=df4b65147d7ddd74dd449f9067aabbca5aef0ec7
-ARG CODEX_CLI_VERSION=0.144.6
-ARG CLAUDE_CODE_VERSION=2.1.216
-# These optional delegation-tool pins preserve build compatibility, but the
-# packages are not installed below because Hermes does not need
-# the standalone Codex or Claude executables.
-
 ENV TZ=Etc/UTC \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONUNBUFFERED=1
@@ -121,13 +115,6 @@ RUN --mount=type=cache,target=/root/.npm \
 
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g --no-audit --no-fund --include=optional pnpm
-
-# Optional delegation tools (about 592 MB uncompressed); Hermes itself does
-# not call them; managed provider accounts are handled by the central router.
-# RUN --mount=type=cache,target=/root/.npm npm install -g --no-audit --no-fund \
-#       "@openai/codex@${CODEX_CLI_VERSION}"
-# RUN --mount=type=cache,target=/root/.npm npm install -g --no-audit --no-fund \
-#       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
 RUN agent-browser install --with-deps
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Scaffold a new Hermes built-in tool module from the skill's template.
+"""Scaffold a new XNOBrain runtime tool module from the skill template.
 
-Generates ``.tools/hermes-agent/tools/<name>_tool.py`` (self-registering).
+A destination is required so generated code stays in an XNOBrain-owned extension path.
 
 Usage:
     python3 new_tool.py <tool_name> [--toolset custom] [--emoji 🔧]
@@ -20,10 +20,6 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE = SKILL_DIR / "assets" / "tool_template.py"
-
-# Default destination: the vendored Hermes source in this repo, if present.
-REPO_ROOT = Path.cwd()
-DEFAULT_DEST = REPO_ROOT / ".tools" / "hermes-agent" / "tools"
 
 VALID_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -45,8 +41,8 @@ def main() -> int:
     ap.add_argument("--toolset", default="custom", help="toolset grouping (default: custom)")
     ap.add_argument("--emoji", default="🔧", help="emoji shown in UIs")
     ap.add_argument("--description", default="Describe what this tool does and when to use it.")
-    ap.add_argument("--dest", type=Path, default=DEFAULT_DEST,
-                    help="destination tools/ dir (default: ./.tools/hermes-agent/tools)")
+    ap.add_argument("--dest", type=Path, required=not "--stdout" in sys.argv,
+                    help="XNOBrain-owned destination tools directory")
     ap.add_argument("--force", action="store_true", help="overwrite if file exists")
     ap.add_argument("--stdout", action="store_true", help="print to stdout instead of writing a file")
     args = ap.parse_args()
@@ -65,7 +61,7 @@ def main() -> int:
     dest_dir = args.dest
     if not dest_dir.exists():
         print(f"! destination {dest_dir} does not exist.", file=sys.stderr)
-        print("  Pass --dest <hermes>/tools, or use --stdout to preview.", file=sys.stderr)
+        print("  Create an XNOBrain-owned tools directory or use --stdout to preview.", file=sys.stderr)
         return 2
 
     out = dest_dir / f"{args.name}_tool.py"

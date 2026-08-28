@@ -166,6 +166,6 @@ Config lives under `plugins:` in `config.yaml` (`plugins.enabled`,
 ## Verification
 
 ```bash
-python3 agents/skills/hermes-agent/scripts/verify_extension.py --plugin my-plugin
+python3 .agents/skills/runtime-skill/scripts/verify_extension.py --plugin my-plugin
 cd .tools/hermes-agent && uv run pytest tests/ -q -k plugin
 ```

@@ -23,9 +23,6 @@ hermes_version="${XNOBRAIN_AGENT_ENGINE_VERSION:-v2026.8.16}"
 hermes_commit="${XNOBRAIN_AGENT_ENGINE_COMMIT:-df4b65147d7ddd74dd449f9067aabbca5aef0ec7}"
 node_version="${XNOBRAIN_NODE_VERSION:-22.23.1}"
 agent_browser_version="${XNOBRAIN_AGENT_BROWSER_VERSION:-0.26.0}"
-# Optional delegated coding CLIs are not required by Hermes:
-# codex_version="${XNOBRAIN_CODEX_VERSION:-0.144.6}"
-# claude_version="${XNOBRAIN_CLAUDE_CODE_VERSION:-2.1.216}"
 skip_system_packages=false
 skip_office_tools=false
 skip_browser=false
@@ -289,11 +286,6 @@ npm install --global --prefix "$npm_prefix" --no-audit --no-fund --include=optio
   "${npm_script_args[@]}" \
   "agent-browser@${agent_browser_version}" \
   pnpm
-
-# Optional delegation tools; provider connections named "codex" and "claude"
-# are managed centrally and do not need these standalone executables:
-# npm install --global --prefix "$npm_prefix" "@openai/codex@${codex_version}"
-# npm install --global --prefix "$npm_prefix" "@anthropic-ai/claude-code@${claude_version}"
 
 if [[ "$skip_browser" == false ]]; then
   "$npm_prefix/bin/agent-browser" install --with-deps

@@ -110,8 +110,11 @@ Run UI tests and builds in the sibling `xnobrain-ui` repository.
 Before runtime work, read `.agents/rules/01-start-here.md`, the applicable
 rules in `.agents/rules/`, and the relevant reference in `docs/`. Use
 `$xnobrain-runtime` for general runtime changes; use the existing
-`$xnobrain-backend`, `$xnobrain-frontend`, `$hermes-agent` extension guidance,
+`$xnobrain-backend`, `$xnobrain-frontend`, `$runtime-skill` extension guidance,
 or `$tauri-app-development` skill when the task is specific to those areas.
+
+For every change to the embedded agent engine, tools, plugins, hooks, commands,
+skills, memory, or profiles, read and use `$runtime-skill` before editing.
 
 For a new feature, identify its service group, trace the route through model,
 operation, service, repository/integration, and tests, then implement a
