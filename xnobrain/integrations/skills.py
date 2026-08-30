@@ -282,10 +282,14 @@ class CommonSkillsMixin:
         if not isinstance(raw, list):
             return []
         result = []
+        # Packaged Hermes skills are opt-in for API catalog projection. The
+        # Runtime image sets HERMES_INSTALL_DIR for execution, but tests and
+        # isolated profiles must not silently inherit the installation-wide
+        # catalog. Production profile templates explicitly enable it.
+        include_packaged = str(os.environ.get("RUNTIME_INCLUDE_PACKAGED_SKILLS") or "").strip().lower() in {"1", "true", "yes", "on"}
         install_root = Path(str(os.environ.get("HERMES_INSTALL_DIR") or "").strip())
-        packaged_skills = install_root / "skills" if str(install_root) not in {"", "."} else None
-        if packaged_skills is not None and packaged_skills.is_dir():
-            result.append(packaged_skills)
+        packaged_skills = install_root / "skills" if include_packaged and str(install_root) not in {"", "."} else None
+        if packaged_skills is not None and packaged_skills.is_dir(): result.append(packaged_skills)
         for item in raw:
             expanded = os.path.expandvars(os.path.expanduser(str(item)))
             path = Path(expanded)

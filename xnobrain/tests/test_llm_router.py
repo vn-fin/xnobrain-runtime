@@ -562,7 +562,7 @@ class LLMRouterConfigTests(unittest.TestCase):
                 "---\nname: research\ndescription: Bundled research skill\n---\n",
                 encoding="utf-8",
             )
-            with patch.dict("os.environ", {"HERMES_INSTALL_DIR": str(root / "hermes-install")}):
+            with patch.dict("os.environ", {"HERMES_INSTALL_DIR": str(root / "hermes-install"), "RUNTIME_INCLUDE_PACKAGED_SKILLS": "true"}):
                 skills = GlobalConfigManager(root_profile=profile).list_skills()["skills"]
 
         self.assertEqual([item["skill_id"] for item in skills], ["research"])
