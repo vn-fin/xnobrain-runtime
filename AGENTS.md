@@ -34,6 +34,8 @@ Select and read the smallest relevant set under `.agents/skills/`:
   HTTP/SSE, service identity, health, and trace propagation.
 - `$runtime-skill` — mandatory for Hermes tools, plugins, hooks, commands,
   skills, memory, profiles, or embedded-engine extensions.
+- `$runtime-onefile-build` — Nuitka one-file API compilation, dynamic Hermes
+  imports, package data, image startup, and compiled Incus validation.
 - `$runtime-verification` — focused tests, smoke, image, proto, and Incus checks.
 - `$tauri-app-development` — only for the separate `app/` tree.
 

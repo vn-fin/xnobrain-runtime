@@ -8,24 +8,31 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class CompiledContainerTests(unittest.TestCase):
-    def test_runtime_compiles_only_the_first_party_package(self):
+    def test_runtime_endpoint_is_one_nuitka_executable(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
 
-        self.assertIn("'nuitka==4.1.3'", dockerfile)
-        self.assertIn("--mode=package", dockerfile)
+        self.assertIn("'nuitka[onefile]==4.1.3'", dockerfile)
+        self.assertIn("--mode=onefile", dockerfile)
+        self.assertIn("--output-filename=xnobrain-runtime", dockerfile)
+        self.assertIn("--onefile-tempdir-spec=", dockerfile)
         self.assertIn("--lto=no", dockerfile)
+        for package in ("xnobrain", "hermes_cli", "gateway", "tools"):
+            self.assertIn(f"--include-package={package}", dockerfile)
+        self.assertIn("--include-package-data=xnobrain", dockerfile)
         self.assertIn(
-            "COPY --from=endpoint-builder /opt/xnobrain-dist/xnobrain*.so "
-            "/opt/xnobrain-compiled/",
+            "COPY --from=endpoint-builder /opt/xnobrain-dist/xnobrain-runtime "
+            "/usr/local/bin/app.so",
             dockerfile,
         )
-        self.assertIn("runtime/compiled-endpoint.sh /usr/local/bin/app.so", dockerfile)
         self.assertNotIn("BUILD_MODE", dockerfile)
-        self.assertNotIn("--mode=onefile", dockerfile)
-        self.assertNotIn("--include-package=hermes_cli", dockerfile)
+        self.assertNotIn("--mode=package", dockerfile)
+        self.assertNotIn("--mode=module", dockerfile)
+        self.assertNotIn("runtime/compiled-endpoint.sh", dockerfile)
         final_stage = dockerfile.split("FROM runtime-base AS runtime\n", 1)[1]
         self.assertNotIn("COPY xnobrain ", final_stage)
         self.assertNotIn("COPY server.py ", final_stage)
+        self.assertNotIn("/opt/xnobrain-compiled", final_stage)
+
 
     def test_container_entrypoint_starts_compiled_endpoint(self):
         entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(

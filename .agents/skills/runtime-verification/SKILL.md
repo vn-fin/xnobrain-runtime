@@ -11,8 +11,9 @@ smallest checks proving the requested behavior, then broaden by risk.
 - Run focused tests with the repository-selected Python and Hermes source
   `PYTHONPATH`; do not substitute a different environment silently.
 - For ordinary backend work, finish with `make check` when practical.
-- Add `make smoke-api` for public route/envelope changes and a container build
-  for dependency, entrypoint, or packaging changes.
+- Add `make smoke-api` for public route/envelope changes. For dependency,
+  entrypoint, Nuitka, or packaging changes, use `$runtime-onefile-build` and
+  build/test the actual image.
 - For gRPC/protobuf changes, run Runtime contract tests and the root Buf checks;
   validate the Control consumer in the coordinated workspace.
 - For Incus packaging, use the root local-development workflow and report the

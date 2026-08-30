@@ -129,25 +129,34 @@ FROM runtime-base AS endpoint-builder
 
 WORKDIR /opt/xnobrain-build
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ccache \
+    && apt-get install -y --no-install-recommends ccache patchelf \
     && rm -rf /var/lib/apt/lists/* \
     && uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
-      'nuitka==4.1.3'
+      'nuitka[onefile]==4.1.3'
 COPY xnobrain ./xnobrain
+COPY server.py ./server.py
 RUN --mount=type=cache,target=/root/.cache/ccache \
     /usr/local/lib/hermes-agent/venv/bin/python -m nuitka \
-      --mode=package \
+      --mode=onefile \
+      --assume-yes-for-downloads \
       --lto=no \
       --output-dir=/opt/xnobrain-dist \
+      --output-filename=xnobrain-runtime \
+      --onefile-tempdir-spec="{TEMP}/xnobrain-runtime-${HERMES_COMMIT}" \
+      --include-package=xnobrain \
+      --include-package=hermes_cli \
+      --include-module=hermes_constants \
+      --include-module=hermes_state \
+      --include-package=gateway \
+      --include-package=tools \
+      --include-package-data=xnobrain \
       --nofollow-import-to='*.tests' \
-      xnobrain \
-    && test "$(find /opt/xnobrain-dist -maxdepth 1 -name 'xnobrain*.so' | wc -l)" -eq 1
+      server.py \
+    && test -x /opt/xnobrain-dist/xnobrain-runtime
 
 FROM runtime-base AS runtime
 
-COPY --from=endpoint-builder /opt/xnobrain-dist/xnobrain*.so /opt/xnobrain-compiled/
-COPY xnobrain/assets /opt/xnobrain-compiled/xnobrain/assets
-COPY runtime/compiled-endpoint.sh /usr/local/bin/app.so
+COPY --from=endpoint-builder /opt/xnobrain-dist/xnobrain-runtime /usr/local/bin/app.so
 
 ARG RUN_ENV=dev
 LABEL com.xno.run-environment="${RUN_ENV}"

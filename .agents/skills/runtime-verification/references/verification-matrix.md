@@ -7,5 +7,5 @@
 | Profile files/snapshots | Isolation, traversal, atomic-write, and recovery tests |
 | Hermes extension | `$runtime-skill` verifier plus focused Runtime tests |
 | Private gRPC/proto | `test_runtime_gateway.py`, root Buf generation/lint, Control consumer tests |
-| Image/entrypoint/dependency | `make check` and relevant Docker build/smoke |
+| Image/entrypoint/dependency | `$runtime-onefile-build`, `make check`, actual Docker build/health smoke |
 | Incus VM/container | Root local-dev health and explicit Incus smoke target |
