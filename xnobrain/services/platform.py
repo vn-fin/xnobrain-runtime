@@ -39,6 +39,7 @@ from .teams import TeamsServiceMixin
 from .workspace_preview import WorkspacePreviewError, WorkspacePreviewService
 from .workspace_upload import WorkspaceUploadError, WorkspaceUploadService
 from .workspaces import WorkspacesServiceMixin
+from .organization_artifacts import OrganizationArtifactsServiceMixin
 from .errors import EXPECTED_ERRORS
 
 
@@ -52,6 +53,7 @@ class PlatformService(
     SandboxesServiceMixin,
     TeamsServiceMixin,
     WorkspacesServiceMixin,
+    OrganizationArtifactsServiceMixin,
 ):
     """Compose feature services behind the stable application service facade."""
 

@@ -93,3 +93,7 @@ curl -fsS -X POST http://localhost:5173/xnobrain/api/runtime/v1/bundles/apply \
 
 All application endpoints are local; the project does not expose Enterprise
 proxy, device-pairing, dashboard, or observability routes.
+
+## Organization artifact workspace adapter
+
+The private Runtime exposes inspect, approved publish, and verified import operations under `/xnobrain/api/runtime/v1/agents-workspaces/{agent_id}/organization-artifacts`. Transfer capabilities are supplied ephemerally by Control. Imports reject unsafe paths/protected profile areas, stage bytes, enforce size/SHA-256, and atomically rename into the selected workspace. Publish requires `approved: true` and never returns a local absolute path.

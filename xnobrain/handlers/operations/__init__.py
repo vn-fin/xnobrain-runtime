@@ -8,6 +8,7 @@ from .automation import operations as automation_operations
 from .checkpoints import operations as checkpoints_operations
 from .conversations import operations as conversations_operations
 from .kanban import operations as kanban_operations
+from .organization_artifacts import operations as organization_artifacts_operations
 from .mcp import operations as mcp_operations
 from .portability import operations as portability_operations
 from .providers import operations as providers_operations
@@ -24,6 +25,7 @@ OPERATION_GROUPS = (
     checkpoints_operations,
     conversations_operations,
     kanban_operations,
+    organization_artifacts_operations,
     mcp_operations,
     portability_operations,
     providers_operations,
