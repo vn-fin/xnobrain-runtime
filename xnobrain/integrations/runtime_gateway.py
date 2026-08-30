@@ -77,8 +77,17 @@ def _response_headers(values) -> list[http_pb2.Header]:
     ]
 
 
-class RuntimeGatewayService(gateway_grpc.RuntimeGatewayServiceServicer):
-    """Relay authenticated gRPC frames into the existing local HTTP app."""
+class RuntimeGatewayService(
+    gateway_grpc.RuntimeGatewayServiceServicer,
+    gateway_grpc.NodeGatewayServiceServicer,
+):
+    """Relay authenticated gRPC frames into the existing local HTTP app.
+
+    The NodeGateway-compatible method lets the explicit four-container dev
+    topology connect Control directly to this Runtime without an extra gateway
+    process. Workspace project/instance fields are discarded at this trusted
+    development boundary.
+    """
 
     def __init__(self, token: str, http_port: int):
         self._token = token
@@ -101,7 +110,8 @@ class RuntimeGatewayService(gateway_grpc.RuntimeGatewayServiceServicer):
         if first.WhichOneof("frame") != "head":
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "request head must be first")
 
-        head = first.head
+        received_head = first.head
+        head = received_head.http if hasattr(received_head, "http") else received_head
         method = str(head.method or "").strip().upper()
         path = str(head.path or "").strip()
         if not _METHOD_RE.fullmatch(method) or not path.startswith("/") or "://" in path:
@@ -182,9 +192,9 @@ async def start_runtime_gateway():
         ("grpc.max_receive_message_length", 128 * 1024),
         ("grpc.max_send_message_length", 128 * 1024),
     ))
-    gateway_grpc.add_RuntimeGatewayServiceServicer_to_server(
-        RuntimeGatewayService(token, http_port), server,
-    )
+    relay = RuntimeGatewayService(token, http_port)
+    gateway_grpc.add_RuntimeGatewayServiceServicer_to_server(relay, server)
+    gateway_grpc.add_NodeGatewayServiceServicer_to_server(relay, server)
     if server.add_insecure_port(f"0.0.0.0:{grpc_port}") == 0:
         raise RuntimeError("could not bind Runtime gRPC listener")
     await server.start()

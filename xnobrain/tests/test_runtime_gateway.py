@@ -75,18 +75,42 @@ class RuntimeGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.http_port = http_site._server.sockets[0].getsockname()[1]
 
         self.grpc_server = grpc.aio.server()
-        gateway_grpc.add_RuntimeGatewayServiceServicer_to_server(
-            RuntimeGatewayService(TOKEN, self.http_port), self.grpc_server
-        )
+        relay = RuntimeGatewayService(TOKEN, self.http_port)
+        gateway_grpc.add_RuntimeGatewayServiceServicer_to_server(relay, self.grpc_server)
+        gateway_grpc.add_NodeGatewayServiceServicer_to_server(relay, self.grpc_server)
         grpc_port = self.grpc_server.add_insecure_port("127.0.0.1:0")
         await self.grpc_server.start()
         self.channel = grpc.aio.insecure_channel(f"127.0.0.1:{grpc_port}")
         self.stub = gateway_grpc.RuntimeGatewayServiceStub(self.channel)
+        self.node_stub = gateway_grpc.NodeGatewayServiceStub(self.channel)
 
     async def asyncTearDown(self) -> None:
         await self.channel.close()
         await self.grpc_server.stop(grace=None)
         await self.http_runner.cleanup()
+
+    async def test_accepts_node_gateway_frames_for_static_dev_runtime(self) -> None:
+        call = self.node_stub.Proxy(
+            _frames(
+                gateway_pb2.NodeGatewayServiceProxyRequest(
+                    head=gateway_pb2.WorkspaceRequestHead(
+                        project="dev",
+                        instance="source-runtime",
+                        http=http_pb2.HttpRequestHead(
+                            request_id="request-node",
+                            method="GET",
+                            path="/xnobrain/api/runtime/v1/health",
+                            principal=http_pb2.VerifiedPrincipal(user_id="user-1"),
+                        ),
+                    )
+                ),
+                gateway_pb2.NodeGatewayServiceProxyRequest(end=http_pb2.StreamEnd()),
+            ),
+            metadata=(("x-xnobrain-internal-token", TOKEN),),
+        )
+        responses = [response async for response in call]
+        self.assertEqual(responses[0].head.status_code, 206)
+        self.assertEqual(self.received["path_qs"], "/xnobrain/api/runtime/v1/health")
 
     async def test_streams_body_and_strips_browser_credentials(self) -> None:
         request_headers = (
