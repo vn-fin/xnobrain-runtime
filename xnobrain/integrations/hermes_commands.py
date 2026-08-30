@@ -91,7 +91,14 @@ class HermesCommandsMixin:
     @staticmethod
     def _ensure_router_api_key() -> None:
         """Map the provisioned API key to Hermes' provider key env."""
+        token_file = os.environ.get("RUNTIME_LLM_API_KEY_FILE", "").strip()
         token = os.environ.get("RUNTIME_LLM_API_KEY", "").strip()
+        if token_file:
+            try:
+                token = Path(token_file).read_text(encoding="utf-8").strip() or token
+                os.environ["RUNTIME_LLM_API_KEY"] = token
+            except OSError:
+                pass
         if token:
             os.environ[LLM_ROUTER_KEY_ENV] = token
 

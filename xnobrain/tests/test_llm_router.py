@@ -269,7 +269,7 @@ class LLMRouterConfigTests(unittest.TestCase):
             root = Path(temp_dir)
             with patch.dict(
                 os.environ,
-                {"RUNTIME_LLM_API_KEY": "api-key"},
+                {"RUNTIME_LLM_API_KEY": "api-key", "RUNTIME_LLM_API_KEY_FILE": ""},
                 clear=False,
             ):
                 os.environ.pop("LLM_ROUTER_API_KEY", None)
@@ -598,7 +598,7 @@ class LLMRouterConfigTests(unittest.TestCase):
         self.assertEqual(config["agent"]["reasoning_effort"], "high")
 
     def test_router_headers_use_provisioned_workload_identity(self) -> None:
-        with patch.dict(os.environ, {"RUNTIME_LLM_API_KEY": "api-key-test-token"}):
+        with patch.dict(os.environ, {"RUNTIME_LLM_API_KEY": "api-key-test-token", "RUNTIME_LLM_API_KEY_FILE": ""}):
             headers = LLMRouterClient(base_url="https://control.test/llm")._request_headers()
         self.assertEqual(headers["Accept"], "application/json")
         self.assertEqual(headers["Authorization"], "Bearer api-key-test-token")
@@ -1828,3 +1828,14 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class RuntimeRouterKeyFileTests(unittest.TestCase):
+    def test_transport_refreshes_runtime_key_from_private_file(self):
+        from xnobrain.integrations.llm_router import LLMRouterClient
+        with TemporaryDirectory() as temp_dir:
+            key_file = Path(temp_dir) / "router-key"
+            key_file.write_text("rotated-key\n", encoding="utf-8")
+            with patch.dict(os.environ, {"RUNTIME_LLM_API_KEY":"stale", "RUNTIME_LLM_API_KEY_FILE":str(key_file)}):
+                client = LLMRouterClient(data_dir=temp_dir)
+                self.assertEqual(client._request_headers()["Authorization"], "Bearer rotated-key")
+                self.assertEqual(os.environ["RUNTIME_LLM_API_KEY"], "rotated-key")

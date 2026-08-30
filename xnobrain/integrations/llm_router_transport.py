@@ -8,15 +8,29 @@ from .llm_router_support import (
     _SAFE_ID_RE,
     aiohttp,
     os,
+    Path,
 )
 
 
 class LLMRouterTransportMixin:
+    @staticmethod
+    def _workload_token() -> str:
+        token_file = os.environ.get("RUNTIME_LLM_API_KEY_FILE", "").strip()
+        if token_file:
+            try:
+                value = Path(token_file).read_text(encoding="utf-8").strip()
+                if value:
+                    os.environ["RUNTIME_LLM_API_KEY"] = value
+                    return value
+            except OSError:
+                pass
+        return os.environ.get("RUNTIME_LLM_API_KEY", "").strip()
+
     def _request_headers(self) -> dict[str, str]:
         headers = {
             "Accept": "application/json",
         }
-        workload_token = os.environ.get("RUNTIME_LLM_API_KEY", "").strip()
+        workload_token = self._workload_token()
         if workload_token:
             headers["Authorization"] = f"Bearer {workload_token}"
         return headers

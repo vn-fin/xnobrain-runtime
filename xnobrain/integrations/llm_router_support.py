@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
 
