@@ -36,6 +36,7 @@ class XNOBrainApplication:
         async def lifespan(application):
             async with upstream_lifespan(application):
                 await self.service.ensure_default_agent()
+                await self.service.organization_connector.start()
                 from .integrations.runtime_gateway import start_runtime_gateway
                 grpc_server = await start_runtime_gateway()
                 dispatcher = None
@@ -76,6 +77,7 @@ class XNOBrainApplication:
                 try:
                     yield
                 finally:
+                    await self.service.organization_connector.stop()
                     if grpc_server is not None:
                         await grpc_server.stop(grace=5)
                     cron_dispatcher.cancel()

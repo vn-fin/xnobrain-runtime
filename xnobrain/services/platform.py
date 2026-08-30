@@ -40,6 +40,9 @@ from .workspace_preview import WorkspacePreviewError, WorkspacePreviewService
 from .workspace_upload import WorkspaceUploadError, WorkspaceUploadService
 from .workspaces import WorkspacesServiceMixin
 from .organization_artifacts import OrganizationArtifactsServiceMixin
+from .organization_connector import OrganizationConnector
+from .marketplace import MarketplaceService
+from .hosted import HostedRuntimeService
 from .errors import EXPECTED_ERRORS
 
 
@@ -70,6 +73,9 @@ class PlatformService(
         self.config = config
         self.router = router
         self.runtime = runtime
+        self.organization_connector = OrganizationConnector(self)
+        self.marketplace = MarketplaceService(repository, agents)
+        self.hosted = HostedRuntimeService(self)
         self.portability = PortabilityService(repository, config.root_profile)
         self.cron = CronService(repository, agents)
         self.workspace_previews = WorkspacePreviewService(repository.data_dir / "workspace-previews")
