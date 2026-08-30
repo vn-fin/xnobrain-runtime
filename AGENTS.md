@@ -1,134 +1,97 @@
-# XNOBrain Agent Guide
+# XNOBrain Runtime agent instructions
 
-XNOBrain is a private, proprietary FastAPI/Hermes runtime. The React UI lives in the
-sibling `xnobrain-ui` repository. Read this
-file, `.agents/rules/01-start-here.md`, and applicable additional `.agents/rules/`
-files before every task. For roadmap work,
-also read the assigned specification and referenced versioned contracts.
+## Mission
 
-Working code only. Finish the requested job and verify it; plausibility is not
-correctness.
+This repository owns the private Python/FastAPI Runtime, original Hermes
+integration, profile-local persistence, Runtime packaging, and private
+Control/node-gateway adapter. The React workspace UI is in `../xnobrain-ui`;
+managed tenant APIs are in `../xnobrain-control`; centralized provider routing
+is in `../xnobrain-router`.
 
-## Operating principles
+Prefer small, explicit changes that preserve the original Hermes behavior and
+stable XNOBrain contracts. Do not copy upstream engine code or move managed
+control-plane behavior into a workspace Runtime.
 
-- Inspect the relevant code, callers, tests, and configuration before editing.
-- Never fabricate paths, APIs, commands, results, or repository state. Check
-  them directly.
-- State a short plan before non-trivial work and define how completion will be
-  verified.
-- Resolve ambiguity from the code when possible. Ask only when two reasonable
-  interpretations would materially change the result.
-- Make the smallest coherent change that fulfills the request. Avoid unrelated
-  refactors, formatting, abstractions, or speculative features.
-- Match the repository's existing naming, layout, error handling, and testing
-  patterns.
-- Preserve user changes in a dirty worktree and clean up only artifacts created
-  by the current change.
-- Run focused checks while iterating and `make check` before final handoff when
-  the full suite is practical. Never report success without reading the result.
-- Changes may span related repositories when the user explicitly places them in
-  scope. Before writing in another repository, read and follow that repository's
-  `AGENTS.md` and `.agents` rules as well.
+## Instruction and contract precedence
 
-## Project context
+1. The current user request.
+2. The workspace root `../AGENTS.md`, this file, and closer agent instructions.
+3. Current code, tests, versioned contracts, and release metadata.
 
-- Backend: Python, FastAPI, Pydantic, and the original Hermes agent runtime.
-- Managed runtime: one backend/agent process; LLM calls use the centralized
-  control gateway and router infrastructure.
-- Local persistence: atomic files below `DATA_DIR`; no application database.
-- Optional managed features: the separate Enterprise API configured through
-  `ENTERPRISE_API_URL`.
+Inspect the working tree before editing and preserve unrelated changes. Read
+`.agents/rules/01-start-here.md` and only the additional rules relevant to the
+task.
 
-## Commands
+## Use repository skills
 
-- Run the Docker application: `make run`
-- Run backend tests: `make test`
-- Run all repository checks: `make check`
-- Run the backend directly: `make backend`
-- Build Docker images: `make build`
-- Run the API smoke test: `make smoke-api`
+Select and read the smallest relevant set under `.agents/skills/`:
 
-Prefer a focused Python test or `npm test -- <test>` during iteration.
-Run UI tests and builds in the sibling `xnobrain-ui` repository.
+- `$xnobrain-runtime` — general feature ownership and end-to-end Runtime work.
+- `$runtime-fastapi-api` — FastAPI routes, Pydantic contracts, envelopes,
+  uploads/downloads, and SSE.
+- `$xnobrain-backend` — Python service-group implementation and refactoring.
+- `$runtime-managed-networking` — private gRPC relay, Incus settings, router
+  HTTP/SSE, service identity, health, and trace propagation.
+- `$runtime-skill` — mandatory for Hermes tools, plugins, hooks, commands,
+  skills, memory, profiles, or embedded-engine extensions.
+- `$runtime-verification` — focused tests, smoke, image, proto, and Incus checks.
+- `$tauri-app-development` — only for the separate `app/` tree.
 
-## Architecture rules
+Legacy `$xnobrain-frontend` and `$xnobrain-ui` guidance applies only to historic
+Runtime UI review contexts; authored web UI work belongs in `../xnobrain-ui`.
 
-- Do not add Go, PostgreSQL, an ORM, or another application API process.
-- Keep one FastAPI/Hermes process on private port 3000. Do not install or start
-  router inside managed workspace images. Traefik is the only published web
-  port in the root development stack.
-- Runtime Compose and installer settings use the `RUNTIME_*` prefix. Memory
-  dependencies are installed with the runtime image/installer; do not add
-  separate memory, Redis, or vector-database services to Compose.
-- Preserve the original Hermes core and native FastAPI routes. Extend them from
-  `xnobrain` instead of copying or forking Hermes.
+## Architecture and dependency rules
+
+```text
+routes -> operation handlers -> services -> repositories/integrations
+                                  |             |-- atomic profile files
+                                  |             |-- Hermes adapters
+                                  |             `-- router/private gRPC adapters
+                                  `-> models define Pydantic public contracts
+```
+
 - `xnobrain/routes/setup.py` is the only XNOBrain route assembly point.
-- Handlers own HTTP translation, services own rules, repositories own atomic
-  files, integrations adapt Hermes CLI and the control LLM gateway, and models
-  are Pydantic.
-- Use one consistently named service-group file per backend layer. Keep
-  registries, `services/platform.py`, and repository facades limited to
-  composition. MCP is its own group and does not belong to workspace.
-- Local layers call each other directly rather than through HTTP.
-- Resolve user paths beneath their profile root and reject traversal and symlink
+- Use one stable service-group name across routes, models, operations, services,
+  and repositories. Composition modules remain composition only.
+- Handlers own HTTP/SSE translation; services own rules; repositories own
+  atomic local files; integrations own external protocols.
+- Local layers call directly, never through the local HTTP API.
+- Preserve the original Hermes FastAPI host and one Runtime/Hermes process per
+  workspace. Do not add Go, PostgreSQL, an ORM, or another API process.
+- Managed images expose FastAPI privately on `8642` and optional Runtime gRPC on
+  `3001`; local container packaging may map its private FastAPI port differently.
+  Do not publish workspace APIs directly to the browser.
+- Runtime/Hermes uses the centralized router's supported OpenAI-compatible
+  HTTP/SSE endpoint with a scoped key. Do not install the router in a workspace
+  or treat the reserved router protobuf as implemented.
+- Runtime configuration uses `RUNTIME_*`. Keep memory dependencies in the image
+  or installer; do not add root-stack Redis/vector services.
+
+## Persistence, security, and streams
+
+- Profile data belongs below `DATA_DIR/profiles/<agent-id>`; skills belong below
+  that profile's `skills/<skill-id>/SKILL.md`.
+- Resolve paths beneath the profile root and reject traversal and symlink
   escapes.
-
-## Persistence and security
-
-- Agent-owned data belongs under `DATA_DIR/profiles/<agent-id>/`.
-- Agent-created skills belong under
-  `DATA_DIR/profiles/<agent-id>/skills/<skill-id>/SKILL.md`.
-- Every memory, skill, or config mutation that promises persistence creates an
-  immutable snapshot before success and writes mutable state atomically using
+- Snapshot before promised persistent mutations and write mutable files with
   temp-file, fsync, and rename semantics.
-- Never return, log, or trace credentials, authorization headers, request bodies,
-  prompts, provider keys, tool arguments, or tool output.
-- Preserve structured metadata logs, OpenTelemetry propagation, streaming run
-  events, stop behavior, and the Hermes approval path.
+- Preserve profile isolation, streaming event order, cancellation, stop
+  behavior, approval flow, and graceful optional-dependency failure.
+- Never log or trace credentials, headers, prompts, request bodies, provider
+  payloads, tool arguments, tool output, or user file content.
 
-## Deployment boundaries
+## Change workflow
 
-- Local OSS access is unlimited. Enterprise behavior is optional; an Enterprise
-  API outage must not restrict local features.
-- This repository builds the combined backend/agent runtime image. The UI image
-  is built by `xnobrain-ui`.
-- Managed control-plane services remain in `xnobrain-enterprise`; coordinate
-  versioned contracts when a feature changes both repositories.
-- Incus and cloud runtime packaging are maintained in this repository. The
-  managed control plane consumes released, versioned runtime artifacts and
-  must not rebuild the runtime.
+1. Trace the existing caller, route, model, operation, service,
+   repository/integration, tests, and relevant docs.
+2. Define observable paths/shapes, errors, persistence keys, auth/service
+   identity, streaming, environment, and compatibility before changing them.
+3. Implement the smallest complete slice in the owning service group.
+4. Update `docs/api.md`, `docs/contracts/`, UI/Control consumers, packaging, and
+   release compatibility only when their contracts intentionally change.
+5. Add focused tests, then use `$runtime-verification`. Run `make check` when
+   practical and report exact observed commands/results.
 
-## Project learnings
-
-- Use the `.yaml` extension for Compose files.
-- Do not add a static `docs/openapi.yaml`; FastAPI generates OpenAPI at runtime.
-- Keep the runtime Compose build context at this repository root; the UI image
-  is built from the sibling `xnobrain-ui` repository.
-
-## Read order and feature workflow
-
-Before runtime work, read `.agents/rules/01-start-here.md`, the applicable
-rules in `.agents/rules/`, and the relevant reference in `docs/`. Use
-`$xnobrain-runtime` for general runtime changes; use the existing
-`$xnobrain-backend`, `$xnobrain-frontend`, `$runtime-skill` extension guidance,
-or `$tauri-app-development` skill when the task is specific to those areas.
-
-For every change to the embedded agent engine, tools, plugins, hooks, commands,
-skills, memory, or profiles, read and use `$runtime-skill` before editing.
-
-For a new feature, identify its service group, trace the route through model,
-operation, service, repository/integration, and tests, then implement a
-focused vertical slice. Update the versioned API contract in `docs/api.md` or
-`docs/contracts/` when the public behavior changes. Add regression tests under
-`xnobrain/tests/`, preserve profile isolation and atomic snapshots, and run a
-focused test followed by `make check`. Runtime UI source belongs in the sibling
-`xnobrain-ui` repository; the separate `app/` tree is out of scope unless the
-request explicitly includes it.
-
-Useful references:
-
-- [`docs/architecture.md`](docs/architecture.md) — runtime layers and profile persistence.
-- [`docs/api.md`](docs/api.md) — public runtime API and generated docs paths.
-- [`docs/contracts/`](docs/contracts/) — cross-repository protocols.
-- [`docs/development.md`](docs/development.md) — local development workflow.
-- [`.agents/rules/`](.agents/rules/) — focused coding and boundary rules.
+Do not edit generated protobufs, `dist/`, sibling repositories, or `app/`
+without explicit scope. FastAPI generates OpenAPI at runtime; do not add a
+static OpenAPI file.
