@@ -34,8 +34,6 @@ Select and read the smallest relevant set under `.agents/skills/`:
   HTTP/SSE, service identity, health, and trace propagation.
 - `$runtime-skill` — mandatory for Hermes tools, plugins, hooks, commands,
   skills, memory, profiles, or embedded-engine extensions.
-- `$runtime-onefile-build` — Nuitka one-file API compilation, dynamic Hermes
-  imports, package data, image startup, and compiled Incus validation.
 - `$runtime-verification` — focused tests, smoke, image, proto, and Incus checks.
 - `$tauri-app-development` — only for the separate `app/` tree.
 
@@ -91,8 +89,11 @@ routes -> operation handlers -> services -> repositories/integrations
 3. Implement the smallest complete slice in the owning service group.
 4. Update `docs/api.md`, `docs/contracts/`, UI/Control consumers, packaging, and
    release compatibility only when their contracts intentionally change.
-5. Add focused tests, then use `$runtime-verification`. Run `make check` when
-   practical and report exact observed commands/results.
+5. Add focused source tests, then use `$runtime-verification`. Ordinary
+   development runs from source and uses `make test` or focused unittest
+   modules; it does not compile a Nuitka artifact or build an image. Invoke
+   the root `$xnobrain-onboard-build` only when the user requests onboarding or
+   images for `local`, `dev`, `staging`, or `prod`.
 
 Do not edit generated protobufs, `dist/`, sibling repositories, or `app/`
 without explicit scope. FastAPI generates OpenAPI at runtime; do not add a

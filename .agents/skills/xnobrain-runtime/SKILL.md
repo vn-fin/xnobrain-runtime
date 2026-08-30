@@ -24,7 +24,7 @@ Read `AGENTS.md`, `.agents/rules/01-start-here.md`,
 5. Keep public paths and persisted keys stable unless a migration/compatibility
    change is explicitly part of the task. Never log secrets, prompts, bodies,
    tool arguments, or tool output.
-6. Add focused tests in `xnobrain/tests/`, run them, then run `make check`.
+6. Add and run focused source tests in `xnobrain/tests/`, then `make test` when broader source coverage is needed. Do not compile Nuitka artifacts or build images during ordinary development.
 
 Keep UI source in `../xnobrain-ui` and managed services in their owning
 repositories. Do not edit `app/`, `dist/`, or `dist/assets/` unless explicitly

@@ -17,7 +17,7 @@ Read `AGENTS.md`, `.agents/rules/01-start-here.md`,
 6. Preserve stable API paths and persisted product keys during internal package refactors unless a migration is explicitly requested.
 7. Never log secrets, headers, prompts, bodies, tool arguments, or tool output. Add only explicit metadata fields.
 8. Preserve profile isolation, snapshots, atomic writes, streaming, approvals, and graceful optional-dependency failure.
-9. Run narrow Python tests first, then `make test` or `make check` when practical.
+9. Run narrow Python tests first, then `make test` when broader source coverage is needed. Do not run Nuitka or build images for ordinary development.
 10. Keep external-runtime facades (`integrations/hermes.py`, `config.py`,
     `llm_router.py`, and `kanban.py`) as compatibility composition only. Add
     behavior to focused capability modules such as `agents.py`,
