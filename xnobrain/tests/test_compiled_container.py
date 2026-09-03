@@ -8,30 +8,37 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class CompiledContainerTests(unittest.TestCase):
-    def test_runtime_endpoint_is_one_nuitka_executable(self):
+    def test_runtime_endpoint_supports_onefile_and_module_layouts(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
 
-        self.assertIn("'nuitka[onefile]==4.1.3'", dockerfile)
-        self.assertIn("--mode=onefile", dockerfile)
+        self.assertIn("ARG BUILD_MODE=onefile", dockerfile)
+        self.assertIn('onefile) nuitka_mode="--mode=onefile', dockerfile)
+        self.assertIn("module) nuitka_mode='--mode=standalone'", dockerfile)
+        self.assertIn("BUILD_MODE must be onefile or module", dockerfile)
+        self.assertIn(
+            'nuitka_mode="--mode=onefile --onefile-tempdir-spec={TEMP}/xnobrain-runtime-${HERMES_COMMIT}"',
+            dockerfile,
+        )
+        self.assertNotIn(
+            "nuitka_mode='--mode=onefile --onefile-tempdir-spec={TEMP}/xnobrain-runtime-${HERMES_COMMIT}'",
+            dockerfile,
+        )
         self.assertIn("--output-filename=xnobrain-runtime", dockerfile)
-        self.assertIn("--onefile-tempdir-spec=", dockerfile)
         self.assertIn("--lto=no", dockerfile)
         for package in ("xnobrain", "hermes_cli", "gateway", "tools"):
             self.assertIn(f"--include-package={package}", dockerfile)
         self.assertIn("--include-package-data=xnobrain", dockerfile)
         self.assertIn(
-            "COPY --from=endpoint-builder /opt/xnobrain-dist/xnobrain-runtime "
-            "/usr/local/bin/app.so",
+            "COPY --from=endpoint-builder /opt/xnobrain-artifact /opt/xnobrain-app",
             dockerfile,
         )
-        self.assertNotIn("BUILD_MODE", dockerfile)
-        self.assertNotIn("--mode=package", dockerfile)
-        self.assertNotIn("--mode=module", dockerfile)
-        self.assertNotIn("runtime/compiled-endpoint.sh", dockerfile)
+        self.assertIn(
+            "RUN ln -s /opt/xnobrain-app/app.so /usr/local/bin/app.so",
+            dockerfile,
+        )
         final_stage = dockerfile.split("FROM runtime-base AS runtime\n", 1)[1]
         self.assertNotIn("COPY xnobrain ", final_stage)
         self.assertNotIn("COPY server.py ", final_stage)
-        self.assertNotIn("/opt/xnobrain-compiled", final_stage)
 
 
     def test_container_entrypoint_starts_compiled_endpoint(self):

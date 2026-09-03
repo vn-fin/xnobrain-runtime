@@ -127,6 +127,7 @@ RUN uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
 
 FROM runtime-base AS endpoint-builder
 
+ARG BUILD_MODE=onefile
 WORKDIR /opt/xnobrain-build
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ccache patchelf \
@@ -136,13 +137,17 @@ RUN apt-get update \
 COPY xnobrain ./xnobrain
 COPY server.py ./server.py
 RUN --mount=type=cache,target=/root/.cache/ccache \
-    /usr/local/lib/hermes-agent/venv/bin/python -m nuitka \
-      --mode=onefile \
+    case "${BUILD_MODE}" in \
+      onefile) nuitka_mode="--mode=onefile --onefile-tempdir-spec={TEMP}/xnobrain-runtime-${HERMES_COMMIT}" ;; \
+      module) nuitka_mode='--mode=standalone' ;; \
+      *) echo "BUILD_MODE must be onefile or module; got: ${BUILD_MODE}" >&2; exit 2 ;; \
+    esac \
+    && /usr/local/lib/hermes-agent/venv/bin/python -m nuitka \
+      ${nuitka_mode} \
       --assume-yes-for-downloads \
       --lto=no \
       --output-dir=/opt/xnobrain-dist \
       --output-filename=xnobrain-runtime \
-      --onefile-tempdir-spec="{TEMP}/xnobrain-runtime-${HERMES_COMMIT}" \
       --include-package=xnobrain \
       --include-package=hermes_cli \
       --include-module=hermes_constants \
@@ -152,11 +157,17 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
       --include-package-data=xnobrain \
       --nofollow-import-to='*.tests' \
       server.py \
-    && test -x /opt/xnobrain-dist/xnobrain-runtime
+    && install -d /opt/xnobrain-artifact \
+    && case "${BUILD_MODE}" in \
+      onefile) cp /opt/xnobrain-dist/xnobrain-runtime /opt/xnobrain-artifact/app.so ;; \
+      module) cp -a /opt/xnobrain-dist/xnobrain-runtime.dist/. /opt/xnobrain-artifact/; mv /opt/xnobrain-artifact/xnobrain-runtime /opt/xnobrain-artifact/app.so ;; \
+    esac \
+    && test -x /opt/xnobrain-artifact/app.so
 
 FROM runtime-base AS runtime
 
-COPY --from=endpoint-builder /opt/xnobrain-dist/xnobrain-runtime /usr/local/bin/app.so
+COPY --from=endpoint-builder /opt/xnobrain-artifact /opt/xnobrain-app
+RUN ln -s /opt/xnobrain-app/app.so /usr/local/bin/app.so
 
 ARG RUN_ENV=dev
 LABEL com.xno.run-environment="${RUN_ENV}"

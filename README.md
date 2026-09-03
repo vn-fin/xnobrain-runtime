@@ -11,10 +11,14 @@ API key issued by Control. The workspace does not install or start
 router and stores no provider credentials or router usage database. There
 is no per-profile API server.
 
-The production OCI image compiles the XNOBrain API endpoint and its required Python imports into one Nuitka executable at `/usr/local/bin/app.so`; it does not copy the XNOBrain Python source tree or a compiled package-module directory into the final stage. The image still contains the
-upstream Hermes Python environment and office Python tools because agent CLI,
-skill synchronization, and document tooling execute independently of the API
-endpoint.
+The production OCI image compiles the XNOBrain API endpoint and its required
+Python imports with Nuitka. `BUILD_MODE=onefile` (default) packages one
+executable, while `BUILD_MODE=module` uses Nuitka standalone mode and copies the
+compiled application directory for faster packaging and startup without
+one-file extraction. Both modes expose `/usr/local/bin/app.so`. The image still
+contains the upstream Hermes Python environment and office Python tools because
+agent CLI, skill synchronization, and document tooling execute independently of
+the API endpoint.
 
 ```text
 browser -> Traefik -> React UI
