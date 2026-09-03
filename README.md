@@ -184,7 +184,7 @@ Enterprise API integration.
 
 ## Optional local telemetry
 
-Telemetry is off by default. To run the local-only OpenTelemetry collector,
+Telemetry is off by default. To run the OpenTelemetry collector,
 which writes metadata-only span summaries to its own container logs, run:
 
 ```bash

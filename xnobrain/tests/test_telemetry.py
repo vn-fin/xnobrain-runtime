@@ -1,4 +1,4 @@
-"""Telemetry configuration must remain explicitly opt-in and local-only."""
+"""Telemetry configuration remains explicit and collector-independent."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from xnobrain.telemetry import local_collector_endpoint, telemetry_enabled
+from xnobrain.telemetry import collector_endpoint, telemetry_enabled
 
 
 class TelemetryConfigurationTests(unittest.TestCase):
@@ -14,11 +14,11 @@ class TelemetryConfigurationTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertFalse(telemetry_enabled())
 
-    def test_local_collector_is_the_only_accepted_export_target(self):
+    def test_configured_collector_endpoint_is_accepted(self):
         with patch.dict(os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel-collector:4317"}, clear=True):
-            self.assertEqual(local_collector_endpoint(), "http://otel-collector:4317")
+            self.assertEqual(collector_endpoint(), "http://otel-collector:4317")
         with patch.dict(os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": "https://telemetry.example.com"}, clear=True):
-            self.assertIsNone(local_collector_endpoint())
+            self.assertEqual(collector_endpoint(), "https://telemetry.example.com")
 
 
 if __name__ == "__main__":

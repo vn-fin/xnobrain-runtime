@@ -17,6 +17,7 @@ _SAFE_RECORD_FIELDS = (
     "http_route",
     "http_status_code",
     "trace_id",
+    "span_id",
 )
 
 
@@ -30,7 +31,7 @@ class JLoggerHandler(logging.Handler):
                     "DEVELOPMENT_ENVIRONMENT",
                     DEVELOPMENT_ENVIRONMENT,
                 ),
-                service_name=SERVICE_NAME,
+                service_name=os.getenv("SERVICE_NAME", SERVICE_NAME),
             )
             event_factory = {
                 logging.DEBUG: logger.debug,

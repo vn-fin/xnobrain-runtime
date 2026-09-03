@@ -29,7 +29,7 @@ the root-disk request only on storage drivers with per-container quota support;
 durable profile data in the named volume follows the Docker host's volume
 capacity.
 
-The optional `otel` profile starts a local OpenTelemetry collector for Runtime
+The optional `otel` profile starts a local OpenTelemetry collector for Runtime; deployed environments may use `RUNTIME_OTEL_EXPORTER_OTLP_ENDPOINT`
 development. It is disabled by default and has no outbound exporter:
 
 ```bash

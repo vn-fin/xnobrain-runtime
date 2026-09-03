@@ -55,6 +55,6 @@ Managed LLM inference calls the centralized router directly with a Control-issue
 API key. Runtime does not host the router, retain provider credentials, or
 read router usage storage. Profile files, tools, memory, and other local agent behavior
 remain local. The optional
-OpenTelemetry collector is local-only and disabled by default. When
+OpenTelemetry export is disabled by default and can target the configured collector. When
 `OTEL_ENABLED=true`, the runtime exports metadata-only spans only to the
 Compose collector or a loopback endpoint.

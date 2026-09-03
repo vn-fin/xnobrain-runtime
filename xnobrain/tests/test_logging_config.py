@@ -23,7 +23,7 @@ class LoggingConfigTests(unittest.TestCase):
         jlog.set_output(sys.stderr)
 
     def test_configures_jlogger_json_with_service_context(self):
-        with patch.dict("os.environ", {"DEVELOPMENT_ENVIRONMENT": "local"}):
+        with patch.dict("os.environ", {"DEVELOPMENT_ENVIRONMENT": "local", "SERVICE_NAME": "runtime-test"}):
             configure_logging()
             logging.getLogger("xnobrain.http").info(
                 "HTTP request completed",
@@ -33,7 +33,7 @@ class LoggingConfigTests(unittest.TestCase):
         rendered = json.loads(self.output.getvalue())
         self.assertEqual(rendered["level"], "info")
         self.assertEqual(rendered["message"], "HTTP request completed")
-        self.assertEqual(rendered["service_name"], SERVICE_NAME)
+        self.assertEqual(rendered["service_name"], "runtime-test")
         self.assertEqual(rendered["development_environment"], "local")
         self.assertEqual(rendered["http_method"], "GET")
 

@@ -51,10 +51,12 @@ def create_app():
             if request.url.path.startswith("/xnobrain/api/runtime/"):
                 request.state.token_authenticated = True
             response = await call_next(request)
-            traceparent = request.headers.get("traceparent", "")
             route = request.scope.get("route")
             route_path = route.path if route else request.url.path
-            trace_id = traceparent.split("-")[1] if traceparent.count("-") >= 3 else "-"
+            from opentelemetry import trace
+            span_context = trace.get_current_span().get_span_context()
+            trace_id = format(span_context.trace_id, "032x") if span_context.is_valid else ""
+            span_id = format(span_context.span_id, "016x") if span_context.is_valid else ""
             logging.getLogger("xnobrain.http").info(
                 "HTTP request completed",
                 extra={
@@ -63,6 +65,7 @@ def create_app():
                     "http_status_code": response.status_code,
                     "duration_ms": round((time.monotonic() - started) * 1000, 3),
                     "trace_id": trace_id,
+                    "span_id": span_id,
                 },
             )
             return response

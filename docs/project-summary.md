@@ -25,7 +25,7 @@ memory, MCP, conversations and SSE runs, approvals, cron, model catalogs, teams,
 workspace files, immutable snapshots, and portable bundles. It has no managed
 control plane or Enterprise API integration.
 
-OpenTelemetry is optional and local-only. The Compose collector profile is off
+OpenTelemetry is optional and exports only to the configured collector. The Compose collector profile is off
 by default and writes metadata-only span summaries to its container logs.
 
 ## Privacy and persistence
