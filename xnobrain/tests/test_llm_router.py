@@ -51,6 +51,26 @@ class FakeLLMRouterClient(LLMRouterClient):
         return self.responses.get((method, path), {})
 
 
+class ProviderRuntimeRequestGuardTests(unittest.TestCase):
+    def test_removes_custom_provider_hints_without_changing_router_model(self):
+        agent = SimpleNamespace()
+        agent._build_api_kwargs = lambda messages, tools_for_api=None: {
+            "model": "cc/claude-sonnet-5",
+            "messages": messages,
+            "custom_llm_provider": "xnobrain",
+            "timeout": 1800,
+            "extra_body": {"custom_llm_provider": "xnobrain"},
+        }
+
+        AgentManager._install_provider_runtime_request_guard(agent)
+        result = agent._build_api_kwargs([{"role": "user", "content": "hello"}])
+
+        self.assertEqual(result["model"], "cc/claude-sonnet-5")
+        self.assertNotIn("custom_llm_provider", result)
+        self.assertNotIn("timeout", result)
+        self.assertNotIn("extra_body", result)
+
+
 class LLMRouterConfigTests(unittest.TestCase):
     def test_global_config_accepts_model_derived_auto_reasoning(self) -> None:
         with TemporaryDirectory() as temp_dir:

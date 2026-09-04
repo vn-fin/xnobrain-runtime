@@ -446,6 +446,36 @@ class ConversationRunnerMixin:
 
 
     @staticmethod
+    def _install_provider_runtime_request_guard(agent: Any) -> None:
+        """Strip client-only kwargs and custom-provider hints before routing.
+
+        Hermes identifies the centralized endpoint as a named custom provider.
+        The OpenAI SDK accepts client-side fields such as ``timeout`` while its
+        custom-provider path can also attach ``custom_llm_provider``. GoRouter
+        resolves the public model prefix itself and forwards request JSON, so
+        neither field belongs in the upstream body.
+        """
+        original_build_api_kwargs = getattr(agent, "_build_api_kwargs", None)
+        if not callable(original_build_api_kwargs):
+            return
+
+        def build_provider_runtime_api_kwargs(
+            api_messages: list[Any], tools_for_api: list[Any] | None = None,
+        ) -> dict[str, Any]:
+            kwargs = original_build_api_kwargs(api_messages, tools_for_api=tools_for_api)
+            kwargs.pop("custom_llm_provider", None)
+            kwargs.pop("timeout", None)
+            extra_body = kwargs.get("extra_body")
+            if isinstance(extra_body, dict):
+                extra_body.pop("custom_llm_provider", None)
+                if not extra_body:
+                    kwargs.pop("extra_body", None)
+            return kwargs
+
+        agent._build_api_kwargs = build_provider_runtime_api_kwargs
+
+
+    @staticmethod
     def _install_model_fallbacks(agent: Any, prepared: Mapping[str, Any]) -> None:
         """Attach alternate Auto candidates to Hermes' native failure chain."""
         models = list(dict.fromkeys(
@@ -652,6 +682,7 @@ class ConversationRunnerMixin:
                     agent,
                     str(active_smart_decision.get("model") or prepared.get("model") or ""),
                 )
+                manager._install_provider_runtime_request_guard(agent)
                 manager._install_model_fallbacks(agent, prepared)
                 if smart_route_name:
                     manager._install_smart_route_step_routing(
