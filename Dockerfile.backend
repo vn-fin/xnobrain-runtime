@@ -160,7 +160,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     && install -d /opt/xnobrain-artifact \
     && case "${BUILD_MODE}" in \
       onefile) cp /opt/xnobrain-dist/xnobrain-runtime /opt/xnobrain-artifact/app.so ;; \
-      module) cp -a /opt/xnobrain-dist/xnobrain-runtime.dist/. /opt/xnobrain-artifact/; mv /opt/xnobrain-artifact/xnobrain-runtime /opt/xnobrain-artifact/app.so ;; \
+      module) cp -a /opt/xnobrain-dist/server.dist/. /opt/xnobrain-artifact/; mv /opt/xnobrain-artifact/xnobrain-runtime /opt/xnobrain-artifact/app.so ;; \
     esac \
     && test -x /opt/xnobrain-artifact/app.so
 

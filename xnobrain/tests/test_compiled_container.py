@@ -24,6 +24,11 @@ class CompiledContainerTests(unittest.TestCase):
             dockerfile,
         )
         self.assertIn("--output-filename=xnobrain-runtime", dockerfile)
+        self.assertIn(
+            "module) cp -a /opt/xnobrain-dist/server.dist/. /opt/xnobrain-artifact/",
+            dockerfile,
+        )
+        self.assertNotIn("/opt/xnobrain-dist/xnobrain-runtime.dist/", dockerfile)
         self.assertIn("--lto=no", dockerfile)
         for package in ("xnobrain", "hermes_cli", "gateway", "tools"):
             self.assertIn(f"--include-package={package}", dockerfile)
