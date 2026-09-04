@@ -12,6 +12,82 @@ from ..services import EXPECTED_ERRORS
 
 class StreamingHandlers:
 
+    async def workspace_event_stream(self, request: Request) -> StreamingResponse:
+        """Fan agent, workspace, and default-board updates into one SSE feed."""
+        async def events():
+            queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue(maxsize=64)
+            stopped = asyncio.Event()
+
+            async def publish(kind: str, payload: dict[str, Any]) -> None:
+                if queue.full():
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                await queue.put((kind, payload))
+
+            async def agent_updates() -> None:
+                previous: dict[str, str] | None = None
+                while not stopped.is_set():
+                    snapshot = self.service.agent_activity()
+                    activity = snapshot["agents"]
+                    if activity != previous:
+                        await publish("agent.activity", snapshot)
+                        previous = dict(activity)
+                    await asyncio.sleep(1)
+
+            async def workspace_updates() -> None:
+                previous = ""
+                while not stopped.is_set():
+                    detail = self.service.sandbox("detail")
+                    encoded = json.dumps(detail, sort_keys=True, separators=(",", ":"))
+                    if encoded != previous:
+                        await publish("workspace.stats", detail)
+                        previous = encoded
+                    await asyncio.sleep(1)
+
+            async def board_updates() -> None:
+                board = "default"
+                cursor = self.service.kanban.board_event_cursor(board)
+                await publish("kanban.connected", {"board_slug": board, "cursor": cursor})
+                while not stopped.is_set():
+                    rows = self.service.kanban.board_events(board, after_id=cursor)
+                    for item in rows:
+                        cursor = max(cursor, int(item["id"]))
+                        if str(item.get("kind") or "").lower() != "heartbeat":
+                            await publish("kanban.task", item)
+                    await asyncio.sleep(1)
+
+            producers = [
+                asyncio.create_task(agent_updates()),
+                asyncio.create_task(workspace_updates()),
+                asyncio.create_task(board_updates()),
+            ]
+            sequence = 0
+            try:
+                while True:
+                    try:
+                        kind, payload = await asyncio.wait_for(queue.get(), timeout=15)
+                        sequence += 1
+                        yield f"id: {sequence}\nevent: {kind}\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n"
+                    except asyncio.TimeoutError:
+                        yield ": keep-alive\n\n"
+            finally:
+                stopped.set()
+                for producer in producers:
+                    producer.cancel()
+                await asyncio.gather(*producers, return_exceptions=True)
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     async def agent_activity_stream(self, request: Request) -> StreamingResponse:
         """Emit activity changes while keeping idle connections inexpensive."""
         async def events():

@@ -55,7 +55,7 @@ class ProvidersServiceMixin:
                 ),
                 "connection_mode": "managed",
                 "base_url": "",
-                "requires_base_url": False,
+                "requires_base_url": provider == "openai-like",
                 "connected": bool(available_models),
                 "status": (
                     "unavailable" if not router_available

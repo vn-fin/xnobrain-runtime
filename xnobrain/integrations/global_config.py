@@ -91,13 +91,11 @@ class GlobalConfigMixin:
             self._deep_merge(config, self._sanitize_config_value(patch, "config"))
             touched = True
 
+        selection_provider = None
         if "provider" in body:
-            provider = self._nonempty_string(body["provider"], "provider").lower()
-            if provider not in {"xnobrain", "auto", LLM_ROUTER_PROVIDER}:
-                raise ConfigAPIError(
-                    "provider must be xnobrain",
-                    code="unsupported_provider",
-                )
+            selection_provider = self._nonempty_string(body["provider"], "provider").lower()
+            if not _SAFE_ID_RE.fullmatch(selection_provider):
+                raise ConfigAPIError("provider is invalid", code="unsupported_provider")
             touched = True
         if "model" in body:
             self._set_nested(config, ("model", "default"), self._nonempty_string(body["model"], "model"))
@@ -156,7 +154,7 @@ class GlobalConfigMixin:
             self._write_text(self.root_profile / "SOUL.md", soul, field="soul")
 
         selected_model = body.get("model") if "model" in body else None
-        normalize_llm_router_config(config, selected_model)
+        normalize_llm_router_config(config, selected_model, selection_provider=selection_provider)
         if touched or soul is not _MISSING:
             if (self.root_profile / "config.yaml").is_file():
                 self._snapshot_config()
@@ -196,7 +194,10 @@ class GlobalConfigMixin:
             "root_profile": str(self.root_profile),
             "config_path": str(self.root_profile / "config.yaml"),
             "soul_path": str(self.root_profile / "SOUL.md"),
-            "provider": LLM_ROUTER_PROVIDER_KEY,
+            "provider": str(
+                self._get_nested(normalized, ("model", "selection_provider"), "")
+                or LLM_ROUTER_PROVIDER_KEY
+            ),
             "model": public_model,
             "assignment_id": str(
                 self._get_nested(normalized, ("model", "assignment_id"), "") or ""

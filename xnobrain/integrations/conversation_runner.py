@@ -148,6 +148,10 @@ class ConversationRunnerMixin:
 
         provider = self._conversation_provider(profile_dir, body)
         model = self._conversation_model(profile_dir, body)
+        profile_config = self._read_config(profile_dir)
+        selection_provider = str(
+            self._get_nested(profile_config, ("model", "selection_provider"), "") or ""
+        ).strip().lower()
         engine = "xnobrain"
         command = [self._hermes_binary()]
         if conversation_id:
@@ -196,6 +200,7 @@ class ConversationRunnerMixin:
             "conversation_id": conversation_id,
             "message": message,
             "provider": provider,
+            "selection_provider": selection_provider,
             "model": model,
             "requested_model": (
                 self._nonempty_string(body["model"], "model")
@@ -208,6 +213,35 @@ class ConversationRunnerMixin:
             "feature": feature,
             "goal_resume": bool(body.get("goal_resume", False)),
         }
+
+
+    async def _resolve_prepared_model_route(self, prepared: dict[str, Any]) -> None:
+        """Resolve Auto/simple blends and attach same-router fallback models."""
+        route_name = str(prepared.get("model") or "").strip()
+        if route_name != LLM_ROUTER_DEFAULT_MODEL:
+            return
+        resolver = getattr(self.llm_router, "model_route_candidates", None)
+        if not callable(resolver):
+            await self.llm_router.ensure_auto_combo()
+            return
+        candidates = await resolver(
+            route_name, provider=str(prepared.get("selection_provider") or ""),
+        )
+        if not candidates:
+            return
+        selected = candidates[0]
+        prepared["model"] = selected
+        prepared["requested_model"] = selected
+        prepared["model_route"] = route_name
+        prepared["model_fallbacks"] = candidates[1:]
+        command = list(prepared.get("command") or [])
+        if "--model" in command:
+            index = command.index("--model")
+            if index + 1 < len(command):
+                command[index + 1] = selected
+        elif command:
+            command[1:1] = ["--model", selected]
+        prepared["command"] = command
 
 
     async def _resolve_prepared_smart_route(self, prepared: dict[str, Any]) -> None:
@@ -411,6 +445,26 @@ class ConversationRunnerMixin:
             )
 
 
+    @staticmethod
+    def _install_model_fallbacks(agent: Any, prepared: Mapping[str, Any]) -> None:
+        """Attach alternate Auto candidates to Hermes' native failure chain."""
+        models = list(dict.fromkeys(
+            str(model) for model in (prepared.get("model_fallbacks") or []) if str(model)
+        ))
+        if not models:
+            return
+        common = {
+            "provider": "xnobrain",
+            "base_url": str(getattr(agent, "base_url", "") or ""),
+            "api_key": str(getattr(agent, "api_key", "") or ""),
+            "api_mode": str(getattr(agent, "api_mode", "chat_completions") or "chat_completions"),
+        }
+        chain = [{**common, "model": model} for model in models]
+        agent._fallback_chain = chain
+        agent._fallback_index = 0
+        agent._fallback_model = chain[0]
+
+
     def _install_smart_route_step_routing(
         self,
         agent: Any,
@@ -598,6 +652,7 @@ class ConversationRunnerMixin:
                     agent,
                     str(active_smart_decision.get("model") or prepared.get("model") or ""),
                 )
+                manager._install_model_fallbacks(agent, prepared)
                 if smart_route_name:
                     manager._install_smart_route_step_routing(
                         agent,

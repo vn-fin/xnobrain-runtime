@@ -7,10 +7,11 @@ from fastapi.responses import Response
 
 from ..models import APIEnvelope
 from .definition import Route
-from . import hosted, marketplace, organization_artifacts, analytics, agents, automation, checkpoints, conversations, kanban, mcp, portability, providers, sandboxes, system, teams, workspaces
+from . import hosted, marketplace, organization_artifacts, analytics, agents, automation, checkpoints, conversations, events, kanban, mcp, portability, providers, sandboxes, system, teams, workspaces
 
 ROUTE_GROUPS = (
     system.ROUTES,
+    events.ROUTES,
     agents.ROUTES,
     checkpoints.ROUTES,
     mcp.ROUTES,
@@ -66,6 +67,9 @@ def _endpoint(handlers: Any, route: Route):
     elif route.special == "sandbox_stream":
         async def endpoint(request: Request) -> Response:
             return await handlers.sandbox_detail_stream(request)
+    elif route.special == "workspace_event_stream":
+        async def endpoint(request: Request) -> Response:
+            return await handlers.workspace_event_stream(request)
     elif route.special == "agent_activity_stream":
         async def endpoint(request: Request) -> Response:
             return await handlers.agent_activity_stream(request)
@@ -92,7 +96,7 @@ def _endpoint(handlers: Any, route: Route):
 
 def setup_routes(app: Any, handlers: Any) -> None:
     for route in ROUTES:
-        raw_response = route.special in {"stream", "workspace_upload", "workspace_upload_chunk", "workspace_file", "workspace_preview", "workspace_workbook", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "agent_activity_stream", "kanban_stream", "team_run_stream", "conversation_run_stream"}
+        raw_response = route.special in {"stream", "workspace_upload", "workspace_upload_chunk", "workspace_file", "workspace_preview", "workspace_workbook", "bundle_export", "bundle_upload", "bundle_part", "sandbox_setup", "sandbox_stream", "workspace_event_stream", "agent_activity_stream", "kanban_stream", "team_run_stream", "conversation_run_stream"}
         app.add_api_route(
             route.path,
             _endpoint(handlers, route),

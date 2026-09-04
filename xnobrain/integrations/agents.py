@@ -521,13 +521,11 @@ class AgentOperationsMixin:
                 code="invalid_agent_config",
             )
 
+        selection_provider = None
         if "provider" in body:
-            provider = self._nonempty_string(body["provider"], "provider").lower()
-            if provider not in {"xnobrain", "auto", LLM_ROUTER_PROVIDER}:
-                raise AgentAPIError(
-                    "provider must be xnobrain",
-                    code="unsupported_provider",
-                )
+            selection_provider = self._nonempty_string(body["provider"], "provider").lower()
+            if not _SAFE_ID_RE.fullmatch(selection_provider):
+                raise AgentAPIError("provider is invalid", code="unsupported_provider")
         if "model" in body:
             model = self._nonempty_string(body["model"], "model")
             self._set_nested(config, ("model", "default"), model)
@@ -602,6 +600,7 @@ class AgentOperationsMixin:
         normalize_llm_router_config(
             config,
             str(body["model"]).strip() if "model" in body else None,
+            selection_provider=selection_provider,
         )
         if "soul" in body:
             self._write_text(profile_dir / "SOUL.md", body["soul"])

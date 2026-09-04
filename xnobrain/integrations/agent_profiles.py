@@ -371,7 +371,10 @@ class AgentProfilesMixin:
         effort = str(self._get_nested(config, ("agent", "reasoning_effort"), "medium") or "medium").lower()
         approval = self._get_nested(config, ("approvals", "mode"), "off")
         return {
-            "provider": LLM_ROUTER_PROVIDER_KEY,
+            "provider": str(
+                self._get_nested(config, ("model", "selection_provider"), "")
+                or LLM_ROUTER_PROVIDER_KEY
+            ),
             "model": display_llm_model(
                 self._get_nested(
                     config,

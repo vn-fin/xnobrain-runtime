@@ -622,6 +622,62 @@ class LLMRouterConfigTests(unittest.TestCase):
 
 
 class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
+    def test_agent_config_preserves_provider_auto_scope(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(root_profile=root / "root", profiles_root=root / "profiles")
+            created, _ = manager.create_agent({"display_name": "Scoped auto"})
+            name = created["name"]
+            updated = manager.update_config(name, {"provider": "openai", "model": "auto"})
+            self.assertEqual(updated["config"]["provider"], "openai")
+            config = manager._read_config(manager._require_profile(name))
+            self.assertEqual(config["model"]["selection_provider"], "openai")
+            self.assertEqual(config["model"]["provider"], "custom:xnobrain")
+
+    async def test_custom_blend_keeps_its_existing_strategy(self) -> None:
+        manager = object.__new__(AgentManager)
+        class Router:
+            async def model_route_candidates(self, *_args, **_kwargs):
+                raise AssertionError("custom blends must use resolve_blend_route")
+        manager.llm_router = Router()
+        prepared = {"model": "my-blend", "command": ["hermes"]}
+        await manager._resolve_prepared_model_route(prepared)
+        self.assertEqual(prepared["model"], "my-blend")
+        self.assertNotIn("model_fallbacks", prepared)
+
+    def test_auto_fallbacks_use_same_router_and_advance_to_other_models(self) -> None:
+        manager = object.__new__(AgentManager)
+        class Agent:
+            base_url = "http://router:8090/v1"
+            api_key = "workload-key"
+            api_mode = "chat_completions"
+        agent = Agent()
+        manager._install_model_fallbacks(agent, {
+            "model_fallbacks": ["openai/small", "openai/stale", "openai/small"],
+        })
+        self.assertEqual([row["model"] for row in agent._fallback_chain], ["openai/small", "openai/stale"])
+        self.assertTrue(all(row["provider"] == "xnobrain" for row in agent._fallback_chain))
+        self.assertTrue(all(row["base_url"] == "http://router:8090/v1" for row in agent._fallback_chain))
+        self.assertEqual(agent._fallback_model["model"], "openai/small")
+        self.assertEqual(agent._fallback_index, 0)
+
+    async def test_prepared_auto_uses_first_random_candidate_and_keeps_fallbacks(self) -> None:
+        manager = object.__new__(AgentManager)
+        class Router:
+            async def model_route_candidates(self, name, *, provider=""):
+                self.request = (name, provider)
+                return ["openai/small", "openai/large", "openai/stale"]
+        manager.llm_router = Router()
+        prepared = {
+            "model": "auto", "selection_provider": "openai",
+            "command": ["hermes", "chat", "--quiet"],
+        }
+        await manager._resolve_prepared_model_route(prepared)
+        self.assertEqual(manager.llm_router.request, ("auto", "openai"))
+        self.assertEqual(prepared["model"], "openai/small")
+        self.assertEqual(prepared["model_fallbacks"], ["openai/large", "openai/stale"])
+        self.assertEqual(prepared["command"][1:3], ["--model", "openai/small"])
+
     async def test_title_generation_uses_the_configured_v1_router_base_once(self) -> None:
         manager = FakeLLMRouterClient({
             ("POST", "/chat/completions"): {

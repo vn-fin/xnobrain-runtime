@@ -737,6 +737,34 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         kanban_activity.assert_called_once_with()
 
+    async def test_workspace_event_stream_fans_all_three_sources_concurrently(self):
+        response = await self.composition.handlers.workspace_event_stream(Mock())
+        received = {}
+        try:
+            for _ in range(4):
+                event = await asyncio.wait_for(anext(response.body_iterator), timeout=2)
+                if event.startswith(":"):
+                    continue
+                kind = event.split("event: ", 1)[1].split("\n", 1)[0]
+                received[kind] = json.loads(event.split("data: ", 1)[1])
+                if {"agent.activity", "workspace.stats", "kanban.connected"}.issubset(received):
+                    break
+        finally:
+            await response.body_iterator.aclose()
+
+        self.assertEqual(response.media_type, "text/event-stream")
+        self.assertEqual(response.headers["x-accel-buffering"], "no")
+        self.assertIn("agents", received["agent.activity"])
+        self.assertIn("metrics", received["workspace.stats"])
+        self.assertEqual(received["kanban.connected"]["board_slug"], "default")
+
+    async def test_workspace_event_stream_route_keeps_legacy_streams_registered(self):
+        paths = {route.path for route in self.app.routes}
+        self.assertIn("/xnobrain/api/runtime/v1/events/stream", paths)
+        self.assertIn("/xnobrain/api/runtime/v1/agents/activity/stream", paths)
+        self.assertIn("/xnobrain/api/runtime/v1/sandboxes/detail/stream", paths)
+        self.assertIn("/xnobrain/api/runtime/v1/kanban/boards/{board_slug}/events/stream", paths)
+
     async def test_agent_activity_stream_emits_initial_state_and_changes_only(self):
         class ConnectedRequest:
             async def is_disconnected(self):

@@ -2,6 +2,7 @@
 
 import json
 import os
+import random
 import re
 import tempfile
 import time
@@ -28,8 +29,7 @@ class BlendsIntegrationMixin:
     }
 
     async def ensure_auto_combo(self) -> None:
-        models = (await self.list_models(ensure_auto=False))["data"]
-        if not await self._ensure_auto_combo(models):
+        if not await self.auto_model_candidates():
             raise LLMRouterAPIError(
                 "connect at least one provider before using auto",
                 code="provider_connection_required",
@@ -37,46 +37,53 @@ class BlendsIntegrationMixin:
             )
 
 
-    async def _ensure_auto_combo(self, models: list[Mapping[str, Any]]) -> bool:
+    async def auto_model_candidates(self, provider: str = "") -> list[str]:
+        """Return every connected workload model in a fresh random order.
+
+        A provider selection narrows Auto to that provider. The system Auto
+        blend leaves provider empty and therefore spans all connected models.
+        The workload-scoped catalog is authoritative; stale/invalid rows are
+        skipped defensively and can still fail over at execution time.
+        """
+        wanted = str(provider or "").strip().lower()
+        models = (await self.list_models(ensure_auto=False))["data"]
         selected: list[str] = []
-        owners: set[str] = set()
+        seen: set[str] = set()
         for item in models:
+            if not isinstance(item, Mapping):
+                continue
             model_id = str(item.get("id") or "").strip()
-            if (not model_id or model_id == LLM_ROUTER_DEFAULT_MODEL
-                    or "/" not in model_id or str(item.get("provider") or "") == "blend"):
+            owner = str(item.get("provider") or self._model_owner(model_id)).strip().lower()
+            if (not model_id or model_id == LLM_ROUTER_DEFAULT_MODEL or "/" not in model_id
+                    or owner == "blend" or wanted and owner != wanted):
                 continue
-            owner = str(item.get("provider") or self._model_owner(model_id)).strip()
-            if owner in owners:
-                continue
-            owners.add(owner)
-            selected.append(route_llm_model(model_id))
-            if len(selected) >= 12:
-                break
-        combos = await self.list_combos()
-        existing = next(
-            (
-                item
-                for item in combos if isinstance(item, Mapping)
-                and str(item.get("name") or "") == LLM_ROUTER_DEFAULT_MODEL
-            ),
-            None,
-        )
-        if not selected:
-            if existing is not None:
-                await self.delete_combo(existing.get("id"))
-            return False
-        if existing is None:
-            await self._create_local_combo(LLM_ROUTER_DEFAULT_MODEL, selected)
-            return True
-        existing_models = [
-            str(model.get("model") or "") if isinstance(model, Mapping) else str(model)
-            for model in (existing.get("models") or [])
-        ]
-        if existing_models == selected:
-            return True
-        combo_id = self._safe_id(existing.get("id"), "combo_id")
-        await self.update_combo(combo_id, models=selected)
-        return True
+            routed = route_llm_model(model_id)
+            if routed not in seen:
+                seen.add(routed)
+                selected.append(routed)
+        random.SystemRandom().shuffle(selected)
+        return selected
+
+
+    async def _ensure_auto_combo(self, models: list[Mapping[str, Any]]) -> bool:
+        # Compatibility for callers that still request materialization. Auto is
+        # resolved per run now, so no persistent system combo is necessary.
+        del models
+        return bool(await self.auto_model_candidates())
+
+
+    async def model_route_candidates(self, name: str, *, provider: str = "") -> list[str]:
+        """Resolve Auto or a simple blend to an ordered fallback candidate list."""
+        if name == LLM_ROUTER_DEFAULT_MODEL:
+            return await self.auto_model_candidates(provider)
+        combo = next((row for row in await self.list_combos() if row["name"] == name), None)
+        if combo is None:
+            return []
+        config = combo.get("config") if isinstance(combo.get("config"), Mapping) else {}
+        if isinstance(config.get(self._SMART_ROUTE_CONFIG_KEY), Mapping):
+            return []
+        models = list(dict.fromkeys(str(model) for model in combo.get("models", []) if str(model)))
+        return [route_llm_model(model) for model in models]
 
 
     @staticmethod
@@ -324,6 +331,14 @@ class BlendsIntegrationMixin:
         Fusion uses its configured judge for the Hermes agent loop; candidate
         fan-out remains an execution concern and is never persisted centrally.
         """
+        if name == LLM_ROUTER_DEFAULT_MODEL:
+            candidates = await self.auto_model_candidates()
+            if not candidates:
+                raise LLMRouterAPIError(
+                    "connect at least one provider before using auto",
+                    code="provider_connection_required", status=409,
+                )
+            return {"model": candidates[0], "candidates": candidates, "reasoning": "auto", "tier": "", "route": name, "context_length": None}
         combo = next((row for row in await self.list_combos() if row["name"] == name), None)
         if combo is None:
             return None

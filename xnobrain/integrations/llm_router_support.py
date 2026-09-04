@@ -69,7 +69,9 @@ def display_llm_model(model: Any) -> str:
     return str(model or "").strip()
 
 
-def normalize_llm_router_config(config: dict[str, Any], model: str | None = None) -> str:
+def normalize_llm_router_config(
+    config: dict[str, Any], model: str | None = None, *, selection_provider: str | None = None,
+) -> str:
     """Force one Hermes provider while preserving unrelated profile settings."""
 
     model_config = config.get("model")
@@ -87,6 +89,13 @@ def normalize_llm_router_config(config: dict[str, Any], model: str | None = None
         selected_model = LLM_ROUTER_DEFAULT_MODEL
     selected_model = route_llm_model(selected_model)
 
+    current_selection = str(model_config.get("selection_provider") or "").strip().lower()
+    if selection_provider is not None:
+        current_selection = str(selection_provider or "").strip().lower()
+    if current_selection and current_selection not in {"xnobrain", "auto"}:
+        model_config["selection_provider"] = current_selection
+    else:
+        model_config.pop("selection_provider", None)
     model_config["provider"] = LLM_ROUTER_PROVIDER
     model_config["default"] = selected_model
     model_config["base_url"] = LLM_ROUTER_API_BASE_URL

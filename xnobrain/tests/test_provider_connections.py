@@ -64,6 +64,7 @@ class ProviderCatalogTests(unittest.IsolatedAsyncioTestCase):
             "llma_org",
         )
         self.assertEqual(service.router.requests, [("GET", "/models?kind=llm")])
+        self.assertTrue(next(item for item in providers if item["id"] == "openai-like")["requires_base_url"])
 
     async def test_catalog_maps_gorouter_owned_models_by_public_prefix(self):
         class Router(LLMRouterClient):

@@ -94,6 +94,32 @@ curl -fsS -X POST http://localhost:5173/xnobrain/api/runtime/v1/bundles/apply \
 All application endpoints are local; the project does not expose Enterprise
 proxy, device-pairing, dashboard, or observability routes.
 
+## Unified workspace event stream
+
+`GET /xnobrain/api/runtime/v1/events/stream` is the preferred browser SSE
+subscription for shared workspace state. It multiplexes three event families:
+
+- `agent.activity` — `{agents, updated_at}` activity snapshots;
+- `workspace.stats` — the existing sandbox detail/VM status projection;
+- `kanban.connected` and `kanban.task` — default-board connection and task events.
+
+The Runtime starts one concurrent producer for each family and fans them into a
+bounded queue. Disconnecting the SSE response cancels every producer. The
+legacy `/agents/activity/stream`, `/sandboxes/detail/stream`, and
+`/kanban/boards/{board_slug}/events/stream` endpoints remain available for
+backward compatibility, but new browser code should use the unified stream.
+
 ## Organization artifact workspace adapter
 
 The private Runtime exposes inspect, approved publish, and verified import operations under `/xnobrain/api/runtime/v1/agents-workspaces/{agent_id}/organization-artifacts`. Transfer capabilities are supplied ephemerally by Control. Imports reject unsafe paths/protected profile areas, stage bytes, enforce size/SHA-256, and atomically rename into the selected workspace. Publish requires `approved: true` and never returns a local absolute path.
+
+### Automatic model routing
+
+Selecting **Auto** for a provider randomizes the workload-scoped connected model
+catalog for that provider. Selecting the system **Auto** blend randomizes all
+connected models across providers. The first candidate is used for the run and
+the remaining unique candidates are attached to the embedded agent's bounded
+fallback chain over the same authenticated router transport. Model-not-found,
+quota/rate-limit, malformed-response, and supported transient provider failures
+can therefore advance to another candidate. Explicit models and user-created
+blend strategies retain their existing behavior.

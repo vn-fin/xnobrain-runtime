@@ -729,6 +729,18 @@ class AgentsServiceMixin:
             "display_name": display_name,
             "description": str(metadata.get("description") or ""),
         }
+        public_config = {
+            "model": str(config.get("model") or "auto"),
+            "reasoning_effort": str(config.get("effort") or "medium"),
+            "approval_mode": str(config.get("approval_mode") or "off"),
+            "skills_write_approval": bool(config.get("skills_write_approval", False)),
+            "memory_write_approval": bool(config.get("memory_write_approval", False)),
+            "checkpoints_enabled": bool(config.get("checkpoints_enabled", False)),
+            "goal_max_turns": int(config.get("goal_max_turns") or 20),
+        }
+        selected_provider = str(config.get("provider") or "").strip()
+        if selected_provider and selected_provider != "xnobrain":
+            public_config["provider"] = selected_provider
         result = {
             "id": name,
             "name": display_name,
@@ -736,15 +748,7 @@ class AgentsServiceMixin:
             "title": display_name,
             "description": str(metadata.get("description") or ""),
             "status": str(metadata.get("status") or "active"),
-            "config": {
-                "model": str(config.get("model") or "auto"),
-                "reasoning_effort": str(config.get("effort") or "medium"),
-                "approval_mode": str(config.get("approval_mode") or "off"),
-                "skills_write_approval": bool(config.get("skills_write_approval", False)),
-                "memory_write_approval": bool(config.get("memory_write_approval", False)),
-                "checkpoints_enabled": bool(config.get("checkpoints_enabled", False)),
-                "goal_max_turns": int(config.get("goal_max_turns") or 20),
-            },
+            "config": public_config,
             "created_at": metadata.get("created_at"),
             "updated_at": metadata.get("updated_at"),
             "metadata": public_metadata,

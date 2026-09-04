@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+import unittest.mock
 
 from xnobrain.integrations.llm_router import LLMRouterClient
 from xnobrain.services.blends import BlendService
@@ -59,6 +60,21 @@ class LocalBlendTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(deleted["deleted"])
         self.assertEqual((await self.service.list_blends())["blends"], [])
         self.assertFalse(any(path.startswith("/api/") for _, path, _ in self.router.requests))
+
+    async def test_auto_randomizes_all_connected_models(self):
+        with unittest.mock.patch("xnobrain.integrations.blends.random.SystemRandom.shuffle", side_effect=lambda rows: rows.reverse()):
+            candidates = await self.router.auto_model_candidates()
+        self.assertEqual(candidates, ["anthropic/deep", "openai/fast"])
+
+    async def test_provider_auto_stays_on_the_selected_provider(self):
+        candidates = await self.router.auto_model_candidates("openai")
+        self.assertEqual(candidates, ["openai/fast"])
+
+    async def test_auto_route_exposes_remaining_models_as_fallbacks(self):
+        with unittest.mock.patch("xnobrain.integrations.blends.random.SystemRandom.shuffle", side_effect=lambda rows: rows.reverse()):
+            route = await self.router.resolve_blend_route("auto", "hello")
+        self.assertEqual(route["model"], "anthropic/deep")
+        self.assertEqual(route["candidates"], ["anthropic/deep", "openai/fast"])
 
     async def test_round_robin_is_resolved_in_runtime(self):
         created = await self.service.create_blend({

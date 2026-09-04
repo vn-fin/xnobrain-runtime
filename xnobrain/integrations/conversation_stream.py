@@ -84,21 +84,14 @@ class ConversationStreamMixin:
         chat_id = "chatcmpl-" + (conversation_id or uuid.uuid4().hex)
         run_id = str(prepared.get("run_id") or ("run_" + uuid.uuid4().hex))
 
-        if model == LLM_ROUTER_DEFAULT_MODEL:
-            try:
-                await self.llm_router.ensure_auto_combo()
-            except LLMRouterAPIError as exc:
-                yield self._chat_sse_error(str(exc))
-                yield self._chat_sse_done(chat_id, created, model, conversation_id)
-                return
-        else:
-            try:
-                await self._resolve_prepared_smart_route(prepared)
-                model = str(prepared.get("model") or model)
-            except LLMRouterAPIError as exc:
-                yield self._chat_sse_error(str(exc))
-                yield self._chat_sse_done(chat_id, created, model, conversation_id)
-                return
+        try:
+            await self._resolve_prepared_model_route(prepared)
+            await self._resolve_prepared_smart_route(prepared)
+            model = str(prepared.get("model") or model)
+        except LLMRouterAPIError as exc:
+            yield self._chat_sse_error(str(exc))
+            yield self._chat_sse_done(chat_id, created, model, conversation_id)
+            return
 
         title_task: asyncio.Task[str] | None = None
         if self._conversation_has_default_title(profile_dir, conversation_id):
