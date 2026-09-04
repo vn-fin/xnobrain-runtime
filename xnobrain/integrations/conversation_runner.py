@@ -462,7 +462,26 @@ class ConversationRunnerMixin:
         def build_provider_runtime_api_kwargs(
             api_messages: list[Any], tools_for_api: list[Any] | None = None,
         ) -> dict[str, Any]:
-            kwargs = original_build_api_kwargs(api_messages, tools_for_api=tools_for_api)
+            try:
+                kwargs = original_build_api_kwargs(
+                    api_messages, tools_for_api=tools_for_api
+                )
+            except TypeError as error:
+                if "tools_for_api" not in str(error):
+                    raise
+                kwargs = original_build_api_kwargs(api_messages)
+            messages = kwargs.get("messages")
+            if isinstance(messages, list):
+                kwargs["messages"] = [
+                    message
+                    for message in messages
+                    if not (
+                        isinstance(message, dict)
+                        and message.get("role") == "assistant"
+                        and not message.get("tool_calls")
+                        and message.get("content") in {None, ""}
+                    )
+                ]
             kwargs.pop("custom_llm_provider", None)
             kwargs.pop("timeout", None)
             extra_body = kwargs.get("extra_body")

@@ -70,6 +70,31 @@ class ProviderRuntimeRequestGuardTests(unittest.TestCase):
         self.assertNotIn("timeout", result)
         self.assertNotIn("extra_body", result)
 
+    def test_removes_empty_assistant_placeholder_rejected_by_claude_code(self):
+        agent = SimpleNamespace()
+        agent._build_api_kwargs = lambda messages: {
+            "model": "cc/claude-sonnet-5",
+            "messages": messages,
+        }
+        messages = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": ""},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "call-1"}],
+            },
+            {"role": "user", "content": "continue"},
+        ]
+
+        AgentManager._install_provider_runtime_request_guard(agent)
+        result = agent._build_api_kwargs(messages)
+
+        self.assertEqual(
+            result["messages"],
+            [messages[0], messages[2], messages[3]],
+        )
+
 
 class LLMRouterConfigTests(unittest.TestCase):
     def test_global_config_accepts_model_derived_auto_reasoning(self) -> None:
