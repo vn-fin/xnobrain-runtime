@@ -46,6 +46,15 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertNotIn("COPY server.py ", final_stage)
 
 
+    def test_incus_image_does_not_declare_oci_data_volume(self):
+        dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
+        active = "\n".join(
+            line for line in dockerfile.splitlines() if not line.lstrip().startswith("#")
+        )
+
+        self.assertNotIn('VOLUME ["/opt/data"]', active)
+        self.assertIn("install -d -m 0700 /opt/data", dockerfile)
+
     def test_container_entrypoint_starts_compiled_endpoint(self):
         entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(
             encoding="utf-8"

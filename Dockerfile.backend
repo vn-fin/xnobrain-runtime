@@ -209,7 +209,9 @@ ENV PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr
     API_SERVER_HOST=0.0.0.0 \
     API_SERVER_PORT=3000
 
-VOLUME ["/opt/data"]
+# Incus workspaces keep /opt/data inside the quota-limited root filesystem or
+# attach an explicit managed volume. Declaring an OCI VOLUME makes Incus
+# convert it into an invalid source=none tmpfs mount.
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=3s --retries=10 CMD curl --fail --silent --show-error --max-time 2 http://127.0.0.1:3000/xnobrain/api/runtime/v1/health >/dev/null || exit 1
 USER root
