@@ -706,22 +706,23 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent._fallback_model["model"], "openai/small")
         self.assertEqual(agent._fallback_index, 0)
 
-    async def test_prepared_auto_uses_first_random_candidate_and_keeps_fallbacks(self) -> None:
+    async def test_prepared_auto_is_left_for_gorouter_v017_to_resolve(self) -> None:
         manager = object.__new__(AgentManager)
         class Router:
-            async def model_route_candidates(self, name, *, provider=""):
-                self.request = (name, provider)
-                return ["openai/small", "openai/large", "openai/stale"]
+            async def ensure_auto_combo(self):
+                self.checked = True
+            async def model_route_candidates(self, *_args, **_kwargs):
+                raise AssertionError("Runtime must not duplicate GoRouter auto routing")
         manager.llm_router = Router()
         prepared = {
             "model": "auto", "selection_provider": "openai",
-            "command": ["hermes", "chat", "--quiet"],
+            "command": ["hermes", "chat", "--model", "auto", "--quiet"],
         }
         await manager._resolve_prepared_model_route(prepared)
-        self.assertEqual(manager.llm_router.request, ("auto", "openai"))
-        self.assertEqual(prepared["model"], "openai/small")
-        self.assertEqual(prepared["model_fallbacks"], ["openai/large", "openai/stale"])
-        self.assertEqual(prepared["command"][1:3], ["--model", "openai/small"])
+        self.assertTrue(manager.llm_router.checked)
+        self.assertEqual(prepared["model"], "auto")
+        self.assertNotIn("model_fallbacks", prepared)
+        self.assertEqual(prepared["command"], ["hermes", "chat", "--model", "auto", "--quiet"])
 
     async def test_title_generation_uses_the_configured_v1_router_base_once(self) -> None:
         manager = FakeLLMRouterClient({

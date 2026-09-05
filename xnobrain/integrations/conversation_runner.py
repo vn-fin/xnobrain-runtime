@@ -216,32 +216,17 @@ class ConversationRunnerMixin:
 
 
     async def _resolve_prepared_model_route(self, prepared: dict[str, Any]) -> None:
-        """Resolve Auto/simple blends and attach same-router fallback models."""
+        """Leave the virtual Auto route for GoRouter to resolve and retry.
+
+        GoRouter v0.0.17 owns allowlist-aware random selection, route health and
+        quota filtering, retryable failover, and selected-upstream attribution.
+        Resolving Auto in Runtime would duplicate that policy and bypass the
+        router's ``AUTO_MAX_TRIES`` bound.
+        """
         route_name = str(prepared.get("model") or "").strip()
         if route_name != LLM_ROUTER_DEFAULT_MODEL:
             return
-        resolver = getattr(self.llm_router, "model_route_candidates", None)
-        if not callable(resolver):
-            await self.llm_router.ensure_auto_combo()
-            return
-        candidates = await resolver(
-            route_name, provider=str(prepared.get("selection_provider") or ""),
-        )
-        if not candidates:
-            return
-        selected = candidates[0]
-        prepared["model"] = selected
-        prepared["requested_model"] = selected
-        prepared["model_route"] = route_name
-        prepared["model_fallbacks"] = candidates[1:]
-        command = list(prepared.get("command") or [])
-        if "--model" in command:
-            index = command.index("--model")
-            if index + 1 < len(command):
-                command[index + 1] = selected
-        elif command:
-            command[1:1] = ["--model", selected]
-        prepared["command"] = command
+        await self.llm_router.ensure_auto_combo()
 
 
     async def _resolve_prepared_smart_route(self, prepared: dict[str, Any]) -> None:
