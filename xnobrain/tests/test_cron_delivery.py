@@ -169,11 +169,20 @@ class CronDeliveryAPITests(unittest.IsolatedAsyncioTestCase):
             conn = sqlite3.connect(executions)
             try:
                 conn.execute(
-                    "CREATE TABLE executions (id TEXT PRIMARY KEY, job_id TEXT, status TEXT, claimed_at TEXT, started_at TEXT, finished_at TEXT, error TEXT)"
+                    "DELETE FROM executions WHERE id = ?",
+                    ("execution-1",),
                 )
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(executions)")}
+                values = {
+                    "id": "execution-1", "job_id": job_id, "source": "test",
+                    "process_id": "test-process", "pid": 1, "process_started_at": 1,
+                    "status": "completed", "claimed_at": now, "started_at": now, "finished_at": now,
+                    "error": None,
+                }
+                selected = [name for name in values if name in columns]
                 conn.execute(
-                    "INSERT INTO executions VALUES (?, ?, 'completed', ?, ?, ?, NULL)",
-                    ("execution-1", job_id, now, now, now),
+                    f"INSERT INTO executions ({', '.join(selected)}) VALUES ({', '.join('?' for _ in selected)})",
+                    tuple(values[name] for name in selected),
                 )
                 conn.commit()
             finally:

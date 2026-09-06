@@ -18,7 +18,10 @@ does not hold provider credentials or an router database. Runtime calls
 token and the centralized router introspects it.
 
 Control provisions `RUNTIME_GRPC_ENABLED=true`, private port `3001`, and a
-per-workspace `RUNTIME_INTERNAL_SERVICE_TOKEN`. The node gateway derives that
+per-workspace `RUNTIME_INTERNAL_SERVICE_TOKEN`. `RUNTIME_LLM_API_KEY` is a
+user/workspace-scoped GoRouter credential, not `MASTER_KEY`. The Runtime may
+start without it so Control can repair interrupted provisioning, but inference
+remains unavailable until Control injects the scoped key. The node gateway derives that
 same credential and never sends it to the browser or logs.
 
 The runtime defaults to 4 CPUs and 4 GB RAM and requests a 100 GB writable

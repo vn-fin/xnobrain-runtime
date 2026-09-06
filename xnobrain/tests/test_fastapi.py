@@ -54,6 +54,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.environment = patch.dict(os.environ, {
             "HERMES_HOME": str(self.root), "HERMES_ROOT_PROFILE": str(self.root),
             "HERMES_PROFILES_ROOT": str(self.profiles), "DATA_DIR": self.temporary.name,
+            # Unit profiles must not inherit the source container's packaged
+            # Hermes catalog; tests add only the skills they assert below.
+            "RUNTIME_INCLUDE_PACKAGED_SKILLS": "false",
         })
         self.environment.start()
         app = FastAPI()

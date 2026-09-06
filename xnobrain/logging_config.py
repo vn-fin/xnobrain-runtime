@@ -18,6 +18,7 @@ _SAFE_RECORD_FIELDS = (
     "http_status_code",
     "trace_id",
     "span_id",
+    "error",
 )
 
 
@@ -32,6 +33,7 @@ class JLoggerHandler(logging.Handler):
                     DEVELOPMENT_ENVIRONMENT,
                 ),
                 service_name=os.getenv("SERVICE_NAME", SERVICE_NAME),
+                component="runtime-api",
             )
             event_factory = {
                 logging.DEBUG: logger.debug,
@@ -46,10 +48,19 @@ class JLoggerHandler(logging.Handler):
                 for field in _SAFE_RECORD_FIELDS
                 if hasattr(record, field)
             }
-            if safe_fields:
-                event.with_dict(safe_fields)
-            if record.exc_info and record.exc_info[1]:
-                event.with_error(record.exc_info[1])
+            # Every Runtime record has the same nullable error field. Keep it
+            # categorical: third-party exception messages can contain network
+            # addresses or provider details and must not be copied as fields.
+            if "error" not in safe_fields:
+                if record.exc_info and record.exc_info[1]:
+                    safe_fields["error"] = record.exc_info[1].__class__.__name__
+                elif record.levelno >= logging.ERROR:
+                    safe_fields["error"] = "logged_error"
+                elif record.name.startswith("opentelemetry.exporter") and record.levelno >= logging.WARNING:
+                    safe_fields["error"] = "telemetry_export_unavailable"
+                else:
+                    safe_fields["error"] = None
+            event.with_dict(safe_fields)
             event.msg(record.getMessage())
         except Exception:
             self.handleError(record)

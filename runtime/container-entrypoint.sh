@@ -18,7 +18,10 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="${RUNTIME_OTEL_EXPORTER_OTLP_ENDPOINT:-}"
 export OTEL_EXPORTER_OTLP_INSECURE="${RUNTIME_OTEL_EXPORTER_OTLP_INSECURE:-true}"
 export RUNTIME_LLM_ROUTER_URL="${RUNTIME_LLM_ROUTER_URL:-}"
 : "${RUNTIME_LLM_ROUTER_URL:?RUNTIME_LLM_ROUTER_URL is required}"
-: "${RUNTIME_LLM_API_KEY:?RUNTIME_LLM_API_KEY is required}"
+# A scoped workload key is provisioned by Control. Keep the container alive if
+# provisioning has not supplied one yet so health/reconciliation can repair the
+# assignment; inference remains unauthorized until the scoped key is injected.
+export RUNTIME_LLM_API_KEY="${RUNTIME_LLM_API_KEY:-}"
 
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 hermes_python="${HERMES_RUNTIME_PYTHON:-/usr/local/lib/hermes-agent/venv/bin/python}"
