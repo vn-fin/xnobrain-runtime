@@ -185,18 +185,35 @@ class AgentBlueprintsServiceMixin:
             ) from exc
 
     @staticmethod
-    def _validate_stored_spec(record: Mapping[str, Any]) -> None:
-        spec = record.get("blueprint")
+    def _normalize_stored_record(record: Mapping[str, Any]) -> dict[str, Any]:
+        """Load older draft records through additive schema defaults.
+
+        Blueprint records are durable profile data. Fields added with a safe empty
+        default must not make pre-upgrade records unreadable; normalize them only in
+        memory and persist the canonical form on the next intentional mutation.
+        """
+        normalized = dict(record)
+        spec = normalized.get("blueprint")
         if spec is None:
-            return
+            return normalized
+        normalized_spec = dict(spec)
+        tools = normalized_spec.get("tools")
+        if isinstance(tools, Mapping):
+            normalized_spec["tools"] = {
+                "mcp_servers": [],
+                **dict(tools),
+            }
+        normalized["blueprint"] = normalized_spec
         try:
-            AgentBlueprintSpec.model_validate(spec)
+            validated = AgentBlueprintSpec.model_validate(normalized_spec)
         except ValidationError as exc:
             raise ServiceError(
                 "stored blueprint is invalid",
                 status=500,
                 code="invalid_blueprint_store",
             ) from exc
+        normalized["blueprint"] = validated.model_dump(mode="json")
+        return normalized
 
     @staticmethod
     def _trusted_subject(trusted_subject: str) -> str:
@@ -281,9 +298,8 @@ class AgentBlueprintsServiceMixin:
     def list_agent_blueprints(self, owner_agent_id: str) -> dict[str, Any]:
         owner_profile = self._blueprint_owner_profile(owner_agent_id)
         records = self.repository.list_agent_blueprints(owner_profile)
-        for record in records:
-            self._validate_stored_spec(record)
-        return {"blueprints": [self._present(record) for record in records]}
+        normalized = [self._normalize_stored_record(record) for record in records]
+        return {"blueprints": [self._present(record) for record in normalized]}
 
     def get_agent_blueprint(
         self,
@@ -292,8 +308,7 @@ class AgentBlueprintsServiceMixin:
     ) -> dict[str, Any]:
         owner_profile = self._blueprint_owner_profile(owner_agent_id)
         record = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
-        self._validate_stored_spec(record)
-        return self._present(record)
+        return self._present(self._normalize_stored_record(record))
 
     def patch_agent_blueprint(
         self,
@@ -303,7 +318,8 @@ class AgentBlueprintsServiceMixin:
     ) -> dict[str, Any]:
         owner_profile = self._blueprint_owner_profile(owner_agent_id)
         expected_revision = int(body["expected_revision"])
-        current = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
+        stored = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
+        current = self._normalize_stored_record(stored)
         if current.get("status") not in {"requested", "blueprint_ready", "approved"}:
             raise ServiceError(
                 "blueprint can no longer be edited",
@@ -323,7 +339,7 @@ class AgentBlueprintsServiceMixin:
             blueprint_id,
             expected_revision,
             record,
-            expected_record=current,
+            expected_record=stored,
         )
         return self._present(updated)
 
@@ -336,7 +352,8 @@ class AgentBlueprintsServiceMixin:
     ) -> dict[str, Any]:
         subject = self._trusted_subject(trusted_subject)
         owner_profile = self._blueprint_owner_profile(owner_agent_id)
-        current = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
+        stored = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
+        current = self._normalize_stored_record(stored)
         expected_revision, expected_digest = self._check_lifecycle_request(current, body)
         if current.get("status") != "blueprint_ready" or not current.get("blueprint"):
             raise ServiceError(
@@ -367,7 +384,7 @@ class AgentBlueprintsServiceMixin:
                 blueprint_id,
                 expected_revision,
                 record,
-                expected_record=current,
+                expected_record=stored,
             )
             return self._present(updated)
         approved_at = iso()
@@ -388,7 +405,7 @@ class AgentBlueprintsServiceMixin:
             blueprint_id,
             expected_revision,
             record,
-            expected_record=current,
+            expected_record=stored,
         )
         return self._present(updated)
 
@@ -471,7 +488,8 @@ class AgentBlueprintsServiceMixin:
     ) -> dict[str, Any]:
         subject = self._trusted_subject(trusted_subject)
         owner_profile = self._blueprint_owner_profile(owner_agent_id)
-        current = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
+        stored = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
+        current = self._normalize_stored_record(stored)
         existing_scaffold = current.get("scaffold")
         if self._same_operation(existing_scaffold, body):
             if current.get("status") == "scaffolded":
@@ -490,7 +508,7 @@ class AgentBlueprintsServiceMixin:
                     blueprint_id,
                     int(current["revision"]),
                     recovered,
-                    expected_record=current,
+                    expected_record=stored,
                 )
                 return self._present(current)
             current = self.repository.update_agent_blueprint(
@@ -498,7 +516,7 @@ class AgentBlueprintsServiceMixin:
                 blueprint_id,
                 int(current["revision"]),
                 {**current, "status": "approved", "scaffold": None},
-                expected_record=current,
+                expected_record=stored,
             )
             existing_scaffold = None
         if existing_scaffold:
@@ -546,7 +564,7 @@ class AgentBlueprintsServiceMixin:
             blueprint_id,
             expected_revision,
             in_progress,
-            expected_record=current,
+            expected_record=stored,
         )
         staging = Path(
             tempfile.mkdtemp(
@@ -620,7 +638,8 @@ class AgentBlueprintsServiceMixin:
     ) -> dict[str, Any]:
         subject = self._trusted_subject(trusted_subject)
         owner_profile = self._blueprint_owner_profile(owner_agent_id)
-        current = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
+        stored = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
+        current = self._normalize_stored_record(stored)
         existing_activation = current.get("activation")
         if self._same_operation(existing_activation, body):
             return self._present(current)
@@ -667,7 +686,7 @@ class AgentBlueprintsServiceMixin:
             blueprint_id,
             expected_revision,
             in_progress,
-            expected_record=current,
+            expected_record=stored,
         )
         metadata_path = final / "agent.json"
         config_path = final / "config.yaml"
@@ -708,7 +727,8 @@ class AgentBlueprintsServiceMixin:
     ) -> dict[str, Any]:
         subject = self._trusted_subject(trusted_subject)
         owner_profile = self._blueprint_owner_profile(owner_agent_id)
-        current = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
+        stored = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
+        current = self._normalize_stored_record(stored)
         existing_cancellation = current.get("cancellation")
         if self._same_operation(existing_cancellation, body):
             return self._present(current)
@@ -753,6 +773,6 @@ class AgentBlueprintsServiceMixin:
             blueprint_id,
             expected_revision,
             record,
-            expected_record=current,
+            expected_record=stored,
         )
         return self._present(updated)

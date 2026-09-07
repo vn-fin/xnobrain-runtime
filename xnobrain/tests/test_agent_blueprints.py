@@ -196,6 +196,37 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(path.read_text())["intent"], record["intent"])
         self.assertFalse(any(path.parent.glob(f".{path.name}.*")))
 
+    async def test_list_and_resume_legacy_blueprint_uses_safe_tool_defaults(self):
+        created = (await self.create(blueprint=self.spec())).json()["data"]
+        path = self.root / ".xnobrain" / "agent-blueprints" / f"{created['id']}.json"
+        legacy = json.loads(path.read_text(encoding="utf-8"))
+        del legacy["blueprint"]["tools"]["mcp_servers"]
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+
+        async with self.client() as client:
+            listed = await client.get(
+                "/xnobrain/api/runtime/v1/agent-blueprints?agent=big-brother"
+            )
+            resumed = await client.get(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}"
+                "?agent=big-brother"
+            )
+
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(
+            listed.json()["data"]["blueprints"][0]["blueprint"]["tools"]["mcp_servers"],
+            [],
+        )
+        self.assertEqual(resumed.status_code, 200, resumed.text)
+        self.assertEqual(
+            resumed.json()["data"]["blueprint"]["tools"]["mcp_servers"],
+            [],
+        )
+        self.assertNotIn(
+            "mcp_servers",
+            json.loads(path.read_text(encoding="utf-8"))["blueprint"]["tools"],
+        )
+
     async def test_create_get_patch_revision_and_approval_invalidation(self):
         created = (await self.create(blueprint=self.spec())).json()["data"]
         self.assertEqual(created["status"], "blueprint_ready")
