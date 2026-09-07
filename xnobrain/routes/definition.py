@@ -16,6 +16,7 @@ class Route:
     special: str | None = None
     tags: tuple[str, ...] = ("XNOBrain",)
     include_in_schema: bool = True
+    response_data: type | None = None
 
 
 def route(
@@ -26,7 +27,17 @@ def route(
     special: str | None = None,
     tags: tuple[str, ...] = ("XNOBrain",),
     include_in_schema: bool = True,
+    response_data: type | None = None,
 ) -> Route:
     """Declare a route relative to the current public API version."""
     suffix = f"/{path.lstrip('/')}" if path else ""
-    return Route(method, f"{API_PREFIX}{suffix}", operation, body, special, tags, include_in_schema)
+    return Route(
+        method,
+        f"{API_PREFIX}{suffix}",
+        operation,
+        body,
+        special,
+        tags,
+        include_in_schema,
+        response_data,
+    )

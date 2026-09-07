@@ -94,6 +94,18 @@ curl -fsS -X POST http://localhost:5173/xnobrain/api/runtime/v1/bundles/apply \
 All application endpoints are local; the project does not expose Enterprise
 proxy, device-pairing, dashboard, or observability routes.
 
+
+## Immutable conversation ownership
+
+`POST /sessions?agent=<agent-id>` (and the hidden legacy `/conversations` alias)
+accepts an optional typed `ownership_context`. Omission creates an explicit Personal
+binding. Non-Personal bindings require the Control-verified private facade identity;
+direct callers fail closed. The immutable context is returned by create, list, detail,
+goal/subgoal, and durable run responses. Existing unlabeled Hermes sessions are
+atomically backfilled Personal on first access. Run bodies cannot override owner,
+organization, context, payer, or sponsor grant. See
+[`contracts/conversation-ownership-v1.md`](contracts/conversation-ownership-v1.md).
+
 ## Unified workspace event stream
 
 `GET /xnobrain/api/runtime/v1/events/stream` is the preferred browser SSE
@@ -135,8 +147,10 @@ creator profile selected by the required `?agent=<agent-id>` query parameter;
 normalized proposed file manifest and a canonical SHA-256 digest.
 
 `POST /{blueprint_id}/approvals` requires the current revision, exact canonical
-digest, an explicit `approve` decision, and trusted human actor reference. The
-approval records separate content, permission, model, and context digests.
+digest, and an explicit `approve` decision. It does not accept `approved_by`.
+The approver is the authenticated subject asserted by Control's private gRPC facade;
+missing, unsigned, or direct caller identity fails with `trusted_subject_required`.
+The approval records separate content, permission, model, and context digests.
 Changing intent, context, or blueprint content increments the revision and
 invalidates approval. Approval does not create a profile.
 
@@ -145,3 +159,24 @@ not exposed in this delivery. Existing profile creation cannot yet atomically
 publish the complete approved file plan as a paused child without creating
 history/state and copying inherited skills, so implementing scaffold with that
 API would violate the Agent Maker safety contract.
+
+## Skill lifecycle usage
+
+`GET /xnobrain/api/runtime/v1/agents/{agent_id}/skills/usage` accepts the
+existing `days` or `from`/`to` UTC range parameters plus additive `context`,
+`cursor`, and `limit` (1–100) filters. Omitting the additive filters preserves
+the personal-context behavior and historical `skill_view` fallback when no
+lifecycle event log exists.
+
+New embedded runs write only allowlisted metadata beneath
+`profiles/<agent-id>/skill-usage/v1/events/`: stable event ID, lifecycle type,
+agent/context/run/session IDs, skill ID and `sha256:` digest, attribution,
+timestamp, duration/outcome, and tool name. Prompt text, skill content, tool
+arguments/results, credentials, and absolute paths are never written. Stable
+event IDs make duplicate delivery idempotent. The response distinguishes
+requested, loaded, reference-read, tool-invoked, completed, and failed events;
+tool provenance is explicitly multiple or unattributed where it is not
+singular. Coverage reports the source, selected range/context,
+instrumentation version, event count, and unattributed tool count. Historical
+`state.db` inference remains labeled `observed_load_only` and does not
+manufacture tool or error metrics.

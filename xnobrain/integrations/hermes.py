@@ -25,10 +25,12 @@ from .hermes_support import (
     threading,
 )
 from .mcp import MCPIntegrationMixin
+from .skill_usage import SkillUsageInstrumentationMixin
 from .workspaces import WorkspacesMixin
 
 
 class AgentManager(
+    SkillUsageInstrumentationMixin,
     AgentOperationsMixin,
     MCPIntegrationMixin,
     AgentSkillsMixin,

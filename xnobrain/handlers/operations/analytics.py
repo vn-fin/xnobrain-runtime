@@ -3,7 +3,7 @@
 import time
 from typing import Any, Callable
 
-from ..query import bucket, csv, time_range
+from ..query import bucket, csv, skill_usage_filters, time_range
 
 Operation = tuple[Callable[[], Any], str, int]
 
@@ -39,7 +39,9 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             200,
         ),
         "analytics_agent_skill_usage": (
-            lambda: s.analytics.skill_usage(p["agent_id"], **time_range(q)),
+            lambda: s.analytics.skill_usage(
+                p["agent_id"], **time_range(q), **skill_usage_filters(q)
+            ),
             "agent skill usage retrieved successfully",
             200,
         ),

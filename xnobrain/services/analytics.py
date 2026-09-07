@@ -9,7 +9,9 @@ here and is written to the agent's ``config.yaml`` with a snapshot first.
 from __future__ import annotations
 
 import asyncio
+import base64
 import copy
+import json
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,6 +26,7 @@ from ..integrations.analytics import (
     profile_model_usage,
     skill_usage_profile,
 )
+from ..repositories.skill_usage import SKILL_USAGE_INSTRUMENTATION_VERSION
 from .base import ServiceError
 
 _TOKEN_COLS = (
@@ -221,28 +224,67 @@ class AnalyticsService:
         }
 
     async def skill_usage(
-        self, agent_id: str, *, start_epoch: float, end_epoch: float
+        self,
+        agent_id: str,
+        *,
+        start_epoch: float,
+        end_epoch: float,
+        work_context_id: str | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
     ) -> dict[str, Any]:
-        """Return bounded, honest observed skill-load metrics for one agent."""
+        """Return paged, privacy-safe skill lifecycle metrics for one agent."""
         item = self._require_item(agent_id)
         profile = self._profile_dir(item)
+        context_id = work_context_id or "personal"
+        _validate_work_context_id(context_id)
+        after = _decode_skill_cursor(cursor) if cursor else None
+        page_limit = max(1, min(100, int(limit or 100)))
         if profile is None:
-            return {
-                "agent_id": agent_id,
-                "items": [],
-                "coverage": {
-                    "source": "hermes_tool_calls",
-                    "attribution": "observed_load_only",
-                    "instrumented": False,
-                    "message": "No measured data",
-                },
-            }
-        result = await asyncio.to_thread(
-            skill_usage_profile,
-            profile,
-            start_epoch=start_epoch,
-            end_epoch=end_epoch,
+            return _empty_skill_usage(agent_id, context_id, start_epoch, end_epoch)
+
+        has_events = await asyncio.to_thread(
+            self.repository.has_skill_usage_events,
+            agent_id,
         )
+        if has_events:
+            events = await asyncio.to_thread(
+                self.repository.list_skill_usage_events,
+                agent_id,
+                start_epoch=start_epoch,
+                end_epoch=end_epoch,
+                work_context_id=context_id,
+            )
+            result = _aggregate_skill_events(
+                events,
+                start_epoch=start_epoch,
+                end_epoch=end_epoch,
+                context_id=context_id,
+            )
+        elif work_context_id is None or context_id == "personal":
+            result = await asyncio.to_thread(
+                skill_usage_profile,
+                profile,
+                start_epoch=start_epoch,
+                end_epoch=end_epoch,
+            )
+            result["work_context_id"] = context_id
+            result["coverage"]["instrumentation_version"] = None
+        else:
+            result = _empty_skill_usage(agent_id, context_id, start_epoch, end_epoch)
+
+        items = result["items"]
+        if after is not None:
+            items = [item for item in items if _skill_item_key(item) > after]
+        page = items[:page_limit]
+        next_cursor = (
+            _encode_skill_cursor(_skill_item_key(page[-1]))
+            if len(items) > page_limit and page
+            else None
+        )
+        result["items"] = page
+        result["next_cursor"] = next_cursor
+        result["limit"] = page_limit
         return {"agent_id": agent_id, **result}
 
     async def get_budget(self, agent_id: str) -> dict[str, Any]:
@@ -651,6 +693,156 @@ class AnalyticsService:
             "message": "Central limits are available from Control.",
             "quotas": [],
         }
+
+
+def _empty_skill_usage(
+    agent_id: str,
+    context_id: str,
+    start_epoch: float,
+    end_epoch: float,
+) -> dict[str, Any]:
+    return {
+        "agent_id": agent_id,
+        "work_context_id": context_id,
+        "items": [],
+        "next_cursor": None,
+        "limit": 100,
+        "coverage": {
+            "source": "xnobrain_skill_lifecycle_events",
+            "attribution": "explicit_lifecycle",
+            "from": start_epoch,
+            "to": end_epoch,
+            "instrumented": False,
+            "instrumentation_version": SKILL_USAGE_INSTRUMENTATION_VERSION,
+            "event_count": 0,
+            "unattributed_tool_invocations": 0,
+            "message": "No measured data",
+        },
+    }
+
+
+def _aggregate_skill_events(
+    events: list[Mapping[str, Any]],
+    *,
+    start_epoch: float,
+    end_epoch: float,
+    context_id: str,
+) -> dict[str, Any]:
+    measured: dict[tuple[str, str], dict[str, Any]] = {}
+    unattributed_tools = 0
+    for event in events:
+        event_type = str(event.get("event_type") or "")
+        associations = event.get("associated_skills")
+        if isinstance(associations, list) and associations:
+            linked = [item for item in associations if isinstance(item, Mapping)]
+        elif event.get("skill_id"):
+            linked = [event]
+        else:
+            linked = []
+        if event_type == "skill.tool_invoked" and not linked:
+            unattributed_tools += 1
+        for association in linked:
+            skill_id = str(association.get("skill_id") or "")
+            digest = str(association.get("skill_digest") or "")
+            if not skill_id:
+                continue
+            key = (skill_id, digest)
+            item = measured.setdefault(
+                key,
+                {
+                    "skill_id": skill_id,
+                    "skill_digest": digest or None,
+                    "requested_count": 0,
+                    "loaded_count": 0,
+                    "reference_reads": 0,
+                    "distinct_runs": set(),
+                    "last_used_at": None,
+                    "tool_invocations": 0,
+                    "tool_completed": 0,
+                    "errors": 0,
+                    "attribution": "observed",
+                },
+            )
+            if event_type == "skill.requested":
+                item["requested_count"] += 1
+            elif event_type == "skill.loaded":
+                item["loaded_count"] += 1
+                item["distinct_runs"].add(str(event.get("run_id") or ""))
+            elif event_type == "skill.reference_read":
+                item["reference_reads"] += 1
+            elif event_type == "skill.tool_invoked":
+                item["tool_invocations"] += 1
+            elif event_type == "skill.tool_completed":
+                item["tool_completed"] += 1
+            elif event_type == "skill.tool_failed":
+                item["errors"] += 1
+            occurred_at = str(event.get("occurred_at") or "")
+            if occurred_at and (item["last_used_at"] is None or occurred_at > item["last_used_at"]):
+                item["last_used_at"] = occurred_at
+            if str(event.get("attribution") or "") == "multiple":
+                item["attribution"] = "multiple"
+    items = []
+    for item in measured.values():
+        item["distinct_runs"] = len(item["distinct_runs"])
+        items.append(item)
+    items.sort(key=_skill_item_key)
+    return {
+        "work_context_id": context_id,
+        "items": items,
+        "coverage": {
+            "source": "xnobrain_skill_lifecycle_events",
+            "attribution": "explicit_lifecycle",
+            "from": start_epoch,
+            "to": end_epoch,
+            "instrumented": True,
+            "instrumentation_version": SKILL_USAGE_INSTRUMENTATION_VERSION,
+            "event_count": len(events),
+            "unattributed_tool_invocations": unattributed_tools,
+            "message": (
+                "Measured skill lifecycle metadata"
+                if events
+                else "No measured data in selected range"
+            ),
+        },
+    }
+
+
+def _validate_work_context_id(value: str) -> None:
+    if (
+        not value
+        or len(value) > 256
+        or value[0] not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        or any(
+            char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:-"
+            for char in value
+        )
+    ):
+        raise ValueError("invalid work context id")
+
+
+def _skill_item_key(item: Mapping[str, Any]) -> tuple[str, str]:
+    return str(item.get("skill_id") or ""), str(item.get("skill_digest") or "")
+
+
+def _encode_skill_cursor(key: tuple[str, str]) -> str:
+    payload = json.dumps(list(key), separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_skill_cursor(cursor: str) -> tuple[str, str]:
+    try:
+        if not cursor or len(cursor) > 1024:
+            raise ValueError
+        padding = "=" * (-len(cursor) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(cursor + padding))
+        if not isinstance(decoded, list) or len(decoded) != 2:
+            raise ValueError
+        key = str(decoded[0]), str(decoded[1])
+        if not key[0] or len(key[0]) > 256 or len(key[1]) > 71:
+            raise ValueError
+        return key
+    except (ValueError, TypeError, json.JSONDecodeError) as error:
+        raise ValueError("invalid skill usage cursor") from error
 
 
 # ---- module helpers ---------------------------------------------------------

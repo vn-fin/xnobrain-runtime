@@ -72,6 +72,7 @@ class PlatformService(
     ):
         self.repository = repository
         self.agents = agents
+        self.agents.skill_usage_repository = repository
         self.config = config
         self.router = router
         self.runtime = runtime

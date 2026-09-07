@@ -85,6 +85,8 @@ class ConversationStreamMixin:
         chat_id = "chatcmpl-" + (conversation_id or uuid.uuid4().hex)
         run_id = str(prepared.get("run_id") or ("run_" + uuid.uuid4().hex))
 
+        self._skill_usage_record_requested(prepared, run_id=run_id)
+
         try:
             await self._resolve_prepared_model_route(prepared)
             await self._resolve_prepared_smart_route(prepared)

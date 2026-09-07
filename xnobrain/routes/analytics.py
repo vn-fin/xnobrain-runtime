@@ -1,6 +1,6 @@
 """Analytics API route declarations."""
 
-from ..models import AgentBudgetPatch
+from ..models import AgentBudgetPatch, SkillUsageResponse
 from .definition import route
 
 ROUTES = (
@@ -17,6 +17,7 @@ ROUTES = (
         "/agents/{agent_id}/skills/usage",
         "analytics_agent_skill_usage",
         tags=("Analytics", "Skills"),
+        response_data=SkillUsageResponse,
     ),
     route(
         "GET", "/analytics/agents/{agent_id}/budget", "analytics_budget_get", tags=("Analytics",)

@@ -224,6 +224,8 @@ class ConversationRunnerMixin:
             "timeout_seconds": timeout_seconds,
             "feature": feature,
             "goal_resume": bool(body.get("goal_resume", False)),
+            "requested_skills": normalized_skills,
+            "work_context_id": str((body.get("ownership_context") or {}).get("id") or "personal"),
         }
 
     async def _resolve_prepared_model_route(self, prepared: dict[str, Any]) -> None:
@@ -1114,6 +1116,10 @@ class ConversationRunnerMixin:
             aggregate_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
             result: dict[str, Any] = {}
             first_turn = True
+            skill_tool_start, skill_tool_complete = manager._skill_usage_callbacks(
+                prepared,
+                run_id=run_id,
+            )
             while prompt:
                 history = await adapter._conversation_history_for_session(conversation_id)
                 if smart_route_name and not first_turn:
@@ -1137,6 +1143,8 @@ class ConversationRunnerMixin:
                     session_id=conversation_id,
                     stream_delta_callback=stream_delta_callback,
                     tool_progress_callback=tool_progress_callback,
+                    tool_start_callback=skill_tool_start,
+                    tool_complete_callback=skill_tool_complete,
                     agent_ref=agent_ref,
                     gateway_session_key=conversation_id,
                     route={"model": selected_model} if selected_model else None,

@@ -39,6 +39,15 @@ def time_range(query: Any) -> dict[str, float]:
     return {"start_epoch": start, "end_epoch": end}
 
 
+def skill_usage_filters(query: Any) -> dict[str, Any]:
+    """Parse additive skill-usage context and cursor pagination filters."""
+    return {
+        "work_context_id": str(query.get("context") or "").strip() or None,
+        "cursor": str(query.get("cursor") or "").strip() or None,
+        "limit": _clamp_int(query.get("limit"), 100, 1, 100),
+    }
+
+
 def bucket(query: Any) -> str:
     value = str(query.get("bucket") or "day")
     return value if value in {"hour", "day", "week", "month"} else "day"

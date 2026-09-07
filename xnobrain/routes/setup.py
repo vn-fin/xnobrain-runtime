@@ -156,6 +156,9 @@ def setup_routes(app: Any, handlers: Any) -> None:
             "team_run_stream",
             "conversation_run_stream",
         }
+        response_model = APIEnvelope
+        if route.response_data is not None:
+            response_model = APIEnvelope[route.response_data]
         app.add_api_route(
             route.path,
             _endpoint(handlers, route),
@@ -163,7 +166,7 @@ def setup_routes(app: Any, handlers: Any) -> None:
             name=route.operation,
             tags=list(route.tags),
             include_in_schema=route.include_in_schema,
-            response_model=None if raw_response else APIEnvelope,
+            response_model=None if raw_response else response_model,
         )
 
     # Hermes CLI serves its bundled SPA from a catch-all route. Compatibility
