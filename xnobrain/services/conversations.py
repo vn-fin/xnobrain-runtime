@@ -80,7 +80,10 @@ class ConversationsServiceMixin:
         creation_intent = str(body.get("creation_intent") or "").strip()
         verified = getattr(trusted_context, "ownership_context", None)
         if raw is None and creation_intent:
-            if not isinstance(verified, Mapping) or str(verified.get("id") or "") != creation_intent:
+            if (
+                not isinstance(verified, Mapping)
+                or str(verified.get("id") or "") != creation_intent
+            ):
                 raise ServiceError(
                     "conversation creation intent was not verified by Control",
                     status=403,
