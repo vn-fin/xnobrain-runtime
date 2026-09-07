@@ -88,12 +88,34 @@ class AgentBlueprintRepositoryMixin:
         with self._lock:
             return self._decode_agent_blueprint(path)
 
+    def list_agent_blueprints(
+        self,
+        profile_root: Path,
+    ) -> list[dict[str, Any]]:
+        root = self._agent_blueprints_root(profile_root)
+        with self._lock:
+            records = [
+                self._decode_agent_blueprint(path)
+                for path in root.glob("abp_*.json")
+                if path.is_file() and not path.is_symlink()
+            ]
+        return sorted(
+            records,
+            key=lambda item: (
+                str(item.get("updated_at") or ""),
+                str(item.get("id") or ""),
+            ),
+            reverse=True,
+        )
+
     def update_agent_blueprint(
         self,
         profile_root: Path,
         blueprint_id: Any,
         expected_revision: int,
         record: Mapping[str, Any],
+        *,
+        expected_record: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         path = self._agent_blueprint_path(profile_root, blueprint_id)
         with self._lock:
@@ -103,6 +125,12 @@ class AgentBlueprintRepositoryMixin:
                     "blueprint revision conflict",
                     status=409,
                     code="blueprint_revision_conflict",
+                )
+            if expected_record is not None and current != dict(expected_record):
+                raise StoreError(
+                    "blueprint state conflict",
+                    status=409,
+                    code="blueprint_state_conflict",
                 )
             next_record = dict(record)
             next_revision = int(next_record.get("revision") or 0)

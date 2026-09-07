@@ -1,4 +1,4 @@
-"""Typed contracts for the Agent Maker blueprint draft lifecycle."""
+"""Typed contracts for the Agent Maker blueprint lifecycle."""
 
 from typing import Literal
 
@@ -168,7 +168,25 @@ class AgentBlueprintApprovalCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     canonical_digest: str = Field(pattern=_SHA256)
-    decision: Literal["approve"]
+    decision: Literal["approve", "deny"]
+    reason: str | None = Field(default=None, min_length=1, max_length=2_000)
+
+
+class AgentBlueprintLifecycleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    canonical_digest: str = Field(pattern=_SHA256)
+    idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
+    decision: Literal["scaffold", "activate"]
+
+
+class AgentBlueprintCancel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    canonical_digest: str = Field(pattern=_SHA256)
+    idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
+    decision: Literal["cancel"]
+    reason: str | None = Field(default=None, min_length=1, max_length=2_000)
 
 
 class BlueprintFileManifestEntry(BaseModel):
@@ -195,6 +213,21 @@ class BlueprintApproval(BaseModel):
     approved_at: str
 
 
+class BlueprintLifecycleOperation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    revision: int = Field(ge=1)
+    canonical_digest: str = Field(pattern=_SHA256)
+    idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
+    actor: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
+    started_at: str
+    completed_at: str | None = None
+
+
+class BlueprintCancellation(BlueprintLifecycleOperation):
+    decision: Literal["cancel", "deny"]
+    reason: str | None = Field(default=None, max_length=2_000)
+
+
 class AgentBlueprintRecord(BaseModel):
     """Validated representation returned by every blueprint lifecycle endpoint."""
 
@@ -206,10 +239,27 @@ class AgentBlueprintRecord(BaseModel):
     target_profile_id: str = Field(pattern=r"^agent-[0-9a-f]{12}$")
     intent: str = Field(min_length=1, max_length=20_000)
     blueprint: AgentBlueprintSpec | None
-    status: Literal["requested", "blueprint_ready", "approved"]
+    status: Literal[
+        "requested",
+        "blueprint_ready",
+        "approved",
+        "scaffolding",
+        "scaffolded",
+        "activating",
+        "active",
+        "cancelled",
+    ]
     approval: BlueprintApproval | None
+    scaffold: BlueprintLifecycleOperation | None = None
+    activation: BlueprintLifecycleOperation | None = None
+    cancellation: BlueprintCancellation | None = None
     created_at: str
     updated_at: str
     file_manifest: list[BlueprintFileManifestEntry] = Field(max_length=256)
     approval_binding: BlueprintApprovalBinding
     canonical_digest: str = Field(pattern=_SHA256)
+
+
+class AgentBlueprintList(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    blueprints: list[AgentBlueprintRecord]

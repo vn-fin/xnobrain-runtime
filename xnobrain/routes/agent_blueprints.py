@@ -2,12 +2,15 @@
 
 from ..models import (
     AgentBlueprintApprovalCreate,
+    AgentBlueprintCancel,
     AgentBlueprintCreate,
+    AgentBlueprintLifecycleRequest,
     AgentBlueprintPatch,
 )
 from .definition import route
 
 ROUTES = (
+    route("GET", "/agent-blueprints", "agent_blueprints_list", tags=("Agent Maker",)),
     route(
         "POST",
         "/agent-blueprints",
@@ -26,6 +29,27 @@ ROUTES = (
         "/agent-blueprints/{blueprint_id}",
         "agent_blueprints_patch",
         AgentBlueprintPatch,
+        tags=("Agent Maker",),
+    ),
+    route(
+        "POST",
+        "/agent-blueprints/{blueprint_id}/scaffold",
+        "agent_blueprints_scaffold",
+        AgentBlueprintLifecycleRequest,
+        tags=("Agent Maker",),
+    ),
+    route(
+        "POST",
+        "/agent-blueprints/{blueprint_id}/activate",
+        "agent_blueprints_activate",
+        AgentBlueprintLifecycleRequest,
+        tags=("Agent Maker",),
+    ),
+    route(
+        "POST",
+        "/agent-blueprints/{blueprint_id}/cancel",
+        "agent_blueprints_cancel",
+        AgentBlueprintCancel,
         tags=("Agent Maker",),
     ),
     route(

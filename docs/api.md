@@ -166,29 +166,50 @@ quota/rate-limit, malformed-response, and supported transient provider failures
 can therefore advance to another candidate. Explicit models and user-created
 blend strategies retain their existing behavior.
 
-## Agent Maker blueprint drafts
+## Agent Maker trusted blueprint lifecycle
 
-Runtime exposes the pre-scaffold Agent Maker lifecycle under
-`/xnobrain/api/runtime/v1/agent-blueprints`. `POST` creates a draft in the
-creator profile selected by the required `?agent=<agent-id>` query parameter;
-`GET /{blueprint_id}` resumes it; and `PATCH /{blueprint_id}` requires
-`expected_revision`. Draft records remain private below that creator profile's
-`.xnobrain/agent-blueprints` directory. A complete typed blueprint returns its
-normalized proposed file manifest and a canonical SHA-256 digest.
+Runtime exposes owner-profile-local Agent Maker records under
+`/xnobrain/api/runtime/v1/agent-blueprints`; every route requires
+`?agent=<creator-agent-id>`. `GET` lists that creator's records newest-first,
+`POST` creates a draft without creating a child profile, and
+`GET /{blueprint_id}` resumes the exact persisted revision. `PATCH /{blueprint_id}`
+uses `expected_revision`, invalidates prior approval, and rejects stale writes with
+`blueprint_revision_conflict`. Records and mutable lifecycle operations use atomic
+profile-local JSON below `.xnobrain/agent-blueprints`.
 
-`POST /{blueprint_id}/approvals` requires the current revision, exact canonical
-digest, and an explicit `approve` decision. It does not accept `approved_by`.
-The approver is the authenticated subject asserted by Control's private gRPC facade;
-missing, unsigned, or direct caller identity fails with `trusted_subject_required`.
-The approval records separate content, permission, model, and context digests.
-Changing intent, context, or blueprint content increments the revision and
-invalidates approval. Approval does not create a profile.
+Personal drafts use `work_context_id: "personal"`. Any other work context must equal
+the independently signed conversation ownership context supplied by Control; an
+unsigned or mismatched context is rejected.
 
-Scaffold, certification, activation, and cancellation routes are intentionally
-not exposed in this delivery. Existing profile creation cannot yet atomically
-publish the complete approved file plan as a paused child without creating
-history/state and copying inherited skills, so implementing scaffold with that
-API would violate the Agent Maker safety contract.
+`POST /{blueprint_id}/approvals` accepts `approve` or `deny`, the current revision,
+and the exact canonical digest. The actor always comes from Control's verified
+principal headers; caller-supplied `approved_by` is forbidden. Approval binds
+content, permissions, model, context, target profile, and revision. Denial is
+terminal and records the authenticated actor and optional reason without creating a
+profile.
+
+The remaining trusted operations require the verified actor plus
+`expected_revision`, `canonical_digest`, an `idempotency_key`, and the exact
+operation `decision` (`scaffold`, `activate`, or `cancel`):
+
+- `POST /{blueprint_id}/scaffold` requires current approval. It stages and
+  atomically publishes exactly one generated child at the server-reserved target.
+  The child is `draft` and paused, with manual protected-write approval, cron and
+  MCP disabled, no state database/sessions/logs, no provider credentials or custom
+  base URL, and only blueprint-pinned skills/memory seeds. It never clones the
+  creator profile or global skills. An occupied or drifted target fails closed.
+- `POST /{blueprint_id}/activate` is a separate authenticated decision. It changes
+  only the scaffold lifecycle markers to active; it does not enable cron or MCP and
+  does not claim that certification ran. Bounded child-path certification remains a
+  later lifecycle slice.
+- `POST /{blueprint_id}/cancel` prevents future blueprint steps and retains any
+  paused draft profile for explicit cleanup. It never deletes files implicitly; an
+  active profile must use the separate profile lifecycle.
+
+A replay with the same operation key, revision, and digest returns the persisted
+result. Reusing a completed lifecycle with different idempotency material returns
+`blueprint_idempotency_conflict`. Digest, revision, approval, target collision, and
+profile-drift conflicts fail without widening permissions or activating a profile.
 
 ## Skill lifecycle usage
 
