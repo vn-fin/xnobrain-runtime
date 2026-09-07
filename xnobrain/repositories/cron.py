@@ -46,4 +46,3 @@ class CronRepositoryMixin:
                     self._sync_dir(path.parent)
                     return True
         return False
-

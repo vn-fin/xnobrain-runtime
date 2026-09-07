@@ -1,0 +1,6 @@
+interface:
+  display_name: "Skill optimizer"
+  short_description: "Measure, propose, evaluate, and safely improve skills"
+  default_prompt: "Review measured skill usage for this agent and propose a bounded, testable improvement without applying it."
+policy:
+  allow_implicit_invocation: false

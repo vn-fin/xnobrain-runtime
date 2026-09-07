@@ -24,7 +24,9 @@ class ChatRequest(BaseModel):
     toolsets: list[str] | None = None
     timeout_seconds: int | None = Field(default=None, gt=0)
     run_mode: Literal["auto", "interactive", "background"] = "auto"
-    feature: Literal["todo", "delegate", "goal", "learn"] | None = None
+    feature: (
+        Literal["todo", "delegate", "goal", "learn", "agent_maker", "optimize_skills"] | None
+    ) = None
 
 
 class GoalContractInput(BaseModel):

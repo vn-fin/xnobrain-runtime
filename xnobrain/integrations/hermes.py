@@ -5,19 +5,19 @@ from __future__ import annotations
 from .agent_profiles import AgentProfilesMixin
 from .agent_skills import AgentSkillsMixin
 from .agents import AgentOperationsMixin
-from .conversation_runner import ConversationRunnerMixin
-from .conversation_prompt import ConversationPromptMixin
 from .conversation_goals import ConversationGoalsMixin
+from .conversation_prompt import ConversationPromptMixin
+from .conversation_runner import ConversationRunnerMixin
 from .conversation_stream import ConversationStreamMixin
 from .conversations import ConversationsMixin
 from .default_skills import DefaultSkillsMixin
 from .hermes_commands import HermesCommandsMixin
 from .hermes_support import *  # noqa: F401,F403
 from .hermes_support import (
-    AgentAPIError,
-    Any,
     DEFAULT_PROFILES_ROOT,
     DEFAULT_ROOT_PROFILE,
+    AgentAPIError,
+    Any,
     LLMRouterClient,
     Path,
     asyncio,  # noqa: F401 - retained for existing runtime monkeypatches
@@ -51,9 +51,7 @@ class AgentManager(
         profile_template: str | Path | None = None,
     ):
         self.root_profile = Path(
-            root_profile
-            or os.environ.get("HERMES_ROOT_PROFILE")
-            or DEFAULT_ROOT_PROFILE
+            root_profile or os.environ.get("HERMES_ROOT_PROFILE") or DEFAULT_ROOT_PROFILE
         )
         self.profiles_root = Path(
             profiles_root
@@ -78,9 +76,7 @@ class AgentManager(
         configured_template = Path(configured_template)
         bundled_template = Path(__file__).resolve().parents[2] / "runtime" / "profile-templates"
         self.profile_template = (
-            configured_template
-            if configured_template.is_dir()
-            else bundled_template
+            configured_template if configured_template.is_dir() else bundled_template
         )
         self.llm_router = LLMRouterClient()
         self._active_runs: dict[str, dict[str, Any]] = {}
@@ -96,7 +92,6 @@ class AgentManager(
             for profile_dir in self.profiles_root.iterdir():
                 if profile_dir.is_dir():
                     self._apply_default_skills_policy(profile_dir)
-
 
 
 __all__ = ["AgentAPIError", "AgentManager"]

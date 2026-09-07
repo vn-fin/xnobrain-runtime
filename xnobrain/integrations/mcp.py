@@ -30,17 +30,13 @@ class MCPIntegrationMixin:
                 }
         return safe
 
-
     def get_mcp(self, raw_name: Any) -> dict[str, Any]:
         profile_dir = self._require_profile(self._agent_name(raw_name))
         config = self._read_config(profile_dir)
         servers = config.get("mcp_servers")
         return {
-            "servers": self._safe_mcp_servers(servers)
-            if isinstance(servers, Mapping)
-            else {},
+            "servers": self._safe_mcp_servers(servers) if isinstance(servers, Mapping) else {},
         }
-
 
     def update_mcp(self, raw_name: Any, servers: Mapping[str, Any]) -> dict[str, Any]:
         from urllib.parse import urlparse

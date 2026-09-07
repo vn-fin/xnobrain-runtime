@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import logging
-from pathlib import Path
 import sqlite3
 import time
-from typing import Any, Mapping
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Mapping
 
 from ..integrations import (
     CronBlueprintInvalid,
@@ -18,7 +18,6 @@ from ..integrations import (
     CronDeliveryAdapterError,
 )
 from ..repositories import FileRepository
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -50,11 +49,7 @@ class CronService:
     def list_jobs(self, agent_id: str | None = None) -> list[dict[str, Any]]:
         profile_jobs = self._jobs_by_profile([agent_id] if agent_id else None)
         self.reconcile_deliveries(profile_jobs)
-        return [
-            self._dto(profile, job)
-            for profile, jobs in profile_jobs
-            for job in jobs
-        ]
+        return [self._dto(profile, job) for profile, jobs in profile_jobs for job in jobs]
 
     def get_job_detail(self, job_id: str, agent_id: str | None = None) -> dict[str, Any]:
         profile_jobs = self._jobs_by_profile([agent_id] if agent_id else None)
@@ -96,29 +91,43 @@ class CronService:
             raise CronServiceError(str(exc), code="invalid_schedule") from exc
         if self.kanban is not None:
             next_run_at = _iso(created.get("next_run_at"))
-            task = self.kanban.create_task("default", {
-                "title": name,
-                "description": prompt,
-                "status": "scheduled",
-                "assignee": agent_id,
-                "schedule": {
-                    "recurrence": "interval" if interval > 0 else "once",
-                    "scheduled_at": next_run_at,
-                    "interval_minutes": interval if interval > 0 else None,
-                    "timezone": "Etc/UTC",
+            task = self.kanban.create_task(
+                "default",
+                {
+                    "title": name,
+                    "description": prompt,
+                    "status": "scheduled",
+                    "assignee": agent_id,
+                    "schedule": {
+                        "recurrence": "interval" if interval > 0 else "once",
+                        "scheduled_at": next_run_at,
+                        "interval_minutes": interval if interval > 0 else None,
+                        "timezone": "Etc/UTC",
+                    },
                 },
-            }, created_by="cron")
-            created = self._native(agent_id, "update_job", str(created["id"]), {
-                "xnobrain_kanban_board": "default",
-                "xnobrain_kanban_task_id": str(task["id"]),
-            }) or created
+                created_by="cron",
+            )
+            created = (
+                self._native(
+                    agent_id,
+                    "update_job",
+                    str(created["id"]),
+                    {
+                        "xnobrain_kanban_board": "default",
+                        "xnobrain_kanban_task_id": str(task["id"]),
+                    },
+                )
+                or created
+            )
         return self._dto(agent_id, created)
 
     def list_blueprints(self) -> dict[str, Any]:
         try:
             return {"blueprints": self.delivery.list_blueprints()}
         except CronDeliveryAdapterError as exc:
-            raise CronServiceError(str(exc), status=503, code="cron_blueprints_unavailable") from exc
+            raise CronServiceError(
+                str(exc), status=503, code="cron_blueprints_unavailable"
+            ) from exc
 
     def instantiate_blueprint(self, body: Mapping[str, Any]) -> dict[str, Any]:
         agent_id = str(body.get("agent_id") or "").strip()
@@ -130,7 +139,9 @@ class CronService:
         except CronBlueprintInvalid as exc:
             raise CronServiceError(str(exc), status=422, code="invalid_blueprint_values") from exc
         except CronDeliveryAdapterError as exc:
-            raise CronServiceError(str(exc), status=503, code="cron_blueprints_unavailable") from exc
+            raise CronServiceError(
+                str(exc), status=503, code="cron_blueprints_unavailable"
+            ) from exc
         deliver = str(spec.get("deliver") or "local")
         native_deliver = deliver if deliver not in {"origin", ""} else "local"
         try:
@@ -147,10 +158,14 @@ class CronService:
             raise CronServiceError(str(exc), status=422, code="invalid_schedule") from exc
         targets = list(body.get("deliver_targets") or [])
         if not targets and native_deliver not in {"local", "origin"}:
-            targets = [{
-                "target_type": "email" if native_deliver.split(":", 1)[0] == "email" else "channel",
-                "destination": native_deliver,
-            }]
+            targets = [
+                {
+                    "target_type": "email"
+                    if native_deliver.split(":", 1)[0] == "email"
+                    else "channel",
+                    "destination": native_deliver,
+                }
+            ]
         for target in targets:
             self.add_delivery_target(str(created["id"]), target, agent_id)
         profile, updated = self._find_job(str(created["id"]), agent_id)
@@ -174,17 +189,37 @@ class CronService:
                     "id": target_id,
                     "name": str(row.get("name") or target_id.title()),
                     "available": bool(row.get("home_target_set")),
-                    "degraded_reason": None if row.get("home_target_set") else "No home delivery target configured",
+                    "degraded_reason": None
+                    if row.get("home_target_set")
+                    else "No home delivery target configured",
                 }
-        discovered.setdefault(("email", "email"), {
-            "target_type": "email", "id": "email", "name": "Email",
-            "available": False, "degraded_reason": "No email delivery target configured",
-        })
+        discovered.setdefault(
+            ("email", "email"),
+            {
+                "target_type": "email",
+                "id": "email",
+                "name": "Email",
+                "available": False,
+                "degraded_reason": "No email delivery target configured",
+            },
+        )
         return {
             "options": [
                 *discovered.values(),
-                {"target_type": "kanban", "id": "kanban", "name": "Kanban board", "available": True, "degraded_reason": None},
-                {"target_type": "file", "id": "file", "name": "Workspace file", "available": True, "degraded_reason": None},
+                {
+                    "target_type": "kanban",
+                    "id": "kanban",
+                    "name": "Kanban board",
+                    "available": True,
+                    "degraded_reason": None,
+                },
+                {
+                    "target_type": "file",
+                    "id": "file",
+                    "name": "Workspace file",
+                    "available": True,
+                    "degraded_reason": None,
+                },
             ]
         }
 
@@ -202,30 +237,46 @@ class CronService:
         target_type = str(body.get("target_type") or "").strip()
         destination = str(body.get("destination") or "").strip()
         if target_type not in {"channel", "email", "kanban", "file"}:
-            raise CronServiceError("invalid delivery target type", status=422, code="invalid_delivery_target")
+            raise CronServiceError(
+                "invalid delivery target type", status=422, code="invalid_delivery_target"
+            )
         if target_type == "kanban":
             if not destination:
-                raise CronServiceError("Kanban board is required", status=422, code="invalid_delivery_target")
+                raise CronServiceError(
+                    "Kanban board is required", status=422, code="invalid_delivery_target"
+                )
             if self.kanban is None:
                 raise CronServiceError("Kanban is unavailable", status=503, code="kanban_not_ready")
             self.kanban.get_board(destination)
         elif target_type == "file":
             if not destination:
-                raise CronServiceError("workspace file path is required", status=422, code="invalid_delivery_target")
+                raise CronServiceError(
+                    "workspace file path is required", status=422, code="invalid_delivery_target"
+                )
             try:
                 path = self.agents._workspace_path(profile, destination, require_file=False)
-                destination = path.relative_to(self.agents._workspace_dir(profile).resolve()).as_posix()
+                destination = path.relative_to(
+                    self.agents._workspace_dir(profile).resolve()
+                ).as_posix()
             except (ValueError, OSError) as exc:
-                raise CronServiceError("workspace delivery path is invalid", code="invalid_workspace_path") from exc
+                raise CronServiceError(
+                    "workspace delivery path is invalid", code="invalid_workspace_path"
+                ) from exc
         else:
             if not destination:
                 raise CronServiceError(
-                    f"{target_type} destination is required", status=422, code="invalid_delivery_target"
+                    f"{target_type} destination is required",
+                    status=422,
+                    code="invalid_delivery_target",
                 )
-            option = next((
-                item for item in self.list_delivery_target_options(profile)["options"]
-                if item["target_type"] == target_type and item["id"] == destination
-            ), None)
+            option = next(
+                (
+                    item
+                    for item in self.list_delivery_target_options(profile)["options"]
+                    if item["target_type"] == target_type and item["id"] == destination
+                ),
+                None,
+            )
             if not option or not option.get("available"):
                 raise CronServiceError(
                     f"{target_type} delivery target is not configured",
@@ -242,10 +293,15 @@ class CronService:
         targets = [dict(item) for item in job.get("xnobrain_delivery_targets") or []]
         targets.append(target)
         self._snapshot_store(profile)
-        updated = self._native(profile, "update_job", str(job["id"]), {
-            "xnobrain_delivery_targets": targets,
-            "deliver": self._native_deliver(targets),
-        })
+        updated = self._native(
+            profile,
+            "update_job",
+            str(job["id"]),
+            {
+                "xnobrain_delivery_targets": targets,
+                "deliver": self._native_deliver(targets),
+            },
+        )
         return self._target_dto(profile, updated or job, target)
 
     def remove_delivery_target(
@@ -258,12 +314,19 @@ class CronService:
         targets = [dict(item) for item in job.get("xnobrain_delivery_targets") or []]
         kept = [item for item in targets if str(item.get("id")) != str(target_id)]
         if len(kept) == len(targets):
-            raise CronServiceError("delivery target not found", status=404, code="delivery_target_not_found")
+            raise CronServiceError(
+                "delivery target not found", status=404, code="delivery_target_not_found"
+            )
         self._snapshot_store(profile)
-        self._native(profile, "update_job", str(job["id"]), {
-            "xnobrain_delivery_targets": kept,
-            "deliver": self._native_deliver(kept),
-        })
+        self._native(
+            profile,
+            "update_job",
+            str(job["id"]),
+            {
+                "xnobrain_delivery_targets": kept,
+                "deliver": self._native_deliver(kept),
+            },
+        )
         return {"deleted": True}
 
     def set_enabled(
@@ -292,7 +355,12 @@ class CronService:
         now = _iso(datetime.now(timezone.utc))
         return {
             "job": self._dto(profile, triggered),
-            "run": {"id": f"pending-{job['id']}", "state": "running", "triggered_at": now, "deliveries": []},
+            "run": {
+                "id": f"pending-{job['id']}",
+                "state": "running",
+                "triggered_at": now,
+                "deliveries": [],
+            },
         }
 
     def due_jobs(self) -> list[tuple[str, str]]:
@@ -328,9 +396,9 @@ class CronService:
 
     def fire_due(self, profile: str, job_id: str) -> bool:
         """Claim and execute one due job using its profile-scoped Hermes home."""
-        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
         from cron import jobs as cron_jobs
         from cron.scheduler_provider import resolve_cron_scheduler
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
 
         home = self._profile_home(profile)
         token = set_hermes_home_override(str(home))
@@ -369,7 +437,10 @@ class CronService:
                 if not targets:
                     continue
                 records = [dict(item) for item in job.get("xnobrain_delivery_records") or []]
-                indexed = {(str(item.get("execution_id")), str(item.get("target_id"))): item for item in records}
+                indexed = {
+                    (str(item.get("execution_id")), str(item.get("target_id"))): item
+                    for item in records
+                }
                 changed = False
                 for execution in reversed(self._executions(profile, job, 50)):
                     status = str(execution.get("status") or "")
@@ -400,9 +471,14 @@ class CronService:
                         changed = True
                 if changed:
                     self._snapshot_store(profile)
-                    self._native(profile, "update_job", str(job["id"]), {
-                        "xnobrain_delivery_records": records[-500:],
-                    })
+                    self._native(
+                        profile,
+                        "update_job",
+                        str(job["id"]),
+                        {
+                            "xnobrain_delivery_records": records[-500:],
+                        },
+                    )
                     # Keep the request's loaded job in sync with the durable
                     # update so detail/run responses publish delivery state
                     # immediately, without requiring a second refresh.
@@ -420,11 +496,20 @@ class CronService:
         execution_status = str(execution.get("status") or "")
         if target_type in {"channel", "email"}:
             if execution_status != "completed":
-                return {"status": "failed", "reason": str(execution.get("error") or "Cron run failed")[:500]}
+                return {
+                    "status": "failed",
+                    "reason": str(execution.get("error") or "Cron run failed")[:500],
+                }
             delivery_error = str(job.get("last_delivery_error") or "").strip()
-            return {"status": "failed" if delivery_error else "delivered", "reason": delivery_error[:500] or None}
+            return {
+                "status": "failed" if delivery_error else "delivered",
+                "reason": delivery_error[:500] or None,
+            }
         if execution_status != "completed":
-            return {"status": "failed", "reason": str(execution.get("error") or "Cron run failed")[:500]}
+            return {
+                "status": "failed",
+                "reason": str(execution.get("error") or "Cron run failed")[:500],
+            }
         if output is None:
             return None
         delivery_key = hashlib.sha256(f"{execution['id']}:{target['id']}".encode()).hexdigest()
@@ -438,24 +523,35 @@ class CronService:
                     digest = hashlib.sha256(payload).hexdigest()
                     relative = destination.relative_to(self.agents.workspace_dir(profile))
                     snapshot = (
-                        self._profile_home(profile) / "snapshots" / "workspace"
-                        / relative.parent / f"{relative.name}.{time.time_ns()}-{digest[:12]}"
+                        self._profile_home(profile)
+                        / "snapshots"
+                        / "workspace"
+                        / relative.parent
+                        / f"{relative.name}.{time.time_ns()}-{digest[:12]}"
                     )
                     self.repository.atomic_write(snapshot, payload, mode=0o440, replace=False)
                 self.repository.atomic_write(destination, output.encode("utf-8"))
             elif target_type == "kanban":
                 if self.kanban is None:
                     return {"status": "degraded", "reason": "Kanban is unavailable"}
-                self.kanban.create_task(str(target.get("destination") or "default"), {
-                    "title": f"{job.get('name') or 'Automation'} result",
-                    "description": output[:50_000] or "Cron run completed without text output.",
-                    "status": "todo",
-                    "idempotency_key": f"cron-delivery:{delivery_key}",
-                }, created_by="xnobrain-cron")
+                self.kanban.create_task(
+                    str(target.get("destination") or "default"),
+                    {
+                        "title": f"{job.get('name') or 'Automation'} result",
+                        "description": output[:50_000] or "Cron run completed without text output.",
+                        "status": "todo",
+                        "idempotency_key": f"cron-delivery:{delivery_key}",
+                    },
+                    created_by="xnobrain-cron",
+                )
             else:
                 return {"status": "failed", "reason": "Unsupported delivery target"}
         except Exception:
-            reason = "Workspace file delivery failed" if target_type == "file" else "Kanban delivery failed"
+            reason = (
+                "Workspace file delivery failed"
+                if target_type == "file"
+                else "Kanban delivery failed"
+            )
             return {"status": "degraded", "reason": reason}
         return {"status": "delivered", "reason": None}
 
@@ -500,6 +596,7 @@ class CronService:
 
     def _native_module(self, profile: str, module: str, function: str, *args, **kwargs):
         from importlib import import_module
+
         from hermes_constants import reset_hermes_home_override, set_hermes_home_override
 
         home = self._profile_home(profile)
@@ -516,7 +613,9 @@ class CronService:
     def _profile_home(self, agent_id: str) -> Path:
         home = self.agents.profile_path(agent_id)
         if not home.is_dir():
-            raise CronServiceError("cron agent profile is unavailable", status=404, code="agent_not_found")
+            raise CronServiceError(
+                "cron agent profile is unavailable", status=404, code="agent_not_found"
+            )
         return home
 
     def _snapshot_store(self, profile: str) -> None:
@@ -525,7 +624,13 @@ class CronService:
             return
         payload = path.read_bytes()
         digest = hashlib.sha256(payload).hexdigest()
-        snapshot = self._profile_home(profile) / "snapshots" / "cron" / "jobs" / f"{time.time_ns()}-{digest[:12]}.json"
+        snapshot = (
+            self._profile_home(profile)
+            / "snapshots"
+            / "cron"
+            / "jobs"
+            / f"{time.time_ns()}-{digest[:12]}.json"
+        )
         self.repository.atomic_write(snapshot, payload, mode=0o440, replace=False)
 
     def _snapshot_job_output(self, profile: str, job_id: str) -> None:
@@ -533,8 +638,12 @@ class CronService:
         if not output_dir.is_dir():
             return
         snapshot_dir = (
-            self._profile_home(profile) / "snapshots" / "cron" / "output"
-            / job_id / str(time.time_ns())
+            self._profile_home(profile)
+            / "snapshots"
+            / "cron"
+            / "output"
+            / job_id
+            / str(time.time_ns())
         )
         for source in output_dir.glob("*.md"):
             if source.is_file():
@@ -560,7 +669,9 @@ class CronService:
 
     def _target_dtos(self, profile: str, job: Mapping[str, Any]) -> list[dict[str, Any]]:
         targets = list(job.get("xnobrain_delivery_targets") or [])
-        needs_options = any(str(item.get("target_type") or "") in {"channel", "email"} for item in targets)
+        needs_options = any(
+            str(item.get("target_type") or "") in {"channel", "email"} for item in targets
+        )
         options = self.list_delivery_target_options(profile)["options"] if needs_options else []
         return [self._target_dto(profile, job, item, options) for item in targets]
 
@@ -576,8 +687,19 @@ class CronService:
         available, reason = True, None
         if target_type in {"channel", "email"}:
             option_id = destination.split(":", 1)[0] or "email"
-            available_options = options if options is not None else self.list_delivery_target_options(profile)["options"]
-            option = next((item for item in available_options if item["target_type"] == target_type and item["id"] == option_id), None)
+            available_options = (
+                options
+                if options is not None
+                else self.list_delivery_target_options(profile)["options"]
+            )
+            option = next(
+                (
+                    item
+                    for item in available_options
+                    if item["target_type"] == target_type and item["id"] == option_id
+                ),
+                None,
+            )
             available = bool(option and option.get("available"))
             reason = None if available else "Delivery target is not configured"
         return {
@@ -599,7 +721,9 @@ class CronService:
         result["schedule"] = str(display or schedule or "")
         result["next_run_at"] = _iso(job.get("next_run_at"))
         result["enabled"] = bool(job.get("enabled", True))
-        result["delivery_targets"] = [dict(item) for item in job.get("xnobrain_delivery_targets") or []]
+        result["delivery_targets"] = [
+            dict(item) for item in job.get("xnobrain_delivery_targets") or []
+        ]
         result["kanban_board"] = str(job.get("xnobrain_kanban_board") or "") or None
         result["kanban_task_id"] = str(job.get("xnobrain_kanban_task_id") or "") or None
         result.pop("xnobrain_delivery_records", None)
@@ -635,7 +759,7 @@ class CronService:
             (item for item in output_dir.glob("*.md") if item.is_file()),
             key=lambda item: (item.stat().st_mtime_ns, item.name),
             reverse=True,
-        )[:max(1, min(limit, 100))]
+        )[: max(1, min(limit, 100))]
         synthesized: list[dict[str, Any]] = []
         for index, artifact in enumerate(artifacts):
             finished = datetime.fromtimestamp(artifact.stat().st_mtime, timezone.utc)
@@ -643,44 +767,54 @@ class CronService:
             failed = "\n## Error\n" in text or (
                 index == 0 and str(job.get("last_status") or "ok") != "ok"
             )
-            synthesized.append({
-                "id": f"output-{artifact.name}",
-                "job_id": job_id,
-                "status": "failed" if failed else "completed",
-                "claimed_at": _iso(finished),
-                "started_at": _iso(finished),
-                "finished_at": _iso(finished),
-                "error": str(job.get("last_error") or "") if failed and index == 0 else "",
-                "output_path": str(artifact),
-            })
+            synthesized.append(
+                {
+                    "id": f"output-{artifact.name}",
+                    "job_id": job_id,
+                    "status": "failed" if failed else "completed",
+                    "claimed_at": _iso(finished),
+                    "started_at": _iso(finished),
+                    "finished_at": _iso(finished),
+                    "error": str(job.get("last_error") or "") if failed and index == 0 else "",
+                    "output_path": str(artifact),
+                }
+            )
         return synthesized
 
     def _run_dtos(self, profile: str, job: Mapping[str, Any], limit: int) -> list[dict[str, Any]]:
         records = [dict(item) for item in job.get("xnobrain_delivery_records") or []]
         by_execution: dict[str, list[dict[str, Any]]] = {}
         for item in records:
-            by_execution.setdefault(str(item.get("execution_id") or ""), []).append({
-                "target_id": str(item.get("target_id") or ""),
-                "target_type": str(item.get("target_type") or ""),
-                "status": str(item.get("status") or ""),
-                "at": str(item.get("at") or ""),
-                "reason": item.get("reason"),
-            })
+            by_execution.setdefault(str(item.get("execution_id") or ""), []).append(
+                {
+                    "target_id": str(item.get("target_id") or ""),
+                    "target_type": str(item.get("target_type") or ""),
+                    "status": str(item.get("status") or ""),
+                    "at": str(item.get("at") or ""),
+                    "reason": item.get("reason"),
+                }
+            )
         result = []
         for execution in self._executions(profile, job, limit):
-            state = {"claimed": "running", "running": "running", "completed": "success"}.get(str(execution["status"]), "failed")
-            result.append({
-                "id": str(execution["id"]),
-                "occurrence_id": str(execution["id"]),
-                "state": state,
-                "triggered_at": str(execution.get("claimed_at") or ""),
-                "completed_at": str(execution.get("finished_at") or ""),
-                "error": str(execution.get("error") or "")[:4_000],
-                "deliveries": by_execution.get(str(execution["id"]), []),
-            })
+            state = {"claimed": "running", "running": "running", "completed": "success"}.get(
+                str(execution["status"]), "failed"
+            )
+            result.append(
+                {
+                    "id": str(execution["id"]),
+                    "occurrence_id": str(execution["id"]),
+                    "state": state,
+                    "triggered_at": str(execution.get("claimed_at") or ""),
+                    "completed_at": str(execution.get("finished_at") or ""),
+                    "error": str(execution.get("error") or "")[:4_000],
+                    "deliveries": by_execution.get(str(execution["id"]), []),
+                }
+            )
         return result
 
-    def _execution_output(self, profile: str, job: Mapping[str, Any], execution: Mapping[str, Any]) -> str | None:
+    def _execution_output(
+        self, profile: str, job: Mapping[str, Any], execution: Mapping[str, Any]
+    ) -> str | None:
         output_path = str(execution.get("output_path") or "")
         if output_path:
             candidate = Path(output_path)
@@ -703,7 +837,9 @@ class CronService:
         except ValueError:
             pass
         output_dir = self._profile_home(profile) / "cron" / "output" / str(job["id"])
-        candidates = sorted(output_dir.glob("*.md"), key=lambda path: path.stat().st_mtime, reverse=True)
+        candidates = sorted(
+            output_dir.glob("*.md"), key=lambda path: path.stat().st_mtime, reverse=True
+        )
         if cutoff is not None:
             candidates = [path for path in candidates if path.stat().st_mtime <= cutoff + 120]
         if not candidates:
@@ -724,7 +860,9 @@ class CronService:
         runs = known_runs if known_runs is not None else self._run_dtos(profile, job, 1)
         if runs:
             run = dict(runs[0])
-            run["output"] = self._execution_output(profile, job, {"finished_at": run["completed_at"]}) or ""
+            run["output"] = (
+                self._execution_output(profile, job, {"finished_at": run["completed_at"]}) or ""
+            )
             return run
         last_at = str(job.get("last_run_at") or "")
         if not last_at:

@@ -24,6 +24,8 @@ task.
 
 ## Use repository skills
 
+Also read the root `$python-pep8` skill for every Python source change. New and modified Python must use four-space PEP 8 formatting; never format generated or vendored trees.
+
 Select and read the smallest relevant set under `.agents/skills/`:
 
 - `$xnobrain-runtime` — general feature ownership and end-to-end Runtime work.

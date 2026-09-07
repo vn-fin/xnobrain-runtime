@@ -1,15 +1,15 @@
 """CommonSkills behavior for the global Hermes profile."""
 
 from .config_support import (
-    Any,
     CUSTOM_SKILL_CATEGORY,
-    ConfigAPIError,
     DEFAULT_INSTALL_TIMEOUT_SECONDS,
     MAX_INSTALL_TIMEOUT_SECONDS,
     MAX_TEXT_CHARS,
+    SKILL_ID_RE,
+    Any,
+    ConfigAPIError,
     Mapping,
     Path,
-    SKILL_ID_RE,
     asyncio,
     hashlib,
     os,
@@ -30,9 +30,7 @@ class CommonSkillsMixin:
         if "content" in body:
             skill_id = self._skill_id(body.get("skill_id") or body.get("name"))
             content = self._text_value(body["content"], field="content", max_chars=MAX_TEXT_CHARS)
-            category = self._safe_category(
-                body.get("category") or CUSTOM_SKILL_CATEGORY
-            )
+            category = self._safe_category(body.get("category") or CUSTOM_SKILL_CATEGORY)
             skill_dir = self.root_profile / "skills"
             if category:
                 skill_dir /= category
@@ -48,10 +46,12 @@ class CommonSkillsMixin:
         command = [self._hermes_binary(), "skills", "install", source, "--yes"]
         if body.get("name"):
             command.extend(["--name", self._skill_id(body["name"])])
-        command.extend([
-            "--category",
-            self._safe_category(body.get("category") or CUSTOM_SKILL_CATEGORY),
-        ])
+        command.extend(
+            [
+                "--category",
+                self._safe_category(body.get("category") or CUSTOM_SKILL_CATEGORY),
+            ]
+        )
         if bool(body.get("force", False)):
             command.append("--force")
         result = await self._run_command(
@@ -72,7 +72,6 @@ class CommonSkillsMixin:
         self._set_skills_enabled(changed, enable)
         return self.list_skills()
 
-
     def list_skills(self) -> dict[str, Any]:
         config = self._read_config()
         skills = self._scan_skills(config)
@@ -84,7 +83,6 @@ class CommonSkillsMixin:
             "root_profile": str(self.root_profile),
             "skills": skills,
         }
-
 
     def set_skill_enabled(
         self,
@@ -98,7 +96,10 @@ class CommonSkillsMixin:
 
         skill_id = self._skill_id(raw_skill_id)
         config = self._read_config()
-        if self._find_owned_skill_dir(skill_id) is None and self._find_external_skill_dir(skill_id, config) is None:
+        if (
+            self._find_owned_skill_dir(skill_id) is None
+            and self._find_external_skill_dir(skill_id, config) is None
+        ):
             raise ConfigAPIError("skill not found", code="skill_not_found", status=404)
 
         disabled = self._disabled_skills(config)
@@ -110,7 +111,6 @@ class CommonSkillsMixin:
         self._set_nested(config, ("skills", "disabled"), sorted(disabled))
         self._write_config(config)
         return self.list_skills()
-
 
     def delete_skill(self, raw_skill_id: Any) -> dict[str, Any]:
         skill_id = self._skill_id(raw_skill_id)
@@ -135,7 +135,6 @@ class CommonSkillsMixin:
                 self._write_config(config)
         return self.list_skills()
 
-
     def _skill_files(self) -> dict[str, bytes]:
         root = self.root_profile / "skills"
         if not root.is_dir():
@@ -146,8 +145,9 @@ class CommonSkillsMixin:
             if path.is_file()
         }
 
-
-    def _snapshot_skill_changes(self, before: Mapping[str, bytes], after: Mapping[str, bytes]) -> None:
+    def _snapshot_skill_changes(
+        self, before: Mapping[str, bytes], after: Mapping[str, bytes]
+    ) -> None:
         for relative, current in after.items():
             previous = before.get(relative)
             if previous == current:
@@ -157,7 +157,6 @@ class CommonSkillsMixin:
             target = self.root_profile / "snapshots" / "skills" / Path(relative).parent
             snapshot = target / f"{time.time_ns()}-{digest[:12]}.md"
             self._atomic_write(snapshot, payload, mode=0o440)
-
 
     def _changed_skill_ids(
         self,
@@ -173,7 +172,6 @@ class CommonSkillsMixin:
             frontmatter = self._read_skill_frontmatter(path)
             changed.add(str(frontmatter.get("name") or path.parent.name).strip())
         return {item for item in changed if item}
-
 
     def _set_skills_enabled(self, skill_ids: set[str], enabled: bool) -> None:
         if not skill_ids:
@@ -191,7 +189,6 @@ class CommonSkillsMixin:
         self._set_nested(config, ("skills", "disabled"), sorted(disabled))
         self._write_config(config)
 
-
     def _scan_skills(self, config: Mapping[str, Any]) -> list[dict[str, Any]]:
         seen: set[str] = set()
         skills: list[dict[str, Any]] = []
@@ -199,7 +196,6 @@ class CommonSkillsMixin:
         for directory in self._external_skill_dirs(config):
             self._scan_skill_dir(directory, skills, seen)
         return sorted(skills, key=lambda item: (item["category"], item["name"]))
-
 
     def _scan_skill_dir(
         self,
@@ -225,13 +221,14 @@ class CommonSkillsMixin:
                     "description": str(frontmatter.get("description") or ""),
                     "category": str(
                         frontmatter.get("category")
-                        or (relative_parent.parts[0] if len(relative_parent.parts) > 1 else "skills")
+                        or (
+                            relative_parent.parts[0] if len(relative_parent.parts) > 1 else "skills"
+                        )
                     ),
                     "installed": True,
                     "enabled": True,
                 }
             )
-
 
     def _disabled_skills(self, config: Mapping[str, Any]) -> set[str]:
         raw = self._get_nested(config, ("skills", "disabled"), []) or []
@@ -247,10 +244,8 @@ class CommonSkillsMixin:
                 continue
         return disabled
 
-
     def _find_owned_skill_dir(self, skill_id: str) -> Path | None:
         return self._find_skill_dir(self.root_profile / "skills", skill_id)
-
 
     def _find_external_skill_dir(self, skill_id: str, config: Mapping[str, Any]) -> Path | None:
         for directory in self._external_skill_dirs(config):
@@ -258,7 +253,6 @@ class CommonSkillsMixin:
             if found is not None:
                 return found
         return None
-
 
     def _find_skill_dir(self, root: Path, skill_id: str) -> Path | None:
         if not root.is_dir():
@@ -274,7 +268,6 @@ class CommonSkillsMixin:
                 return skill_file.parent
         return None
 
-
     def _external_skill_dirs(self, config: Mapping[str, Any]) -> list[Path]:
         raw = self._get_nested(config, ("skills", "external_dirs"), []) or []
         if isinstance(raw, str):
@@ -286,10 +279,17 @@ class CommonSkillsMixin:
         # Runtime image sets HERMES_INSTALL_DIR for execution, but tests and
         # isolated profiles must not silently inherit the installation-wide
         # catalog. Production profile templates explicitly enable it.
-        include_packaged = str(os.environ.get("RUNTIME_INCLUDE_PACKAGED_SKILLS") or "").strip().lower() in {"1", "true", "yes", "on"}
+        include_packaged = str(
+            os.environ.get("RUNTIME_INCLUDE_PACKAGED_SKILLS") or ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
         install_root = Path(str(os.environ.get("HERMES_INSTALL_DIR") or "").strip())
-        packaged_skills = install_root / "skills" if include_packaged and str(install_root) not in {"", "."} else None
-        if packaged_skills is not None and packaged_skills.is_dir(): result.append(packaged_skills)
+        packaged_skills = (
+            install_root / "skills"
+            if include_packaged and str(install_root) not in {"", "."}
+            else None
+        )
+        if packaged_skills is not None and packaged_skills.is_dir():
+            result.append(packaged_skills)
         for item in raw:
             expanded = os.path.expandvars(os.path.expanduser(str(item)))
             path = Path(expanded)
@@ -298,7 +298,6 @@ class CommonSkillsMixin:
             if path not in result:
                 result.append(path)
         return result
-
 
     def _read_skill_frontmatter(self, path: Path) -> dict[str, Any]:
         try:
@@ -321,7 +320,6 @@ class CommonSkillsMixin:
         except Exception:
             return {}
         return {}
-
 
     async def _run_command(self, command: list[str], *, timeout_seconds: int) -> dict[str, Any]:
         timeout_seconds = max(1, min(timeout_seconds, MAX_INSTALL_TIMEOUT_SECONDS))
@@ -352,13 +350,11 @@ class CommonSkillsMixin:
             "stderr": stderr.decode("utf-8", "replace"),
         }
 
-
     def _skill_id(self, value: Any) -> str:
         skill_id = str(value or "").strip()
         if not SKILL_ID_RE.match(skill_id) or ".." in skill_id:
             raise ConfigAPIError("skill_id is invalid", code="invalid_skill_id")
         return skill_id
-
 
     def _safe_category(self, value: Any) -> str:
         category = str(value or "").strip().strip("/")

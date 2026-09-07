@@ -3,22 +3,22 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 import hashlib
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import time
-from typing import Any, Mapping
 import uuid
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, Mapping
 
 import yaml
 
 from ..defaults import (
-    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_AGENT_ID,
+    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
     BIG_BROTHER_MODEL_DEFAULT_MARKER,
@@ -49,22 +49,18 @@ from .helpers import cached_method
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError
 from .workspace_upload import WorkspaceUploadError
 
+
 class TeamsServiceMixin:
     @staticmethod
     def _team_with_description(team: Mapping[str, Any]) -> dict[str, Any]:
         result = dict(team)
         if not str(result.get("description") or "").strip():
             count = len(result.get("members") or []) + 1
-            result["description"] = (
-                f"A coordinated team of {count} agents for multi-stage work."
-            )
+            result["description"] = f"A coordinated team of {count} agents for multi-stage work."
         return result
 
     def list_teams(self) -> list[dict[str, Any]]:
-        return [
-            self._team_with_description(team)
-            for team in self.repository.list_teams()
-        ]
+        return [self._team_with_description(team) for team in self.repository.list_teams()]
 
     def get_team(self, team_id: str) -> dict[str, Any]:
         return self._team_with_description(self.repository.get_team(team_id))
@@ -85,7 +81,9 @@ class TeamsServiceMixin:
         self.repository.delete_team_runs(team_id)
         return {"deleted": True}
 
-    def _build_team_workflow(self, team: Mapping[str, Any], body: Mapping[str, Any]) -> list[dict[str, Any]]:
+    def _build_team_workflow(
+        self, team: Mapping[str, Any], body: Mapping[str, Any]
+    ) -> list[dict[str, Any]]:
         """Build and validate the executable workflow for a team run.
 
         Shared by the legacy sync ``run_team`` and the async ``TeamRunService`` so
@@ -101,20 +99,27 @@ class TeamsServiceMixin:
             str(item["agent_id"]): {
                 "agent_id": str(item["agent_id"]),
                 "role": str(item["role"]),
-                "allowed_tools": [tool for tool in item.get("allowed_tools", []) if tool in SAFE_TOOLSETS],
+                "allowed_tools": [
+                    tool for tool in item.get("allowed_tools", []) if tool in SAFE_TOOLSETS
+                ],
             }
             for item in members
         }
-        configured.setdefault(str(team["orchestrator_id"]), {
-            "agent_id": str(team["orchestrator_id"]),
-            "role": "coordinator",
-            "allowed_tools": ["todo"],
-        })
+        configured.setdefault(
+            str(team["orchestrator_id"]),
+            {
+                "agent_id": str(team["orchestrator_id"]),
+                "role": "coordinator",
+                "allowed_tools": ["todo"],
+            },
+        )
         if raw_workflow:
             workflow = self._team_workflow(raw_workflow, configured, members, task)
         else:
             if not members:
-                raise ServiceError("team has no enabled workers", status=409, code="team_has_no_workers")
+                raise ServiceError(
+                    "team has no enabled workers", status=409, code="team_has_no_workers"
+                )
             workflow = [
                 {
                     "id": f"worker-{index + 1}",
@@ -145,8 +150,11 @@ class TeamsServiceMixin:
     @staticmethod
     def _legacy_step_result(step: Mapping[str, Any]) -> dict[str, Any]:
         base = {
-            "id": step["id"], "agent_id": step["agent_id"], "role": step["role"],
-            "needs": list(step["needs"]), "status": step["status"],
+            "id": step["id"],
+            "agent_id": step["agent_id"],
+            "role": step["role"],
+            "needs": list(step["needs"]),
+            "status": step["status"],
         }
         if step["status"] == "failed":
             base["error"] = step["error"]
@@ -162,7 +170,9 @@ class TeamsServiceMixin:
         parent_task: str,
     ) -> list[dict[str, Any]]:
         if not isinstance(raw_workflow, list) or not raw_workflow or len(raw_workflow) > 64:
-            raise ServiceError("workflow must contain between 1 and 64 steps", code="invalid_workflow")
+            raise ServiceError(
+                "workflow must contain between 1 and 64 steps", code="invalid_workflow"
+            )
         workers = [str(item["agent_id"]) for item in members]
         workflow: list[dict[str, Any]] = []
         for index, raw in enumerate(raw_workflow):
@@ -178,42 +188,57 @@ class TeamsServiceMixin:
             requested_role = str(raw.get("role") or "").strip()
             if not requested_agent and requested_role:
                 requested_agent = next(
-                    (agent_id for agent_id, item in configured.items() if item["role"] == requested_role),
+                    (
+                        agent_id
+                        for agent_id, item in configured.items()
+                        if item["role"] == requested_role
+                    ),
                     "",
                 )
             if not requested_agent:
                 if not workers:
-                    raise ServiceError("workflow has no available worker", status=409, code="team_has_no_workers")
+                    raise ServiceError(
+                        "workflow has no available worker", status=409, code="team_has_no_workers"
+                    )
                 requested_agent = workers[index % len(workers)]
             assignment = configured.get(requested_agent)
             if assignment is None:
-                raise ServiceError("workflow references an agent outside the team", code="invalid_workflow_agent")
+                raise ServiceError(
+                    "workflow references an agent outside the team", code="invalid_workflow_agent"
+                )
             allowed = list(assignment["allowed_tools"])
             requested_tools = raw.get("allowed_tools")
             if requested_tools is not None:
                 if not isinstance(requested_tools, list):
                     raise ServiceError("allowed_tools must be a list", code="invalid_workflow")
                 if any(str(tool) not in SAFE_TOOLSETS for tool in requested_tools):
-                    raise ServiceError("workflow step contains a privileged toolset", code="invalid_workflow_tools")
+                    raise ServiceError(
+                        "workflow step contains a privileged toolset", code="invalid_workflow_tools"
+                    )
                 if allowed and any(str(tool) not in allowed for tool in requested_tools):
-                    raise ServiceError("workflow step exceeds its assigned tool policy", code="invalid_workflow_tools")
+                    raise ServiceError(
+                        "workflow step exceeds its assigned tool policy",
+                        code="invalid_workflow_tools",
+                    )
                 allowed = sorted({str(tool) for tool in requested_tools})
             needs = raw.get("needs") or []
             if not isinstance(needs, list):
                 raise ServiceError("workflow needs must be a list", code="invalid_workflow")
-            workflow.append({
-                "id": step_id,
-                "task": step_task,
-                "agent_id": requested_agent,
-                "role": requested_role or str(assignment["role"]),
-                "allowed_tools": allowed,
-                "skills": (
-                    self._enabled_team_skills(requested_agent)
-                    if raw.get("skills") is None
-                    else self._team_step_skills(raw.get("skills"))
-                ),
-                "needs": [str(item).strip() for item in needs],
-            })
+            workflow.append(
+                {
+                    "id": step_id,
+                    "task": step_task,
+                    "agent_id": requested_agent,
+                    "role": requested_role or str(assignment["role"]),
+                    "allowed_tools": allowed,
+                    "skills": (
+                        self._enabled_team_skills(requested_agent)
+                        if raw.get("skills") is None
+                        else self._team_step_skills(raw.get("skills"))
+                    ),
+                    "needs": [str(item).strip() for item in needs],
+                }
+            )
         return workflow
 
     @staticmethod
@@ -230,15 +255,23 @@ class TeamsServiceMixin:
             if len(set(needs)) != len(needs) or str(step["id"]) in needs:
                 raise ServiceError("workflow dependencies are invalid", code="invalid_workflow")
             if any(need not in known for need in needs):
-                raise ServiceError("workflow dependency does not exist", code="invalid_workflow_dependency")
+                raise ServiceError(
+                    "workflow dependency does not exist", code="invalid_workflow_dependency"
+                )
         while remaining:
-            ready = {step_id for step_id in remaining if all(need in completed for need in by_id[step_id].get("needs", []))}
+            ready = {
+                step_id
+                for step_id in remaining
+                if all(need in completed for need in by_id[step_id].get("needs", []))
+            }
             if not ready:
                 raise ServiceError("workflow contains a dependency cycle", code="workflow_cycle")
             completed.update(ready)
             remaining.difference_update(ready)
 
-    def _put_team(self, team_id: str, body: Mapping[str, Any], *, created_at: str) -> dict[str, Any]:
+    def _put_team(
+        self, team_id: str, body: Mapping[str, Any], *, created_at: str
+    ) -> dict[str, Any]:
         name = str(body.get("name") or "").strip()
         orchestrator = str(body.get("orchestrator_id") or "").strip()
         if not name or not orchestrator:
@@ -259,7 +292,14 @@ class TeamsServiceMixin:
             tools = sorted(set(raw_tools if raw_tools is not None else []))
             if any(tool not in SAFE_TOOLSETS for tool in tools):
                 raise ServiceError("team member contains a privileged toolset")
-            members.append({"agent_id": agent_id, "role": role, "allowed_tools": tools, "enabled": bool(raw.get("enabled", True))})
+            members.append(
+                {
+                    "agent_id": agent_id,
+                    "role": role,
+                    "allowed_tools": tools,
+                    "enabled": bool(raw.get("enabled", True)),
+                }
+            )
         configured = {
             str(item["agent_id"]): {
                 "agent_id": str(item["agent_id"]),
@@ -268,11 +308,14 @@ class TeamsServiceMixin:
             }
             for item in members
         }
-        configured.setdefault(orchestrator, {
-            "agent_id": orchestrator,
-            "role": "coordinator",
-            "allowed_tools": ["todo"],
-        })
+        configured.setdefault(
+            orchestrator,
+            {
+                "agent_id": orchestrator,
+                "role": "coordinator",
+                "allowed_tools": ["todo"],
+            },
+        )
         workflow = []
         if body.get("workflow"):
             workflow = self._team_workflow(body["workflow"], configured, members, "")
@@ -287,8 +330,7 @@ class TeamsServiceMixin:
             ),
             "orchestrator_id": orchestrator,
             "coordinator_prompt": (
-                str(body.get("coordinator_prompt") or "").strip()
-                or DEFAULT_TEAM_COORDINATOR_PROMPT
+                str(body.get("coordinator_prompt") or "").strip() or DEFAULT_TEAM_COORDINATOR_PROMPT
             ),
             "coordinator_allowed_tools": self._team_toolsets(body.get("coordinator_allowed_tools")),
             "coordinator_skills": (
@@ -335,11 +377,13 @@ class TeamsServiceMixin:
             skills = self.agents.list_skills(agent_id).get("skills", [])
         except (AgentAPIError, StoreError):
             return []
-        return sorted({
-            str(item.get("skill_id") or "").strip()
-            for item in skills
-            if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
-        })
+        return sorted(
+            {
+                str(item.get("skill_id") or "").strip()
+                for item in skills
+                if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
+            }
+        )
 
     @staticmethod
     def _team_toolsets(value: Any) -> list[str]:
@@ -349,6 +393,7 @@ class TeamsServiceMixin:
             raise ServiceError("allowed tools must be a list", code="invalid_workflow")
         tools = sorted({str(item).strip() for item in value if str(item).strip()})
         if any(tool not in SAFE_TOOLSETS for tool in tools):
-            raise ServiceError("team role contains a privileged toolset", code="invalid_workflow_tools")
+            raise ServiceError(
+                "team role contains a privileged toolset", code="invalid_workflow_tools"
+            )
         return tools
-

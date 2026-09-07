@@ -6,17 +6,17 @@ import asyncio
 import hashlib
 import json
 import os
-from io import BytesIO
-from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from io import BytesIO
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 from zipfile import ZipFile
 
+import yaml
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-import yaml
 
 from xnobrain.app import XNOBrainApplication
 from xnobrain.defaults import (
@@ -34,9 +34,14 @@ from xnobrain.services.workspace_upload import WORKSPACE_UPLOAD_CHUNK_BYTES
 
 
 class FakeRouter:
-    async def list_connections(self): return {"connections": []}
-    async def list_models(self): return {"data": []}
-    async def status(self): return {"available": True, "provider_count": 0}
+    async def list_connections(self):
+        return {"connections": []}
+
+    async def list_models(self):
+        return {"data": []}
+
+    async def status(self):
+        return {"available": True, "provider_count": 0}
 
 
 class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
@@ -46,23 +51,40 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.profiles = Path(self.temporary.name) / "profiles"
         self.root.mkdir(parents=True)
         self.profiles.mkdir(parents=True)
-        (self.root / "config.yaml").write_text(yaml.safe_dump({
-            "model": {"provider": "custom:xnobrain", "default": "auto"},
-            "providers": {}, "agent": {"reasoning_effort": "medium"},
-            "approvals": {"mode": "manual"}, "terminal": {"backend": "local"},
-        }), encoding="utf-8")
-        self.environment = patch.dict(os.environ, {
-            "HERMES_HOME": str(self.root), "HERMES_ROOT_PROFILE": str(self.root),
-            "HERMES_PROFILES_ROOT": str(self.profiles), "DATA_DIR": self.temporary.name,
-            # Unit profiles must not inherit the source container's packaged
-            # Hermes catalog; tests add only the skills they assert below.
-            "RUNTIME_INCLUDE_PACKAGED_SKILLS": "false",
-        })
+        (self.root / "config.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "model": {"provider": "custom:xnobrain", "default": "auto"},
+                    "providers": {},
+                    "agent": {"reasoning_effort": "medium"},
+                    "approvals": {"mode": "manual"},
+                    "terminal": {"backend": "local"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.environment = patch.dict(
+            os.environ,
+            {
+                "HERMES_HOME": str(self.root),
+                "HERMES_ROOT_PROFILE": str(self.root),
+                "HERMES_PROFILES_ROOT": str(self.profiles),
+                "DATA_DIR": self.temporary.name,
+                # Unit profiles must not inherit the source container's packaged
+                # Hermes catalog; tests add only the skills they assert below.
+                "RUNTIME_INCLUDE_PACKAGED_SKILLS": "false",
+            },
+        )
         self.environment.start()
         app = FastAPI()
         composition = XNOBrainApplication(
-            AgentManager(root_profile=self.root, profiles_root=self.profiles, legacy_agents_root=Path(self.temporary.name) / "legacy-agents"),
-            GlobalConfigManager(root_profile=self.root), FakeRouter(),
+            AgentManager(
+                root_profile=self.root,
+                profiles_root=self.profiles,
+                legacy_agents_root=Path(self.temporary.name) / "legacy-agents",
+            ),
+            GlobalConfigManager(root_profile=self.root),
+            FakeRouter(),
         )
         composition.register(app)
         self.composition = composition
@@ -127,12 +149,8 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             first = self.composition.service.get_agent(BIG_BROTHER_AGENT_ID)
 
         profile_config_path = self.root / "config.yaml"
-        migrated_config = yaml.safe_load(
-            profile_config_path.read_text(encoding="utf-8")
-        )
-        migrated_config["platform_toolsets"]["api_server"].append(
-            "xnobrain-control"
-        )
+        migrated_config = yaml.safe_load(profile_config_path.read_text(encoding="utf-8"))
+        migrated_config["platform_toolsets"]["api_server"].append("xnobrain-control")
         migrated_config["approvals"]["mode"] = "manual"
         migrated_config["model"]["default"] = "pinned-before-model-default"
         migrated_config["xnobrain"].pop(BIG_BROTHER_APPROVAL_DEFAULT_MARKER)
@@ -142,9 +160,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             encoding="utf-8",
         )
         second = await self.composition.service.ensure_default_agent()
-        migrated_config = yaml.safe_load(
-            profile_config_path.read_text(encoding="utf-8")
-        )
+        migrated_config = yaml.safe_load(profile_config_path.read_text(encoding="utf-8"))
         self.assertEqual(migrated_config["approvals"]["mode"], "off")
         self.assertFalse(migrated_config["skills"]["write_approval"])
         self.assertFalse(migrated_config["memory"]["write_approval"])
@@ -181,20 +197,11 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertTrue(
-            (
-                self.root
-                / "skills"
-                / "big-brother"
-                / "big-brother-control"
-                / "SKILL.md"
-            ).is_file()
+            (self.root / "skills" / "big-brother" / "big-brother-control" / "SKILL.md").is_file()
         )
         self.assertNotIn(
             "big-brother-control",
-            {
-                item["skill_id"]
-                for item in self.composition.service.list_default_skills()
-            },
+            {item["skill_id"] for item in self.composition.service.list_default_skills()},
         )
         self.assertFalse((self.profiles / BIG_BROTHER_AGENT_ID).exists())
         self.assertEqual(first["metadata"]["display_name"], "Big Brother")
@@ -206,21 +213,15 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             self.composition.service.agents.describe_agent("Big Brother")["name"],
             BIG_BROTHER_AGENT_ID,
         )
-        profile_config = yaml.safe_load(
-            profile_config_path.read_text(encoding="utf-8")
-        )
+        profile_config = yaml.safe_load(profile_config_path.read_text(encoding="utf-8"))
         self.assertIn("kanban", profile_config["toolsets"])
         self.assertEqual(
             set(profile_config["platform_toolsets"]["api_server"]),
             set(BIG_BROTHER_NATIVE_TOOLSETS),
         )
         self.assertEqual(profile_config["approvals"]["mode"], "manual")
-        self.assertTrue(
-            profile_config["xnobrain"][BIG_BROTHER_APPROVAL_DEFAULT_MARKER]
-        )
-        self.assertTrue(
-            profile_config["xnobrain"][BIG_BROTHER_MODEL_DEFAULT_MARKER]
-        )
+        self.assertTrue(profile_config["xnobrain"][BIG_BROTHER_APPROVAL_DEFAULT_MARKER])
+        self.assertTrue(profile_config["xnobrain"][BIG_BROTHER_MODEL_DEFAULT_MARKER])
         with self.assertRaises(ServiceError) as protected:
             self.composition.service.delete_agent(BIG_BROTHER_AGENT_ID)
         self.assertEqual(protected.exception.code, "protected_agent")
@@ -235,20 +236,11 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             BIG_BROTHER_AGENT_ID,
             {
                 "skill_id": "global-from-big-brother",
-                "content": (
-                    "---\nname: global-from-big-brother\n"
-                    "description: Root skill\n---\n"
-                ),
+                "content": ("---\nname: global-from-big-brother\ndescription: Root skill\n---\n"),
             },
         )
         self.assertTrue(
-            (
-                self.root
-                / "skills"
-                / "custom"
-                / "global-from-big-brother"
-                / "SKILL.md"
-            ).is_file()
+            (self.root / "skills" / "custom" / "global-from-big-brother" / "SKILL.md").is_file()
         )
         self.assertIn(
             "global-from-big-brother",
@@ -263,16 +255,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn(
             "global-from-big-brother",
-            {
-                item["skill_id"]
-                for item in self.composition.service.list_default_skills()
-            },
+            {item["skill_id"] for item in self.composition.service.list_default_skills()},
         )
 
         custom = self.composition.service.create_agent({"display_name": "Worker"})
         custom_skill_ids = {
-            item["skill_id"]
-            for item in self.composition.service.list_skills(custom["id"])
+            item["skill_id"] for item in self.composition.service.list_skills(custom["id"])
         }
         self.assertNotIn("big-brother-control", custom_skill_ids)
         self.assertNotIn("global-from-big-brother", custom_skill_ids)
@@ -320,22 +308,14 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertTrue(
-            (
-                self.root
-                / "skills"
-                / "custom"
-                / "legacy-installed"
-                / "SKILL.md"
-            ).is_file()
+            (self.root / "skills" / "custom" / "legacy-installed" / "SKILL.md").is_file()
         )
         self.assertEqual(
             migrated["messages"][0]["content"],
             "Preserved legacy message",
         )
         self.assertTrue(legacy.is_dir())
-        self.assertTrue(
-            any((self.root / "snapshots" / "migrations").glob("*.db"))
-        )
+        self.assertTrue(any((self.root / "snapshots" / "migrations").glob("*.db")))
 
     async def test_health_identifies_fastapi_database_free_runtime(self):
         async with self.client() as client:
@@ -376,9 +356,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(migrated["approvals"]["mode"], "off")
         self.assertFalse(migrated["skills"]["write_approval"])
         self.assertFalse(migrated["memory"]["write_approval"])
-        self.assertTrue(
-            migrated["xnobrain"][BIG_BROTHER_MODEL_DEFAULT_MARKER]
-        )
+        self.assertTrue(migrated["xnobrain"][BIG_BROTHER_MODEL_DEFAULT_MARKER])
 
         migrated["model"]["default"] = "user-selected-model"
         config_path.write_text(
@@ -389,9 +367,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         preserved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self.assertEqual(preserved["model"]["default"], "user-selected-model")
         self.assertTrue(
-            self.composition.service.repository.list_snapshots(
-                "legacy-model", "config"
-            )
+            self.composition.service.repository.list_snapshots("legacy-model", "config")
         )
 
     async def test_local_only_deployment_has_no_enterprise_proxy_routes(self):
@@ -403,10 +379,18 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 device = await client.get("/xnobrain/api/runtime/v1/device")
 
         self.assertEqual(deployment.status_code, 200, deployment.text)
-        self.assertEqual(deployment.json()["data"], {
-            "mode": "local", "runtime": "agent-fastapi", "runtime_transport": "in-process", "database": False,
-        })
-        self.assertEqual([dashboard.status_code, skills.status_code, device.status_code], [404, 404, 404])
+        self.assertEqual(
+            deployment.json()["data"],
+            {
+                "mode": "local",
+                "runtime": "agent-fastapi",
+                "runtime_transport": "in-process",
+                "database": False,
+            },
+        )
+        self.assertEqual(
+            [dashboard.status_code, skills.status_code, device.status_code], [404, 404, 404]
+        )
 
     async def test_sandbox_detail_reports_only_important_runtime_usage(self):
         async with self.client() as client:
@@ -426,9 +410,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             async def is_disconnected(self):
                 return False
 
-        with patch(
-            "xnobrain.handlers.streaming.asyncio.sleep", new=AsyncMock()
-        ) as sleep:
+        with patch("xnobrain.handlers.streaming.asyncio.sleep", new=AsyncMock()) as sleep:
             response = await self.composition.handlers.sandbox_detail_stream(ConnectedRequest())
             event = await anext(response.body_iterator)
             next_event = await anext(response.body_iterator)
@@ -446,8 +428,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_default_profile_installs_skill_from_url_without_returning_command_output(self):
         source = "https://example.com/office-helper/SKILL.md"
         control = (
-            self.root / "skills" / BIG_BROTHER_SKILL_CATEGORY
-            / BIG_BROTHER_SKILL_ID / "SKILL.md"
+            self.root / "skills" / BIG_BROTHER_SKILL_CATEGORY / BIG_BROTHER_SKILL_ID / "SKILL.md"
         )
         control.parent.mkdir(parents=True)
         control.write_text(
@@ -467,7 +448,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         self.composition.service.config._run_command = AsyncMock(side_effect=install_from_url)
         async with self.client() as client:
-            response = await client.post("/xnobrain/api/runtime/v1/agents-skills", json={"source": source})
+            response = await client.post(
+                "/xnobrain/api/runtime/v1/agents-skills", json={"source": source}
+            )
         self.assertEqual(response.status_code, 201, response.text)
         data = response.json()["data"]
         self.assertEqual([item["skill_id"] for item in data], ["office-helper"])
@@ -476,16 +459,16 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("internal installer output", response.text)
         command = self.composition.service.config._run_command.await_args.args[0]
         self.assertEqual(command[1:4], ["skills", "install", source])
-        self.assertIn(["--category", "custom"], [
-            command[index:index + 2] for index in range(len(command) - 1)
-        ])
+        self.assertIn(
+            ["--category", "custom"],
+            [command[index : index + 2] for index in range(len(command) - 1)],
+        )
         snapshots = list((self.root / "snapshots" / "skills").rglob("*.md"))
         self.assertEqual(len(snapshots), 1)
 
     async def test_default_skill_toggle_controls_which_skills_new_profiles_copy(self):
         control = (
-            self.root / "skills" / BIG_BROTHER_SKILL_CATEGORY
-            / BIG_BROTHER_SKILL_ID / "SKILL.md"
+            self.root / "skills" / BIG_BROTHER_SKILL_CATEGORY / BIG_BROTHER_SKILL_ID / "SKILL.md"
         )
         control.parent.mkdir(parents=True)
         control.write_text(
@@ -524,11 +507,15 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((profile_skills / "enabled-skill" / "SKILL.md").is_file())
         self.assertFalse((profile_skills / "disabled-skill").exists())
         self.assertFalse((profile_skills / BIG_BROTHER_SKILL_CATEGORY).exists())
-        self.assertFalse(any(
-            path.parent.name == BIG_BROTHER_SKILL_ID
-            for path in profile_skills.rglob("SKILL.md")
-        ))
-        profile_config = yaml.safe_load((self.profiles / agent_id / "config.yaml").read_text(encoding="utf-8"))
+        self.assertFalse(
+            any(
+                path.parent.name == BIG_BROTHER_SKILL_ID
+                for path in profile_skills.rglob("SKILL.md")
+            )
+        )
+        profile_config = yaml.safe_load(
+            (self.profiles / agent_id / "config.yaml").read_text(encoding="utf-8")
+        )
         self.assertEqual(profile_config["skills"]["disabled"], [])
         self.assertEqual(len(list((self.root / "snapshots" / "config").glob("*.yaml"))), 1)
 
@@ -616,10 +603,13 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_profile_registry_uses_generated_ids_and_display_names(self):
         async with self.client() as client:
-            created = await client.post("/xnobrain/api/runtime/v1/agents", json={
-                "display_name": "Research Lead",
-                "description": "Coordinates research workflows.",
-            })
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/agents",
+                json={
+                    "display_name": "Research Lead",
+                    "description": "Coordinates research workflows.",
+                },
+            )
         self.assertEqual(created.status_code, 201, created.text)
         profile = created.json()["data"]
         self.assertRegex(profile["id"], r"^[a-z][a-z0-9]{5}$")
@@ -630,14 +620,19 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("profile_path", profile["metadata"])
         self.assertNotIn("workspace_path", profile["metadata"])
         self.assertNotIn(str(self.profiles), created.text)
-        self.assertEqual(profile["metadata"], {
-            "display_name": "Research Lead",
-            "description": "Coordinates research workflows.",
-        })
+        self.assertEqual(
+            profile["metadata"],
+            {
+                "display_name": "Research Lead",
+                "description": "Coordinates research workflows.",
+            },
+        )
         registry_path = self.root / "profiles.yaml"
         registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
         entries = {item["name"]: item for item in registry["profiles"]}
-        self.assertEqual(set(entries[profile["id"]]), {"description", "name", "display_name", "updated_at"})
+        self.assertEqual(
+            set(entries[profile["id"]]), {"description", "name", "display_name", "updated_at"}
+        )
         self.assertEqual(entries[profile["id"]]["display_name"], "Research Lead")
         self.assertIn("default", entries)
 
@@ -692,18 +687,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.json()["data"], cached.json()["data"])
         self.assertEqual(upstream_list.call_count, 4)
         self.assertEqual(created.status_code, 201)
-        self.assertTrue(any(
-            item["id"] == agent_id for item in after_create.json()["data"]
-        ))
+        self.assertTrue(any(item["id"] == agent_id for item in after_create.json()["data"]))
         self.assertEqual(updated.status_code, 200)
-        updated_row = next(
-            item for item in after_update.json()["data"] if item["id"] == agent_id
-        )
+        updated_row = next(item for item in after_update.json()["data"] if item["id"] == agent_id)
         self.assertEqual(updated_row["display_name"], "Updated Cached Agent")
         self.assertEqual(deleted.status_code, 200)
-        self.assertFalse(any(
-            item["id"] == agent_id for item in after_delete.json()["data"]
-        ))
+        self.assertFalse(any(item["id"] == agent_id for item in after_delete.json()["data"]))
 
     async def test_agent_activity_reports_only_real_runtime_execution(self):
         created = self.composition.service.create_agent({"display_name": "Active Worker"})
@@ -786,9 +775,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(),
             ) as sleep,
         ):
-            response = await self.composition.handlers.agent_activity_stream(
-                ConnectedRequest()
-            )
+            response = await self.composition.handlers.agent_activity_stream(ConnectedRequest())
             initial = await anext(response.body_iterator)
             changed = await anext(response.body_iterator)
             await response.body_iterator.aclose()
@@ -826,7 +813,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_write_approvals_default_off_and_allow_always_disables_the_selected_gate(self):
         async with self.client() as client:
-            created = await client.post("/xnobrain/api/runtime/v1/agents", json={"display_name": "Safe Writer"})
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"display_name": "Safe Writer"}
+            )
         self.assertEqual(created.status_code, 201, created.text)
         agent = created.json()["data"]
         agent_id = agent["id"]
@@ -875,32 +864,45 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         )
         config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self.assertFalse(config["memory"]["write_approval"])
-        self.assertGreaterEqual(len(self.composition.service.repository.list_snapshots(agent_id, "config")), 2)
+        self.assertGreaterEqual(
+            len(self.composition.service.repository.list_snapshots(agent_id, "config")), 2
+        )
 
     async def test_agent_skill_memory_mcp_and_snapshots_are_profile_local(self):
         async with self.client() as client:
-            created = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Researcher", "description": "test"})
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/agents",
+                json={"name": "Researcher", "description": "test"},
+            )
         self.assertEqual(created.status_code, 201, created.text)
         agent_id = created.json()["data"]["id"]
         profile = self.profiles / agent_id
 
         async with self.client() as client:
-            skill = await client.post(f"/xnobrain/api/runtime/v1/agents-skills/{agent_id}", json={
-                "skill_id": "notes", "content": "---\nname: notes\n---\n# Notes\n",
-            })
-            memory = await client.patch(f"/xnobrain/api/runtime/v1/agents/{agent_id}/memory", json={"memory": "remember this"})
-            mcp = await client.put(f"/xnobrain/api/runtime/v1/agents-mcp/{agent_id}", json={"servers": {"docs": {"command": "docs-mcp"}}})
-            snapshot_response = await client.get(f"/xnobrain/api/runtime/v1/agents/{agent_id}/snapshots")
+            skill = await client.post(
+                f"/xnobrain/api/runtime/v1/agents-skills/{agent_id}",
+                json={
+                    "skill_id": "notes",
+                    "content": "---\nname: notes\n---\n# Notes\n",
+                },
+            )
+            memory = await client.patch(
+                f"/xnobrain/api/runtime/v1/agents/{agent_id}/memory",
+                json={"memory": "remember this"},
+            )
+            mcp = await client.put(
+                f"/xnobrain/api/runtime/v1/agents-mcp/{agent_id}",
+                json={"servers": {"docs": {"command": "docs-mcp"}}},
+            )
+            snapshot_response = await client.get(
+                f"/xnobrain/api/runtime/v1/agents/{agent_id}/snapshots"
+            )
         self.assertEqual(skill.status_code, 201, skill.text)
         self.assertEqual(memory.status_code, 200, memory.text)
         self.assertEqual(mcp.status_code, 200, mcp.text)
 
         self.assertTrue((profile / "skills" / "custom" / "notes" / "SKILL.md").is_file())
-        installed_notes = next(
-            item
-            for item in skill.json()["data"]
-            if item["skill_id"] == "notes"
-        )
+        installed_notes = next(item for item in skill.json()["data"] if item["skill_id"] == "notes")
         self.assertFalse(installed_notes["enabled"])
         self.assertTrue((profile / "mcp.json").is_file())
         snapshots = snapshot_response.json()["data"]
@@ -911,9 +913,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((self.root / "skills" / "notes" / "SKILL.md").exists())
 
     async def test_agent_can_install_existing_default_skill_by_id(self):
-        default_skill = (
-            self.root / "skills" / "custom" / "shared-notes" / "SKILL.md"
-        )
+        default_skill = self.root / "skills" / "custom" / "shared-notes" / "SKILL.md"
         default_skill.parent.mkdir(parents=True)
         default_skill.write_text(
             "---\n"
@@ -946,19 +946,10 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 201, response.text)
         installed = next(
-            item
-            for item in response.json()["data"]
-            if item["skill_id"] == "shared-notes"
+            item for item in response.json()["data"] if item["skill_id"] == "shared-notes"
         )
         self.assertFalse(installed["enabled"])
-        copied = (
-            self.profiles
-            / agent_id
-            / "skills"
-            / "custom"
-            / "shared-notes"
-            / "SKILL.md"
-        )
+        copied = self.profiles / agent_id / "skills" / "custom" / "shared-notes" / "SKILL.md"
         self.assertEqual(
             copied.read_text(encoding="utf-8"),
             default_skill.read_text(encoding="utf-8"),
@@ -1026,12 +1017,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         )
 
         runtime_skill = (
-            self.profiles
-            / agent_id
-            / "skills"
-            / "custom"
-            / "runtime-added"
-            / "SKILL.md"
+            self.profiles / agent_id / "skills" / "custom" / "runtime-added" / "SKILL.md"
         )
         runtime_skill.parent.mkdir(parents=True)
         runtime_skill.write_text(
@@ -1044,10 +1030,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIn(
             "runtime-added",
-            {
-                item["skill_id"]
-                for item in refreshed_overview.json()["data"]["agents"][agent_id]
-            },
+            {item["skill_id"] for item in refreshed_overview.json()["data"]["agents"][agent_id]},
         )
 
     async def test_team_files_and_cron_kanban_database_persist(self):
@@ -1056,13 +1039,25 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             for title in ("Lead", "Worker"):
                 result = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": title})
                 ids.append(result.json()["data"]["id"])
-            team = await client.post("/xnobrain/api/runtime/v1/teams", json={
-                "name": "Research", "orchestrator_id": ids[0],
-                "members": [{"agent_id": ids[1], "role": "researcher", "allowed_tools": ["web"]}],
-            })
-            cron = await client.post("/xnobrain/api/runtime/v1/cron/jobs", json={
-                "agent_id": ids[0], "name": "Digest", "prompt": "Summarize", "interval_minutes": 60,
-            })
+            team = await client.post(
+                "/xnobrain/api/runtime/v1/teams",
+                json={
+                    "name": "Research",
+                    "orchestrator_id": ids[0],
+                    "members": [
+                        {"agent_id": ids[1], "role": "researcher", "allowed_tools": ["web"]}
+                    ],
+                },
+            )
+            cron = await client.post(
+                "/xnobrain/api/runtime/v1/cron/jobs",
+                json={
+                    "agent_id": ids[0],
+                    "name": "Digest",
+                    "prompt": "Summarize",
+                    "interval_minutes": 60,
+                },
+            )
             teams = await client.get("/xnobrain/api/runtime/v1/teams")
             crons = await client.get("/xnobrain/api/runtime/v1/cron/jobs")
         self.assertEqual(team.status_code, 201, team.text)
@@ -1074,21 +1069,31 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         ids = []
         async with self.client() as client:
             for display_name in ("Coordinator", "Researcher", "Reviewer"):
-                response = await client.post("/xnobrain/api/runtime/v1/agents", json={"display_name": display_name})
+                response = await client.post(
+                    "/xnobrain/api/runtime/v1/agents", json={"display_name": display_name}
+                )
                 ids.append(response.json()["data"]["id"])
-            team_response = await client.post("/xnobrain/api/runtime/v1/teams", json={
-                "name": "DAG team",
-                "orchestrator_id": ids[0],
-                "members": [
-                    {"agent_id": ids[1], "role": "researcher", "allowed_tools": ["web"]},
-                    {"agent_id": ids[2], "role": "reviewer", "allowed_tools": ["web"]},
-                ],
-                "workflow": [
-                    {"id": "research", "task": "Research the API", "role": "researcher"},
-                    {"id": "review", "task": "Review the findings", "role": "reviewer", "needs": ["research"]},
-                ],
-                "max_parallel": 2,
-            })
+            team_response = await client.post(
+                "/xnobrain/api/runtime/v1/teams",
+                json={
+                    "name": "DAG team",
+                    "orchestrator_id": ids[0],
+                    "members": [
+                        {"agent_id": ids[1], "role": "researcher", "allowed_tools": ["web"]},
+                        {"agent_id": ids[2], "role": "reviewer", "allowed_tools": ["web"]},
+                    ],
+                    "workflow": [
+                        {"id": "research", "task": "Research the API", "role": "researcher"},
+                        {
+                            "id": "review",
+                            "task": "Review the findings",
+                            "role": "reviewer",
+                            "needs": ["research"],
+                        },
+                    ],
+                    "max_parallel": 2,
+                },
+            )
         team_id = team_response.json()["data"]["id"]
         self.assertEqual(
             [step["id"] for step in team_response.json()["data"]["workflow"]],
@@ -1106,43 +1111,59 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         self.composition.service.agents.chat = AsyncMock(side_effect=fake_chat)
         async with self.client() as client:
-            response = await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/run", json={
-                "synthesis": "Produce the final answer.",
-            })
+            response = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/run",
+                json={
+                    "synthesis": "Produce the final answer.",
+                },
+            )
         self.assertEqual(response.status_code, 200, response.text)
         result = response.json()["data"]
-        self.assertEqual([item["id"] for item in result["workflow_results"]], ["research", "review"])
+        self.assertEqual(
+            [item["id"] for item in result["workflow_results"]], ["research", "review"]
+        )
         self.assertEqual(result["orchestrator_summary"], "final synthesis")
         reviewer_prompt = next(prompt for agent_id, prompt in prompts if agent_id == ids[2])
         self.assertIn("[research] research result", reviewer_prompt)
         self.assertEqual(prompts[-1][0], ids[0])
 
         async with self.client() as client:
-            cycle = await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/run", json={
-                "workflow": [
-                    {"id": "a", "task": "A", "needs": ["b"]},
-                    {"id": "b", "task": "B", "needs": ["a"]},
-                ],
-            })
+            cycle = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/run",
+                json={
+                    "workflow": [
+                        {"id": "a", "task": "A", "needs": ["b"]},
+                        {"id": "b", "task": "B", "needs": ["a"]},
+                    ],
+                },
+            )
         self.assertEqual(cycle.status_code, 400, cycle.text)
         self.assertEqual(cycle.json()["error"]["code"], "workflow_cycle")
 
     async def test_due_profile_cron_executes_in_the_unified_process(self):
-        from xnobrain.integrations import kanban as kanban_adapter
         from hermes_cli import kanban_db
 
+        from xnobrain.integrations import kanban as kanban_adapter
+
         async with self.client() as client:
-            created = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Scheduler"})
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"name": "Scheduler"}
+            )
             agent_id = created.json()["data"]["id"]
-            response = await client.post("/xnobrain/api/runtime/v1/cron/jobs", json={
-                "agent_id": agent_id, "name": "Due", "prompt": "Run", "interval_minutes": 60,
-            })
+            response = await client.post(
+                "/xnobrain/api/runtime/v1/cron/jobs",
+                json={
+                    "agent_id": agent_id,
+                    "name": "Due",
+                    "prompt": "Run",
+                    "interval_minutes": 60,
+                },
+            )
         job = response.json()["data"]
         scheduled_task_id = job["kanban_task_id"]
         with kanban_adapter.connection("default") as conn:
             conn.execute(
-                "UPDATE xnobrain_task_schedules SET next_run_at = 1 "
-                "WHERE task_id = ?",
+                "UPDATE xnobrain_task_schedules SET next_run_at = 1 WHERE task_id = ?",
                 (scheduled_task_id,),
             )
             released = kanban_adapter.release_due_schedules(
@@ -1154,19 +1175,25 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             schedule = kanban_adapter.task_schedule(conn, scheduled_task_id)
         self.assertEqual(len(released), 1)
         self.assertEqual(schedule["occurrence_count"], 1)
-        self.assertTrue(any(
-            str(task.idempotency_key or "").startswith(f"schedule:{scheduled_task_id}:")
-            for task in tasks
-        ))
+        self.assertTrue(
+            any(
+                str(task.idempotency_key or "").startswith(f"schedule:{scheduled_task_id}:")
+                for task in tasks
+            )
+        )
 
     async def test_swagger_documents_typed_management_and_stream_requests(self):
         schema = self.app.openapi()
         self.assertEqual(
-            schema["paths"]["/xnobrain/api/runtime/v1/agents"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            schema["paths"]["/xnobrain/api/runtime/v1/agents"]["post"]["requestBody"]["content"][
+                "application/json"
+            ]["schema"]["$ref"],
             "#/components/schemas/AgentCreate",
         )
         self.assertEqual(
-            schema["paths"]["/xnobrain/api/runtime/v1/sessions/{conversation_id}/chat/stream"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            schema["paths"]["/xnobrain/api/runtime/v1/sessions/{conversation_id}/chat/stream"][
+                "post"
+            ]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ChatRequest",
         )
 
@@ -1232,10 +1259,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("inline", response.headers["content-disposition"])
 
     async def test_workspace_large_file_upload_is_assembled_from_bounded_chunks(self):
-        payload = (
-            b"a" * (WORKSPACE_UPLOAD_CHUNK_BYTES * 7)
-            + b"last-chunk"
-        )
+        payload = b"a" * (WORKSPACE_UPLOAD_CHUNK_BYTES * 7) + b"last-chunk"
         total_chunks = 8
         async with self.client() as client:
             created = await client.post(
@@ -1246,7 +1270,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             responses = []
             for index in range(total_chunks):
                 start = index * WORKSPACE_UPLOAD_CHUNK_BYTES
-                part = payload[start:start + WORKSPACE_UPLOAD_CHUNK_BYTES]
+                part = payload[start : start + WORKSPACE_UPLOAD_CHUNK_BYTES]
                 response = await client.post(
                     f"/xnobrain/api/runtime/v1/agents-workspaces/{agent_id}/upload/chunk",
                     data={
@@ -1332,7 +1356,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bundle_round_trip_exports_every_profile_file_and_redacts_credentials(self):
         async with self.client() as client:
-            created = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Portable"})
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"name": "Portable"}
+            )
             agent_id = created.json()["data"]["id"]
             profile = self.profiles / agent_id
             (profile / ".env").write_text("SECRET=never-export\n", encoding="utf-8")
@@ -1340,9 +1366,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             (profile / "logs" / "runtime.log").write_text("kept log\n", encoding="utf-8")
             (profile / "cache").mkdir(exist_ok=True)
             (profile / "cache" / "result.bin").write_bytes(b"kept cache")
-            (profile / "cache" / "highly-compressible.bin").write_bytes(
-                b"\0" * (1024 * 1024)
-            )
+            (profile / "cache" / "highly-compressible.bin").write_bytes(b"\0" * (1024 * 1024))
             (profile / "tmp").mkdir(exist_ok=True)
             (profile / "tmp" / "scratch.txt").write_text("kept temp\n", encoding="utf-8")
             expected = {
@@ -1350,7 +1374,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 for path in profile.rglob("*")
                 if path.is_file() and not path.is_symlink()
             }
-            exported = await client.post("/xnobrain/api/runtime/v1/bundles/export", json={"agent_ids": [agent_id]})
+            exported = await client.post(
+                "/xnobrain/api/runtime/v1/bundles/export", json={"agent_ids": [agent_id]}
+            )
         self.assertEqual(exported.status_code, 200, exported.text)
         with ZipFile(BytesIO(exported.content)) as archive:
             self.assertTrue(expected.issubset(set(archive.namelist())))
@@ -1450,19 +1476,33 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 "team-snapshot-secret\n",
                 encoding="utf-8",
             )
-            created_team = await client.post("/xnobrain/api/runtime/v1/teams", json={
-                "name": "Portable Team",
-                "description": "A complete portable workflow.",
-                "orchestrator_id": agent_ids[0],
-                "members": [
-                    {"agent_id": agent_ids[1], "role": "researcher"},
-                    {"agent_id": agent_ids[2], "role": "reviewer"},
-                ],
-                "workflow": [
-                    {"id": "research", "task": "Research.", "agent_id": agent_ids[1], "role": "researcher"},
-                    {"id": "review", "task": "Review.", "agent_id": agent_ids[2], "role": "reviewer", "needs": ["research"]},
-                ],
-            })
+            created_team = await client.post(
+                "/xnobrain/api/runtime/v1/teams",
+                json={
+                    "name": "Portable Team",
+                    "description": "A complete portable workflow.",
+                    "orchestrator_id": agent_ids[0],
+                    "members": [
+                        {"agent_id": agent_ids[1], "role": "researcher"},
+                        {"agent_id": agent_ids[2], "role": "reviewer"},
+                    ],
+                    "workflow": [
+                        {
+                            "id": "research",
+                            "task": "Research.",
+                            "agent_id": agent_ids[1],
+                            "role": "researcher",
+                        },
+                        {
+                            "id": "review",
+                            "task": "Review.",
+                            "agent_id": agent_ids[2],
+                            "role": "reviewer",
+                            "needs": ["research"],
+                        },
+                    ],
+                },
+            )
             team_id = created_team.json()["data"]["id"]
             exported = await client.post(
                 "/xnobrain/api/runtime/v1/bundles/export",
@@ -1505,24 +1545,34 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         (self.root / ".env").write_text("DEFAULT_SECRET=from-default\n", encoding="utf-8")
         (self.root / "auth.json").write_text('{"session":"default-auth"}\n', encoding="utf-8")
         async with self.client() as client:
-            created = await client.post("/xnobrain/api/runtime/v1/agents", json={"display_name": "Chunked profile"})
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"display_name": "Chunked profile"}
+            )
         agent_id = created.json()["data"]["id"]
         profile = self.profiles / agent_id
         (profile / ".env").write_text("SOURCE_TOKEN=never-export-this\n", encoding="utf-8")
-        (profile / "workspace" / "secret.txt").write_text("token=never-export-this\n", encoding="utf-8")
+        (profile / "workspace" / "secret.txt").write_text(
+            "token=never-export-this\n", encoding="utf-8"
+        )
         (profile / "workspace" / "large.bin").write_bytes(os.urandom(4 * 1024 * 1024 + 256))
         config = yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))
-        config["providers"] = {"private": {"api_key": "never-export-this", "key_env": "MISSING_API_KEY"}}
+        config["providers"] = {
+            "private": {"api_key": "never-export-this", "key_env": "MISSING_API_KEY"}
+        }
         (profile / "config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
 
         async with self.client() as client:
-            started = await client.post("/xnobrain/api/runtime/v1/bundles/exports", json={"agent_ids": [agent_id]})
+            started = await client.post(
+                "/xnobrain/api/runtime/v1/bundles/exports", json={"agent_ids": [agent_id]}
+            )
             transfer = started.json()["data"]
             self.assertTrue(transfer["filename"].endswith(".zip"))
             self.assertEqual(transfer["chunk_size"], 512 * 1024)
             parts = []
             for number in range(transfer["total_parts"]):
-                response = await client.get(f"/xnobrain/api/runtime/v1/bundles/exports/{transfer['export_id']}/parts/{number}")
+                response = await client.get(
+                    f"/xnobrain/api/runtime/v1/bundles/exports/{transfer['export_id']}/parts/{number}"
+                )
                 self.assertEqual(response.status_code, 200, response.text)
                 parts.append(response.content)
         self.assertGreater(transfer["total_parts"], 1)
@@ -1533,24 +1583,33 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             names = archive.namelist()
             self.assertIn(f"profiles/{agent_id}/.env", names)
             self.assertEqual(archive.read(f"profiles/{agent_id}/.env"), b"[REDACTED]\n")
-            self.assertNotIn(b"never-export-this", archive.read(f"profiles/{agent_id}/workspace/secret.txt"))
+            self.assertNotIn(
+                b"never-export-this", archive.read(f"profiles/{agent_id}/workspace/secret.txt")
+            )
             exported_config = yaml.safe_load(archive.read(f"profiles/{agent_id}/config.yaml"))
             self.assertNotIn("api_key", exported_config.get("providers", {}).get("private", {}))
 
         async with self.client() as client:
-            upload_started = await client.post("/xnobrain/api/runtime/v1/bundles/uploads", json={"filename": "profile.zip", "size": len(bundle)})
+            upload_started = await client.post(
+                "/xnobrain/api/runtime/v1/bundles/uploads",
+                json={"filename": "profile.zip", "size": len(bundle)},
+            )
             upload = upload_started.json()["data"]
             for number in range(upload["total_parts"]):
-                chunk = bundle[number * upload["chunk_size"]:(number + 1) * upload["chunk_size"]]
+                chunk = bundle[number * upload["chunk_size"] : (number + 1) * upload["chunk_size"]]
                 response = await client.put(
                     f"/xnobrain/api/runtime/v1/bundles/uploads/{upload['upload_id']}/parts/{number}",
                     content=chunk,
                     headers={"Content-Type": "application/octet-stream"},
                 )
                 self.assertEqual(response.status_code, 201, response.text)
-            completed = await client.post(f"/xnobrain/api/runtime/v1/bundles/uploads/{upload['upload_id']}/complete", json={})
+            completed = await client.post(
+                f"/xnobrain/api/runtime/v1/bundles/uploads/{upload['upload_id']}/complete", json={}
+            )
             self.assertEqual(completed.status_code, 200, completed.text)
-            self.assertIn("MISSING_API_KEY", completed.json()["data"]["preview"]["missing_environment"])
+            self.assertIn(
+                "MISSING_API_KEY", completed.json()["data"]["preview"]["missing_environment"]
+            )
             applied = await client.post(
                 f"/xnobrain/api/runtime/v1/bundles/uploads/{upload['upload_id']}/apply",
                 json={"environment": {"MISSING_API_KEY": "server-specific-value"}},
@@ -1562,11 +1621,15 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("DEFAULT_SECRET=from-default", imported_env)
         self.assertIn("MISSING_API_KEY=server-specific-value", imported_env)
         self.assertNotIn("never-export-this", imported_env)
-        self.assertEqual(json.loads((imported / "auth.json").read_text())["session"], "default-auth")
+        self.assertEqual(
+            json.loads((imported / "auth.json").read_text())["session"], "default-auth"
+        )
 
     async def test_missing_run_control_has_a_stable_response(self):
         async with self.client() as client:
-            stopped = await client.post("/xnobrain/api/runtime/v1/conversations/c/runs/run_00000000000000000000000000000000/stop?agent=a")
+            stopped = await client.post(
+                "/xnobrain/api/runtime/v1/conversations/c/runs/run_00000000000000000000000000000000/stop?agent=a"
+            )
         self.assertEqual(stopped.status_code, 404)
         self.assertEqual(stopped.json()["error"]["code"], "run_not_found")
 
@@ -1687,11 +1750,15 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             started.json()["data"]["goal"]["contract"]["verification"],
             "Run the auth test suite",
         )
-        self.assertEqual(added.json()["data"]["goal"]["subgoals"], ["Keep the login response compatible"])
+        self.assertEqual(
+            added.json()["data"]["goal"]["subgoals"], ["Keep the login response compatible"]
+        )
         self.assertEqual(paused.json()["data"]["goal"]["status"], "paused")
         self.assertEqual(edited.json()["data"]["goal"]["objective"], "Make authentication reliable")
         self.assertEqual(edited.json()["data"]["goal"]["status"], "paused")
-        self.assertEqual(edited.json()["data"]["goal"]["subgoals"], ["Keep the login response compatible"])
+        self.assertEqual(
+            edited.json()["data"]["goal"]["subgoals"], ["Keep the login response compatible"]
+        )
         self.assertEqual(resumed.status_code, 202, resumed.text)
         self.assertEqual(resumed.json()["data"]["goal"]["status"], "active")
         self.assertEqual(removed.json()["data"]["goal"]["subgoals"], [])
@@ -1726,14 +1793,29 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                     WHERE id = ?
                     """,
                     (
-                        "test/model", 100.0, 103.25, 3, 1, 1_000, 200,
-                        100, 20, 50, 2, 0.25, "estimated",
-                        json.dumps({"xnobrain_context": {
-                            "used": 10_000,
-                            "limit": 200_000,
-                            "threshold": 100_000,
-                            "auto_compaction": True,
-                        }}),
+                        "test/model",
+                        100.0,
+                        103.25,
+                        3,
+                        1,
+                        1_000,
+                        200,
+                        100,
+                        20,
+                        50,
+                        2,
+                        0.25,
+                        "estimated",
+                        json.dumps(
+                            {
+                                "xnobrain_context": {
+                                    "used": 10_000,
+                                    "limit": 200_000,
+                                    "threshold": 100_000,
+                                    "auto_compaction": True,
+                                }
+                            }
+                        ),
                         conversation_id,
                     ),
                 )
@@ -1759,28 +1841,34 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         usage = response.json()["data"]
-        self.assertEqual(usage["tokens"], {
-            "cache_read": 100,
-            "cache_write": 20,
-            "input": 1_000,
-            "output": 200,
-            "reasoning": 50,
-            "total": 1_320,
-        })
+        self.assertEqual(
+            usage["tokens"],
+            {
+                "cache_read": 100,
+                "cache_write": 20,
+                "input": 1_000,
+                "output": 200,
+                "reasoning": 50,
+                "total": 1_320,
+            },
+        )
         self.assertEqual(usage["steps"], 1)
         self.assertEqual(usage["tool_calls"], 1)
         self.assertEqual(usage["messages"], 3)
         self.assertEqual(usage["execution_seconds"], 3.25)
         self.assertEqual(usage["api_calls"], 2)
         self.assertEqual(usage["cost"]["total_usd"], 0.25)
-        self.assertEqual(usage["context"], {
-            "used": 10_000,
-            "limit": 200_000,
-            "percent": 5.0,
-            "threshold": 100_000,
-            "pressure_percent": 10.0,
-            "auto_compaction": True,
-        })
+        self.assertEqual(
+            usage["context"],
+            {
+                "used": 10_000,
+                "limit": 200_000,
+                "percent": 5.0,
+                "threshold": 100_000,
+                "pressure_percent": 10.0,
+                "auto_compaction": True,
+            },
+        )
 
 
 if __name__ == "__main__":

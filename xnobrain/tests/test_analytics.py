@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import shutil
 import sqlite3
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
 import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import patch
 
+import yaml
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-import yaml
 
 from xnobrain.app import XNOBrainApplication
 from xnobrain.integrations import AgentManager, GlobalConfigManager
@@ -38,8 +39,14 @@ class FakeRouter:
         return {"data": []}
 
     async def usage(self, _model):
-        return {"available": False, "provider": "", "model": "auto",
-                "plan": "", "message": "", "quotas": []}
+        return {
+            "available": False,
+            "provider": "",
+            "model": "auto",
+            "plan": "",
+            "message": "",
+            "quotas": [],
+        }
 
 
 _SESSION_COLUMNS = (
@@ -58,22 +65,39 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         self.router_data = base / "central-router-placeholder"
         self.root.mkdir(parents=True)
         self.profiles.mkdir(parents=True)
-        (self.root / "config.yaml").write_text(yaml.safe_dump({
-            "model": {"provider": "custom:xnobrain", "default": "auto"},
-            "providers": {}, "agent": {"reasoning_effort": "medium"},
-            "approvals": {"mode": "manual"}, "terminal": {"backend": "local"},
-        }), encoding="utf-8")
+        (self.root / "config.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "model": {"provider": "custom:xnobrain", "default": "auto"},
+                    "providers": {},
+                    "agent": {"reasoning_effort": "medium"},
+                    "approvals": {"mode": "manual"},
+                    "terminal": {"backend": "local"},
+                }
+            ),
+            encoding="utf-8",
+        )
         from unittest.mock import patch
-        self.environment = patch.dict(os.environ, {
-            "HERMES_HOME": str(self.root), "HERMES_ROOT_PROFILE": str(self.root),
-            "HERMES_PROFILES_ROOT": str(self.profiles), "DATA_DIR": self.temporary.name,
-        })
+
+        self.environment = patch.dict(
+            os.environ,
+            {
+                "HERMES_HOME": str(self.root),
+                "HERMES_ROOT_PROFILE": str(self.root),
+                "HERMES_PROFILES_ROOT": str(self.profiles),
+                "DATA_DIR": self.temporary.name,
+            },
+        )
         self.environment.start()
         app = FastAPI()
         composition = XNOBrainApplication(
-            AgentManager(root_profile=self.root, profiles_root=self.profiles,
-                         legacy_agents_root=base / "legacy-agents"),
-            GlobalConfigManager(root_profile=self.root), FakeRouter(self.router_data),
+            AgentManager(
+                root_profile=self.root,
+                profiles_root=self.profiles,
+                legacy_agents_root=base / "legacy-agents",
+            ),
+            GlobalConfigManager(root_profile=self.root),
+            FakeRouter(self.router_data),
         )
         composition.register(app)
         self.analytics = composition.service.analytics
@@ -88,22 +112,35 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
 
     async def _create_agent(self, client, display_name):
         response = await client.post(
-            "/xnobrain/api/runtime/v1/agents", json={"display_name": display_name})
+            "/xnobrain/api/runtime/v1/agents", json={"display_name": display_name}
+        )
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["data"]["id"]
 
-    def _insert(self, agent_id, *, model, inp, out, est, act=0.0,
-                started_at=None, provider="anthropic"):
+    def _insert(
+        self, agent_id, *, model, inp, out, est, act=0.0, started_at=None, provider="anthropic"
+    ):
         db = self.profiles / agent_id / "state.db"
         session_id = uuid.uuid4().hex
         conn = sqlite3.connect(db)
         try:
             conn.execute(
-                f"INSERT INTO sessions ({_SESSION_COLUMNS}) "
-                f"VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (session_id, "api", model, provider,
-                 started_at if started_at is not None else time.time() - 3600,
-                 inp, out, 0, 0, 0, est, act, 1),
+                f"INSERT INTO sessions ({_SESSION_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    session_id,
+                    "api",
+                    model,
+                    provider,
+                    started_at if started_at is not None else time.time() - 3600,
+                    inp,
+                    out,
+                    0,
+                    0,
+                    0,
+                    est,
+                    act,
+                    1,
+                ),
             )
             conn.commit()
         finally:
@@ -121,18 +158,50 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             "billing_provider TEXT, started_at REAL, input_tokens INTEGER, "
             "output_tokens INTEGER, cache_read_tokens INTEGER, "
             "cache_write_tokens INTEGER, reasoning_tokens INTEGER, "
-            "estimated_cost_usd REAL, actual_cost_usd REAL, api_call_count INTEGER)")
+            "estimated_cost_usd REAL, actual_cost_usd REAL, api_call_count INTEGER)"
+        )
         now = time.time()
         rows = [
-            (uuid.uuid4().hex, "api", "m1", "anthropic", now - 3600, 100, 50, 0, 0, 0, 0.10, 0.0, 1),
+            (
+                uuid.uuid4().hex,
+                "api",
+                "m1",
+                "anthropic",
+                now - 3600,
+                100,
+                50,
+                0,
+                0,
+                0,
+                0.10,
+                0.0,
+                1,
+            ),
             (uuid.uuid4().hex, "api", "m1", "anthropic", now - 7200, 40, 20, 0, 0, 0, 0.04, 0.0, 1),
-            (uuid.uuid4().hex, "api", "m2", "openai", now - 90 * 86400, 999, 999, 0, 0, 0, 9.99, 0.0, 1),
+            (
+                uuid.uuid4().hex,
+                "api",
+                "m2",
+                "openai",
+                now - 90 * 86400,
+                999,
+                999,
+                0,
+                0,
+                0,
+                9.99,
+                0.0,
+                1,
+            ),
         ]
-        conn.executemany(f"INSERT INTO sessions ({_SESSION_COLUMNS}) VALUES ({','.join('?'*13)})", rows)
-        conn.commit(); conn.close()
+        conn.executemany(
+            f"INSERT INTO sessions ({_SESSION_COLUMNS}) VALUES ({','.join('?' * 13)})", rows
+        )
+        conn.commit()
+        conn.close()
 
         out = aggregate_profile(profile, start_epoch=now - 30 * 86400, end_epoch=now, bucket="day")
-        self.assertEqual(out["totals"]["input_tokens"], 140)   # 100 + 40, old row excluded
+        self.assertEqual(out["totals"]["input_tokens"], 140)  # 100 + 40, old row excluded
         self.assertEqual(out["totals"]["output_tokens"], 70)
         self.assertEqual(out["totals"]["sessions"], 2)
         self.assertAlmostEqual(out["totals"]["estimated_cost_usd"], 0.14, places=6)
@@ -155,7 +224,9 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self._insert(a, model="m1", inp=100, out=50, est=0.10)
             self._insert(b, model="m2", inp=200, out=100, est=0.20)
 
-            agents = (await client.get("/xnobrain/api/runtime/v1/analytics/agents")).json()["data"]["agents"]
+            agents = (await client.get("/xnobrain/api/runtime/v1/analytics/agents")).json()["data"][
+                "agents"
+            ]
             self.assertEqual(
                 {row["agent_id"] for row in agents},
                 {"big-brother", a, b},
@@ -176,7 +247,9 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         async with self.client() as client:
             await self._create_agent(client, "Agent A")
             with patch.object(
-                self.analytics, "_agents", wraps=self.analytics._agents,
+                self.analytics,
+                "_agents",
+                wraps=self.analytics._agents,
             ) as list_agents:
                 response = await client.get("/xnobrain/api/runtime/v1/analytics/usage")
 
@@ -227,7 +300,9 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self._insert(a, model="m1", inp=100, out=50, est=0.10)
             self._insert(b, model="m2", inp=200, out=100, est=0.20)
 
-            data = (await client.get(f"/xnobrain/api/runtime/v1/analytics/usage?agents={a}")).json()["data"]
+            data = (
+                await client.get(f"/xnobrain/api/runtime/v1/analytics/usage?agents={a}")
+            ).json()["data"]
             self.assertEqual(data["totals"]["input_tokens"], 100)
             self.assertEqual(data["totals"]["sessions"], 1)
             self.assertEqual(data["agents_selected"], [a])
@@ -242,9 +317,9 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             kept = await self._create_agent(client, "Kept")
             self._insert(deleted, model="gpt-5", inp=100, out=20, est=0.10)
 
-            before = (await client.get(
-                "/xnobrain/api/runtime/v1/analytics/usage?days=30"
-            )).json()["data"]
+            before = (await client.get("/xnobrain/api/runtime/v1/analytics/usage?days=30")).json()[
+                "data"
+            ]
             self.assertEqual(before["totals"]["total_tokens"], 120)
             self.assertEqual(before["source"]["kind"], "live_profiles")
             self.assertFalse(before["source"]["durable"])
@@ -252,9 +327,9 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             shutil.rmtree(self.profiles / deleted)
             self.analytics.agents.sync_profiles_registry()
 
-            after = (await client.get(
-                "/xnobrain/api/runtime/v1/analytics/usage?days=30"
-            )).json()["data"]
+            after = (await client.get("/xnobrain/api/runtime/v1/analytics/usage?days=30")).json()[
+                "data"
+            ]
             self.assertEqual(after["totals"]["total_tokens"], 0)
             self.assertEqual(after["totals"]["cost_usd"], 0)
             self.assertEqual(
@@ -270,14 +345,20 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self._insert(a, model="m1", inp=100, out=0, est=0.1, started_at=now - 3600)
             self._insert(a, model="m1", inp=999, out=0, est=0.9, started_at=now - 60 * 86400)
 
-            recent = (await client.get("/xnobrain/api/runtime/v1/analytics/usage?days=30")).json()["data"]
+            recent = (await client.get("/xnobrain/api/runtime/v1/analytics/usage?days=30")).json()[
+                "data"
+            ]
             self.assertEqual(recent["totals"]["input_tokens"], 100)  # 60-day row excluded
 
-            wide = (await client.get("/xnobrain/api/runtime/v1/analytics/usage?days=90&bucket=week")).json()["data"]
+            wide = (
+                await client.get("/xnobrain/api/runtime/v1/analytics/usage?days=90&bucket=week")
+            ).json()["data"]
             self.assertEqual(wide["totals"]["input_tokens"], 1099)
             self.assertTrue(all("T00:00:00" in row["bucket"] for row in wide["series"]))
 
-            bad = await client.get("/xnobrain/api/runtime/v1/analytics/usage?from=2099-01-01&to=2000-01-01")
+            bad = await client.get(
+                "/xnobrain/api/runtime/v1/analytics/usage?from=2099-01-01&to=2000-01-01"
+            )
             self.assertEqual(bad.status_code, 400)
 
     async def test_24h_hour_route_uses_current_profile_history(self):
@@ -286,11 +367,19 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         async with self.client() as client:
             agent_id = await self._create_agent(client, "Hourly")
             self._insert(
-                agent_id, model="gpt-5", inp=100, out=10, est=0.1,
+                agent_id,
+                model="gpt-5",
+                inp=100,
+                out=10,
+                est=0.1,
                 started_at=(now - timedelta(hours=2)).timestamp(),
             )
             self._insert(
-                agent_id, model="gpt-5", inp=200, out=20, est=0.2,
+                agent_id,
+                model="gpt-5",
+                inp=200,
+                out=20,
+                est=0.2,
                 started_at=(now - timedelta(hours=1)).timestamp(),
             )
             response = await client.get(
@@ -316,9 +405,9 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             a = await self._create_agent(client, "Agent A")
             self._insert(a, model="m1", inp=100, out=50, est=14.00)
 
-            default = (await client.get(
-                f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget"
-            )).json()["data"]
+            default = (
+                await client.get(f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget")
+            ).json()["data"]
             self.assertEqual(default["weekly_usd"], 20)
             self.assertFalse(default["configured"])
             self.assertEqual(default["severity"], "yellow")
@@ -326,17 +415,22 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(default["period_start"].endswith("Z"))
             self.assertTrue(default["period_end"].endswith("Z"))
 
-            ok = (await client.put(
-                f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget",
-                json={"weekly_usd": 17.5})).json()["data"]
+            ok = (
+                await client.put(
+                    f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget",
+                    json={"weekly_usd": 17.5},
+                )
+            ).json()["data"]
             self.assertEqual(ok["status"], "ok")
             self.assertEqual(ok["severity"], "orange")
             self.assertTrue(ok["configured"])
             self.assertAlmostEqual(ok["spend_usd"], 14.00, places=6)
 
-            over = (await client.put(
-                f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget",
-                json={"weekly_usd": 14})).json()["data"]
+            over = (
+                await client.put(
+                    f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget", json={"weekly_usd": 14}
+                )
+            ).json()["data"]
             self.assertEqual(over["status"], "exceeded")
             self.assertEqual(over["severity"], "red")
             self.assertFalse(over["accepting_chats"])
@@ -345,9 +439,12 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             config = yaml.safe_load((self.profiles / a / "config.yaml").read_text("utf-8"))
             self.assertIn("xnobrain_budget", config)
 
-            cleared = (await client.put(
-                f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget",
-                json={"weekly_usd": None})).json()["data"]
+            cleared = (
+                await client.put(
+                    f"/xnobrain/api/runtime/v1/analytics/agents/{a}/budget",
+                    json={"weekly_usd": None},
+                )
+            ).json()["data"]
             self.assertEqual(cleared["weekly_usd"], 20)
             self.assertFalse(cleared["configured"])
             config = yaml.safe_load((self.profiles / a / "config.yaml").read_text("utf-8"))
@@ -357,7 +454,11 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         async with self.client() as client:
             agent_id = await self._create_agent(client, "Cost Agent")
             session_id = self._insert(
-                agent_id, model="ocz/deepseek-v4-flash", inp=100, out=10, est=0,
+                agent_id,
+                model="ocz/deepseek-v4-flash",
+                inp=100,
+                out=10,
+                est=0,
             )
             db = self.profiles / agent_id / "state.db"
             conn = sqlite3.connect(db)
@@ -376,15 +477,15 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
                     "(session_id, model, api_call_count, input_tokens, output_tokens, "
                     "cache_read_tokens, reasoning_tokens, estimated_cost_usd, "
                     "first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (session_id, "ocz/deepseek-v4-flash", 2, 100, 10, 40, 5,
-                     0.5, now - 60, now),
+                    (session_id, "ocz/deepseek-v4-flash", 2, 100, 10, 40, 5, 0.5, now - 60, now),
                 )
                 conn.commit()
             finally:
                 conn.close()
             budget = await self.analytics.get_budget(agent_id)
             conversation_cost = await self.analytics.conversation_estimated_cost(
-                agent_id, session_id,
+                agent_id,
+                session_id,
             )
 
             self.assertEqual(budget["spend_usd"], 0.5)
@@ -406,7 +507,8 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(budget.status_code, 200, budget.text)
             session = await client.post(
-                f"/xnobrain/api/runtime/v1/sessions?agent={a}", json={"title": "Budget gate"},
+                f"/xnobrain/api/runtime/v1/sessions?agent={a}",
+                json={"title": "Budget gate"},
             )
             self.assertEqual(session.status_code, 201, session.text)
             session_id = session.json()["data"]["id"]
@@ -449,3 +551,57 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SkillUsageContractTests(unittest.TestCase):
+    def test_observed_skill_loads_are_deduplicated_by_session_and_honest(self):
+        from xnobrain.integrations.analytics import skill_usage_profile
+
+        with tempfile.TemporaryDirectory() as directory:
+            profile = Path(directory)
+            conn = sqlite3.connect(profile / "state.db")
+            conn.execute("CREATE TABLE sessions (id TEXT, started_at REAL)")
+            conn.execute(
+                "CREATE TABLE messages (session_id TEXT, role TEXT, tool_calls TEXT, timestamp REAL)"
+            )
+            now = time.time()
+            conn.executemany(
+                "INSERT INTO sessions VALUES (?,?)",
+                [("run-a", now - 10), ("run-b", now - 5)],
+            )
+            call = json.dumps(
+                [{"function": {"name": "skill_view", "arguments": '{"name":"report-writer"}'}}]
+            )
+            conn.executemany(
+                "INSERT INTO messages VALUES (?,?,?,?)",
+                [
+                    ("run-a", "assistant", call, now - 9),
+                    ("run-a", "assistant", call, now - 8),
+                    ("run-b", "assistant", call, now - 4),
+                    (
+                        "run-b",
+                        "assistant",
+                        json.dumps([{"function": {"name": "terminal", "arguments": "{}"}}]),
+                        now - 3,
+                    ),
+                ],
+            )
+            conn.commit()
+            conn.close()
+
+            result = skill_usage_profile(profile, start_epoch=now - 100, end_epoch=now + 1)
+
+        self.assertTrue(result["coverage"]["instrumented"])
+        self.assertEqual(result["coverage"]["attribution"], "observed_load_only")
+        self.assertEqual(result["items"][0]["loaded_count"], 3)
+        self.assertEqual(result["items"][0]["distinct_runs"], 2)
+        self.assertIsNone(result["items"][0]["tool_invocations"])
+        self.assertIsNone(result["items"][0]["errors"])
+
+    def test_missing_instrumentation_reports_unknown_not_zero(self):
+        from xnobrain.integrations.analytics import skill_usage_profile
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = skill_usage_profile(Path(directory), start_epoch=0, end_epoch=time.time())
+        self.assertFalse(result["coverage"]["instrumented"])
+        self.assertEqual(result["coverage"]["message"], "No measured data")

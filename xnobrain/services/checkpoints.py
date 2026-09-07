@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import threading
 from contextlib import contextmanager
 from pathlib import Path
-import threading
 from typing import Any, Mapping
 
 from ..integrations.checkpoints import CheckpointIntegration, CheckpointIntegrationError
@@ -51,12 +51,14 @@ class CheckpointService:
     def list(self, agent_id: str, cursor: str | None = None, limit: int = 20) -> dict[str, Any]:
         _, _, workspace, enabled = self._profile(agent_id)
         if not enabled:
-            raise ServiceError("File restore points are disabled", status=409, code="checkpoints_disabled")
+            raise ServiceError(
+                "File restore points are disabled", status=409, code="checkpoints_disabled"
+            )
         with self._lock(workspace):
             items = self.integration.list(workspace)
         offset = int(cursor or 0)
         size = max(1, min(int(limit), 100))
-        page = items[offset:offset + size]
+        page = items[offset : offset + size]
         next_cursor = str(offset + size) if offset + size < len(items) else None
         return {"items": page, "next_cursor": next_cursor}
 
@@ -67,14 +69,18 @@ class CheckpointService:
     def diff(self, agent_id: str, checkpoint_id: str) -> dict[str, Any]:
         _, _, workspace, enabled = self._profile(agent_id)
         if not enabled:
-            raise ServiceError("File restore points are disabled", status=409, code="checkpoints_disabled")
+            raise ServiceError(
+                "File restore points are disabled", status=409, code="checkpoints_disabled"
+            )
         with self._lock(workspace):
             return self.integration.diff(workspace, checkpoint_id)
 
     def file_versions(self, agent_id: str, path: Any) -> dict[str, Any]:
         _, _, workspace, enabled = self._profile(agent_id)
         if not enabled:
-            raise ServiceError("File restore points are disabled", status=409, code="checkpoints_disabled")
+            raise ServiceError(
+                "File restore points are disabled", status=409, code="checkpoints_disabled"
+            )
         relative = self._relative(path)
         resolved = (workspace / relative).resolve(strict=False)
         if workspace != resolved and workspace not in resolved.parents:
@@ -85,17 +91,23 @@ class CheckpointService:
     def restore(self, agent_id: str, checkpoint_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         name, _, workspace, enabled = self._profile(agent_id)
         if not enabled:
-            raise ServiceError("File restore points are disabled", status=409, code="checkpoints_disabled")
+            raise ServiceError(
+                "File restore points are disabled", status=409, code="checkpoints_disabled"
+            )
         relative = self._relative(body.get("path")) if body.get("path") is not None else None
         if relative is not None:
             resolved = (workspace / relative).resolve(strict=False)
             if workspace != resolved and workspace not in resolved.parents:
                 raise ServiceError("path escapes the workspace", code="invalid_workspace_path")
         if name in self.agents.active_agent_ids():
-            raise ServiceError("Stop the active run before restoring", status=409, code="agent_busy")
+            raise ServiceError(
+                "Stop the active run before restoring", status=409, code="agent_busy"
+            )
         with self._lock(workspace):
             if name in self.agents.active_agent_ids():
-                raise ServiceError("Stop the active run before restoring", status=409, code="agent_busy")
+                raise ServiceError(
+                    "Stop the active run before restoring", status=409, code="agent_busy"
+                )
             result = self.integration.restore(workspace, checkpoint_id, relative)
         return {
             "restored": True,

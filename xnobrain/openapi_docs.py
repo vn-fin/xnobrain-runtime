@@ -72,9 +72,7 @@ def configure_openapi_docs(app: Any) -> None:
 
     # Hermes serves its SPA through an ordered catch-all route.
     catch_all = [
-        route
-        for route in app.router.routes
-        if getattr(route, "path", "") == "/{full_path:path}"
+        route for route in app.router.routes if getattr(route, "path", "") == "/{full_path:path}"
     ]
     if catch_all:
         app.router.routes[:] = [

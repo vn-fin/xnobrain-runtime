@@ -1,12 +1,12 @@
 """AgentSkills methods for the Hermes runtime adapter."""
 
 from .hermes_support import (
-    AgentAPIError,
-    Any,
     BIG_BROTHER_SKILL_CATEGORY,
     BIG_BROTHER_SKILL_ID,
     CUSTOM_SKILL_CATEGORY,
     MAX_TEXT_CHARS,
+    AgentAPIError,
+    Any,
     Mapping,
     Path,
     hashlib,
@@ -33,7 +33,6 @@ class AgentSkillsMixin:
             "skills": sorted(skills, key=lambda item: (item["category"], item["name"])),
         }
 
-
     def preview_common_skill_sync(self, raw_names: list[str]) -> dict[str, Any]:
         """Describe how enabled root-profile skills would change each agent."""
         with self._skill_sync_lock:
@@ -49,7 +48,6 @@ class AgentSkillsMixin:
                 "agents": plans,
                 "totals": self._skill_sync_totals(plans),
             }
-
 
     def sync_common_skills(
         self,
@@ -73,11 +71,13 @@ class AgentSkillsMixin:
                     self._apply_skill_sync(raw_name, common)
                     results.append({**plan, "status": "completed"})
                 except (OSError, AgentAPIError) as exc:
-                    results.append({
-                        **plan,
-                        "status": "failed",
-                        "error": str(exc),
-                    })
+                    results.append(
+                        {
+                            **plan,
+                            "status": "failed",
+                            "error": str(exc),
+                        }
+                    )
             completed = sum(item["status"] == "completed" for item in results)
             return {
                 "source_revision": revision,
@@ -86,7 +86,6 @@ class AgentSkillsMixin:
                 "completed": completed,
                 "failed": len(results) - completed,
             }
-
 
     def _skill_sync_plan(
         self,
@@ -101,17 +100,22 @@ class AgentSkillsMixin:
         enabled_common = {key: value for key, value in common.items() if value["enabled"]}
         added = sorted(key for key in enabled_common if key not in target)
         updated = sorted(
-            key for key, source in enabled_common.items()
-            if key in target and (
+            key
+            for key, source in enabled_common.items()
+            if key in target
+            and (
                 not target[key]["enabled"]
                 or target[key]["digest"] != source["digest"]
                 or target[key]["relative_path"] != source["relative_path"]
             )
         )
-        removed = sorted(key for key, source in common.items() if not source["enabled"] and key in target)
+        removed = sorted(
+            key for key, source in common.items() if not source["enabled"] and key in target
+        )
         preserved = sorted(key for key in target if key not in common)
         unchanged = sorted(
-            key for key, source in enabled_common.items()
+            key
+            for key, source in enabled_common.items()
             if key in target
             and target[key]["enabled"]
             and target[key]["digest"] == source["digest"]
@@ -125,7 +129,6 @@ class AgentSkillsMixin:
             "preserved": preserved,
             "unchanged": unchanged,
         }
-
 
     def _apply_skill_sync(
         self,
@@ -174,7 +177,6 @@ class AgentSkillsMixin:
             if committed and backup.exists():
                 shutil.rmtree(backup)
 
-
     @staticmethod
     def _copy_skill_directory(
         item: Mapping[str, Any],
@@ -187,7 +189,6 @@ class AgentSkillsMixin:
             shutil.rmtree(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(Path(str(item["source"])), destination, symlinks=True)
-
 
     def _skill_sync_inventory(
         self,
@@ -220,7 +221,6 @@ class AgentSkillsMixin:
             }
         return inventory
 
-
     @staticmethod
     def _skill_directory_digest(root: Path) -> str:
         digest = hashlib.sha256()
@@ -237,19 +237,22 @@ class AgentSkillsMixin:
                 digest.update(b"D")
         return digest.hexdigest()
 
-
     @staticmethod
     def _skill_sync_revision(inventory: Mapping[str, Mapping[str, Any]]) -> str:
         digest = hashlib.sha256()
         for skill_id, item in sorted(inventory.items()):
-            digest.update(json.dumps({
-                "id": skill_id,
-                "relative_path": item["relative_path"],
-                "enabled": item["enabled"],
-                "digest": item["digest"],
-            }, sort_keys=True).encode("utf-8"))
+            digest.update(
+                json.dumps(
+                    {
+                        "id": skill_id,
+                        "relative_path": item["relative_path"],
+                        "enabled": item["enabled"],
+                        "digest": item["digest"],
+                    },
+                    sort_keys=True,
+                ).encode("utf-8")
+            )
         return digest.hexdigest()
-
 
     @staticmethod
     def _skill_sync_totals(plans: list[dict[str, Any]]) -> dict[str, int]:
@@ -257,7 +260,6 @@ class AgentSkillsMixin:
             key: sum(len(plan[key]) for plan in plans)
             for key in ("added", "updated", "removed", "preserved", "unchanged")
         }
-
 
     async def install_skill(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         name = self._agent_name(raw_name)
@@ -289,10 +291,12 @@ class AgentSkillsMixin:
         command = [self._hermes_binary(), "skills", "install", source, "--yes"]
         if body.get("name"):
             command.extend(["--name", self._skill_id(body["name"])])
-        command.extend([
-            "--category",
-            self._safe_category(body.get("category") or CUSTOM_SKILL_CATEGORY),
-        ])
+        command.extend(
+            [
+                "--category",
+                self._safe_category(body.get("category") or CUSTOM_SKILL_CATEGORY),
+            ]
+        )
         if bool(body.get("force", False)):
             command.append("--force")
         result = await self._run_hermes_command(
@@ -316,7 +320,6 @@ class AgentSkillsMixin:
         payload["command"] = result
         return payload
 
-
     def set_skill_enabled(
         self,
         raw_name: Any,
@@ -335,14 +338,11 @@ class AgentSkillsMixin:
                 status=403,
             )
         if self._find_agent_skill(profile_dir, skill_id) is None:
-            raise AgentAPIError(
-                f"Skill not found: {skill_id}", code="skill_not_found", status=404
-            )
+            raise AgentAPIError(f"Skill not found: {skill_id}", code="skill_not_found", status=404)
         if "enabled" not in body:
             raise AgentAPIError("enabled is required", code="invalid_skill_request")
         self._set_skill_enabled(profile_dir, skill_id, self._coerce_bool(body["enabled"]))
         return self.list_skills(name)
-
 
     def remove_skill(self, raw_name: Any, raw_skill_id: Any) -> dict[str, Any]:
         name = self._agent_name(raw_name)
@@ -365,12 +365,9 @@ class AgentSkillsMixin:
                     removed = True
                     break
         if not removed:
-            raise AgentAPIError(
-                f"Skill not found: {skill_id}", code="skill_not_found", status=404
-            )
+            raise AgentAPIError(f"Skill not found: {skill_id}", code="skill_not_found", status=404)
         self._set_skill_enabled(profile_dir, skill_id, True)
         return self.list_skills(name)
-
 
     @staticmethod
     def _skill_files_for_profile(profile_dir: Path) -> dict[str, bytes]:
@@ -382,7 +379,6 @@ class AgentSkillsMixin:
             for path in skills_root.rglob("SKILL.md")
             if path.is_file()
         }
-
 
     def _changed_skill_ids(
         self,
@@ -399,7 +395,6 @@ class AgentSkillsMixin:
             changed.add(str(frontmatter.get("name") or path.parent.name).strip())
         return {item for item in changed if item}
 
-
     def _skill_ids_for_profile(self, profile_dir: Path) -> set[str]:
         skills_root = profile_dir / "skills"
         if not skills_root.is_dir():
@@ -414,7 +409,6 @@ class AgentSkillsMixin:
                 skill_ids.add(skill_id)
         return skill_ids
 
-
     def _disable_new_skills(
         self,
         profile_dir: Path,
@@ -428,7 +422,6 @@ class AgentSkillsMixin:
         self._write_disabled_skills(profile_dir, config, disabled | new_skill_ids)
         return new_skill_ids
 
-
     def _clear_seeded_disabled_skills(self, profile_dir: Path) -> None:
         config = self._read_config(profile_dir)
         skills_config = config.get("skills")
@@ -436,7 +429,6 @@ class AgentSkillsMixin:
             skills_config["disabled"] = []
             with (profile_dir / "config.yaml").open("w", encoding="utf-8") as file:
                 yaml.safe_dump(config, file, sort_keys=False, allow_unicode=False)
-
 
     def _normalize_agent_skill_config(self, config: dict[str, Any]) -> None:
         shared_dir = str(self.root_profile / "skills")
@@ -457,7 +449,6 @@ class AgentSkillsMixin:
         else:
             skills_config.pop("external_dirs", None)
 
-
     def _find_agent_skill(self, profile_dir: Path, skill_id: str) -> Path | None:
         skills_root = profile_dir / "skills"
         direct = skills_root / skill_id
@@ -476,7 +467,6 @@ class AgentSkillsMixin:
                 return skill_file.parent
         return None
 
-
     def _append_skills_from_dir(
         self,
         skills: list[dict[str, Any]],
@@ -493,9 +483,8 @@ class AgentSkillsMixin:
             name_value = str(frontmatter.get("name") or skill_id).strip()
             if name_value:
                 skill_id = name_value
-            if (
-                skill_id == BIG_BROTHER_SKILL_ID
-                or rel_parent.parts[:1] == (BIG_BROTHER_SKILL_CATEGORY,)
+            if skill_id == BIG_BROTHER_SKILL_ID or rel_parent.parts[:1] == (
+                BIG_BROTHER_SKILL_CATEGORY,
             ):
                 continue
             if skill_id in seen:
@@ -516,7 +505,6 @@ class AgentSkillsMixin:
                 }
             )
 
-
     def _disabled_skills(self, config: Mapping[str, Any]) -> set[str]:
         raw = self._get_nested(config, ("skills", "disabled"), []) or []
         if isinstance(raw, str):
@@ -531,7 +519,6 @@ class AgentSkillsMixin:
                 continue
         return disabled
 
-
     def _set_skill_enabled(self, profile_dir: Path, skill_id: str, enabled: bool) -> None:
         config = self._read_config(profile_dir)
         disabled = self._disabled_skills(config)
@@ -540,7 +527,6 @@ class AgentSkillsMixin:
         else:
             disabled.add(skill_id)
         self._write_disabled_skills(profile_dir, config, disabled)
-
 
     def _write_disabled_skills(
         self,
@@ -556,7 +542,6 @@ class AgentSkillsMixin:
         skills_config["disabled"] = sorted(disabled)
         with (profile_dir / "config.yaml").open("w", encoding="utf-8") as file:
             yaml.safe_dump(config, file, sort_keys=False, allow_unicode=False)
-
 
     def _read_skill_frontmatter(self, path: Path) -> dict[str, Any]:
         try:

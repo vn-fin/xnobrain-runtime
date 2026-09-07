@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -38,8 +38,13 @@ class WorkspacePreviewTests(unittest.TestCase):
                 return type("Completed", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
             with (
-                patch("xnobrain.services.workspace_preview.shutil.which", return_value="/usr/bin/soffice"),
-                patch("xnobrain.services.workspace_preview.subprocess.run", side_effect=convert) as run,
+                patch(
+                    "xnobrain.services.workspace_preview.shutil.which",
+                    return_value="/usr/bin/soffice",
+                ),
+                patch(
+                    "xnobrain.services.workspace_preview.subprocess.run", side_effect=convert
+                ) as run,
             ):
                 first = service.preview(source)
                 second = service.preview(source)
@@ -65,8 +70,13 @@ class WorkspacePreviewTests(unittest.TestCase):
                 return type("Completed", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
             with (
-                patch("xnobrain.services.workspace_preview.shutil.which", return_value="/usr/bin/soffice"),
-                patch("xnobrain.services.workspace_preview.subprocess.run", side_effect=convert) as run,
+                patch(
+                    "xnobrain.services.workspace_preview.shutil.which",
+                    return_value="/usr/bin/soffice",
+                ),
+                patch(
+                    "xnobrain.services.workspace_preview.subprocess.run", side_effect=convert
+                ) as run,
             ):
                 first = service.workbook(source)
                 second = service.workbook(source)
@@ -96,7 +106,10 @@ class WorkspacePreviewTests(unittest.TestCase):
                 return type("Completed", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
             with (
-                patch("xnobrain.services.workspace_preview.shutil.which", return_value="/usr/bin/soffice"),
+                patch(
+                    "xnobrain.services.workspace_preview.shutil.which",
+                    return_value="/usr/bin/soffice",
+                ),
                 patch("xnobrain.services.workspace_preview.subprocess.run", side_effect=convert),
             ):
                 result = service.workbook(source)

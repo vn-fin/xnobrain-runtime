@@ -123,3 +123,25 @@ fallback chain over the same authenticated router transport. Model-not-found,
 quota/rate-limit, malformed-response, and supported transient provider failures
 can therefore advance to another candidate. Explicit models and user-created
 blend strategies retain their existing behavior.
+
+## Agent Maker blueprint drafts
+
+Runtime exposes the pre-scaffold Agent Maker lifecycle under
+`/xnobrain/api/runtime/v1/agent-blueprints`. `POST` creates a draft in the
+creator profile selected by the required `?agent=<agent-id>` query parameter;
+`GET /{blueprint_id}` resumes it; and `PATCH /{blueprint_id}` requires
+`expected_revision`. Draft records remain private below that creator profile's
+`.xnobrain/agent-blueprints` directory. A complete typed blueprint returns its
+normalized proposed file manifest and a canonical SHA-256 digest.
+
+`POST /{blueprint_id}/approvals` requires the current revision, exact canonical
+digest, an explicit `approve` decision, and trusted human actor reference. The
+approval records separate content, permission, model, and context digests.
+Changing intent, context, or blueprint content increments the revision and
+invalidates approval. Approval does not create a profile.
+
+Scaffold, certification, activation, and cancellation routes are intentionally
+not exposed in this delivery. Existing profile creation cannot yet atomically
+publish the complete approved file plan as a paused child without creating
+history/state and copying inherited skills, so implementing scaffold with that
+API would violate the Agent Maker safety contract.

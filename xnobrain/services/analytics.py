@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import time
 from typing import Any, Mapping
 
 import yaml
@@ -22,13 +22,16 @@ from ..integrations.analytics import (
     bucket_start_iso,
     period_spend,
     profile_model_usage,
+    skill_usage_profile,
 )
 from .base import ServiceError
 
-
 _TOKEN_COLS = (
-    "input_tokens", "output_tokens", "cache_read_tokens",
-    "cache_write_tokens", "reasoning_tokens",
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "reasoning_tokens",
 )
 _BUDGET_KEY = "xnobrain_budget"
 DEFAULT_WEEKLY_BUDGET_USD = 20.0
@@ -65,28 +68,45 @@ class AnalyticsService:
         return {"agents": rows}
 
     async def usage_summary(
-        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
+        self,
+        *,
+        agent_ids: list[str],
+        start_epoch: float,
+        end_epoch: float,
         bucket: str,
     ) -> dict[str, Any]:
         items, available = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
-            items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket,
+            items,
+            selected=bool(agent_ids),
+            start=start_epoch,
+            end=end_epoch,
+            bucket=bucket,
         )
         return await self._decorate_overview(summary, items, agent_ids, available)
 
     async def usage_overview(
-        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
+        self,
+        *,
+        agent_ids: list[str],
+        start_epoch: float,
+        end_epoch: float,
         bucket: str,
     ) -> dict[str, Any]:
         """Return dashboard totals and attribution without chart payloads."""
         items, available = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
-            items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket,
+            items,
+            selected=bool(agent_ids),
+            start=start_epoch,
+            end=end_epoch,
+            bucket=bucket,
         )
         complete = await self._decorate_overview(
-            summary, items, agent_ids, available,
+            summary,
+            items,
+            agent_ids,
+            available,
         )
         return {
             key: value
@@ -107,8 +127,12 @@ class AnalyticsService:
             item = by_path.get(row["agent_id"])
             row["budget"] = (
                 await self._budget_status(
-                    row["agent_id"], item, attribution_items=attribution_items,
-                ) if item else None
+                    row["agent_id"],
+                    item,
+                    attribution_items=attribution_items,
+                )
+                if item
+                else None
             )
         summary["agents_selected"] = (
             [str(item.get("name") or "") for item in items] if agent_ids else []
@@ -118,15 +142,24 @@ class AnalyticsService:
         return summary
 
     async def agent_usage(
-        self, agent_id: str, *, start_epoch: float, end_epoch: float,
+        self,
+        agent_id: str,
+        *,
+        start_epoch: float,
+        end_epoch: float,
         bucket: str,
     ) -> dict[str, Any]:
         item = self._require_item(agent_id)
         summary = await self._summary([item], start_epoch, end_epoch, bucket)
-        agent_row = summary["agents"][0] if summary["agents"] else {
-            "agent_id": agent_id, "display_name": self._display(item, agent_id),
-            "totals": summary["totals"],
-        }
+        agent_row = (
+            summary["agents"][0]
+            if summary["agents"]
+            else {
+                "agent_id": agent_id,
+                "display_name": self._display(item, agent_id),
+                "totals": summary["totals"],
+            }
+        )
         agent_row["budget"] = await self._budget_status(agent_id, item)
         agent_row["by_model"] = summary["by_model"]
         agent_row["series"] = summary["series"]
@@ -137,42 +170,89 @@ class AnalyticsService:
         return agent_row
 
     async def models_breakdown(
-        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
+        self,
+        *,
+        agent_ids: list[str],
+        start_epoch: float,
+        end_epoch: float,
         bucket: str,
     ) -> dict[str, Any]:
         items, _ = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
-            items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket,
+            items,
+            selected=bool(agent_ids),
+            start=start_epoch,
+            end=end_epoch,
+            bucket=bucket,
         )
         return {
-            "range_from": _epoch_iso(start_epoch), "range_to": _epoch_iso(end_epoch),
-            "by_model": summary["by_model"], "totals": summary["totals"],
-            "by_provider": summary["by_provider"], "source": summary["source"],
+            "range_from": _epoch_iso(start_epoch),
+            "range_to": _epoch_iso(end_epoch),
+            "by_model": summary["by_model"],
+            "totals": summary["totals"],
+            "by_provider": summary["by_provider"],
+            "source": summary["source"],
             "timezone": "UTC",
         }
 
     async def timeseries(
-        self, *, agent_ids: list[str], start_epoch: float, end_epoch: float,
+        self,
+        *,
+        agent_ids: list[str],
+        start_epoch: float,
+        end_epoch: float,
         bucket: str,
     ) -> dict[str, Any]:
         items, _ = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
-            items, selected=bool(agent_ids),
-            start=start_epoch, end=end_epoch, bucket=bucket,
+            items,
+            selected=bool(agent_ids),
+            start=start_epoch,
+            end=end_epoch,
+            bucket=bucket,
         )
         return {
-            "range_from": _epoch_iso(start_epoch), "range_to": _epoch_iso(end_epoch),
-            "bucket": bucket, "series": summary["series"], "source": summary["source"],
+            "range_from": _epoch_iso(start_epoch),
+            "range_to": _epoch_iso(end_epoch),
+            "bucket": bucket,
+            "series": summary["series"],
+            "source": summary["source"],
             "timezone": "UTC",
         }
+
+    async def skill_usage(
+        self, agent_id: str, *, start_epoch: float, end_epoch: float
+    ) -> dict[str, Any]:
+        """Return bounded, honest observed skill-load metrics for one agent."""
+        item = self._require_item(agent_id)
+        profile = self._profile_dir(item)
+        if profile is None:
+            return {
+                "agent_id": agent_id,
+                "items": [],
+                "coverage": {
+                    "source": "hermes_tool_calls",
+                    "attribution": "observed_load_only",
+                    "instrumented": False,
+                    "message": "No measured data",
+                },
+            }
+        result = await asyncio.to_thread(
+            skill_usage_profile,
+            profile,
+            start_epoch=start_epoch,
+            end_epoch=end_epoch,
+        )
+        return {"agent_id": agent_id, **result}
 
     async def get_budget(self, agent_id: str) -> dict[str, Any]:
         item = self._require_item(agent_id)
         return await self._budget_status(agent_id, item)
 
     async def set_budget(
-        self, agent_id: str, patch: Mapping[str, Any],
+        self,
+        agent_id: str,
+        patch: Mapping[str, Any],
     ) -> dict[str, Any]:
         item = self._require_item(agent_id)
         config, path = self._read_config(agent_id)
@@ -241,11 +321,17 @@ class AnalyticsService:
         return Path(raw) if raw else None
 
     async def _summary(
-        self, items: list[Mapping[str, Any]], start: float, end: float, bucket: str,
+        self,
+        items: list[Mapping[str, Any]],
+        start: float,
+        end: float,
+        bucket: str,
     ) -> dict[str, Any]:
         key = (
             frozenset(str(item.get("name") or "") for item in items),
-            round(start), round(end), bucket,
+            round(start),
+            round(end),
+            bucket,
         )
         now = time.time()
         cached = self._merged.get(key)
@@ -271,7 +357,10 @@ class AnalyticsService:
         """Single-flight computation shared by parallel dashboard endpoints."""
         key = (
             frozenset(str(item.get("name") or "") for item in items),
-            selected, round(start), round(end), bucket,
+            selected,
+            round(start),
+            round(end),
+            bucket,
         )
         now = time.time()
         cached = self._workspace.get(key)
@@ -284,7 +373,11 @@ class AnalyticsService:
                 return copy.deepcopy(cached[1])
             live = await self._summary(items, start, end, bucket)
             summary = await self._with_durable_workspace(
-                live, selected=selected, start=start, end=end, bucket=bucket,
+                live,
+                selected=selected,
+                start=start,
+                end=end,
+                bucket=bucket,
             )
             if len(self._workspace) > _CACHE_CAP:
                 self._workspace.clear()
@@ -292,7 +385,11 @@ class AnalyticsService:
             return copy.deepcopy(summary)
 
     async def _collect_partials(
-        self, items: list[Mapping[str, Any]], start: float, end: float, effective: str,
+        self,
+        items: list[Mapping[str, Any]],
+        start: float,
+        end: float,
+        effective: str,
     ) -> list[dict[str, Any]]:
         async def read_one(item: Mapping[str, Any]) -> dict[str, Any]:
             agent_id = str(item.get("name") or "")
@@ -312,8 +409,11 @@ class AnalyticsService:
                 else:
                     async with self._sem:
                         partial = await asyncio.to_thread(
-                            aggregate_profile, profile_dir,
-                            start_epoch=start, end_epoch=end, bucket=effective,
+                            aggregate_profile,
+                            profile_dir,
+                            start_epoch=start,
+                            end_epoch=end,
+                            bucket=effective,
                         )
                     if mtime is not None:
                         if len(self._partials) > _CACHE_CAP:
@@ -359,7 +459,11 @@ class AnalyticsService:
         }
 
     def _merge(
-        self, partials: list[dict[str, Any]], start: float, end: float, bucket: str,
+        self,
+        partials: list[dict[str, Any]],
+        start: float,
+        end: float,
+        bucket: str,
     ) -> dict[str, Any]:
         totals = _zero_totals()
         models: dict[tuple[str, str], dict[str, Any]] = {}
@@ -369,11 +473,13 @@ class AnalyticsService:
             partial = entry["partial"] or {}
             agent_totals = _accumulate_totals(_zero_totals(), partial.get("totals") or {})
             _accumulate_totals(totals, partial.get("totals") or {})
-            agents.append({
-                "agent_id": entry["agent_id"],
-                "display_name": entry["display_name"],
-                "totals": _finish_totals(agent_totals),
-            })
+            agents.append(
+                {
+                    "agent_id": entry["agent_id"],
+                    "display_name": entry["display_name"],
+                    "totals": _finish_totals(agent_totals),
+                }
+            )
             for row in partial.get("by_model") or []:
                 mk = (str(row.get("model") or "unknown"), str(row.get("provider") or ""))
                 _accumulate_model(models.setdefault(mk, _zero_model(*mk)), row)
@@ -381,15 +487,19 @@ class AnalyticsService:
                 label = _fold_bucket(str(row.get("bucket") or ""), bucket)
                 _accumulate_bucket(series.setdefault(label, _zero_bucket(label)), row)
         return {
-            "range_from": _epoch_iso(start), "range_to": _epoch_iso(end),
+            "range_from": _epoch_iso(start),
+            "range_to": _epoch_iso(end),
             "period_days": max(1, round((end - start) / 86400)),
-            "bucket": bucket, "generated_at": _iso(), "timezone": "UTC",
+            "bucket": bucket,
+            "generated_at": _iso(),
+            "timezone": "UTC",
             "totals": _finish_totals(totals),
             "agents": agents,
             "by_model": [
                 _finish_model(models[key])
-                for key in sorted(models, key=lambda k: -(
-                    models[k]["input_tokens"] + models[k]["output_tokens"]))
+                for key in sorted(
+                    models, key=lambda k: -(models[k]["input_tokens"] + models[k]["output_tokens"])
+                )
             ],
             "series": [
                 _finish_bucket(series.get(label, _zero_bucket(label)))
@@ -398,8 +508,11 @@ class AnalyticsService:
         }
 
     async def _budget_status(
-        self, agent_id: str, item: Mapping[str, Any] | None,
-        *, attribution_items: list[Mapping[str, Any]] | None = None,
+        self,
+        agent_id: str,
+        item: Mapping[str, Any] | None,
+        *,
+        attribution_items: list[Mapping[str, Any]] | None = None,
     ) -> dict[str, Any]:
         config, _ = self._read_config(agent_id)
         budget = config.get(_BUDGET_KEY) if isinstance(config.get(_BUDGET_KEY), dict) else {}
@@ -422,15 +535,20 @@ class AnalyticsService:
             )
         else:
             spends = await self._weekly_estimated_spends(
-                week_start, now, items=attribution_items,
+                week_start,
+                now,
+                items=attribution_items,
             )
             spend = spends.get(agent_id, 0.0)
         percent = max(0.0, spend / weekly * 100)
         accepting = spend < weekly
         severity = (
-            "red" if percent >= 90
-            else "orange" if percent >= 80
-            else "yellow" if percent >= 70
+            "red"
+            if percent >= 90
+            else "orange"
+            if percent >= 80
+            else "yellow"
+            if percent >= 70
             else "normal"
         )
         return {
@@ -451,8 +569,11 @@ class AnalyticsService:
         }
 
     async def _weekly_estimated_spends(
-        self, week_start: datetime, now: datetime,
-        *, items: list[Mapping[str, Any]] | None = None,
+        self,
+        week_start: datetime,
+        now: datetime,
+        *,
+        items: list[Mapping[str, Any]] | None = None,
     ) -> dict[str, float]:
         """Read the locally recorded estimated costs for each live agent."""
         cache_key = _iso(week_start)
@@ -491,7 +612,9 @@ class AnalyticsService:
             return result
 
     async def conversation_estimated_cost(
-        self, agent_id: str, conversation_id: str,
+        self,
+        agent_id: str,
+        conversation_id: str,
     ) -> float:
         """Return the estimated cost recorded in one conversation ledger."""
         item = self._require_item(agent_id)
@@ -532,6 +655,7 @@ class AnalyticsService:
 
 # ---- module helpers ---------------------------------------------------------
 
+
 def _iso(value: datetime | None = None) -> str:
     return (value or datetime.now(timezone.utc)).isoformat().replace("+00:00", "Z")
 
@@ -557,9 +681,15 @@ def _num_or_none(value: Any) -> float | None:
 
 def _zero_totals() -> dict[str, Any]:
     return {
-        "input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0,
-        "cache_write_tokens": 0, "reasoning_tokens": 0, "estimated_cost_usd": 0.0,
-        "actual_cost_usd": 0.0, "sessions": 0, "api_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "actual_cost_usd": 0.0,
+        "sessions": 0,
+        "api_calls": 0,
     }
 
 
@@ -580,9 +710,15 @@ def _finish_totals(acc: dict[str, Any]) -> dict[str, Any]:
 
 
 def _zero_model(model: str, provider: str) -> dict[str, Any]:
-    return {"model": model, "provider": provider, "input_tokens": 0,
-            "output_tokens": 0, "estimated_cost_usd": 0.0, "actual_cost_usd": 0.0,
-            "sessions": 0}
+    return {
+        "model": model,
+        "provider": provider,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "actual_cost_usd": 0.0,
+        "sessions": 0,
+    }
 
 
 def _accumulate_model(acc: dict[str, Any], row: Mapping[str, Any]) -> None:
@@ -598,8 +734,14 @@ def _finish_model(acc: dict[str, Any]) -> dict[str, Any]:
 
 
 def _zero_bucket(label: str) -> dict[str, Any]:
-    return {"bucket": label, "input_tokens": 0, "output_tokens": 0,
-            "estimated_cost_usd": 0.0, "actual_cost_usd": 0.0, "sessions": 0}
+    return {
+        "bucket": label,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "actual_cost_usd": 0.0,
+        "sessions": 0,
+    }
 
 
 def _accumulate_bucket(acc: dict[str, Any], row: Mapping[str, Any]) -> None:
@@ -690,7 +832,8 @@ def _dense_buckets(start_epoch: float, end_epoch: float, bucket: str) -> list[st
             cur += timedelta(hours=1)
     elif bucket == "week":
         cur = (start - timedelta(days=start.weekday())).replace(
-            hour=0, minute=0, second=0, microsecond=0)
+            hour=0, minute=0, second=0, microsecond=0
+        )
         while cur <= end:
             labels.append(bucket_start_iso(cur, bucket, zone))
             cur += timedelta(weeks=1)

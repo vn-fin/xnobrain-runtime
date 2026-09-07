@@ -1,18 +1,18 @@
 """Agent operations methods for the Hermes runtime adapter."""
 
 from .hermes_support import (
-    AgentAPIError,
-    Any,
+    _SAFE_ID_RE,
     BIG_BROTHER_AGENT_ID,
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
     CUSTOM_SKILL_CATEGORY,
-    Mapping,
     LLM_ROUTER_PROVIDER,
-    PROFILES_REGISTRY_FILE,
     PROFILE_STATE_DIRS,
+    PROFILES_REGISTRY_FILE,
+    AgentAPIError,
+    Any,
+    Mapping,
     Path,
-    _SAFE_ID_RE,
     datetime,
     normalize_llm_router_config,
     os,
@@ -54,7 +54,6 @@ class AgentOperationsMixin:
             "agents": agents,
         }
 
-
     def list_agent_names(self) -> list[str]:
         """Return valid profile names without loading configs, skills, or memory."""
         names = [BIG_BROTHER_AGENT_ID]
@@ -72,19 +71,15 @@ class AgentOperationsMixin:
                 names.append(path.name)
         return names
 
-
     def profile_path(self, raw_name: Any) -> Path:
         """Return an existing profile path without building its full agent DTO."""
         return self._require_profile(self._agent_name(raw_name)).resolve()
-
 
     def create_agent(self, body: Mapping[str, Any]) -> tuple[dict[str, Any], int]:
         name = self._agent_name(body.get("name") or self._new_agent_name())
         existed = self._existing_profile_dir(name) is not None
         if existed and not bool(body.get("idempotent", False)):
-            raise AgentAPIError(
-                f"Agent already exists: {name}", code="agent_exists", status=409
-            )
+            raise AgentAPIError(f"Agent already exists: {name}", code="agent_exists", status=409)
 
         profile_dir = self._profile_dir(name)
         workspace_dir = self._workspace_dir(name)
@@ -95,7 +90,9 @@ class AgentOperationsMixin:
                 (profile_dir / dirname).mkdir(parents=True, exist_ok=True)
 
             if not existed or bool(body.get("refresh_seed", False)):
-                self._copy_seed_profile(profile_dir, copy_credentials=bool(body.get("copy_credentials", True)))
+                self._copy_seed_profile(
+                    profile_dir, copy_credentials=bool(body.get("copy_credentials", True))
+                )
                 self._copy_root_skills(profile_dir, overwrite=True)
                 self._clear_seeded_disabled_skills(profile_dir)
             if not existed:
@@ -146,7 +143,6 @@ class AgentOperationsMixin:
                     pass
             raise
 
-
     def describe_agent(self, raw_name: Any, *, include_memory: bool = True) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
@@ -177,7 +173,6 @@ class AgentOperationsMixin:
             payload["memory"] = self.read_memory(name)
         return payload
 
-
     def migrate_legacy_big_brother_profile(self) -> dict[str, int]:
         """Merge data created by the former named profile into the root profile."""
         legacy_profile = self.profiles_root / BIG_BROTHER_AGENT_ID
@@ -191,9 +186,7 @@ class AgentOperationsMixin:
         if legacy_skills.is_dir():
             for skill_file in sorted(legacy_skills.rglob("SKILL.md")):
                 frontmatter = self._read_skill_frontmatter(skill_file)
-                skill_id = str(
-                    frontmatter.get("name") or skill_file.parent.name
-                ).strip()
+                skill_id = str(frontmatter.get("name") or skill_file.parent.name).strip()
                 if not skill_id or self._find_agent_skill(self.root_profile, skill_id):
                     continue
                 relative = skill_file.parent.relative_to(legacy_skills)
@@ -222,8 +215,7 @@ class AgentOperationsMixin:
             connection.row_factory = sqlite3.Row
             connection.execute("ATTACH DATABASE ? AS legacy", (str(legacy_db),))
             root_session_ids = {
-                str(row[0])
-                for row in connection.execute("SELECT id FROM main.sessions")
+                str(row[0]) for row in connection.execute("SELECT id FROM main.sessions")
             }
             legacy_session_ids = [
                 str(row[0])
@@ -244,14 +236,12 @@ class AgentOperationsMixin:
             placeholders = ",".join("?" for _ in legacy_session_ids)
             try:
                 connection.execute("BEGIN IMMEDIATE")
-                session_columns = self._shared_sqlite_columns(
-                    connection, "sessions", exclude=()
-                )
+                session_columns = self._shared_sqlite_columns(connection, "sessions", exclude=())
                 quoted_sessions = ", ".join(f'"{item}"' for item in session_columns)
                 connection.execute(
-                    f'INSERT INTO main.sessions ({quoted_sessions}) '
-                    f'SELECT {quoted_sessions} FROM legacy.sessions '
-                    f'WHERE id IN ({placeholders})',
+                    f"INSERT INTO main.sessions ({quoted_sessions}) "
+                    f"SELECT {quoted_sessions} FROM legacy.sessions "
+                    f"WHERE id IN ({placeholders})",
                     legacy_session_ids,
                 )
                 message_columns = self._shared_sqlite_columns(
@@ -259,9 +249,9 @@ class AgentOperationsMixin:
                 )
                 quoted_messages = ", ".join(f'"{item}"' for item in message_columns)
                 connection.execute(
-                    f'INSERT INTO main.messages ({quoted_messages}) '
-                    f'SELECT {quoted_messages} FROM legacy.messages '
-                    f'WHERE session_id IN ({placeholders})',
+                    f"INSERT INTO main.messages ({quoted_messages}) "
+                    f"SELECT {quoted_messages} FROM legacy.messages "
+                    f"WHERE session_id IN ({placeholders})",
                     legacy_session_ids,
                 )
                 usage_columns = self._shared_sqlite_columns(
@@ -270,9 +260,9 @@ class AgentOperationsMixin:
                 if usage_columns:
                     quoted_usage = ", ".join(f'"{item}"' for item in usage_columns)
                     connection.execute(
-                        f'INSERT OR IGNORE INTO main.session_model_usage ({quoted_usage}) '
-                        f'SELECT {quoted_usage} FROM legacy.session_model_usage '
-                        f'WHERE session_id IN ({placeholders})',
+                        f"INSERT OR IGNORE INTO main.session_model_usage ({quoted_usage}) "
+                        f"SELECT {quoted_usage} FROM legacy.session_model_usage "
+                        f"WHERE session_id IN ({placeholders})",
                         legacy_session_ids,
                     )
                 connection.commit()
@@ -286,7 +276,6 @@ class AgentOperationsMixin:
             "conversations": len(legacy_session_ids),
         }
 
-
     @staticmethod
     def _shared_sqlite_columns(
         connection: sqlite3.Connection,
@@ -294,16 +283,9 @@ class AgentOperationsMixin:
         *,
         exclude: tuple[str, ...],
     ) -> list[str]:
-        main = {
-            str(row[1])
-            for row in connection.execute(f'PRAGMA main.table_info("{table}")')
-        }
-        legacy = [
-            str(row[1])
-            for row in connection.execute(f'PRAGMA legacy.table_info("{table}")')
-        ]
+        main = {str(row[1]) for row in connection.execute(f'PRAGMA main.table_info("{table}")')}
+        legacy = [str(row[1]) for row in connection.execute(f'PRAGMA legacy.table_info("{table}")')]
         return [item for item in legacy if item in main and item not in exclude]
-
 
     @staticmethod
     def _write_bytes_atomic(path: Path, payload: bytes, *, mode: int) -> None:
@@ -323,7 +305,6 @@ class AgentOperationsMixin:
                 pass
             raise
 
-
     def sync_profiles_registry(self) -> dict[str, Any]:
         """Atomically backfill root ``profiles.yaml`` from all Hermes profiles."""
         self.root_profile.mkdir(parents=True, exist_ok=True)
@@ -334,23 +315,35 @@ class AgentOperationsMixin:
                 for item in self._read_profiles_registry().get("profiles", [])
                 if isinstance(item, Mapping) and str(item.get("name") or "")
             }
-            entries = [self._profile_registry_entry("default", self.root_profile, current.get("default"))]
+            entries = [
+                self._profile_registry_entry("default", self.root_profile, current.get("default"))
+            ]
             for profile_dir in sorted(self.profiles_root.iterdir(), key=lambda item: item.name):
-                if (
-                    profile_dir.name != BIG_BROTHER_AGENT_ID
-                    and self._is_native_agent_profile(profile_dir)
+                if profile_dir.name != BIG_BROTHER_AGENT_ID and self._is_native_agent_profile(
+                    profile_dir
                 ):
-                    entries.append(self._profile_registry_entry(profile_dir.name, profile_dir, current.get(profile_dir.name)))
+                    entries.append(
+                        self._profile_registry_entry(
+                            profile_dir.name, profile_dir, current.get(profile_dir.name)
+                        )
+                    )
             if self.legacy_agents_root.is_dir():
-                for agent_dir in sorted(self.legacy_agents_root.iterdir(), key=lambda item: item.name):
+                for agent_dir in sorted(
+                    self.legacy_agents_root.iterdir(), key=lambda item: item.name
+                ):
                     profile_dir = agent_dir / ".profile"
-                    if profile_dir.is_dir() and agent_dir.name not in {item["name"] for item in entries}:
-                        entries.append(self._profile_registry_entry(agent_dir.name, profile_dir, current.get(agent_dir.name)))
+                    if profile_dir.is_dir() and agent_dir.name not in {
+                        item["name"] for item in entries
+                    }:
+                        entries.append(
+                            self._profile_registry_entry(
+                                agent_dir.name, profile_dir, current.get(agent_dir.name)
+                            )
+                        )
             payload = {"profiles": entries}
             if payload != self._read_profiles_registry():
                 self._write_profiles_registry(payload)
             return payload
-
 
     def update_profile_registry(
         self,
@@ -380,7 +373,6 @@ class AgentOperationsMixin:
             entry["updated_at"] = self._iso_timestamp(time.time())
             self._write_profiles_registry(payload)
             return entry
-
 
     def _profile_registry_entry(
         self,
@@ -414,7 +406,9 @@ class AgentOperationsMixin:
         updated_value = existing.get("updated_at") or metadata.get("updated_at")
         if updated_value is None:
             source = profile_dir / "config.yaml"
-            updated_value = source.stat().st_mtime if source.exists() else profile_dir.stat().st_mtime
+            updated_value = (
+                source.stat().st_mtime if source.exists() else profile_dir.stat().st_mtime
+            )
         return {
             "description": description,
             "name": name,
@@ -422,17 +416,12 @@ class AgentOperationsMixin:
             "updated_at": self._iso_timestamp(updated_value),
         }
 
-
     def _registry_profile(self, name: str) -> dict[str, Any] | None:
         registry_name = "default" if name == BIG_BROTHER_AGENT_ID else name
         for item in self._read_profiles_registry().get("profiles", []):
-            if (
-                isinstance(item, dict)
-                and str(item.get("name") or "") == registry_name
-            ):
+            if isinstance(item, dict) and str(item.get("name") or "") == registry_name:
                 return item
         return None
-
 
     def _read_profiles_registry(self) -> dict[str, Any]:
         path = self.root_profile / PROFILES_REGISTRY_FILE
@@ -445,10 +434,11 @@ class AgentOperationsMixin:
         profiles = loaded.get("profiles", []) if isinstance(loaded, dict) else []
         return {"profiles": profiles if isinstance(profiles, list) else []}
 
-
     def _write_profiles_registry(self, payload: Mapping[str, Any]) -> None:
         path = self.root_profile / PROFILES_REGISTRY_FILE
-        serialized = yaml.safe_dump(dict(payload), sort_keys=False, allow_unicode=True).encode("utf-8")
+        serialized = yaml.safe_dump(dict(payload), sort_keys=False, allow_unicode=True).encode(
+            "utf-8"
+        )
         descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         try:
             os.fchmod(descriptor, 0o640)
@@ -464,16 +454,18 @@ class AgentOperationsMixin:
                 pass
             raise
 
-
     @staticmethod
     def _iso_timestamp(value: Any) -> str:
         if isinstance(value, (int, float)):
-            return datetime.fromtimestamp(float(value), timezone.utc).isoformat().replace("+00:00", "Z")
+            return (
+                datetime.fromtimestamp(float(value), timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
         text = str(value or "").strip()
         if not text:
             return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         return text
-
 
     def delete_agent(self, raw_name: Any) -> dict[str, Any]:
         name = self._agent_name(raw_name)
@@ -489,7 +481,6 @@ class AgentOperationsMixin:
         else:
             shutil.rmtree(profile_dir)
         return {"object": "xnobrain.agent_delete", "agent": name, "deleted": True}
-
 
     def update_config(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         name = self._agent_name(raw_name)
@@ -545,12 +536,29 @@ class AgentOperationsMixin:
         if isinstance(body.get("config"), Mapping):
             self._deep_merge(config, dict(body["config"]))
         if "reasoning" in body or "effort" in body:
-            effort = str(body.get("effort") or self._get_nested(config, ("agent", "reasoning_effort"), "medium")).strip().lower()
+            effort = (
+                str(
+                    body.get("effort")
+                    or self._get_nested(config, ("agent", "reasoning_effort"), "medium")
+                )
+                .strip()
+                .lower()
+            )
             if "reasoning" in body and not self._coerce_bool(body["reasoning"]):
                 effort = "none"
             elif effort == "none":
                 effort = "medium"
-            if effort not in {"auto", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}:
+            if effort not in {
+                "auto",
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+                "ultra",
+            }:
                 raise AgentAPIError(
                     "effort must be one of: auto, none, minimal, low, medium, high, xhigh, max, ultra",
                     code="invalid_agent_config",
@@ -586,15 +594,23 @@ class AgentOperationsMixin:
                 )
             self._set_nested(config, ("goals", "max_turns"), goal_max_turns)
         if "system_prompt" in body:
-            prompt = self._text_value(body["system_prompt"], field="system_prompt", max_chars=20_000)
+            prompt = self._text_value(
+                body["system_prompt"], field="system_prompt", max_chars=20_000
+            )
             self._set_nested(config, ("agent", "system_prompt"), prompt)
         if "language" in body:
             language = self._text_value(body["language"], field="language", max_chars=128).strip()
             self._set_nested(config, ("agent", "language"), language)
         if "stream_output" in body:
-            self._set_nested(config, ("agent", "stream_output"), self._coerce_bool(body["stream_output"]))
+            self._set_nested(
+                config, ("agent", "stream_output"), self._coerce_bool(body["stream_output"])
+            )
         if name != BIG_BROTHER_AGENT_ID:
-            self._set_nested(config, ("terminal", "backend"), self._get_nested(config, ("terminal", "backend"), "local"))
+            self._set_nested(
+                config,
+                ("terminal", "backend"),
+                self._get_nested(config, ("terminal", "backend"), "local"),
+            )
             self._set_nested(config, ("terminal", "cwd"), str(self._workspace_dir(name)))
         self._normalize_agent_skill_config(config)
         normalize_llm_router_config(

@@ -6,8 +6,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-from aiohttp import web
 import grpc
+from aiohttp import web
 
 from xnobrain.common.v1 import http_stream_pb2 as http_pb2
 from xnobrain.integrations.runtime_gateway import (
@@ -16,7 +16,6 @@ from xnobrain.integrations.runtime_gateway import (
 )
 from xnobrain.runtime.v1 import runtime_gateway_pb2 as gateway_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2_grpc as gateway_grpc
-
 
 TOKEN = "runtime-internal-test-token"
 
@@ -158,14 +157,18 @@ class RuntimeGatewayTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertEqual(response_headers["x-runtime-result"], ["first", "second"])
         self.assertNotIn("connection", response_headers)
-        body_frames = [response.body_chunk for response in responses if response.HasField("body_chunk")]
+        body_frames = [
+            response.body_chunk for response in responses if response.HasField("body_chunk")
+        ]
         self.assertEqual([frame.sequence for frame in body_frames], list(range(len(body_frames))))
         self.assertEqual(b"".join(frame.data for frame in body_frames), b"stream-result")
         self.assertEqual(responses[-1].WhichOneof("frame"), "end")
 
     async def test_rejects_invalid_internal_token(self) -> None:
         call = self.stub.Proxy(
-            _frames(_head(), gateway_pb2.RuntimeGatewayServiceProxyRequest(end=http_pb2.StreamEnd())),
+            _frames(
+                _head(), gateway_pb2.RuntimeGatewayServiceProxyRequest(end=http_pb2.StreamEnd())
+            ),
             metadata=(("x-xnobrain-internal-token", "wrong-token"),),
         )
         with self.assertRaises(grpc.aio.AioRpcError) as raised:

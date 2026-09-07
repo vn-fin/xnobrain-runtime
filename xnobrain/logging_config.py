@@ -8,7 +8,6 @@ from typing import Any
 
 import jlogger as jlog
 
-
 SERVICE_NAME = "xnobrain-runtime-services"
 DEVELOPMENT_ENVIRONMENT = "development"
 _SAFE_RECORD_FIELDS = (
@@ -56,7 +55,10 @@ class JLoggerHandler(logging.Handler):
                     safe_fields["error"] = record.exc_info[1].__class__.__name__
                 elif record.levelno >= logging.ERROR:
                     safe_fields["error"] = "logged_error"
-                elif record.name.startswith("opentelemetry.exporter") and record.levelno >= logging.WARNING:
+                elif (
+                    record.name.startswith("opentelemetry.exporter")
+                    and record.levelno >= logging.WARNING
+                ):
                     safe_fields["error"] = "telemetry_export_unavailable"
                 else:
                     safe_fields["error"] = None

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from xnobrain.server import app, main
 
-
 __all__ = ["app", "main"]
 
 

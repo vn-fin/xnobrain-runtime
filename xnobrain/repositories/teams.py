@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import shutil
 import time
-from typing import Any, Mapping
 import uuid
+from pathlib import Path
+from typing import Any, Mapping
 
 import yaml
 
-from .base import StoreError, TEAM_RUN_RETENTION
+from .base import TEAM_RUN_RETENTION, StoreError
 
 
 class TeamRepositoryMixin:
@@ -119,8 +119,14 @@ class TeamRepositoryMixin:
                     pass
                 return ""
 
-            files.sort(key=lambda path: (_created_at(path) or "", path.stat().st_mtime if path.exists() else 0.0), reverse=True)
-            for path in files[max(0, int(keep)):]:
+            files.sort(
+                key=lambda path: (
+                    _created_at(path) or "",
+                    path.stat().st_mtime if path.exists() else 0.0,
+                ),
+                reverse=True,
+            )
+            for path in files[max(0, int(keep)) :]:
                 try:
                     path.unlink()
                     removed += 1

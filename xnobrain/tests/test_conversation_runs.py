@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest.mock import patch
 
 from xnobrain.repositories import FileRepository
@@ -31,15 +31,19 @@ class FakeAgents:
         run_id = body["run_id"]
         try:
             yield sse({"event": "run.started", "run_id": run_id, "timestamp": 100.0})
-            yield sse({"event": "tool.started", "run_id": run_id, "timestamp": 101.0, "tool": "terminal"})
+            yield sse(
+                {"event": "tool.started", "run_id": run_id, "timestamp": 101.0, "tool": "terminal"}
+            )
             await self.release.wait()
-            yield sse({
-                "event": "run.completed",
-                "run_id": run_id,
-                "timestamp": 102.0,
-                "output": "report ready",
-                "usage": {"total_tokens": 12},
-            })
+            yield sse(
+                {
+                    "event": "run.completed",
+                    "run_id": run_id,
+                    "timestamp": 102.0,
+                    "output": "report ready",
+                    "usage": {"total_tokens": 12},
+                }
+            )
             yield b"data: [DONE]\n\n"
             self.finished.set()
         except asyncio.CancelledError:
@@ -106,7 +110,10 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         replay = [
             event
             async for event in self.service.events(
-                "agent-one", "session-one", record["id"], after=1,
+                "agent-one",
+                "session-one",
+                record["id"],
+                after=1,
             )
         ]
         self.assertEqual([event["sequence"] for event in replay], [2, 3])
@@ -119,7 +126,9 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_budget_is_checked_once_when_the_run_is_accepted(self) -> None:
         record = await self.service.start_run(
-            "agent-one", "session-one", {"input": "hello", "model": "test/model"},
+            "agent-one",
+            "session-one",
+            {"input": "hello", "model": "test/model"},
         )
         self.assertEqual(self.analytics.calls, ["agent-one"])
 
@@ -130,12 +139,16 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cancel_closes_the_running_agent_stream(self) -> None:
         record = await self.service.start_run(
-            "agent-one", "session-one", {"input": "run a long command", "model": "test/model"},
+            "agent-one",
+            "session-one",
+            {"input": "run a long command", "model": "test/model"},
         )
         await self.wait_for_revision(record["id"], 2)
 
         cancelled = await self.service.cancel_run(
-            "agent-one", "session-one", record["id"],
+            "agent-one",
+            "session-one",
+            record["id"],
         )
 
         self.assertEqual(cancelled["status"], "cancelled")
@@ -143,7 +156,9 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_interactive_and_explicit_timeout_policy(self) -> None:
         first = await self.service.start_run(
-            "agent-one", "session-one", {"input": "Say hello", "model": "test/model"},
+            "agent-one",
+            "session-one",
+            {"input": "Say hello", "model": "test/model"},
         )
         self.assertEqual(first["mode"], "interactive")
         self.assertEqual(first["timeout_seconds"], 60)
@@ -152,7 +167,12 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         second = await self.service.start_run(
             "agent-one",
             "session-one",
-            {"input": "Say hello", "model": "test/model", "run_mode": "background", "timeout_seconds": 172800},
+            {
+                "input": "Say hello",
+                "model": "test/model",
+                "run_mode": "background",
+                "timeout_seconds": 172800,
+            },
         )
         self.assertEqual(second["mode"], "background")
         self.assertEqual(second["timeout_seconds"], 86400)

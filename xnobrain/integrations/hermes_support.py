@@ -45,7 +45,6 @@ from .llm_router import (
     route_llm_model,
 )
 
-
 AGENT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 GENERATED_AGENT_NAME_RE = re.compile(r"^[a-z][a-z0-9]{5}$")
 SKILL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -159,7 +158,6 @@ class AgentAPIError(ValueError):
         super().__init__(message)
         self.code = code
         self.status = status
-
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

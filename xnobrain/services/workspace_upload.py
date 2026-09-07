@@ -5,16 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import tempfile
 import threading
 import time
-from typing import Any
 from collections.abc import Callable
 from contextlib import nullcontext
-
+from pathlib import Path
+from typing import Any
 
 WORKSPACE_UPLOAD_CHUNK_BYTES = 768 * 1024
 DEFAULT_MAX_WORKSPACE_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024
@@ -84,8 +83,7 @@ class WorkspaceUploadService:
             )
         expected_chunks = max(
             1,
-            (total_size + WORKSPACE_UPLOAD_CHUNK_BYTES - 1)
-            // WORKSPACE_UPLOAD_CHUNK_BYTES,
+            (total_size + WORKSPACE_UPLOAD_CHUNK_BYTES - 1) // WORKSPACE_UPLOAD_CHUNK_BYTES,
         )
         if total_chunks != expected_chunks:
             raise WorkspaceUploadError("total_chunks does not match total_size")
@@ -127,13 +125,10 @@ class WorkspaceUploadService:
             part = parts / f"{chunk_index:08d}.part"
             self._write_part(part, payload)
             received = [
-                number
-                for number in range(total_chunks)
-                if (parts / f"{number:08d}.part").is_file()
+                number for number in range(total_chunks) if (parts / f"{number:08d}.part").is_file()
             ]
             received_bytes = sum(
-                (parts / f"{number:08d}.part").stat().st_size
-                for number in received
+                (parts / f"{number:08d}.part").stat().st_size for number in received
             )
             if len(received) != total_chunks:
                 return {

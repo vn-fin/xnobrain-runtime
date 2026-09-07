@@ -7,8 +7,9 @@ owned by Control and the router's PostgreSQL store, not by Runtime.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone, tzinfo
+import json
 import sqlite3
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Any
 
@@ -45,8 +46,9 @@ def aggregate_profile(
     except sqlite3.Error:
         return empty
     try:
-        totals = dict(conn.execute(
-            """
+        totals = dict(
+            conn.execute(
+                """
             SELECT COALESCE(SUM(input_tokens),0)        AS input_tokens,
                    COALESCE(SUM(output_tokens),0)       AS output_tokens,
                    COALESCE(SUM(cache_read_tokens),0)   AS cache_read_tokens,
@@ -58,10 +60,13 @@ def aggregate_profile(
                    COALESCE(SUM(api_call_count),0)      AS api_calls
             FROM sessions WHERE started_at > ? AND started_at <= ?
             """,
-            win,
-        ).fetchone())
-        by_model = [dict(row) for row in conn.execute(
-            """
+                win,
+            ).fetchone()
+        )
+        by_model = [
+            dict(row)
+            for row in conn.execute(
+                """
             SELECT COALESCE(model,'unknown')            AS model,
                    COALESCE(billing_provider,'')        AS provider,
                    COALESCE(SUM(input_tokens),0)        AS input_tokens,
@@ -72,8 +77,9 @@ def aggregate_profile(
             FROM sessions WHERE started_at > ? AND started_at <= ?
             GROUP BY model, billing_provider
             """,
-            win,
-        ).fetchall()]
+                win,
+            ).fetchall()
+        ]
         series: dict[str, dict[str, Any]] = {}
         for row in conn.execute(
             """
@@ -90,8 +96,11 @@ def aggregate_profile(
             bucket_row = series.setdefault(
                 label,
                 {
-                    "bucket": label, "input_tokens": 0, "output_tokens": 0,
-                    "estimated_cost_usd": 0.0, "actual_cost_usd": 0.0,
+                    "bucket": label,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "estimated_cost_usd": 0.0,
+                    "actual_cost_usd": 0.0,
                     "sessions": 0,
                 },
             )
@@ -109,7 +118,11 @@ def aggregate_profile(
 
 
 def period_spend(
-    profile_dir: Path, *, since_epoch: float, until_epoch: float, cost_basis: str,
+    profile_dir: Path,
+    *,
+    since_epoch: float,
+    until_epoch: float,
+    cost_basis: str,
 ) -> float:
     """Single read-only SUM of the chosen cost column for an inclusive window.
 
@@ -137,7 +150,10 @@ def period_spend(
 
 
 def profile_model_usage(
-    profile_dir: Path, *, since_epoch: float, until_epoch: float,
+    profile_dir: Path,
+    *,
+    since_epoch: float,
+    until_epoch: float,
     session_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Read detailed per-model usage used for agent cost attribution."""
@@ -150,8 +166,10 @@ def profile_model_usage(
         return []
     try:
         if _table_exists(conn, "session_model_usage"):
-            return [dict(row) for row in conn.execute(
-                """
+            return [
+                dict(row)
+                for row in conn.execute(
+                    """
                 SELECT COALESCE(u.model,'unknown') AS model,
                        COALESCE(SUM(u.input_tokens),0) AS input_tokens,
                        COALESCE(SUM(u.output_tokens),0) AS output_tokens,
@@ -167,10 +185,13 @@ def profile_model_usage(
                   AND (? IS NULL OR u.session_id = ?)
                 GROUP BY u.model
                 """,
-                (since_epoch, until_epoch, session_id, session_id),
-            ).fetchall()]
-        return [dict(row) for row in conn.execute(
-            """
+                    (since_epoch, until_epoch, session_id, session_id),
+                ).fetchall()
+            ]
+        return [
+            dict(row)
+            for row in conn.execute(
+                """
             SELECT COALESCE(model,'unknown') AS model,
                    COALESCE(SUM(input_tokens),0) AS input_tokens,
                    COALESCE(SUM(output_tokens),0) AS output_tokens,
@@ -183,8 +204,9 @@ def profile_model_usage(
               AND (? IS NULL OR id = ?)
             GROUP BY model
             """,
-            (since_epoch, until_epoch, session_id, session_id),
-        ).fetchall()]
+                (since_epoch, until_epoch, session_id, session_id),
+            ).fetchall()
+        ]
     except sqlite3.Error:
         return []
     finally:
@@ -193,9 +215,15 @@ def profile_model_usage(
 
 def _zero_totals() -> dict[str, Any]:
     return {
-        "input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0,
-        "cache_write_tokens": 0, "reasoning_tokens": 0, "estimated_cost_usd": 0.0,
-        "actual_cost_usd": 0.0, "sessions": 0, "api_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "actual_cost_usd": 0.0,
+        "sessions": 0,
+        "api_calls": 0,
     }
 
 
@@ -207,8 +235,12 @@ def bucket_start_iso(value: datetime, bucket: str, zone: tzinfo) -> str:
     local = value.astimezone(zone)
     if bucket == "hour":
         local = datetime(
-            local.year, local.month, local.day, local.hour,
-            tzinfo=local.tzinfo, fold=local.fold,
+            local.year,
+            local.month,
+            local.day,
+            local.hour,
+            tzinfo=local.tzinfo,
+            fold=local.fold,
         )
     elif bucket == "month":
         local = datetime(local.year, local.month, 1, tzinfo=local.tzinfo)
@@ -225,6 +257,123 @@ def epoch_bucket(value: float, bucket: str, zone: tzinfo) -> str:
 
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
-    return conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
-    ).fetchone() is not None
+    return (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+        ).fetchone()
+        is not None
+    )
+
+
+def skill_usage_profile(
+    profile_dir: Path,
+    *,
+    start_epoch: float,
+    end_epoch: float,
+) -> dict[str, Any]:
+    """Estimate observed skill loads from persisted Hermes tool calls.
+
+    A ``skill_view`` call proves only that a skill definition was loaded. It
+    does not prove that its guidance caused later tools or that the run was
+    successful, so those fields remain explicitly unattributed.
+    """
+    db = profile_dir / "state.db"
+    empty = {
+        "items": [],
+        "coverage": {
+            "source": "hermes_tool_calls",
+            "attribution": "observed_load_only",
+            "from": start_epoch,
+            "to": end_epoch,
+            "instrumented": False,
+            "message": "No measured data",
+        },
+    }
+    if not db.is_file():
+        return empty
+    try:
+        conn = _open_ro(db)
+    except sqlite3.Error:
+        return empty
+    try:
+        if not _table_exists(conn, "messages") or not _table_exists(conn, "sessions"):
+            return empty
+        rows = conn.execute(
+            """
+            SELECT m.session_id, m.tool_calls, m.timestamp
+            FROM messages m
+            JOIN sessions s ON s.id=m.session_id
+            WHERE s.started_at>? AND s.started_at<=?
+              AND m.role='assistant' AND m.tool_calls IS NOT NULL
+            ORDER BY m.timestamp, m.rowid
+            """,
+            (start_epoch, end_epoch),
+        ).fetchall()
+        measured: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            try:
+                calls = (
+                    json.loads(row["tool_calls"])
+                    if isinstance(row["tool_calls"], str)
+                    else row["tool_calls"]
+                )
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(calls, list):
+                continue
+            for call in calls:
+                if not isinstance(call, dict):
+                    continue
+                function = call.get("function")
+                if not isinstance(function, dict) or function.get("name") != "skill_view":
+                    continue
+                arguments = function.get("arguments")
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except (TypeError, json.JSONDecodeError):
+                        continue
+                if not isinstance(arguments, dict):
+                    continue
+                skill = str(arguments.get("name") or "").strip()
+                if not skill or len(skill) > 256:
+                    continue
+                item = measured.setdefault(
+                    skill,
+                    {
+                        "skill_id": skill,
+                        "loaded_count": 0,
+                        "distinct_runs": set(),
+                        "last_used_at": None,
+                        "tool_invocations": None,
+                        "errors": None,
+                        "attribution": "observed",
+                    },
+                )
+                item["loaded_count"] += 1
+                item["distinct_runs"].add(str(row["session_id"]))
+                timestamp = row["timestamp"]
+                if timestamp is not None and (
+                    item["last_used_at"] is None or timestamp > item["last_used_at"]
+                ):
+                    item["last_used_at"] = timestamp
+        items = []
+        for item in measured.values():
+            item["distinct_runs"] = len(item["distinct_runs"])
+            items.append(item)
+        items.sort(key=lambda item: (-item["loaded_count"], item["skill_id"]))
+        return {
+            "items": items,
+            "coverage": {
+                "source": "hermes_tool_calls",
+                "attribution": "observed_load_only",
+                "from": start_epoch,
+                "to": end_epoch,
+                "instrumented": True,
+                "message": "Measured skill loads; downstream tool attribution is unavailable",
+            },
+        }
+    except sqlite3.Error:
+        return empty
+    finally:
+        conn.close()

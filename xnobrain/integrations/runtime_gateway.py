@@ -15,7 +15,6 @@ from xnobrain.common.v1 import http_stream_pb2 as http_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2 as gateway_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2_grpc as gateway_grpc
 
-
 _MAX_CHUNK_BYTES = 64 * 1024
 _METHOD_RE = re.compile(r"^[A-Z][A-Z0-9_-]{0,31}$")
 _FORBIDDEN_REQUEST_HEADERS = {
@@ -71,10 +70,7 @@ def _response_headers(values) -> list[http_pb2.Header]:
         if not normalized or normalized in _FORBIDDEN_RESPONSE_HEADERS:
             continue
         grouped.setdefault(normalized, []).append(str(value).encode("latin-1"))
-    return [
-        http_pb2.Header(name=name, values=items)
-        for name, items in grouped.items()
-    ]
+    return [http_pb2.Header(name=name, values=items) for name, items in grouped.items()]
 
 
 class RuntimeGatewayService(
@@ -126,10 +122,14 @@ class RuntimeGatewayService(
                 if kind == "end":
                     return
                 if kind != "body_chunk":
-                    await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid request frame order")
+                    await context.abort(
+                        grpc.StatusCode.INVALID_ARGUMENT, "invalid request frame order"
+                    )
                 chunk = frame.body_chunk
                 if chunk.sequence != sequence or len(chunk.data) > _MAX_CHUNK_BYTES:
-                    await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid request body chunk")
+                    await context.abort(
+                        grpc.StatusCode.INVALID_ARGUMENT, "invalid request body chunk"
+                    )
                 sequence += 1
                 if chunk.data:
                     yield bytes(chunk.data)
@@ -169,29 +169,38 @@ class RuntimeGatewayService(
             except asyncio.CancelledError:
                 raise
             except (aiohttp.ClientError, TimeoutError):
-                await context.abort(grpc.StatusCode.UNAVAILABLE, "Runtime HTTP service is unavailable")
+                await context.abort(
+                    grpc.StatusCode.UNAVAILABLE, "Runtime HTTP service is unavailable"
+                )
 
 
 async def start_runtime_gateway():
     """Start the optional private gRPC listener in the FastAPI process."""
 
     enabled = os.getenv("RUNTIME_GRPC_ENABLED", "").strip().lower() in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }
     if not enabled:
         return None
     token = os.getenv("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
     if not token:
-        raise RuntimeError("RUNTIME_INTERNAL_SERVICE_TOKEN is required when Runtime gRPC is enabled")
+        raise RuntimeError(
+            "RUNTIME_INTERNAL_SERVICE_TOKEN is required when Runtime gRPC is enabled"
+        )
     grpc_port = int(os.getenv("RUNTIME_GRPC_PORT", "3001"))
     http_port = int(os.getenv("API_SERVER_PORT", "3000"))
     if grpc_port < 1 or grpc_port > 65535 or http_port < 1 or http_port > 65535:
         raise RuntimeError("Runtime HTTP and gRPC ports must be between 1 and 65535")
 
-    server = grpc.aio.server(options=(
-        ("grpc.max_receive_message_length", 128 * 1024),
-        ("grpc.max_send_message_length", 128 * 1024),
-    ))
+    server = grpc.aio.server(
+        options=(
+            ("grpc.max_receive_message_length", 128 * 1024),
+            ("grpc.max_send_message_length", 128 * 1024),
+        )
+    )
     relay = RuntimeGatewayService(token, http_port)
     gateway_grpc.add_RuntimeGatewayServiceServicer_to_server(relay, server)
     gateway_grpc.add_NodeGatewayServiceServicer_to_server(relay, server)

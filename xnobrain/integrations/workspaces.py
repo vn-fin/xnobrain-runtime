@@ -1,10 +1,10 @@
 """Workspaces methods for the Hermes runtime adapter."""
 
 from .hermes_support import (
-    AgentAPIError,
-    Any,
     MAX_FILE_BYTES,
     MAX_TEXT_CHARS,
+    AgentAPIError,
+    Any,
     Mapping,
     base64,
     shutil,
@@ -12,7 +12,9 @@ from .hermes_support import (
 
 
 class WorkspacesMixin:
-    def list_workspace(self, raw_name: Any, body: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    def list_workspace(
+        self, raw_name: Any, body: Mapping[str, Any] | None = None
+    ) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         self._require_profile(name)
         body = body or {}
@@ -38,7 +40,6 @@ class WorkspacesMixin:
             "entries": entries,
         }
 
-
     def read_workspace_file(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         self._require_profile(name)
@@ -61,7 +62,6 @@ class WorkspacesMixin:
             "content_base64": base64.b64encode(content).decode("ascii"),
         }
 
-
     def write_workspace_file(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         self._require_profile(name)
@@ -72,7 +72,9 @@ class WorkspacesMixin:
             except Exception as exc:
                 raise AgentAPIError("content_base64 is invalid", code="invalid_content") from exc
         else:
-            content = self._text_value(body.get("content"), field="content", max_chars=MAX_TEXT_CHARS).encode("utf-8")
+            content = self._text_value(
+                body.get("content"), field="content", max_chars=MAX_TEXT_CHARS
+            ).encode("utf-8")
         if len(content) > MAX_FILE_BYTES:
             raise AgentAPIError(
                 f"content is too large (max {MAX_FILE_BYTES} bytes)",
@@ -88,7 +90,6 @@ class WorkspacesMixin:
             "size_bytes": len(content),
         }
 
-
     def delete_workspace_path(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         self._require_profile(name)
@@ -103,7 +104,6 @@ class WorkspacesMixin:
             target.unlink()
         return {"object": "xnobrain.agent_workspace_delete", "agent": name, "deleted": True}
 
-
     def read_memory(self, raw_name: Any) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
@@ -114,7 +114,6 @@ class WorkspacesMixin:
             "memory": self._read_text(mem_dir / "MEMORY.md"),
             "user": self._read_text(mem_dir / "USER.md"),
         }
-
 
     def write_memory(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         name = self._agent_name(raw_name)

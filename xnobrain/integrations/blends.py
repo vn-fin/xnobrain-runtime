@@ -9,10 +9,10 @@ import time
 import uuid
 
 from .llm_router_support import (
-    Any,
-    Mapping,
     LLM_ROUTER_DEFAULT_MODEL,
+    Any,
     LLMRouterAPIError,
+    Mapping,
     display_llm_model,
     route_llm_model,
 )
@@ -36,7 +36,6 @@ class BlendsIntegrationMixin:
                 status=409,
             )
 
-
     async def auto_model_candidates(self, provider: str = "") -> list[str]:
         """Return every connected workload model in a fresh random order.
 
@@ -54,8 +53,14 @@ class BlendsIntegrationMixin:
                 continue
             model_id = str(item.get("id") or "").strip()
             owner = str(item.get("provider") or self._model_owner(model_id)).strip().lower()
-            if (not model_id or model_id == LLM_ROUTER_DEFAULT_MODEL or "/" not in model_id
-                    or owner == "blend" or wanted and owner != wanted):
+            if (
+                not model_id
+                or model_id == LLM_ROUTER_DEFAULT_MODEL
+                or "/" not in model_id
+                or owner == "blend"
+                or wanted
+                and owner != wanted
+            ):
                 continue
             routed = route_llm_model(model_id)
             if routed not in seen:
@@ -64,13 +69,11 @@ class BlendsIntegrationMixin:
         random.SystemRandom().shuffle(selected)
         return selected
 
-
     async def _ensure_auto_combo(self, models: list[Mapping[str, Any]]) -> bool:
         # Compatibility for callers that still request materialization. Auto is
         # resolved per run now, so no persistent system combo is necessary.
         del models
         return bool(await self.auto_model_candidates())
-
 
     async def model_route_candidates(self, name: str, *, provider: str = "") -> list[str]:
         """Resolve Auto or a simple blend to an ordered fallback candidate list."""
@@ -85,7 +88,6 @@ class BlendsIntegrationMixin:
         models = list(dict.fromkeys(str(model) for model in combo.get("models", []) if str(model)))
         return [route_llm_model(model) for model in models]
 
-
     @staticmethod
     def _normalize_combo(item: Any) -> dict[str, Any]:
         item = item if isinstance(item, Mapping) else {}
@@ -98,27 +100,26 @@ class BlendsIntegrationMixin:
             "models": [
                 normalized
                 for model in models
-                if (normalized := display_llm_model(
-                    model.get("model") if isinstance(model, Mapping) else model
-                ))
-            ] if isinstance(models, list) else [],
+                if (
+                    normalized := display_llm_model(
+                        model.get("model") if isinstance(model, Mapping) else model
+                    )
+                )
+            ]
+            if isinstance(models, list)
+            else [],
             "strategy": str(item.get("strategy") or ""),
             "config": dict(config) if isinstance(config, Mapping) else {},
             "created_at": str(item.get("createdAt") or ""),
             "updated_at": str(item.get("updatedAt") or ""),
         }
 
-
     async def list_combos(self) -> list[dict[str, Any]]:
         rows = self._read_blend_state().get("combos", [])
         return [self._normalize_combo(row) for row in rows if isinstance(row, Mapping)]
 
-
     async def create_combo(self, name: str, models: list[str]) -> dict[str, Any]:
-        return await self._create_local_combo(
-            name, [route_llm_model(model) for model in models]
-        )
-
+        return await self._create_local_combo(name, [route_llm_model(model) for model in models])
 
     async def _create_local_combo(self, name: str, models: list[str]) -> dict[str, Any]:
         state = self._read_blend_state()
@@ -136,9 +137,12 @@ class BlendsIntegrationMixin:
         self._write_blend_state(state)
         return self._normalize_combo(combo)
 
-
     async def update_combo(
-        self, combo_id: Any, *, name: str | None = None, models: list[str] | None = None,
+        self,
+        combo_id: Any,
+        *,
+        name: str | None = None,
+        models: list[str] | None = None,
     ) -> dict[str, Any]:
         combo_id = self._safe_id(combo_id, "combo_id")
         state = self._read_blend_state()
@@ -156,19 +160,15 @@ class BlendsIntegrationMixin:
         self._write_blend_state(state)
         return self._normalize_combo(combo)
 
-
     async def delete_combo(self, combo_id: Any) -> dict[str, Any]:
         combo_id = self._safe_id(combo_id, "combo_id")
         state = self._read_blend_state()
         before = len(state["combos"])
-        state["combos"] = [
-            row for row in state["combos"] if str(row.get("id") or "") != combo_id
-        ]
+        state["combos"] = [row for row in state["combos"] if str(row.get("id") or "") != combo_id]
         if len(state["combos"]) == before:
             raise LLMRouterAPIError("combo not found", code="combo_not_found", status=404)
         self._write_blend_state(state)
         return {"id": combo_id, "deleted": True}
-
 
     async def combo_settings(self) -> dict[str, Any]:
         """Return the service's combo view without exposing unrelated settings."""
@@ -205,9 +205,11 @@ class BlendsIntegrationMixin:
             "combo_sticky_limit": int(sticky) if isinstance(sticky, (int, float)) else None,
         }
 
-
     async def set_combo_strategy(
-        self, name: str, *, strategy: str,
+        self,
+        name: str,
+        *,
+        strategy: str,
         judge_model: str | None = None,
         fusion_tuning: Mapping[str, Any] | None = None,
         smart_route: Mapping[str, Any] | None = None,
@@ -239,7 +241,6 @@ class BlendsIntegrationMixin:
         stored["config"] = config
         stored["updatedAt"] = self._blend_timestamp()
         self._write_blend_state(state)
-
 
     async def resolve_smart_route(
         self,
@@ -316,7 +317,6 @@ class BlendsIntegrationMixin:
             "context_length": selected.get("context_length"),
         }
 
-
     async def resolve_blend_route(
         self,
         name: str,
@@ -336,9 +336,17 @@ class BlendsIntegrationMixin:
             if not candidates:
                 raise LLMRouterAPIError(
                     "connect at least one provider before using auto",
-                    code="provider_connection_required", status=409,
+                    code="provider_connection_required",
+                    status=409,
                 )
-            return {"model": candidates[0], "candidates": candidates, "reasoning": "auto", "tier": "", "route": name, "context_length": None}
+            return {
+                "model": candidates[0],
+                "candidates": candidates,
+                "reasoning": "auto",
+                "tier": "",
+                "route": name,
+                "context_length": None,
+            }
         combo = next((row for row in await self.list_combos() if row["name"] == name), None)
         if combo is None:
             return None
@@ -374,7 +382,6 @@ class BlendsIntegrationMixin:
             "context_length": None,
         }
 
-
     @staticmethod
     def _eligible_smart_models(
         raw: Any,
@@ -389,23 +396,34 @@ class BlendsIntegrationMixin:
             if not model:
                 continue
             context = item.get("context_length")
-            context_length = int(context) if isinstance(context, (int, float)) and context > 0 else None
+            context_length = (
+                int(context) if isinstance(context, (int, float)) and context > 0 else None
+            )
             if context_length is not None and required_context_tokens > context_length:
                 continue
-            rows.append({
-                "model": model,
-                "reasoning": str(item.get("reasoning") or "auto"),
-                "context_length": context_length,
-                "reasoning_levels": [
-                    str(level) for level in (item.get("reasoning_levels") or [])
-                    if str(level) in {
-                        "none", "minimal", "low", "medium", "high",
-                        "xhigh", "max", "ultra",
-                    }
-                ],
-            })
+            rows.append(
+                {
+                    "model": model,
+                    "reasoning": str(item.get("reasoning") or "auto"),
+                    "context_length": context_length,
+                    "reasoning_levels": [
+                        str(level)
+                        for level in (item.get("reasoning_levels") or [])
+                        if str(level)
+                        in {
+                            "none",
+                            "minimal",
+                            "low",
+                            "medium",
+                            "high",
+                            "xhigh",
+                            "max",
+                            "ultra",
+                        }
+                    ],
+                }
+            )
         return rows
-
 
     async def _classify_smart_route(self, message: str, classifier_model: str) -> str:
         payload = await self._request(
@@ -435,13 +453,16 @@ class BlendsIntegrationMixin:
             },
         )
         choices = payload.get("choices")
-        response = choices[0].get("message") if isinstance(choices, list) and choices and isinstance(choices[0], Mapping) else None
+        response = (
+            choices[0].get("message")
+            if isinstance(choices, list) and choices and isinstance(choices[0], Mapping)
+            else None
+        )
         content = str(response.get("content") or "") if isinstance(response, Mapping) else ""
         match = re.search(r"\b(quick|normal|difficult)\b", content.lower())
         if match is None:
             raise LLMRouterAPIError("Smart Route classifier returned an invalid result")
         return match.group(1)
-
 
     @staticmethod
     def _obvious_smart_route_tier(message: str) -> str | None:
@@ -451,15 +472,26 @@ class BlendsIntegrationMixin:
         if not words or len(words) > 6:
             return None
         greetings = {
-            "hi", "hello", "hey", "yo", "thanks", "thank", "bye",
-            "chao", "chào", "xin", "cam", "cảm", "ơn", "on",
+            "hi",
+            "hello",
+            "hey",
+            "yo",
+            "thanks",
+            "thank",
+            "bye",
+            "chao",
+            "chào",
+            "xin",
+            "cam",
+            "cảm",
+            "ơn",
+            "on",
         }
         if words[0] in greetings:
             return "quick"
         if words[:2] in (["good", "morning"], ["good", "afternoon"], ["good", "evening"]):
             return "quick"
         return None
-
 
     async def clear_combo_strategy(self, name: str) -> None:
         combo = next((row for row in await self.list_combos() if row["name"] == name), None)
@@ -480,16 +512,13 @@ class BlendsIntegrationMixin:
             stored["updatedAt"] = self._blend_timestamp()
             self._write_blend_state(state)
 
-
     async def set_combo_sticky_limit(self, limit: int) -> None:
         state = self._read_blend_state()
         state["stickyLimit"] = int(limit)
         self._write_blend_state(state)
 
-
     def _blend_state_path(self):
         return self.data_dir / "blends.json"
-
 
     def _read_blend_state(self) -> dict[str, Any]:
         try:
@@ -502,9 +531,9 @@ class BlendsIntegrationMixin:
             "stickyLimit": payload.get("stickyLimit") if isinstance(payload, Mapping) else None,
             "roundRobin": payload.get("roundRobin") if isinstance(payload, Mapping) else {},
             "combos": [dict(row) for row in combos if isinstance(row, Mapping)]
-            if isinstance(combos, list) else [],
+            if isinstance(combos, list)
+            else [],
         }
-
 
     def _write_blend_state(self, state: Mapping[str, Any]) -> None:
         path = self._blend_state_path()
@@ -526,7 +555,6 @@ class BlendsIntegrationMixin:
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
-
 
     @staticmethod
     def _blend_timestamp() -> str:

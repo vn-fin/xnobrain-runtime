@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
-from dataclasses import dataclass, field
 import json
 import re
 import time
-from typing import Any, AsyncIterator, Mapping
 import uuid
+from contextlib import suppress
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator, Mapping
 
-from .base import ServiceError
 from xnobrain.runtime_limits import session_timeout_seconds
 
+from .base import ServiceError
 
 TERMINAL_STATUSES = frozenset({"completed", "failed", "timed_out", "cancelled"})
 BACKGROUND_HINT = re.compile(
@@ -141,12 +141,17 @@ class ConversationRunService:
         while True:
             record = self.get_run(agent_id, conversation_id, run_id)
             pending = self.repository.list_conversation_run_events(
-                agent_id, conversation_id, run_id, cursor,
+                agent_id,
+                conversation_id,
+                run_id,
+                cursor,
             )
             for event in pending:
                 cursor = max(cursor, int(event.get("sequence") or 0))
                 yield event
-            if record.get("status") in TERMINAL_STATUSES and cursor >= int(record.get("revision") or 0):
+            if record.get("status") in TERMINAL_STATUSES and cursor >= int(
+                record.get("revision") or 0
+            ):
                 return
             entry = self._active.get(run_id)
             if entry is None:
@@ -170,7 +175,9 @@ class ConversationRunService:
         yield b"data: [DONE]\n\n"
 
     async def shutdown(self) -> None:
-        tasks = [entry.task for entry in self._active.values() if entry.task and not entry.task.done()]
+        tasks = [
+            entry.task for entry in self._active.values() if entry.task and not entry.task.done()
+        ]
         for task in tasks:
             task.cancel()
         for task in tasks:
@@ -220,56 +227,78 @@ class ConversationRunService:
 
     def _append(self, record: Mapping[str, Any], event: Mapping[str, Any]) -> dict[str, Any]:
         now = time.time()
-        payload = dict(event.get("data") or {}) if isinstance(event.get("data"), Mapping) else event.get("data")
+        payload = (
+            dict(event.get("data") or {})
+            if isinstance(event.get("data"), Mapping)
+            else event.get("data")
+        )
         event_name = str(
-            payload.get("event") if isinstance(payload, Mapping) else event.get("event") or "message"
+            payload.get("event")
+            if isinstance(payload, Mapping)
+            else event.get("event") or "message"
         )
         next_record = dict(record)
         if isinstance(payload, dict) and event_name == "run.started":
             started = float(payload.get("timestamp") or now)
-            next_record.update({
-                "status": "running",
-                "started_at": started,
-                "deadline_at": started + int(next_record["timeout_seconds"]),
-            })
-            payload.update({
-                "durable": True,
-                "run_mode": next_record["mode"],
-                "timeout_seconds": next_record["timeout_seconds"],
-                "deadline_at": next_record["deadline_at"],
-            })
+            next_record.update(
+                {
+                    "status": "running",
+                    "started_at": started,
+                    "deadline_at": started + int(next_record["timeout_seconds"]),
+                }
+            )
+            payload.update(
+                {
+                    "durable": True,
+                    "run_mode": next_record["mode"],
+                    "timeout_seconds": next_record["timeout_seconds"],
+                    "deadline_at": next_record["deadline_at"],
+                }
+            )
         elif isinstance(payload, Mapping) and event_name == "run.completed":
-            next_record.update({
-                "status": "completed",
-                "output": str(payload.get("output") or ""),
-                "usage": dict(payload.get("usage") or {}),
-                "ended_at": float(payload.get("timestamp") or now),
-            })
+            next_record.update(
+                {
+                    "status": "completed",
+                    "output": str(payload.get("output") or ""),
+                    "usage": dict(payload.get("usage") or {}),
+                    "ended_at": float(payload.get("timestamp") or now),
+                }
+            )
         elif isinstance(payload, Mapping) and event_name == "run.cancelled":
-            next_record.update({"status": "cancelled", "ended_at": float(payload.get("timestamp") or now)})
+            next_record.update(
+                {"status": "cancelled", "ended_at": float(payload.get("timestamp") or now)}
+            )
         elif isinstance(payload, Mapping) and event_name == "run.failed":
             message = str(payload.get("message") or "conversation run failed")
-            next_record.update({
-                "status": "timed_out" if "timed out" in message.lower() else "failed",
-                "error": message,
-                "ended_at": float(payload.get("timestamp") or now),
-            })
+            next_record.update(
+                {
+                    "status": "timed_out" if "timed out" in message.lower() else "failed",
+                    "error": message,
+                    "ended_at": float(payload.get("timestamp") or now),
+                }
+            )
         stored = self.repository.append_conversation_run_event(
-            next_record["agent_id"], next_record["conversation_id"], next_record["id"],
+            next_record["agent_id"],
+            next_record["conversation_id"],
+            next_record["id"],
             {"event": str(event.get("event") or "message"), "data": payload},
         )
-        next_record.update({
-            "revision": int(stored["sequence"]),
-            "updated_at": now,
-            "last_activity_at": now,
-        })
+        next_record.update(
+            {
+                "revision": int(stored["sequence"]),
+                "updated_at": now,
+                "last_activity_at": now,
+            }
+        )
         self.repository.put_conversation_run(next_record)
         entry = self._active.get(str(next_record["id"]))
         if entry is not None:
             entry.changed.set()
         return next_record
 
-    def _mark_terminal(self, record: Mapping[str, Any], status: str, message: str) -> dict[str, Any]:
+    def _mark_terminal(
+        self, record: Mapping[str, Any], status: str, message: str
+    ) -> dict[str, Any]:
         event_name = "run.cancelled" if status == "cancelled" else "run.failed"
         payload: dict[str, Any] = {
             "event": event_name,
@@ -304,8 +333,8 @@ class ConversationRunService:
             match = re.search(r"\r?\n\r?\n", buffer)
             if match is None:
                 return frames, buffer
-            frames.append(buffer[:match.start()])
-            buffer = buffer[match.end():]
+            frames.append(buffer[: match.start()])
+            buffer = buffer[match.end() :]
 
     @staticmethod
     def _parse_frame(frame: str) -> dict[str, Any] | None:

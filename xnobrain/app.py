@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager, suppress
 import logging
 import os
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from .handlers import APIHandlers
@@ -18,12 +18,15 @@ class XNOBrainApplication:
     """Builds clean layers around the original Hermes runtime objects."""
 
     def __init__(self, agents, config, router, runtime=None):
-        root_profile = Path(os.getenv("HERMES_ROOT_PROFILE") or os.getenv("HERMES_HOME") or Path.home() / ".hermes")
+        root_profile = Path(
+            os.getenv("HERMES_ROOT_PROFILE") or os.getenv("HERMES_HOME") or Path.home() / ".hermes"
+        )
         profiles_root = Path(os.getenv("HERMES_PROFILES_ROOT") or root_profile / "profiles")
         data_dir = Path(os.getenv("DATA_DIR") or root_profile / "xnobrain")
         self.repository = FileRepository(data_dir, profiles_root)
         if runtime is None:
             from .integrations import LocalRuntimeManager
+
             runtime = LocalRuntimeManager(data_dir=data_dir)
         self.service = PlatformService(self.repository, agents, config, router, runtime)
         self.handlers = APIHandlers(self.service)
@@ -38,10 +41,12 @@ class XNOBrainApplication:
                 await self.service.ensure_default_agent()
                 await self.service.organization_connector.start()
                 from .integrations.runtime_gateway import start_runtime_gateway
+
                 grpc_server = await start_runtime_gateway()
                 dispatcher = None
                 try:
                     from .integrations.kanban import dispatcher_loop
+
                     dispatcher = asyncio.create_task(
                         dispatcher_loop(on_tick=self.service.cron.reconcile_deliveries),
                         name="xnobrain-kanban-dispatcher",
@@ -69,11 +74,15 @@ class XNOBrainApplication:
                                 asyncio.to_thread(self.service.cron.fire_due, profile, job_id),
                                 name=f"xnobrain-cron-{job_id}",
                             )
-                            task.add_done_callback(lambda completed, key=key: finish_cron_task(key, completed))
+                            task.add_done_callback(
+                                lambda completed, key=key: finish_cron_task(key, completed)
+                            )
                             cron_tasks[key] = task
                         await asyncio.sleep(1)
 
-                cron_dispatcher = asyncio.create_task(profile_cron_loop(), name="xnobrain-profile-cron-dispatcher")
+                cron_dispatcher = asyncio.create_task(
+                    profile_cron_loop(), name="xnobrain-profile-cron-dispatcher"
+                )
                 try:
                     yield
                 finally:

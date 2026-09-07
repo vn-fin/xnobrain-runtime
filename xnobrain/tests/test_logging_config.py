@@ -20,14 +20,21 @@ class LoggingConfigTests(unittest.TestCase):
 
     def tearDown(self):
         import sys
+
         jlog.set_output(sys.stderr)
 
     def test_configures_jlogger_json_with_service_context(self):
-        with patch.dict("os.environ", {"DEVELOPMENT_ENVIRONMENT": "local", "SERVICE_NAME": "runtime-test"}):
+        with patch.dict(
+            "os.environ", {"DEVELOPMENT_ENVIRONMENT": "local", "SERVICE_NAME": "runtime-test"}
+        ):
             configure_logging()
             logging.getLogger("xnobrain.http").info(
                 "HTTP request completed",
-                extra={"http_method": "GET", "http_route": "/xnobrain/api/runtime/v1/health", "error": ""},
+                extra={
+                    "http_method": "GET",
+                    "http_route": "/xnobrain/api/runtime/v1/health",
+                    "error": "",
+                },
             )
 
         rendered = json.loads(self.output.getvalue())
@@ -41,13 +48,15 @@ class LoggingConfigTests(unittest.TestCase):
 
     def test_handler_does_not_copy_arbitrary_record_fields(self):
         handler = JLoggerHandler()
-        record = logging.makeLogRecord({
-            "name": "xnobrain.test",
-            "levelno": logging.INFO,
-            "levelname": "INFO",
-            "msg": "safe",
-            "authorization": "secret",
-        })
+        record = logging.makeLogRecord(
+            {
+                "name": "xnobrain.test",
+                "levelno": logging.INFO,
+                "levelname": "INFO",
+                "msg": "safe",
+                "authorization": "secret",
+            }
+        )
         handler.emit(record)
 
         rendered = json.loads(self.output.getvalue())
@@ -64,7 +73,6 @@ class LoggingConfigTests(unittest.TestCase):
         self.assertEqual(rendered["level"], "warning")
         self.assertEqual(rendered["component"], "runtime-api")
         self.assertEqual(rendered["error"], "telemetry_export_unavailable")
-
 
 
 if __name__ == "__main__":

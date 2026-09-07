@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import shutil
+from pathlib import Path
 from typing import Any, Mapping
 
 from .base import StoreError
@@ -25,19 +25,30 @@ class ConversationRunRepositoryMixin:
         self.atomic_json(directory / f"{run_id}.json", run)
         return run
 
-    def get_conversation_run(self, agent_id: Any, conversation_id: Any, run_id: Any) -> dict[str, Any]:
-        path = self._conversation_run_dir(agent_id, conversation_id) / f"{self._id(run_id, 'run id')}.json"
+    def get_conversation_run(
+        self, agent_id: Any, conversation_id: Any, run_id: Any
+    ) -> dict[str, Any]:
+        path = (
+            self._conversation_run_dir(agent_id, conversation_id)
+            / f"{self._id(run_id, 'run id')}.json"
+        )
         if not path.is_file():
             raise StoreError("conversation run not found", status=404, code="run_not_found")
         try:
             item = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
-            raise StoreError("conversation run is invalid", status=500, code="invalid_conversation_run") from error
+            raise StoreError(
+                "conversation run is invalid", status=500, code="invalid_conversation_run"
+            ) from error
         if not isinstance(item, dict):
-            raise StoreError("conversation run is invalid", status=500, code="invalid_conversation_run")
+            raise StoreError(
+                "conversation run is invalid", status=500, code="invalid_conversation_run"
+            )
         return item
 
-    def list_conversation_runs(self, agent_id: Any, conversation_id: Any, limit: int = 20) -> list[dict[str, Any]]:
+    def list_conversation_runs(
+        self, agent_id: Any, conversation_id: Any, limit: int = 20
+    ) -> list[dict[str, Any]]:
         directory = self._conversation_run_dir(agent_id, conversation_id)
         if not directory.is_dir():
             return []
@@ -50,7 +61,7 @@ class ConversationRunRepositoryMixin:
             if isinstance(item, dict):
                 result.append(item)
         result.sort(key=lambda item: float(item.get("created_at") or 0), reverse=True)
-        return result[:max(1, min(100, int(limit or 20)))]
+        return result[: max(1, min(100, int(limit or 20)))]
 
     def append_conversation_run_event(
         self,
@@ -63,7 +74,10 @@ class ConversationRunRepositoryMixin:
             record = self.get_conversation_run(agent_id, conversation_id, run_id)
             sequence = int(record.get("revision") or 0) + 1
             item = {"sequence": sequence, **dict(event)}
-            directory = self._conversation_run_dir(agent_id, conversation_id) / f"{self._id(run_id, 'run id')}.events"
+            directory = (
+                self._conversation_run_dir(agent_id, conversation_id)
+                / f"{self._id(run_id, 'run id')}.events"
+            )
             self.atomic_json(directory / f"{sequence:08d}.json", item)
             return item
 
@@ -74,7 +88,10 @@ class ConversationRunRepositoryMixin:
         run_id: Any,
         after: int = 0,
     ) -> list[dict[str, Any]]:
-        directory = self._conversation_run_dir(agent_id, conversation_id) / f"{self._id(run_id, 'run id')}.events"
+        directory = (
+            self._conversation_run_dir(agent_id, conversation_id)
+            / f"{self._id(run_id, 'run id')}.events"
+        )
         if not directory.is_dir():
             return []
         result: list[dict[str, Any]] = []

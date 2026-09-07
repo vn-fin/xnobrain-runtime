@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import subprocess
-from tempfile import TemporaryDirectory
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import yaml
 
@@ -44,14 +44,14 @@ class ProfileTemplateInstallerTests(unittest.TestCase):
                 (templates / "SOUL.md").read_text(encoding="utf-8"),
             )
             self.assertIn("AI assistant", (template / "SOUL.md").read_text(encoding="utf-8"))
-            self.assertIn("## Source citations", (template / "AGENTS.md").read_text(encoding="utf-8"))
+            self.assertIn(
+                "## Source citations", (template / "AGENTS.md").read_text(encoding="utf-8")
+            )
             agents = (template / "AGENTS.md").read_text(encoding="utf-8")
             self.assertNotIn("XNOBrain", agents)
             self.assertNotIn("Hermes", agents)
             self.assertNotIn("9router", agents.lower())
-            template_config = yaml.safe_load(
-                (template / "config.yaml").read_text(encoding="utf-8")
-            )
+            template_config = yaml.safe_load((template / "config.yaml").read_text(encoding="utf-8"))
             self.assertEqual(template_config["approvals"]["mode"], "off")
             self.assertFalse(template_config["skills"]["write_approval"])
             self.assertFalse(template_config["memory"]["write_approval"])

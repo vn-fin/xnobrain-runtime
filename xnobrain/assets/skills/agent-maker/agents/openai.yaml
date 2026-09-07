@@ -1,0 +1,6 @@
+interface:
+  display_name: "Agent maker"
+  short_description: "Interview, blueprint, review, and certify a specialist"
+  default_prompt: "Interview me, then propose a complete specialist-agent blueprint for review without creating anything yet."
+policy:
+  allow_implicit_invocation: false

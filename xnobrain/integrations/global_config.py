@@ -1,19 +1,19 @@
 """GlobalConfig behavior for the global Hermes profile."""
 
 from .config_support import (
-    Any,
-    ConfigAPIError,
+    _MISSING,
+    _SAFE_ID_RE,
     DEFAULT_SOUL,
-    MAX_CONFIG_STRING_CHARS,
-    MAX_TEXT_CHARS,
-    Mapping,
     LLM_ROUTER_API_BASE_URL,
     LLM_ROUTER_DEFAULT_MODEL,
     LLM_ROUTER_PROVIDER,
     LLM_ROUTER_PROVIDER_KEY,
+    MAX_CONFIG_STRING_CHARS,
+    MAX_TEXT_CHARS,
+    Any,
+    ConfigAPIError,
+    Mapping,
     Path,
-    _MISSING,
-    _SAFE_ID_RE,
     display_llm_model,
     hashlib,
     normalize_llm_router_config,
@@ -27,7 +27,6 @@ from .config_support import (
 class GlobalConfigMixin:
     def get_config(self) -> dict[str, Any]:
         return self._describe(self._read_config())
-
 
     def ensure_write_approval_defaults(self) -> dict[str, Any]:
         """Persist XNOBrain's automatic execution defaults when unspecified."""
@@ -53,7 +52,6 @@ class GlobalConfigMixin:
         if changed:
             self._write_config(config)
         return self._describe(config)
-
 
     def update_config(self, body: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(body, Mapping):
@@ -98,7 +96,9 @@ class GlobalConfigMixin:
                 raise ConfigAPIError("provider is invalid", code="unsupported_provider")
             touched = True
         if "model" in body:
-            self._set_nested(config, ("model", "default"), self._nonempty_string(body["model"], "model"))
+            self._set_nested(
+                config, ("model", "default"), self._nonempty_string(body["model"], "model")
+            )
             touched = True
         if "assignment_id" in body:
             assignment_id = str(body.get("assignment_id") or "").strip()
@@ -161,12 +161,10 @@ class GlobalConfigMixin:
             self._write_config(config)
         return self._describe(config)
 
-
     def ensure_default_soul(self, *, overwrite: bool = False) -> None:
         path = self.root_profile / "SOUL.md"
         if overwrite or not path.is_file() or not path.read_text(encoding="utf-8").strip():
             self._write_text(path, DEFAULT_SOUL, field="soul")
-
 
     def _describe(self, config: Mapping[str, Any]) -> dict[str, Any]:
         normalized = self._sanitize_config_value(config, "config")
@@ -183,10 +181,10 @@ class GlobalConfigMixin:
         if isinstance(provider_config, dict):
             for field in ("default_model", "model"):
                 if field in provider_config:
-                    provider_config[field] = display_llm_model(
-                        provider_config[field]
-                    )
-        effort = str(self._get_nested(config, ("agent", "reasoning_effort"), "medium") or "medium").lower()
+                    provider_config[field] = display_llm_model(provider_config[field])
+        effort = str(
+            self._get_nested(config, ("agent", "reasoning_effort"), "medium") or "medium"
+        ).lower()
         approval = self._get_nested(config, ("approvals", "mode"), "off")
         soul = self._read_text(self.root_profile / "SOUL.md")
         return {
@@ -215,9 +213,7 @@ class GlobalConfigMixin:
                 self._get_nested(config, ("memory", "write_approval"), False),
                 field="memory.write_approval",
             ),
-            "goal_max_turns": int(
-                self._get_nested(config, ("goals", "max_turns"), 20) or 20
-            ),
+            "goal_max_turns": int(self._get_nested(config, ("goals", "max_turns"), 20) or 20),
             "system_prompt": soul,
             "soul": soul,
             "router": {
@@ -229,7 +225,6 @@ class GlobalConfigMixin:
             "updated_at": time.time(),
         }
 
-
     def _read_config(self) -> dict[str, Any]:
         path = self.root_profile / "config.yaml"
         if not path.is_file():
@@ -238,13 +233,11 @@ class GlobalConfigMixin:
             data = yaml.safe_load(file) or {}
         return data if isinstance(data, dict) else {}
 
-
     def _write_config(self, config: Mapping[str, Any]) -> None:
         self.root_profile.mkdir(parents=True, exist_ok=True)
         path = self.root_profile / "config.yaml"
         payload = yaml.safe_dump(dict(config), sort_keys=False, allow_unicode=False).encode("utf-8")
         self._atomic_write(path, payload)
-
 
     def _atomic_write(self, path: Path, payload: bytes, *, mode: int = 0o640) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -263,14 +256,14 @@ class GlobalConfigMixin:
                 pass
             raise
 
-
     def _snapshot_config(self) -> None:
         path = self.root_profile / "config.yaml"
         payload = path.read_bytes() if path.is_file() else b"{}\n"
         digest = hashlib.sha256(payload).hexdigest()
-        snapshot = self.root_profile / "snapshots" / "config" / f"{time.time_ns()}-{digest[:12]}.yaml"
+        snapshot = (
+            self.root_profile / "snapshots" / "config" / f"{time.time_ns()}-{digest[:12]}.yaml"
+        )
         self._atomic_write(snapshot, payload, mode=0o440)
-
 
     def _sanitize_config_value(self, value: Any, path: str) -> Any:
         if isinstance(value, Mapping):
@@ -290,7 +283,6 @@ class GlobalConfigMixin:
             return value
         raise ConfigAPIError(f"{path} contains an unsupported value")
 
-
     def _deep_merge(self, target: dict[str, Any], patch: Mapping[str, Any]) -> None:
         for key, value in patch.items():
             if isinstance(value, Mapping) and isinstance(target.get(key), dict):
@@ -298,15 +290,23 @@ class GlobalConfigMixin:
             else:
                 target[key] = value
 
-
     def _set_reasoning_effort(self, config: dict[str, Any], effort: str) -> None:
-        if effort not in {"auto", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}:
+        if effort not in {
+            "auto",
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra",
+        }:
             raise ConfigAPIError(
                 "effort must be one of: auto, none, minimal, low, medium, high, xhigh, max, ultra",
                 code="invalid_reasoning_effort",
             )
         self._set_nested(config, ("agent", "reasoning_effort"), effort)
-
 
     def _normalize_skill_list(self, value: Any) -> list[str]:
         if value is None:
@@ -324,7 +324,6 @@ class GlobalConfigMixin:
                 result.append(skill_id)
         return result
 
-
     def _text_value(self, value: Any, *, field: str, max_chars: int) -> str:
         if value is None:
             return ""
@@ -336,18 +335,15 @@ class GlobalConfigMixin:
             raise ConfigAPIError(f"{field} is too long", code="invalid_text", status=413)
         return value
 
-
     def _write_text(self, path: Path, value: Any, *, field: str) -> None:
         text = self._text_value(value, field=field, max_chars=MAX_TEXT_CHARS)
         self._atomic_write(path, text.encode("utf-8"))
-
 
     def _read_text(self, path: Path) -> str:
         try:
             return path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return ""
-
 
     def _nonempty_string(self, value: Any, field: str) -> str:
         if not isinstance(value, str) or not value.strip():
@@ -356,7 +352,6 @@ class GlobalConfigMixin:
         if len(result) > 512:
             raise ConfigAPIError(f"{field} is too long", code="invalid_text")
         return result
-
 
     def _coerce_bool(self, value: Any, *, field: str = "reasoning") -> bool:
         if isinstance(value, bool):
@@ -369,7 +364,6 @@ class GlobalConfigMixin:
                 return False
         raise ConfigAPIError(f"{field} must be boolean", code="invalid_config")
 
-
     def _approval_mode(self, value: Any) -> str:
         if isinstance(value, bool):
             return "on" if value else "off"
@@ -380,15 +374,15 @@ class GlobalConfigMixin:
             return "off"
         raise ConfigAPIError("approval_mode must be on or off", code="invalid_config")
 
-
-    def _get_nested(self, data: Mapping[str, Any], keys: tuple[str, ...], default: Any = None) -> Any:
+    def _get_nested(
+        self, data: Mapping[str, Any], keys: tuple[str, ...], default: Any = None
+    ) -> Any:
         current: Any = data
         for key in keys:
             if not isinstance(current, Mapping) or key not in current:
                 return default
             current = current[key]
         return current
-
 
     def _set_nested(self, data: dict[str, Any], keys: tuple[str, ...], value: Any) -> None:
         current = data
@@ -399,7 +393,6 @@ class GlobalConfigMixin:
                 current[key] = child
             current = child
         current[keys[-1]] = value
-
 
     def _hermes_binary(self) -> str:
         return os.environ.get("HERMES_CLI", "hermes")

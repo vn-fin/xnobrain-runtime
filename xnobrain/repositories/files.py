@@ -1,6 +1,7 @@
 """Filesystem repository facade composed from service-group repositories."""
 
-from .base import RepositoryBase, StoreError, TEAM_RUN_RETENTION
+from .agent_blueprints import AgentBlueprintRepositoryMixin
+from .base import TEAM_RUN_RETENTION, RepositoryBase, StoreError
 from .conversation_runs import ConversationRunRepositoryMixin
 from .cron import CronRepositoryMixin
 from .notifications import NotificationRepositoryMixin
@@ -9,6 +10,7 @@ from .teams import TeamRepositoryMixin
 
 
 class FileRepository(
+    AgentBlueprintRepositoryMixin,
     ProfileRepositoryMixin,
     ConversationRunRepositoryMixin,
     CronRepositoryMixin,

@@ -26,9 +26,7 @@ class LLMRouterClient(
         data_dir: str | Path | None = None,
     ):
         self.base_url = str(
-            base_url
-            or os.environ.get("RUNTIME_LLM_ROUTER_URL")
-            or LLM_ROUTER_BASE_URL
+            base_url or os.environ.get("RUNTIME_LLM_ROUTER_URL") or LLM_ROUTER_BASE_URL
         ).rstrip("/")
         # Provider credentials and router state remain centralized. This local
         # directory contains only Runtime-owned blend definitions/counters.

@@ -3,21 +3,22 @@
 import asyncio
 import threading
 
+from xnobrain.runtime_limits import max_parallel_agents, session_timeout_seconds
+
 from .hermes_support import (
+    BIG_BROTHER_AGENT_ID,
+    LLM_ROUTER_DEFAULT_MODEL,
+    MAX_TEXT_CHARS,
     AgentAPIError,
     Any,
-    BIG_BROTHER_AGENT_ID,
-    MAX_TEXT_CHARS,
-    Mapping,
-    LLM_ROUTER_DEFAULT_MODEL,
     LLMRouterAPIError,
+    Mapping,
     Path,
     json,
-    route_llm_model,
     re,
+    route_llm_model,
     time,
 )
-from xnobrain.runtime_limits import max_parallel_agents, session_timeout_seconds
 
 
 class ConversationRunnerMixin:
@@ -33,6 +34,14 @@ class ConversationRunnerMixin:
         "learn": (
             "For this turn, distill the completed work into durable reusable knowledge. "
             "When appropriate, use the skill management tools to create or improve a focused skill."
+        ),
+        "agent_maker": (
+            "Use the agent-maker workflow: interview for missing requirements, then propose a complete reviewable blueprint. "
+            "Do not create, scaffold, activate, or approve a profile without explicit human approval."
+        ),
+        "optimize_skills": (
+            "Use skill-optimizer for the selected agent. Review measured usage and clearly label missing or estimated evidence. "
+            "Propose a baseline/candidate diff and evaluation plan, but do not evaluate, change, or enable skills without explicit approval."
         ),
     }
 
@@ -99,7 +108,6 @@ class ConversationRunnerMixin:
             "profile_path": str(profile_dir),
         }
 
-
     def chat_stream(self, raw_name: Any, body: Mapping[str, Any]):
         payload = dict(body)
         if "message" not in payload and "input" in payload:
@@ -112,7 +120,6 @@ class ConversationRunnerMixin:
             prepared["run_id"] = requested_run_id
         prepared["run_mode"] = str(payload.get("run_mode") or "interactive")
         return self._chat_stream_events(prepared)
-
 
     def _prepare_chat_command(
         self,
@@ -150,28 +157,34 @@ class ConversationRunnerMixin:
         provider = self._conversation_provider(profile_dir, body)
         model = self._conversation_model(profile_dir, body)
         profile_config = self._read_config(profile_dir)
-        selection_provider = str(
-            self._get_nested(profile_config, ("model", "selection_provider"), "") or ""
-        ).strip().lower()
+        selection_provider = (
+            str(self._get_nested(profile_config, ("model", "selection_provider"), "") or "")
+            .strip()
+            .lower()
+        )
         engine = "xnobrain"
         command = [self._hermes_binary()]
         if conversation_id:
             command.extend(["--resume", conversation_id])
         if body.get("model"):
-            command.extend([
-                "--model",
-                route_llm_model(
-                    self._nonempty_string(body["model"], "model")
-                ),
-            ])
+            command.extend(
+                [
+                    "--model",
+                    route_llm_model(self._nonempty_string(body["model"], "model")),
+                ]
+            )
         skills = body.get("skills")
         if skills is None:
             disabled = self._disabled_skills(self._read_config(profile_dir))
-            skills = [
-                item["skill_id"]
-                for item in self.list_skills(name)["skills"]
-                if item["skill_id"] not in disabled
-            ] if disabled else []
+            skills = (
+                [
+                    item["skill_id"]
+                    for item in self.list_skills(name)["skills"]
+                    if item["skill_id"] not in disabled
+                ]
+                if disabled
+                else []
+            )
         normalized_skills = self._normalize_skill_list(skills) if skills else []
         if normalized_skills:
             command.extend(["--skills", ",".join(normalized_skills)])
@@ -204,9 +217,7 @@ class ConversationRunnerMixin:
             "selection_provider": selection_provider,
             "model": model,
             "requested_model": (
-                self._nonempty_string(body["model"], "model")
-                if body.get("model")
-                else ""
+                self._nonempty_string(body["model"], "model") if body.get("model") else ""
             ),
             "engine": engine,
             "command": command,
@@ -214,7 +225,6 @@ class ConversationRunnerMixin:
             "feature": feature,
             "goal_resume": bool(body.get("goal_resume", False)),
         }
-
 
     async def _resolve_prepared_model_route(self, prepared: dict[str, Any]) -> None:
         """Leave the virtual Auto route for GoRouter to resolve and retry.
@@ -228,7 +238,6 @@ class ConversationRunnerMixin:
         if route_name != LLM_ROUTER_DEFAULT_MODEL:
             return
         await self.llm_router.ensure_auto_combo()
-
 
     async def _resolve_prepared_smart_route(self, prepared: dict[str, Any]) -> None:
         route_name = str(prepared.get("model") or "").strip()
@@ -258,7 +267,6 @@ class ConversationRunnerMixin:
             command[1:1] = ["--model", selected_model]
         prepared["command"] = command
 
-
     def _estimated_route_context(self, prepared: Mapping[str, Any]) -> int:
         # Reserve output/tool space, then add the last measured prompt size
         # when this is an existing conversation. Unknown measurements remain
@@ -277,7 +285,6 @@ class ConversationRunnerMixin:
         if isinstance(context, Mapping):
             estimated += max(0, int(context.get("used") or 0))
         return estimated
-
 
     @staticmethod
     def _smart_route_step_input(messages: Any) -> str:
@@ -312,7 +319,6 @@ class ConversationRunnerMixin:
             "this recent execution context:\n" + "\n".join(selected)
         )
 
-
     @staticmethod
     def _smart_route_context_tokens(messages: Any) -> int:
         try:
@@ -320,7 +326,6 @@ class ConversationRunnerMixin:
         except (TypeError, ValueError):
             serialized = str(messages or "")
         return 8_192 + max(1, len(serialized) // 4)
-
 
     def _resolve_smart_route_from_worker(
         self,
@@ -353,7 +358,6 @@ class ConversationRunnerMixin:
             # transient classifier failure must not fail an active agent run.
             return None
 
-
     def _resolve_smart_route_batch_from_worker(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -375,9 +379,7 @@ class ConversationRunnerMixin:
                     return await self.llm_router.resolve_smart_route(
                         route_name,
                         message,
-                        required_context_tokens=(
-                            8_192 + max(1, len(message) // 4)
-                        ),
+                        required_context_tokens=(8_192 + max(1, len(message) // 4)),
                     )
                 except Exception:
                     return None
@@ -390,7 +392,6 @@ class ConversationRunnerMixin:
         except Exception:
             future.cancel()
             return [None] * len(tasks)
-
 
     @staticmethod
     def _apply_smart_route_decision(
@@ -430,7 +431,6 @@ class ConversationRunnerMixin:
                 api_mode=str(getattr(agent, "api_mode", "") or ""),
             )
 
-
     @staticmethod
     def _install_provider_runtime_request_guard(agent: Any) -> None:
         """Strip client-only kwargs and custom-provider hints before routing.
@@ -446,12 +446,11 @@ class ConversationRunnerMixin:
             return
 
         def build_provider_runtime_api_kwargs(
-            api_messages: list[Any], tools_for_api: list[Any] | None = None,
+            api_messages: list[Any],
+            tools_for_api: list[Any] | None = None,
         ) -> dict[str, Any]:
             try:
-                kwargs = original_build_api_kwargs(
-                    api_messages, tools_for_api=tools_for_api
-                )
+                kwargs = original_build_api_kwargs(api_messages, tools_for_api=tools_for_api)
             except TypeError as error:
                 if "tools_for_api" not in str(error):
                     raise
@@ -479,13 +478,14 @@ class ConversationRunnerMixin:
 
         agent._build_api_kwargs = build_provider_runtime_api_kwargs
 
-
     @staticmethod
     def _install_model_fallbacks(agent: Any, prepared: Mapping[str, Any]) -> None:
         """Attach alternate Auto candidates to Hermes' native failure chain."""
-        models = list(dict.fromkeys(
-            str(model) for model in (prepared.get("model_fallbacks") or []) if str(model)
-        ))
+        models = list(
+            dict.fromkeys(
+                str(model) for model in (prepared.get("model_fallbacks") or []) if str(model)
+            )
+        )
         if not models:
             return
         common = {
@@ -498,7 +498,6 @@ class ConversationRunnerMixin:
         agent._fallback_chain = chain
         agent._fallback_index = 0
         agent._fallback_model = chain[0]
-
 
     def _install_smart_route_step_routing(
         self,
@@ -536,9 +535,7 @@ class ConversationRunnerMixin:
                     loop_thread_id,
                     route_name,
                     step_input,
-                    required_context_tokens=self._smart_route_context_tokens(
-                        api_messages
-                    ),
+                    required_context_tokens=self._smart_route_context_tokens(api_messages),
                 )
                 if decision is not None:
                     if not apply_reasoning:
@@ -548,7 +545,6 @@ class ConversationRunnerMixin:
 
         agent._build_api_kwargs = build_smart_route_api_kwargs
         agent._xnobrain_smart_step_route = route_marker
-
 
     def _install_smart_route_child_routing(
         self,
@@ -595,7 +591,6 @@ class ConversationRunnerMixin:
         agent._active_children = SmartRouteChildren(current)
         agent._xnobrain_smart_children = True
 
-
     @staticmethod
     def _apply_provider_runtime_compatibility(agent: Any, model: str) -> None:
         """Apply narrow workarounds for known router/provider wire defects."""
@@ -607,7 +602,6 @@ class ConversationRunnerMixin:
             # the answer. The blocking response is complete, so use it until
             # the centralized router normalizes OpenCode's terminal event.
             agent._disable_streaming = True
-
 
     async def _run_session_agent(
         self,
@@ -631,9 +625,7 @@ class ConversationRunnerMixin:
         profile_dir = Path(prepared["profile_dir"])
         name = str(prepared["name"])
         workspace_dir = (
-            Path(prepared["workspace_dir"]).resolve()
-            if name != BIG_BROTHER_AGENT_ID
-            else None
+            Path(prepared["workspace_dir"]).resolve() if name != BIG_BROTHER_AGENT_ID else None
         )
         conversation_id = str(prepared["conversation_id"])
         manager = self
@@ -645,24 +637,24 @@ class ConversationRunnerMixin:
             "reasoning": str(prepared.get("route_reasoning") or ""),
             "tier": str(prepared.get("smart_route_tier") or ""),
         }
-        configured_reasoning = str(
-            self._get_nested(
-                self._read_config(profile_dir),
-                ("agent", "reasoning_effort"),
-                "medium",
+        configured_reasoning = (
+            str(
+                self._get_nested(
+                    self._read_config(profile_dir),
+                    ("agent", "reasoning_effort"),
+                    "medium",
+                )
+                or "medium"
             )
-            or "medium"
-        ).strip().lower()
+            .strip()
+            .lower()
+        )
         if configured_reasoning == "auto" and not smart_route_name:
             try:
-                metadata = await self.llm_router.reasoning_for_model(
-                    active_smart_decision["model"]
-                )
+                metadata = await self.llm_router.reasoning_for_model(active_smart_decision["model"])
             except LLMRouterAPIError:
                 metadata = {}
-            active_smart_decision["reasoning"] = str(
-                metadata.get("default_reasoning") or ""
-            )
+            active_smart_decision["reasoning"] = str(metadata.get("default_reasoning") or "")
 
         class RunScopedAPIServerAdapter(APIServerAdapter):
             @staticmethod
@@ -710,6 +702,7 @@ class ConversationRunnerMixin:
                     _strip_model_hidden_task_fields,
                     delegate_task,
                 )
+
                 delegation_config = _load_config()
                 delegation_model_pinned = any(
                     str(delegation_config.get(key) or "").strip()
@@ -764,11 +757,13 @@ class ConversationRunnerMixin:
                                 background=False,
                                 parent_agent=agent,
                             )
-                        tasks = [{
-                            "goal": goal,
-                            "context": function_args.get("context"),
-                            "role": function_args.get("role"),
-                        }]
+                        tasks = [
+                            {
+                                "goal": goal,
+                                "context": function_args.get("context"),
+                                "role": function_args.get("role"),
+                            }
+                        ]
                     if not smart_route_name and len(tasks) <= slots:
                         return delegate_task(
                             tasks=tasks,
@@ -788,12 +783,14 @@ class ConversationRunnerMixin:
                             parent_agent=agent,
                         )
                     if len(tasks) > max_batch_tasks:
-                        return json.dumps({
-                            "error": (
-                                f"Too many tasks: {len(tasks)} provided; "
-                                f"this runtime accepts at most {max_batch_tasks}."
-                            ),
-                        })
+                        return json.dumps(
+                            {
+                                "error": (
+                                    f"Too many tasks: {len(tasks)} provided; "
+                                    f"this runtime accepts at most {max_batch_tasks}."
+                                ),
+                            }
+                        )
 
                     decisions = (
                         manager._resolve_smart_route_batch_from_worker(
@@ -818,7 +815,9 @@ class ConversationRunnerMixin:
                     batches: list[tuple[Mapping[str, Any] | None, list[tuple[int, Any]]]] = []
                     for key, entries in grouped.items():
                         for offset in range(0, len(entries), slots):
-                            batches.append((decision_by_group[key], entries[offset:offset + slots]))
+                            batches.append(
+                                (decision_by_group[key], entries[offset : offset + slots])
+                            )
 
                     original_model = agent.model
                     original_reasoning = getattr(agent, "reasoning_config", None)
@@ -846,7 +845,9 @@ class ConversationRunnerMixin:
                             agent.model = original_model
                             agent.reasoning_config = original_reasoning
 
-                    if len(batches) == 1 and [index for index, _ in batches[0][1]] == list(range(len(tasks))):
+                    if len(batches) == 1 and [index for index, _ in batches[0][1]] == list(
+                        range(len(tasks))
+                    ):
                         return run_batch(*batches[0])
 
                     # Hermes treats max_concurrent_children as both a slot
@@ -906,13 +907,19 @@ class ConversationRunnerMixin:
                             decoded = json.loads(raw_result)
                         except (TypeError, ValueError, json.JSONDecodeError):
                             decoded = {}
-                        chunk_results = decoded.get("results") if isinstance(decoded, Mapping) else None
+                        chunk_results = (
+                            decoded.get("results") if isinstance(decoded, Mapping) else None
+                        )
                         if isinstance(chunk_results, list):
                             for local_index, item in enumerate(chunk_results):
-                                entry = dict(item) if isinstance(item, Mapping) else {
-                                    "status": "error",
-                                    "error": str(item),
-                                }
+                                entry = (
+                                    dict(item)
+                                    if isinstance(item, Mapping)
+                                    else {
+                                        "status": "error",
+                                        "error": str(item),
+                                    }
+                                )
                                 reported = int(entry.get("task_index", local_index))
                                 entry["task_index"] = (
                                     index_map[reported]
@@ -921,22 +928,34 @@ class ConversationRunnerMixin:
                                 )
                                 combined_results.append(entry)
                         else:
-                            error = str(decoded.get("error") or raw_result) if isinstance(decoded, Mapping) else str(raw_result)
+                            error = (
+                                str(decoded.get("error") or raw_result)
+                                if isinstance(decoded, Mapping)
+                                else str(raw_result)
+                            )
                             for task_index in index_map:
-                                combined_results.append({
-                                    "task_index": task_index,
-                                    "status": "error",
-                                    "summary": None,
-                                    "error": error,
-                                    "api_calls": 0,
-                                    "duration_seconds": 0,
-                                })
-                        paths = decoded.get("live_transcripts") if isinstance(decoded, Mapping) else None
+                                combined_results.append(
+                                    {
+                                        "task_index": task_index,
+                                        "status": "error",
+                                        "summary": None,
+                                        "error": error,
+                                        "api_calls": 0,
+                                        "duration_seconds": 0,
+                                    }
+                                )
+                        paths = (
+                            decoded.get("live_transcripts")
+                            if isinstance(decoded, Mapping)
+                            else None
+                        )
                         if isinstance(paths, list):
                             live_transcripts.extend(str(path) for path in paths if path)
 
                     payload: dict[str, Any] = {
-                        "results": sorted(combined_results, key=lambda item: int(item.get("task_index", 0))),
+                        "results": sorted(
+                            combined_results, key=lambda item: int(item.get("task_index", 0))
+                        ),
                         "total_duration_seconds": round(time.monotonic() - started, 2),
                         "concurrency": slots,
                     }
@@ -953,7 +972,9 @@ class ConversationRunnerMixin:
                     if not isinstance(function, dict) or function.get("name") != "delegate_task":
                         continue
                     parameters = function.get("parameters")
-                    properties = parameters.get("properties") if isinstance(parameters, dict) else None
+                    properties = (
+                        parameters.get("properties") if isinstance(parameters, dict) else None
+                    )
                     tasks_schema = properties.get("tasks") if isinstance(properties, dict) else None
                     if isinstance(tasks_schema, dict):
                         tasks_schema["description"] = (
@@ -1055,6 +1076,7 @@ class ConversationRunnerMixin:
                 or ""
             ).strip()
             from hermes_cli.goals import GoalManager
+
             from .conversation_goals import _goal_payload
 
             def read_goal():
@@ -1143,7 +1165,9 @@ class ConversationRunnerMixin:
             context_used = int(getattr(compressor, "last_prompt_tokens", 0) or 0)
             context_limit = int(getattr(compressor, "context_length", 0) or 0)
             context_threshold = int(getattr(compressor, "threshold_tokens", 0) or 0)
-            auto_compaction = bool(getattr(agent, "compression_enabled", False)) if agent is not None else False
+            auto_compaction = (
+                bool(getattr(agent, "compression_enabled", False)) if agent is not None else False
+            )
             actual_model = str(
                 (result.get("model") if isinstance(result, Mapping) else "")
                 or getattr(agent, "model", "")
@@ -1165,10 +1189,12 @@ class ConversationRunnerMixin:
                 "route_tier": str(active_smart_decision.get("tier") or ""),
                 "reasoning": str(active_smart_decision.get("reasoning") or ""),
             }
-            usage.update({
-                "context_used": context["used"],
-                "context_limit": context["limit"],
-            })
+            usage.update(
+                {
+                    "context_used": context["used"],
+                    "context_limit": context["limit"],
+                }
+            )
             self._persist_conversation_context(profile_dir, conversation_id, context)
             return result, usage
         finally:

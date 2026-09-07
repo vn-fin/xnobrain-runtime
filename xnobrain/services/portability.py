@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 import hashlib
 import json
 import logging
 import os
-from pathlib import Path
 import time
-from typing import Any, Mapping
 import uuid
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, Mapping
 
 import yaml
 
 from ..defaults import (
-    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_AGENT_ID,
+    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
     BIG_BROTHER_MODEL_DEFAULT_MARKER,
@@ -48,6 +48,7 @@ from .helpers import cached_method
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError
 from .workspace_upload import WorkspaceUploadError
 
+
 class PortabilityServiceMixin:
     def export_bundle(self, body: Mapping[str, Any]) -> tuple[bytes, str]:
         return self.portability.export(body)
@@ -67,13 +68,17 @@ class PortabilityServiceMixin:
     def start_bundle_export(self, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.portability.start_export(body)
 
-    def bundle_export_part(self, transfer_id: str, part_number: str) -> tuple[bytes, dict[str, Any]]:
+    def bundle_export_part(
+        self, transfer_id: str, part_number: str
+    ) -> tuple[bytes, dict[str, Any]]:
         return self.portability.read_export_part(transfer_id, part_number)
 
     def start_bundle_upload(self, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.portability.start_upload(body)
 
-    def put_bundle_upload_part(self, transfer_id: str, part_number: str, payload: bytes) -> dict[str, Any]:
+    def put_bundle_upload_part(
+        self, transfer_id: str, part_number: str, payload: bytes
+    ) -> dict[str, Any]:
         return self.portability.put_upload_part(transfer_id, part_number, payload)
 
     def complete_bundle_upload(self, transfer_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -88,26 +93,26 @@ class PortabilityServiceMixin:
     def delete_bundle_transfer(self, kind: str, transfer_id: str) -> dict[str, Any]:
         return self.portability.delete_transfer(kind, transfer_id)
 
-from copy import deepcopy
-from datetime import datetime, timezone
+
 import hashlib
-from io import BytesIO
 import json
 import os
-from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
 import tempfile
-from typing import Any, BinaryIO, Iterable, Mapping
 import uuid
+from copy import deepcopy
+from datetime import datetime, timezone
+from io import BytesIO
+from pathlib import Path, PurePosixPath
+from typing import Any, BinaryIO, Iterable, Mapping
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile, ZipInfo
 
 import yaml
 
-from ..repositories import FileRepository, StoreError
 from ..defaults import BIG_BROTHER_AGENT_ID
-
+from ..repositories import FileRepository, StoreError
 
 BUNDLE_FORMAT = "xnobrain-bundle"
 BUNDLE_VERSION = 1
@@ -123,7 +128,9 @@ TRANSFER_TTL_SECONDS = 24 * 60 * 60
 ROOT_EXCLUDED_PARTS = {"profiles"}
 SECRET_FILES = {".env", "auth.json", "credentials.env", "secrets.json", "tokens.json", "oauth.json"}
 CODE_SUFFIXES = {".py", ".sh", ".js", ".ts", ".so", ".dll", ".dylib"}
-SENSITIVE_KEY = re.compile(r"(?:api[_-]?key|secret|token|password|credential|authorization|cookie|oauth)", re.I)
+SENSITIVE_KEY = re.compile(
+    r"(?:api[_-]?key|secret|token|password|credential|authorization|cookie|oauth)", re.I
+)
 ENDPOINT_KEY = re.compile(r"^(?:api|base_url|endpoint|host|url)$", re.I)
 ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,127}$")
 ENV_REFERENCE = re.compile(r"\$\{([A-Z][A-Z0-9_]{1,127})\}")
@@ -135,7 +142,9 @@ class PortabilityService:
 
     def __init__(self, repository: FileRepository, root_profile: str | Path | None = None):
         self.repository = repository
-        self.root_profile = Path(root_profile or os.environ.get("HERMES_ROOT_PROFILE") or Path.home() / ".hermes")
+        self.root_profile = Path(
+            root_profile or os.environ.get("HERMES_ROOT_PROFILE") or Path.home() / ".hermes"
+        )
         self.transfer_root = repository.data_dir / "transfers"
         self.upload_root = self.transfer_root / "uploads"
         self.export_root = self.transfer_root / "exports"
@@ -146,7 +155,9 @@ class PortabilityService:
     # Legacy whole-response endpoints stay compatible. New UI/API clients use
     # the transfer-session methods below so archive bytes are always chunked.
     def export(self, body: Mapping[str, Any]) -> tuple[bytes, str]:
-        descriptor, name = tempfile.mkstemp(prefix=".bundle-", suffix=".zip", dir=self.transfer_root)
+        descriptor, name = tempfile.mkstemp(
+            prefix=".bundle-", suffix=".zip", dir=self.transfer_root
+        )
         os.close(descriptor)
         temporary = Path(name)
         try:
@@ -224,7 +235,12 @@ class PortabilityService:
             raise StoreError("upload part size is invalid", code="invalid_upload_part")
         path = directory / "parts" / f"{number:08d}.part"
         self.repository.atomic_write(path, payload)
-        return {"upload_id": metadata["upload_id"], "part_number": number, "size": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
+        return {
+            "upload_id": metadata["upload_id"],
+            "part_number": number,
+            "size": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
 
     def complete_upload(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         directory = self._transfer_dir(self.upload_root, transfer_id)
@@ -240,7 +256,9 @@ class PortabilityService:
                 for number in range(metadata["total_parts"]):
                     part = directory / "parts" / f"{number:08d}.part"
                     if not part.is_file():
-                        raise StoreError(f"upload part {number} is missing", code="missing_upload_part")
+                        raise StoreError(
+                            f"upload part {number} is missing", code="missing_upload_part"
+                        )
                     with part.open("rb") as source:
                         while chunk := source.read(1024 * 1024):
                             output.write(chunk)
@@ -251,7 +269,9 @@ class PortabilityService:
             requested = str(body.get("sha256") or metadata.get("sha256") or "").strip().lower()
             actual = digest.hexdigest()
             if total != metadata["size"] or (requested and requested != actual):
-                raise StoreError("merged bundle checksum is invalid", code="invalid_bundle_checksum")
+                raise StoreError(
+                    "merged bundle checksum is invalid", code="invalid_bundle_checksum"
+                )
             os.replace(temporary, target)
         except Exception:
             try:
@@ -287,7 +307,12 @@ class PortabilityService:
         archive, files, expanded = self._validated_archive_file(path)
         with archive:
             manifest = json.loads(archive.read("manifest.json"))
-        return {"manifest": manifest, "files": len(files), "expanded_bytes": expanded, "warnings": []}
+        return {
+            "manifest": manifest,
+            "files": len(files),
+            "expanded_bytes": expanded,
+            "warnings": [],
+        }
 
     def dry_run_file(self, path: Path) -> dict[str, Any]:
         inspection = self.inspect_file(path)
@@ -311,15 +336,25 @@ class PortabilityService:
                     raise
         with ZipFile(path) as archive:
             names = archive.namelist()
-        required = sorted({str(item) for item in manifest.get("required_environment", []) if ENV_NAME.fullmatch(str(item))})
+        required = sorted(
+            {
+                str(item)
+                for item in manifest.get("required_environment", [])
+                if ENV_NAME.fullmatch(str(item))
+            }
+        )
         available = self._default_environment()
         return {
             "inspection": inspection,
             "collisions": collisions,
             "approval_resets": len(manifest.get("agents", [])),
-            "paused_cron_jobs": sum(1 for name in names if "/cron/jobs/" in name and name.endswith((".yaml", ".yml"))),
+            "paused_cron_jobs": sum(
+                1 for name in names if "/cron/jobs/" in name and name.endswith((".yaml", ".yml"))
+            ),
             "providers_reset": len(manifest.get("agents", [])),
-            "quarantined_code": [name for name in names if PurePosixPath(name).suffix.lower() in CODE_SUFFIXES],
+            "quarantined_code": [
+                name for name in names if PurePosixPath(name).suffix.lower() in CODE_SUFFIXES
+            ],
             "storage_required": inspection["expanded_bytes"],
             "team_collisions": team_collisions,
             "missing_environment": [name for name in required if not available.get(name)],
@@ -349,10 +384,13 @@ class PortabilityService:
                     for info in archive.infolist():
                         if not info.filename.startswith(prefix) or info.is_dir():
                             continue
-                        relative = PurePosixPath(info.filename[len(prefix):])
+                        relative = PurePosixPath(info.filename[len(prefix) :])
                         destination = target_stage.joinpath(*relative.parts)
                         destination.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
-                        with archive.open(info) as input_file, destination.open("wb") as output_file:
+                        with (
+                            archive.open(info) as input_file,
+                            destination.open("wb") as output_file,
+                        ):
                             shutil.copyfileobj(input_file, output_file, length=1024 * 1024)
                     self._reset_imported_profile(target_stage, supplied)
                     self._reset_imported_identity(
@@ -374,7 +412,10 @@ class PortabilityService:
                     target_id = self._available_team_id(source_id)
                     team_mappings[source_id] = target_id
                     team["id"] = target_id
-                    team["orchestrator_id"] = mappings.get(str(team.get("orchestrator_id") or ""), str(team.get("orchestrator_id") or ""))
+                    team["orchestrator_id"] = mappings.get(
+                        str(team.get("orchestrator_id") or ""),
+                        str(team.get("orchestrator_id") or ""),
+                    )
                     team["synthesis_agent_id"] = mappings.get(
                         str(team.get("synthesis_agent_id") or ""),
                         str(team.get("synthesis_agent_id") or team.get("orchestrator_id") or ""),
@@ -385,7 +426,9 @@ class PortabilityService:
                             member["agent_id"] = mappings[old]
                         else:
                             member["enabled"] = False
-                            member["diagnostic"] = f"Profile {old or 'unknown'} was not included in the imported snapshot."
+                            member["diagnostic"] = (
+                                f"Profile {old or 'unknown'} was not included in the imported snapshot."
+                            )
                             disabled_members += 1
                     for step in team.get("workflow", []):
                         old = str(step.get("agent_id") or "")
@@ -407,34 +450,41 @@ class PortabilityService:
             }
         except Exception:
             for installed_path in reversed(installed):
-                if installed_path.is_dir() and installed_path.parent == self.repository.profiles_root:
+                if (
+                    installed_path.is_dir()
+                    and installed_path.parent == self.repository.profiles_root
+                ):
                     shutil.rmtree(installed_path)
             raise
         finally:
             shutil.rmtree(stage, ignore_errors=True)
 
     def _export_to_path(self, body: Mapping[str, Any], target: Path) -> dict[str, Any]:
-        requested_team_ids = list(dict.fromkeys(
-            str(item).strip()
-            for item in body.get("team_ids", [])
-            if str(item).strip()
-        ))
+        requested_team_ids = list(
+            dict.fromkeys(
+                str(item).strip() for item in body.get("team_ids", []) if str(item).strip()
+            )
+        )
         selected_teams: list[dict[str, Any]] = []
         team_agents: list[str] = []
         for team_id in requested_team_ids:
             team = self.repository.get_team(team_id)
             selected_teams.append(team)
-            team_agents.extend([
-                str(team.get("orchestrator_id") or ""),
-                str(team.get("synthesis_agent_id") or ""),
-                *(str(member.get("agent_id") or "") for member in team.get("members", [])),
-                *(str(step.get("agent_id") or "") for step in team.get("workflow", [])),
-            ])
-        agent_ids = list(dict.fromkeys(
-            str(item).strip()
-            for item in [*(body.get("agent_ids", []) or []), *team_agents]
-            if str(item).strip()
-        ))
+            team_agents.extend(
+                [
+                    str(team.get("orchestrator_id") or ""),
+                    str(team.get("synthesis_agent_id") or ""),
+                    *(str(member.get("agent_id") or "") for member in team.get("members", [])),
+                    *(str(step.get("agent_id") or "") for step in team.get("workflow", [])),
+                ]
+            )
+        agent_ids = list(
+            dict.fromkeys(
+                str(item).strip()
+                for item in [*(body.get("agent_ids", []) or []), *team_agents]
+                if str(item).strip()
+            )
+        )
         if not agent_ids and not requested_team_ids:
             raise StoreError("at least one agent or team is required")
         include_conversations = bool(body.get("include_conversations", False))
@@ -481,7 +531,9 @@ class PortabilityService:
             team_id = str(team.get("id") or "")
             if team_id:
                 teams.append({"id": team_id, "name": str(team.get("name") or team_id)})
-                team_payloads.append((f"teams/{team_id}.yaml", yaml.safe_dump(team, sort_keys=False).encode()))
+                team_payloads.append(
+                    (f"teams/{team_id}.yaml", yaml.safe_dump(team, sort_keys=False).encode())
+                )
 
         manifest = {
             "format": BUNDLE_FORMAT,
@@ -500,7 +552,9 @@ class PortabilityService:
         checksums: dict[str, dict[str, Any]] = {}
         with ZipFile(target, "w", ZIP_DEFLATED, compresslevel=6, allowZip64=True) as archive:
             manifest_payload = (json.dumps(manifest, indent=2) + "\n").encode()
-            checksums["manifest.json"] = self._write_zip_payload(archive, "manifest.json", manifest_payload, secrets)
+            checksums["manifest.json"] = self._write_zip_payload(
+                archive, "manifest.json", manifest_payload, secrets
+            )
             for name, source in sorted(entries):
                 if source.name.lower() in SECRET_FILES:
                     checksums[name] = self._write_zip_payload(
@@ -523,11 +577,14 @@ class PortabilityService:
             raise StoreError("bundle size is invalid", code="invalid_bundle")
         filename = f"xnobrain-{export_id}.zip"
         if len(selected_teams) == 1:
-            team_name = re.sub(
-                r"[^a-z0-9]+",
-                "-",
-                str(selected_teams[0].get("name") or "team").strip().lower(),
-            ).strip("-")[:80] or "team"
+            team_name = (
+                re.sub(
+                    r"[^a-z0-9]+",
+                    "-",
+                    str(selected_teams[0].get("name") or "team").strip().lower(),
+                ).strip("-")[:80]
+                or "team"
+            )
             filename = f"xnobrain-team-{team_name}-{export_id[:8]}.zip"
         return {
             "bundle_export_id": export_id,
@@ -554,7 +611,14 @@ class PortabilityService:
                 raw_parts = raw.split("/")
                 control = any(ord(character) < 32 for character in raw)
                 drive = bool(re.match(r"^[A-Za-z]:", raw))
-                if path_value.is_absolute() or any(part in {"", ".", ".."} for part in raw_parts) or "\\" in raw or control or drive or len(path_value.parts) > MAX_PATH_DEPTH:
+                if (
+                    path_value.is_absolute()
+                    or any(part in {"", ".", ".."} for part in raw_parts)
+                    or "\\" in raw
+                    or control
+                    or drive
+                    or len(path_value.parts) > MAX_PATH_DEPTH
+                ):
                     raise StoreError("bundle contains an unsafe path", code="invalid_bundle")
                 if stat.S_ISLNK(info.external_attr >> 16):
                     raise StoreError("bundle symlinks are forbidden", code="invalid_bundle")
@@ -562,7 +626,9 @@ class PortabilityService:
                     continue
                 key = raw.casefold()
                 if raw in files or key in folded or len(files) >= MAX_FILES:
-                    raise StoreError("bundle file count or uniqueness is invalid", code="invalid_bundle")
+                    raise StoreError(
+                        "bundle file count or uniqueness is invalid", code="invalid_bundle"
+                    )
                 if info.file_size > MAX_FILE_BYTES or (info.file_size and not info.compress_size):
                     raise StoreError("bundle contains an oversized file", code="invalid_bundle")
                 expanded += info.file_size
@@ -576,8 +642,13 @@ class PortabilityService:
                 files[raw] = info
                 folded.add(key)
             if "manifest.json" not in files or "checksums.json" not in files:
-                raise StoreError("bundle manifest and checksums are required", code="invalid_bundle")
-            if files["manifest.json"].file_size > 4 * 1024 * 1024 or files["checksums.json"].file_size > 16 * 1024 * 1024:
+                raise StoreError(
+                    "bundle manifest and checksums are required", code="invalid_bundle"
+                )
+            if (
+                files["manifest.json"].file_size > 4 * 1024 * 1024
+                or files["checksums.json"].file_size > 16 * 1024 * 1024
+            ):
                 raise StoreError("bundle metadata is too large", code="invalid_bundle")
             manifest = json.loads(archive.read("manifest.json"))
             if manifest.get("format") != BUNDLE_FORMAT or manifest.get("version") != BUNDLE_VERSION:
@@ -599,7 +670,9 @@ class PortabilityService:
                 parts = PurePosixPath(name).parts
                 if parts and parts[0] == "profiles":
                     if len(parts) < 3 or parts[1] not in declared:
-                        raise StoreError("bundle references unsafe profile content", code="invalid_bundle")
+                        raise StoreError(
+                            "bundle references unsafe profile content", code="invalid_bundle"
+                        )
             return archive, files, expanded
         except Exception:
             archive.close()
@@ -689,9 +762,19 @@ class PortabilityService:
             pass
         timestamp = datetime.fromtimestamp(profile.stat().st_mtime, timezone.utc).isoformat()
         display_name = str(metadata.get("display_name") or metadata.get("title") or agent_id)
-        return {"id": agent_id, "name": str(metadata.get("name") or agent_id), "display_name": display_name, "title": display_name, "description": str(metadata.get("description") or ""), "created_at": timestamp, "updated_at": timestamp}
+        return {
+            "id": agent_id,
+            "name": str(metadata.get("name") or agent_id),
+            "display_name": display_name,
+            "title": display_name,
+            "description": str(metadata.get("description") or ""),
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
 
-    def _reset_imported_profile(self, profile: Path, supplied_environment: Mapping[str, str]) -> None:
+    def _reset_imported_profile(
+        self, profile: Path, supplied_environment: Mapping[str, str]
+    ) -> None:
         config_path = profile / "config.yaml"
         config = {}
         if config_path.is_file():
@@ -735,7 +818,9 @@ class PortabilityService:
             env_path = profile / ".env"
             existing = env_path.read_text(encoding="utf-8") if env_path.is_file() else ""
             suffix = "" if not existing or existing.endswith("\n") else "\n"
-            additions = "".join(f"{key}={value}\n" for key, value in sorted(supplied_environment.items()))
+            additions = "".join(
+                f"{key}={value}\n" for key, value in sorted(supplied_environment.items())
+            )
             env_path.write_text(existing + suffix + additions, encoding="utf-8")
 
         cron_root = profile / "cron" / "jobs"
@@ -775,7 +860,9 @@ class PortabilityService:
             config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         except (OSError, yaml.YAMLError):
             config = {}
-        return yaml.safe_dump(self._sanitize_value(config), sort_keys=False, allow_unicode=True).encode()
+        return yaml.safe_dump(
+            self._sanitize_value(config), sort_keys=False, allow_unicode=True
+        ).encode()
 
     def _sanitize_value(self, value: Any) -> Any:
         if isinstance(value, Mapping):
@@ -805,7 +892,9 @@ class PortabilityService:
                 for child in current:
                     visit(child, key)
             elif isinstance(current, str):
-                if key.lower() in {"key_env", "env", "environment_variable"} and ENV_NAME.fullmatch(current):
+                if key.lower() in {"key_env", "env", "environment_variable"} and ENV_NAME.fullmatch(
+                    current
+                ):
                     found.add(current)
                 found.update(ENV_REFERENCE.findall(current))
 
@@ -851,7 +940,7 @@ class PortabilityService:
             for line in raw.splitlines():
                 if "=" not in line or line.lstrip().startswith("#"):
                     continue
-                candidate = line.split("=", 1)[1].strip().strip('"\'')
+                candidate = line.split("=", 1)[1].strip().strip("\"'")
                 if len(candidate) >= 6:
                     values.add(candidate.encode())
         config_path = profile / "config.yaml"
@@ -875,7 +964,9 @@ class PortabilityService:
         return values
 
     def _default_environment(self) -> dict[str, str]:
-        values = {key: value for key, value in os.environ.items() if ENV_NAME.fullmatch(key) and value}
+        values = {
+            key: value for key, value in os.environ.items() if ENV_NAME.fullmatch(key) and value
+        }
         for filename in (".env", "credentials.env"):
             path = self.root_profile / filename
             if not path.is_file():
@@ -895,22 +986,30 @@ class PortabilityService:
             key = str(raw_key).strip()
             value = str(raw_value).strip()
             if key not in allowed or not ENV_NAME.fullmatch(key):
-                raise StoreError(f"environment value is not requested: {key}", code="invalid_environment")
+                raise StoreError(
+                    f"environment value is not requested: {key}", code="invalid_environment"
+                )
             if not value or len(value) > 8192 or "\n" in value or "\r" in value:
                 raise StoreError(f"environment value is invalid: {key}", code="invalid_environment")
             result[key] = value
         return result
 
-    def _write_zip_file(self, archive: ZipFile, name: str, source: Path, secrets: set[bytes]) -> dict[str, Any]:
+    def _write_zip_file(
+        self, archive: ZipFile, name: str, source: Path, secrets: set[bytes]
+    ) -> dict[str, Any]:
         if source.stat().st_size > MAX_FILE_BYTES:
             raise StoreError(f"profile file is too large: {name}", code="oversized_profile_file")
         with source.open("rb") as file:
             return self._write_zip_stream(archive, name, file, secrets)
 
-    def _write_zip_payload(self, archive: ZipFile, name: str, payload: bytes, secrets: set[bytes]) -> dict[str, Any]:
+    def _write_zip_payload(
+        self, archive: ZipFile, name: str, payload: bytes, secrets: set[bytes]
+    ) -> dict[str, Any]:
         return self._write_zip_stream(archive, name, BytesIO(payload), secrets)
 
-    def _write_zip_stream(self, archive: ZipFile, name: str, source: BinaryIO, secrets: set[bytes]) -> dict[str, Any]:
+    def _write_zip_stream(
+        self, archive: ZipFile, name: str, source: BinaryIO, secrets: set[bytes]
+    ) -> dict[str, Any]:
         digest = hashlib.sha256()
         size = 0
         info = ZipInfo(name)
@@ -937,7 +1036,9 @@ class PortabilityService:
             while len(buffer) >= maximum:
                 safe = len(buffer) - maximum + 1
                 matches = [(buffer.find(secret), secret) for secret in candidates]
-                matches = [(position, secret) for position, secret in matches if 0 <= position < safe]
+                matches = [
+                    (position, secret) for position, secret in matches if 0 <= position < safe
+                ]
                 if not matches:
                     yield buffer[:safe]
                     buffer = buffer[safe:]
@@ -946,7 +1047,7 @@ class PortabilityService:
                 if position:
                     yield buffer[:position]
                 yield REDACTED
-                buffer = buffer[position + len(secret):]
+                buffer = buffer[position + len(secret) :]
         while buffer:
             matches = [(buffer.find(secret), secret) for secret in candidates]
             matches = [(position, secret) for position, secret in matches if position >= 0]
@@ -957,7 +1058,7 @@ class PortabilityService:
             if position:
                 yield buffer[:position]
             yield REDACTED
-            buffer = buffer[position + len(secret):]
+            buffer = buffer[position + len(secret) :]
 
     @staticmethod
     def _hash_member(archive: ZipFile, info: ZipInfo) -> tuple[str, int]:
@@ -983,7 +1084,11 @@ class PortabilityService:
                 candidate = f"big-brother-import-{uuid.uuid4().hex[:8]}"
                 if not self.repository.profile_path(candidate).exists():
                     return candidate
-            raise StoreError("could not allocate an imported Big Brother profile id", status=409, code="collision")
+            raise StoreError(
+                "could not allocate an imported Big Brother profile id",
+                status=409,
+                code="collision",
+            )
         if not self.repository.profile_path(source).exists():
             return source
         for _ in range(100):
@@ -1027,13 +1132,17 @@ class PortabilityService:
         try:
             metadata = json.loads((directory / "metadata.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
-            raise StoreError("transfer metadata is invalid", status=500, code="invalid_transfer") from error
+            raise StoreError(
+                "transfer metadata is invalid", status=500, code="invalid_transfer"
+            ) from error
         return metadata
 
     def _with_payload(self, payload: bytes, operation):
         if not payload or len(payload) > MAX_COMPRESSED:
             raise StoreError("bundle size is invalid", code="invalid_bundle")
-        descriptor, name = tempfile.mkstemp(prefix=".legacy-bundle-", suffix=".zip", dir=self.transfer_root)
+        descriptor, name = tempfile.mkstemp(
+            prefix=".legacy-bundle-", suffix=".zip", dir=self.transfer_root
+        )
         path = Path(name)
         try:
             with os.fdopen(descriptor, "wb") as file:

@@ -16,7 +16,6 @@ from unittest.mock import Mock, patch
 
 import yaml
 
-from xnobrain.integrations.hermes import AgentAPIError, AgentManager
 from xnobrain.integrations.config import GlobalConfigManager
 from xnobrain.integrations.conversation_prompt import (
     AGENT_WORKSPACE_GUIDANCE,
@@ -26,6 +25,7 @@ from xnobrain.integrations.conversation_stream import (
     _commit_resolved_write_result,
     _persist_cancelled_terminal,
 )
+from xnobrain.integrations.hermes import AgentAPIError, AgentManager
 from xnobrain.integrations.llm_router import (
     LLM_ROUTER_API_BASE_URL,
     LLM_ROUTER_PROVIDER,
@@ -167,7 +167,9 @@ class LLMRouterConfigTests(unittest.TestCase):
 
     def test_smart_route_reuses_initial_decision_then_routes_new_inference_step(self) -> None:
         manager = object.__new__(AgentManager)
-        agent = SimpleNamespace(model="cx/deep", reasoning_config={"enabled": True, "effort": "high"})
+        agent = SimpleNamespace(
+            model="cx/deep", reasoning_config={"enabled": True, "effort": "high"}
+        )
         agent._build_api_kwargs = lambda messages: {
             "model": agent.model,
             "messages": messages,
@@ -290,11 +292,13 @@ class LLMRouterConfigTests(unittest.TestCase):
                 self.replacement = (session_id, messages, active_only)
 
         db = SessionDB()
-        messages = [{
-            "role": "tool",
-            "name": "skill_manage",
-            "content": json.dumps({"staged": True, "pending_id": "pending-1"}),
-        }]
+        messages = [
+            {
+                "role": "tool",
+                "name": "skill_manage",
+                "content": json.dumps({"staged": True, "pending_id": "pending-1"}),
+            }
+        ]
         agent = SimpleNamespace(
             _db_flush_scan_prefix=messages,
             _session_db=db,
@@ -336,9 +340,7 @@ class LLMRouterConfigTests(unittest.TestCase):
                     "api-key",
                 )
                 self.assertEqual(
-                    manager._command_env(root / "root", "hermes").get(
-                        "RUNTIME_LLM_API_KEY"
-                    ),
+                    manager._command_env(root / "root", "hermes").get("RUNTIME_LLM_API_KEY"),
                     "api-key",
                 )
                 self.assertIsNone(os.environ.get("LLM_ROUTER_API_KEY"))
@@ -391,15 +393,15 @@ class LLMRouterConfigTests(unittest.TestCase):
                 )
                 manager.create_agent({"name": "memory-agent"})
                 agent_config = yaml.safe_load(
-                    (root / "profiles" / "memory-agent" / "config.yaml").read_text(
-                        encoding="utf-8"
-                    )
+                    (root / "profiles" / "memory-agent" / "config.yaml").read_text(encoding="utf-8")
                 )
 
         self.assertNotIn("provider", described["config"]["memory"])
         self.assertNotIn("provider", agent_config["memory"])
 
-    def test_profile_normalization_preserves_custom_prompt_and_removes_managed_overlay(self) -> None:
+    def test_profile_normalization_preserves_custom_prompt_and_removes_managed_overlay(
+        self,
+    ) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             profile = root / "profile"
@@ -545,9 +547,7 @@ class LLMRouterConfigTests(unittest.TestCase):
                 root_profile / "workspace",
             )
             manager.update_config("big-brother", {"language": "English"})
-            config = yaml.safe_load(
-                (root_profile / "config.yaml").read_text(encoding="utf-8")
-            )
+            config = yaml.safe_load((root_profile / "config.yaml").read_text(encoding="utf-8"))
 
         self.assertNotIn("# Agent workspace", fake_agent._build_system_prompt(None))
         self.assertNotIn("cwd", config.get("terminal", {}))
@@ -614,16 +614,19 @@ class LLMRouterConfigTests(unittest.TestCase):
                 "---\nname: research\ndescription: Bundled research skill\n---\n",
                 encoding="utf-8",
             )
-            with patch.dict("os.environ", {"HERMES_INSTALL_DIR": str(root / "hermes-install"), "RUNTIME_INCLUDE_PACKAGED_SKILLS": "true"}):
+            with patch.dict(
+                "os.environ",
+                {
+                    "HERMES_INSTALL_DIR": str(root / "hermes-install"),
+                    "RUNTIME_INCLUDE_PACKAGED_SKILLS": "true",
+                },
+            ):
                 skills = GlobalConfigManager(root_profile=profile).list_skills()["skills"]
 
         self.assertEqual([item["skill_id"] for item in skills], ["research"])
 
     def test_hermes_exit_zero_provider_error_is_detected(self) -> None:
-        message = (
-            'HTTP 401: [codex/gpt-5.5] [401]: {"error": {'
-            '"code": "token_invalidated"}}'
-        )
+        message = 'HTTP 401: [codex/gpt-5.5] [401]: {"error": {"code": "token_invalidated"}}'
 
         self.assertEqual(AgentManager._provider_error(message), message)
         self.assertEqual(AgentManager._provider_error("HTTP is a protocol"), "")
@@ -650,7 +653,10 @@ class LLMRouterConfigTests(unittest.TestCase):
         self.assertEqual(config["agent"]["reasoning_effort"], "high")
 
     def test_router_headers_use_provisioned_workload_identity(self) -> None:
-        with patch.dict(os.environ, {"RUNTIME_LLM_API_KEY": "api-key-test-token", "RUNTIME_LLM_API_KEY_FILE": ""}):
+        with patch.dict(
+            os.environ,
+            {"RUNTIME_LLM_API_KEY": "api-key-test-token", "RUNTIME_LLM_API_KEY_FILE": ""},
+        ):
             headers = LLMRouterClient(base_url="https://control.test/llm")._request_headers()
         self.assertEqual(headers["Accept"], "application/json")
         self.assertEqual(headers["Authorization"], "Bearer api-key-test-token")
@@ -688,9 +694,11 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_custom_blend_keeps_its_existing_strategy(self) -> None:
         manager = object.__new__(AgentManager)
+
         class Router:
             async def model_route_candidates(self, *_args, **_kwargs):
                 raise AssertionError("custom blends must use resolve_blend_route")
+
         manager.llm_router = Router()
         prepared = {"model": "my-blend", "command": ["hermes"]}
         await manager._resolve_prepared_model_route(prepared)
@@ -699,30 +707,43 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
 
     def test_auto_fallbacks_use_same_router_and_advance_to_other_models(self) -> None:
         manager = object.__new__(AgentManager)
+
         class Agent:
             base_url = "http://router:8090/v1"
             api_key = "workload-key"
             api_mode = "chat_completions"
+
         agent = Agent()
-        manager._install_model_fallbacks(agent, {
-            "model_fallbacks": ["openai/small", "openai/stale", "openai/small"],
-        })
-        self.assertEqual([row["model"] for row in agent._fallback_chain], ["openai/small", "openai/stale"])
+        manager._install_model_fallbacks(
+            agent,
+            {
+                "model_fallbacks": ["openai/small", "openai/stale", "openai/small"],
+            },
+        )
+        self.assertEqual(
+            [row["model"] for row in agent._fallback_chain], ["openai/small", "openai/stale"]
+        )
         self.assertTrue(all(row["provider"] == "xnobrain" for row in agent._fallback_chain))
-        self.assertTrue(all(row["base_url"] == "http://router:8090/v1" for row in agent._fallback_chain))
+        self.assertTrue(
+            all(row["base_url"] == "http://router:8090/v1" for row in agent._fallback_chain)
+        )
         self.assertEqual(agent._fallback_model["model"], "openai/small")
         self.assertEqual(agent._fallback_index, 0)
 
     async def test_prepared_auto_is_left_for_gorouter_v017_to_resolve(self) -> None:
         manager = object.__new__(AgentManager)
+
         class Router:
             async def ensure_auto_combo(self):
                 self.checked = True
+
             async def model_route_candidates(self, *_args, **_kwargs):
                 raise AssertionError("Runtime must not duplicate GoRouter auto routing")
+
         manager.llm_router = Router()
         prepared = {
-            "model": "auto", "selection_provider": "openai",
+            "model": "auto",
+            "selection_provider": "openai",
             "command": ["hermes", "chat", "--model", "auto", "--quiet"],
         }
         await manager._resolve_prepared_model_route(prepared)
@@ -732,11 +753,13 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prepared["command"], ["hermes", "chat", "--model", "auto", "--quiet"])
 
     async def test_title_generation_uses_the_configured_v1_router_base_once(self) -> None:
-        manager = FakeLLMRouterClient({
-            ("POST", "/chat/completions"): {
-                "choices": [{"message": {"content": "Managed routing"}}],
-            },
-        })
+        manager = FakeLLMRouterClient(
+            {
+                ("POST", "/chat/completions"): {
+                    "choices": [{"message": {"content": "Managed routing"}}],
+                },
+            }
+        )
 
         title = await manager.generate_conversation_title("hello", "openai/gpt-5")
 
@@ -744,15 +767,19 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager.requests[0][0:2], ("POST", "/chat/completions"))
 
     async def test_runtime_catalog_uses_only_the_workload_models_endpoint(self) -> None:
-        manager = FakeLLMRouterClient({
-            ("GET", "/models?kind=llm"): {
-                "data": [{
-                    "id": "openai/gpt-5",
-                    "owned_by": "openai",
-                    "capabilities": {"reasoning": ["low", "high"]},
-                }],
-            },
-        })
+        manager = FakeLLMRouterClient(
+            {
+                ("GET", "/models?kind=llm"): {
+                    "data": [
+                        {
+                            "id": "openai/gpt-5",
+                            "owned_by": "openai",
+                            "capabilities": {"reasoning": ["low", "high"]},
+                        }
+                    ],
+                },
+            }
+        )
 
         models = await manager.list_models()
 
@@ -832,7 +859,11 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
     async def test_smart_route_classifies_delegated_tasks_independently(self) -> None:
         class Router:
             async def resolve_smart_route(
-                self, name, message, *, required_context_tokens=0,
+                self,
+                name,
+                message,
+                *,
+                required_context_tokens=0,
             ):
                 await asyncio.sleep(0)
                 difficult = "architecture" in message.lower()
@@ -944,9 +975,9 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                 "Office assistant\n",
             )
             self.assertEqual(
-                yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))[
-                    "model"
-                ]["default"],
+                yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))["model"][
+                    "default"
+                ],
                 "auto",
             )
             self.assertFalse((profile / "cron" / "ticker_heartbeat").exists())
@@ -1040,7 +1071,9 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                 "auto_compaction": True,
             }
 
-            with patch.object(manager, "_compact_conversation_sync", return_value=compacted) as worker:
+            with patch.object(
+                manager, "_compact_conversation_sync", return_value=compacted
+            ) as worker:
                 result = await manager.compact_conversation(
                     "news",
                     conversation_id,
@@ -1051,13 +1084,16 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             worker.assert_called_once()
             stored = manager.get_conversation("news", conversation_id)["conversation"]
             self.assertEqual(stored["id"], conversation_id)
-            self.assertEqual(stored["model_config"]["xnobrain_context"], {
-                "used": 29_000,
-                "limit": 200_000,
-                "threshold": 100_000,
-                "auto_compaction": True,
-                "model": "cx/gpt-5.6-luna",
-            })
+            self.assertEqual(
+                stored["model_config"]["xnobrain_context"],
+                {
+                    "used": 29_000,
+                    "limit": 200_000,
+                    "threshold": 100_000,
+                    "auto_compaction": True,
+                    "model": "cx/gpt-5.6-luna",
+                },
+            )
 
     def test_default_conversation_titles_continue_without_duplicates(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -1095,10 +1131,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             fourth = manager.create_conversation("news", {})
             self.assertEqual(fourth["conversation"]["title"], "New Session 4")
 
-            titles = [
-                item["title"]
-                for item in manager.list_conversations("news")["conversations"]
-            ]
+            titles = [item["title"] for item in manager.list_conversations("news")["conversations"]]
             self.assertEqual(len(titles), len(set(titles)))
 
             manager.create_agent({"name": "research"})
@@ -1123,14 +1156,23 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
 
             database = manager._profile_dir("news") / "state.db"
             with sqlite3.connect(database) as connection:
-                connection.execute("UPDATE sessions SET started_at = 1, ended_at = 30 WHERE id = ?", (first["id"],))
-                connection.execute("UPDATE sessions SET started_at = 2, ended_at = 20 WHERE id = ?", (second["id"],))
-                connection.execute("UPDATE sessions SET started_at = 3, ended_at = 10 WHERE id = ?", (third["id"],))
+                connection.execute(
+                    "UPDATE sessions SET started_at = 1, ended_at = 30 WHERE id = ?", (first["id"],)
+                )
+                connection.execute(
+                    "UPDATE sessions SET started_at = 2, ended_at = 20 WHERE id = ?",
+                    (second["id"],),
+                )
+                connection.execute(
+                    "UPDATE sessions SET started_at = 3, ended_at = 10 WHERE id = ?", (third["id"],)
+                )
 
             page_one = manager.list_conversations("news", {"page": 1, "limit": 2})
             page_two = manager.list_conversations("news", {"page": 2, "limit": 2})
 
-            self.assertEqual([item["id"] for item in page_one["conversations"]], [first["id"], second["id"]])
+            self.assertEqual(
+                [item["id"] for item in page_one["conversations"]], [first["id"], second["id"]]
+            )
             self.assertEqual(page_one["pagination"], {"page": 1, "limit": 2, "has_more": True})
             self.assertEqual([item["id"] for item in page_two["conversations"]], [third["id"]])
             self.assertEqual(page_two["pagination"], {"page": 2, "limit": 2, "has_more": False})
@@ -1338,13 +1380,23 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     None,
                     duration=0.01,
                     is_error=False,
-                    result=json.dumps({
-                        "todos": [
-                            {"id": "research", "content": "Research sources", "status": "completed"},
-                            {"id": "summary", "content": "Summarize findings", "status": "in_progress"},
-                        ],
-                        "summary": {"total": 2},
-                    }),
+                    result=json.dumps(
+                        {
+                            "todos": [
+                                {
+                                    "id": "research",
+                                    "content": "Research sources",
+                                    "status": "completed",
+                                },
+                                {
+                                    "id": "summary",
+                                    "content": "Summarize findings",
+                                    "status": "in_progress",
+                                },
+                            ],
+                            "summary": {"total": 2},
+                        }
+                    ),
                 )
                 delegation_args = {
                     "tasks": [
@@ -1352,19 +1404,21 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                         {"goal": "Verify the proposed behavior with focused tests."},
                     ],
                 }
-                delegation_result = json.dumps({
-                    "results": [
-                        {
-                            "task_index": 0,
-                            "status": "completed",
-                            "summary": "Found it.",
-                            "live_transcript": "/private/task-0.log",
-                        },
-                        {"task_index": 1, "status": "completed", "summary": "Verified it."},
-                    ],
-                    "total_duration_seconds": 1.25,
-                    "live_transcripts": ["/private/task-0.log"],
-                })
+                delegation_result = json.dumps(
+                    {
+                        "results": [
+                            {
+                                "task_index": 0,
+                                "status": "completed",
+                                "summary": "Found it.",
+                                "live_transcript": "/private/task-0.log",
+                            },
+                            {"task_index": 1, "status": "completed", "summary": "Verified it."},
+                        ],
+                        "total_duration_seconds": 1.25,
+                        "live_transcripts": ["/private/task-0.log"],
+                    }
+                )
                 tool_progress_callback(
                     "tool.started",
                     "delegate_task",
@@ -1379,23 +1433,40 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     "subagent_id": "sa-test",
                 }
                 tool_progress_callback(
-                    "subagent.queued", None, None, None,
-                    **worker_context, queue_position=1,
+                    "subagent.queued",
+                    None,
+                    None,
+                    None,
+                    **worker_context,
+                    queue_position=1,
                 )
                 tool_progress_callback(
-                    "subagent.start", None, "Starting research", None,
+                    "subagent.start",
+                    None,
+                    "Starting research",
+                    None,
                     **worker_context,
                 )
                 tool_progress_callback(
-                    "subagent.tool", "web_search", "ICML proceedings", None,
-                    **worker_context, tool_count=1,
+                    "subagent.tool",
+                    "web_search",
+                    "ICML proceedings",
+                    None,
+                    **worker_context,
+                    tool_count=1,
                 )
                 tool_progress_callback(
-                    "subagent.text", None, "Drafting the report.", None,
+                    "subagent.text",
+                    None,
+                    "Drafting the report.",
+                    None,
                     **worker_context,
                 )
                 tool_progress_callback(
-                    "subagent.complete", None, None, None,
+                    "subagent.complete",
+                    None,
+                    None,
+                    None,
                     **worker_context,
                     status="completed",
                     duration_seconds=1.2,
@@ -1417,12 +1488,14 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     is_error=False,
                     result=delegation_result,
                 )
-                approval_notify_callback({
-                    "command": "rm -rf ./cache",
-                    "description": "Delete the cache directory",
-                    "pattern_keys": ["rm_recursive"],
-                    "allow_permanent": False,
-                })
+                approval_notify_callback(
+                    {
+                        "command": "rm -rf ./cache",
+                        "description": "Delete the cache directory",
+                        "pattern_keys": ["rm_recursive"],
+                        "allow_permanent": False,
+                    }
+                )
                 stream_delta_callback("First ")
                 await asyncio.sleep(0)
                 stream_delta_callback("second")
@@ -1445,10 +1518,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                 "_run_session_agent",
                 side_effect=run_session_agent,
             ):
-                chunks = [
-                    event
-                    async for event in manager._chat_stream_events(prepared)
-                ]
+                chunks = [event async for event in manager._chat_stream_events(prepared)]
 
             self.assertNotIn("news", manager.active_agent_ids())
 
@@ -1465,7 +1535,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(b"private-args", payload)
             self.assertIn(b'"tool":"delegate_task"', payload)
             self.assertIn(b'"args":{"tasks"', payload)
-            self.assertIn(b'Research the current implementation', payload)
+            self.assertIn(b"Research the current implementation", payload)
             self.assertIn(b'"event":"delegation.worker.queued"', payload)
             self.assertIn(b'"event":"delegation.worker.started"', payload)
             self.assertIn(b'"event":"delegation.worker.activity"', payload)
@@ -1540,19 +1610,27 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     return self._session_db.get_messages_as_conversation(session_id)
 
                 def _create_agent(self, **_kwargs):
-                    return type("FakeAgent", (), {
-                        "model": "cx/gpt-5.6-luna",
-                        "tool_progress_callback": staticmethod(
-                            _kwargs.get("tool_progress_callback")
-                        ),
-                        "context_compressor": type("FakeCompressor", (), {
-                            "last_prompt_tokens": 10_000,
-                            "context_length": 200_000,
-                            "threshold_tokens": 100_000,
-                        })(),
-                        "compression_enabled": True,
-                        "run_conversation": lambda self, *_args, **_kwargs: {},
-                    })()
+                    return type(
+                        "FakeAgent",
+                        (),
+                        {
+                            "model": "cx/gpt-5.6-luna",
+                            "tool_progress_callback": staticmethod(
+                                _kwargs.get("tool_progress_callback")
+                            ),
+                            "context_compressor": type(
+                                "FakeCompressor",
+                                (),
+                                {
+                                    "last_prompt_tokens": 10_000,
+                                    "context_length": 200_000,
+                                    "threshold_tokens": 100_000,
+                                },
+                            )(),
+                            "compression_enabled": True,
+                            "run_conversation": lambda self, *_args, **_kwargs: {},
+                        },
+                    )()
 
                 async def _run_agent(self, **kwargs):
                     observed.update(kwargs)
@@ -1560,18 +1638,24 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                         tool_progress_callback=kwargs["tool_progress_callback"],
                     )
                     kwargs["agent_ref"][0] = agent
-                    observed["delegated"] = agent._dispatch_delegate_task({
-                        "tasks": [{
-                            "goal": "Inspect the implementation thoroughly.",
-                            "acp_command": "hidden-provider-command",
-                        }],
-                    })
-                    observed["queued_delegated"] = agent._dispatch_delegate_task({
-                        "tasks": [
-                            {"goal": f"Research conference task number {index} thoroughly."}
-                            for index in range(5)
-                        ],
-                    })
+                    observed["delegated"] = agent._dispatch_delegate_task(
+                        {
+                            "tasks": [
+                                {
+                                    "goal": "Inspect the implementation thoroughly.",
+                                    "acp_command": "hidden-provider-command",
+                                }
+                            ],
+                        }
+                    )
+                    observed["queued_delegated"] = agent._dispatch_delegate_task(
+                        {
+                            "tasks": [
+                                {"goal": f"Research conference task number {index} thoroughly."}
+                                for index in range(5)
+                            ],
+                        }
+                    )
                     agent.reasoning_callback("I checked the saved context.")
 
                     def execute():
@@ -1617,14 +1701,30 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     "tools.delegate_tool.delegate_task",
                     side_effect=[
                         '{"results":[]}',
-                        json.dumps({"results": [
-                            {"task_index": index, "status": "completed", "summary": f"wave one {index}"}
-                            for index in range(3)
-                        ]}),
-                        json.dumps({"results": [
-                            {"task_index": index, "status": "completed", "summary": f"wave two {index}"}
-                            for index in range(2)
-                        ]}),
+                        json.dumps(
+                            {
+                                "results": [
+                                    {
+                                        "task_index": index,
+                                        "status": "completed",
+                                        "summary": f"wave one {index}",
+                                    }
+                                    for index in range(3)
+                                ]
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "results": [
+                                    {
+                                        "task_index": index,
+                                        "status": "completed",
+                                        "summary": f"wave two {index}",
+                                    }
+                                    for index in range(2)
+                                ]
+                            }
+                        ),
                     ],
                 ) as delegate,
                 patch("tools.delegate_tool._get_max_concurrent_children", return_value=3),
@@ -1634,7 +1734,9 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     run_id="run_" + "a" * 32,
                     stream_delta_callback=deltas.append,
                     tool_progress_callback=lambda *args, **_kwargs: (
-                        reasoning_events if args and args[0] == "reasoning.delta" else delegation_events
+                        reasoning_events
+                        if args and args[0] == "reasoning.delta"
+                        else delegation_events
                     ).append(args),
                     approval_notify_callback=lambda _data: None,
                     agent_ref=[None],
@@ -1667,8 +1769,12 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                 delegate_kwargs["tasks"],
                 [{"goal": "Inspect the implementation thoroughly."}],
             )
-            self.assertEqual([len(call.kwargs["tasks"]) for call in delegate.call_args_list[1:]], [3, 2])
-            self.assertEqual([item["task_index"] for item in queued_delegated["results"]], [0, 1, 2, 3, 4])
+            self.assertEqual(
+                [len(call.kwargs["tasks"]) for call in delegate.call_args_list[1:]], [3, 2]
+            )
+            self.assertEqual(
+                [item["task_index"] for item in queued_delegated["results"]], [0, 1, 2, 3, 4]
+            )
             self.assertEqual(queued_delegated["concurrency"], 3)
             self.assertEqual(len(delegation_events), 5)
             self.assertEqual(
@@ -1774,10 +1880,9 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                         observed["callback_restored"] = (
                             terminal_tool._get_approval_callback() is None
                         )
-                        observed["workspace_scope_cleared"] = (
-                            terminal_tool.get_session_cwd(kwargs["session_id"]) is None
-                            and not terminal_tool.resolve_task_overrides(kwargs["session_id"])
-                        )
+                        observed["workspace_scope_cleared"] = terminal_tool.get_session_cwd(
+                            kwargs["session_id"]
+                        ) is None and not terminal_tool.resolve_task_overrides(kwargs["session_id"])
                         return result
 
                     result = await asyncio.to_thread(execute)
@@ -1849,11 +1954,13 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     None,
                     duration=0.25,
                     is_error=False,
-                    result=json.dumps({
-                        "success": True,
-                        "staged": True,
-                        "pending_id": "pending-1",
-                    }),
+                    result=json.dumps(
+                        {
+                            "success": True,
+                            "staged": True,
+                            "pending_id": "pending-1",
+                        }
+                    ),
                 )
                 return (
                     {"final_response": "The skill was saved.", "messages": []},
@@ -1889,9 +1996,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                 ) as apply,
                 patch("tools.write_approval.discard_pending", return_value=True) as discard,
             ):
-                payload = b"".join([
-                    event async for event in manager._chat_stream_events(prepared)
-                ])
+                payload = b"".join([event async for event in manager._chat_stream_events(prepared)])
 
             self.assertIn(b'"event":"approval.request"', payload)
             self.assertIn(b'"subsystem":"skills"', payload)
@@ -1927,9 +2032,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                 "engine": "xnobrain",
             }
 
-            payload = b"".join(
-                [event async for event in manager._chat_stream_events(prepared)]
-            )
+            payload = b"".join([event async for event in manager._chat_stream_events(prepared)])
             self.assertIn(b"event: error", payload)
             self.assertIn(b"connect at least one provider", payload)
             self.assertTrue(payload.endswith(b"data: [DONE]\n\n"))
@@ -1938,13 +2041,18 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
 class RuntimeRouterKeyFileTests(unittest.TestCase):
     def test_transport_refreshes_runtime_key_from_private_file(self):
         from xnobrain.integrations.llm_router import LLMRouterClient
+
         with TemporaryDirectory() as temp_dir:
             key_file = Path(temp_dir) / "router-key"
             key_file.write_text("rotated-key\n", encoding="utf-8")
-            with patch.dict(os.environ, {"RUNTIME_LLM_API_KEY":"stale", "RUNTIME_LLM_API_KEY_FILE":str(key_file)}):
+            with patch.dict(
+                os.environ,
+                {"RUNTIME_LLM_API_KEY": "stale", "RUNTIME_LLM_API_KEY_FILE": str(key_file)},
+            ):
                 client = LLMRouterClient(data_dir=temp_dir)
                 self.assertEqual(client._request_headers()["Authorization"], "Bearer rotated-key")
                 self.assertEqual(os.environ["RUNTIME_LLM_API_KEY"], "rotated-key")

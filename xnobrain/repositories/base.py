@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import re
 import tempfile
 import threading
+from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
-
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 TEAM_RUN_RETENTION = 100
@@ -37,7 +36,14 @@ class RepositoryBase:
         self.notifications_root = self.data_dir / "notifications"
         self.trash_root = self.data_dir / "trash" / "profiles"
         self._lock = threading.RLock()
-        for path in (self.data_dir, self.profiles_root, self.teams_root, self.team_runs_root, self.notifications_root, self.trash_root):
+        for path in (
+            self.data_dir,
+            self.profiles_root,
+            self.teams_root,
+            self.team_runs_root,
+            self.notifications_root,
+            self.trash_root,
+        ):
             path.mkdir(parents=True, exist_ok=True, mode=0o750)
 
     @staticmethod
@@ -53,11 +59,15 @@ class RepositoryBase:
     def atomic_yaml(self, path: Path, value: Any) -> None:
         self.atomic_write(path, yaml.safe_dump(value, sort_keys=False, allow_unicode=True).encode())
 
-    def atomic_write(self, path: Path, payload: bytes, *, mode: int = 0o640, replace: bool = True) -> None:
+    def atomic_write(
+        self, path: Path, payload: bytes, *, mode: int = 0o640, replace: bool = True
+    ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
         with self._lock:
             if not replace and path.exists():
-                raise StoreError("immutable snapshot already exists", status=409, code="snapshot_exists")
+                raise StoreError(
+                    "immutable snapshot already exists", status=409, code="snapshot_exists"
+                )
             fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
             try:
                 os.fchmod(fd, mode)
@@ -75,7 +85,9 @@ class RepositoryBase:
                 raise
 
     def _profile_dirs(self) -> list[Path]:
-        return [path for path in self.profiles_root.iterdir() if path.is_dir() and not path.is_symlink()]
+        return [
+            path for path in self.profiles_root.iterdir() if path.is_dir() and not path.is_symlink()
+        ]
 
     @staticmethod
     def _read_yaml(path: Path) -> Any:
@@ -91,4 +103,3 @@ class RepositoryBase:
                 os.close(descriptor)
         except OSError:
             pass
-

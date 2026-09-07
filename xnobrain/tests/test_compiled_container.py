@@ -1,8 +1,7 @@
 """Production container packaging contracts."""
 
-from pathlib import Path
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -45,7 +44,6 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertNotIn("COPY xnobrain ", final_stage)
         self.assertNotIn("COPY server.py ", final_stage)
 
-
     def test_incus_image_does_not_declare_oci_data_volume(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
         active = "\n".join(
@@ -56,25 +54,19 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertIn("install -d -m 0700 /opt/data", dockerfile)
 
     def test_container_entrypoint_starts_compiled_endpoint(self):
-        entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(
-            encoding="utf-8"
-        )
+        entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(encoding="utf-8")
 
         self.assertIn("exec /usr/local/bin/app.so", entrypoint)
         self.assertNotIn("/opt/xnobrain/server.py", entrypoint)
 
     def test_runtime_uses_only_a_generic_central_router_client(self):
-        entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(
-            encoding="utf-8"
-        )
+        entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(encoding="utf-8")
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
         compose = (ROOT / "docker-compose.yaml").read_text(encoding="utf-8")
         systemd_target = (ROOT / "deploy" / "systemd" / "xnobrain.target").read_text(
             encoding="utf-8"
         )
-        installer = (ROOT / "scripts" / "install-linux.sh").read_text(
-            encoding="utf-8"
-        )
+        installer = (ROOT / "scripts" / "install-linux.sh").read_text(encoding="utf-8")
 
         self.assertIn("RUNTIME_LLM_ROUTER_URL is required", entrypoint)
         self.assertIn('RUNTIME_LLM_API_KEY="${RUNTIME_LLM_API_KEY:-}"', entrypoint)
@@ -87,14 +79,10 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertNotIn("xnobrain-omniroute.service", systemd_target)
         self.assertNotIn("xnobrain-router.service", systemd_target)
         self.assertNotIn("9router@", installer)
-        self.assertFalse(
-            (ROOT / "deploy" / "systemd" / "xnobrain-omniroute.service").exists()
-        )
+        self.assertFalse((ROOT / "deploy" / "systemd" / "xnobrain-omniroute.service").exists())
         self.assertFalse((ROOT / "deploy" / "systemd" / "xnobrain-router.service").exists())
         self.assertFalse((ROOT / "runtime" / "prepare-omniroute-auth.sh").exists())
-        self.assertFalse(
-            (ROOT / "third_party_licenses" / "provider-runtime.LICENSE").exists()
-        )
+        self.assertFalse((ROOT / "third_party_licenses" / "provider-runtime.LICENSE").exists())
         for legacy_module in (
             "omniroute.py",
             "nine_router.py",
@@ -128,9 +116,7 @@ class CompiledContainerTests(unittest.TestCase):
 
     def test_runtime_packages_required_node_tools_in_separate_layers(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
-        installer = (ROOT / "scripts" / "install-linux.sh").read_text(
-            encoding="utf-8"
-        )
+        installer = (ROOT / "scripts" / "install-linux.sh").read_text(encoding="utf-8")
 
         active_dockerfile = "\n".join(
             line for line in dockerfile.splitlines() if not line.lstrip().startswith("#")
@@ -139,9 +125,7 @@ class CompiledContainerTests(unittest.TestCase):
             line for line in installer.splitlines() if not line.lstrip().startswith("#")
         )
 
-        self.assertGreaterEqual(
-            active_dockerfile.count("--mount=type=cache,target=/root/.npm"), 3
-        )
+        self.assertGreaterEqual(active_dockerfile.count("--mount=type=cache,target=/root/.npm"), 3)
         self.assertIn("--mount=type=cache,target=/root/.cache/uv", active_dockerfile)
         self.assertIn("rm -rf /opt/hermes-build-home", active_dockerfile)
         for standalone_cli in (
@@ -160,12 +144,8 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertIn("multi-user.target.wants/systemd-resolved.service", dockerfile)
         self.assertIn("sysinit.target.wants/xnobrain-resolv-conf.service", dockerfile)
 
-        service = (ROOT / "runtime" / "xnobrain-resolv-conf.service").read_text(
-            encoding="utf-8"
-        )
-        script = (ROOT / "runtime" / "prepare-resolv-conf.sh").read_text(
-            encoding="utf-8"
-        )
+        service = (ROOT / "runtime" / "xnobrain-resolv-conf.service").read_text(encoding="utf-8")
+        script = (ROOT / "runtime" / "prepare-resolv-conf.sh").read_text(encoding="utf-8")
         self.assertIn("Before=systemd-resolved.service", service)
         self.assertIn("ln -sfn", script)
         self.assertIn("/run/systemd/resolve/stub-resolv.conf", script)

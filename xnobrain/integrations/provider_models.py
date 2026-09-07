@@ -3,15 +3,22 @@
 import time
 
 from .llm_router_support import (
-    Any,
-    Mapping,
     LLM_ROUTER_DEFAULT_MODEL,
     LLM_ROUTER_PROVIDER_KEY,
     ROUTER_PROVIDER_BY_MODEL_OWNER,
+    Any,
+    Mapping,
 )
 
 _REASONING_LEVELS = (
-    "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "ultra",
 )
 
 
@@ -44,7 +51,9 @@ class ProviderModelsMixin:
             # prefix (for example ocz/, cx/, or anthropic/), so prefer it and
             # use owned_by only for legacy unprefixed model IDs.
             model_owner = self._model_owner(model_id)
-            owner = model_owner if "/" in model_id else str(item.get("owned_by") or model_owner).strip()
+            owner = (
+                model_owner if "/" in model_id else str(item.get("owned_by") or model_owner).strip()
+            )
             provider = ROUTER_PROVIDER_BY_MODEL_OWNER.get(owner, owner)
             seen.add(model_id)
             model: dict[str, Any] = {
@@ -90,7 +99,6 @@ class ProviderModelsMixin:
             ],
         }
 
-
     async def reasoning_for_model(self, model: str) -> dict[str, Any]:
         """Return live reasoning metadata for one public model ID."""
 
@@ -111,7 +119,6 @@ class ProviderModelsMixin:
         }
         return result
 
-
     @staticmethod
     def _model_context_length(item: Mapping[str, Any]) -> int | None:
         capabilities = item.get("capabilities")
@@ -127,7 +134,6 @@ class ProviderModelsMixin:
                 return int(value)
         return None
 
-
     @staticmethod
     def _model_reasoning_levels(item: Mapping[str, Any]) -> list[str]:
         raw = item.get("reasoning_levels") or item.get("supported_reasoning")
@@ -141,11 +147,11 @@ class ProviderModelsMixin:
         capabilities = item.get("capabilities")
         if (
             item.get("supportsThinking") is True
-            or isinstance(capabilities, Mapping) and capabilities.get("reasoning") is True
+            or isinstance(capabilities, Mapping)
+            and capabilities.get("reasoning") is True
         ):
             return ["low", "medium", "high"]
         return []
-
 
     @classmethod
     def _connection_catalog_models(
@@ -192,9 +198,7 @@ class ProviderModelsMixin:
             if len(variants) >= 2 or cls._model_reasoning_levels(by_id[base_id])
         }
         collapsed_ids = {
-            alias_id
-            for base_id in collapsible
-            for alias_id in aliases[base_id].values()
+            alias_id for base_id in collapsible for alias_id in aliases[base_id].values()
         }
         result = []
         for item in rows:

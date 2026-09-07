@@ -35,14 +35,17 @@ class MCPValidationTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_accepts_strict_stdio_and_https_entries(self) -> None:
-        result = self.adapter.update_mcp("agent", {
-            "local": {"command": "npx", "args": ["-y"], "env": {"MODE": "safe"}},
-            "remote": {
-                "url": "https://example.com/mcp",
-                "headers": {"Authorization": "${MCP_TOKEN}"},
-                "tools": {"include": ["search"]},
+        result = self.adapter.update_mcp(
+            "agent",
+            {
+                "local": {"command": "npx", "args": ["-y"], "env": {"MODE": "safe"}},
+                "remote": {
+                    "url": "https://example.com/mcp",
+                    "headers": {"Authorization": "${MCP_TOKEN}"},
+                    "tools": {"include": ["search"]},
+                },
             },
-        })
+        )
         self.assertEqual(set(result["servers"]), {"local", "remote"})
 
     def test_rejects_invalid_transport_fields_without_persisting(self) -> None:

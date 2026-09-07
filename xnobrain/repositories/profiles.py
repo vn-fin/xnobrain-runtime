@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import os
-from pathlib import Path
 import shutil
 import time
-from typing import Any
 import uuid
+from pathlib import Path
+from typing import Any
 
 from .base import StoreError
 
@@ -81,15 +81,17 @@ class ProfileRepositoryMixin:
             if kind and current_kind != kind:
                 continue
             payload = path.read_bytes()
-            result.append({
-                "id": path.stem,
-                "agent_id": agent_id,
-                "kind": current_kind,
-                "target": target,
-                "hash": hashlib.sha256(payload).hexdigest(),
-                "path": relative.as_posix(),
-                "created_at": path.stat().st_mtime,
-            })
+            result.append(
+                {
+                    "id": path.stem,
+                    "agent_id": agent_id,
+                    "kind": current_kind,
+                    "target": target,
+                    "hash": hashlib.sha256(payload).hexdigest(),
+                    "path": relative.as_posix(),
+                    "created_at": path.stat().st_mtime,
+                }
+            )
         return sorted(result, key=lambda item: item["created_at"], reverse=True)
 
     def restore_snapshot(self, agent_id: Any, snapshot_id: Any) -> dict[str, Any]:
@@ -115,4 +117,3 @@ class ProfileRepositoryMixin:
             destination = profile / "config.yaml"
         self.atomic_write(destination, source.read_bytes(), mode=0o640)
         return item
-

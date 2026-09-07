@@ -1,10 +1,10 @@
 """Conversations methods for the Hermes runtime adapter."""
 
 from .hermes_support import (
-    AgentAPIError,
-    Any,
     DEFAULT_CONVERSATION_TITLE,
     DEFAULT_CONVERSATION_TITLE_RE,
+    AgentAPIError,
+    Any,
     Mapping,
     Path,
     _new_conversation_id,
@@ -18,7 +18,9 @@ from .hermes_support import (
 
 
 class ConversationsMixin:
-    def list_conversations(self, raw_name: Any, body: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    def list_conversations(
+        self, raw_name: Any, body: Mapping[str, Any] | None = None
+    ) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
         body = body or {}
@@ -32,12 +34,13 @@ class ConversationsMixin:
             "pagination": {"page": page, "limit": limit, "has_more": len(rows) > limit},
         }
 
-
     def create_conversation(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
         if not isinstance(body, Mapping):
-            raise AgentAPIError("request body must be an object", code="invalid_conversation_request")
+            raise AgentAPIError(
+                "request body must be an object", code="invalid_conversation_request"
+            )
         session_id = self._session_id(
             body.get("id")
             or body.get("session_id")
@@ -75,7 +78,6 @@ class ConversationsMixin:
                 )
         return self.get_conversation(name, session_id)
 
-
     def update_conversation(
         self,
         raw_name: Any,
@@ -85,7 +87,9 @@ class ConversationsMixin:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
         if not isinstance(body, Mapping):
-            raise AgentAPIError("request body must be an object", code="invalid_conversation_request")
+            raise AgentAPIError(
+                "request body must be an object", code="invalid_conversation_request"
+            )
         session_id = self._session_id(raw_session_id)
         if self._session(profile_dir, session_id) is None:
             raise AgentAPIError(
@@ -98,7 +102,6 @@ class ConversationsMixin:
             raise AgentAPIError("name is required", code="invalid_conversation_request")
         self._update_session_title(profile_dir, session_id, title)
         return self.get_conversation(name, session_id)
-
 
     def delete_conversation(self, raw_name: Any, raw_session_id: Any) -> dict[str, Any]:
         name = self._agent_name(raw_name)
@@ -118,7 +121,6 @@ class ConversationsMixin:
             "deleted": True,
         }
 
-
     def get_conversation(self, raw_name: Any, raw_session_id: Any) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
@@ -136,7 +138,6 @@ class ConversationsMixin:
             "conversation": session,
             "messages": self._messages(profile_dir, session_id),
         }
-
 
     async def compact_conversation(
         self,
@@ -166,8 +167,7 @@ class ConversationsMixin:
                     status=409,
                 )
             if any(
-                state.get("agent") == name
-                and state.get("conversation_id") == session_id
+                state.get("agent") == name and state.get("conversation_id") == session_id
                 for state in self._active_runs.values()
             ):
                 raise AgentAPIError(
@@ -201,7 +201,6 @@ class ConversationsMixin:
         finally:
             with self._registry_lock:
                 self._compacting_sessions.discard(compact_key)
-
 
     def _compact_conversation_sync(
         self,
@@ -302,7 +301,9 @@ class ConversationsMixin:
                     "in_place": True,
                     "model": str(getattr(agent, "model", "") or selected_model),
                     "context_limit": max(0, int(getattr(compressor, "context_length", 0) or 0)),
-                    "context_threshold": max(0, int(getattr(compressor, "threshold_tokens", 0) or 0)),
+                    "context_threshold": max(
+                        0, int(getattr(compressor, "threshold_tokens", 0) or 0)
+                    ),
                     "auto_compaction": bool(getattr(agent, "compression_enabled", False)),
                 }
         except AgentAPIError:
@@ -325,14 +326,12 @@ class ConversationsMixin:
             if callable(close):
                 close()
 
-
     def _conversation_title(self, body: Mapping[str, Any]) -> str | None:
         if "name" in body:
             return self._nullable_text(body["name"], field="name", max_chars=256)
         if "title" in body:
             return self._nullable_text(body["title"], field="title", max_chars=256)
         return None
-
 
     def _title_from_first_message(self, message: Any) -> str:
         """Build a short, stable fallback title from the first message."""
@@ -351,13 +350,11 @@ class ConversationsMixin:
             title = (shortened or title[:45]).rstrip() + "…"
         return title[0].upper() + title[1:] if title else "Conversation"
 
-
     def _conversation_has_default_title(self, profile_dir: Path, session_id: str) -> bool:
         with self._conversation_lock:
             session = self._session(profile_dir, session_id)
             current = str((session or {}).get("title") or "").strip()
             return bool(DEFAULT_CONVERSATION_TITLE_RE.fullmatch(current))
-
 
     def _clean_generated_title(self, value: Any) -> str:
         title = re.sub(r"\s+", " ", str(value or "")).strip(" \t\r\n\"'`*_#")
@@ -371,7 +368,6 @@ class ConversationsMixin:
             title = title[:48].rsplit(" ", 1)[0].rstrip(".,:;- ")
         return title
 
-
     async def _summarize_conversation_title(self, message: Any, model: str) -> str:
         try:
             generated = await asyncio.wait_for(
@@ -381,7 +377,6 @@ class ConversationsMixin:
             return self._clean_generated_title(generated) or self._title_from_first_message(message)
         except Exception:
             return self._title_from_first_message(message)
-
 
     def _auto_title_conversation(
         self,
@@ -397,7 +392,9 @@ class ConversationsMixin:
             current = str((session or {}).get("title") or "").strip()
             if not DEFAULT_CONVERSATION_TITLE_RE.fullmatch(current):
                 return current or None
-            base = self._clean_generated_title(suggested_title) or self._title_from_first_message(message)
+            base = self._clean_generated_title(suggested_title) or self._title_from_first_message(
+                message
+            )
             for index in range(1, 101):
                 suffix = "" if index == 1 else f" {index}"
                 candidate = base[: max(1, 256 - len(suffix))].rstrip() + suffix
@@ -408,7 +405,6 @@ class ConversationsMixin:
                     if exc.code != "conversation_name_exists":
                         return None
             return None
-
 
     def _next_default_conversation_title(self, profile_dir: Path) -> str:
         db_path = profile_dir / "state.db"
@@ -439,24 +435,19 @@ class ConversationsMixin:
             else f"{DEFAULT_CONVERSATION_TITLE} {highest + 1}"
         )
 
-
     def _conversation_model(self, profile_dir: Path, body: Mapping[str, Any]) -> str:
         if body.get("model"):
-            return route_llm_model(
-                self._nonempty_string(body["model"], "model")
-            )
+            return route_llm_model(self._nonempty_string(body["model"], "model"))
         config = self._read_config(profile_dir)
         model = self._get_nested(config, ("model", "default"), None)
         if not model:
             model = self._get_nested(config, ("model", "model"), "")
         return str(model or "")
 
-
     def _session_db(self, profile_dir: Path):
         from hermes_state import SessionDB
 
         return SessionDB(db_path=profile_dir / "state.db")
-
 
     def _create_session(
         self,
@@ -480,7 +471,6 @@ class ConversationsMixin:
             # used by tests and degraded local installations.
             pass
         self._create_session_sqlite(profile_dir, session_id, model=model, title=title)
-
 
     def _create_session_sqlite(
         self,
@@ -516,7 +506,6 @@ class ConversationsMixin:
         finally:
             conn.close()
 
-
     def _update_session_title(self, profile_dir: Path, session_id: str, title: str) -> None:
         try:
             db = self._session_db(profile_dir)
@@ -524,22 +513,26 @@ class ConversationsMixin:
             return
         except Exception as exc:
             if "UNIQUE" in str(exc).upper() or "already" in str(exc).lower():
-                raise AgentAPIError("conversation name already exists", code="conversation_name_exists", status=409) from exc
+                raise AgentAPIError(
+                    "conversation name already exists", code="conversation_name_exists", status=409
+                ) from exc
             self._update_session_title_sqlite(profile_dir, session_id, title)
-
 
     def _update_session_title_sqlite(self, profile_dir: Path, session_id: str, title: str) -> None:
         conn = sqlite3.connect(profile_dir / "state.db", timeout=1.0)
         try:
             cursor = conn.execute("UPDATE sessions SET title = ? WHERE id = ?", (title, session_id))
             if cursor.rowcount == 0:
-                raise AgentAPIError("conversation not found", code="conversation_not_found", status=404)
+                raise AgentAPIError(
+                    "conversation not found", code="conversation_not_found", status=404
+                )
             conn.commit()
         except sqlite3.IntegrityError as exc:
-            raise AgentAPIError("conversation name already exists", code="conversation_name_exists", status=409) from exc
+            raise AgentAPIError(
+                "conversation name already exists", code="conversation_name_exists", status=409
+            ) from exc
         finally:
             conn.close()
-
 
     def _delete_session(self, profile_dir: Path, session_id: str) -> None:
         try:
@@ -549,18 +542,18 @@ class ConversationsMixin:
         except Exception:
             self._delete_session_sqlite(profile_dir, session_id)
 
-
     def _delete_session_sqlite(self, profile_dir: Path, session_id: str) -> None:
         conn = sqlite3.connect(profile_dir / "state.db", timeout=1.0)
         try:
             conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
             cursor = conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             if cursor.rowcount == 0:
-                raise AgentAPIError("conversation not found", code="conversation_not_found", status=404)
+                raise AgentAPIError(
+                    "conversation not found", code="conversation_not_found", status=404
+                )
             conn.commit()
         finally:
             conn.close()
-
 
     def _ensure_session_schema(self, conn: sqlite3.Connection) -> None:
         conn.execute(
@@ -616,8 +609,9 @@ class ConversationsMixin:
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC)")
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_title_unique ON sessions(title) WHERE title IS NOT NULL")
-
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_title_unique ON sessions(title) WHERE title IS NOT NULL"
+        )
 
     def _latest_session_ids(self, profile_dir: Path) -> dict[str, float]:
         return {
@@ -626,8 +620,9 @@ class ConversationsMixin:
             if item.get("id")
         }
 
-
-    def _detect_changed_session(self, before: Mapping[str, float], after: Mapping[str, float]) -> str | None:
+    def _detect_changed_session(
+        self, before: Mapping[str, float], after: Mapping[str, float]
+    ) -> str | None:
         new_ids = [session_id for session_id in after if session_id not in before]
         if new_ids:
             return max(new_ids, key=lambda session_id: after[session_id])
@@ -640,7 +635,6 @@ class ConversationsMixin:
             return max(changed, key=lambda session_id: after[session_id])
         return max(after, key=lambda session_id: after[session_id]) if after else None
 
-
     def _sessions(self, profile_dir: Path, *, limit: int, offset: int = 0) -> list[dict[str, Any]]:
         db_path = profile_dir / "state.db"
         if not db_path.is_file():
@@ -648,18 +642,27 @@ class ConversationsMixin:
         conn = self._open_readonly_db(db_path)
         try:
             columns = {
-                row["name"]
-                for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
+                row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
             }
             activity_columns = [
                 column
-                for column in ("last_active_at", "updated_at", "ended_at", "started_at", "created_at")
+                for column in (
+                    "last_active_at",
+                    "updated_at",
+                    "ended_at",
+                    "started_at",
+                    "created_at",
+                )
                 if column in columns
             ]
             sql = "SELECT * FROM sessions"
             if activity_columns:
                 activity_values = [f"COALESCE({column}, 0)" for column in activity_columns]
-                activity = activity_values[0] if len(activity_values) == 1 else f"MAX({', '.join(activity_values)})"
+                activity = (
+                    activity_values[0]
+                    if len(activity_values) == 1
+                    else f"MAX({', '.join(activity_values)})"
+                )
                 sql += f" ORDER BY {activity} DESC, id DESC"
             else:
                 sql += " ORDER BY id DESC"
@@ -670,7 +673,6 @@ class ConversationsMixin:
             return []
         finally:
             conn.close()
-
 
     def _session(self, profile_dir: Path, session_id: str) -> dict[str, Any] | None:
         db_path = profile_dir / "state.db"
@@ -684,7 +686,6 @@ class ConversationsMixin:
             return None
         finally:
             conn.close()
-
 
     def _messages(self, profile_dir: Path, session_id: str) -> list[dict[str, Any]]:
         db_path = profile_dir / "state.db"
@@ -702,7 +703,6 @@ class ConversationsMixin:
             return []
         finally:
             conn.close()
-
 
     def _persist_conversation_context(
         self,
@@ -752,13 +752,11 @@ class ConversationsMixin:
         finally:
             conn.close()
 
-
     def _open_readonly_db(self, path: Path) -> sqlite3.Connection:
         uri = f"file:{path.resolve()}?mode=ro"
         conn = sqlite3.connect(uri, uri=True, timeout=1.0)
         conn.row_factory = sqlite3.Row
         return conn
-
 
     def _preferred_order_column(
         self,
@@ -769,8 +767,7 @@ class ConversationsMixin:
     ) -> str | None:
         try:
             columns = {
-                row["name"]
-                for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+                row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
             }
         except sqlite3.Error:
             return None
@@ -783,7 +780,6 @@ class ConversationsMixin:
             if column in columns:
                 return column
         return None
-
 
     def _row_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         result = {}

@@ -6,7 +6,6 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-
 MARKDOWN_RESPONSE_GUIDANCE = """# Response format
 Write every user-facing final response as valid GitHub-Flavored Markdown.
 Use headings, lists, tables, links, and fenced code blocks when they improve
@@ -42,7 +41,11 @@ class ConversationPromptMixin:
             rendered = rendered.replace(upstream, "")
         rendered = rendered.strip()
         if include_response_guidance and MARKDOWN_RESPONSE_GUIDANCE not in rendered:
-            rendered = f"{rendered}\n\n{MARKDOWN_RESPONSE_GUIDANCE}" if rendered else MARKDOWN_RESPONSE_GUIDANCE
+            rendered = (
+                f"{rendered}\n\n{MARKDOWN_RESPONSE_GUIDANCE}"
+                if rendered
+                else MARKDOWN_RESPONSE_GUIDANCE
+            )
         if workspace_dir is not None:
             guidance = AGENT_WORKSPACE_GUIDANCE.format(workspace=str(workspace_dir))
             if guidance not in rendered:
@@ -60,6 +63,7 @@ class ConversationPromptMixin:
             workspace_dir = None
         original_build = getattr(agent, "_build_system_prompt", None)
         if callable(original_build):
+
             def build_system_prompt(system_message: Any = None) -> str:
                 return self._format_runtime_prompt(
                     original_build(system_message),

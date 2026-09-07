@@ -5,12 +5,11 @@ from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import aiohttp
-
 
 LLM_ROUTER_PROVIDER_KEY = "xnobrain"
 LLM_ROUTER_PROVIDER = f"custom:{LLM_ROUTER_PROVIDER_KEY}"
@@ -57,6 +56,7 @@ class LLMRouterAPIError(RuntimeError):
         self.code = code
         self.status = status
 
+
 def route_llm_model(model: Any) -> str:
     model_id = str(model or "").strip()
     if not model_id.startswith("oc/"):
@@ -70,7 +70,10 @@ def display_llm_model(model: Any) -> str:
 
 
 def normalize_llm_router_config(
-    config: dict[str, Any], model: str | None = None, *, selection_provider: str | None = None,
+    config: dict[str, Any],
+    model: str | None = None,
+    *,
+    selection_provider: str | None = None,
 ) -> str:
     """Force one Hermes provider while preserving unrelated profile settings."""
 
@@ -107,14 +110,14 @@ def normalize_llm_router_config(
         model_config.pop("assignment_id", None)
 
     provider_config = {
-            "name": "XNOBrain Provider Runtime",
-            "api": LLM_ROUTER_API_BASE_URL,
-            "api_mode": "chat_completions",
-            "default_model": selected_model,
-            "model": selected_model,
-            "key_env": LLM_ROUTER_KEY_ENV,
-            "request_timeout_seconds": 1800,
-            "models": {selected_model: {}},
+        "name": "XNOBrain Provider Runtime",
+        "api": LLM_ROUTER_API_BASE_URL,
+        "api_mode": "chat_completions",
+        "default_model": selected_model,
+        "model": selected_model,
+        "key_env": LLM_ROUTER_KEY_ENV,
+        "request_timeout_seconds": 1800,
+        "models": {selected_model: {}},
     }
     if assignment_id:
         provider_config["extra_headers"] = {
@@ -123,7 +126,6 @@ def normalize_llm_router_config(
     config["providers"] = {LLM_ROUTER_PROVIDER_KEY: provider_config}
     config.pop("fallback_providers", None)
     return selected_model
-
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

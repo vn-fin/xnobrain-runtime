@@ -17,5 +17,11 @@ ROUTES = (
     route("GET", "/teams/{team_id}/runs/{run_id}", "team_runs_get", tags=("Teams",)),
     route("DELETE", "/teams/{team_id}/runs/{run_id}", "team_runs_delete", tags=("Teams",)),
     route("POST", "/teams/{team_id}/runs/{run_id}/cancel", "team_runs_cancel", tags=("Teams",)),
-    route("GET", "/teams/{team_id}/runs/{run_id}/events", "team_run_event_stream", special="team_run_stream", tags=("Teams",)),
+    route(
+        "GET",
+        "/teams/{team_id}/runs/{run_id}/events",
+        "team_run_event_stream",
+        special="team_run_stream",
+        tags=("Teams",),
+    ),
 )

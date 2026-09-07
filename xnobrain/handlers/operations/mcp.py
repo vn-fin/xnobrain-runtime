@@ -9,6 +9,14 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
     path = request.path_params
     service = handler.service.mcp
     return {
-        "mcp_get": (lambda: service.get(path["agent_id"]), "MCP config retrieved successfully", 200),
-        "mcp_put": (lambda: service.update(path["agent_id"], body), "MCP config updated successfully", 200),
+        "mcp_get": (
+            lambda: service.get(path["agent_id"]),
+            "MCP config retrieved successfully",
+            200,
+        ),
+        "mcp_put": (
+            lambda: service.update(path["agent_id"], body),
+            "MCP config updated successfully",
+            200,
+        ),
     }

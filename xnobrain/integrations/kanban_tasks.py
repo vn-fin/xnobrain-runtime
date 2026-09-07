@@ -15,6 +15,7 @@ _TOOL_ACTIVITY_LINE = re.compile(
     r"(?:\s+.*?\s+|\s+)(\d+(?:\.\d+)?)s(?:\s+.*)?$"
 )
 
+
 def task_dependencies(conn: Any, task_id: str) -> list[str]:
     kb = _module()
     return [str(item) for item in kb.parent_ids(conn, task_id)]
@@ -47,7 +48,7 @@ def team_member_task_ids(conn: Any) -> set[str]:
     for row in rows:
         body = str(row["body"] or "")
         try:
-            metadata = json.loads(body[len("[xnobrain:team] "):])
+            metadata = json.loads(body[len("[xnobrain:team] ") :])
         except (TypeError, json.JSONDecodeError):
             continue
         if not isinstance(metadata, dict):
@@ -87,7 +88,9 @@ def task_page(
         params.append(str(assignee))
     query = str(search or "").strip().lower()
     if query:
-        clauses.append("(lower(id) LIKE ? OR lower(title) LIKE ? OR lower(COALESCE(body, '')) LIKE ? OR lower(COALESCE(assignee, '')) LIKE ?)")
+        clauses.append(
+            "(lower(id) LIKE ? OR lower(title) LIKE ? OR lower(COALESCE(body, '')) LIKE ? OR lower(COALESCE(assignee, '')) LIKE ?)"
+        )
         needle = f"%{query}%"
         params.extend([needle, needle, needle, needle])
     where = " AND ".join(clauses)
@@ -115,8 +118,7 @@ def return_failed_task_to_triage(
     kb = _module()
     with kb.write_txn(conn):
         row = conn.execute(
-            "SELECT status, last_failure_error, current_run_id, claim_lock "
-            "FROM tasks WHERE id = ?",
+            "SELECT status, last_failure_error, current_run_id, claim_lock FROM tasks WHERE id = ?",
             (task_id,),
         ).fetchone()
         if row is None:
@@ -200,11 +202,7 @@ def create_task(conn: Any, **fields: Any) -> str:
     if unsupported_requested:
         labels = ", ".join(name.replace("_", " ") for name in unsupported_requested)
         raise ValueError(f"the installed runtime does not support {labels}")
-    compatible = {
-        name: value
-        for name, value in fields.items()
-        if name in supported
-    }
+    compatible = {name: value for name, value in fields.items() if name in supported}
     return str(creator(conn, **compatible))
 
 
@@ -300,18 +298,20 @@ def update_task_fields(
             "VALUES (?, 'edited', ?, unixepoch())",
             (
                 task_id,
-                json.dumps({
-                    "fields": [
-                        field
-                        for field, present in (
-                            ("title", title is not None),
-                            ("description", body is not None),
-                            ("priority", priority is not None),
-                            ("skills", cleaned_skills is not None),
-                        )
-                        if present
-                    ],
-                }),
+                json.dumps(
+                    {
+                        "fields": [
+                            field
+                            for field, present in (
+                                ("title", title is not None),
+                                ("description", body is not None),
+                                ("priority", priority is not None),
+                                ("skills", cleaned_skills is not None),
+                            )
+                            if present
+                        ],
+                    }
+                ),
             ),
         )
     return True
@@ -335,8 +335,7 @@ def update_task_workspace(
         if str(task.status) not in {"triage", "todo", "ready", "scheduled"}:
             raise ValueError("A task workspace can only change before it starts")
         changed = conn.execute(
-            "UPDATE tasks SET workspace_kind = ?, workspace_path = ? "
-            "WHERE id = ? AND status = ?",
+            "UPDATE tasks SET workspace_kind = ?, workspace_path = ? WHERE id = ? AND status = ?",
             (workspace_kind, workspace_path, task_id, str(task.status)),
         )
         if changed.rowcount != 1:
@@ -363,16 +362,18 @@ def safe_worker_activity(task_id: str, *, board: str, limit: int = 80) -> dict[s
             continue
         activity = _TOOL_ACTIVITY_LINE.match(line)
         if activity:
-            entries.append({
-                "kind": "tool",
-                "name": activity.group(1),
-                "duration_seconds": float(activity.group(2)),
-            })
+            entries.append(
+                {
+                    "kind": "tool",
+                    "name": activity.group(1),
+                    "duration_seconds": float(activity.group(2)),
+                }
+            )
     return {
         "exists": bool(content),
         "size_bytes": path.stat().st_size if path.exists() else 0,
         "session_id": session_id,
-        "entries": entries[-max(1, min(int(limit), 200)):],
+        "entries": entries[-max(1, min(int(limit), 200)) :],
     }
 
 

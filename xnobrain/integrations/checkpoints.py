@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 import os
 import re
 import shutil
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
-
 
 FULL_HASH = re.compile(r"^[0-9a-f]{40}$")
 MAX_DIFF_FILES = 200
@@ -26,7 +25,9 @@ class CheckpointIntegrationError(RuntimeError):
 class CheckpointIntegration:
     """Adapt the installed Hermes implementation without exposing its paths."""
 
-    def __init__(self, *, max_snapshots: int = 20, max_total_size_mb: int = 500, max_file_size_mb: int = 10):
+    def __init__(
+        self, *, max_snapshots: int = 20, max_total_size_mb: int = 500, max_file_size_mb: int = 10
+    ):
         self.max_snapshots = max_snapshots
         self.max_total_size_mb = max_total_size_mb
         self.max_file_size_mb = max_file_size_mb
@@ -42,9 +43,9 @@ class CheckpointIntegration:
             ) from exc
         # Hermes resolves this module constant at import time. Tests and the
         # embedded server can select a profile root later, so refresh it here.
-        checkpoint_module.CHECKPOINT_BASE = Path(
-            os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
-        ) / "checkpoints"
+        checkpoint_module.CHECKPOINT_BASE = (
+            Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))) / "checkpoints"
+        )
         manager = checkpoint_module.CheckpointManager(
             enabled=True,
             max_snapshots=self.max_snapshots,
@@ -82,14 +83,18 @@ class CheckpointIntegration:
     def _require_hash(value: str) -> str:
         value = str(value or "").strip().lower()
         if not FULL_HASH.fullmatch(value):
-            raise CheckpointIntegrationError("checkpoint id is invalid", code="invalid_checkpoint_id")
+            raise CheckpointIntegrationError(
+                "checkpoint id is invalid", code="invalid_checkpoint_id"
+            )
         return value
 
     def _owned_hash(self, workspace: Path, checkpoint_id: str):
         checkpoint_id = self._require_hash(checkpoint_id)
         manager, root, store, ref, index, run_git = self._context(workspace)
         ok, stdout, _ = run_git(
-            ["merge-base", "--is-ancestor", checkpoint_id, ref], store, root,
+            ["merge-base", "--is-ancestor", checkpoint_id, ref],
+            store,
+            root,
             allowed_returncodes={1, 128, 129},
         )
         if not ok:
@@ -131,7 +136,17 @@ class CheckpointIntegration:
     @staticmethod
     def _trigger(reason: Any) -> str:
         text = str(reason or "").lower()
-        for value in ("patch", "write_file", "terminal", "workspace write", "workspace delete", "workspace rename", "workspace upload", "workspace create", "restore"):
+        for value in (
+            "patch",
+            "write_file",
+            "terminal",
+            "workspace write",
+            "workspace delete",
+            "workspace rename",
+            "workspace upload",
+            "workspace create",
+            "restore",
+        ):
             if value in text:
                 return value.replace("workspace ", "")
         return "other"
@@ -144,7 +159,9 @@ class CheckpointIntegration:
         checkpoint_id, manager, root, *_ = self._owned_hash(workspace, checkpoint_id)
         result = manager.diff(root, checkpoint_id)
         if not result.get("success"):
-            raise CheckpointIntegrationError("could not generate restore point diff", code="checkpoint_diff_failed", status=503)
+            raise CheckpointIntegrationError(
+                "could not generate restore point diff", code="checkpoint_diff_failed", status=503
+            )
         raw = str(result.get("diff") or "")
         total_bytes = len(raw.encode("utf-8"))
         lines = raw.splitlines(keepends=True)
@@ -170,7 +187,13 @@ class CheckpointIntegration:
         for line in patch.splitlines():
             if line.startswith("diff --git a/"):
                 path = line.split(" b/", 1)[-1]
-                current = {"path": path, "status": "modified", "insertions": 0, "deletions": 0, "binary": False}
+                current = {
+                    "path": path,
+                    "status": "modified",
+                    "insertions": 0,
+                    "deletions": 0,
+                    "binary": False,
+                }
                 files.append(current)
             elif current is not None and line.startswith("new file mode"):
                 current["status"] = "added"
@@ -190,12 +213,19 @@ class CheckpointIntegration:
         current = {"exists": current_path.is_file(), "size": None, "modified_at": None}
         if current_path.is_file():
             stat = current_path.stat()
-            current.update(size=stat.st_size, modified_at=datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat().replace("+00:00", "Z"))
+            current.update(
+                size=stat.st_size,
+                modified_at=datetime.fromtimestamp(stat.st_mtime, timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z"),
+            )
         items: list[dict[str, Any]] = []
         previous: tuple[bool, str | None] | None = None
         for checkpoint in manager.list_checkpoints(root):
             commit = str(checkpoint.get("hash") or "")
-            ok, output, _ = run_git(["ls-tree", commit, "--", relative], store, root, allowed_returncodes={128, 129})
+            ok, output, _ = run_git(
+                ["ls-tree", commit, "--", relative], store, root, allowed_returncodes={128, 129}
+            )
             exists = bool(ok and output.strip())
             blob_id = None
             size = None
@@ -209,19 +239,25 @@ class CheckpointIntegration:
             if signature == previous:
                 continue
             previous = signature
-            items.append({
-                "checkpoint_id": commit,
-                "short_id": str(checkpoint.get("short_hash") or commit[:7]),
-                "created_at": checkpoint.get("timestamp", ""),
-                "reason": checkpoint.get("reason", "restore point"),
-                "exists": exists,
-                "blob_id": blob_id,
-                "size": size,
-            })
+            items.append(
+                {
+                    "checkpoint_id": commit,
+                    "short_id": str(checkpoint.get("short_hash") or commit[:7]),
+                    "created_at": checkpoint.get("timestamp", ""),
+                    "reason": checkpoint.get("reason", "restore point"),
+                    "exists": exists,
+                    "blob_id": blob_id,
+                    "size": size,
+                }
+            )
         return {"path": relative, "current": current, "items": items}
 
-    def restore(self, workspace: Path, checkpoint_id: str, relative: str | None = None) -> dict[str, Any]:
-        checkpoint_id, manager, root, store, ref, index, run_git = self._owned_hash(workspace, checkpoint_id)
+    def restore(
+        self, workspace: Path, checkpoint_id: str, relative: str | None = None
+    ) -> dict[str, Any]:
+        checkpoint_id, manager, root, store, ref, index, run_git = self._owned_hash(
+            workspace, checkpoint_id
+        )
         if not manager._take(root, f"before explicit restore to {checkpoint_id[:8]}"):
             raise CheckpointIntegrationError(
                 "Current workspace state could not be protected; restore was cancelled",
@@ -233,10 +269,21 @@ class CheckpointIntegration:
         else:
             current_diff = manager.diff(root, checkpoint_id)
             if not current_diff.get("success"):
-                raise CheckpointIntegrationError("could not calculate restore impact", code="checkpoint_restore_failed", status=503)
-            targets = [item["path"] for item in self._diff_files(str(current_diff.get("diff") or ""))]
+                raise CheckpointIntegrationError(
+                    "could not calculate restore impact",
+                    code="checkpoint_restore_failed",
+                    status=503,
+                )
+            targets = [
+                item["path"] for item in self._diff_files(str(current_diff.get("diff") or ""))
+            ]
         for target in targets:
-            ok, output, _ = run_git(["ls-tree", checkpoint_id, "--", target], store, root, allowed_returncodes={128, 129})
+            ok, output, _ = run_git(
+                ["ls-tree", checkpoint_id, "--", target],
+                store,
+                root,
+                allowed_returncodes={128, 129},
+            )
             destination = workspace / str(target)
             if not ok or not output.strip():
                 if destination.is_dir() and not destination.is_symlink():
@@ -245,9 +292,14 @@ class CheckpointIntegration:
                     destination.unlink()
                 continue
             restored, _, _ = run_git(
-                ["checkout", checkpoint_id, "--", str(target)], store, root,
-                index_file=index, allowed_returncodes={128, 129},
+                ["checkout", checkpoint_id, "--", str(target)],
+                store,
+                root,
+                index_file=index,
+                allowed_returncodes={128, 129},
             )
             if not restored:
-                raise CheckpointIntegrationError("restore failed", code="checkpoint_restore_failed", status=503)
+                raise CheckpointIntegrationError(
+                    "restore failed", code="checkpoint_restore_failed", status=503
+                )
         return {"safety_checkpoint_created": True}

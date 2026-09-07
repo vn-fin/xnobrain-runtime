@@ -19,18 +19,24 @@ from ..integrations import (
     LLMRouterClient,
 )
 from ..repositories import FileRepository, StoreError
+from .agent_blueprints import AgentBlueprintsServiceMixin
 from .agents import AgentsServiceMixin
 from .analytics import AnalyticsService
 from .automation import AutomationServiceMixin
 from .base import ServiceError
 from .blends import BlendService
-from .conversations import ConversationsServiceMixin
 from .checkpoints import CheckpointService, CheckpointsServiceMixin
 from .conversation_runs import ConversationRunService
+from .conversations import ConversationsServiceMixin
 from .cron import CronService, CronServiceError
+from .errors import EXPECTED_ERRORS
 from .helpers import MemoryCache
+from .hosted import HostedRuntimeService
 from .kanban import KanbanService
+from .marketplace import MarketplaceService
 from .mcp import MCPService
+from .organization_artifacts import OrganizationArtifactsServiceMixin
+from .organization_connector import OrganizationConnector
 from .portability import PortabilityService, PortabilityServiceMixin
 from .providers import ProvidersServiceMixin
 from .sandboxes import SandboxesServiceMixin
@@ -39,14 +45,10 @@ from .teams import TeamsServiceMixin
 from .workspace_preview import WorkspacePreviewError, WorkspacePreviewService
 from .workspace_upload import WorkspaceUploadError, WorkspaceUploadService
 from .workspaces import WorkspacesServiceMixin
-from .organization_artifacts import OrganizationArtifactsServiceMixin
-from .organization_connector import OrganizationConnector
-from .marketplace import MarketplaceService
-from .hosted import HostedRuntimeService
-from .errors import EXPECTED_ERRORS
 
 
 class PlatformService(
+    AgentBlueprintsServiceMixin,
     AgentsServiceMixin,
     AutomationServiceMixin,
     ConversationsServiceMixin,
@@ -78,18 +80,24 @@ class PlatformService(
         self.hosted = HostedRuntimeService(self)
         self.portability = PortabilityService(repository, config.root_profile)
         self.cron = CronService(repository, agents)
-        self.workspace_previews = WorkspacePreviewService(repository.data_dir / "workspace-previews")
+        self.workspace_previews = WorkspacePreviewService(
+            repository.data_dir / "workspace-previews"
+        )
         self.workspace_uploads = WorkspaceUploadService(repository.data_dir / "workspace-uploads")
         self.checkpoints = CheckpointService(agents)
         from .kanban import KanbanService
+
         self.kanban = KanbanService(agents, repository)
         self.cron.kanban = self.kanban
         from .analytics import AnalyticsService
+
         self.analytics = AnalyticsService(agents, router, repository)
         from .blends import BlendService
+
         self.blends = BlendService(router)
         self.conversation_runs = ConversationRunService(repository, agents, self.analytics)
         from .team_runs import TeamRunService
+
         self.team_runs = TeamRunService(repository, agents, self, self.analytics)
         self._cache = MemoryCache()
         self._agent_activity_kanban_ids: set[str] = set()

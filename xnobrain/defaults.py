@@ -4,9 +4,7 @@ import os
 
 BIG_BROTHER_AGENT_ID = "big-brother"
 BIG_BROTHER_DISPLAY_NAME = "Big Brother"
-BIG_BROTHER_DESCRIPTION = (
-    "Platform coordinator for agents, skills, usage, and Kanban work."
-)
+BIG_BROTHER_DESCRIPTION = "Platform coordinator for agents, skills, usage, and Kanban work."
 BIG_BROTHER_SKILL_ID = "big-brother-control"
 BIG_BROTHER_SKILL_CATEGORY = "big-brother"
 CUSTOM_SKILL_CATEGORY = "custom"
@@ -38,5 +36,8 @@ LEGACY_BIG_BROTHER_TOOLSET = "xnobrain-control"
 def memory_enabled() -> bool:
     """Return whether the embedded memory subsystem is enabled by default."""
     return os.environ.get("RUNTIME_HONCHO_MEMORY_ENABLE", "").strip().lower() in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }

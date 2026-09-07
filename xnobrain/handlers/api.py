@@ -25,12 +25,23 @@ class APIHandlers(WorkspaceHandlers, PortabilityHandlers, StreamingHandlers):
 
     @staticmethod
     def success(data: Any, message: str = "ok", status: int = 200) -> JSONResponse:
-        return JSONResponse({"success": True, "data": data, "message": message, "status_code": status}, status_code=status)
+        return JSONResponse(
+            {"success": True, "data": data, "message": message, "status_code": status},
+            status_code=status,
+        )
 
     @staticmethod
     def failure(error: Exception) -> JSONResponse:
         status = int(getattr(error, "status", 500))
-        return JSONResponse({"success": False, "message": str(error), "error": {"code": str(getattr(error, "code", "internal_error"))}, "status_code": status}, status_code=status)
+        return JSONResponse(
+            {
+                "success": False,
+                "message": str(error),
+                "error": {"code": str(getattr(error, "code", "internal_error"))},
+                "status_code": status,
+            },
+            status_code=status,
+        )
 
     async def dispatch(self, request: Request, body: dict[str, Any]) -> Response:
         name = request.scope["route"].name
@@ -47,5 +58,7 @@ class APIHandlers(WorkspaceHandlers, PortabilityHandlers, StreamingHandlers):
                 error.status, error.code = 400, "invalid_request"
             return self.failure(error)
 
-    def _operation(self, name: str, request: Request, body: dict[str, Any]) -> tuple[Callable[[], Any], str, int]:
+    def _operation(
+        self, name: str, request: Request, body: dict[str, Any]
+    ) -> tuple[Callable[[], Any], str, int]:
         return resolve_operation(self, name, request, body)

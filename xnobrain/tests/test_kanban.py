@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import re
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import FastAPI
@@ -58,17 +58,24 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
         root.mkdir()
         profiles.mkdir()
         self.profiles = profiles
-        self.env = patch.dict(os.environ, {
-            "HERMES_HOME": str(root),
-            "HERMES_ROOT_PROFILE": str(root),
-            "HERMES_PROFILES_ROOT": str(profiles),
-            "HERMES_KANBAN_HOME": str(root),
-            "DATA_DIR": self.temp.name,
-        })
+        self.env = patch.dict(
+            os.environ,
+            {
+                "HERMES_HOME": str(root),
+                "HERMES_ROOT_PROFILE": str(root),
+                "HERMES_PROFILES_ROOT": str(profiles),
+                "HERMES_KANBAN_HOME": str(root),
+                "DATA_DIR": self.temp.name,
+            },
+        )
         self.env.start()
         self.app = FastAPI()
         self.composition = XNOBrainApplication(
-            AgentManager(root_profile=root, profiles_root=profiles, legacy_agents_root=Path(self.temp.name) / "legacy"),
+            AgentManager(
+                root_profile=root,
+                profiles_root=profiles,
+                legacy_agents_root=Path(self.temp.name) / "legacy",
+            ),
             GlobalConfigManager(root_profile=root),
             _Router(),
         )
@@ -79,17 +86,22 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
         self.temp.cleanup()
 
     async def test_real_sqlite_task_lifecycle_and_projection(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
             boards = await client.get("/xnobrain/api/runtime/v1/kanban/boards")
             self.assertEqual(boards.status_code, 200, boards.text)
             self.assertEqual(boards.json()["data"][0]["id"], "default")
 
-            created = await client.post("/xnobrain/api/runtime/v1/kanban/boards/default/tasks", json={
-                "title": "Persisted task",
-                "description": "Stored in Hermes SQLite",
-                "status": "todo",
-                "priority": "high",
-            })
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
+                json={
+                    "title": "Persisted task",
+                    "description": "Stored in Hermes SQLite",
+                    "status": "todo",
+                    "priority": "high",
+                },
+            )
             self.assertEqual(created.status_code, 201, created.text)
             task_id = created.json()["data"]["id"]
             self.assertEqual(len(task_id), 10)
@@ -117,9 +129,13 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(done_move.status_code, 409, done_move.text)
 
             from hermes_cli import kanban_db
+
             from xnobrain.integrations import kanban as kanban_adapter
+
             with kanban_adapter.connection("default") as conn:
-                self.assertTrue(kanban_db.complete_task(conn, task_id, summary="Worker completed it"))
+                self.assertTrue(
+                    kanban_db.complete_task(conn, task_id, summary="Worker completed it")
+                )
             done = await client.get(
                 f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}",
             )
@@ -137,16 +153,22 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
 
             visible = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/tasks")
             self.assertEqual(visible.json()["data"]["tasks"], [])
-            all_tasks = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/tasks?include_archived=true")
+            all_tasks = await client.get(
+                "/xnobrain/api/runtime/v1/kanban/boards/default/tasks?include_archived=true"
+            )
             self.assertEqual(len(all_tasks.json()["data"]["tasks"]), 1)
-            boards_with_archive = await client.get("/xnobrain/api/runtime/v1/kanban/boards?include_archived=true")
+            boards_with_archive = await client.get(
+                "/xnobrain/api/runtime/v1/kanban/boards?include_archived=true"
+            )
             self.assertNotIn("tasks", boards_with_archive.json()["data"][0])
             stats = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/stats")
             self.assertEqual(stats.json()["data"]["archived"], 1)
             self.assertEqual(stats.json()["data"]["total"], 1)
 
     async def test_saved_team_expands_to_grouped_native_dag_and_can_cancel(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
             agent_ids = []
             for name in ("Coordinator", "Researcher", "Reviewer"):
                 response = await client.post(
@@ -155,23 +177,36 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(response.status_code, 201, response.text)
                 agent_ids.append(response.json()["data"]["id"])
-            team = await client.post("/xnobrain/api/runtime/v1/teams", json={
-                "name": "Launch team",
-                "orchestrator_id": agent_ids[0],
-                "members": [
-                    {"agent_id": agent_ids[1], "role": "researcher", "allowed_tools": ["web"]},
-                    {"agent_id": agent_ids[2], "role": "reviewer", "allowed_tools": ["web"]},
-                ],
-                "workflow": [
-                    {"id": "review", "task": "Review the research", "role": "reviewer", "needs": ["research"]},
-                    {"id": "research", "task": "Research the launch", "role": "researcher", "skills": ["news-research"]},
-                ],
-                "coordinator_prompt": "Plan the stages before work begins.",
-                "coordinator_skills": ["team-planning"],
-                "synthesis_agent_id": agent_ids[2],
-                "synthesis_skills": ["final-writing"],
-                "synthesis_instruction": "Create the final cited launch plan.",
-            })
+            team = await client.post(
+                "/xnobrain/api/runtime/v1/teams",
+                json={
+                    "name": "Launch team",
+                    "orchestrator_id": agent_ids[0],
+                    "members": [
+                        {"agent_id": agent_ids[1], "role": "researcher", "allowed_tools": ["web"]},
+                        {"agent_id": agent_ids[2], "role": "reviewer", "allowed_tools": ["web"]},
+                    ],
+                    "workflow": [
+                        {
+                            "id": "review",
+                            "task": "Review the research",
+                            "role": "reviewer",
+                            "needs": ["research"],
+                        },
+                        {
+                            "id": "research",
+                            "task": "Research the launch",
+                            "role": "researcher",
+                            "skills": ["news-research"],
+                        },
+                    ],
+                    "coordinator_prompt": "Plan the stages before work begins.",
+                    "coordinator_skills": ["team-planning"],
+                    "synthesis_agent_id": agent_ids[2],
+                    "synthesis_skills": ["final-writing"],
+                    "synthesis_instruction": "Create the final cited launch plan.",
+                },
+            )
             self.assertEqual(team.status_code, 201, team.text)
             self.assertEqual(
                 team.json()["data"]["description"],
@@ -227,16 +262,23 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([item["id"] for item in history.json()["data"]["tasks"]], [root_id])
 
     async def test_compatibility_cron_creation_is_visible_on_default_board(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
-            agent = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Scheduled worker"})
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            agent = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"name": "Scheduled worker"}
+            )
             self.assertEqual(agent.status_code, 201, agent.text)
             agent_id = agent.json()["data"]["id"]
-            cron = await client.post("/xnobrain/api/runtime/v1/cron/jobs", json={
-                "agent_id": agent_id,
-                "name": "Morning review",
-                "prompt": "Review the inbox",
-                "interval_minutes": 60,
-            })
+            cron = await client.post(
+                "/xnobrain/api/runtime/v1/cron/jobs",
+                json={
+                    "agent_id": agent_id,
+                    "name": "Morning review",
+                    "prompt": "Review the inbox",
+                    "interval_minutes": 60,
+                },
+            )
             self.assertEqual(cron.status_code, 201, cron.text)
             job = cron.json()["data"]
             self.assertEqual(job["kanban_board"], "default")
@@ -249,7 +291,9 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(tasks.json()["data"]["tasks"][0]["schedule"])
 
     async def test_deleting_agent_hard_deletes_profile_and_assigned_tasks_on_every_board(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
             created_agent = await client.post(
                 "/xnobrain/api/runtime/v1/agents",
                 json={"display_name": "Disposable assistant"},
@@ -316,7 +360,9 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(project_tasks.json()["data"]["tasks"], [])
 
     async def test_pre_run_assignment_and_clean_transition_conflict(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
             researcher = await client.post(
                 "/xnobrain/api/runtime/v1/agents",
                 json={"name": "researcher"},
@@ -329,7 +375,11 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             reviewer_id = reviewer.json()["data"]["id"]
             created = await client.post(
                 "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
-                json={"title": "Assignable task", "description": "Assign this before it runs.", "status": "backlog"},
+                json={
+                    "title": "Assignable task",
+                    "description": "Assign this before it runs.",
+                    "status": "backlog",
+                },
             )
             task_id = created.json()["data"]["id"]
             assigned = await client.post(
@@ -351,8 +401,10 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(reassigned.status_code, 200, reassigned.text)
             self.assertEqual(reassigned.json()["data"]["assignees"], [reviewer_id])
-            from xnobrain.integrations import kanban as kanban_adapter
             from hermes_cli import kanban_db
+
+            from xnobrain.integrations import kanban as kanban_adapter
+
             with kanban_adapter.connection("default") as conn:
                 native_task = kanban_db.get_task(conn, task_id)
             self.assertEqual(
@@ -366,8 +418,10 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(promoted.status_code, 200, promoted.text)
             self.assertEqual(promoted.json()["data"]["status"], "ready")
-            from xnobrain.integrations import kanban as kanban_adapter
             from hermes_cli import kanban_db
+
+            from xnobrain.integrations import kanban as kanban_adapter
+
             with kanban_adapter.connection("default") as conn:
                 claimed = kanban_db.claim_task(conn, task_id, claimer="test")
             self.assertIsNotNone(claimed)
@@ -384,10 +438,15 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                 json={"assignee": "writer"},
             )
             self.assertEqual(assignment_conflict.status_code, 409, assignment_conflict.text)
-            self.assertEqual(assignment_conflict.json()["message"], "A task can only be assigned before it starts")
+            self.assertEqual(
+                assignment_conflict.json()["message"],
+                "A task can only be assigned before it starts",
+            )
 
     async def test_backlog_moves_forward_to_todo_but_todo_cannot_move_backward(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
             created = await client.post(
                 "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
                 json={
@@ -414,13 +473,19 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(backlog.json()["error"]["code"], "invalid_transition")
 
     async def test_disabled_assignee_skill_is_rejected_server_side(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
-            agent = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Policy worker"})
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            agent = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"name": "Policy worker"}
+            )
             agent_id = agent.json()["data"]["id"]
             with patch.object(
                 self.composition.service.agents,
                 "list_skills",
-                return_value={"skills": [{"skill_id": "disabled-skill", "installed": True, "enabled": False}]},
+                return_value={
+                    "skills": [{"skill_id": "disabled-skill", "installed": True, "enabled": False}]
+                },
             ):
                 rejected = await client.post(
                     "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
@@ -436,14 +501,22 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(rejected.json()["error"]["code"], "skill_not_enabled")
 
     async def test_board_event_feed_uses_safe_public_shapes(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
             created = await client.post(
                 "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
-                json={"title": "Event task", "description": "Generate a safe event.", "status": "backlog"},
+                json={
+                    "title": "Event task",
+                    "description": "Generate a safe event.",
+                    "status": "backlog",
+                },
             )
             task_id = created.json()["data"]["id"]
             rows = self.composition.service.kanban.board_events("default", after_id=0)
-            event = next(item for item in rows if item["task_id"] == task_id and item["kind"] == "created")
+            event = next(
+                item for item in rows if item["task_id"] == task_id and item["kind"] == "created"
+            )
             self.assertEqual(event["title"], "Event task")
             self.assertEqual(event["status"], "triage")
             self.assertEqual(event["kanban_status"], "backlog")
@@ -460,7 +533,9 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                 )
             return False, f"task {task_id} is 'ready'; promote only applies to 'todo' or 'blocked'"
 
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
             created = await client.post(
                 "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
                 json={
@@ -481,34 +556,62 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(moved.json()["data"]["kanban_status"], "running")
 
     async def test_board_metadata_never_exposes_hermes_database_path(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
-            created = await client.post("/xnobrain/api/runtime/v1/kanban/boards", json={"slug": "safe-board", "name": "Safe board"})
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/kanban/boards",
+                json={"slug": "safe-board", "name": "Safe board"},
+            )
             self.assertEqual(created.status_code, 201, created.text)
             self.assertNotIn("db_path", created.json()["data"])
-            updated = await client.patch("/xnobrain/api/runtime/v1/kanban/boards/safe-board", json={"description": "No path"})
+            updated = await client.patch(
+                "/xnobrain/api/runtime/v1/kanban/boards/safe-board", json={"description": "No path"}
+            )
             self.assertEqual(updated.status_code, 200, updated.text)
             self.assertNotIn("db_path", updated.json()["data"])
 
     async def test_dependencies_events_and_pagination_use_safe_public_shapes(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
-            first = await client.post("/xnobrain/api/runtime/v1/kanban/boards/default/tasks", json={"title": "Parent", "description": "Finish the parent.", "status": "todo"})
-            second = await client.post("/xnobrain/api/runtime/v1/kanban/boards/default/tasks", json={"title": "Child", "description": "Wait for the parent.", "status": "todo"})
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            first = await client.post(
+                "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
+                json={"title": "Parent", "description": "Finish the parent.", "status": "todo"},
+            )
+            second = await client.post(
+                "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
+                json={"title": "Child", "description": "Wait for the parent.", "status": "todo"},
+            )
             parent_id = first.json()["data"]["id"]
             child_id = second.json()["data"]["id"]
-            linked = await client.post(f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{child_id}/links", json={"parent_id": parent_id, "child_id": child_id})
+            linked = await client.post(
+                f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{child_id}/links",
+                json={"parent_id": parent_id, "child_id": child_id},
+            )
             self.assertEqual(linked.status_code, 201, linked.text)
             self.assertEqual(linked.json()["data"]["parent_id"], parent_id)
-            unlinked = await client.request("DELETE", f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{child_id}/links", json={"parent_id": parent_id, "child_id": child_id})
+            unlinked = await client.request(
+                "DELETE",
+                f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{child_id}/links",
+                json={"parent_id": parent_id, "child_id": child_id},
+            )
             self.assertEqual(unlinked.status_code, 200, unlinked.text)
-            page = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/tasks?limit=1&offset=0")
+            page = await client.get(
+                "/xnobrain/api/runtime/v1/kanban/boards/default/tasks?limit=1&offset=0"
+            )
             self.assertEqual(page.status_code, 200, page.text)
             self.assertEqual(page.json()["data"]["limit"], 1)
-            events = await client.get(f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{child_id}/events")
+            events = await client.get(
+                f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{child_id}/events"
+            )
             self.assertEqual(events.status_code, 200, events.text)
             self.assertNotIn("workspace_path", events.text)
 
     async def test_board_list_is_lightweight_and_selected_board_has_stats(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
             for index in range(3):
                 created = await client.post(
                     "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
@@ -529,8 +632,12 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(stats.json()["data"]["current"], 3)
             self.assertEqual(stats.json()["data"]["by_status"]["backlog"], 3)
 
-            first = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/tasks?limit=2&offset=0")
-            second = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/tasks?limit=2&offset=2")
+            first = await client.get(
+                "/xnobrain/api/runtime/v1/kanban/boards/default/tasks?limit=2&offset=0"
+            )
+            second = await client.get(
+                "/xnobrain/api/runtime/v1/kanban/boards/default/tasks?limit=2&offset=2"
+            )
             self.assertEqual(first.json()["data"]["total"], 3)
             self.assertEqual(len(first.json()["data"]["tasks"]), 2)
             self.assertEqual(len(second.json()["data"]["tasks"]), 1)
@@ -548,13 +655,17 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_pre_run_edit_skills_comments_activity_and_conversation_link(self):
         from hermes_cli import kanban_db
 
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
             missing_brief = await client.post(
                 "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
                 json={"title": "Missing worker brief", "status": "backlog"},
             )
             self.assertEqual(missing_brief.status_code, 422, missing_brief.text)
-            agent = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Brief writer"})
+            agent = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"name": "Brief writer"}
+            )
             self.assertEqual(agent.status_code, 201, agent.text)
             agent_id = agent.json()["data"]["id"]
             inventory = {
@@ -563,7 +674,9 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                     {"skill_id": "web-research", "installed": True, "enabled": True},
                 ]
             }
-            with patch.object(self.composition.service.agents, "list_skills", return_value=inventory):
+            with patch.object(
+                self.composition.service.agents, "list_skills", return_value=inventory
+            ):
                 created = await client.post(
                     "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
                     json={
@@ -578,7 +691,9 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             task_id = created.json()["data"]["id"]
             self.assertEqual(created.json()["data"]["workspace_kind"], "dir")
 
-            with patch.object(self.composition.service.agents, "list_skills", return_value=inventory):
+            with patch.object(
+                self.composition.service.agents, "list_skills", return_value=inventory
+            ):
                 updated = await client.patch(
                     f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}",
                     json={
@@ -626,8 +741,12 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_assigned_automation_approvals_heartbeat_filter_and_cancel(self):
         from hermes_cli import kanban_db
 
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
-            agent = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Automation worker"})
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            agent = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"name": "Automation worker"}
+            )
             self.assertEqual(agent.status_code, 201, agent.text)
             agent_id = agent.json()["data"]["id"]
             created = await client.post(
@@ -668,10 +787,9 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
                 f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}",
             )
             self.assertEqual(detail.status_code, 200, detail.text)
-            self.assertFalse(any(
-                event["kind"] == "heartbeat"
-                for event in detail.json()["data"]["events"]
-            ))
+            self.assertFalse(
+                any(event["kind"] == "heartbeat" for event in detail.json()["data"]["events"])
+            )
 
             cancelled = await client.post(
                 f"/xnobrain/api/runtime/v1/kanban/boards/default/tasks/{task_id}/cancel",
@@ -682,8 +800,12 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_sqlite_schedule_locks_moves_and_releases_without_claiming(self):
         scheduled_at = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(microsecond=0)
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
-            agent = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Scheduled worker"})
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            agent = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"name": "Scheduled worker"}
+            )
             agent_id = agent.json()["data"]["id"]
             created = await client.post(
                 "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
@@ -750,12 +872,17 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(resume.json()["message"], "one-time schedule has already run")
 
     async def test_recurring_schedule_creates_idempotent_occurrences(self):
-        from xnobrain.integrations import kanban as kanban_adapter
         from hermes_cli import kanban_db
 
+        from xnobrain.integrations import kanban as kanban_adapter
+
         scheduled_at = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(microsecond=0)
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
-            agent = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Repeating worker"})
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            agent = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"name": "Repeating worker"}
+            )
             agent_id = agent.json()["data"]["id"]
             created = await client.post(
                 "/xnobrain/api/runtime/v1/kanban/boards/default/tasks",
@@ -784,7 +911,8 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             with kanban_adapter.connection("default") as conn:
                 tasks = kanban_db.list_tasks(conn, include_archived=True)
                 occurrences = [
-                    task for task in tasks
+                    task
+                    for task in tasks
                     if str(task.id) != template_id
                     and str(task.idempotency_key or "").startswith(f"schedule:{template_id}:")
                 ]
@@ -792,8 +920,12 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(str(occurrences[0].status), {"todo", "ready"})
 
     async def test_api_created_conversations_use_the_native_session_id_shape(self):
-        async with AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test") as client:
-            agent = await client.post("/xnobrain/api/runtime/v1/agents", json={"name": "Session worker"})
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            agent = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"name": "Session worker"}
+            )
             agent_id = agent.json()["data"]["id"]
             conversation = await client.post(
                 f"/xnobrain/api/runtime/v1/conversations?agent={agent_id}",

@@ -10,14 +10,14 @@ imported by tooling and tests that do not install the Hermes runtime.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import asyncio
 import inspect
 import json
 import logging
-from pathlib import Path
 import re
 import time
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Iterator
 
 _log = logging.getLogger("xnobrain.kanban")
@@ -61,8 +61,13 @@ def board_slug(value: str | None) -> str:
         normalized = normalizer(slug)
         if normalized:
             return normalized
-    if not slug or len(slug) > 64 or any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789-_" for ch in slug):
+    if (
+        not slug
+        or len(slug) > 64
+        or any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789-_" for ch in slug)
+    ):
         raise ValueError("invalid board slug")
     return slug
+
 
 __all__ = [name for name in globals() if not name.startswith("__")]

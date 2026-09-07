@@ -8,7 +8,15 @@ from pydantic import BaseModel, Field
 class SmartRouteModel(BaseModel):
     model: str = Field(min_length=1, max_length=256)
     reasoning: Literal[
-        "auto", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+        "auto",
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra",
     ] = "auto"
 
 
@@ -29,7 +37,9 @@ class BlendCreate(BaseModel):
 
 
 class BlendPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+    name: str | None = Field(
+        default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    )
     models: list[str] | None = Field(default=None, min_length=1, max_length=24)
     strategy: Literal["fallback", "round-robin", "fusion", "smart-route"] | None = None
     judge_model: str | None = Field(default=None, max_length=256)

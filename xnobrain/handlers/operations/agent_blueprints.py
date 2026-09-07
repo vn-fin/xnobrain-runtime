@@ -1,0 +1,38 @@
+"""Agent Maker blueprint operation handlers."""
+
+from typing import Any, Callable
+
+Operation = tuple[Callable[[], Any], str, int]
+
+
+def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Operation]:
+    path, query, service = request.path_params, request.query_params, handler.service
+
+    def owner() -> str:
+        value = str(query.get("agent") or "").strip()
+        if not value:
+            raise ValueError("agent is required")
+        return value
+
+    return {
+        "agent_blueprints_create": (
+            lambda: service.create_agent_blueprint(owner(), body),
+            "agent blueprint created successfully",
+            201,
+        ),
+        "agent_blueprints_get": (
+            lambda: service.get_agent_blueprint(owner(), path["blueprint_id"]),
+            "agent blueprint retrieved successfully",
+            200,
+        ),
+        "agent_blueprints_patch": (
+            lambda: service.patch_agent_blueprint(owner(), path["blueprint_id"], body),
+            "agent blueprint updated successfully",
+            200,
+        ),
+        "agent_blueprints_approve": (
+            lambda: service.approve_agent_blueprint(owner(), path["blueprint_id"], body),
+            "agent blueprint approved successfully",
+            200,
+        ),
+    }

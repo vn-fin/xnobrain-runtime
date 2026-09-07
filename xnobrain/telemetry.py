@@ -43,18 +43,14 @@ def configure(app) -> None:
             {
                 "service.name": os.getenv("SERVICE_NAME", "xnobrain-runtime-services"),
                 "service.version": os.getenv("XNOBRAIN_VERSION", "dev"),
-                "deployment.environment.name": os.getenv(
-                    "DEVELOPMENT_ENVIRONMENT", "development"
-                ),
+                "deployment.environment.name": os.getenv("DEVELOPMENT_ENVIRONMENT", "development"),
             }
         )
     )
     if endpoint:
         exporter = OTLPSpanExporter(
             endpoint=endpoint,
-            insecure=str(os.getenv("OTEL_EXPORTER_OTLP_INSECURE", "true"))
-            .strip()
-            .lower()
+            insecure=str(os.getenv("OTEL_EXPORTER_OTLP_INSECURE", "true")).strip().lower()
             in {"1", "true", "yes", "on"},
         )
         provider.add_span_processor(
@@ -74,6 +70,9 @@ def configure(app) -> None:
     GrpcAioInstrumentorServer().instrument()
     try:
         from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
+
         AioHttpClientInstrumentor().instrument()
     except ImportError:
-        logging.getLogger("xnobrain.telemetry").warning("aiohttp OpenTelemetry instrumentation is unavailable")
+        logging.getLogger("xnobrain.telemetry").warning(
+            "aiohttp OpenTelemetry instrumentation is unavailable"
+        )

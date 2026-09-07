@@ -2,23 +2,32 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import threading
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 from zipfile import BadZipFile, ZipFile
 
-
-OFFICE_EXTENSIONS = frozenset({
-    ".doc", ".docx", ".odt", ".rtf",
-    ".xls", ".xlsx", ".xlsm", ".ods",
-    ".ppt", ".pptx", ".odp",
-})
+OFFICE_EXTENSIONS = frozenset(
+    {
+        ".doc",
+        ".docx",
+        ".odt",
+        ".rtf",
+        ".xls",
+        ".xlsx",
+        ".xlsm",
+        ".ods",
+        ".ppt",
+        ".pptx",
+        ".odp",
+    }
+)
 SPREADSHEET_EXTENSIONS = frozenset({".xls", ".xlsx", ".xlsm", ".ods"})
 MAX_PREVIEW_SOURCE_BYTES = 25 * 1024 * 1024
 MAX_PREVIEW_BYTES = 50 * 1024 * 1024

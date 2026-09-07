@@ -1,7 +1,7 @@
 """Shared, side-effect-free query parameter parsing."""
 
-from datetime import datetime, timezone
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -22,9 +22,7 @@ def _parse_epoch(value: Any) -> float:
     try:
         return float(text)
     except ValueError:
-        return datetime.strptime(text, "%Y-%m-%d").replace(
-            tzinfo=timezone.utc
-        ).timestamp()
+        return datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()
 
 
 def time_range(query: Any) -> dict[str, float]:

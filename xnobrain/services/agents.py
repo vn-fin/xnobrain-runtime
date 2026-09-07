@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 import hashlib
 import json
 import logging
 import os
-from pathlib import Path
 import time
-from typing import Any, Mapping
 import uuid
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, Mapping
 
 import yaml
 
 from ..defaults import (
-    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_AGENT_ID,
+    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
     BIG_BROTHER_MODEL_DEFAULT_MARKER,
@@ -48,7 +48,6 @@ from .helpers import cached_method
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError
 from .workspace_upload import WorkspaceUploadError
 
-
 AGENT_ACTIVITY_KANBAN_TTL_SECONDS = 10.0
 
 
@@ -56,22 +55,26 @@ class AgentsServiceMixin:
     def list_profiles(self) -> list[dict[str, Any]]:
         """Use Hermes' native profile inventory, including the default profile."""
         from hermes_cli.profiles import list_profiles
-        registry = {
-            item["name"]: item
-            for item in self.agents.sync_profiles_registry()["profiles"]
-        }
+
+        registry = {item["name"]: item for item in self.agents.sync_profiles_registry()["profiles"]}
         result = []
         for item in list_profiles():
             updated_at = item.path.stat().st_mtime if item.path.exists() else None
             metadata = registry.get(item.name, {})
-            result.append({
-                "name": item.name, "path": str(item.path), "is_default": item.is_default,
-                "gateway_running": item.gateway_running, "model": item.model,
-                "provider": item.provider, "skill_count": item.skill_count,
-                "display_name": metadata.get("display_name", item.name),
-                "description": metadata.get("description", item.description),
-                "updated_at": metadata.get("updated_at", updated_at),
-            })
+            result.append(
+                {
+                    "name": item.name,
+                    "path": str(item.path),
+                    "is_default": item.is_default,
+                    "gateway_running": item.gateway_running,
+                    "model": item.model,
+                    "provider": item.provider,
+                    "skill_count": item.skill_count,
+                    "display_name": metadata.get("display_name", item.name),
+                    "description": metadata.get("description", item.description),
+                    "updated_at": metadata.get("updated_at", updated_at),
+                }
+            )
         return result
 
     @cached_method("agents")
@@ -142,11 +145,7 @@ class AgentsServiceMixin:
         )
         bundled_skill = bundled_skill_path.read_text(encoding="utf-8")
         installed_skill_path = (
-            profile
-            / "skills"
-            / BIG_BROTHER_SKILL_CATEGORY
-            / BIG_BROTHER_SKILL_ID
-            / "SKILL.md"
+            profile / "skills" / BIG_BROTHER_SKILL_CATEGORY / BIG_BROTHER_SKILL_ID / "SKILL.md"
         )
         installed_skill = (
             installed_skill_path.read_text(encoding="utf-8")
@@ -154,12 +153,14 @@ class AgentsServiceMixin:
             else None
         )
         if installed_skill != bundled_skill:
-            await self.config.install_skill({
-                "skill_id": BIG_BROTHER_SKILL_ID,
-                "category": BIG_BROTHER_SKILL_CATEGORY,
-                "content": bundled_skill,
-                "enable": True,
-            })
+            await self.config.install_skill(
+                {
+                    "skill_id": BIG_BROTHER_SKILL_ID,
+                    "category": BIG_BROTHER_SKILL_CATEGORY,
+                    "content": bundled_skill,
+                    "enable": True,
+                }
+            )
         elif not next(
             (
                 item.get("enabled", True)
@@ -182,9 +183,7 @@ class AgentsServiceMixin:
 
     def _migrate_big_brother_skill_category(self, profile: Path) -> None:
         """Move the former root-level bundled skill out of profile inheritance."""
-        destination = (
-            profile / "skills" / BIG_BROTHER_SKILL_CATEGORY / BIG_BROTHER_SKILL_ID
-        )
+        destination = profile / "skills" / BIG_BROTHER_SKILL_CATEGORY / BIG_BROTHER_SKILL_ID
         for legacy in (
             profile / "skills" / BIG_BROTHER_SKILL_ID,
             profile / "skills" / CUSTOM_SKILL_CATEGORY / BIG_BROTHER_SKILL_ID,
@@ -236,10 +235,7 @@ class AgentsServiceMixin:
         api_server = platforms.get("api_server")
         if not isinstance(api_server, list):
             api_server = []
-        next_api_server = [
-            item for item in api_server
-            if item != LEGACY_BIG_BROTHER_TOOLSET
-        ]
+        next_api_server = [item for item in api_server if item != LEGACY_BIG_BROTHER_TOOLSET]
         for toolset in BIG_BROTHER_NATIVE_TOOLSETS:
             if toolset not in next_api_server:
                 next_api_server.append(toolset)
@@ -406,7 +402,9 @@ class AgentsServiceMixin:
             if translated:
                 self.config.update_config(translated)
             if checkpoint_value is not None:
-                self.config.update_config({"config": {"checkpoints": {"enabled": bool(checkpoint_value)}}})
+                self.config.update_config(
+                    {"config": {"checkpoints": {"enabled": bool(checkpoint_value)}}}
+                )
             result = self.agents.describe_agent(agent_id)["config"]
         else:
             profile = self.repository.profile_path(agent_id)
@@ -451,9 +449,7 @@ class AgentsServiceMixin:
         agent_ids = [str(item.get("id") or "").strip() for item in agents]
         agent_ids = [agent_id for agent_id in agent_ids if agent_id]
         profile_agent_ids = [
-            agent_id
-            for agent_id in agent_ids
-            if not self._is_big_brother(agent_id)
+            agent_id for agent_id in agent_ids if not self._is_big_brother(agent_id)
         ]
         concurrency = asyncio.Semaphore(8)
 
@@ -520,14 +516,17 @@ class AgentsServiceMixin:
         requested = body.get("agent_ids")
         if not isinstance(requested, list):
             raise ServiceError("agent_ids is required", status=422, code="invalid_agent_ids")
-        agent_ids = list(dict.fromkeys(str(value).strip() for value in requested if str(value).strip()))
+        agent_ids = list(
+            dict.fromkeys(str(value).strip() for value in requested if str(value).strip())
+        )
         if not agent_ids:
             raise ServiceError("select at least one agent", status=422, code="invalid_agent_ids")
-        known = {
-            str(item.get("id") or "").strip()
-            for item in await self.list_agents_async()
-        }
-        invalid = [agent_id for agent_id in agent_ids if agent_id not in known or self._is_big_brother(agent_id)]
+        known = {str(item.get("id") or "").strip() for item in await self.list_agents_async()}
+        invalid = [
+            agent_id
+            for agent_id in agent_ids
+            if agent_id not in known or self._is_big_brother(agent_id)
+        ]
         if invalid:
             raise ServiceError(
                 f"agents cannot be synchronized: {', '.join(invalid)}",
@@ -540,14 +539,18 @@ class AgentsServiceMixin:
         """Install a URL, hub identifier, or local SKILL.md into the root profile."""
         requested_id = str(body.get("skill_id") or body.get("name") or "").strip()
         self._reject_control_skill(requested_id)
-        result = await self.config.install_skill({
-            **dict(body),
-            "category": CUSTOM_SKILL_CATEGORY,
-            "enable": False,
-        })
+        result = await self.config.install_skill(
+            {
+                **dict(body),
+                "category": CUSTOM_SKILL_CATEGORY,
+                "enable": False,
+            }
+        )
         return self._default_skills(result["skills"])
 
-    def set_default_skill_enabled(self, skill_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
+    def set_default_skill_enabled(
+        self, skill_id: str, body: Mapping[str, Any]
+    ) -> list[dict[str, Any]]:
         """Change whether new profiles inherit a default-profile skill."""
         self._reject_control_skill(skill_id)
         result = self.config.set_skill_enabled(skill_id, body)
@@ -555,18 +558,14 @@ class AgentsServiceMixin:
 
     async def install_skill(self, agent_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
         install_body = dict(body)
-        requested_id = str(
-            install_body.get("skill_id") or install_body.get("name") or ""
-        ).strip()
+        requested_id = str(install_body.get("skill_id") or install_body.get("name") or "").strip()
         if not self._is_big_brother(agent_id):
             self._reject_control_skill(requested_id)
         has_payload = "content" in install_body or bool(
             str(install_body.get("source") or "").strip()
         )
         if not has_payload:
-            skill_id = str(
-                install_body.get("skill_id") or install_body.get("name") or ""
-            ).strip()
+            skill_id = str(install_body.get("skill_id") or install_body.get("name") or "").strip()
             library_skill = next(
                 (
                     item
@@ -598,20 +597,23 @@ class AgentsServiceMixin:
 
         if self._is_big_brother(agent_id):
             return (
-                await self.config.install_skill({
-                    **install_body,
-                    "category": CUSTOM_SKILL_CATEGORY,
-                    "enable": False,
-                })
+                await self.config.install_skill(
+                    {
+                        **install_body,
+                        "category": CUSTOM_SKILL_CATEGORY,
+                        "enable": False,
+                    }
+                )
             )["skills"]
-        payload = await self.agents.install_skill(agent_id, {
-            **install_body,
-            "category": CUSTOM_SKILL_CATEGORY,
-            "enable": False,
-        })
-        skill_id = str(
-            install_body.get("skill_id") or install_body.get("name") or ""
-        ).strip()
+        payload = await self.agents.install_skill(
+            agent_id,
+            {
+                **install_body,
+                "category": CUSTOM_SKILL_CATEGORY,
+                "enable": False,
+            },
+        )
+        skill_id = str(install_body.get("skill_id") or install_body.get("name") or "").strip()
         if skill_id and "content" in install_body:
             self.repository.snapshot(
                 agent_id,
@@ -621,7 +623,9 @@ class AgentsServiceMixin:
             )
         return payload["skills"]
 
-    def set_skill_enabled(self, agent_id: str, skill_id: str, body: Mapping[str, Any]) -> list[dict[str, Any]]:
+    def set_skill_enabled(
+        self, agent_id: str, skill_id: str, body: Mapping[str, Any]
+    ) -> list[dict[str, Any]]:
         if self._is_big_brother(agent_id):
             return self.config.set_skill_enabled(skill_id, body)["skills"]
         self._reject_control_skill(skill_id)
@@ -681,25 +685,23 @@ class AgentsServiceMixin:
                 continue
             target = "config" if current_kind == "config" else path.parent.name
             payload = path.read_bytes()
-            result.append({
-                "id": path.stem,
-                "agent_id": BIG_BROTHER_AGENT_ID,
-                "kind": current_kind,
-                "target": target,
-                "hash": hashlib.sha256(payload).hexdigest(),
-                "path": relative.as_posix(),
-                "created_at": path.stat().st_mtime,
-            })
+            result.append(
+                {
+                    "id": path.stem,
+                    "agent_id": BIG_BROTHER_AGENT_ID,
+                    "kind": current_kind,
+                    "target": target,
+                    "hash": hashlib.sha256(payload).hexdigest(),
+                    "path": relative.as_posix(),
+                    "created_at": path.stat().st_mtime,
+                }
+            )
         return sorted(result, key=lambda item: item["created_at"], reverse=True)
 
     def _restore_root_snapshot(self, snapshot_id: str) -> dict[str, Any]:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", snapshot_id):
             raise StoreError("invalid snapshot id")
-        matches = [
-            item
-            for item in self._list_root_snapshots()
-            if item["id"] == snapshot_id
-        ]
+        matches = [item for item in self._list_root_snapshots() if item["id"] == snapshot_id]
         if not matches:
             raise StoreError("snapshot not found", status=404, code="not_found")
         item = matches[0]
@@ -724,7 +726,9 @@ class AgentsServiceMixin:
         metadata = dict(item.get("metadata") or {})
         config = dict(item.get("config") or {})
         name = str(item.get("name") or item.get("profile_name") or "")
-        display_name = str(metadata.get("display_name") or metadata.get("title") or metadata.get("name") or name)
+        display_name = str(
+            metadata.get("display_name") or metadata.get("title") or metadata.get("name") or name
+        )
         public_metadata = {
             "display_name": display_name,
             "description": str(metadata.get("description") or ""),

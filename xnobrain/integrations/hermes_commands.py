@@ -2,11 +2,11 @@
 
 from .hermes_support import (
     AGENT_CREDENTIAL_ENV_KEYS,
+    LLM_ROUTER_KEY_ENV,
+    LLM_ROUTER_PROVIDER,
     AgentAPIError,
     Any,
     Mapping,
-    LLM_ROUTER_KEY_ENV,
-    LLM_ROUTER_PROVIDER,
     Path,
     asyncio,
     os,
@@ -29,7 +29,6 @@ class HermesCommandsMixin:
             engine=engine,
             timeout_seconds=timeout_seconds,
         )
-
 
     async def _run_hermes_command(
         self,
@@ -77,7 +76,6 @@ class HermesCommandsMixin:
             "stderr": stderr.decode("utf-8", "replace"),
         }
 
-
     def _command_env(self, hermes_home: Path, engine: str) -> dict[str, str]:
         self._ensure_router_api_key()
         env = os.environ.copy()
@@ -86,7 +84,6 @@ class HermesCommandsMixin:
         env.setdefault("HERMES_ACCEPT_HOOKS", "1")
         self._load_agent_credentials(env)
         return env
-
 
     @staticmethod
     def _ensure_router_api_key() -> None:
@@ -102,10 +99,8 @@ class HermesCommandsMixin:
         if token:
             os.environ[LLM_ROUTER_KEY_ENV] = token
 
-
     def _hermes_binary(self) -> str:
         return os.environ.get("HERMES_CLI", "hermes")
-
 
     def _agent_config_dir(self) -> Path:
         configured = os.environ.get("AGENT_CONFIG_DIR")
@@ -113,13 +108,11 @@ class HermesCommandsMixin:
             return Path(configured)
         return Path(os.environ.get("HOME") or str(Path.home())) / ".config" / "sandbox-agent"
 
-
     def _agent_env_file(self) -> Path:
         configured = os.environ.get("AGENT_ENV_FILE")
         if configured:
             return Path(configured)
         return self._agent_config_dir() / "credentials.env"
-
 
     def _load_agent_credentials(self, env: dict[str, str]) -> None:
         env_file = self._agent_env_file()
@@ -136,7 +129,6 @@ class HermesCommandsMixin:
             value = value.strip()
             if key in allowed and value:
                 env[key] = value
-
 
     def _conversation_provider(self, profile_dir: Path, body: Mapping[str, Any]) -> str:
         return LLM_ROUTER_PROVIDER

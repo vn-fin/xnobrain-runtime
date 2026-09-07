@@ -2,10 +2,10 @@
 
 import unittest
 
+from xnobrain.integrations.llm_router import LLMRouterClient
 from xnobrain.routes.providers import ROUTES
 from xnobrain.services.helpers import MemoryCache
 from xnobrain.services.providers import ProvidersServiceMixin
-from xnobrain.integrations.llm_router import LLMRouterClient
 
 
 class _Router:
@@ -64,7 +64,9 @@ class ProviderCatalogTests(unittest.IsolatedAsyncioTestCase):
             "llma_org",
         )
         self.assertEqual(service.router.requests, [("GET", "/models?kind=llm")])
-        self.assertTrue(next(item for item in providers if item["id"] == "openai-like")["requires_base_url"])
+        self.assertTrue(
+            next(item for item in providers if item["id"] == "openai-like")["requires_base_url"]
+        )
 
     async def test_catalog_maps_gorouter_owned_models_by_public_prefix(self):
         class Router(LLMRouterClient):

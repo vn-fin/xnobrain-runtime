@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import copy
-from functools import wraps
 import inspect
 import threading
+from functools import wraps
 from typing import Any, Callable
-
 
 _MISSING = object()
 
@@ -72,6 +71,7 @@ def cached_method(
 
     def decorator(method):
         if inspect.iscoroutinefunction(method):
+
             @wraps(method)
             async def async_wrapper(instance, *args, **kwargs):
                 if args or kwargs:
@@ -118,7 +118,5 @@ def cached_method(
 def _service_cache(instance: Any, attribute: str) -> MemoryCache:
     cache = getattr(instance, attribute, None)
     if not isinstance(cache, MemoryCache):
-        raise RuntimeError(
-            f"{type(instance).__name__} must initialize {attribute} = MemoryCache()"
-        )
+        raise RuntimeError(f"{type(instance).__name__} must initialize {attribute} = MemoryCache()")
     return cache

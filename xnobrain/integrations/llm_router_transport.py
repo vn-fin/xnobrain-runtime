@@ -1,14 +1,14 @@
 """Transport helpers for the centralized OpenAI-compatible LLM router client."""
 
 from .llm_router_support import (
-    Any,
-    Mapping,
-    LLM_ROUTER_PROVIDER_KEY,
-    LLMRouterAPIError,
     _SAFE_ID_RE,
+    LLM_ROUTER_PROVIDER_KEY,
+    Any,
+    LLMRouterAPIError,
+    Mapping,
+    Path,
     aiohttp,
     os,
-    Path,
 )
 
 
@@ -59,7 +59,10 @@ class LLMRouterTransportMixin:
                         except Exception:
                             payload = {"error": (await response.text()).strip()}
                         if response.status < 200 or response.status >= 300:
-                            message = self._error_message(payload) or f"Provider runtime returned HTTP {response.status}"
+                            message = (
+                                self._error_message(payload)
+                                or f"Provider runtime returned HTTP {response.status}"
+                            )
                             raise LLMRouterAPIError(message, status=response.status)
                         return dict(payload) if isinstance(payload, Mapping) else {"data": payload}
         except LLMRouterAPIError:
@@ -77,10 +80,8 @@ class LLMRouterTransportMixin:
             raise LLMRouterAPIError(f"{field} is invalid", status=400)
         return normalized
 
-
     def _model_owner(self, model_id: str) -> str:
         return model_id.split("/", 1)[0] if "/" in model_id else LLM_ROUTER_PROVIDER_KEY
-
 
     def _error_message(self, payload: Any) -> str:
         if not isinstance(payload, Mapping):

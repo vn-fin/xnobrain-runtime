@@ -1,10 +1,10 @@
 """Runtime-owned blend persistence and direct-router execution tests."""
 
 import json
-from pathlib import Path
-from tempfile import TemporaryDirectory
 import unittest
 import unittest.mock
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from xnobrain.integrations.llm_router import LLMRouterClient
 from xnobrain.services.blends import BlendService
@@ -41,12 +41,14 @@ class LocalBlendTests(unittest.IsolatedAsyncioTestCase):
         self.service = BlendService(self.router)
 
     async def test_create_update_delete_persist_locally_without_management_calls(self):
-        created = await self.service.create_blend({
-            "name": "duo",
-            "models": ["openai/fast", "anthropic/deep"],
-            "strategy": "round-robin",
-            "sticky_limit": 3,
-        })
+        created = await self.service.create_blend(
+            {
+                "name": "duo",
+                "models": ["openai/fast", "anthropic/deep"],
+                "strategy": "round-robin",
+                "sticky_limit": 3,
+            }
+        )
 
         path = self.data_dir / "blends.json"
         stored = json.loads(path.read_text(encoding="utf-8"))
@@ -62,7 +64,10 @@ class LocalBlendTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(path.startswith("/api/") for _, path, _ in self.router.requests))
 
     async def test_auto_randomizes_all_connected_models(self):
-        with unittest.mock.patch("xnobrain.integrations.blends.random.SystemRandom.shuffle", side_effect=lambda rows: rows.reverse()):
+        with unittest.mock.patch(
+            "xnobrain.integrations.blends.random.SystemRandom.shuffle",
+            side_effect=lambda rows: rows.reverse(),
+        ):
             candidates = await self.router.auto_model_candidates()
         self.assertEqual(candidates, ["anthropic/deep", "openai/fast"])
 
@@ -71,17 +76,22 @@ class LocalBlendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(candidates, ["openai/fast"])
 
     async def test_auto_route_exposes_remaining_models_as_fallbacks(self):
-        with unittest.mock.patch("xnobrain.integrations.blends.random.SystemRandom.shuffle", side_effect=lambda rows: rows.reverse()):
+        with unittest.mock.patch(
+            "xnobrain.integrations.blends.random.SystemRandom.shuffle",
+            side_effect=lambda rows: rows.reverse(),
+        ):
             route = await self.router.resolve_blend_route("auto", "hello")
         self.assertEqual(route["model"], "anthropic/deep")
         self.assertEqual(route["candidates"], ["anthropic/deep", "openai/fast"])
 
     async def test_round_robin_is_resolved_in_runtime(self):
-        created = await self.service.create_blend({
-            "name": "rotate",
-            "models": ["openai/fast", "anthropic/deep"],
-            "strategy": "round-robin",
-        })
+        created = await self.service.create_blend(
+            {
+                "name": "rotate",
+                "models": ["openai/fast", "anthropic/deep"],
+                "strategy": "round-robin",
+            }
+        )
 
         first = await self.router.resolve_blend_route(created["name"], "hello")
         second = await self.router.resolve_blend_route(created["name"], "hello")
@@ -91,23 +101,27 @@ class LocalBlendTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(path.startswith("/api/") for _, path, _ in self.router.requests))
 
     async def test_smart_route_uses_only_inference_endpoint(self):
-        created = await self.service.create_blend({
-            "name": "smart",
-            "models": ["openai/fast", "anthropic/deep"],
-            "strategy": "smart-route",
-            "smart_route": {
-                "quick": [{"model": "openai/fast", "reasoning": "low"}],
-                "normal": [{"model": "openai/fast", "reasoning": "low"}],
-                "difficult": [{"model": "anthropic/deep", "reasoning": "high"}],
-            },
-        })
+        created = await self.service.create_blend(
+            {
+                "name": "smart",
+                "models": ["openai/fast", "anthropic/deep"],
+                "strategy": "smart-route",
+                "smart_route": {
+                    "quick": [{"model": "openai/fast", "reasoning": "low"}],
+                    "normal": [{"model": "openai/fast", "reasoning": "low"}],
+                    "difficult": [{"model": "anthropic/deep", "reasoning": "high"}],
+                },
+            }
+        )
 
         route = await self.router.resolve_blend_route(
             created["name"], "Design a secure distributed architecture"
         )
 
         self.assertEqual(route["model"], "anthropic/deep")
-        self.assertIn(("POST", "/chat/completions"), [request[:2] for request in self.router.requests])
+        self.assertIn(
+            ("POST", "/chat/completions"), [request[:2] for request in self.router.requests]
+        )
         self.assertFalse(any(path.startswith("/api/") for _, path, _ in self.router.requests))
 
 

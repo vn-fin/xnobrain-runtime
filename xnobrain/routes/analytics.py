@@ -9,7 +9,23 @@ ROUTES = (
     route("GET", "/analytics/overview", "analytics_overview", tags=("Analytics",)),
     route("GET", "/analytics/models", "analytics_models", tags=("Analytics",)),
     route("GET", "/analytics/timeseries", "analytics_timeseries", tags=("Analytics",)),
-    route("GET", "/analytics/agents/{agent_id}/usage", "analytics_agent_usage", tags=("Analytics",)),
-    route("GET", "/analytics/agents/{agent_id}/budget", "analytics_budget_get", tags=("Analytics",)),
-    route("PUT", "/analytics/agents/{agent_id}/budget", "analytics_budget_set", AgentBudgetPatch, tags=("Analytics",)),
+    route(
+        "GET", "/analytics/agents/{agent_id}/usage", "analytics_agent_usage", tags=("Analytics",)
+    ),
+    route(
+        "GET",
+        "/agents/{agent_id}/skills/usage",
+        "analytics_agent_skill_usage",
+        tags=("Analytics", "Skills"),
+    ),
+    route(
+        "GET", "/analytics/agents/{agent_id}/budget", "analytics_budget_get", tags=("Analytics",)
+    ),
+    route(
+        "PUT",
+        "/analytics/agents/{agent_id}/budget",
+        "analytics_budget_set",
+        AgentBudgetPatch,
+        tags=("Analytics",),
+    ),
 )

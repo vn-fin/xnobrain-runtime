@@ -10,16 +10,15 @@ a lazy staleness rule for runs interrupted by a process restart.
 from __future__ import annotations
 
 import asyncio
+import logging
+import uuid
 from contextlib import suppress
 from dataclasses import dataclass, field
-import logging
 from typing import Any, Mapping
-import uuid
 
 from .base import ServiceError, iso
 from .constants import DEFAULT_TEAM_COORDINATOR_PROMPT
 from .errors import EXPECTED_ERRORS
-
 
 MAX_ACTIVE_TEAM_RUNS = 4
 SUMMARY_CAP = 100_000
@@ -116,7 +115,11 @@ class TeamRunService:
         return {"id": run_id, "team_id": team_id, "deleted": True}
 
     async def shutdown(self) -> None:
-        tasks = [entry.task for entry in list(self._active.values()) if entry.task and not entry.task.done()]
+        tasks = [
+            entry.task
+            for entry in list(self._active.values())
+            if entry.task and not entry.task.done()
+        ]
         for task in tasks:
             task.cancel()
         for task in tasks:
@@ -151,7 +154,9 @@ class TeamRunService:
 
     def _guard_capacity(self, team_id: str) -> None:
         if team_id in self._by_team:
-            raise ServiceError("a run is already active for this team", status=409, code="team_run_active")
+            raise ServiceError(
+                "a run is already active for this team", status=409, code="team_run_active"
+            )
         if len(self._active) >= MAX_ACTIVE_TEAM_RUNS:
             raise ServiceError("too many active team runs", status=409, code="too_many_team_runs")
 
@@ -168,7 +173,14 @@ class TeamRunService:
 
     # ---- record shaping -------------------------------------------------
 
-    def _new_record(self, team: Mapping[str, Any], body: Mapping[str, Any], workflow: list[Mapping[str, Any]], *, mode: str) -> dict[str, Any]:
+    def _new_record(
+        self,
+        team: Mapping[str, Any],
+        body: Mapping[str, Any],
+        workflow: list[Mapping[str, Any]],
+        *,
+        mode: str,
+    ) -> dict[str, Any]:
         now = iso()
         task = str(body.get("task") or "").strip()
         synthesis = str(
@@ -244,11 +256,13 @@ class TeamRunService:
             skills = self.agents.list_skills(agent_id).get("skills", [])
         except EXPECTED_ERRORS:
             return []
-        return sorted({
-            str(item.get("skill_id") or "").strip()
-            for item in skills
-            if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
-        })
+        return sorted(
+            {
+                str(item.get("skill_id") or "").strip()
+                for item in skills
+                if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
+            }
+        )
 
     # ---- persistence + staleness ---------------------------------------
 
@@ -287,7 +301,9 @@ class TeamRunService:
                 if step.get("ended_at") is None:
                     step["ended_at"] = iso()
 
-    async def _finalize(self, record: dict[str, Any], status: str, *, error: str | None = None) -> None:
+    async def _finalize(
+        self, record: dict[str, Any], status: str, *, error: str | None = None
+    ) -> None:
         record["status"] = status
         if error is not None:
             record["error"] = error
@@ -299,7 +315,9 @@ class TeamRunService:
 
     # ---- background driver + engine ------------------------------------
 
-    async def _drive(self, record: dict[str, Any], team: Mapping[str, Any], workflow: list[Mapping[str, Any]]) -> None:
+    async def _drive(
+        self, record: dict[str, Any], team: Mapping[str, Any], workflow: list[Mapping[str, Any]]
+    ) -> None:
         try:
             record["status"] = "running"
             record["started_at"] = iso()
@@ -311,12 +329,16 @@ class TeamRunService:
             await self._finalize(record, "cancelled", error="cancelled")
             raise
         except EXPECTED_ERRORS as error:
-            await self._finalize(record, "failed", error=str(getattr(error, "code", "worker_failed")))
+            await self._finalize(
+                record, "failed", error=str(getattr(error, "code", "worker_failed"))
+            )
         except Exception:  # noqa: BLE001 - never leak provider output; log the type only
             logger.exception("team run %s failed with an unexpected error", record["id"])
             await self._finalize(record, "failed", error="internal_error")
 
-    async def _execute_workflow(self, record: dict[str, Any], team: Mapping[str, Any], workflow: list[Mapping[str, Any]]) -> str:
+    async def _execute_workflow(
+        self, record: dict[str, Any], team: Mapping[str, Any], workflow: list[Mapping[str, Any]]
+    ) -> str:
         communication_level = max(0, min(3, int(team.get("communication_level", 1))))
         # L3 is deliberately turn-based. Serializing stages avoids two dialogue
         # participants holding each other's per-profile execution lock.
@@ -337,23 +359,19 @@ class TeamRunService:
             )
             self.repository.atomic_write(
                 scratchpad,
-                (
-                    f"# Shared scratchpad\n\n"
-                    f"Team: {team['name']}\n"
-                    f"Run: {record['id']}\n\n"
-                ).encode("utf-8"),
+                (f"# Shared scratchpad\n\nTeam: {team['name']}\nRun: {record['id']}\n\n").encode(
+                    "utf-8"
+                ),
                 mode=0o640,
             )
 
         coordinator_guidance = ""
         coordinator_prompt = (
-            str(team.get("coordinator_prompt") or "").strip()
-            or DEFAULT_TEAM_COORDINATOR_PROMPT
+            str(team.get("coordinator_prompt") or "").strip() or DEFAULT_TEAM_COORDINATOR_PROMPT
         )
         if coordinator_prompt:
             workflow_outline = "\n".join(
-                f"- {step['id']} ({step['role']}): {step['task']}"
-                for step in workflow
+                f"- {step['id']} ({step['role']}): {step['task']}" for step in workflow
             )
             coordinator_request: dict[str, Any] = {
                 "message": (
@@ -399,7 +417,9 @@ class TeamRunService:
                     mode=0o640,
                 )
 
-        async def run_step(step: Mapping[str, Any], completed: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+        async def run_step(
+            step: Mapping[str, Any], completed: Mapping[str, Mapping[str, Any]]
+        ) -> dict[str, Any]:
             step_record = steps_by_id[str(step["id"])]
             agent_lock = agent_locks.setdefault(str(step["agent_id"]), asyncio.Lock())
             async with agent_lock, semaphore:
@@ -409,7 +429,10 @@ class TeamRunService:
                 upstream = []
                 for dependency in step["needs"]:
                     result = completed[dependency]
-                    value = result.get("summary") or f"Failed with {result.get('error', 'worker_failed')}"
+                    value = (
+                        result.get("summary")
+                        or f"Failed with {result.get('error', 'worker_failed')}"
+                    )
                     upstream.append(f"[{dependency}] {value}")
                 prompt = (
                     f"Role: {step['role']}\n"
@@ -487,8 +510,12 @@ class TeamRunService:
                     step_record["ended_at"] = iso()
                     await self._persist(record)
                     return {
-                        "id": step["id"], "agent_id": step["agent_id"], "role": step["role"],
-                        "needs": list(step["needs"]), "status": "completed", "summary": summary,
+                        "id": step["id"],
+                        "agent_id": step["agent_id"],
+                        "role": step["role"],
+                        "needs": list(step["needs"]),
+                        "status": "completed",
+                        "summary": summary,
                     }
                 except asyncio.CancelledError:
                     raise
@@ -499,14 +526,22 @@ class TeamRunService:
                     step_record["ended_at"] = iso()
                     await self._persist(record)
                     return {
-                        "id": step["id"], "agent_id": step["agent_id"], "role": step["role"],
-                        "needs": list(step["needs"]), "status": "failed", "error": code,
+                        "id": step["id"],
+                        "agent_id": step["agent_id"],
+                        "role": step["role"],
+                        "needs": list(step["needs"]),
+                        "status": "failed",
+                        "error": code,
                     }
 
         pending = {str(step["id"]): step for step in workflow}
         completed: dict[str, dict[str, Any]] = {}
         while pending:
-            ready = [step for step in pending.values() if all(need in completed for need in step["needs"])]
+            ready = [
+                step
+                for step in pending.values()
+                if all(need in completed for need in step["needs"])
+            ]
             if not ready:
                 raise ServiceError("workflow contains a dependency cycle", code="workflow_cycle")
             batch = await asyncio.gather(*(run_step(step, completed) for step in ready))
@@ -518,11 +553,11 @@ class TeamRunService:
         synthesis = (
             record["synthesis_instruction"]
             + "\n\nBefore making exact claims about shared artifacts, re-read their current "
-              "contents with the configured read tools; do not infer final state only from stage summaries."
+            "contents with the configured read tools; do not infer final state only from stage summaries."
             + "\n\n"
             + "\n\n".join(
-            f"[{item['id']}] {item['role']}: {item.get('summary') or item.get('error', 'worker_failed')}"
-            for item in results
+                f"[{item['id']}] {item['role']}: {item.get('summary') or item.get('error', 'worker_failed')}"
+                for item in results
             )
         )
         try:
@@ -544,5 +579,7 @@ class TeamRunService:
         except asyncio.CancelledError:
             raise
         except EXPECTED_ERRORS as error:
-            raise ServiceError("team synthesis failed", status=502, code="synthesis_failed") from error
+            raise ServiceError(
+                "team synthesis failed", status=502, code="synthesis_failed"
+            ) from error
         return str(final.get("response") or "")

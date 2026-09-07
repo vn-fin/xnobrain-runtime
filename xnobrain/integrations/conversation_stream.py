@@ -1,12 +1,14 @@
 """Conversation SSE lifecycle and approval methods for the Hermes adapter."""
 
+from xnobrain.runtime_limits import max_parallel_agents
+
 from .hermes_support import (
+    LLM_ROUTER_DEFAULT_MODEL,
+    PROVIDER_ERROR_OUTPUT_RE,
     AgentAPIError,
     Any,
-    Mapping,
-    LLM_ROUTER_DEFAULT_MODEL,
     LLMRouterAPIError,
-    PROVIDER_ERROR_OUTPUT_RE,
+    Mapping,
     Path,
     _todo_updated_event,
     asyncio,
@@ -15,7 +17,6 @@ from .hermes_support import (
     time,
     uuid,
 )
-from xnobrain.runtime_limits import max_parallel_agents
 
 
 def _commit_resolved_write_result(agent, tool_name, pending_id, applied) -> bool:
@@ -225,7 +226,11 @@ class ConversationStreamMixin:
                     else:
                         children = list(getattr(parent, "_active_children", ()))
                     child = next(
-                        (item for item in children if getattr(item, "_subagent_id", None) == subagent_id),
+                        (
+                            item
+                            for item in children
+                            if getattr(item, "_subagent_id", None) == subagent_id
+                        ),
                         None,
                     )
                     if child is None:
@@ -240,12 +245,14 @@ class ConversationStreamMixin:
                     return {}
 
             if event_type == "goal.updated":
-                enqueue_event({
-                    "event": "goal.updated",
-                    "run_id": run_id,
-                    "timestamp": timestamp,
-                    "goal": kwargs.get("goal"),
-                })
+                enqueue_event(
+                    {
+                        "event": "goal.updated",
+                        "run_id": run_id,
+                        "timestamp": timestamp,
+                        "goal": kwargs.get("goal"),
+                    }
+                )
                 return
 
             if event_type.startswith("subagent."):
@@ -276,28 +283,40 @@ class ConversationStreamMixin:
                 if event_type == "subagent.queued":
                     event["queue_position"] = int(kwargs.get("queue_position") or 0)
                 elif event_type == "subagent.tool":
-                    event.update({
-                        "kind": "tool",
-                        "tool": safe_text(tool_name, 120),
-                        "message": safe_text(preview, 500),
-                        "tool_count": int(kwargs.get("tool_count") or 0),
-                    })
+                    event.update(
+                        {
+                            "kind": "tool",
+                            "tool": safe_text(tool_name, 120),
+                            "message": safe_text(preview, 500),
+                            "tool_count": int(kwargs.get("tool_count") or 0),
+                        }
+                    )
                 elif event_type == "subagent.thinking":
                     event.update({"kind": "activity", "message": "Reasoning"})
                 elif event_type == "subagent.text":
                     event["delta"] = safe_text(preview, 4_000)
                 elif event_type == "subagent.complete":
-                    event.update({
-                        "status": safe_text(kwargs.get("status"), 40) or "completed",
-                        "duration_seconds": round(float(kwargs.get("duration_seconds") or 0), 3),
-                        "summary": safe_text(kwargs.get("summary") or preview, 4_000),
-                        "input_tokens": int(kwargs.get("input_tokens") or 0),
-                        "output_tokens": int(kwargs.get("output_tokens") or 0),
-                        "reasoning_tokens": int(kwargs.get("reasoning_tokens") or 0),
-                        "api_calls": int(kwargs.get("api_calls") or 0),
-                        "files_read": [safe_text(path, 500) for path in list(kwargs.get("files_read") or [])[:40]],
-                        "files_written": [safe_text(path, 500) for path in list(kwargs.get("files_written") or [])[:40]],
-                    })
+                    event.update(
+                        {
+                            "status": safe_text(kwargs.get("status"), 40) or "completed",
+                            "duration_seconds": round(
+                                float(kwargs.get("duration_seconds") or 0), 3
+                            ),
+                            "summary": safe_text(kwargs.get("summary") or preview, 4_000),
+                            "input_tokens": int(kwargs.get("input_tokens") or 0),
+                            "output_tokens": int(kwargs.get("output_tokens") or 0),
+                            "reasoning_tokens": int(kwargs.get("reasoning_tokens") or 0),
+                            "api_calls": int(kwargs.get("api_calls") or 0),
+                            "files_read": [
+                                safe_text(path, 500)
+                                for path in list(kwargs.get("files_read") or [])[:40]
+                            ],
+                            "files_written": [
+                                safe_text(path, 500)
+                                for path in list(kwargs.get("files_written") or [])[:40]
+                            ],
+                        }
+                    )
                 enqueue_event(event)
                 return
 
@@ -339,27 +358,33 @@ class ConversationStreamMixin:
                 if tool_name == "todo" and not bool(kwargs.get("is_error", False)):
                     todo_event = _todo_updated_event(result)
                     if todo_event is not None:
-                        enqueue_event({
-                            **todo_event,
-                            "run_id": run_id,
-                            "timestamp": timestamp,
-                        })
+                        enqueue_event(
+                            {
+                                **todo_event,
+                                "run_id": run_id,
+                                "timestamp": timestamp,
+                            }
+                        )
             elif event_type == "tool.failed":
-                enqueue_event({
-                    "event": "tool.failed",
-                    "run_id": run_id,
-                    "timestamp": timestamp,
-                    "tool": tool_name or "tool",
-                    "duration": round(float(kwargs.get("duration") or 0), 3),
-                    "error": True,
-                })
+                enqueue_event(
+                    {
+                        "event": "tool.failed",
+                        "run_id": run_id,
+                        "timestamp": timestamp,
+                        "tool": tool_name or "tool",
+                        "duration": round(float(kwargs.get("duration") or 0), 3),
+                        "error": True,
+                    }
+                )
             elif event_type == "reasoning.delta":
-                enqueue_event({
-                    "event": "reasoning.delta",
-                    "run_id": run_id,
-                    "timestamp": timestamp,
-                    "delta": preview or "",
-                })
+                enqueue_event(
+                    {
+                        "event": "reasoning.delta",
+                        "run_id": run_id,
+                        "timestamp": timestamp,
+                        "delta": preview or "",
+                    }
+                )
 
         def on_approval(approval_data: Mapping[str, Any]) -> None:
             from gateway.platforms.api_server import _approval_event_choices
@@ -418,15 +443,17 @@ class ConversationStreamMixin:
 
             record = write_approval.get_pending(subsystem, pending_id)
             if record is None:
-                enqueue_event({
-                    "event": "write.failed",
-                    "run_id": run_id,
-                    "timestamp": time.time(),
-                    "tool": tool_name,
-                    "subsystem": subsystem,
-                    "pending_id": pending_id,
-                    "status": "missing",
-                })
+                enqueue_event(
+                    {
+                        "event": "write.failed",
+                        "run_id": run_id,
+                        "timestamp": time.time(),
+                        "tool": tool_name,
+                        "subsystem": subsystem,
+                        "pending_id": pending_id,
+                        "status": "missing",
+                    }
+                )
                 return "failed"
 
             summary = str(record.get("summary") or f"Pending {subsystem} write")
@@ -468,9 +495,7 @@ class ConversationStreamMixin:
                     else:
                         from tools.skill_manager_tool import apply_skill_pending
 
-                        applied = json.loads(
-                            apply_skill_pending(dict(record.get("payload") or {}))
-                        )
+                        applied = json.loads(apply_skill_pending(dict(record.get("payload") or {})))
                         success = bool(applied.get("success"))
                 except Exception:
                     success = False
@@ -487,22 +512,22 @@ class ConversationStreamMixin:
                         raw_result.update(dict(applied))
                         raw_result.pop("pending_id", None)
                         raw_result["staged"] = False
-                        raw_result["disposition"] = str(
-                            raw_result.get("disposition") or "applied"
-                        )
+                        raw_result["disposition"] = str(raw_result.get("disposition") or "applied")
                     status = "applied"
                 else:
                     status = "failed"
 
-            enqueue_event({
-                "event": f"write.{status}",
-                "run_id": run_id,
-                "timestamp": time.time(),
-                "tool": tool_name,
-                "subsystem": subsystem,
-                "pending_id": pending_id,
-                "status": status,
-            })
+            enqueue_event(
+                {
+                    "event": f"write.{status}",
+                    "run_id": run_id,
+                    "timestamp": time.time(),
+                    "tool": tool_name,
+                    "subsystem": subsystem,
+                    "pending_id": pending_id,
+                    "status": status,
+                }
+            )
             return status
 
         async def run_agent() -> None:
@@ -533,11 +558,16 @@ class ConversationStreamMixin:
         state["task"] = task
         self._active_runs[run_id] = state
         self._mark_agent_active(str(state["agent"]))
-        yield self._sse_data({
-            "event": "run.started", "run_id": run_id,
-            "session_id": conversation_id, "status": "started",
-            "timestamp": time.time(), "model": model,
-        })
+        yield self._sse_data(
+            {
+                "event": "run.started",
+                "run_id": run_id,
+                "session_id": conversation_id,
+                "status": "started",
+                "timestamp": time.time(),
+                "model": model,
+            }
+        )
         deadline = time.monotonic() + timeout_seconds
         try:
             while True:
@@ -557,12 +587,14 @@ class ConversationStreamMixin:
                 if kind == "delta":
                     text = str(payload)
                     output_chunks.append(text)
-                    yield self._sse_data({
-                        "event": "message.delta",
-                        "run_id": run_id,
-                        "timestamp": time.time(),
-                        "delta": text,
-                    })
+                    yield self._sse_data(
+                        {
+                            "event": "message.delta",
+                            "run_id": run_id,
+                            "timestamp": time.time(),
+                            "delta": text,
+                        }
+                    )
                     continue
                 if kind == "event":
                     yield self._sse_data(payload)
@@ -576,26 +608,32 @@ class ConversationStreamMixin:
                     # Some non-streaming-compatible providers can only return
                     # a final response. Preserve a usable fallback for them.
                     output_chunks.append(output)
-                    yield self._sse_data({
-                        "event": "message.delta",
-                        "run_id": run_id,
-                        "timestamp": time.time(),
-                        "delta": output,
-                    })
+                    yield self._sse_data(
+                        {
+                            "event": "message.delta",
+                            "run_id": run_id,
+                            "timestamp": time.time(),
+                            "delta": output,
+                        }
+                    )
                 if state["stop_requested"] or bool(result.get("interrupted")):
                     _persist_cancelled_terminal(agent_ref[0], "".join(output_chunks))
-                    yield self._sse_data({
-                        "event": "run.cancelled",
-                        "run_id": run_id,
-                        "timestamp": time.time(),
-                    })
+                    yield self._sse_data(
+                        {
+                            "event": "run.cancelled",
+                            "run_id": run_id,
+                            "timestamp": time.time(),
+                        }
+                    )
                 elif result.get("failed") and not output:
-                    yield self._sse_data({
-                        "event": "run.failed",
-                        "run_id": run_id,
-                        "timestamp": time.time(),
-                        "message": str(result.get("error") or "agent command failed"),
-                    })
+                    yield self._sse_data(
+                        {
+                            "event": "run.failed",
+                            "run_id": run_id,
+                            "timestamp": time.time(),
+                            "message": str(result.get("error") or "agent command failed"),
+                        }
+                    )
                 else:
                     suggested_title = await title_task if title_task is not None else None
                     conversation_title = self._auto_title_conversation(
@@ -604,18 +642,20 @@ class ConversationStreamMixin:
                         prepared.get("message"),
                         suggested_title=suggested_title,
                     )
-                    yield self._sse_data({
-                        "event": "run.completed",
-                        "run_id": run_id,
-                        "timestamp": time.time(),
-                        "output": output,
-                        "usage": {
-                            "input_tokens": int(usage.get("input_tokens") or 0),
-                            "output_tokens": int(usage.get("output_tokens") or 0),
-                            "total_tokens": int(usage.get("total_tokens") or 0),
-                        },
-                        "conversation_title": conversation_title or "",
-                    })
+                    yield self._sse_data(
+                        {
+                            "event": "run.completed",
+                            "run_id": run_id,
+                            "timestamp": time.time(),
+                            "output": output,
+                            "usage": {
+                                "input_tokens": int(usage.get("input_tokens") or 0),
+                                "output_tokens": int(usage.get("output_tokens") or 0),
+                                "total_tokens": int(usage.get("total_tokens") or 0),
+                            },
+                            "conversation_title": conversation_title or "",
+                        }
+                    )
                 yield b"data: [DONE]\n\n"
                 return
         except asyncio.CancelledError:
@@ -647,20 +687,24 @@ class ConversationStreamMixin:
                 unregister_gateway_notify(run_id)
             except ImportError:
                 pass
-            yield self._sse_data({
-                "event": "run.failed",
-                "run_id": run_id,
-                "timestamp": time.time(),
-                "message": "agent command timed out",
-            })
+            yield self._sse_data(
+                {
+                    "event": "run.failed",
+                    "run_id": run_id,
+                    "timestamp": time.time(),
+                    "message": "agent command timed out",
+                }
+            )
             yield b"data: [DONE]\n\n"
         except Exception as exc:
-            yield self._sse_data({
-                "event": "run.failed",
-                "run_id": run_id,
-                "timestamp": time.time(),
-                "message": str(exc) or "agent command failed",
-            })
+            yield self._sse_data(
+                {
+                    "event": "run.failed",
+                    "run_id": run_id,
+                    "timestamp": time.time(),
+                    "message": str(exc) or "agent command failed",
+                }
+            )
             yield b"data: [DONE]\n\n"
         finally:
             if title_task is not None and not title_task.done():
@@ -668,7 +712,6 @@ class ConversationStreamMixin:
             self._active_runs.pop(run_id, None)
             self._mark_agent_idle(str(state["agent"]))
             self._stopped_runs.discard(run_id)
-
 
     async def stop_run(self, run_id: str) -> dict[str, Any]:
         if not re.fullmatch(r"run_[0-9a-f]{32}", str(run_id)):
@@ -689,18 +732,16 @@ class ConversationStreamMixin:
             pass
         return {"run_id": run_id, "stopped": True, "status": "stopping"}
 
-
     def resolve_approval(self, run_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         choice = str(body.get("choice") or "").strip().lower()
         if choice not in {"once", "session", "always", "deny"}:
             raise AgentAPIError("invalid approval choice", code="invalid_approval_choice")
         try:
             from tools.approval import resolve_gateway_approval
+
             state = self._active_runs.get(run_id)
             approval_session = (
-                str(state.get("approval_session") or run_id)
-                if state is not None
-                else run_id
+                str(state.get("approval_session") or run_id) if state is not None else run_id
             )
             resolved = resolve_gateway_approval(
                 approval_session,
@@ -708,9 +749,13 @@ class ConversationStreamMixin:
                 bool(body.get("resolve_all", False)),
             )
         except ImportError as error:
-            raise AgentAPIError("Agent approval service is unavailable", code="approval_unavailable", status=503) from error
+            raise AgentAPIError(
+                "Agent approval service is unavailable", code="approval_unavailable", status=503
+            ) from error
         if resolved == 0:
-            raise AgentAPIError("run has no pending approval", code="approval_not_pending", status=409)
+            raise AgentAPIError(
+                "run has no pending approval", code="approval_not_pending", status=409
+            )
         if state is not None:
             event_loop = state.get("event_loop")
             event_queue = state.get("event_queue")
@@ -729,7 +774,6 @@ class ConversationStreamMixin:
                     ),
                 )
         return {"run_id": run_id, "choice": choice, "resolved": resolved}
-
 
     def _chat_sse_chunk(
         self,
@@ -757,31 +801,30 @@ class ConversationStreamMixin:
             }
         )
 
-
     def _chat_sse_done(self, chat_id: str, created: int, model: str, conversation_id: str) -> bytes:
-        return self._sse_data(
-            {
-                "id": chat_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model,
-                "conversation_id": conversation_id,
-                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-            }
-        ) + b"data: [DONE]\n\n"
-
+        return (
+            self._sse_data(
+                {
+                    "id": chat_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "conversation_id": conversation_id,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                }
+            )
+            + b"data: [DONE]\n\n"
+        )
 
     def _chat_sse_error(self, message: str) -> bytes:
         payload = json.dumps({"error": {"message": message}}, separators=(",", ":"))
         return f"event: error\ndata: {payload}\n\n".encode("utf-8")
-
 
     @staticmethod
     def _provider_error(output: str) -> str:
         """Recognize the structured provider failure Hermes may print with exit 0."""
         normalized = str(output or "").strip()
         return normalized if PROVIDER_ERROR_OUTPUT_RE.match(normalized) else ""
-
 
     def _sse_data(self, payload: Mapping[str, Any]) -> bytes:
         raw = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))

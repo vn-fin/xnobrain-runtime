@@ -8,35 +8,60 @@ record sanitization, and retention.
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 import inspect
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import suppress
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import yaml
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-import yaml
 
 from xnobrain.app import XNOBrainApplication
 from xnobrain.integrations import AgentManager, GlobalConfigManager
 from xnobrain.repositories.files import TEAM_RUN_RETENTION
 from xnobrain.services.base import ServiceError
 
-
 _STEP_SCHEMA_KEYS = {
-    "id", "agent_id", "role", "task", "needs", "allowed_tools", "skills", "status",
-    "summary", "summary_chars", "error", "conversation_id", "started_at", "ended_at",
+    "id",
+    "agent_id",
+    "role",
+    "task",
+    "needs",
+    "allowed_tools",
+    "skills",
+    "status",
+    "summary",
+    "summary_chars",
+    "error",
+    "conversation_id",
+    "started_at",
+    "ended_at",
 }
 _RUN_SCHEMA_KEYS = {
-    "id", "team_id", "status", "error", "mode", "task", "synthesis_instruction",
-    "orchestrator_id", "orchestrator_summary", "created_at", "started_at",
-    "ended_at", "completed_at", "updated_at", "revision", "steps", "coordinator_conversation_id",
+    "id",
+    "team_id",
+    "status",
+    "error",
+    "mode",
+    "task",
+    "synthesis_instruction",
+    "orchestrator_id",
+    "orchestrator_summary",
+    "created_at",
+    "started_at",
+    "ended_at",
+    "completed_at",
+    "updated_at",
+    "revision",
+    "steps",
+    "coordinator_conversation_id",
     "synthesis_conversation_id",
 }
 
@@ -54,7 +79,9 @@ class CompatibilityTests(unittest.TestCase):
 
     def test_chat_is_a_coroutine_with_the_expected_signature(self):
         self.assertTrue(inspect.iscoroutinefunction(AgentManager.chat))
-        self.assertEqual(list(inspect.signature(AgentManager.chat).parameters), ["self", "raw_name", "body"])
+        self.assertEqual(
+            list(inspect.signature(AgentManager.chat).parameters), ["self", "raw_name", "body"]
+        )
 
     def test_adapter_surface_exists(self):
         for name in ("stop_run", "_run_hermes_command", "_chat_stream_events"):
@@ -92,20 +119,37 @@ class _TeamRunBase(unittest.IsolatedAsyncioTestCase):
         self.profiles = base / "profiles"
         self.root.mkdir(parents=True)
         self.profiles.mkdir(parents=True)
-        (self.root / "config.yaml").write_text(yaml.safe_dump({
-            "model": {"provider": "custom:xnobrain", "default": "auto"},
-            "providers": {}, "agent": {"reasoning_effort": "medium"},
-            "approvals": {"mode": "manual"}, "terminal": {"backend": "local"},
-        }), encoding="utf-8")
-        self.environment = patch.dict(os.environ, {
-            "HERMES_HOME": str(self.root), "HERMES_ROOT_PROFILE": str(self.root),
-            "HERMES_PROFILES_ROOT": str(self.profiles), "DATA_DIR": self.temporary.name,
-        })
+        (self.root / "config.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "model": {"provider": "custom:xnobrain", "default": "auto"},
+                    "providers": {},
+                    "agent": {"reasoning_effort": "medium"},
+                    "approvals": {"mode": "manual"},
+                    "terminal": {"backend": "local"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.environment = patch.dict(
+            os.environ,
+            {
+                "HERMES_HOME": str(self.root),
+                "HERMES_ROOT_PROFILE": str(self.root),
+                "HERMES_PROFILES_ROOT": str(self.profiles),
+                "DATA_DIR": self.temporary.name,
+            },
+        )
         self.environment.start()
         app = FastAPI()
         self.composition = XNOBrainApplication(
-            AgentManager(root_profile=self.root, profiles_root=self.profiles, legacy_agents_root=base / "legacy-agents"),
-            GlobalConfigManager(root_profile=self.root), FakeRouter(),
+            AgentManager(
+                root_profile=self.root,
+                profiles_root=self.profiles,
+                legacy_agents_root=base / "legacy-agents",
+            ),
+            GlobalConfigManager(root_profile=self.root),
+            FakeRouter(),
         )
         self.composition.register(app)
         self.app = app
@@ -121,24 +165,34 @@ class _TeamRunBase(unittest.IsolatedAsyncioTestCase):
     async def _make_team(self, client) -> tuple[str, list[str]]:
         ids = []
         for display_name in ("Coordinator", "Researcher", "Reviewer"):
-            response = await client.post("/xnobrain/api/runtime/v1/agents", json={"display_name": display_name})
+            response = await client.post(
+                "/xnobrain/api/runtime/v1/agents", json={"display_name": display_name}
+            )
             ids.append(response.json()["data"]["id"])
-        team = await client.post("/xnobrain/api/runtime/v1/teams", json={
-            "name": "DAG team",
-            "orchestrator_id": ids[0],
-            "members": [
-                {"agent_id": ids[1], "role": "researcher", "allowed_tools": ["web"]},
-                {"agent_id": ids[2], "role": "reviewer", "allowed_tools": ["web"]},
-            ],
-            "max_parallel": 2,
-        })
+        team = await client.post(
+            "/xnobrain/api/runtime/v1/teams",
+            json={
+                "name": "DAG team",
+                "orchestrator_id": ids[0],
+                "members": [
+                    {"agent_id": ids[1], "role": "researcher", "allowed_tools": ["web"]},
+                    {"agent_id": ids[2], "role": "reviewer", "allowed_tools": ["web"]},
+                ],
+                "max_parallel": 2,
+            },
+        )
         return team.json()["data"]["id"], ids
 
     def _dag_body(self) -> dict:
         return {
             "workflow": [
                 {"id": "research", "task": "Research the API", "role": "researcher"},
-                {"id": "review", "task": "Review the findings", "role": "reviewer", "needs": ["research"]},
+                {
+                    "id": "review",
+                    "task": "Review the findings",
+                    "role": "reviewer",
+                    "needs": ["research"],
+                },
             ],
             "synthesis": "Produce the final answer.",
         }
@@ -227,41 +281,58 @@ class TeamRunLifecycleTests(_TeamRunBase):
         async with self.client() as client:
             ids = []
             for display_name in ("Coordinator", "Researcher"):
-                response = await client.post("/xnobrain/api/runtime/v1/agents", json={"display_name": display_name})
+                response = await client.post(
+                    "/xnobrain/api/runtime/v1/agents", json={"display_name": display_name}
+                )
                 ids.append(response.json()["data"]["id"])
 
             def listed_skills(agent_id):
                 enabled = "team-planning" if agent_id == ids[0] else "news-research"
-                return {"skills": [
-                    {"skill_id": enabled, "enabled": True},
-                    {"skill_id": "disabled-skill", "enabled": False},
-                ]}
+                return {
+                    "skills": [
+                        {"skill_id": enabled, "enabled": True},
+                        {"skill_id": "disabled-skill", "enabled": False},
+                    ]
+                }
 
-            with patch.object(self.composition.service.agents, "list_skills", side_effect=listed_skills):
-                created = await client.post("/xnobrain/api/runtime/v1/teams", json={
-                    "name": "Repeated profile DAG",
-                    "orchestrator_id": ids[0],
-                    "members": [
-                        {"agent_id": ids[0], "role": "planner", "allowed_tools": ["todo"]},
-                        {"agent_id": ids[1], "role": "researcher", "allowed_tools": []},
-                    ],
-                    "workflow": [
-                        {
-                            "id": "plan", "task": "Check the execution plan",
-                            "agent_id": ids[0], "role": "planner",
-                        },
-                        {
-                            "id": "research", "task": "Research the subject",
-                            "agent_id": ids[1], "role": "researcher", "needs": ["plan"],
-                        },
-                        {
-                            "id": "verify", "task": "Verify the research",
-                            "agent_id": ids[1], "role": "verifier",
-                            "skills": [], "needs": ["research"],
-                        },
-                    ],
-                    "synthesis_agent_id": ids[1],
-                })
+            with patch.object(
+                self.composition.service.agents, "list_skills", side_effect=listed_skills
+            ):
+                created = await client.post(
+                    "/xnobrain/api/runtime/v1/teams",
+                    json={
+                        "name": "Repeated profile DAG",
+                        "orchestrator_id": ids[0],
+                        "members": [
+                            {"agent_id": ids[0], "role": "planner", "allowed_tools": ["todo"]},
+                            {"agent_id": ids[1], "role": "researcher", "allowed_tools": []},
+                        ],
+                        "workflow": [
+                            {
+                                "id": "plan",
+                                "task": "Check the execution plan",
+                                "agent_id": ids[0],
+                                "role": "planner",
+                            },
+                            {
+                                "id": "research",
+                                "task": "Research the subject",
+                                "agent_id": ids[1],
+                                "role": "researcher",
+                                "needs": ["plan"],
+                            },
+                            {
+                                "id": "verify",
+                                "task": "Verify the research",
+                                "agent_id": ids[1],
+                                "role": "verifier",
+                                "skills": [],
+                                "needs": ["research"],
+                            },
+                        ],
+                        "synthesis_agent_id": ids[1],
+                    },
+                )
 
         self.assertEqual(created.status_code, 201, created.text)
         team = created.json()["data"]
@@ -287,7 +358,9 @@ class TeamRunLifecycleTests(_TeamRunBase):
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
             self._mock_completing_chat(ids)
-            start = await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body())
+            start = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body()
+            )
             self.assertEqual(start.status_code, 202, start.text)
             record = start.json()["data"]
             run_id = record["id"]
@@ -318,37 +391,47 @@ class TeamRunLifecycleTests(_TeamRunBase):
     async def test_team_inherits_agent_tools_and_supports_skills_scratchpad_and_dialogue(self):
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
-            updated = await client.put(f"/xnobrain/api/runtime/v1/teams/{team_id}", json={
-                "name": "Capable DAG team",
-                "orchestrator_id": ids[0],
-                "members": [
-                    {"agent_id": ids[1], "role": "researcher", "allowed_tools": []},
-                    {"agent_id": ids[2], "role": "reviewer", "allowed_tools": []},
-                ],
-                "workflow": [
-                    {
-                        "id": "research", "task": "Research current news",
-                        "agent_id": ids[1], "role": "researcher",
-                        "allowed_tools": [], "skills": ["news-research"],
-                    },
-                    {
-                        "id": "review", "task": "Review the findings",
-                        "agent_id": ids[2], "role": "reviewer", "needs": ["research"],
-                        "allowed_tools": [], "skills": ["critical-review"],
-                    },
-                ],
-                "communication_level": 3,
-                "shared_workspace": True,
-                "coordinator_prompt": "Guide the workers with a source-first plan.",
-                "coordinator_allowed_tools": ["todo", "web"],
-                "coordinator_skills": ["team-planning"],
-                "synthesis_agent_id": ids[2],
-                "synthesis_allowed_tools": ["file"],
-                "synthesis_skills": ["final-writing"],
-                "synthesis_instruction": "Synthesize these workflow results with citations.",
-                "max_parallel": 2,
-                "max_depth": 1,
-            })
+            updated = await client.put(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}",
+                json={
+                    "name": "Capable DAG team",
+                    "orchestrator_id": ids[0],
+                    "members": [
+                        {"agent_id": ids[1], "role": "researcher", "allowed_tools": []},
+                        {"agent_id": ids[2], "role": "reviewer", "allowed_tools": []},
+                    ],
+                    "workflow": [
+                        {
+                            "id": "research",
+                            "task": "Research current news",
+                            "agent_id": ids[1],
+                            "role": "researcher",
+                            "allowed_tools": [],
+                            "skills": ["news-research"],
+                        },
+                        {
+                            "id": "review",
+                            "task": "Review the findings",
+                            "agent_id": ids[2],
+                            "role": "reviewer",
+                            "needs": ["research"],
+                            "allowed_tools": [],
+                            "skills": ["critical-review"],
+                        },
+                    ],
+                    "communication_level": 3,
+                    "shared_workspace": True,
+                    "coordinator_prompt": "Guide the workers with a source-first plan.",
+                    "coordinator_allowed_tools": ["todo", "web"],
+                    "coordinator_skills": ["team-planning"],
+                    "synthesis_agent_id": ids[2],
+                    "synthesis_allowed_tools": ["file"],
+                    "synthesis_skills": ["final-writing"],
+                    "synthesis_instruction": "Synthesize these workflow results with citations.",
+                    "max_parallel": 2,
+                    "max_depth": 1,
+                },
+            )
             self.assertEqual(updated.status_code, 200, updated.text)
 
             calls: list[tuple[str, dict]] = []
@@ -378,23 +461,37 @@ class TeamRunLifecycleTests(_TeamRunBase):
         coordinator_call = next(body for agent_id, body in calls if agent_id == ids[0])
         self.assertEqual(coordinator_call["skills"], ["team-planning"])
         self.assertEqual(coordinator_call["toolsets"], ["todo", "web"])
-        research_call = next(body for agent_id, body in calls if agent_id == ids[1] and "Task: Research current news" in body["message"])
+        research_call = next(
+            body
+            for agent_id, body in calls
+            if agent_id == ids[1] and "Task: Research current news" in body["message"]
+        )
         self.assertNotIn("toolsets", research_call)
         self.assertEqual(research_call["skills"], ["news-research"])
         self.assertIn("Verify dates and cite primary sources.", research_call["message"])
-        reviewer_call = next(body for agent_id, body in calls if agent_id == ids[2] and "Task: Review the findings" in body["message"])
+        reviewer_call = next(
+            body
+            for agent_id, body in calls
+            if agent_id == ids[2] and "Task: Review the findings" in body["message"]
+        )
         self.assertIn("[research] research result", reviewer_call["message"])
         self.assertIn("Shared team scratchpad:", reviewer_call["message"])
-        revision_call = next(body for _agent_id, body in calls if "Revise your draft" in body["message"])
+        revision_call = next(
+            body for _agent_id, body in calls if "Revise your draft" in body["message"]
+        )
         self.assertEqual(revision_call["toolsets"], ["todo"])
         self.assertNotIn("skills", revision_call)
         self.assertIn("do not repeat file, workspace, network", revision_call["message"])
-        scratchpads = list((self.data_dir / "teams" / "workspaces" / team_id).glob("*/SCRATCHPAD.md"))
+        scratchpads = list(
+            (self.data_dir / "teams" / "workspaces" / team_id).glob("*/SCRATCHPAD.md")
+        )
         self.assertEqual(len(scratchpads), 1)
         self.assertIn("reviewed result", scratchpads[0].read_text(encoding="utf-8"))
         synthesis_call = next(
-            body for agent_id, body in calls
-            if agent_id == ids[2] and "Synthesize these workflow results with citations" in body["message"]
+            body
+            for agent_id, body in calls
+            if agent_id == ids[2]
+            and "Synthesize these workflow results with citations" in body["message"]
         )
         self.assertEqual(synthesis_call["skills"], ["final-writing"])
         self.assertEqual(synthesis_call["toolsets"], ["file"])
@@ -404,7 +501,9 @@ class TeamRunLifecycleTests(_TeamRunBase):
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
             self._mock_completing_chat(ids)
-            started = await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body())
+            started = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body()
+            )
             run_id = started.json()["data"]["id"]
             await self._poll_until_terminal(client, team_id, run_id)
 
@@ -413,11 +512,14 @@ class TeamRunLifecycleTests(_TeamRunBase):
             history = await client.get(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs")
 
         self.assertEqual(deleted.status_code, 200, deleted.text)
-        self.assertEqual(deleted.json()["data"], {
-            "id": run_id,
-            "team_id": team_id,
-            "deleted": True,
-        })
+        self.assertEqual(
+            deleted.json()["data"],
+            {
+                "id": run_id,
+                "team_id": team_id,
+                "deleted": True,
+            },
+        )
         self.assertEqual(missing.status_code, 404)
         self.assertNotIn(run_id, [record["id"] for record in history.json()["data"]])
         self.assertFalse((self.data_dir / "teams" / "runs" / team_id / f"{run_id}.json").exists())
@@ -426,14 +528,25 @@ class TeamRunLifecycleTests(_TeamRunBase):
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
             self._mock_completing_chat(ids)
-            response = await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/run", json=self._dag_body())
+            response = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/run", json=self._dag_body()
+            )
         self.assertEqual(response.status_code, 200, response.text)
         result = response.json()["data"]
-        self.assertEqual(set(result), {
-            "team_id", "member_results", "workflow_results", "orchestrator_summary",
-            "started_at", "completed_at",
-        })
-        self.assertEqual([item["id"] for item in result["workflow_results"]], ["research", "review"])
+        self.assertEqual(
+            set(result),
+            {
+                "team_id",
+                "member_results",
+                "workflow_results",
+                "orchestrator_summary",
+                "started_at",
+                "completed_at",
+            },
+        )
+        self.assertEqual(
+            [item["id"] for item in result["workflow_results"]], ["research", "review"]
+        )
         self.assertEqual(result["orchestrator_summary"], "final synthesis")
         self.assertEqual(result["member_results"][0]["summary"], "research result")
 
@@ -454,15 +567,23 @@ class TeamRunLifecycleTests(_TeamRunBase):
         self.composition.service.agents.chat = AsyncMock(side_effect=gated)
         async with self.client() as client:
             team_id, _ = await self._make_team(client)
-            first = await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body())
+            first = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body()
+            )
             self.assertEqual(first.status_code, 202, first.text)
-            second = await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body())
+            second = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body()
+            )
             self.assertEqual(second.status_code, 409, second.text)
             self.assertEqual(second.json()["error"]["code"], "team_run_active")
-            deleting = await client.delete(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs/{first.json()['data']['id']}")
+            deleting = await client.delete(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/runs/{first.json()['data']['id']}"
+            )
             self.assertEqual(deleting.status_code, 409, deleting.text)
             self.assertEqual(deleting.json()["error"]["code"], "team_run_active")
-            await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs/{first.json()['data']['id']}/cancel")
+            await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/runs/{first.json()['data']['id']}/cancel"
+            )
 
     async def test_cancel_marks_steps_and_record(self):
         gate = asyncio.Event()  # never set
@@ -474,21 +595,29 @@ class TeamRunLifecycleTests(_TeamRunBase):
         self.composition.service.agents.chat = AsyncMock(side_effect=blocking)
         async with self.client() as client:
             team_id, _ = await self._make_team(client)
-            start = await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body())
+            start = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body()
+            )
             run_id = start.json()["data"]["id"]
             for _ in range(100):
-                current = (await client.get(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs/{run_id}")).json()["data"]
+                current = (
+                    await client.get(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs/{run_id}")
+                ).json()["data"]
                 if any(step["status"] == "running" for step in current["steps"]):
                     break
                 await asyncio.sleep(0.02)
-            cancel = await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs/{run_id}/cancel")
+            cancel = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/runs/{run_id}/cancel"
+            )
 
         self.assertEqual(cancel.status_code, 200, cancel.text)
         record = cancel.json()["data"]
         self.assertEqual(record["status"], "cancelled")
         self.assertIsNotNone(record["ended_at"])
         self.assertIsNone(record["completed_at"])
-        self.assertTrue(all(step["status"] in {"completed", "failed", "cancelled"} for step in record["steps"]))
+        self.assertTrue(
+            all(step["status"] in {"completed", "failed", "cancelled"} for step in record["steps"])
+        )
         self.assertTrue(any(step["status"] == "cancelled" for step in record["steps"]))
         self.assertEqual(self.composition.service.team_runs._active, {})
 
@@ -502,9 +631,13 @@ class TeamRunLifecycleTests(_TeamRunBase):
             created["pid"] = proc.pid
             return proc
 
-        with patch("xnobrain.integrations.hermes.asyncio.create_subprocess_exec", side_effect=recording):
+        with patch(
+            "xnobrain.integrations.hermes.asyncio.create_subprocess_exec", side_effect=recording
+        ):
             task = asyncio.ensure_future(
-                manager._run_hermes_command(self.root, self.root, ["/bin/sleep", "60"], timeout_seconds=120)
+                manager._run_hermes_command(
+                    self.root, self.root, ["/bin/sleep", "60"], timeout_seconds=120
+                )
             )
             for _ in range(200):
                 if "pid" in created:
@@ -537,7 +670,9 @@ class TeamRunStreamAndStoreTests(_TeamRunBase):
         self.composition.service.agents.chat = AsyncMock(side_effect=gated)
         async with self.client() as client:
             team_id, _ = await self._make_team(client)
-            start = await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body())
+            start = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body()
+            )
             run_id = start.json()["data"]["id"]
 
         class FakeRequest:
@@ -571,17 +706,37 @@ class TeamRunStreamAndStoreTests(_TeamRunBase):
         team_id = "a" * 32
         run_id = "tr_" + "b" * 32
         stale = {
-            "id": run_id, "team_id": team_id, "status": "running", "error": None,
-            "mode": "async", "task": "t", "synthesis_instruction": "s",
-            "orchestrator_id": "o", "orchestrator_summary": "",
-            "created_at": "2026-07-25T00:00:00Z", "started_at": "2026-07-25T00:00:00Z",
-            "ended_at": None, "updated_at": "2026-07-25T00:00:00Z", "revision": 3,
-            "steps": [{
-                "id": "research", "agent_id": "w", "role": "researcher", "task": "t",
-                "needs": [], "allowed_tools": ["web"], "status": "running", "summary": "",
-                "summary_chars": 0, "error": None, "conversation_id": None,
-                "started_at": "2026-07-25T00:00:00Z", "ended_at": None,
-            }],
+            "id": run_id,
+            "team_id": team_id,
+            "status": "running",
+            "error": None,
+            "mode": "async",
+            "task": "t",
+            "synthesis_instruction": "s",
+            "orchestrator_id": "o",
+            "orchestrator_summary": "",
+            "created_at": "2026-07-25T00:00:00Z",
+            "started_at": "2026-07-25T00:00:00Z",
+            "ended_at": None,
+            "updated_at": "2026-07-25T00:00:00Z",
+            "revision": 3,
+            "steps": [
+                {
+                    "id": "research",
+                    "agent_id": "w",
+                    "role": "researcher",
+                    "task": "t",
+                    "needs": [],
+                    "allowed_tools": ["web"],
+                    "status": "running",
+                    "summary": "",
+                    "summary_chars": 0,
+                    "error": None,
+                    "conversation_id": None,
+                    "started_at": "2026-07-25T00:00:00Z",
+                    "ended_at": None,
+                }
+            ],
         }
         repository.put_team_run(stale)
         async with self.client() as client:
@@ -591,7 +746,11 @@ class TeamRunStreamAndStoreTests(_TeamRunBase):
         self.assertEqual(record["error"], "interrupted_by_restart")
         self.assertEqual(record["steps"][0]["status"], "cancelled")
         self.assertGreater(record["revision"], 3)
-        stored = json.loads((self.data_dir / "teams" / "runs" / team_id / f"{run_id}.json").read_text(encoding="utf-8"))
+        stored = json.loads(
+            (self.data_dir / "teams" / "runs" / team_id / f"{run_id}.json").read_text(
+                encoding="utf-8"
+            )
+        )
         self.assertEqual(stored["status"], "failed")
 
     async def test_record_sanitization(self):
@@ -604,13 +763,17 @@ class TeamRunStreamAndStoreTests(_TeamRunBase):
         self.composition.service.agents.chat = AsyncMock(side_effect=recording_chat)
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
-            start = await client.post(f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body())
+            start = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body()
+            )
             run_id = start.json()["data"]["id"]
             await self._poll_until_terminal(client, team_id, run_id)
 
         # The composed prompt the engine sent contained the role preamble sentinel.
         self.assertTrue(any("Role:" in message for message in received.values()))
-        raw = (self.data_dir / "teams" / "runs" / team_id / f"{run_id}.json").read_text(encoding="utf-8")
+        raw = (self.data_dir / "teams" / "runs" / team_id / f"{run_id}.json").read_text(
+            encoding="utf-8"
+        )
         self.assertNotIn("Role:", raw)
         self.assertNotIn("Upstream results", raw)
         stored = json.loads(raw)
@@ -625,14 +788,25 @@ class TeamRunStreamAndStoreTests(_TeamRunBase):
         team_id = "c" * 32
         total = TEAM_RUN_RETENTION + 5
         for index in range(total):
-            repository.put_team_run({
-                "id": f"tr_{index:032d}", "team_id": team_id, "status": "completed",
-                "error": None, "mode": "async", "task": "t", "synthesis_instruction": "s",
-                "orchestrator_id": "o", "orchestrator_summary": "",
-                "created_at": f"2026-07-25T00:00:{index:05d}Z",
-                "started_at": None, "ended_at": None,
-                "updated_at": "2026-07-25T00:00:00Z", "revision": 1, "steps": [],
-            })
+            repository.put_team_run(
+                {
+                    "id": f"tr_{index:032d}",
+                    "team_id": team_id,
+                    "status": "completed",
+                    "error": None,
+                    "mode": "async",
+                    "task": "t",
+                    "synthesis_instruction": "s",
+                    "orchestrator_id": "o",
+                    "orchestrator_summary": "",
+                    "created_at": f"2026-07-25T00:00:{index:05d}Z",
+                    "started_at": None,
+                    "ended_at": None,
+                    "updated_at": "2026-07-25T00:00:00Z",
+                    "revision": 1,
+                    "steps": [],
+                }
+            )
         files = list((self.data_dir / "teams" / "runs" / team_id).glob("*.json"))
         self.assertEqual(len(files), TEAM_RUN_RETENTION)
 

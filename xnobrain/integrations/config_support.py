@@ -26,7 +26,6 @@ from .llm_router import (
     normalize_llm_router_config,
 )
 
-
 SKILL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 MAX_TEXT_CHARS = 200_000
 MAX_CONFIG_STRING_CHARS = 100_000
@@ -53,7 +52,6 @@ class ConfigAPIError(ValueError):
         super().__init__(message)
         self.code = code
         self.status = status
-
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

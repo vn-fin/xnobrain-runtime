@@ -1,8 +1,8 @@
 """Conversation title operations backed by the centralized LLM router."""
 
 from .llm_router_support import (
-    Mapping,
     LLM_ROUTER_DEFAULT_MODEL,
+    Mapping,
 )
 
 
@@ -40,8 +40,6 @@ class ConversationTitlesMixin:
             return content
         if isinstance(content, list):
             return " ".join(
-                str(part.get("text") or "")
-                for part in content
-                if isinstance(part, Mapping)
+                str(part.get("text") or "") for part in content if isinstance(part, Mapping)
             )
         return ""

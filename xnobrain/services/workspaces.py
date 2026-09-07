@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 import hashlib
 import json
 import logging
 import os
-from pathlib import Path
 import time
-from typing import Any, Mapping
 import uuid
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, Mapping
 
 import yaml
 
 from ..defaults import (
-    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_AGENT_ID,
+    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
     BIG_BROTHER_MODEL_DEFAULT_MARKER,
@@ -64,11 +64,16 @@ def _validate_create_path(raw_path: Any) -> str:
         or any(character in path for character in ("\x00", "\r", "\n", "∕", "⁄", "／"))
         or unicodedata.normalize("NFC", path) != path
     ):
-        raise AgentAPIError("path contains an invalid file name", code="invalid_workspace_path", status=400)
+        raise AgentAPIError(
+            "path contains an invalid file name", code="invalid_workspace_path", status=400
+        )
     parts = path.split("/")
     if any(not part or part in {".", ".."} for part in parts):
-        raise AgentAPIError("path contains an invalid file name", code="invalid_workspace_path", status=400)
+        raise AgentAPIError(
+            "path contains an invalid file name", code="invalid_workspace_path", status=400
+        )
     return path
+
 
 class WorkspacesServiceMixin:
     def list_workspace(self, agent_id: str, path: str = ".") -> dict[str, Any]:
@@ -144,8 +149,14 @@ class WorkspacesServiceMixin:
             path = self.agents._workspace_path(agent_id, path_value, require_file=False)
             with self.checkpoints.mutation(agent_id, f"before workspace create: {path_value}"):
                 path.mkdir(parents=True, exist_ok=True)
-            return {"agent": agent_id, "path": str(path.relative_to(self.agents._workspace_dir(agent_id))), "type": "directory"}
-        return self.write_workspace(agent_id, {"path": path_value, "content": body.get("content") or ""})
+            return {
+                "agent": agent_id,
+                "path": str(path.relative_to(self.agents._workspace_dir(agent_id))),
+                "type": "directory",
+            }
+        return self.write_workspace(
+            agent_id, {"path": path_value, "content": body.get("content") or ""}
+        )
 
     def delete_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         relative = _validate_create_path(body.get("path"))

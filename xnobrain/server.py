@@ -18,6 +18,7 @@ def create_app():
     # load by both the source reloader and compiled entrypoint.
     configure_logging()
     from hermes_cli.web_server import app
+
     from .app import XNOBrainApplication
     from .integrations import AgentManager, GlobalConfigManager, LLMRouterClient
 
@@ -39,6 +40,7 @@ def create_app():
         composition = XNOBrainApplication(AgentManager(), GlobalConfigManager(), LLMRouterClient())
         composition.register(app)
         from .openapi_docs import configure_openapi_docs
+
         configure_openapi_docs(app)
         app.state.xnobrain = composition
         app.state.xnobrain_registered = True
@@ -67,12 +69,17 @@ def create_app():
                 route = request.scope.get("route")
                 route_path = route.path if route else request.url.path
                 from opentelemetry import trace
+
                 span_context = trace.get_current_span().get_span_context()
                 trace_id = format(span_context.trace_id, "032x") if span_context.is_valid else ""
                 span_id = format(span_context.span_id, "016x") if span_context.is_valid else ""
                 status_code = response.status_code if response is not None else 500
                 logging.getLogger("xnobrain.http").log(
-                    logging.ERROR if status_code >= 500 else logging.WARNING if status_code >= 400 else logging.INFO,
+                    logging.ERROR
+                    if status_code >= 500
+                    else logging.WARNING
+                    if status_code >= 400
+                    else logging.INFO,
                     "HTTP request completed",
                     extra={
                         "http_method": request.method,
@@ -86,6 +93,7 @@ def create_app():
                 )
 
         from .telemetry import configure
+
         configure(app)
     return app
 

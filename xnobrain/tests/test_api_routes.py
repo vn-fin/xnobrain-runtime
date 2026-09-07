@@ -4,7 +4,7 @@ import unittest
 
 from xnobrain.models import KanbanTaskCreate, KanbanTaskPatch
 from xnobrain.routes.definition import API_PREFIX
-from xnobrain.routes.setup import ROUTES, ROUTE_GROUPS
+from xnobrain.routes.setup import ROUTE_GROUPS, ROUTES
 
 
 class APIRouteContractTests(unittest.TestCase):

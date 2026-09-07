@@ -7,11 +7,11 @@ public Hermes operations.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import json
-from pathlib import Path
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -22,7 +22,6 @@ from ..integrations.kanban import KanbanUnavailable
 from ..repositories import StoreError
 from .base import ServiceError
 from .constants import DEFAULT_TEAM_COORDINATOR_PROMPT
-
 
 PRODUCT_STATUSES = ("backlog", "todo", "scheduled", "running", "done", "archived")
 PRIORITY_TO_INT = {"low": 0, "medium": 1, "high": 2}
@@ -50,7 +49,9 @@ def _status(raw: str) -> str:
         return "done"
     if raw == "archived":
         return "archived"
-    raise ServiceError("The task has an unsupported status", status=503, code="kanban_contract_incompatible")
+    raise ServiceError(
+        "The task has an unsupported status", status=503, code="kanban_contract_incompatible"
+    )
 
 
 def _detail(task: Any, *, has_schedule: bool = False) -> dict[str, Any]:
@@ -69,7 +70,11 @@ def _detail(task: Any, *, has_schedule: bool = False) -> dict[str, Any]:
     kind, label = labels.get(raw, (raw, raw.replace("_", " ").title()))
     # Failure text can contain provider/tool output. Keep the UI actionable
     # without returning that sensitive payload through the management API.
-    reason = "The task run failed" if raw == "blocked" and getattr(task, "last_failure_error", None) else None
+    reason = (
+        "The task run failed"
+        if raw == "blocked" and getattr(task, "last_failure_error", None)
+        else None
+    )
     return {"kind": kind, "label": label, "reason": reason}
 
 
@@ -123,21 +128,25 @@ class KanbanService:
             if profile == self.agents.root_profile:
                 digest = hashlib.sha256(payload).hexdigest()
                 snapshot = (
-                    profile / "snapshots" / "config" / "config"
+                    profile
+                    / "snapshots"
+                    / "config"
+                    / "config"
                     / f"{time.time_ns()}-{digest[:12]}.yaml"
                 )
-                self.repository.atomic_write(
-                    snapshot, payload, mode=0o440, replace=False
-                )
+                self.repository.atomic_write(snapshot, payload, mode=0o440, replace=False)
             else:
                 self.repository.snapshot(name, "config", "config", payload)
         if already_automatic:
             return
-        self.agents.update_config(name, {
-            "approval_mode": "off",
-            "skills_write_approval": False,
-            "memory_write_approval": False,
-        })
+        self.agents.update_config(
+            name,
+            {
+                "approval_mode": "off",
+                "skills_write_approval": False,
+                "memory_write_approval": False,
+            },
+        )
 
     def _enabled_agent_skills(self, agent_id: str) -> list[str]:
         if self.agents is None:
@@ -146,18 +155,20 @@ class KanbanService:
             skills = self.agents.list_skills(agent_id).get("skills", [])
         except (AgentAPIError, StoreError):
             return []
-        return sorted({
-            str(item.get("skill_id") or "").strip()
-            for item in skills
-            if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
-        })
+        return sorted(
+            {
+                str(item.get("skill_id") or "").strip()
+                for item in skills
+                if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
+            }
+        )
 
     def _validate_agent_skills(self, agent_id: Any, requested: Any) -> list[str] | None:
         if requested is None:
             return None
-        selected = list(dict.fromkeys(
-            str(item or "").strip() for item in requested if str(item or "").strip()
-        ))
+        selected = list(
+            dict.fromkeys(str(item or "").strip() for item in requested if str(item or "").strip())
+        )
         if not selected:
             return []
         assignee = str(agent_id or "").strip()
@@ -167,7 +178,9 @@ class KanbanService:
                 code="invalid_skills",
             )
         if self.agents is None:
-            raise ServiceError("Agent skills are unavailable", status=503, code="skills_unavailable")
+            raise ServiceError(
+                "Agent skills are unavailable", status=503, code="skills_unavailable"
+            )
         try:
             inventory = self.agents.list_skills(assignee).get("skills", [])
         except (AgentAPIError, StoreError) as exc:
@@ -194,7 +207,7 @@ class KanbanService:
             text = str(getattr(comment, "body", ""))
             if text.startswith(TEAM_META_PREFIX):
                 try:
-                    candidate = json.loads(text[len(TEAM_META_PREFIX):])
+                    candidate = json.loads(text[len(TEAM_META_PREFIX) :])
                 except (TypeError, json.JSONDecodeError):
                     continue
                 if isinstance(candidate, dict):
@@ -226,17 +239,19 @@ class KanbanService:
                 (str(run.summary) for run in reversed(runs) if getattr(run, "summary", None)),
                 None,
             )
-            projected.append({
-                "step_id": str(node.get("step_id") or task_id),
-                "task_id": task_id,
-                "title": str(task.title),
-                "agent_id": str(node.get("agent_id") or getattr(task, "assignee", "") or ""),
-                "role": str(node.get("role") or "worker"),
-                "needs": [str(item) for item in node.get("needs") or []],
-                "status": raw_status,
-                "kanban_status": _status(raw_status),
-                "summary": summary,
-            })
+            projected.append(
+                {
+                    "step_id": str(node.get("step_id") or task_id),
+                    "task_id": task_id,
+                    "title": str(task.title),
+                    "agent_id": str(node.get("agent_id") or getattr(task, "assignee", "") or ""),
+                    "role": str(node.get("role") or "worker"),
+                    "needs": [str(item) for item in node.get("needs") or []],
+                    "status": raw_status,
+                    "kanban_status": _status(raw_status),
+                    "summary": summary,
+                }
+            )
             all_ids.append(task_id)
         synthesis_id = str(metadata.get("synthesis_task_id") or "")
         synthesis = kb.get_task(conn, synthesis_id) if synthesis_id else None
@@ -247,17 +262,23 @@ class KanbanService:
                 (str(run.summary) for run in reversed(runs) if getattr(run, "summary", None)),
                 None,
             )
-            projected.append({
-                "step_id": "__synthesis__",
-                "task_id": synthesis_id,
-                "title": str(synthesis.title),
-                "agent_id": str(metadata.get("synthesis_agent_id") or getattr(synthesis, "assignee", "") or ""),
-                "role": "synthesizer",
-                "needs": [str(item) for item in metadata.get("leaf_step_ids") or []],
-                "status": raw_status,
-                "kanban_status": _status(raw_status),
-                "summary": summary,
-            })
+            projected.append(
+                {
+                    "step_id": "__synthesis__",
+                    "task_id": synthesis_id,
+                    "title": str(synthesis.title),
+                    "agent_id": str(
+                        metadata.get("synthesis_agent_id")
+                        or getattr(synthesis, "assignee", "")
+                        or ""
+                    ),
+                    "role": "synthesizer",
+                    "needs": [str(item) for item in metadata.get("leaf_step_ids") or []],
+                    "status": raw_status,
+                    "kanban_status": _status(raw_status),
+                    "summary": summary,
+                }
+            )
             all_ids.append(synthesis_id)
         terminal = {"done", "archived"}
         complete_count = sum(1 for node in projected if node["status"] in terminal)
@@ -285,9 +306,9 @@ class KanbanService:
             "nodes": projected,
             "task_ids": all_ids,
             "synthesis_task_id": synthesis_id or None,
-            "progress": 100 if status == "done" else (
-                round(100 * complete_count / len(projected)) if projected else 0
-            ),
+            "progress": 100
+            if status == "done"
+            else (round(100 * complete_count / len(projected)) if projected else 0),
             "cancelled": cancelled,
         }
 
@@ -349,7 +370,9 @@ class KanbanService:
             except (TypeError, ValueError) as exc:
                 raise ServiceError("repeat interval is invalid", code="invalid_schedule") from exc
             if interval_seconds < 60:
-                raise ServiceError("repeat interval must be at least one minute", code="invalid_schedule")
+                raise ServiceError(
+                    "repeat interval must be at least one minute", code="invalid_schedule"
+                )
         elif recurrence != "once":
             raise ServiceError("schedule recurrence is invalid", code="invalid_schedule")
         return recurrence, scheduled_at, interval_seconds, timezone_name
@@ -362,7 +385,19 @@ class KanbanService:
     @staticmethod
     def _safe_event_payload(payload: Any) -> Any:
         """Keep audit facts while dropping paths and execution internals."""
-        blocked = {"prompt", "body", "result", "output", "tool_args", "arguments", "stored_path", "workspace_path", "credentials", "api_key", "token"}
+        blocked = {
+            "prompt",
+            "body",
+            "result",
+            "output",
+            "tool_args",
+            "arguments",
+            "stored_path",
+            "workspace_path",
+            "credentials",
+            "api_key",
+            "token",
+        }
         if isinstance(payload, Mapping):
             return {
                 str(key): KanbanService._safe_event_payload(value)
@@ -402,12 +437,14 @@ class KanbanService:
         for parent_id in parent_ids:
             parent = kb.get_task(conn, parent_id)
             if parent is not None:
-                parent_rows.append({
-                    "id": parent.id,
-                    "title": parent.title,
-                    "status": str(parent.status),
-                    "kanban_status": _status(parent.status),
-                })
+                parent_rows.append(
+                    {
+                        "id": parent.id,
+                        "title": parent.title,
+                        "status": str(parent.status),
+                        "kanban_status": _status(parent.status),
+                    }
+                )
         comments = kb_adapter.task_comments(conn, task.id)
         team_metadata, team_cancelled = self._team_metadata(comments)
         attachments = kb_adapter.task_attachments(conn, task.id)
@@ -418,7 +455,12 @@ class KanbanService:
             (str(run.summary) for run in reversed(runs) if getattr(run, "summary", None)),
             None,
         )
-        progress = 100 if raw_status in {"done", "archived"} and getattr(task, "completed_at", None) is not None else (50 if raw_status == "running" else 0)
+        progress = (
+            100
+            if raw_status in {"done", "archived"}
+            and getattr(task, "completed_at", None) is not None
+            else (50 if raw_status == "running" else 0)
+        )
         result = {
             "id": str(task.id),
             "title": str(task.title),
@@ -440,7 +482,9 @@ class KanbanService:
             "tags": [],
             "progress": progress,
             "archived": raw_status == "archived",
-            "block": "The task run failed" if raw_status == "blocked" and getattr(task, "last_failure_error", None) else None,
+            "block": "The task run failed"
+            if raw_status == "blocked" and getattr(task, "last_failure_error", None)
+            else None,
             "summary": getattr(task, "result", None) or latest_summary,
             "result": getattr(task, "result", None) or latest_summary,
             "workspace_kind": getattr(task, "workspace_kind", "scratch"),
@@ -476,7 +520,11 @@ class KanbanService:
             "runs": [self._run_dto(item) for item in runs],
             "worker": self._worker_dto(task),
             "created_at": _iso(getattr(task, "created_at", None)),
-            "updated_at": _iso(getattr(task, "completed_at", None) or getattr(task, "started_at", None) or getattr(task, "created_at", None)),
+            "updated_at": _iso(
+                getattr(task, "completed_at", None)
+                or getattr(task, "started_at", None)
+                or getattr(task, "created_at", None)
+            ),
             "board_slug": board,
             "revision": str(getattr(task, "updated_at", None) or getattr(task, "created_at", "")),
         }
@@ -532,9 +580,9 @@ class KanbanService:
                 "reason": None,
             }
             result["assignee"] = team["orchestrator_id"] or None
-            result["assignees"] = list(dict.fromkeys(
-                node["agent_id"] for node in team["nodes"] if node["agent_id"]
-            ))
+            result["assignees"] = list(
+                dict.fromkeys(node["agent_id"] for node in team["nodes"] if node["agent_id"])
+            )
             result["progress"] = team["progress"]
             result["block"] = (
                 "A team stage needs attention" if team["status"] == "blocked" else None
@@ -546,18 +594,34 @@ class KanbanService:
             result["summary"] = (
                 "Team run cancelled"
                 if team_cancelled
-                else synthesis.get("summary") if synthesis and synthesis["status"] == "done" else None
+                else synthesis.get("summary")
+                if synthesis and synthesis["status"] == "done"
+                else None
             )
             result["result"] = result["summary"]
         return result
 
     @staticmethod
     def _comment_dto(comment: Any) -> dict[str, Any]:
-        return {"id": int(comment.id), "task_id": str(comment.task_id), "author": str(comment.author), "body": str(comment.body), "created_at": _iso(comment.created_at)}
+        return {
+            "id": int(comment.id),
+            "task_id": str(comment.task_id),
+            "author": str(comment.author),
+            "body": str(comment.body),
+            "created_at": _iso(comment.created_at),
+        }
 
     @staticmethod
     def _attachment_dto(attachment: Any) -> dict[str, Any]:
-        return {"id": int(attachment.id), "task_id": str(attachment.task_id), "filename": str(attachment.filename), "content_type": attachment.content_type, "size": int(attachment.size), "uploaded_by": attachment.uploaded_by, "created_at": _iso(attachment.created_at)}
+        return {
+            "id": int(attachment.id),
+            "task_id": str(attachment.task_id),
+            "filename": str(attachment.filename),
+            "content_type": attachment.content_type,
+            "size": int(attachment.size),
+            "uploaded_by": attachment.uploaded_by,
+            "created_at": _iso(attachment.created_at),
+        }
 
     @staticmethod
     def _run_dto(run: Any) -> dict[str, Any]:
@@ -576,7 +640,11 @@ class KanbanService:
     def _worker_dto(task: Any) -> dict[str, Any] | None:
         if str(getattr(task, "status", "")) != "running":
             return None
-        return {"pid": getattr(task, "worker_pid", None), "heartbeat_at": _iso(getattr(task, "last_heartbeat_at", None)), "run_id": getattr(task, "current_run_id", None)}
+        return {
+            "pid": getattr(task, "worker_pid", None),
+            "heartbeat_at": _iso(getattr(task, "last_heartbeat_at", None)),
+            "run_id": getattr(task, "current_run_id", None),
+        }
 
     def list_boards(self, *, include_archived: bool = False) -> list[dict[str, Any]]:
         try:
@@ -615,8 +683,10 @@ class KanbanService:
             boards = kb_adapter.list_boards(include_archived=True)
         except (KanbanUnavailable, ValueError) as exc:
             raise ServiceError(str(exc), status=503, code="kanban_not_ready") from exc
-        item = next((item for item in boards if str(item.get("slug") or "default") == normalized), None)
-        board = ({**self._public_board(item), "id": normalized} if item is not None else None)
+        item = next(
+            (item for item in boards if str(item.get("slug") or "default") == normalized), None
+        )
+        board = {**self._public_board(item), "id": normalized} if item is not None else None
         if board is None or (board.get("archived") and not include_archived):
             raise ServiceError("board not found", status=404, code="board_not_found")
         return board
@@ -648,15 +718,23 @@ class KanbanService:
             "by_status": counts,
         }
 
-    def _list_task_dtos(self, conn: Any, board: str, *, include_archived: bool = False, assignee: str | None = None, status: str | None = None, search: str | None = None) -> list[dict[str, Any]]:
+    def _list_task_dtos(
+        self,
+        conn: Any,
+        board: str,
+        *,
+        include_archived: bool = False,
+        assignee: str | None = None,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> list[dict[str, Any]]:
         kb = self._ready()
-        raw = kb.list_tasks(conn, assignee=assignee or None, include_archived=include_archived, order_by="updated")
+        raw = kb.list_tasks(
+            conn, assignee=assignee or None, include_archived=include_archived, order_by="updated"
+        )
         rows = [self._task_dto(conn, task, board=board) for task in raw]
         member_ids = {
-            task_id
-            for row in rows
-            if row.get("team")
-            for task_id in row["team"]["task_ids"]
+            task_id for row in rows if row.get("team") for task_id in row["team"]["task_ids"]
         }
         rows = [row for row in rows if row["id"] not in member_ids]
         if status:
@@ -665,7 +743,14 @@ class KanbanService:
             rows = [row for row in rows if row["kanban_status"] == status]
         query = (search or "").strip().lower()
         if query:
-            rows = [row for row in rows if query in " ".join([row["id"], row["title"], row["description"], row.get("assignee") or ""]).lower()]
+            rows = [
+                row
+                for row in rows
+                if query
+                in " ".join(
+                    [row["id"], row["title"], row["description"], row.get("assignee") or ""]
+                ).lower()
+            ]
         return rows
 
     def list_tasks(self, board: str, query: Mapping[str, Any]) -> dict[str, Any]:
@@ -692,7 +777,13 @@ class KanbanService:
                     search=query.get("search"),
                 )
             total = len(tasks)
-            return {"board_slug": normalized, "tasks": tasks[offset:offset + limit], "total": total, "offset": offset, "limit": limit}
+            return {
+                "board_slug": normalized,
+                "tasks": tasks[offset : offset + limit],
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+            }
         with kb_adapter.connection(normalized) as conn:
             raw, total = kb_adapter.task_page(
                 conn,
@@ -704,7 +795,13 @@ class KanbanService:
                 limit=limit,
             )
             tasks = [self._task_dto(conn, task, board=normalized) for task in raw]
-        return {"board_slug": normalized, "tasks": tasks, "total": total, "offset": offset, "limit": limit}
+        return {
+            "board_slug": normalized,
+            "tasks": tasks,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
 
     def get_task(self, board: str, task_id: str) -> dict[str, Any]:
         normalized = self._board(board)
@@ -715,7 +812,9 @@ class KanbanService:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             return self._task_dto(conn, task, board=normalized, include_detail=True)
 
-    def create_task(self, board: str, body: Mapping[str, Any], *, created_by: str = "user") -> dict[str, Any]:
+    def create_task(
+        self, board: str, body: Mapping[str, Any], *, created_by: str = "user"
+    ) -> dict[str, Any]:
         normalized = self._board(board)
         kb = self._ready()
         title = str(body.get("title") or "").strip()
@@ -726,8 +825,12 @@ class KanbanService:
             raise ServiceError("description is required", code="invalid_request")
         status = str(body.get("status") or "todo")
         if status not in {"backlog", "todo", "scheduled"}:
-            raise ServiceError("new tasks may start in Backlog, Todo, or Scheduled", code="invalid_request")
-        schedule_values = self._schedule_values(body.get("schedule")) if status == "scheduled" else None
+            raise ServiceError(
+                "new tasks may start in Backlog, Todo, or Scheduled", code="invalid_request"
+            )
+        schedule_values = (
+            self._schedule_values(body.get("schedule")) if status == "scheduled" else None
+        )
         if status != "scheduled" and body.get("schedule") is not None:
             raise ServiceError("choose Scheduled to set a task schedule", code="invalid_schedule")
         team_id = str(body.get("team_id") or "").strip()
@@ -739,7 +842,9 @@ class KanbanService:
                 code="invalid_schedule",
             )
         selected_skills = (
-            None if team_id else self._validate_agent_skills(body.get("assignee"), body.get("skills"))
+            None
+            if team_id
+            else self._validate_agent_skills(body.get("assignee"), body.get("skills"))
         )
         try:
             workspace_kind, workspace_path = self._workspace_for_assignee(
@@ -784,7 +889,11 @@ class KanbanService:
             self._enable_agent_automation(body.get("assignee"))
             task = kb.get_task(conn, task_id)
             if task is None:
-                raise ServiceError("The created task could not be loaded", status=503, code="kanban_contract_incompatible")
+                raise ServiceError(
+                    "The created task could not be loaded",
+                    status=503,
+                    code="kanban_contract_incompatible",
+                )
             # Hermes promotes parent-free tasks to ready on creation. Preserve
             # an explicit Todo choice; ready remains part of In Progress.
             if status == "todo" and not kb_adapter.park_task_in_todo(conn, task_id):
@@ -859,7 +968,9 @@ class KanbanService:
                 if member.get("enabled", True)
             ]
         if not workflow:
-            raise ServiceError("team has no enabled workflow", status=409, code="team_has_no_workers")
+            raise ServiceError(
+                "team has no enabled workflow", status=409, code="team_has_no_workers"
+            )
         step_ids = [str(step.get("id") or "") for step in workflow]
         if any(not step_id for step_id in step_ids) or len(set(step_ids)) != len(step_ids):
             raise ServiceError("team workflow is invalid", status=409, code="invalid_team")
@@ -867,19 +978,26 @@ class KanbanService:
         for step in workflow:
             needs = [str(item) for item in step.get("needs") or []]
             if any(parent not in known_steps for parent in needs):
-                raise ServiceError("team workflow dependency does not exist", status=409, code="invalid_team")
+                raise ServiceError(
+                    "team workflow dependency does not exist", status=409, code="invalid_team"
+                )
             if not str(step.get("agent_id") or ""):
-                raise ServiceError("team workflow step has no agent", status=409, code="invalid_team")
+                raise ServiceError(
+                    "team workflow step has no agent", status=409, code="invalid_team"
+                )
         ordered: list[dict[str, Any]] = []
         remaining = list(workflow)
         completed: set[str] = set()
         while remaining:
             ready = [
-                step for step in remaining
+                step
+                for step in remaining
                 if all(str(parent) in completed for parent in step.get("needs") or [])
             ]
             if not ready:
-                raise ServiceError("team workflow contains a dependency cycle", status=409, code="invalid_team")
+                raise ServiceError(
+                    "team workflow contains a dependency cycle", status=409, code="invalid_team"
+                )
             ordered.extend(ready)
             completed.update(str(step["id"]) for step in ready)
             remaining = [step for step in remaining if step not in ready]
@@ -911,8 +1029,7 @@ class KanbanService:
         root_parent_id = root_id
         orchestrator = str(team.get("orchestrator_id") or "")
         coordinator_prompt = (
-            str(team.get("coordinator_prompt") or "").strip()
-            or DEFAULT_TEAM_COORDINATOR_PROMPT
+            str(team.get("coordinator_prompt") or "").strip() or DEFAULT_TEAM_COORDINATOR_PROMPT
         )
         if coordinator_prompt:
             if not orchestrator:
@@ -936,21 +1053,29 @@ class KanbanService:
                 initial_status="running",
                 board=board,
             )
-            nodes.append({
-                "step_id": "__coordination__",
-                "task_id": root_parent_id,
-                "agent_id": orchestrator,
-                "role": "coordinator",
-                "needs": [],
-            })
+            nodes.append(
+                {
+                    "step_id": "__coordination__",
+                    "task_id": root_parent_id,
+                    "agent_id": orchestrator,
+                    "role": "coordinator",
+                    "needs": [],
+                }
+            )
         for step in workflow:
             step_id = str(step["id"])
             needs = [str(item) for item in step.get("needs") or []]
             if any(parent not in task_ids for parent in needs):
-                raise ServiceError("team workflow dependencies are not in topological order", status=409, code="invalid_team")
+                raise ServiceError(
+                    "team workflow dependencies are not in topological order",
+                    status=409,
+                    code="invalid_team",
+                )
             agent_id = str(step.get("agent_id") or "")
             if not agent_id:
-                raise ServiceError("team workflow step has no agent", status=409, code="invalid_team")
+                raise ServiceError(
+                    "team workflow step has no agent", status=409, code="invalid_team"
+                )
             self._enable_agent_automation(agent_id)
             role = str(step.get("role") or "worker")
             instruction = str(step.get("task") or description).strip()
@@ -976,13 +1101,15 @@ class KanbanService:
                 board=board,
             )
             task_ids[step_id] = task_id
-            nodes.append({
-                "step_id": step_id,
-                "task_id": task_id,
-                "agent_id": agent_id,
-                "role": role,
-                "needs": needs or (["__coordination__"] if coordinator_prompt else []),
-            })
+            nodes.append(
+                {
+                    "step_id": step_id,
+                    "task_id": task_id,
+                    "agent_id": agent_id,
+                    "role": role,
+                    "needs": needs or (["__coordination__"] if coordinator_prompt else []),
+                }
+            )
         depended_on = {item for step in workflow for item in step.get("needs") or []}
         leaf_ids = [step_id for step_id in step_ids if step_id not in depended_on]
         if not orchestrator:
@@ -1124,20 +1251,26 @@ class KanbanService:
             if not ok:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             if body.get("schedule") is not None:
-                recurrence, scheduled_at, interval_seconds, timezone_name = self._schedule_values(body["schedule"])
+                recurrence, scheduled_at, interval_seconds, timezone_name = self._schedule_values(
+                    body["schedule"]
+                )
                 current = kb.get_task(conn, task_id)
                 if current is None:
                     raise ServiceError("task not found", status=404, code="task_not_found")
                 if str(current.status) == "triage":
                     if not kb.specify_triage_task(conn, task_id, author="user"):
-                        raise ServiceError("task could not be scheduled", status=409, code="invalid_schedule")
+                        raise ServiceError(
+                            "task could not be scheduled", status=409, code="invalid_schedule"
+                        )
                     current = kb.get_task(conn, task_id)
                 if str(current.status) != "scheduled" and not kb.schedule_task(
                     conn,
                     task_id,
                     reason="Schedule updated from XNOBrain",
                 ):
-                    raise ServiceError("task could not be scheduled", status=409, code="invalid_schedule")
+                    raise ServiceError(
+                        "task could not be scheduled", status=409, code="invalid_schedule"
+                    )
                 kb_adapter.put_task_schedule(
                     conn,
                     task_id,
@@ -1166,11 +1299,19 @@ class KanbanService:
             if existing_skills:
                 self._validate_agent_skills(body.get("assignee"), existing_skills)
             try:
-                ok = kb.reassign_task(conn, task_id, body.get("assignee"), reclaim_first=bool(body.get("reclaim_first", False)), reason=body.get("reason"))
+                ok = kb.reassign_task(
+                    conn,
+                    task_id,
+                    body.get("assignee"),
+                    reclaim_first=bool(body.get("reclaim_first", False)),
+                    reason=body.get("reason"),
+                )
             except (ValueError, RuntimeError) as exc:
                 raise ServiceError(str(exc), status=409, code="assignment_invalid") from exc
             if not ok:
-                raise ServiceError("task cannot be reassigned while active", status=409, code="assignment_invalid")
+                raise ServiceError(
+                    "task cannot be reassigned while active", status=409, code="assignment_invalid"
+                )
             try:
                 workspace_kind, workspace_path = self._workspace_for_assignee(body.get("assignee"))
                 kb_adapter.update_task_workspace(
@@ -1187,7 +1328,9 @@ class KanbanService:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             return self._task_dto(conn, task, board=normalized)
 
-    def move_task(self, board: str, task_id: str, target: str, *, reason: str | None = None) -> dict[str, Any]:
+    def move_task(
+        self, board: str, task_id: str, target: str, *, reason: str | None = None
+    ) -> dict[str, Any]:
         normalized = self._board(board)
         kb = self._ready()
         with kb_adapter.connection(normalized) as conn:
@@ -1222,9 +1365,13 @@ class KanbanService:
                     if raw in {"blocked", "scheduled"}:
                         ok = kb.unblock_task(conn, task_id)
                         if ok:
-                            ok = kb.complete_task(conn, task_id, summary=reason or "Completed from XNOBrain")
+                            ok = kb.complete_task(
+                                conn, task_id, summary=reason or "Completed from XNOBrain"
+                            )
                     else:
-                        ok = kb.complete_task(conn, task_id, summary=reason or "Completed from XNOBrain")
+                        ok = kb.complete_task(
+                            conn, task_id, summary=reason or "Completed from XNOBrain"
+                        )
                 elif target == "todo":
                     if raw == "triage":
                         ok = kb.specify_triage_task(conn, task_id, author="user")
@@ -1325,7 +1472,9 @@ class KanbanService:
             except (ValueError, RuntimeError) as exc:
                 raise ServiceError(str(exc), status=409, code="invalid_transition") from exc
             if not ok:
-                raise ServiceError("task cannot make that transition", status=409, code="invalid_transition")
+                raise ServiceError(
+                    "task cannot make that transition", status=409, code="invalid_transition"
+                )
             task = kb.get_task(conn, task_id)
             return self._task_dto(conn, task, board=normalized)
 
@@ -1379,7 +1528,11 @@ class KanbanService:
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             if unarchive:
-                raise ServiceError("Archived tasks cannot be restored", status=501, code="kanban_contract_incompatible")
+                raise ServiceError(
+                    "Archived tasks cannot be restored",
+                    status=501,
+                    code="kanban_contract_incompatible",
+                )
             comments = kb_adapter.task_comments(conn, task_id)
             metadata, cancelled = self._team_metadata(comments)
             if metadata is not None:
@@ -1395,7 +1548,9 @@ class KanbanService:
                     if member is not None and str(member.status) != "archived":
                         kb.archive_task(conn, member_id)
             if not kb.archive_task(conn, task_id):
-                raise ServiceError("task could not be archived", status=409, code="invalid_transition")
+                raise ServiceError(
+                    "task could not be archived", status=409, code="invalid_transition"
+                )
             if kb_adapter.task_schedule(conn, task_id) is not None:
                 kb_adapter.set_task_schedule_enabled(conn, task_id, False)
             return self._task_dto(conn, kb.get_task(conn, task_id), board=normalized)
@@ -1405,12 +1560,20 @@ class KanbanService:
         kb = self._ready()
         with kb_adapter.connection(normalized) as conn:
             try:
-                comment_id = kb.add_comment(conn, task_id, str(body.get("author") or "user"), str(body.get("body") or ""))
+                comment_id = kb.add_comment(
+                    conn, task_id, str(body.get("author") or "user"), str(body.get("body") or "")
+                )
             except ValueError as exc:
                 raise ServiceError(str(exc), code="invalid_request") from exc
-            comment = next((item for item in kb.list_comments(conn, task_id) if item.id == comment_id), None)
+            comment = next(
+                (item for item in kb.list_comments(conn, task_id) if item.id == comment_id), None
+            )
             if comment is None:
-                raise ServiceError("The comment could not be saved", status=503, code="kanban_contract_incompatible")
+                raise ServiceError(
+                    "The comment could not be saved",
+                    status=503,
+                    code="kanban_contract_incompatible",
+                )
             return self._comment_dto(comment)
 
     def link_tasks(self, board: str, parent_id: str, child_id: str) -> dict[str, Any]:
@@ -1429,7 +1592,9 @@ class KanbanService:
         with kb_adapter.connection(normalized) as conn:
             try:
                 if not kb.unlink_tasks(conn, parent_id, child_id):
-                    raise ServiceError("dependency link not found", status=404, code="dependency_not_found")
+                    raise ServiceError(
+                        "dependency link not found", status=404, code="dependency_not_found"
+                    )
             except ServiceError:
                 raise
             except ValueError as exc:
@@ -1440,38 +1605,76 @@ class KanbanService:
         normalized = self._board(board)
         kb = self._ready()
         path = kb.kanban_db_path(board=normalized)
-        return {"board_slug": normalized, "ready": True, "db_exists": bool(path.exists()), "dispatcher": "managed-by-local-runtime"}
+        return {
+            "board_slug": normalized,
+            "ready": True,
+            "db_exists": bool(path.exists()),
+            "dispatcher": "managed-by-local-runtime",
+        }
 
     def create_board(self, body: Mapping[str, Any]) -> dict[str, Any]:
         try:
-            return self._public_board(kb_adapter.create_board(str(body.get("slug") or ""), name=body.get("name"), description=body.get("description"), color=body.get("color")))
+            return self._public_board(
+                kb_adapter.create_board(
+                    str(body.get("slug") or ""),
+                    name=body.get("name"),
+                    description=body.get("description"),
+                    color=body.get("color"),
+                )
+            )
         except (ValueError, KanbanUnavailable) as exc:
             code = "kanban_not_ready" if isinstance(exc, KanbanUnavailable) else "invalid_request"
-            raise ServiceError(str(exc), status=503 if isinstance(exc, KanbanUnavailable) else 400, code=code) from exc
+            raise ServiceError(
+                str(exc), status=503 if isinstance(exc, KanbanUnavailable) else 400, code=code
+            ) from exc
 
     def patch_board(self, slug: str, body: Mapping[str, Any]) -> dict[str, Any]:
         normalized = self._board(slug)
-        fields = {key: body[key] for key in ("name", "description", "color") if key in body and body[key] is not None}
+        fields = {
+            key: body[key]
+            for key in ("name", "description", "color")
+            if key in body and body[key] is not None
+        }
         try:
             return self._public_board(kb_adapter.write_board_metadata(normalized, **fields))
         except (ValueError, KanbanUnavailable) as exc:
-            raise ServiceError(str(exc), status=503 if isinstance(exc, KanbanUnavailable) else 400, code="kanban_not_ready" if isinstance(exc, KanbanUnavailable) else "invalid_request") from exc
+            raise ServiceError(
+                str(exc),
+                status=503 if isinstance(exc, KanbanUnavailable) else 400,
+                code="kanban_not_ready"
+                if isinstance(exc, KanbanUnavailable)
+                else "invalid_request",
+            ) from exc
 
     def select_board(self, slug: str) -> dict[str, Any]:
         normalized = self._board(slug)
         try:
             return {"board_slug": kb_adapter.select_board(normalized)}
         except (ValueError, KanbanUnavailable) as exc:
-            raise ServiceError(str(exc), status=503 if isinstance(exc, KanbanUnavailable) else 404, code="kanban_not_ready" if isinstance(exc, KanbanUnavailable) else "board_not_found") from exc
+            raise ServiceError(
+                str(exc),
+                status=503 if isinstance(exc, KanbanUnavailable) else 404,
+                code="kanban_not_ready"
+                if isinstance(exc, KanbanUnavailable)
+                else "board_not_found",
+            ) from exc
 
     def delete_board(self, slug: str) -> dict[str, Any]:
         normalized = self._board(slug)
         if normalized == "default":
-            raise ServiceError("the default board cannot be deleted", status=409, code="invalid_request")
+            raise ServiceError(
+                "the default board cannot be deleted", status=409, code="invalid_request"
+            )
         try:
             return kb_adapter.remove_board(normalized, archive=True)
         except (ValueError, KanbanUnavailable) as exc:
-            raise ServiceError(str(exc), status=503 if isinstance(exc, KanbanUnavailable) else 404, code="kanban_not_ready" if isinstance(exc, KanbanUnavailable) else "board_not_found") from exc
+            raise ServiceError(
+                str(exc),
+                status=503 if isinstance(exc, KanbanUnavailable) else 404,
+                code="kanban_not_ready"
+                if isinstance(exc, KanbanUnavailable)
+                else "board_not_found",
+            ) from exc
 
     def list_comments(self, board: str, task_id: str) -> list[dict[str, Any]]:
         normalized = self._board(board)
@@ -1494,7 +1697,9 @@ class KanbanService:
                 if str(getattr(item, "kind", "")) != "heartbeat"
             ]
 
-    def board_events(self, board: str, *, after_id: int = 0, limit: int = 200) -> list[dict[str, Any]]:
+    def board_events(
+        self, board: str, *, after_id: int = 0, limit: int = 200
+    ) -> list[dict[str, Any]]:
         """Read board events through public task/event operations."""
         normalized = self._board(board)
         kb = self._ready()
@@ -1505,7 +1710,7 @@ class KanbanService:
                     if int(event.id) > after_id:
                         rows.append(self._event_dto(event, task))
         rows.sort(key=lambda item: item["id"])
-        return rows[:max(1, min(int(limit), 200))]
+        return rows[: max(1, min(int(limit), 200))]
 
     def board_event_cursor(self, board: str) -> int:
         cursor = 0

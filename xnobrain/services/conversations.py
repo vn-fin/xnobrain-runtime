@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 import hashlib
 import json
 import logging
 import os
-from pathlib import Path
 import time
-from typing import Any, Mapping
 import uuid
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, Mapping
 
 import yaml
 
 from ..defaults import (
-    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_AGENT_ID,
+    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
     BIG_BROTHER_MODEL_DEFAULT_MARKER,
@@ -48,14 +48,20 @@ from .helpers import cached_method
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError
 from .workspace_upload import WorkspaceUploadError
 
+
 class ConversationsServiceMixin:
-    def list_conversations(self, agent_id: str, *, page: int = 1, limit: int = 50) -> dict[str, Any]:
+    def list_conversations(
+        self, agent_id: str, *, page: int = 1, limit: int = 50
+    ) -> dict[str, Any]:
         bounded_page = max(1, int(page))
         bounded_limit = max(1, min(int(limit), 1000))
-        payload = self.agents.list_conversations(agent_id, {
-            "page": bounded_page,
-            "limit": bounded_limit,
-        })
+        payload = self.agents.list_conversations(
+            agent_id,
+            {
+                "page": bounded_page,
+                "limit": bounded_limit,
+            },
+        )
         conversations = payload["conversations"]
         pagination = dict(payload.get("pagination") or {})
         return {
@@ -68,7 +74,9 @@ class ConversationsServiceMixin:
         }
 
     def create_conversation(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        payload = self.agents.create_conversation(agent_id, {"title": body.get("title") or "New Session"})
+        payload = self.agents.create_conversation(
+            agent_id, {"title": body.get("title") or "New Session"}
+        )
         return self._conversation_dto(agent_id, payload["conversation"])
 
     def get_conversation(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
@@ -78,7 +86,9 @@ class ConversationsServiceMixin:
         return result
 
     async def conversation_usage(
-        self, agent_id: str, conversation_id: str,
+        self,
+        agent_id: str,
+        conversation_id: str,
     ) -> dict[str, Any]:
         payload = self.agents.get_conversation(agent_id, conversation_id)
         session = dict(payload["conversation"])
@@ -114,22 +124,21 @@ class ConversationsServiceMixin:
         execution_seconds = max(0.0, ended_at - started_at) if started_at and ended_at else 0.0
         tool_steps = sum(1 for message in messages if message.get("role") == "tool")
         actual_cost = session.get("actual_cost_usd")
-        cost = number("actual_cost_usd") if actual_cost is not None else number("estimated_cost_usd")
+        cost = (
+            number("actual_cost_usd") if actual_cost is not None else number("estimated_cost_usd")
+        )
         cost_source = str(session.get("cost_source") or "")
         cost_status = str(session.get("cost_status") or "")
         if actual_cost is None and cost <= 0:
             cost = await self.analytics.conversation_estimated_cost(
-                agent_id, conversation_id,
+                agent_id,
+                conversation_id,
             )
             if cost > 0:
                 cost_source = "profile_ledger"
                 cost_status = "estimated"
         model_config = session.get("model_config")
-        context = (
-            model_config.get("xnobrain_context")
-            if isinstance(model_config, Mapping)
-            else {}
-        )
+        context = model_config.get("xnobrain_context") if isinstance(model_config, Mapping) else {}
         context = context if isinstance(context, Mapping) else {}
         try:
             context_used = max(0, int(context.get("used") or 0))
@@ -145,16 +154,22 @@ class ConversationsServiceMixin:
             context_threshold = 0
         context_payload: dict[str, Any] = {"used": context_used}
         if context_limit:
-            context_payload.update({
-                "limit": context_limit,
-                "percent": round(min(100.0, context_used / context_limit * 100), 2),
-            })
+            context_payload.update(
+                {
+                    "limit": context_limit,
+                    "percent": round(min(100.0, context_used / context_limit * 100), 2),
+                }
+            )
         if context_threshold:
-            context_payload.update({
-                "threshold": context_threshold,
-                "pressure_percent": round(min(100.0, context_used / context_threshold * 100), 2),
-                "auto_compaction": bool(context.get("auto_compaction")),
-            })
+            context_payload.update(
+                {
+                    "threshold": context_threshold,
+                    "pressure_percent": round(
+                        min(100.0, context_used / context_threshold * 100), 2
+                    ),
+                    "auto_compaction": bool(context.get("auto_compaction")),
+                }
+            )
 
         return {
             "conversation_id": conversation_id,
@@ -183,8 +198,12 @@ class ConversationsServiceMixin:
             "weekly_budget": await self.analytics.get_budget(agent_id),
         }
 
-    def rename_conversation(self, agent_id: str, conversation_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        payload = self.agents.update_conversation(agent_id, conversation_id, {"title": body.get("title")})
+    def rename_conversation(
+        self, agent_id: str, conversation_id: str, body: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        payload = self.agents.update_conversation(
+            agent_id, conversation_id, {"title": body.get("title")}
+        )
         return self._conversation_dto(agent_id, payload["conversation"])
 
     async def compact_conversation(
@@ -210,7 +229,9 @@ class ConversationsServiceMixin:
         self.repository.delete_conversation_runs(agent_id, conversation_id)
         return result
 
-    async def stream_conversation(self, agent_id: str, conversation_id: str, body: Mapping[str, Any]):
+    async def stream_conversation(
+        self, agent_id: str, conversation_id: str, body: Mapping[str, Any]
+    ):
         async for event in self.conversation_runs.legacy_stream(agent_id, conversation_id, body):
             yield event
 
@@ -226,23 +247,37 @@ class ConversationsServiceMixin:
         return self.agents.get_conversation_goal(agent_id, conversation_id)
 
     async def create_conversation_goal(
-        self, agent_id: str, conversation_id: str, body: Mapping[str, Any],
+        self,
+        agent_id: str,
+        conversation_id: str,
+        body: Mapping[str, Any],
     ) -> dict[str, Any]:
         if self.conversation_runs.active_run(agent_id, conversation_id) is not None:
-            raise ServiceError("pause the current response before starting a goal", status=409, code="conversation_running")
+            raise ServiceError(
+                "pause the current response before starting a goal",
+                status=409,
+                code="conversation_running",
+            )
         result = self.agents.set_conversation_goal(agent_id, conversation_id, body)
         try:
-            run = await self.conversation_runs.start_run(agent_id, conversation_id, {
-                "input": str(body.get("objective") or ""),
-                "run_mode": "background",
-            })
+            run = await self.conversation_runs.start_run(
+                agent_id,
+                conversation_id,
+                {
+                    "input": str(body.get("objective") or ""),
+                    "run_mode": "background",
+                },
+            )
         except Exception:
             self.agents.clear_conversation_goal(agent_id, conversation_id)
             raise
         return {**result, "run": run}
 
     def update_conversation_goal(
-        self, agent_id: str, conversation_id: str, body: Mapping[str, Any],
+        self,
+        agent_id: str,
+        conversation_id: str,
+        body: Mapping[str, Any],
     ) -> dict[str, Any]:
         if self.conversation_runs.active_run(agent_id, conversation_id) is not None:
             # Editing is a safe preemption: the current model turn may finish,
@@ -256,15 +291,21 @@ class ConversationsServiceMixin:
 
     async def resume_conversation_goal(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
         if self.conversation_runs.active_run(agent_id, conversation_id) is not None:
-            raise ServiceError("the goal is already running", status=409, code="conversation_running")
+            raise ServiceError(
+                "the goal is already running", status=409, code="conversation_running"
+            )
         result = self.agents.resume_conversation_goal(agent_id, conversation_id)
         objective = str((result.get("goal") or {}).get("objective") or "")
         try:
-            run = await self.conversation_runs.start_run(agent_id, conversation_id, {
-                "input": objective,
-                "run_mode": "background",
-                "goal_resume": True,
-            })
+            run = await self.conversation_runs.start_run(
+                agent_id,
+                conversation_id,
+                {
+                    "input": objective,
+                    "run_mode": "background",
+                    "goal_resume": True,
+                },
+            )
         except Exception:
             self.agents.pause_conversation_goal(agent_id, conversation_id)
             raise
@@ -274,12 +315,18 @@ class ConversationsServiceMixin:
         return self.agents.clear_conversation_goal(agent_id, conversation_id)
 
     def add_conversation_subgoal(
-        self, agent_id: str, conversation_id: str, body: Mapping[str, Any],
+        self,
+        agent_id: str,
+        conversation_id: str,
+        body: Mapping[str, Any],
     ) -> dict[str, Any]:
         return self.agents.add_conversation_subgoal(agent_id, conversation_id, body)
 
     def remove_conversation_subgoal(
-        self, agent_id: str, conversation_id: str, index: Any,
+        self,
+        agent_id: str,
+        conversation_id: str,
+        index: Any,
     ) -> dict[str, Any]:
         return self.agents.remove_conversation_subgoal(agent_id, conversation_id, index)
 
@@ -319,9 +366,28 @@ class ConversationsServiceMixin:
         if choice == "always" and agent_id and subsystem in {"skills", "memory"}:
             field = f"{subsystem}_write_approval"
             self.update_agent_config(agent_id, {field: False})
-            result = {**result, "choice": "always", "subsystem": subsystem, "write_approval_disabled": True}
+            result = {
+                **result,
+                "choice": "always",
+                "subsystem": subsystem,
+                "write_approval_disabled": True,
+            }
         return result
 
     @staticmethod
     def _conversation_dto(agent_id: str, item: Mapping[str, Any]) -> dict[str, Any]:
-        return {"id": str(item.get("id") or item.get("session_id") or ""), "agent_id": agent_id, "title": str(item.get("title") or item.get("name") or "New Session"), "preview": str(item.get("preview") or ""), "model": str(item.get("model") or ""), "messages": int(item.get("message_count") or item.get("messages") or 0), "tools": int(item.get("tool_call_count") or item.get("tools") or 0), "created_at": item.get("created_at") or item.get("started_at"), "updated_at": item.get("last_active_at") or item.get("updated_at") or item.get("ended_at") or item.get("started_at") or item.get("created_at")}
+        return {
+            "id": str(item.get("id") or item.get("session_id") or ""),
+            "agent_id": agent_id,
+            "title": str(item.get("title") or item.get("name") or "New Session"),
+            "preview": str(item.get("preview") or ""),
+            "model": str(item.get("model") or ""),
+            "messages": int(item.get("message_count") or item.get("messages") or 0),
+            "tools": int(item.get("tool_call_count") or item.get("tools") or 0),
+            "created_at": item.get("created_at") or item.get("started_at"),
+            "updated_at": item.get("last_active_at")
+            or item.get("updated_at")
+            or item.get("ended_at")
+            or item.get("started_at")
+            or item.get("created_at"),
+        }

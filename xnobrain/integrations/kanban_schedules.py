@@ -12,6 +12,7 @@ from .kanban_support import (
 )
 from .kanban_tasks import create_task, task_dependencies
 
+
 def ensure_schedule_schema(conn: Any) -> None:
     """Install XNOBrain scheduling metadata beside native Kanban tasks.
 
@@ -103,11 +104,13 @@ def put_task_schedule(
             "VALUES (?, 'schedule_set', ?, unixepoch())",
             (
                 task_id,
-                json.dumps({
-                    "recurrence": recurrence,
-                    "next_run_at": int(next_run_at),
-                    "timezone": timezone_name,
-                }),
+                json.dumps(
+                    {
+                        "recurrence": recurrence,
+                        "next_run_at": int(next_run_at),
+                        "timezone": timezone_name,
+                    }
+                ),
             ),
         )
     schedule = task_schedule(conn, task_id)
@@ -120,8 +123,7 @@ def set_task_schedule_enabled(conn: Any, task_id: str, enabled: bool) -> dict[st
     now = int(time.time())
     with _module().write_txn(conn):
         changed = conn.execute(
-            "UPDATE xnobrain_task_schedules SET enabled = ?, updated_at = ? "
-            "WHERE task_id = ?",
+            "UPDATE xnobrain_task_schedules SET enabled = ?, updated_at = ? WHERE task_id = ?",
             (1 if enabled else 0, now, task_id),
         )
         if changed.rowcount != 1:
@@ -173,10 +175,12 @@ def _append_schedule_event(
             "VALUES (?, 'schedule_fired', ?, unixepoch())",
             (
                 task_id,
-                json.dumps({
-                    "occurrence_task_id": occurrence_id,
-                    "scheduled_for": scheduled_for,
-                }),
+                json.dumps(
+                    {
+                        "occurrence_task_id": occurrence_id,
+                        "scheduled_for": scheduled_for,
+                    }
+                ),
             ),
         )
 

@@ -7,6 +7,7 @@ from .kanban_support import (
     connection,
 )
 
+
 def list_boards(*, include_archived: bool = False) -> list[dict[str, Any]]:
     return list(_module().list_boards(include_archived=include_archived))
 

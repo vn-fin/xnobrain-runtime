@@ -109,13 +109,21 @@ class ConversationGoalsMixin:
             manager = manager_type(session_id)
             current = manager.state
             if current is None:
-                raise AgentAPIError("no goal exists for this conversation", code="goal_not_found", status=404)
+                raise AgentAPIError(
+                    "no goal exists for this conversation", code="goal_not_found", status=404
+                )
             objective = self._text_value(body.get("objective"), field="objective", max_chars=10_000)
             max_turns = int(body.get("max_turns") or current.max_turns)
             if max_turns < 1 or max_turns > 100:
-                raise AgentAPIError("max_turns must be between 1 and 100", code="invalid_goal_budget")
+                raise AgentAPIError(
+                    "max_turns must be between 1 and 100", code="invalid_goal_budget"
+                )
             contract_data = body.get("contract")
-            contract = GoalContract.from_dict(dict(contract_data)) if isinstance(contract_data, Mapping) else current.contract
+            contract = (
+                GoalContract.from_dict(dict(contract_data))
+                if isinstance(contract_data, Mapping)
+                else current.contract
+            )
             subgoals = list(current.subgoals)
             state = manager.set(objective, max_turns=max_turns, contract=contract)
             state.subgoals = subgoals
@@ -128,7 +136,9 @@ class ConversationGoalsMixin:
         with scope(Path(profile_dir)):
             state = manager_type(session_id).pause()
             if state is None:
-                raise AgentAPIError("no goal exists for this conversation", code="goal_not_found", status=404)
+                raise AgentAPIError(
+                    "no goal exists for this conversation", code="goal_not_found", status=404
+                )
             return {"goal": _goal_payload(state)}
 
     def resume_conversation_goal(self, raw_name: Any, conversation_id: Any) -> dict[str, Any]:
@@ -136,7 +146,9 @@ class ConversationGoalsMixin:
         with scope(Path(profile_dir)):
             state = manager_type(session_id).resume()
             if state is None:
-                raise AgentAPIError("no goal exists for this conversation", code="goal_not_found", status=404)
+                raise AgentAPIError(
+                    "no goal exists for this conversation", code="goal_not_found", status=404
+                )
             return {"goal": _goal_payload(state)}
 
     def clear_conversation_goal(self, raw_name: Any, conversation_id: Any) -> dict[str, Any]:
@@ -175,5 +187,7 @@ class ConversationGoalsMixin:
             except RuntimeError as error:
                 raise AgentAPIError(str(error), code="goal_not_found", status=404) from error
             except (TypeError, ValueError, IndexError) as error:
-                raise AgentAPIError("subgoal not found", code="subgoal_not_found", status=404) from error
+                raise AgentAPIError(
+                    "subgoal not found", code="subgoal_not_found", status=404
+                ) from error
             return {"goal": _goal_payload(manager.state)}

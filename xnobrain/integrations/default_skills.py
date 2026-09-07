@@ -7,7 +7,6 @@ import os
 import time
 from pathlib import Path
 
-
 # Keep the default prompt index focused on broadly useful document, research,
 # planning, and engineering workflows. Browser automation, computer use,
 # memory, todo planning, and self-improvement remain powerful without entries
@@ -15,18 +14,20 @@ from pathlib import Path
 # their guidance directly into the system prompt. Every other bundled skill
 # remains installed and can be enabled from the Skills page. User-installed
 # skills are never changed by this policy.
-DEFAULT_ENABLED_BUNDLED_SKILLS = frozenset({
-    "docx",
-    "grounded-citations",
-    "ocr-and-documents",
-    "pdf",
-    "plan",
-    "powerpoint",
-    "requesting-code-review",
-    "systematic-debugging",
-    "test-driven-development",
-    "xlsx",
-})
+DEFAULT_ENABLED_BUNDLED_SKILLS = frozenset(
+    {
+        "docx",
+        "grounded-citations",
+        "ocr-and-documents",
+        "pdf",
+        "plan",
+        "powerpoint",
+        "requesting-code-review",
+        "systematic-debugging",
+        "test-driven-development",
+        "xlsx",
+    }
+)
 
 
 class DefaultSkillsMixin:
@@ -54,11 +55,7 @@ class DefaultSkillsMixin:
         raw_disabled = skills.get("disabled") or []
         if isinstance(raw_disabled, str):
             raw_disabled = [item.strip() for item in raw_disabled.split(",")]
-        disabled = {
-            str(item).strip()
-            for item in raw_disabled
-            if str(item).strip()
-        }
+        disabled = {str(item).strip() for item in raw_disabled if str(item).strip()}
         # This is initialization, not a migration: choose the current defaults
         # for bundled skills while preserving unrelated user-installed skills.
         disabled.difference_update(bundled)
@@ -89,12 +86,7 @@ class DefaultSkillsMixin:
             return
         payload = source.read_bytes()
         digest = hashlib.sha256(payload).hexdigest()
-        target = (
-            profile_dir
-            / "snapshots"
-            / "config"
-            / f"{time.time_ns()}-{digest[:12]}.yaml"
-        )
+        target = profile_dir / "snapshots" / "config" / f"{time.time_ns()}-{digest[:12]}.yaml"
         target.parent.mkdir(parents=True, exist_ok=True)
         descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o440)
         try:

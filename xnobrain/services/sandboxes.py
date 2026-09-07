@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 import hashlib
 import json
 import logging
 import os
-from pathlib import Path
 import time
-from typing import Any, Mapping
 import uuid
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, Mapping
 
 import yaml
 
 from ..defaults import (
-    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_AGENT_ID,
+    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
     BIG_BROTHER_DESCRIPTION,
     BIG_BROTHER_DISPLAY_NAME,
     BIG_BROTHER_MODEL_DEFAULT_MARKER,
@@ -48,6 +48,7 @@ from .helpers import cached_method
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError
 from .workspace_upload import WorkspaceUploadError
 
+
 class SandboxesServiceMixin:
     def sandbox(self, action: str) -> dict[str, Any]:
         """Return local runtime detail without exposing a process listing."""
@@ -59,5 +60,3 @@ class SandboxesServiceMixin:
         if action == "stats":
             return {"metrics": detail["metrics"], "system": detail["system"]}
         raise ServiceError("sandbox resource not found", status=404, code="not_found")
-
-

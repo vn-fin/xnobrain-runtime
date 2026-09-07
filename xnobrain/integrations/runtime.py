@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import os
-from pathlib import Path
 import platform
 import shutil
 import socket
 import threading
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 
@@ -40,7 +40,9 @@ class LocalRuntimeManager:
                 "status": "running",
                 "type": "container",
                 "image": os.getenv("XNOBRAIN_RUNTIME_IMAGE", "xnobrain-runtime"),
-                "created_at": datetime.fromtimestamp(self.started_at, timezone.utc).isoformat().replace("+00:00", "Z"),
+                "created_at": datetime.fromtimestamp(self.started_at, timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z"),
                 "gateway": {"healthy": True, "port": int(os.getenv("API_SERVER_PORT", "3000"))},
                 "resources": {
                     "cpus": str(cpus),
@@ -80,7 +82,10 @@ class LocalRuntimeManager:
     def _cpu_usage(self) -> tuple[float, int]:
         usage_ns = 0
         try:
-            fields = dict(line.split(None, 1) for line in Path("/sys/fs/cgroup/cpu.stat").read_text(encoding="utf-8").splitlines())
+            fields = dict(
+                line.split(None, 1)
+                for line in Path("/sys/fs/cgroup/cpu.stat").read_text(encoding="utf-8").splitlines()
+            )
             usage_ns = int(fields.get("usage_usec", "0")) * 1_000
         except (OSError, ValueError):
             usage_ns = time.process_time_ns()
@@ -118,16 +123,20 @@ class LocalRuntimeManager:
                     candidates.append((root / "memory.current", root / "memory.max"))
                 elif "memory" in controllers.split(","):
                     root = Path("/sys/fs/cgroup/memory") / relative_path
-                    candidates.append((root / "memory.usage_in_bytes", root / "memory.limit_in_bytes"))
+                    candidates.append(
+                        (root / "memory.usage_in_bytes", root / "memory.limit_in_bytes")
+                    )
         except (OSError, ValueError):
             pass
-        candidates.extend([
-            (Path("/sys/fs/cgroup/memory.current"), Path("/sys/fs/cgroup/memory.max")),
-            (
-                Path("/sys/fs/cgroup/memory/memory.usage_in_bytes"),
-                Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
-            ),
-        ])
+        candidates.extend(
+            [
+                (Path("/sys/fs/cgroup/memory.current"), Path("/sys/fs/cgroup/memory.max")),
+                (
+                    Path("/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+                    Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+                ),
+            ]
+        )
         seen: set[tuple[Path, Path]] = set()
         for current_path, limit_path in candidates:
             if (current_path, limit_path) in seen:

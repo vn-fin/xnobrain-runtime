@@ -20,6 +20,8 @@ test:
 	PYTHONPATH="$(TEST_PYTHONPATH)" $(PYTHON_BIN) -m unittest discover -s xnobrain/tests -t . -p 'test_*.py'
 
 check:
+	../xnobrain-ai/.venv/bin/ruff format --check xnobrain server.py
+	../xnobrain-ai/.venv/bin/ruff check xnobrain server.py
 	PYTHONPATH="$(TEST_PYTHONPATH)" $(PYTHON_BIN) -m unittest discover -s xnobrain/tests -t . -p 'test_*.py'
 	$(PYTHON_BIN) -m compileall -q xnobrain server.py
 

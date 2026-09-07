@@ -46,40 +46,52 @@ class ProvidersServiceMixin:
                 and item.get("id") != "auto"
                 and item.get("assignments")
             }
-            result.append({
-                "id": provider,
-                "display_name": definition.get("display_name", provider.title()),
-                "provider_type": provider,
-                "description": definition.get(
-                    "description", "Managed by your XNOBrain organization."
-                ),
-                "connection_mode": "managed",
-                "base_url": "",
-                "requires_base_url": provider == "openai-like",
-                "connected": bool(available_models),
-                "status": (
-                    "unavailable" if not router_available
-                    else "connected" if available_models
-                    else "disconnected"
-                ),
-                "last_test_status": "unknown",
-                "default_model": "auto" if available_models else "",
-                "connection_count": 0,
-                "available_models": available_models,
-                "model_assignments": model_assignments,
-            })
+            result.append(
+                {
+                    "id": provider,
+                    "display_name": definition.get("display_name", provider.title()),
+                    "provider_type": provider,
+                    "description": definition.get(
+                        "description", "Managed by your XNOBrain organization."
+                    ),
+                    "connection_mode": "managed",
+                    "base_url": "",
+                    "requires_base_url": provider == "openai-like",
+                    "connected": bool(available_models),
+                    "status": (
+                        "unavailable"
+                        if not router_available
+                        else "connected"
+                        if available_models
+                        else "disconnected"
+                    ),
+                    "last_test_status": "unknown",
+                    "default_model": "auto" if available_models else "",
+                    "connection_count": 0,
+                    "available_models": available_models,
+                    "model_assignments": model_assignments,
+                }
+            )
         return result, router_available
 
     async def provider_models(self, provider: str) -> dict[str, Any]:
         self._provider(provider)
         items = [
-            item for item in (await self.router.list_models())["data"]
+            item
+            for item in (await self.router.list_models())["data"]
             if item.get("provider") == provider and item.get("id") != "auto"
         ]
         reasoning = [
             level
             for level in (
-                "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+                "ultra",
             )
             if any(level in item.get("reasoning_levels", []) for item in items)
         ]
