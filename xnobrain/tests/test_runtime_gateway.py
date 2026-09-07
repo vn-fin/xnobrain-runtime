@@ -16,6 +16,10 @@ from xnobrain.integrations.runtime_gateway import (
 )
 from xnobrain.runtime.v1 import runtime_gateway_pb2 as gateway_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2_grpc as gateway_grpc
+from xnobrain.trusted_context import (
+    conversation_context_signature,
+    encode_conversation_context,
+)
 
 TOKEN = "runtime-internal-test-token"
 
@@ -117,6 +121,10 @@ class RuntimeGatewayTests(unittest.IsolatedAsyncioTestCase):
             http_pb2.Header(name="cookie", values=[b"session=browser-secret"]),
             http_pb2.Header(name="proxy-authorization", values=[b"proxy-secret"]),
             http_pb2.Header(name="x-client-value", values=[b"one", b"two"]),
+            http_pb2.Header(
+                name="x-xnobrain-verified-conversation-context",
+                values=[b"forged"],
+            ),
         )
         call = self.stub.Proxy(
             _frames(
@@ -148,6 +156,12 @@ class RuntimeGatewayTests(unittest.IsolatedAsyncioTestCase):
             [value for name, value in relayed_headers if name == "x-client-value"],
             ["one", "two"],
         )
+        relayed = dict(relayed_headers)
+        self.assertEqual(relayed["x-xnobrain-verified-subject"], "user-1")
+        self.assertEqual(relayed["x-xnobrain-verified-tenant"], "tenant-1")
+        self.assertEqual(relayed["x-xnobrain-verified-organization"], "org-1")
+        self.assertRegex(relayed["x-xnobrain-principal-signature"], r"^[0-9a-f]{64}$")
+        self.assertNotIn("x-xnobrain-verified-conversation-context", relayed)
 
         self.assertEqual(responses[0].WhichOneof("frame"), "head")
         self.assertEqual(responses[0].head.status_code, 206)
@@ -163,6 +177,41 @@ class RuntimeGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([frame.sequence for frame in body_frames], list(range(len(body_frames))))
         self.assertEqual(b"".join(frame.data for frame in body_frames), b"stream-result")
         self.assertEqual(responses[-1].WhichOneof("frame"), "end")
+
+    async def test_relays_only_control_signed_conversation_context_claims(self) -> None:
+        context = {
+            "schema_version": 1,
+            "id": "cctx-1",
+            "owner_kind": "organization",
+            "organization_id": "org-1",
+            "payer_kind": "personal",
+            "state": "active",
+        }
+        encoded = encode_conversation_context(context)
+        signature = conversation_context_signature(TOKEN, "user-1", "tenant-1", "org-1", encoded)
+        headers = (
+            http_pb2.Header(
+                name="x-xnobrain-verified-conversation-context",
+                values=[encoded.encode()],
+            ),
+            http_pb2.Header(
+                name="x-xnobrain-conversation-context-signature",
+                values=[signature.encode()],
+            ),
+        )
+        call = self.stub.Proxy(
+            _frames(
+                _head(headers=headers),
+                gateway_pb2.RuntimeGatewayServiceProxyRequest(end=http_pb2.StreamEnd()),
+            ),
+            metadata=(("x-xnobrain-internal-token", TOKEN),),
+        )
+
+        _ = [response async for response in call]
+
+        relayed = {name.lower(): value for name, value in self.received["headers"]}
+        self.assertEqual(relayed["x-xnobrain-verified-conversation-context"], encoded)
+        self.assertEqual(relayed["x-xnobrain-conversation-context-signature"], signature)
 
     async def test_rejects_invalid_internal_token(self) -> None:
         call = self.stub.Proxy(

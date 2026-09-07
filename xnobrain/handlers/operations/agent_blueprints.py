@@ -2,11 +2,14 @@
 
 from typing import Any, Callable
 
+from ...trusted_context import from_request
+
 Operation = tuple[Callable[[], Any], str, int]
 
 
 def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Operation]:
     path, query, service = request.path_params, request.query_params, handler.service
+    trusted = from_request(request)
 
     def owner() -> str:
         value = str(query.get("agent") or "").strip()
@@ -31,7 +34,9 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             200,
         ),
         "agent_blueprints_approve": (
-            lambda: service.approve_agent_blueprint(owner(), path["blueprint_id"], body),
+            lambda: service.approve_agent_blueprint(
+                owner(), path["blueprint_id"], body, trusted.subject
+            ),
             "agent blueprint approved successfully",
             200,
         ),

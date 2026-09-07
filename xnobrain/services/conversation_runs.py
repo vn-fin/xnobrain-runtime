@@ -42,13 +42,45 @@ class ConversationRunService:
         self._active: dict[str, _ActiveConversationRun] = {}
         self._by_conversation: dict[tuple[str, str], str] = {}
 
+    @staticmethod
+    def _reject_conflicting_context(
+        body: Mapping[str, Any],
+        context: Mapping[str, Any],
+    ) -> None:
+        aliases = {
+            "ownership_context": context,
+            "work_context_id": context.get("id"),
+            "owner_kind": context.get("owner_kind"),
+            "organization_id": context.get("organization_id"),
+            "payer_kind": context.get("payer_kind"),
+            "sponsor_grant_id": context.get("sponsor_grant_id"),
+        }
+        for field, expected in aliases.items():
+            if field not in body:
+                continue
+            supplied = body.get(field)
+            if supplied != expected:
+                raise ServiceError(
+                    "run ownership or payer conflicts with the conversation binding",
+                    status=409,
+                    code="conversation_context_conflict",
+                )
+            raise ServiceError(
+                "run ownership and payer are loaded from the conversation",
+                code="conversation_context_not_accepted",
+            )
+
     async def start_run(
         self,
         agent_id: str,
         conversation_id: str,
         body: Mapping[str, Any],
+        *,
+        ownership_context: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         self.agents.get_conversation(agent_id, conversation_id)
+        context = dict(ownership_context or {})
+        self._reject_conflicting_context(body, context)
         key = (str(agent_id), str(conversation_id))
         active_id = self._by_conversation.get(key)
         if active_id and active_id in self._active:
@@ -90,6 +122,7 @@ class ConversationRunService:
             "error": None,
             "output": "",
             "usage": {},
+            "ownership_context": context,
         }
         self.repository.put_conversation_run(record)
         entry = _ActiveConversationRun(run_id, str(agent_id), str(conversation_id))
@@ -100,6 +133,7 @@ class ConversationRunService:
         payload["run_id"] = run_id
         payload["run_mode"] = mode
         payload["conversation_id"] = str(conversation_id)
+        payload["ownership_context"] = context
         task = asyncio.create_task(self._drive(record, payload), name=f"conversation-run-{run_id}")
         entry.task = task
         task.add_done_callback(lambda _task, rid=run_id: self._deregister(rid))
@@ -168,8 +202,15 @@ class ConversationRunService:
         agent_id: str,
         conversation_id: str,
         body: Mapping[str, Any],
+        *,
+        ownership_context: Mapping[str, Any] | None = None,
     ) -> AsyncIterator[bytes]:
-        record = await self.start_run(agent_id, conversation_id, body)
+        record = await self.start_run(
+            agent_id,
+            conversation_id,
+            body,
+            ownership_context=ownership_context,
+        )
         async for event in self.events(agent_id, conversation_id, str(record["id"])):
             yield self._sse(event)
         yield b"data: [DONE]\n\n"
@@ -253,6 +294,7 @@ class ConversationRunService:
                     "run_mode": next_record["mode"],
                     "timeout_seconds": next_record["timeout_seconds"],
                     "deadline_at": next_record["deadline_at"],
+                    "ownership_context": next_record.get("ownership_context") or {},
                 }
             )
         elif isinstance(payload, Mapping) and event_name == "run.completed":

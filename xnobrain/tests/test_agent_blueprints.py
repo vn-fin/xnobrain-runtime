@@ -16,6 +16,11 @@ from httpx import ASGITransport, AsyncClient
 from xnobrain.app import XNOBrainApplication
 from xnobrain.integrations import AgentManager, GlobalConfigManager
 from xnobrain.repositories import FileRepository, StoreError
+from xnobrain.trusted_context import (
+    TRUSTED_SIGNATURE_HEADER,
+    TRUSTED_SUBJECT_HEADER,
+    principal_signature,
+)
 
 
 class FakeRouter:
@@ -49,6 +54,7 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
                 "HERMES_PROFILES_ROOT": str(self.profiles),
                 "DATA_DIR": str(temporary / "data"),
                 "RUNTIME_INCLUDE_PACKAGED_SKILLS": "false",
+                "RUNTIME_INTERNAL_SERVICE_TOKEN": "test-internal-token",
             },
         )
         self.environment.start()
@@ -163,7 +169,12 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
                     "expected_revision": 1,
                     "canonical_digest": created["canonical_digest"],
                     "decision": "approve",
-                    "approved_by": "user:kim",
+                },
+                headers={
+                    TRUSTED_SUBJECT_HEADER: "user:kim",
+                    TRUSTED_SIGNATURE_HEADER: principal_signature(
+                        "test-internal-token", "user:kim"
+                    ),
                 },
             )
             patched = await client.patch(
@@ -179,6 +190,7 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(approval["approval"]["canonical_digest"], created["canonical_digest"])
         self.assertEqual(approval["canonical_digest"], created["canonical_digest"])
         self.assertEqual(approval["approval"]["binding"], created["approval_binding"])
+        self.assertEqual(approval["approval"]["approved_by"], "user:kim")
         self.assertEqual(patched.status_code, 200, patched.text)
         updated = patched.json()["data"]
         self.assertEqual(updated["revision"], 2)
@@ -196,7 +208,12 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
                     "expected_revision": 1,
                     "canonical_digest": "sha256:" + "0" * 64,
                     "decision": "approve",
-                    "approved_by": "user:kim",
+                },
+                headers={
+                    TRUSTED_SUBJECT_HEADER: "user:kim",
+                    TRUSTED_SIGNATURE_HEADER: principal_signature(
+                        "test-internal-token", "user:kim"
+                    ),
                 },
             )
             first = await client.patch(
@@ -212,6 +229,29 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.status_code, 200, first.text)
         self.assertEqual(stale.status_code, 409, stale.text)
         self.assertEqual(stale.json()["error"]["code"], "blueprint_revision_conflict")
+
+    async def test_approval_fails_closed_without_verified_facade_subject(self):
+        created = (await self.create(blueprint=self.spec())).json()["data"]
+        payload = {
+            "expected_revision": 1,
+            "canonical_digest": created["canonical_digest"],
+            "decision": "approve",
+        }
+        async with self.client() as client:
+            missing = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}"
+                "/approvals?agent=big-brother",
+                json=payload,
+            )
+            forged = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}"
+                "/approvals?agent=big-brother",
+                json={**payload, "approved_by": "user:attacker"},
+                headers={TRUSTED_SUBJECT_HEADER: "user:attacker"},
+            )
+        self.assertEqual(missing.status_code, 401, missing.text)
+        self.assertEqual(missing.json()["error"]["code"], "trusted_subject_required")
+        self.assertEqual(forged.status_code, 422, forged.text)
 
     async def test_owner_isolation_validation_and_no_scaffold_route(self):
         other = self.service.create_agent({"display_name": "Other"})

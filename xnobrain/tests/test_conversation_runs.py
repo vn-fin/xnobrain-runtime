@@ -93,14 +93,21 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
             "agent-one",
             "session-one",
             {"input": "Research papers and write a PDF report", "model": "test/model"},
+            ownership_context={
+                "id": "personal",
+                "owner_kind": "personal",
+                "payer_kind": "personal",
+            },
         )
         self.assertEqual(record["mode"], "background")
         self.assertEqual(record["timeout_seconds"], 60)
+        self.assertEqual(record["ownership_context"]["id"], "personal")
         await self.wait_for_revision(record["id"], 2)
 
         observer = self.service.events("agent-one", "session-one", record["id"])
         first = await anext(observer)
         self.assertEqual(first["sequence"], 1)
+        self.assertEqual(first["data"]["ownership_context"]["id"], "personal")
         await observer.aclose()
         self.assertFalse(self.service.registry_entry(record["id"]).task.done())
 
@@ -123,6 +130,19 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(completed["usage"], {"total_tokens": 12})
         self.assertEqual(self.agents.received["run_id"], record["id"])
         self.assertEqual(self.agents.received["conversation_id"], "session-one")
+        self.assertEqual(self.agents.received["ownership_context"]["id"], "personal")
+
+    async def test_conflicting_context_input_is_rejected_before_budget_or_dispatch(self) -> None:
+        with self.assertRaisesRegex(Exception, "conflicts") as caught:
+            await self.service.start_run(
+                "agent-one",
+                "session-one",
+                {"input": "hello", "payer_kind": "organization_sponsor"},
+                ownership_context={"id": "personal", "payer_kind": "personal"},
+            )
+        self.assertEqual(caught.exception.code, "conversation_context_conflict")
+        self.assertEqual(self.analytics.calls, [])
+        self.assertEqual(self.agents.received, {})
 
     async def test_budget_is_checked_once_when_the_run_is_accepted(self) -> None:
         record = await self.service.start_run(

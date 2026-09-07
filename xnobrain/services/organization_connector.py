@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from ..repositories.organization_connector import OrganizationConnectorRepository
+from ..trusted_context import TrustedRequestContext
 
 TERMINAL = {"completed", "failed", "timed_out", "cancelled"}
 
@@ -338,8 +339,42 @@ class OrganizationConnector:
                 else ""
             )
         )
+        context_id = str(cmd.get("work_context_id") or "").strip()
+        sponsor_grant_id = str(cmd.get("sponsor_grant_id") or "").strip()
+        if not context_id:
+            raise ValueError("organization command has no work context")
+        payer_kind = "organization_sponsor" if sponsor_grant_id else "personal"
         conversation = self.platform.create_conversation(
-            agent_id, {"title": f"Organization run {str(cmd['run_id'])[-8:]}"}
+            agent_id,
+            {
+                "title": f"Organization run {str(cmd['run_id'])[-8:]}",
+                "ownership_context": {
+                    "schema_version": 1,
+                    "id": context_id,
+                    "owner_kind": "organization",
+                    "organization_id": self.organization,
+                    "payer_kind": payer_kind,
+                    "sponsor_grant_id": sponsor_grant_id or None,
+                    "membership_revision_at_create": cmd.get("membership_revision"),
+                    "policy_revision_at_create": cmd.get("policy_revision"),
+                    "state": "active",
+                },
+            },
+            TrustedRequestContext(
+                subject=str(cmd.get("subject_user_id") or "organization-runner"),
+                organization_id=self.organization,
+                ownership_context={
+                    "schema_version": 1,
+                    "id": context_id,
+                    "owner_kind": "organization",
+                    "organization_id": self.organization,
+                    "payer_kind": payer_kind,
+                    "sponsor_grant_id": sponsor_grant_id or None,
+                    "membership_revision_at_create": cmd.get("membership_revision"),
+                    "policy_revision_at_create": cmd.get("policy_revision"),
+                    "state": "active",
+                },
+            ),
         )
         run = await self.platform.start_conversation_run(
             agent_id, conversation["id"], self.execution_body(cmd, instruction, deadline)

@@ -14,6 +14,17 @@ import grpc
 from xnobrain.common.v1 import http_stream_pb2 as http_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2 as gateway_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2_grpc as gateway_grpc
+from xnobrain.trusted_context import (
+    TRUSTED_CONVERSATION_CONTEXT_HEADER,
+    TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER,
+    TRUSTED_IDENTITY_HEADERS,
+    TRUSTED_ORGANIZATION_HEADER,
+    TRUSTED_SIGNATURE_HEADER,
+    TRUSTED_SUBJECT_HEADER,
+    TRUSTED_TENANT_HEADER,
+    decode_verified_conversation_context,
+    principal_signature,
+)
 
 _MAX_CHUNK_BYTES = 64 * 1024
 _METHOD_RE = re.compile(r"^[A-Z][A-Z0-9_-]{0,31}$")
@@ -56,11 +67,52 @@ def _request_headers(values) -> list[tuple[str, str]]:
     result: list[tuple[str, str]] = []
     for header in values:
         name = str(header.name or "").strip().lower()
-        if not name or name in _FORBIDDEN_REQUEST_HEADERS:
+        if not name or name in _FORBIDDEN_REQUEST_HEADERS or name in TRUSTED_IDENTITY_HEADERS:
             continue
         for value in header.values:
             result.append((name, bytes(value).decode("latin-1")))
     return result
+
+
+def _verified_context_headers(
+    values,
+    token: str,
+    subject: str,
+    tenant_id: str,
+    organization_id: str,
+) -> list[tuple[str, str]]:
+    """Relay only ownership claims signed by the authenticated Control facade."""
+    captured: dict[str, list[str]] = {}
+    for header in values:
+        name = str(header.name or "").strip().lower()
+        if name not in {
+            TRUSTED_CONVERSATION_CONTEXT_HEADER,
+            TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER,
+        }:
+            continue
+        captured.setdefault(name, []).extend(
+            bytes(value).decode("latin-1") for value in header.values
+        )
+    contexts = captured.get(TRUSTED_CONVERSATION_CONTEXT_HEADER, [])
+    signatures = captured.get(TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER, [])
+    if len(contexts) != 1 or len(signatures) != 1:
+        return []
+    encoded_context = contexts[0].strip()
+    signature = signatures[0].strip()
+    verified = decode_verified_conversation_context(
+        token,
+        subject,
+        tenant_id,
+        organization_id,
+        encoded_context,
+        signature,
+    )
+    if verified is None:
+        return []
+    return [
+        (TRUSTED_CONVERSATION_CONTEXT_HEADER, encoded_context),
+        (TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER, signature),
+    ]
 
 
 def _response_headers(values) -> list[http_pb2.Header]:
@@ -140,6 +192,35 @@ class RuntimeGatewayService(
         if raw_query:
             target += "?" + raw_query
         timeout = aiohttp.ClientTimeout(total=None, connect=10, sock_connect=10)
+        relay_headers = _request_headers(head.headers)
+        subject = str(head.principal.user_id)
+        tenant_id = str(head.principal.tenant_id or "")
+        organization_id = str(head.principal.organization_id or "")
+        relay_headers.extend(
+            _verified_context_headers(
+                head.headers,
+                self._token,
+                subject,
+                tenant_id,
+                organization_id,
+            )
+        )
+        relay_headers.extend(
+            (
+                (TRUSTED_SUBJECT_HEADER, subject),
+                (TRUSTED_TENANT_HEADER, tenant_id),
+                (TRUSTED_ORGANIZATION_HEADER, organization_id),
+                (
+                    TRUSTED_SIGNATURE_HEADER,
+                    principal_signature(
+                        self._token,
+                        subject,
+                        tenant_id,
+                        organization_id,
+                    ),
+                ),
+            )
+        )
         async with aiohttp.ClientSession(
             timeout=timeout,
             trust_env=False,
@@ -149,7 +230,7 @@ class RuntimeGatewayService(
                 async with session.request(
                     method,
                     target,
-                    headers=_request_headers(head.headers),
+                    headers=relay_headers,
                     data=request_body(),
                     allow_redirects=False,
                 ) as response:

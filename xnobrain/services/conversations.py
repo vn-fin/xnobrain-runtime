@@ -29,6 +29,7 @@ from ..defaults import (
     LEGACY_BIG_BROTHER_TOOLSET,
 )
 from ..integrations import AgentAPIError, ConfigAPIError, LLMRouterAPIError
+from ..models.conversations import ConversationOwnershipContext
 from ..repositories import StoreError
 from .base import ServiceError, iso, utc_now
 from .constants import (
@@ -50,6 +51,130 @@ from .workspace_upload import WorkspaceUploadError
 
 
 class ConversationsServiceMixin:
+    @staticmethod
+    def _personal_context() -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "id": "personal",
+            "owner_kind": "personal",
+            "organization_id": None,
+            "payer_kind": "personal",
+            "sponsor_grant_id": None,
+            "membership_revision_at_create": None,
+            "policy_revision_at_create": None,
+            "state": "active",
+        }
+
+    def _conversation_profile(self, agent_id: str) -> Path:
+        profile = self._agent_profile_path(agent_id)
+        if profile.is_symlink() or not profile.is_dir():
+            raise ServiceError("agent profile not found", status=404, code="not_found")
+        return profile
+
+    def _normalize_context(
+        self,
+        body: Mapping[str, Any],
+        trusted_context: Any = None,
+    ) -> dict[str, Any]:
+        raw = body.get("ownership_context")
+        if raw is None:
+            return self._personal_context()
+        trusted_subject = str(getattr(trusted_context, "subject", "") or "").strip()
+        if not trusted_subject:
+            raise ServiceError(
+                "trusted conversation context is required",
+                status=401,
+                code="trusted_context_required",
+            )
+        verified = getattr(trusted_context, "ownership_context", None)
+        if not isinstance(verified, Mapping) or dict(verified) != dict(raw):
+            raise ServiceError(
+                "conversation ownership context was not verified by Control",
+                status=403,
+                code="conversation_context_not_verified",
+            )
+        try:
+            context = ConversationOwnershipContext.model_validate(raw).model_dump(mode="json")
+        except Exception as exc:
+            raise ServiceError(
+                "conversation ownership context is invalid",
+                code="invalid_conversation_context",
+            ) from exc
+        trusted_organization = str(getattr(trusted_context, "organization_id", "") or "").strip()
+        if context["owner_kind"] == "organization":
+            if not trusted_organization or context["organization_id"] != trusted_organization:
+                raise ServiceError(
+                    "conversation organization does not match the trusted subject",
+                    status=403,
+                    code="conversation_context_denied",
+                )
+        return context
+
+    def _stored_context(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        *,
+        backfill: bool = True,
+    ) -> dict[str, Any]:
+        profile = self._conversation_profile(agent_id)
+        stored = self.repository.get_conversation_context(profile, conversation_id)
+        if stored is None:
+            # Never leave a Personal sidecar for a forged/missing Hermes session.
+            self.agents.get_conversation(agent_id, conversation_id)
+            if not backfill:
+                raise ServiceError(
+                    "conversation ownership context is unavailable",
+                    status=500,
+                    code="conversation_context_missing",
+                )
+            context = self._personal_context()
+            record = {
+                **context,
+                "conversation_id": conversation_id,
+                "agent_id": agent_id,
+                "actor_user_id": None,
+                "executor_workspace_id": None,
+                "created_at": iso(),
+                "legacy_backfill": True,
+            }
+            try:
+                stored = self.repository.create_conversation_context(profile, record)
+            except StoreError as exc:
+                if exc.code != "conversation_context_exists":
+                    raise
+                stored = self.repository.get_conversation_context(profile, conversation_id)
+        if not isinstance(stored, Mapping):
+            raise ServiceError(
+                "conversation ownership context is unavailable",
+                status=500,
+                code="conversation_context_missing",
+            )
+        return self._public_context(stored)
+
+    @staticmethod
+    def _public_context(context: Mapping[str, Any]) -> dict[str, Any]:
+        return {field: context.get(field) for field in ConversationOwnershipContext.model_fields}
+
+    def _bind_conversation_context(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        context: Mapping[str, Any],
+        trusted_context: Any = None,
+    ) -> dict[str, Any]:
+        profile = self._conversation_profile(agent_id)
+        record = {
+            **dict(context),
+            "conversation_id": conversation_id,
+            "agent_id": agent_id,
+            "actor_user_id": str(getattr(trusted_context, "subject", "") or "") or None,
+            "executor_workspace_id": None,
+            "created_at": iso(),
+            "legacy_backfill": False,
+        }
+        return self._public_context(self.repository.create_conversation_context(profile, record))
+
     def list_conversations(
         self, agent_id: str, *, page: int = 1, limit: int = 50
     ) -> dict[str, Any]:
@@ -73,11 +198,38 @@ class ConversationsServiceMixin:
             },
         }
 
-    def create_conversation(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        payload = self.agents.create_conversation(
-            agent_id, {"title": body.get("title") or "New Session"}
+    def create_conversation(
+        self,
+        agent_id: str,
+        body: Mapping[str, Any],
+        trusted_context: Any = None,
+    ) -> dict[str, Any]:
+        context = self._normalize_context(body, trusted_context)
+        conversation_id = f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        bound = self._bind_conversation_context(
+            agent_id,
+            conversation_id,
+            context,
+            trusted_context,
         )
-        return self._conversation_dto(agent_id, payload["conversation"])
+        try:
+            payload = self.agents.create_conversation(
+                agent_id,
+                {
+                    "id": conversation_id,
+                    "title": body.get("title") or "New Session",
+                },
+            )
+        except Exception:
+            self.repository.delete_conversation_context(
+                self._conversation_profile(agent_id), conversation_id
+            )
+            raise
+        return self._conversation_dto(
+            agent_id,
+            payload["conversation"],
+            ownership_context=bound,
+        )
 
     def get_conversation(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
         payload = self.agents.get_conversation(agent_id, conversation_id)
@@ -227,12 +379,21 @@ class ConversationsServiceMixin:
             )
         result = self.agents.delete_conversation(agent_id, conversation_id)
         self.repository.delete_conversation_runs(agent_id, conversation_id)
+        self.repository.delete_conversation_context(
+            self._conversation_profile(agent_id), conversation_id
+        )
         return result
 
     async def stream_conversation(
         self, agent_id: str, conversation_id: str, body: Mapping[str, Any]
     ):
-        async for event in self.conversation_runs.legacy_stream(agent_id, conversation_id, body):
+        context = self._stored_context(agent_id, conversation_id)
+        async for event in self.conversation_runs.legacy_stream(
+            agent_id,
+            conversation_id,
+            body,
+            ownership_context=context,
+        ):
             yield event
 
     async def start_conversation_run(
@@ -241,10 +402,28 @@ class ConversationsServiceMixin:
         conversation_id: str,
         body: Mapping[str, Any],
     ) -> dict[str, Any]:
-        return await self.conversation_runs.start_run(agent_id, conversation_id, body)
+        context = self._stored_context(agent_id, conversation_id)
+        return await self.conversation_runs.start_run(
+            agent_id, conversation_id, body, ownership_context=context
+        )
+
+    def _with_context(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        result: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            **dict(result),
+            "ownership_context": self._stored_context(agent_id, conversation_id),
+        }
 
     def get_conversation_goal(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
-        return self.agents.get_conversation_goal(agent_id, conversation_id)
+        return self._with_context(
+            agent_id,
+            conversation_id,
+            self.agents.get_conversation_goal(agent_id, conversation_id),
+        )
 
     async def create_conversation_goal(
         self,
@@ -267,11 +446,12 @@ class ConversationsServiceMixin:
                     "input": str(body.get("objective") or ""),
                     "run_mode": "background",
                 },
+                ownership_context=self._stored_context(agent_id, conversation_id),
             )
         except Exception:
             self.agents.clear_conversation_goal(agent_id, conversation_id)
             raise
-        return {**result, "run": run}
+        return self._with_context(agent_id, conversation_id, {**result, "run": run})
 
     def update_conversation_goal(
         self,
@@ -283,11 +463,19 @@ class ConversationsServiceMixin:
             # Editing is a safe preemption: the current model turn may finish,
             # but the runner observes the paused replacement before judging it.
             self.agents.pause_conversation_goal(agent_id, conversation_id)
-        return self.agents.update_conversation_goal(agent_id, conversation_id, body)
+        return self._with_context(
+            agent_id,
+            conversation_id,
+            self.agents.update_conversation_goal(agent_id, conversation_id, body),
+        )
 
     def pause_conversation_goal(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
         # Persist first: the runner reloads this state after its current model turn.
-        return self.agents.pause_conversation_goal(agent_id, conversation_id)
+        return self._with_context(
+            agent_id,
+            conversation_id,
+            self.agents.pause_conversation_goal(agent_id, conversation_id),
+        )
 
     async def resume_conversation_goal(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
         if self.conversation_runs.active_run(agent_id, conversation_id) is not None:
@@ -305,14 +493,19 @@ class ConversationsServiceMixin:
                     "run_mode": "background",
                     "goal_resume": True,
                 },
+                ownership_context=self._stored_context(agent_id, conversation_id),
             )
         except Exception:
             self.agents.pause_conversation_goal(agent_id, conversation_id)
             raise
-        return {**result, "run": run}
+        return self._with_context(agent_id, conversation_id, {**result, "run": run})
 
     def delete_conversation_goal(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
-        return self.agents.clear_conversation_goal(agent_id, conversation_id)
+        return self._with_context(
+            agent_id,
+            conversation_id,
+            self.agents.clear_conversation_goal(agent_id, conversation_id),
+        )
 
     def add_conversation_subgoal(
         self,
@@ -320,7 +513,11 @@ class ConversationsServiceMixin:
         conversation_id: str,
         body: Mapping[str, Any],
     ) -> dict[str, Any]:
-        return self.agents.add_conversation_subgoal(agent_id, conversation_id, body)
+        return self._with_context(
+            agent_id,
+            conversation_id,
+            self.agents.add_conversation_subgoal(agent_id, conversation_id, body),
+        )
 
     def remove_conversation_subgoal(
         self,
@@ -328,10 +525,17 @@ class ConversationsServiceMixin:
         conversation_id: str,
         index: Any,
     ) -> dict[str, Any]:
-        return self.agents.remove_conversation_subgoal(agent_id, conversation_id, index)
+        return self._with_context(
+            agent_id,
+            conversation_id,
+            self.agents.remove_conversation_subgoal(agent_id, conversation_id, index),
+        )
 
     def active_conversation_run(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
-        return {"run": self.conversation_runs.active_run(agent_id, conversation_id)}
+        return {
+            "run": self.conversation_runs.active_run(agent_id, conversation_id),
+            "ownership_context": self._stored_context(agent_id, conversation_id),
+        }
 
     def get_conversation_run(
         self,
@@ -374,10 +578,16 @@ class ConversationsServiceMixin:
             }
         return result
 
-    @staticmethod
-    def _conversation_dto(agent_id: str, item: Mapping[str, Any]) -> dict[str, Any]:
+    def _conversation_dto(
+        self,
+        agent_id: str,
+        item: Mapping[str, Any],
+        *,
+        ownership_context: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        conversation_id = str(item.get("id") or item.get("session_id") or "")
         return {
-            "id": str(item.get("id") or item.get("session_id") or ""),
+            "id": conversation_id,
             "agent_id": agent_id,
             "title": str(item.get("title") or item.get("name") or "New Session"),
             "preview": str(item.get("preview") or ""),
@@ -390,4 +600,7 @@ class ConversationsServiceMixin:
             or item.get("ended_at")
             or item.get("started_at")
             or item.get("created_at"),
+            "ownership_context": dict(ownership_context)
+            if ownership_context is not None
+            else self._stored_context(agent_id, conversation_id),
         }

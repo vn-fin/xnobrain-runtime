@@ -240,7 +240,14 @@ class AgentBlueprintsServiceMixin:
         owner_agent_id: str,
         blueprint_id: str,
         body: Mapping[str, Any],
+        trusted_subject: str,
     ) -> dict[str, Any]:
+        if not trusted_subject:
+            raise ServiceError(
+                "trusted approval subject is required",
+                status=401,
+                code="trusted_subject_required",
+            )
         owner_profile = self._blueprint_owner_profile(owner_agent_id)
         expected_revision = int(body["expected_revision"])
         current = self.repository.get_agent_blueprint(owner_profile, blueprint_id)
@@ -270,7 +277,7 @@ class AgentBlueprintsServiceMixin:
             "approved_revision": expected_revision,
             "canonical_digest": expected_digest,
             "binding": self._approval_binding(current),
-            "approved_by": body["approved_by"],
+            "approved_by": trusted_subject,
             "approved_at": approved_at,
         }
         record["updated_at"] = approved_at

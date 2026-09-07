@@ -169,7 +169,6 @@ class AgentBlueprintApprovalCreate(BaseModel):
     expected_revision: int = Field(ge=1)
     canonical_digest: str = Field(pattern=_SHA256)
     decision: Literal["approve"]
-    approved_by: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
 
 
 class BlueprintFileManifestEntry(BaseModel):
