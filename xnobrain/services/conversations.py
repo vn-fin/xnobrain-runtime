@@ -77,6 +77,16 @@ class ConversationsServiceMixin:
         trusted_context: Any = None,
     ) -> dict[str, Any]:
         raw = body.get("ownership_context")
+        creation_intent = str(body.get("creation_intent") or "").strip()
+        verified = getattr(trusted_context, "ownership_context", None)
+        if raw is None and creation_intent:
+            if not isinstance(verified, Mapping) or str(verified.get("id") or "") != creation_intent:
+                raise ServiceError(
+                    "conversation creation intent was not verified by Control",
+                    status=403,
+                    code="conversation_context_not_verified",
+                )
+            raw = verified
         if raw is None:
             return self._personal_context()
         trusted_subject = str(getattr(trusted_context, "subject", "") or "").strip()
@@ -154,7 +164,11 @@ class ConversationsServiceMixin:
 
     @staticmethod
     def _public_context(context: Mapping[str, Any]) -> dict[str, Any]:
-        return {field: context.get(field) for field in ConversationOwnershipContext.model_fields}
+        return {
+            field: context.get(field)
+            for field in ConversationOwnershipContext.model_fields
+            if field != "owner_label" or context.get(field) is not None
+        }
 
     def _bind_conversation_context(
         self,

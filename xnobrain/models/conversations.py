@@ -13,6 +13,7 @@ class ConversationOwnershipContext(BaseModel):
     id: str = Field(min_length=1, max_length=256)
     owner_kind: Literal["personal", "organization"]
     organization_id: str | None = Field(default=None, min_length=1, max_length=256)
+    owner_label: str | None = Field(default=None, max_length=200)
     payer_kind: Literal["personal", "organization_sponsor"]
     sponsor_grant_id: str | None = Field(default=None, min_length=1, max_length=256)
     membership_revision_at_create: int | None = Field(default=None, ge=1)
@@ -36,6 +37,7 @@ class ConversationOwnershipContext(BaseModel):
 class ConversationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(default="New Session", max_length=200)
+    creation_intent: str | None = Field(default=None, min_length=1, max_length=256)
     ownership_context: ConversationOwnershipContext | None = None
 
 
