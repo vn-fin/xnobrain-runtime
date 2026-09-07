@@ -1,5 +1,12 @@
 def operations(handler, request, body):
     return {
+        "marketplace_export": (
+            lambda: handler.service.marketplace.export(
+                request.path_params["agent_id"], body["license"]
+            ),
+            "marketplace package exported",
+            200,
+        ),
         "marketplace_install": (
             lambda: handler.service.marketplace.install(body["package"]),
             "marketplace package installed",

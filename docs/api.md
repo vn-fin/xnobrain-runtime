@@ -77,6 +77,36 @@ of failing the run. Supported reasoning values come from provider model
 metadata and may include `none`, `minimal`, `xhigh`, `max`, and `ultra` in
 addition to `low`, `medium`, and `high`.
 
+## Safe marketplace package export
+
+`POST /xnobrain/api/runtime/v1/marketplace/agents/{agent_id}/export` builds a
+typed, deterministic publication package from the selected existing local agent.
+The request is `{"license":"MIT"}`; the response data contains the Control
+candidate fields `definition`, `requested_permissions`, `compatibility`, and
+`license`, plus `schema_version`, `source_agent_id`, a canonical `sha256:`
+`digest`, an ordered file manifest, enforced limits, and an exclusion report.
+The digest covers the definition, requested permissions, compatibility, and
+license using sorted compact UTF-8 JSON, matching marketplace version digest
+material.
+
+The export allowlist contains required `SOUL.md` and `workspace/AGENTS.md`,
+enabled skill `SKILL.md` files, and UTF-8 regular files in each skill's
+`references/`, `scripts/`, and `assets/` directories with approved extensions.
+Only display name, description, model slot, and reasoning effort are copied
+from profile configuration/metadata. Tool and MCP names are declarations; MCP
+URLs, commands, headers, environment and other connection details are not
+exported. Runtime grants no requested permission as a side effect of export.
+
+The export is bounded to 202 files, 1,000,000 bytes per file, 10,000,000 total
+bytes, 100 skills, 100 safe skill assets, and path depth 12. It rejects missing
+required definition files, invalid UTF-8, non-regular files, symlinks anywhere
+in the skills tree, path escapes, unsafe/case-colliding names, oversized input,
+and common credential patterns in otherwise public content. It never traverses
+or exports `.env`, credentials, provider/MCP connection values, `USER.md`,
+memories, conversations/history/sessions, state databases, logs, caches, or
+private workspace files. This endpoint is intentionally separate from the full
+portable profile export and does not modify marketplace installation flow.
+
 Portable profile example:
 
 ```bash

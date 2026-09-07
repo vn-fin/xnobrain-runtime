@@ -1,4 +1,6 @@
 from ..models.marketplace import (
+    MarketplaceExportPackage,
+    MarketplaceExportRequest,
     MarketplaceInstallRequest,
     MarketplaceUninstallRequest,
     MarketplaceUpdateRequest,
@@ -6,6 +8,14 @@ from ..models.marketplace import (
 from .definition import route
 
 ROUTES = (
+    route(
+        "POST",
+        "/marketplace/agents/{agent_id}/export",
+        "marketplace_export",
+        MarketplaceExportRequest,
+        tags=("Marketplace",),
+        response_data=MarketplaceExportPackage,
+    ),
     route(
         "POST",
         "/marketplace/install",
