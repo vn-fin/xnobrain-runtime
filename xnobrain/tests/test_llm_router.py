@@ -51,6 +51,13 @@ class FakeLLMRouterClient(LLMRouterClient):
         return self.responses.get((method, path), {})
 
 
+class ConversationRunnerImportTests(unittest.TestCase):
+    def test_router_error_is_available_to_conversation_error_handlers(self):
+        from xnobrain.integrations import conversation_runner
+
+        self.assertIs(conversation_runner.LLMRouterAPIError, LLMRouterAPIError)
+
+
 class ProviderRuntimeRequestGuardTests(unittest.TestCase):
     def test_removes_custom_provider_hints_without_changing_router_model(self):
         agent = SimpleNamespace()

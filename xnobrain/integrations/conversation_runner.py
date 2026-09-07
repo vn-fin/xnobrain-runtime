@@ -10,6 +10,7 @@ from .hermes_support import (
     MAX_TEXT_CHARS,
     Mapping,
     LLM_ROUTER_DEFAULT_MODEL,
+    LLMRouterAPIError,
     Path,
     json,
     route_llm_model,
