@@ -110,14 +110,10 @@ class ConversationsServiceMixin:
                 "conversation ownership context is invalid",
                 code="invalid_conversation_context",
             ) from exc
-        trusted_organization = str(getattr(trusted_context, "organization_id", "") or "").strip()
-        if context["owner_kind"] == "organization":
-            if not trusted_organization or context["organization_id"] != trusted_organization:
-                raise ServiceError(
-                    "conversation organization does not match the trusted subject",
-                    status=403,
-                    code="conversation_context_denied",
-                )
+        # The exact owner snapshot is independently signed by Control after
+        # active-membership resolution. The principal's optional organization
+        # claim represents login/default context and need not equal the new
+        # conversation owner.
         return context
 
     def _stored_context(

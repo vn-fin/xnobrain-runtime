@@ -201,7 +201,7 @@ class ConversationOwnershipTests(unittest.IsolatedAsyncioTestCase):
         stored = self.service.repository.get_conversation_context(self.root, raw["id"])
         self.assertTrue(stored["legacy_backfill"])
 
-    async def test_context_create_requires_signed_facade_and_matching_organization(self):
+    async def test_context_create_requires_signed_facade_context(self):
         async with self.client() as client:
             absent = await client.post(
                 "/xnobrain/api/runtime/v1/sessions?agent=big-brother",
@@ -223,11 +223,6 @@ class ConversationOwnershipTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 },
             )
-            wrong_org = await client.post(
-                "/xnobrain/api/runtime/v1/sessions?agent=big-brother",
-                json={"ownership_context": self.organization_context()},
-                headers=self.trusted_headers(organization="org-2"),
-            )
 
         self.assertEqual(absent.status_code, 401, absent.text)
         self.assertEqual(forged.status_code, 401, forged.text)
@@ -236,7 +231,6 @@ class ConversationOwnershipTests(unittest.IsolatedAsyncioTestCase):
             unverified_context.json()["error"]["code"],
             "conversation_context_not_verified",
         )
-        self.assertEqual(wrong_org.status_code, 403, wrong_org.text)
         self.assertEqual(self.service.list_conversations("big-brother")["conversations"], [])
 
     async def test_run_rejects_caller_owner_or_payer_fields_before_dispatch(self):
