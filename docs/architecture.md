@@ -58,3 +58,20 @@ remain local. The optional
 OpenTelemetry export is disabled by default and can target the configured collector. When
 `OTEL_ENABLED=true`, the runtime exports metadata-only spans only to the
 Compose collector or a loopback endpoint.
+
+### Router protocol and failed inference
+
+The Runtime uses GoRouter's `/v1/chat/completions` contract for prefixed models.
+In GoRouter v0.0.21, `cx/` is translated to the Codex Responses backend and
+`cc/` to Anthropic Messages. The public `/v1/responses` handler also delegates
+to the same chat routing pipeline; switching the public endpoint does not
+bypass credential health, quota, or provider request validation.
+
+A structured engine result with `failed: true` terminates the Runtime stream
+with `run.failed`, even when `final_response` contains diagnostic text or
+partial deltas have already been delivered. Diagnostic final output is not
+emitted as a synthetic assistant delta. Cancellation retains precedence.
+A router 503 reporting no healthy credentials requires checking the scoped
+principal's eligible provider connections; a generic upstream 400 alone does
+not identify the rejected field. Do not infer either cause from a successful
+request using a different provider or principal.

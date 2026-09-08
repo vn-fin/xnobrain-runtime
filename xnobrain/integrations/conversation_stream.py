@@ -607,7 +607,7 @@ class ConversationStreamMixin:
 
                 result, usage = payload
                 output = str(result.get("final_response") or "")
-                if not output_chunks and output:
+                if not output_chunks and output and not result.get("failed"):
                     # Some non-streaming-compatible providers can only return
                     # a final response. Preserve a usable fallback for them.
                     output_chunks.append(output)
@@ -628,7 +628,7 @@ class ConversationStreamMixin:
                             "timestamp": time.time(),
                         }
                     )
-                elif result.get("failed") and not output:
+                elif result.get("failed"):
                     yield self._sse_data(
                         {
                             "event": "run.failed",

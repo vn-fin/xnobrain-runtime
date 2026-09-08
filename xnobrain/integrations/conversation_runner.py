@@ -466,7 +466,7 @@ class ConversationRunnerMixin:
                         isinstance(message, dict)
                         and message.get("role") == "assistant"
                         and not message.get("tool_calls")
-                        and message.get("content") in {None, ""}
+                        and (message.get("content") is None or message.get("content") == "")
                     )
                 ]
             kwargs.pop("custom_llm_provider", None)

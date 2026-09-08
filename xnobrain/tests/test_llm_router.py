@@ -102,6 +102,16 @@ class ProviderRuntimeRequestGuardTests(unittest.TestCase):
             [messages[0], messages[2], messages[3]],
         )
 
+    def test_preserves_structured_assistant_content(self):
+        agent = SimpleNamespace()
+        agent._build_api_kwargs = lambda messages: {"messages": messages}
+        messages = [
+            {"role": "assistant", "content": [{"type": "text", "text": "hello"}]},
+            {"role": "assistant", "content": ""},
+        ]
+        AgentManager._install_provider_runtime_request_guard(agent)
+        self.assertEqual(agent._build_api_kwargs(messages)["messages"], messages[:1])
+
 
 class LLMRouterConfigTests(unittest.TestCase):
     def test_global_config_accepts_model_derived_auto_reasoning(self) -> None:
@@ -791,6 +801,48 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(LLMRouterAPIError):
             await manager._request("GET", "/api/providers")
+
+    async def test_provider_failure_with_output_is_not_completed(self):
+        for partial in ("", "Partial answer"):
+            with self.subTest(partial=partial), TemporaryDirectory() as temp_dir:
+                manager = object.__new__(AgentManager)
+                manager._active_runs = {}
+                manager._stopped_runs = set()
+                manager._active_agent_counts = {}
+                manager._registry_lock = threading.Lock()
+
+                async def run_session_agent(_prepared, **kwargs):
+                    if partial:
+                        kwargs["stream_delta_callback"](partial)
+                    return (
+                        {
+                            "failed": True,
+                            "error": "HTTP 503: no healthy credentials available",
+                            "final_response": "API call failed after 3 retries",
+                        },
+                        {},
+                    )
+
+                prepared = {
+                    "name": "news",
+                    "profile_dir": Path(temp_dir),
+                    "conversation_id": "session-one",
+                    "message": "hello",
+                    "model": "cx/test",
+                    "timeout_seconds": 30,
+                }
+                with (
+                    patch.object(manager, "_run_session_agent", side_effect=run_session_agent),
+                    patch.object(manager, "_conversation_has_default_title", return_value=False),
+                ):
+                    payload = b"".join(
+                        [event async for event in manager._chat_stream_events(prepared)]
+                    )
+                self.assertIn(b'"event":"run.failed"', payload)
+                self.assertNotIn(b'"event":"run.completed"', payload)
+                self.assertNotIn(b"API call failed after 3 retries", payload)
+                self.assertEqual(payload.count(b'"event":"message.delta"'), bool(partial))
+                self.assertTrue(payload.endswith(b"data: [DONE]\n\n"))
 
     async def test_stop_interrupts_the_running_hermes_agent(self) -> None:
         manager = object.__new__(AgentManager)
