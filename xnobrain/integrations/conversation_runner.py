@@ -231,7 +231,7 @@ class ConversationRunnerMixin:
     async def _resolve_prepared_model_route(self, prepared: dict[str, Any]) -> None:
         """Leave the virtual Auto route for GoRouter to resolve and retry.
 
-        GoRouter v0.0.18 owns allowlist-aware random selection, route health and
+        GoRouter v0.0.19 owns allowlist-aware random selection, route health and
         quota filtering, retryable failover, and selected-upstream attribution.
         Resolving Auto in Runtime would duplicate that policy and bypass the
         router's ``AUTO_MAX_TRIES`` bound.
