@@ -75,3 +75,21 @@ A router 503 reporting no healthy credentials requires checking the scoped
 principal's eligible provider connections; a generic upstream 400 alone does
 not identify the rejected field. Do not infer either cause from a successful
 request using a different provider or principal.
+
+
+#### Pinned-router inference compatibility
+
+Runtime uses blocking provider responses for `cx/` and `cc/`, alongside the
+existing OpenCode workaround. Local probes against GoRouter v0.0.21 returned
+complete text and usage for non-streaming Codex and Claude requests, while
+streaming Codex returned partial text without a finish reason. Codex blocking
+tool calls also completed. Browser run/tool events remain SSE; answer text
+arrives after each provider inference completes. Smart-route selection applies
+the same compatibility behavior. No router API or release pin changes are needed.
+
+For `cc/`, Runtime omits `temperature` and `top_p` and uses provider defaults:
+the tested Claude Opus route rejected each override independently with HTTP 400.
+Other provider prefixes retain their existing sampling behavior.
+These are compatibility workarounds, not evidence that the upstream stream
+failure has been repaired. Revalidate full conversation/tool/delegation flows
+before removing them or claiming provider-wide compatibility.
