@@ -554,7 +554,7 @@ if __name__ == "__main__":
 
 
 class SkillUsageContractTests(unittest.TestCase):
-    def test_observed_skill_loads_are_deduplicated_by_session_and_honest(self):
+    def test_historical_requests_do_not_claim_loads_or_runs(self):
         from xnobrain.integrations.analytics import skill_usage_profile
 
         with tempfile.TemporaryDirectory() as directory:
@@ -567,7 +567,7 @@ class SkillUsageContractTests(unittest.TestCase):
             now = time.time()
             conn.executemany(
                 "INSERT INTO sessions VALUES (?,?)",
-                [("run-a", now - 10), ("run-b", now - 5)],
+                [("run-a", now - 1000), ("run-b", now - 5)],
             )
             call = json.dumps(
                 [{"function": {"name": "skill_view", "arguments": '{"name":"report-writer"}'}}]
@@ -575,6 +575,8 @@ class SkillUsageContractTests(unittest.TestCase):
             conn.executemany(
                 "INSERT INTO messages VALUES (?,?,?,?)",
                 [
+                    ("run-a", "assistant", call, now - 101),
+                    ("run-b", "assistant", call, now + 2),
                     ("run-a", "assistant", call, now - 9),
                     ("run-a", "assistant", call, now - 8),
                     ("run-b", "assistant", call, now - 4),
@@ -591,10 +593,12 @@ class SkillUsageContractTests(unittest.TestCase):
 
             result = skill_usage_profile(profile, start_epoch=now - 100, end_epoch=now + 1)
 
-        self.assertTrue(result["coverage"]["instrumented"])
-        self.assertEqual(result["coverage"]["attribution"], "observed_load_only")
-        self.assertEqual(result["items"][0]["loaded_count"], 3)
-        self.assertEqual(result["items"][0]["distinct_runs"], 2)
+        self.assertFalse(result["coverage"]["instrumented"])
+        self.assertEqual(result["coverage"]["attribution"], "historical_requests")
+        self.assertEqual(result["items"][0]["requested_count"], 3)
+        self.assertIsNone(result["items"][0]["loaded_count"])
+        self.assertIsNone(result["items"][0]["distinct_runs"])
+        self.assertEqual(result["items"][0]["distinct_sessions"], 2)
         self.assertIsNone(result["items"][0]["tool_invocations"])
         self.assertIsNone(result["items"][0]["errors"])
 

@@ -18,3 +18,27 @@ class PublicErrorMessageTests(unittest.TestCase):
             public_error_message("Hermes Agent failed to start"),
             "Agent failed to start",
         )
+
+    def test_fresh_integration_import_and_stream_error_normalization(self):
+        import subprocess
+        import sys
+        import textwrap
+
+        script = textwrap.dedent("""
+            import json
+            import xnobrain.integrations.cron_timezone
+            from xnobrain.integrations.conversation_stream import (
+                ConversationStreamMixin,
+                public_error_message,
+            )
+
+            assert public_error_message(None, "Synthetic fallback") == "Synthetic fallback"
+            payload = ConversationStreamMixin()._chat_sse_error("Hermes Agent failed")
+            assert b"Hermes" not in payload
+            assert b"Agent failed" in payload
+        """)
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True,
+            timeout=30, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)

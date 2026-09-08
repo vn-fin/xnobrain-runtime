@@ -271,18 +271,17 @@ def skill_usage_profile(
     start_epoch: float,
     end_epoch: float,
 ) -> dict[str, Any]:
-    """Estimate observed skill loads from persisted Hermes tool calls.
+    """Count historical skill requests, without inventing loads or run IDs.
 
-    A ``skill_view`` call proves only that a skill definition was loaded. It
-    does not prove that its guidance caused later tools or that the run was
-    successful, so those fields remain explicitly unattributed.
+    Assistant tool calls do not corroborate tool completion. Legacy sessions
+    may contain multiple runs, so both loaded counts and run counts are unknown.
     """
     db = profile_dir / "state.db"
     empty = {
         "items": [],
         "coverage": {
             "source": "hermes_tool_calls",
-            "attribution": "observed_load_only",
+            "attribution": "historical_requests",
             "from": start_epoch,
             "to": end_epoch,
             "instrumented": False,
@@ -303,7 +302,7 @@ def skill_usage_profile(
             SELECT m.session_id, m.tool_calls, m.timestamp
             FROM messages m
             JOIN sessions s ON s.id=m.session_id
-            WHERE s.started_at>? AND s.started_at<=?
+            WHERE m.timestamp>? AND m.timestamp<=?
               AND m.role='assistant' AND m.tool_calls IS NOT NULL
             ORDER BY m.timestamp, m.rowid
             """,
@@ -342,16 +341,18 @@ def skill_usage_profile(
                     skill,
                     {
                         "skill_id": skill,
-                        "loaded_count": 0,
-                        "distinct_runs": set(),
+                        "requested_count": 0,
+                        "loaded_count": None,
+                        "distinct_runs": None,
+                        "distinct_sessions": set(),
                         "last_used_at": None,
                         "tool_invocations": None,
                         "errors": None,
-                        "attribution": "observed",
+                        "attribution": "estimated",
                     },
                 )
-                item["loaded_count"] += 1
-                item["distinct_runs"].add(str(row["session_id"]))
+                item["requested_count"] += 1
+                item["distinct_sessions"].add(str(row["session_id"]))
                 timestamp = row["timestamp"]
                 if timestamp is not None and (
                     item["last_used_at"] is None or timestamp > item["last_used_at"]
@@ -359,18 +360,18 @@ def skill_usage_profile(
                     item["last_used_at"] = timestamp
         items = []
         for item in measured.values():
-            item["distinct_runs"] = len(item["distinct_runs"])
+            item["distinct_sessions"] = len(item["distinct_sessions"])
             items.append(item)
-        items.sort(key=lambda item: (-item["loaded_count"], item["skill_id"]))
+        items.sort(key=lambda item: (-item["requested_count"], item["skill_id"]))
         return {
             "items": items,
             "coverage": {
                 "source": "hermes_tool_calls",
-                "attribution": "observed_load_only",
+                "attribution": "historical_requests",
                 "from": start_epoch,
                 "to": end_epoch,
-                "instrumented": True,
-                "message": "Measured skill loads; downstream tool attribution is unavailable",
+                "instrumented": False,
+                "message": "Historical skill requests only; loads and run counts are unknown",
             },
         }
     except sqlite3.Error:

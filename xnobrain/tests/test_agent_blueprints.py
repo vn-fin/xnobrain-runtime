@@ -413,7 +413,7 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(denied.json()["data"]["cancellation"]["decision"], "deny")
         self.assertEqual(denied.json()["data"]["cancellation"]["actor"], "user:reviewer")
 
-    async def test_safe_scaffold_exactly_once_then_explicit_activation(self):
+    async def test_safe_scaffold_exactly_once_and_uncertified_activation_denied(self):
         (self.root / ".env").write_text("SECRET=parent\n", encoding="utf-8")
         (self.root / "auth.json").write_text('{"token":"parent"}\n', encoding="utf-8")
         (self.root / "state.db").write_bytes(b"private-history")
@@ -517,14 +517,22 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
                 json=activate_body,
                 headers=self.trusted_headers(),
             )
-        self.assertEqual(activated.status_code, 200, activated.text)
-        self.assertEqual(activated.json()["data"]["status"], "active")
-        self.assertEqual(duplicate_activation.json()["data"], activated.json()["data"])
+        self.assertEqual(activated.status_code, 409, activated.text)
+        self.assertEqual(
+            activated.json()["error"]["code"], "blueprint_certification_required"
+        )
+        self.assertEqual(duplicate_activation.status_code, 409)
+        async with self.client() as client:
+            persisted = await client.get(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}"
+                "?agent=big-brother",
+            )
+        self.assertEqual(persisted.json()["data"], scaffold_record)
         metadata = json.loads((profile / "agent.json").read_text(encoding="utf-8"))
         config = yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))
-        self.assertEqual(metadata["status"], "active")
-        self.assertFalse(metadata["paused"])
-        self.assertFalse(config["xnobrain"]["paused"])
+        self.assertEqual(metadata["status"], "draft")
+        self.assertTrue(metadata["paused"])
+        self.assertTrue(config["xnobrain"]["paused"])
         self.assertFalse(config["cron"]["enabled"])
         self.assertFalse(config["mcp"]["enabled"])
 

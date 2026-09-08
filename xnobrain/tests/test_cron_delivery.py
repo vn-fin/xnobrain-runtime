@@ -399,7 +399,12 @@ class CronDeliveryAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(snapshots[0].read_text(encoding="utf-8"), "retained output")
 
     async def test_run_now_dispatches_the_selected_agent_profile(self):
-        with patch.object(self.composition.service.cron, "fire_due", return_value=True) as fire_due:
+        def advance_without_execution(profile, job_id):
+            return self.composition.service.cron._native(profile, "advance_next_run", job_id)
+
+        with patch.object(
+            self.composition.service.cron, "fire_due", side_effect=advance_without_execution
+        ) as fire_due:
             async with self.app.router.lifespan_context(self.app):
                 async with AsyncClient(
                     transport=ASGITransport(app=self.app), base_url="http://test"

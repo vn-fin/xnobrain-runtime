@@ -20,6 +20,14 @@ def _goal_profile_scope(profile_dir: Path):
         reset_hermes_home_override(token)
 
 
+def ensure_composer_goal(manager: Any, objective: str, max_turns: int) -> Any:
+    """Reuse a persisted goal; selecting tools cannot reset its progress."""
+    state = manager.state
+    if state is None or str(getattr(state, "status", "")) == "cleared":
+        return manager.set(objective, max_turns=max_turns)
+    return state
+
+
 def _goal_payload(state: Any) -> dict[str, Any] | None:
     if state is None or str(getattr(state, "status", "")) == "cleared":
         return None

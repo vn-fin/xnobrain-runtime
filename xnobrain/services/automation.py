@@ -9,7 +9,7 @@ import logging
 import os
 import time
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -55,6 +55,20 @@ class AutomationServiceMixin:
 
     def get_job_detail(self, cron_id: str, agent_id: str | None = None) -> dict[str, Any]:
         return self.cron.get_job_detail(cron_id, agent_id)
+
+    def preview_cron_schedule(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        from ..integrations.schedule_preview import preview_calendar_runs
+        from ..models.automation import CronSchedulePreview
+
+        request = CronSchedulePreview.model_validate(dict(body))
+        cutoff = request.after or datetime.now(timezone.utc)
+        return {
+            "occurrences": preview_calendar_runs(
+                request.schedule, request.timezone, cutoff, count=request.count
+            ),
+            "dst_policy": "skip_gap_earlier_fold",
+            "executor_parity_verified": False,
+        }
 
     def create_cron(self, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.cron.create_job(body)

@@ -80,6 +80,63 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         self.temp.cleanup()
         self.timeout_env.stop()
 
+    async def test_combined_selection_persists_with_one_budget_check_and_parent(self):
+        selected = ["goal", "todo", "delegate"]
+        record = await self.service.start_run(
+            "agent-one", "session-one", {"input": "Synthetic task", "capabilities": selected}
+        )
+        selected.clear()
+        await self.wait_for_revision(record["id"], 2)
+        expected = {"schema_version": 1, "feature": None, "capabilities": ["todo", "delegate", "goal"]}
+        self.assertEqual(record["composer_selection"], expected)
+        self.assertEqual(self.agents.received["capabilities"], expected["capabilities"])
+        self.assertEqual(self.analytics.calls, ["agent-one"])
+        reloaded = FileRepository(Path(self.temp.name) / "data", Path(self.temp.name) / "profiles")
+        stored = reloaded.get_conversation_run("agent-one", "session-one", record["id"])
+        self.assertEqual(stored["composer_selection"], expected)
+        self.assertEqual(len(reloaded.list_conversation_runs("agent-one", "session-one")), 1)
+
+    async def test_invalid_selection_cannot_dispatch_or_consume_budget(self):
+        from xnobrain.services.base import ServiceError
+
+        with self.assertRaises(ServiceError) as error:
+            await self.service.start_run(
+                "agent-one", "session-one",
+                {"input": "Synthetic task", "feature": "todo", "capabilities": ["goal"]},
+            )
+        self.assertEqual(error.exception.code, "invalid_capabilities")
+        self.assertEqual(self.analytics.calls, [])
+        self.assertEqual(self.repository.list_conversation_runs("agent-one", "session-one"), [])
+
+    async def test_concurrent_budget_checks_cannot_dispatch_two_parents(self):
+        from xnobrain.services.base import ServiceError
+
+        entered = 0
+        both_entered = asyncio.Event()
+
+        async def delayed_budget(_agent_id):
+            nonlocal entered
+            entered += 1
+            if entered == 2:
+                both_entered.set()
+            await both_entered.wait()
+
+        self.analytics.require_execution_budget = delayed_budget
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                self.service.start_run("agent-one", "session-one", {"input": "Synthetic one"}),
+                self.service.start_run("agent-one", "session-one", {"input": "Synthetic two"}),
+                return_exceptions=True,
+            ),
+            timeout=2,
+        )
+        successes = [result for result in results if isinstance(result, dict)]
+        failures = [result for result in results if isinstance(result, ServiceError)]
+        self.assertEqual(len(successes), 1)
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0].code, "conversation_running")
+        self.assertEqual(len(self.repository.list_conversation_runs("agent-one", "session-one")), 1)
+
     async def wait_for_revision(self, run_id: str, revision: int) -> dict:
         for _ in range(100):
             record = self.repository.get_conversation_run("agent-one", "session-one", run_id)

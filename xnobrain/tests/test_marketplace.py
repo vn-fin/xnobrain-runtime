@@ -21,6 +21,29 @@ from xnobrain.services.marketplace import (
 )
 
 
+class MarketplaceRequestValidationTests(unittest.TestCase):
+    def test_unknown_authority_fields_are_rejected(self):
+        from pydantic import ValidationError
+
+        from xnobrain.models.marketplace import MarketplaceInstallRequest, MarketplaceUpdateRequest
+
+        for model, body in (
+            (MarketplaceInstallRequest, {"package": {}}),
+            (MarketplaceUpdateRequest, {"package": {}, "local_profile_id": "market-synthetic"}),
+        ):
+            with self.assertRaises(ValidationError):
+                model.model_validate({**body, "approved_by": "synthetic"})
+
+    def test_profile_path_input_is_rejected(self):
+        from pydantic import ValidationError
+
+        from xnobrain.models.marketplace import MarketplaceUninstallRequest
+
+        for value in ("", "../outside", "/absolute", "a/b"):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                MarketplaceUninstallRequest(local_profile_id=value)
+
+
 class Agents:
     def sync_profiles_registry(self):
         pass
@@ -53,6 +76,163 @@ class MarketplaceTests(unittest.TestCase):
         p["digest"] = self.s.digest(p)
         return p
 
+    def test_failed_install_publish_cleans_stage_and_allows_retry(self):
+        package = self.package()
+        before = set(self.repo.profiles_root.iterdir())
+        original_replace = os.replace
+
+        def fail_profile_publish(source, destination):
+            if Path(source).is_dir():
+                raise OSError("synthetic profile publish failure")
+            return original_replace(source, destination)
+
+        with patch("xnobrain.services.marketplace.os.replace", side_effect=fail_profile_publish):
+            with self.assertRaises(OSError):
+                self.s.install(package)
+        self.assertEqual(set(self.repo.profiles_root.iterdir()), before)
+        result = self.s.install(package)
+        self.assertTrue(self.repo.profile_path(result["local_profile_id"]).is_dir())
+
+    def test_install_validates_colliding_skill_and_asset_independently(self):
+        for invalid in (None, {"unexpected": "object"}, "x" * 1_000_001):
+            with self.subTest(value_type=type(invalid).__name__):
+                package = self.package()
+                package["definition"]["skills"] = {"same": invalid}
+                package["definition"]["assets"] = {"same": "Valid asset"}
+                package["digest"] = self.s.digest(package)
+                before = set(self.repo.profiles_root.iterdir())
+                with self.assertRaises(ServiceError) as error:
+                    self.s.install(package)
+                self.assertEqual(error.exception.code, "package_rejected")
+                self.assertEqual(set(self.repo.profiles_root.iterdir()), before)
+
+    def test_install_rejects_non_mapping_package_fields(self):
+        for field in ("definition", "skills", "assets", "public_config"):
+            for value in ([], [["key", "value"]], "text", 42):
+                with self.subTest(field=field, value_type=type(value).__name__):
+                    package = self.package()
+                    if field == "definition":
+                        package[field] = value
+                    else:
+                        package["definition"][field] = value
+                    package["digest"] = self.s.digest(package)
+                    with self.assertRaises(ServiceError) as error:
+                        self.s.install(package)
+                    self.assertEqual(error.exception.code, "package_rejected")
+
+    def test_install_rejects_invalid_installation_ids(self):
+        for value in (None, "", "../foreign", "inst_../foreign", 123):
+            with self.subTest(value=value):
+                package = self.package()
+                package["id"] = value
+                with self.assertRaises(ServiceError) as error:
+                    self.s.install(package)
+                self.assertEqual(error.exception.code, "package_rejected")
+
+    def test_distinct_long_installation_ids_do_not_collide(self):
+        package = self.package()
+        package["id"] = "inst_" + "a" * 24 + "first"
+        first = self.s.install(package)
+        package["id"] = "inst_" + "a" * 24 + "second"
+        second = self.s.install(package)
+        self.assertNotEqual(first["local_profile_id"], second["local_profile_id"])
+        self.assertTrue(self.repo.profile_path(first["local_profile_id"]).is_dir())
+        self.assertTrue(self.repo.profile_path(second["local_profile_id"]).is_dir())
+
+    def test_legacy_truncated_installation_is_not_duplicated(self):
+        package = self.package()
+        package["id"] = "inst_" + "b" * 32
+        installed = self.s.install(package)
+        original = self.repo.profile_path(installed["local_profile_id"])
+        legacy = self.repo.profile_path("market-" + "b" * 24)
+        original.rename(legacy)
+        with self.assertRaises(ServiceError) as error:
+            self.s.install(package)
+        self.assertEqual(error.exception.code, "installation_exists")
+        self.assertTrue(legacy.is_dir())
+        self.assertFalse(original.exists())
+
+    def test_install_rejects_aggregate_file_count_before_staging(self):
+        package = self.package()
+        package["definition"]["assets"] = {f"asset-{index}": "x" for index in range(203)}
+        package["digest"] = self.s.digest(package)
+        before = set(self.repo.profiles_root.iterdir())
+        with self.assertRaises(ServiceError) as error:
+            self.s.install(package)
+        self.assertEqual(error.exception.status, 413)
+        self.assertEqual(set(self.repo.profiles_root.iterdir()), before)
+
+    def test_install_aggregate_limit_counts_utf8_bytes(self):
+        package = self.package()
+        package["definition"]["assets"] = {"unicode.txt": "ệ" * 100}
+        package["digest"] = self.s.digest(package)
+        before = set(self.repo.profiles_root.iterdir())
+        with patch("xnobrain.services.marketplace.MAX_EXPORT_TOTAL_BYTES", 200):
+            with self.assertRaises(ServiceError) as error:
+                self.s.install(package)
+        self.assertEqual(error.exception.status, 413)
+        self.assertEqual(set(self.repo.profiles_root.iterdir()), before)
+
+    def test_install_file_limit_counts_utf8_bytes(self):
+        package = self.package()
+        package["definition"]["assets"] = {"unicode.txt": "ệ" * 100}
+        package["digest"] = self.s.digest(package)
+        with patch("xnobrain.services.marketplace.MAX_EXPORT_FILE_BYTES", 200):
+            with self.assertRaises(ServiceError) as error:
+                self.s.install(package)
+        self.assertEqual(error.exception.code, "package_rejected")
+
+    def test_soul_limit_counts_bytes_for_install_and_update(self):
+        package = self.package()
+        installed = self.s.install(package)
+        package["definition"]["soul"] = "ệ" * 40_000
+        package["digest"] = self.s.digest(package)
+        with self.assertRaises(ServiceError) as install_error:
+            self.s.install(package)
+        self.assertEqual(install_error.exception.code, "package_rejected")
+        with self.assertRaises(ServiceError) as update_error:
+            self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+        self.assertEqual(update_error.exception.code, "package_rejected")
+        self.assertEqual(
+            (self.repo.profile_path(installed["local_profile_id"]) / "SOUL.md").read_text(),
+            "You are safe.",
+        )
+
+    def test_legacy_install_detection_rejects_symlinked_config(self):
+        package = self.package()
+        package["id"] = "inst_" + "c" * 32
+        legacy = self.repo.profile_path("market-" + "c" * 24)
+        legacy.mkdir()
+        external = Path(self.tmp.name) / "outside.yaml"
+        external.write_text("synthetic: private\n")
+        (legacy / "config.yaml").symlink_to(external)
+        with self.assertRaises(ServiceError) as error:
+            self.s.install(package)
+        self.assertEqual(error.exception.code, "installation_profile_conflict")
+        self.assertEqual(external.read_text(), "synthetic: private\n")
+        self.assertFalse(self.repo.profile_path("market-" + "c" * 32).exists())
+
+    def test_install_rejects_recognizable_credentials_in_assets(self):
+        package = self.package()
+        package["definition"]["assets"]["credential.txt"] = "sk-" + "x" * 24
+        package["digest"] = self.s.digest(package)
+        with self.assertRaises(ServiceError) as error:
+            self.s.install(package)
+        self.assertEqual(error.exception.code, "package_rejected")
+        self.assertNotIn("x" * 24, str(error.exception))
+
+    def test_install_rejects_category_limits_below_total_limit(self):
+        for field in ("skills", "assets"):
+            with self.subTest(field=field):
+                package = self.package()
+                package["definition"][field] = {f"item-{index}": "Synthetic" for index in range(101)}
+                package["digest"] = self.s.digest(package)
+                before = set(self.repo.profiles_root.iterdir())
+                with self.assertRaises(ServiceError) as error:
+                    self.s.install(package)
+                self.assertEqual(error.exception.status, 413)
+                self.assertEqual(set(self.repo.profiles_root.iterdir()), before)
+
     def test_install_creates_isolated_empty_customer_state(self):
         out = self.s.install(self.package())
         profile = self.repo.profile_path(out["local_profile_id"])
@@ -74,6 +254,199 @@ class MarketplaceTests(unittest.TestCase):
         with self.assertRaises(ServiceError):
             self.s.install(p)
 
+    def test_update_rejects_another_installation_before_writes(self):
+        package = self.package()
+        installed = self.s.install(package)
+        profile = self.repo.profile_path(installed["local_profile_id"])
+        before = {path: path.read_bytes() for path in profile.rglob("*") if path.is_file()}
+        package["id"] = "inst_foreign"
+        package["definition"]["soul"] = "Must not overwrite"
+        package["digest"] = self.s.digest(package)
+        with self.assertRaises(ServiceError) as error:
+            self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+        self.assertEqual(error.exception.code, "installation_profile_conflict")
+        self.assertEqual(
+            before, {path: path.read_bytes() for path in profile.rglob("*") if path.is_file()}
+        )
+
+    def test_update_config_failure_restores_definition_files(self):
+        package = self.package()
+        installed = self.s.install(package)
+        profile = self.repo.profile_path(installed["local_profile_id"])
+        before = {path: path.read_bytes() for path in profile.rglob("*") if path.is_file()}
+        package["definition"]["soul"] = "Synthetic updated soul"
+        package["digest"] = self.s.digest(package)
+        with patch.object(self.repo, "atomic_yaml", side_effect=OSError("synthetic")):
+            with self.assertRaises(OSError):
+                self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+        self.assertEqual(
+            before, {path: path.read_bytes() for path in profile.rglob("*") if path.is_file()}
+        )
+
+    def test_update_rejects_empty_definition_before_writes(self):
+        package = self.package()
+        installed = self.s.install(package)
+        profile = self.repo.profile_path(installed["local_profile_id"])
+        before = (profile / "SOUL.md").read_bytes()
+        package["definition"]["soul"] = " "
+        package["digest"] = self.s.digest(package)
+        with self.assertRaises(ServiceError) as error:
+            self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+        self.assertEqual(error.exception.code, "package_rejected")
+        self.assertEqual((profile / "SOUL.md").read_bytes(), before)
+
+    def test_update_rejects_malformed_config_without_mutation(self):
+        package = self.package()
+        installed = self.s.install(package)
+        profile = self.repo.profile_path(installed["local_profile_id"])
+        before = {path: path.read_bytes() for path in profile.rglob("*") if path.is_file()}
+        package["definition"]["public_config"] = [["model", "synthetic"]]
+        package["digest"] = self.s.digest(package)
+        with self.assertRaises(ServiceError) as error:
+            self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+        self.assertEqual(error.exception.code, "package_rejected")
+        self.assertEqual(
+            before, {path: path.read_bytes() for path in profile.rglob("*") if path.is_file()}
+        )
+
+    def test_update_rejects_symlinked_definition_files(self):
+        for name in ("SOUL.md", "config.yaml"):
+            with self.subTest(name=name):
+                package = self.package()
+                package["id"] = "inst_" + name.replace(".", "_")
+                installed = self.s.install(package)
+                profile = self.repo.profile_path(installed["local_profile_id"])
+                outside = Path(self.tmp.name) / ("outside-" + name)
+                outside.write_text("Synthetic external data")
+                target = profile / name
+                target.unlink()
+                target.symlink_to(outside)
+                with self.assertRaises(ServiceError) as error:
+                    self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+                self.assertEqual(error.exception.code, "installation_profile_conflict")
+                self.assertTrue(target.is_symlink())
+                self.assertEqual(outside.read_text(), "Synthetic external data")
+
+    def test_update_rejects_invalid_persisted_config(self):
+        package = self.package()
+        installed = self.s.install(package)
+        profile = self.repo.profile_path(installed["local_profile_id"])
+        config = profile / "config.yaml"
+        config.write_text("- synthetic-list-entry\n")
+        original_soul = (profile / "SOUL.md").read_bytes()
+        with self.assertRaises(ServiceError) as error:
+            self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+        self.assertEqual(error.exception.code, "installation_profile_conflict")
+        self.assertEqual((profile / "SOUL.md").read_bytes(), original_soul)
+        self.assertEqual(config.read_text(), "- synthetic-list-entry\n")
+
+    def test_update_corrupt_yaml_returns_safe_conflict(self):
+        package = self.package()
+        installed = self.s.install(package)
+        profile = self.repo.profile_path(installed["local_profile_id"])
+        config = profile / "config.yaml"
+        content = "synthetic_private_marker: [\n"
+        config.write_text(content)
+        with self.assertRaises(ServiceError) as error:
+            self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+        self.assertEqual(error.exception.code, "installation_profile_conflict")
+        self.assertNotIn("synthetic_private_marker", str(error.exception))
+        self.assertEqual(config.read_text(), content)
+
+    def test_update_requires_updating_lifecycle(self):
+        package = self.package()
+        installed = self.s.install(package)
+        profile = self.repo.profile_path(installed["local_profile_id"])
+        before = {path: path.read_bytes() for path in profile.rglob("*") if path.is_file()}
+        for status in (None, "pending", "installed", "revoked", "uninstalled"):
+            with self.subTest(status=status), self.assertRaises(ServiceError) as error:
+                self.s.update({**package, "status": status}, installed["local_profile_id"])
+            self.assertEqual(error.exception.code, "installation_unavailable")
+        self.assertEqual(
+            before, {path: path.read_bytes() for path in profile.rglob("*") if path.is_file()}
+        )
+
+    def test_update_reports_failed_rollback_without_content(self):
+        package = self.package()
+        installed = self.s.install(package)
+        original_write = self.repo.atomic_write
+        calls = 0
+
+        def fail_recovery(path, payload, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                raise OSError("synthetic private failure detail")
+            return original_write(path, payload, **kwargs)
+
+        package["definition"]["soul"] = "Synthetic replacement"
+        package["digest"] = self.s.digest(package)
+        with patch.object(self.repo, "atomic_write", side_effect=fail_recovery):
+            with patch.object(self.repo, "atomic_yaml", side_effect=OSError("synthetic")):
+                with self.assertRaises(ServiceError) as error:
+                    self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+        self.assertEqual(error.exception.code, "marketplace_update_recovery_required")
+        self.assertNotIn("private failure", str(error.exception))
+
+    def test_update_digest_mismatch_never_reaches_writes(self):
+        package = self.package()
+        installed = self.s.install(package)
+        package["definition"]["soul"] = "Tampered synthetic content"
+        with patch.object(self.repo, "atomic_write") as write:
+            with patch.object(self.repo, "atomic_yaml") as write_yaml:
+                with self.assertRaises(ServiceError) as error:
+                    self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+                write.assert_not_called()
+                write_yaml.assert_not_called()
+        self.assertEqual(error.exception.code, "package_digest_mismatch")
+        self.assertEqual(
+            (self.repo.profile_path(installed["local_profile_id"]) / "SOUL.md").read_text(),
+            "You are safe.",
+        )
+
+    def test_update_credential_text_rejected_before_writes(self):
+        package = self.package()
+        installed = self.s.install(package)
+        package["definition"]["soul"] = "sk-" + "x" * 24
+        package["digest"] = self.s.digest(package)
+        with patch.object(self.repo, "atomic_write") as write:
+            with patch.object(self.repo, "atomic_yaml") as write_yaml:
+                with self.assertRaises(ServiceError) as error:
+                    self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+                write.assert_not_called()
+                write_yaml.assert_not_called()
+        self.assertEqual(error.exception.code, "package_rejected")
+        self.assertNotIn("x" * 24, str(error.exception))
+
+    def test_update_rejects_invalid_id_even_when_local_marker_matches(self):
+        package = self.package()
+        installed = self.s.install(package)
+        profile = self.repo.profile_path(installed["local_profile_id"])
+        config = yaml.safe_load((profile / "config.yaml").read_text())
+        config["xnobrain"]["marketplace_installation_id"] = True
+        self.repo.atomic_yaml(profile / "config.yaml", config)
+        package["id"] = True
+        with self.assertRaises(ServiceError) as error:
+            self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+        self.assertEqual(error.exception.code, "package_rejected")
+
+    def test_update_preserves_local_configuration_outside_publisher_fields(self):
+        package = self.package()
+        installed = self.s.install(package)
+        profile = self.repo.profile_path(installed["local_profile_id"])
+        config_path = profile / "config.yaml"
+        config = yaml.safe_load(config_path.read_text())
+        config["approvals"] = {"mode": "manual"}
+        config["terminal"] = {"timeout": 42}
+        self.repo.atomic_yaml(config_path, config)
+        package["definition"]["public_config"] = {"display_name": "Updated", "approvals": {"mode": "off"}}
+        package["digest"] = self.s.digest(package)
+        self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
+        updated = yaml.safe_load(config_path.read_text())
+        self.assertEqual(updated["approvals"], {"mode": "manual"})
+        self.assertEqual(updated["terminal"], {"timeout": 42})
+        self.assertEqual(updated["display_name"], "Updated")
+
     def test_update_preserves_customer_memory_and_workspace(self):
         p = self.package()
         out = self.s.install(p)
@@ -82,15 +455,65 @@ class MarketplaceTests(unittest.TestCase):
         (profile / "workspace" / "mine.txt").write_text("mine")
         p["definition"]["soul"] = "Updated"
         p["digest"] = self.s.digest(p)
-        self.s.update(p, out["local_profile_id"])
+        self.s.update({**p, "status": "updating"}, out["local_profile_id"])
         self.assertEqual((profile / "memories" / "MEMORY.md").read_text(), "private")
         self.assertEqual((profile / "workspace" / "mine.txt").read_text(), "mine")
 
+    def test_uninstall_does_not_remove_ordinary_profile(self):
+        profile = self.repo.profile_path("ordinary")
+        profile.mkdir()
+        self.repo.atomic_yaml(profile / "config.yaml", {"display_name": "Ordinary"})
+        (profile / "SOUL.md").write_text("Synthetic local agent")
+        with self.assertRaises(ServiceError) as error:
+            self.s.uninstall("ordinary")
+        self.assertEqual(error.exception.code, "installation_profile_conflict")
+        self.assertTrue(profile.is_dir())
+        self.assertEqual((profile / "SOUL.md").read_text(), "Synthetic local agent")
+
+    def test_uninstall_move_failure_preserves_profile(self):
+        installed = self.s.install(self.package())
+        profile = self.repo.profile_path(installed["local_profile_id"])
+        before = {path: path.read_bytes() for path in profile.rglob("*") if path.is_file()}
+        with patch.object(self.repo, "soft_delete_profile", side_effect=OSError("synthetic")):
+            with patch.object(self.s.agents, "sync_profiles_registry") as sync:
+                with self.assertRaises(OSError):
+                    self.s.uninstall(installed["local_profile_id"])
+                sync.assert_not_called()
+        self.assertEqual(
+            before, {path: path.read_bytes() for path in profile.rglob("*") if path.is_file()}
+        )
+
+    def test_uninstall_rejects_malformed_installation_metadata(self):
+        profile = self.repo.profile_path("ordinary-metadata")
+        profile.mkdir()
+        for marker in (True, 42, "not-an-installation", "inst_../outside"):
+            with self.subTest(marker=marker):
+                self.repo.atomic_yaml(
+                    profile / "config.yaml", {"xnobrain": {"marketplace_installation_id": marker}}
+                )
+                with self.assertRaises(ServiceError) as error:
+                    self.s.uninstall("ordinary-metadata")
+                self.assertEqual(error.exception.code, "installation_profile_conflict")
+                self.assertTrue(profile.is_dir())
+
     def test_uninstall_moves_profile_to_recoverable_trash(self):
         out = self.s.install(self.package())
+        profile = self.repo.profile_path(out["local_profile_id"])
+        (profile / "workspace" / "customer.txt").write_text("Synthetic customer work")
+        (profile / "memories" / "customer.txt").write_text("Synthetic customer memory")
+        before = {
+            path.relative_to(profile): path.read_bytes()
+            for path in profile.rglob("*") if path.is_file()
+        }
         result = self.s.uninstall(out["local_profile_id"])
         self.assertEqual(result["status"], "uninstalled")
-        self.assertFalse(self.repo.profile_path(out["local_profile_id"]).exists())
+        self.assertFalse(profile.exists())
+        retained = self.repo.trash_root / result["recoverable_path"]
+        self.assertEqual(
+            before,
+            {path.relative_to(retained): path.read_bytes()
+             for path in retained.rglob("*") if path.is_file()},
+        )
 
 
 class MarketplaceExportTests(unittest.TestCase):

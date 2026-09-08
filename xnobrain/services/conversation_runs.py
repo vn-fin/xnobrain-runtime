@@ -11,6 +11,9 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Mapping
 
+from pydantic import ValidationError
+
+from xnobrain.models.conversations import ChatRequest
 from xnobrain.runtime_limits import session_timeout_seconds
 
 from .base import ServiceError
@@ -81,6 +84,21 @@ class ConversationRunService:
         self.agents.get_conversation(agent_id, conversation_id)
         context = dict(ownership_context or {})
         self._reject_conflicting_context(body, context)
+        try:
+            selection = ChatRequest(
+                input=str(body.get("input") or body.get("message") or " "),
+                feature=body.get("feature"),
+                capabilities=body.get("capabilities"),
+            )
+        except ValidationError as exc:
+            raise ServiceError(
+                "invalid composer capability selection",
+                status=422,
+                code="invalid_capabilities",
+            ) from exc
+        capabilities = selection.capabilities
+        if capabilities is None:
+            capabilities = [selection.feature] if selection.feature else []
         key = (str(agent_id), str(conversation_id))
         active_id = self._by_conversation.get(key)
         if active_id and active_id in self._active:
@@ -101,6 +119,18 @@ class ConversationRunService:
         # to finish even when its cost pushes the weekly total over 100%.
         if self.analytics is not None:
             await self.analytics.require_execution_budget(agent_id)
+        # Budget verification yields to the event loop. Another request may
+        # have claimed this conversation while it was pending. Recheck before
+        # the synchronous record/worker registration critical section below.
+        active_id = self._by_conversation.get(key)
+        if (active_id and active_id in self._active) or self.active_run(
+            agent_id, conversation_id
+        ) is not None:
+            raise ServiceError(
+                "a response is already running for this conversation",
+                status=409,
+                code="conversation_running",
+            )
         mode = self._mode(body)
         timeout_seconds = session_timeout_seconds(body.get("timeout_seconds"))
         now = time.time()
@@ -123,12 +153,19 @@ class ConversationRunService:
             "output": "",
             "usage": {},
             "ownership_context": context,
+            "composer_selection": {
+                "schema_version": 1,
+                "feature": selection.feature,
+                "capabilities": list(capabilities),
+            },
         }
         self.repository.put_conversation_run(record)
         entry = _ActiveConversationRun(run_id, str(agent_id), str(conversation_id))
         self._active[run_id] = entry
         self._by_conversation[key] = run_id
         payload = dict(body)
+        if selection.capabilities is not None:
+            payload["capabilities"] = list(selection.capabilities)
         payload["timeout_seconds"] = timeout_seconds
         payload["run_id"] = run_id
         payload["run_mode"] = mode

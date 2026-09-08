@@ -5,6 +5,9 @@ import copy
 import hashlib
 import threading
 
+from pydantic import ValidationError
+
+from xnobrain.models.conversations import ChatRequest
 from xnobrain.runtime_limits import max_parallel_agents, session_timeout_seconds
 
 from .hermes_support import (
@@ -209,6 +212,19 @@ class ConversationRunnerMixin:
         feature = str(body.get("feature") or "").strip().lower()
         if feature and feature not in {*self._FEATURE_PROMPTS, "goal"}:
             raise AgentAPIError("invalid composer feature", code="invalid_feature")
+        try:
+            selection = ChatRequest(
+                input=message,
+                feature=feature or None,
+                capabilities=body.get("capabilities"),
+            )
+        except ValidationError as exc:
+            raise AgentAPIError(
+                "invalid composer capabilities", code="invalid_capabilities"
+            ) from exc
+        capabilities = selection.capabilities
+        if capabilities is None:
+            capabilities = [feature] if feature else []
         return {
             "name": name,
             "profile_dir": profile_dir,
@@ -225,6 +241,7 @@ class ConversationRunnerMixin:
             "command": command,
             "timeout_seconds": timeout_seconds,
             "feature": feature,
+            "capabilities": capabilities,
             "goal_resume": bool(body.get("goal_resume", False)),
             "requested_skills": normalized_skills,
             "work_context_id": str((body.get("ownership_context") or {}).get("id") or "personal"),
@@ -1167,7 +1184,7 @@ class ConversationRunnerMixin:
             ).strip()
             from hermes_cli.goals import GoalManager
 
-            from .conversation_goals import _goal_payload
+            from .conversation_goals import _goal_payload, ensure_composer_goal
 
             def read_goal():
                 with _profile_runtime_scope(profile_dir):
@@ -1189,18 +1206,26 @@ class ConversationRunnerMixin:
                     goal=_goal_payload(state),
                 )
 
-            if str(prepared.get("feature") or "") == "goal":
+            capabilities = prepared.get("capabilities")
+            if capabilities is None:
+                capabilities = [str(prepared.get("feature") or "")]
+            if "goal" in capabilities:
                 with _profile_runtime_scope(profile_dir):
-                    GoalManager(conversation_id).set(
+                    ensure_composer_goal(
+                        GoalManager(conversation_id),
                         str(prepared["message"]),
-                        max_turns=self._goal_max_turns(profile_dir),
+                        self._goal_max_turns(profile_dir),
                     )
             initial_goal = read_goal()
             if initial_goal is not None:
                 emit_goal(initial_goal)
 
             prompt = str(prepared["message"])
-            feature_prompt = self._FEATURE_PROMPTS.get(str(prepared.get("feature") or ""))
+            feature_prompt = "\n\n".join(
+                self._FEATURE_PROMPTS[value]
+                for value in capabilities
+                if value in self._FEATURE_PROMPTS
+            ) or None
             aggregate_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
             result: dict[str, Any] = {}
             first_turn = True

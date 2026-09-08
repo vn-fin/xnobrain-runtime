@@ -198,10 +198,13 @@ operation `decision` (`scaffold`, `activate`, or `cancel`):
   MCP disabled, no state database/sessions/logs, no provider credentials or custom
   base URL, and only blueprint-pinned skills/memory seeds. It never clones the
   creator profile or global skills. An occupied or drifted target fails closed.
-- `POST /{blueprint_id}/activate` is a separate authenticated decision. It changes
-  only the scaffold lifecycle markers to active; it does not enable cron or MCP and
-  does not claim that certification ran. Bounded child-path certification remains a
-  later lifecycle slice.
+- `POST /{blueprint_id}/activate` remains a separate authenticated decision, but
+  currently fails closed with HTTP 409 `blueprint_certification_required` for a
+  scaffolded child. Approval and repeated activation requests cannot substitute for
+  child-path certification. The blueprint and child remain unchanged and paused;
+  cron and MCP remain disabled. Bounded child-path certification and digest-bound
+  activation remain pending. Previously recorded activation operations retain their
+  idempotent read behavior; this does not retroactively modify existing profiles.
 - `POST /{blueprint_id}/cancel` prevents future blueprint steps and retains any
   paused draft profile for explicit cleanup. It never deletes files implicitly; an
   active profile must use the separate profile lifecycle.
@@ -231,3 +234,90 @@ singular. Coverage reports the source, selected range/context,
 instrumentation version, event count, and unattributed tool count. Historical
 `state.db` inference remains labeled `observed_load_only` and does not
 manufacture tool or error metrics.
+
+### Historical skill-usage correction
+
+`GET /agents/:agent/skills/usage` distinguishes historical assistant requests
+from measured lifecycle events. Historical rows now use coverage attribution
+`historical_requests`, `instrumented: false`, and item attribution `estimated`.
+`requested_count` counts `skill_view` requests; `distinct_sessions` counts their
+sessions. `loaded_count` and `distinct_runs` are nullable and are **null** for
+history without corroborated completion/run identities, never fabricated zeros.
+The date window applies to message timestamps, not session start times. No tool
+payloads are returned. Event-backed metrics retain their measured numeric fields.
+Consumers must handle nullable metrics and the new attribution values; older UI
+versions suppress uninstrumented history, so coordinate the updated UI for the
+historical request display. This does not establish mixed-version verification.
+
+### Concurrent composer request collection (FT0010 foundation)
+
+Chat requests accept optional `capabilities`, a unique array drawn from `todo`,
+`delegate`, and `goal` (maximum three). All eight subsets are valid. Runtime
+normalizes order to Todo, Sub-agents, Goal. The legacy scalar `feature` remains
+supported, including historical Learn/Maker/Optimize values. If both fields are
+supplied, the array must contain exactly the scalar selection; ambiguity,
+duplicates and unknown capabilities are rejected rather than silently dropped.
+An absent/null array uses legacy behavior; an empty array explicitly selects none.
+
+Preparation retains the complete collection in one parent request. The embedded
+runner combines Todo/Delegate guidance in that parent's initial turn and creates
+the existing goal when selected. No new per-selection parent dispatch is added.
+This is a contract/runner foundation, not full FT0010: UI negotiation/selection,
+shared child budget accounting, linked revision-safe todos, cancellation-tree and
+real execution/reconnect compatibility tests remain required. Old servers reject
+this new field; clients must not silently retry by discarding selections.
+
+New run records also persist `composer_selection` with `schema_version: 1`, the
+legacy `feature` (nullable), and normalized `capabilities`. The collection is copied
+before scheduling, so later caller mutations cannot alter queued work. Reads of
+older records may omit this additive field. Validation occurs before the budget
+check and creation of a run record; selecting three tools still invokes the existing
+parent budget check once. This is not shared child-budget enforcement.
+
+Selecting Goal in a composer request creates a goal only when none exists (or the
+prior goal was cleared). Existing objectives, turn counters, subgoals and paused/
+terminal states are preserved. Replace/resume a goal through its explicit lifecycle
+API rather than implicitly replacing it when selecting combined work tools.
+
+New marketplace installation profiles use the full bounded installation-ID suffix,
+not its former 24-character truncation. Existing truncated profiles are recognized
+by persisted installation binding and are never silently renamed or duplicated.
+Consumers must use returned `local_profile_id`, not derive it from installation ID.
+
+## Calendar schedule preview (Time Control foundation)
+
+`POST /xnobrain/api/runtime/v1/cron/schedule-preview` accepts a five-field `schedule`,
+IANA `timezone`, optional offset-aware `after`, and `count` (1–20, default 5).
+Returns UTC/local occurrences and `dst_policy=skip_gap_earlier_fold`. It performs
+no job creation or timezone mutation. `executor_parity_verified=false` explicitly
+means local scheduler integration is still pending; preview is not execution proof.
+
+Cron blueprint instantiation (`POST /xnobrain/api/runtime/v1/cron/blueprints/instantiate`)
+accepts optional `timezone` (available IANA identifier, default `Etc/UTC`). Calendar
+blueprints persist the versioned per-job timezone/DST binding before native first-run
+computation, matching direct cron creation. Interval/absolute schedules retain native
+semantics. Ambiguous names such as CST reject before blueprint filling. The workspace
+or organization default and explicit preview/confirmation UI remain separate work.
+
+Direct cron creation rejects simultaneous `interval_minutes` and `schedule` with
+HTTP 422 instead of silently preferring the interval. Calendar expression input is
+bounded to 256 characters. Existing interval-only and schedule-only shapes remain.
+
+Explicit-zone calendar evaluation rejects random (`R`) and hashed (`H`) cron fields:
+preview and execution must use deterministic calendar expressions. Ordinary named
+months/weekdays remain supported. This restriction does not rewrite legacy unbound
+native schedules.
+
+Timezone-scoped creation requires an explicit UTC offset on absolute one-shot
+input (`2026-10-25T02:30:00+02:00` or a `Z` instant). Naive local timestamps and
+bare dates reject instead of inheriting a conflicting process timezone. Relative
+interval/delay inputs and existing unscoped native parsing remain unchanged.
+Local one-shot timezone/disambiguation UI is not yet implemented.
+
+Cron job readback includes additive `schedule_kind`: `cron`, `interval`, `once`, or
+null for unknown persisted kinds. It derives from native stored schedule metadata,
+not human display text. Consumers must retain unknown/mixed-version handling.
+
+Cron readback also includes `interval_minutes`: a positive persisted integer for
+interval schedules, otherwise null. Consumers should prefer this over display-text
+parsing; absence on older servers permits compatibility handling, null is unknown.

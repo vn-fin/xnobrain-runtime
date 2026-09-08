@@ -61,6 +61,22 @@ class ChatRequest(BaseModel):
         Literal["todo", "delegate", "goal", "learn", "agent_maker", "optimize_skills"] | None
     ) = None
 
+    capabilities: list[Literal["todo", "delegate", "goal"]] | None = Field(
+        default=None, max_length=3
+    )
+
+    @model_validator(mode="after")
+    def validate_capability_selection(self):
+        if self.capabilities is None:
+            return self
+        if len(self.capabilities) != len(set(self.capabilities)):
+            raise ValueError("capabilities must be unique")
+        if self.feature is not None and self.capabilities != [self.feature]:
+            raise ValueError("feature and capabilities must describe the same selection")
+        order = ("todo", "delegate", "goal")
+        self.capabilities = [value for value in order if value in self.capabilities]
+        return self
+
 
 class GoalContractInput(BaseModel):
     outcome: str = Field(default="", max_length=2_000)

@@ -556,7 +556,16 @@ class MarketplaceService:
         )
 
     def install(self, package: Mapping[str, Any]) -> dict[str, Any]:
-        definition = dict(package.get("definition") or {})
+        raw_definition = package.get("definition")
+        if not isinstance(raw_definition, Mapping):
+            raise ServiceError("marketplace package is unsafe", status=422, code="package_rejected")
+        definition = dict(raw_definition)
+        for field in ("skills", "assets", "public_config"):
+            value = definition.get(field)
+            if value is not None and not isinstance(value, Mapping):
+                raise ServiceError(
+                    "marketplace package is unsafe", status=422, code="package_rejected"
+                )
         expected = str(package.get("digest") or "")
         if self.digest(package) != expected:
             raise ServiceError(
@@ -566,15 +575,74 @@ class MarketplaceService:
             raise ServiceError(
                 "installation is unavailable", status=409, code="installation_unavailable"
             )
-        soul = str(definition.get("soul") or "")
+        soul = definition.get("soul")
         skills = dict(definition.get("skills") or {})
         assets = dict(definition.get("assets") or {})
-        if not soul or any(
-            not _SAFE.fullmatch(str(k)) or len(str(v)) > 1_000_000
-            for k, v in {**skills, **assets}.items()
+        if (
+            not isinstance(soul, str)
+            or not soul.strip()
+            or len(soul.encode("utf-8")) > 100_000
+            or any(
+                not isinstance(key, str)
+                or not _SAFE.fullmatch(key)
+                or not isinstance(content, str)
+                or len(content.encode("utf-8")) > MAX_EXPORT_FILE_BYTES
+                for collection in (skills, assets)
+                for key, content in collection.items()
+            )
         ):
             raise ServiceError("marketplace package is unsafe", status=422, code="package_rejected")
-        profile_id = "market-" + str(package["id"]).replace("inst_", "")[:24]
+        if len(skills) > MAX_SKILLS or len(assets) > MAX_ASSETS:
+            self._reject_limit()
+        contents = [soul, *skills.values(), *assets.values()]
+        if any(pattern.search(content) for content in contents for pattern in _SECRET_PATTERNS):
+            raise ServiceError(
+                "marketplace package contains credential-like content",
+                status=422,
+                code="package_rejected",
+            )
+        if len(contents) > MAX_EXPORT_FILES or sum(
+            len(content.encode("utf-8")) for content in contents
+        ) > MAX_EXPORT_TOTAL_BYTES:
+            self._reject_limit()
+        installation_id = package.get("id")
+        if not isinstance(installation_id, str) or not re.fullmatch(
+            r"inst_[A-Za-z0-9_-]{1,64}", installation_id
+        ):
+            raise ServiceError(
+                "marketplace installation id is invalid", status=422, code="package_rejected"
+            )
+        suffix = installation_id.removeprefix("inst_")
+        profile_id = "market-" + suffix
+        legacy = self.repository.profile_path("market-" + suffix[:24])
+        if legacy.name != profile_id and legacy.is_dir():
+            if (legacy / "config.yaml").is_symlink():
+                raise ServiceError(
+                    "legacy installation configuration is unsafe",
+                    status=409,
+                    code="installation_profile_conflict",
+                )
+            try:
+                legacy_config = self.repository._read_yaml(legacy / "config.yaml") or {}
+            except (OSError, UnicodeError, yaml.YAMLError) as error:
+                raise ServiceError(
+                    "legacy installation configuration cannot be read",
+                    status=409,
+                    code="installation_profile_conflict",
+                ) from error
+            if not isinstance(legacy_config, Mapping):
+                raise ServiceError(
+                    "legacy installation configuration is invalid",
+                    status=409,
+                    code="installation_profile_conflict",
+                )
+            legacy_binding = legacy_config.get("xnobrain") or {}
+            if isinstance(legacy_binding, dict) and legacy_binding.get(
+                "marketplace_installation_id"
+            ) == installation_id:
+                raise ServiceError(
+                    "installation profile already exists", status=409, code="installation_exists"
+                )
         final = self.repository.profile_path(profile_id)
         if final.exists():
             raise ServiceError(
@@ -620,37 +688,104 @@ class MarketplaceService:
         }
 
     def update(self, package: Mapping[str, Any], local_profile_id: str) -> dict[str, Any]:
+        if package.get("status") != "updating":
+            raise ServiceError(
+                "installation update is unavailable", status=409, code="installation_unavailable"
+            )
         profile = self.repository.profile_path(local_profile_id)
         if not profile.is_dir():
             raise ServiceError("installation profile not found", status=404, code="not_found")
-        old_config = self.repository._read_yaml(profile / "config.yaml") or {}
-        memory = profile / "memories"
-        workspace = profile / "workspace"
-        snapshots = {
-            p.relative_to(profile): p.read_bytes()
-            for root in (memory, workspace)
-            if root.exists()
-            for p in root.rglob("*")
-            if p.is_file() and not p.is_symlink()
-        }
+        if any((profile / name).is_symlink() for name in ("SOUL.md", "config.yaml")):
+            raise ServiceError(
+                "installation definition contains a symlink",
+                status=409,
+                code="installation_profile_conflict",
+            )
+        try:
+            old_config = self.repository._read_yaml(profile / "config.yaml") or {}
+        except (OSError, UnicodeError, yaml.YAMLError) as error:
+            raise ServiceError(
+                "installation configuration cannot be read",
+                status=409,
+                code="installation_profile_conflict",
+            ) from error
+        if not isinstance(old_config, Mapping) or not (profile / "SOUL.md").is_file():
+            raise ServiceError(
+                "installation definition is incomplete or invalid",
+                status=409,
+                code="installation_profile_conflict",
+            )
+        installation_id = package.get("id")
+        if not isinstance(installation_id, str) or not re.fullmatch(
+            r"inst_[A-Za-z0-9_-]{1,64}", installation_id
+        ):
+            raise ServiceError(
+                "marketplace installation id is invalid", status=422, code="package_rejected"
+            )
+        installation = old_config.get("xnobrain") or {}
+        if (
+            not isinstance(installation, dict)
+            or not package.get("id")
+            or installation.get("marketplace_installation_id") != package.get("id")
+        ):
+            raise ServiceError(
+                "profile does not belong to this marketplace installation",
+                status=409,
+                code="installation_profile_conflict",
+            )
+
+        raw_definition = package.get("definition")
+        if not isinstance(raw_definition, Mapping) or (
+            raw_definition.get("public_config") is not None
+            and not isinstance(raw_definition.get("public_config"), Mapping)
+        ):
+            raise ServiceError(
+                "marketplace package is unsafe", status=422, code="package_rejected"
+            )
         if self.digest(package) != package.get("digest"):
             raise ServiceError(
                 "marketplace package digest mismatch", status=422, code="package_digest_mismatch"
             )
         definition = dict(package["definition"])
-        (profile / "SOUL.md").write_text(str(definition["soul"]), encoding="utf-8")
-        public = {
-            k: v
-            for k, v in dict(definition.get("public_config") or {}).items()
-            if k in {"model", "reasoning", "display_name", "description"}
-        }
+        soul = definition.get("soul")
+        if not isinstance(soul, str) or not soul.strip() or len(soul.encode("utf-8")) > 100_000:
+            raise ServiceError(
+                "marketplace package is unsafe", status=422, code="package_rejected"
+            )
+        if any(pattern.search(soul) for pattern in _SECRET_PATTERNS):
+            raise ServiceError(
+                "marketplace package contains credential-like content",
+                status=422,
+                code="package_rejected",
+            )
+        public = dict(old_config)
+        public.update({
+            key: value
+            for key, value in dict(definition.get("public_config") or {}).items()
+            if key in {"model", "reasoning", "display_name", "description"}
+        })
         public["xnobrain"] = dict(old_config.get("xnobrain") or {})
         public["xnobrain"]["package_digest"] = package["digest"]
-        self.repository.atomic_yaml(profile / "config.yaml", public)
-        for relative, payload in snapshots.items():
-            target = profile / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            self.repository.atomic_write(target, payload)
+        # Customer memory/workspace are not update targets. Never replay a
+        # stale snapshot over concurrent local work merely to preserve it.
+        soul_path = profile / "SOUL.md"
+        config_path = profile / "config.yaml"
+        original_soul = soul_path.read_bytes()
+        original_config = config_path.read_bytes()
+        try:
+            self.repository.atomic_write(soul_path, str(definition["soul"]).encode("utf-8"))
+            self.repository.atomic_yaml(config_path, public)
+        except Exception:
+            try:
+                self.repository.atomic_write(soul_path, original_soul)
+                self.repository.atomic_write(config_path, original_config)
+            except Exception as recovery_error:
+                raise ServiceError(
+                    "marketplace update failed and requires recovery",
+                    status=409,
+                    code="marketplace_update_recovery_required",
+                ) from recovery_error
+            raise
         return {
             "installation_id": package["id"],
             "local_profile_id": local_profile_id,
@@ -659,6 +794,31 @@ class MarketplaceService:
         }
 
     def uninstall(self, local_profile_id: str) -> dict[str, Any]:
+        profile = self.repository.profile_path(local_profile_id)
+        config_path = profile / "config.yaml"
+        if config_path.is_symlink():
+            raise ServiceError(
+                "installation configuration is unsafe", status=409,
+                code="installation_profile_conflict",
+            )
+        try:
+            config = self.repository._read_yaml(config_path)
+        except (OSError, UnicodeError, yaml.YAMLError) as error:
+            raise ServiceError(
+                "installation configuration cannot be read", status=409,
+                code="installation_profile_conflict",
+            ) from error
+        metadata = config.get("xnobrain") if isinstance(config, Mapping) else None
+        installation_id = (
+            metadata.get("marketplace_installation_id") if isinstance(metadata, Mapping) else None
+        )
+        if not isinstance(installation_id, str) or not re.fullmatch(
+            r"inst_[A-Za-z0-9_-]{1,64}", installation_id
+        ):
+            raise ServiceError(
+                "profile is not a marketplace installation", status=409,
+                code="installation_profile_conflict",
+            )
         target = self.repository.soft_delete_profile(local_profile_id)
         self.agents.sync_profiles_registry()
         return {

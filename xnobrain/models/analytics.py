@@ -18,14 +18,15 @@ class SkillUsageItem(BaseModel):
     skill_id: str
     skill_digest: str | None = None
     requested_count: int | None = Field(default=None, ge=0)
-    loaded_count: int = Field(ge=0)
+    loaded_count: int | None = Field(ge=0)
     reference_reads: int | None = Field(default=None, ge=0)
-    distinct_runs: int = Field(ge=0)
+    distinct_runs: int | None = Field(ge=0)
+    distinct_sessions: int | None = Field(default=None, ge=0)
     last_used_at: str | float | None = None
     tool_invocations: int | None = Field(default=None, ge=0)
     tool_completed: int | None = Field(default=None, ge=0)
     errors: int | None = Field(default=None, ge=0)
-    attribution: Literal["observed", "multiple"]
+    attribution: Literal["observed", "multiple", "estimated"]
 
 
 class SkillUsageCoverage(BaseModel):
@@ -33,7 +34,7 @@ class SkillUsageCoverage(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     source: Literal["xnobrain_skill_lifecycle_events", "hermes_tool_calls"]
-    attribution: Literal["explicit_lifecycle", "observed_load_only"]
+    attribution: Literal["explicit_lifecycle", "observed_load_only", "historical_requests"]
     from_: float | None = Field(default=None, alias="from")
     to: float | None = None
     instrumented: bool

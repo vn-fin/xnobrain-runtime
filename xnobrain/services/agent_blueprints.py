@@ -649,74 +649,20 @@ class AgentBlueprintsServiceMixin:
                 status=409,
                 code="blueprint_idempotency_conflict",
             )
-        expected_revision, expected_digest = self._check_lifecycle_request(current, body)
+        self._check_lifecycle_request(current, body)
         if current.get("status") != "scaffolded":
             raise ServiceError(
                 "a paused scaffold is required before activation",
                 status=409,
                 code="blueprint_not_scaffolded",
             )
-        # This trusted slice intentionally keeps certification out of scope.
-        # Activation is therefore a separate authenticated decision, not a
-        # certification claim and never an implicit scaffold side effect.
-        final = self.repository.profile_path(current["target_profile_id"])
-        if not self._profile_matches_scaffold(final, current):
-            raise ServiceError(
-                "scaffolded profile has drifted",
-                status=409,
-                code="blueprint_scaffold_conflict",
-            )
-        started_at = iso()
-        operation = {
-            "revision": expected_revision,
-            "canonical_digest": expected_digest,
-            "idempotency_key": body["idempotency_key"],
-            "actor": subject,
-            "started_at": started_at,
-            "completed_at": None,
-        }
-        in_progress = {
-            **current,
-            "status": "activating",
-            "activation": operation,
-            "updated_at": started_at,
-        }
-        self.repository.update_agent_blueprint(
-            owner_profile,
-            blueprint_id,
-            expected_revision,
-            in_progress,
-            expected_record=stored,
+        # Approval authorizes scaffolding, not an uncertified child. Fail closed
+        # until the child-path executor and immutable certification binding exist.
+        raise ServiceError(
+            "child-path certification is required before activation",
+            status=409,
+            code="blueprint_certification_required",
         )
-        metadata_path = final / "agent.json"
-        config_path = final / "config.yaml"
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        metadata["status"] = "active"
-        metadata["paused"] = False
-        metadata["updated_at"] = time.time()
-        managed = config.setdefault("xnobrain", {})
-        managed["lifecycle"] = "active"
-        managed["paused"] = False
-        self.repository.atomic_json(metadata_path, metadata)
-        self.repository.atomic_yaml(config_path, config)
-        completed_at = iso()
-        completed = {
-            **in_progress,
-            "status": "active",
-            "activation": {**operation, "completed_at": completed_at},
-            "updated_at": completed_at,
-        }
-        updated = self.repository.update_agent_blueprint(
-            owner_profile,
-            blueprint_id,
-            expected_revision,
-            completed,
-            expected_record=in_progress,
-        )
-        self.agents.sync_profiles_registry()
-        self._cache.invalidate("agents")
-        return self._present(updated)
 
     def cancel_agent_blueprint(
         self,

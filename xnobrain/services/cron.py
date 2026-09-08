@@ -74,51 +74,35 @@ class CronService:
             raise CronServiceError("name and prompt are required")
         interval = int(body.get("interval_minutes") or 0)
         schedule = str(body.get("schedule") or "").strip()
+        if interval > 0 and schedule:
+            raise CronServiceError(
+                "choose interval_minutes or schedule, not both",
+                status=422,
+                code="invalid_schedule",
+            )
         if interval > 0:
             schedule = f"every {interval}m"
         if not schedule:
             raise CronServiceError("interval_minutes or schedule is required")
         try:
-            created = self._native(
-                agent_id,
-                "create_job",
-                prompt=prompt,
-                schedule=schedule,
-                name=name,
-                deliver="local",
-            )
+            from ..integrations.cron_timezone import cron_creation_timezone
+            from ..models.automation import CronCreate
+
+            zone = CronCreate.validate_timezone(str(body.get("timezone") or "Etc/UTC"))
+            with cron_creation_timezone(zone):
+                created = self._native(
+                    agent_id,
+                    "create_job",
+                    prompt=prompt,
+                    schedule=schedule,
+                    name=name,
+                    deliver="local",
+                )
         except ValueError as exc:
             raise CronServiceError(str(exc), code="invalid_schedule") from exc
-        if self.kanban is not None:
-            next_run_at = _iso(created.get("next_run_at"))
-            task = self.kanban.create_task(
-                "default",
-                {
-                    "title": name,
-                    "description": prompt,
-                    "status": "scheduled",
-                    "assignee": agent_id,
-                    "schedule": {
-                        "recurrence": "interval" if interval > 0 else "once",
-                        "scheduled_at": next_run_at,
-                        "interval_minutes": interval if interval > 0 else None,
-                        "timezone": "Etc/UTC",
-                    },
-                },
-                created_by="cron",
-            )
-            created = (
-                self._native(
-                    agent_id,
-                    "update_job",
-                    str(created["id"]),
-                    {
-                        "xnobrain_kanban_board": "default",
-                        "xnobrain_kanban_task_id": str(task["id"]),
-                    },
-                )
-                or created
-            )
+        # Native cron owns recurrence, claims and execution. Creating a second
+        # scheduled Kanban task here would dispatch the same work independently.
+        # Delivery-to-Kanban remains an explicit output target, not a scheduler.
         return self._dto(agent_id, created)
 
     def list_blueprints(self) -> dict[str, Any]:
@@ -145,15 +129,20 @@ class CronService:
         deliver = str(spec.get("deliver") or "local")
         native_deliver = deliver if deliver not in {"origin", ""} else "local"
         try:
-            created = self._native(
-                agent_id,
-                "create_job",
-                prompt=str(spec.get("prompt") or ""),
-                schedule=str(spec.get("schedule") or ""),
-                name=str(spec.get("name") or body.get("blueprint") or "Automation"),
-                deliver=native_deliver,
-                skills=spec.get("skills") or None,
-            )
+            from ..integrations.cron_timezone import cron_creation_timezone
+            from ..models.automation import CronCreate
+
+            zone = CronCreate.validate_timezone(str(body.get("timezone") or "Etc/UTC"))
+            with cron_creation_timezone(zone):
+                created = self._native(
+                    agent_id,
+                    "create_job",
+                    prompt=str(spec.get("prompt") or ""),
+                    schedule=str(spec.get("schedule") or ""),
+                    name=str(spec.get("name") or body.get("blueprint") or "Automation"),
+                    deliver=native_deliver,
+                    skills=spec.get("skills") or None,
+                )
         except ValueError as exc:
             raise CronServiceError(str(exc), status=422, code="invalid_schedule") from exc
         targets = list(body.get("deliver_targets") or [])
@@ -400,6 +389,9 @@ class CronService:
         from cron.scheduler_provider import resolve_cron_scheduler
         from hermes_constants import reset_hermes_home_override, set_hermes_home_override
 
+        from ..integrations.cron_timezone import install_timezone_computation
+
+        install_timezone_computation(cron_jobs)
         home = self._profile_home(profile)
         token = set_hermes_home_override(str(home))
         try:
@@ -604,6 +596,9 @@ class CronService:
         try:
             loaded = import_module(module)
             if module == "cron.jobs":
+                from ..integrations.cron_timezone import install_timezone_computation
+
+                install_timezone_computation(loaded)
                 with loaded.use_cron_store(home):
                     return getattr(loaded, function)(*args, **kwargs)
             return getattr(loaded, function)(*args, **kwargs)
@@ -719,6 +714,29 @@ class CronService:
         result = dict(job)
         result["agent_id"] = profile
         result["schedule"] = str(display or schedule or "")
+        kind = schedule.get("kind") if isinstance(schedule, Mapping) else None
+        result["schedule_kind"] = (
+            kind if isinstance(kind, str) and kind in {"cron", "interval", "once"}
+            else None
+        )
+        minutes = schedule.get("minutes") if isinstance(schedule, Mapping) else None
+        result["interval_minutes"] = (
+            minutes if kind == "interval" and type(minutes) is int and minutes > 0
+            else None
+        )
+        binding = schedule.get("xnobrain_time") if isinstance(schedule, Mapping) else None
+        result["timezone"] = None
+        result["dst_policy"] = None
+        if isinstance(binding, Mapping):
+            from xnobrain.integrations.cron_timezone import validated_schedule_timezone
+
+            try:
+                result["timezone"] = validated_schedule_timezone(dict(schedule))
+                result["dst_policy"] = binding["dst_policy"]
+            except ValueError:
+                # Unsupported persisted state is unknown, never a verified zone.
+                pass
+
         result["next_run_at"] = _iso(job.get("next_run_at"))
         result["enabled"] = bool(job.get("enabled", True))
         result["delivery_targets"] = [

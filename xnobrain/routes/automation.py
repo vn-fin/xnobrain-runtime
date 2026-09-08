@@ -1,9 +1,11 @@
 """Automation API route declarations."""
 
 from ..models import CronBlueprintInstantiate, CronCreate, CronDeliveryTargetCreate
+from ..models.automation import CronSchedulePreview, CronSchedulePreviewResult
 from .definition import route
 
 ROUTES = (
+    route("POST", "/cron/schedule-preview", "cron_schedule_preview", CronSchedulePreview, tags=("Cron",), response_data=CronSchedulePreviewResult),
     route("GET", "/cron/jobs", "cron_list", tags=("Cron",)),
     route("GET", "/cron/jobs/{job_id}", "cron_get", tags=("Cron",)),
     route("POST", "/cron/jobs", "cron_create", CronCreate, tags=("Cron",)),

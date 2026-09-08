@@ -2,7 +2,6 @@
 
 from xnobrain.runtime_limits import max_parallel_agents
 
-from ..services.public_text import public_error_message
 from .hermes_support import (
     LLM_ROUTER_DEFAULT_MODEL,
     PROVIDER_ERROR_OUTPUT_RE,
@@ -18,6 +17,13 @@ from .hermes_support import (
     time,
     uuid,
 )
+
+
+def public_error_message(value: object, fallback: str = "Request failed") -> str:
+    """Defer service package initialization until the adapter is fully loaded."""
+    from xnobrain.services.public_text import public_error_message as normalize
+
+    return normalize(value, fallback)
 
 
 def _commit_resolved_write_result(agent, tool_name, pending_id, applied) -> bool:

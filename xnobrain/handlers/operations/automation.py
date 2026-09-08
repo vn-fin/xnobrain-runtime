@@ -24,6 +24,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         str(q.get("agent") or "").strip() or (_ for _ in ()).throw(ValueError("agent is required"))
     )
     return {
+        "cron_schedule_preview": (_threaded(lambda: s.preview_cron_schedule(body)), "schedule preview calculated", 200),
         "cron_list": (
             _threaded(lambda: s.list_crons(q.get("agent_id"))),
             "cron jobs retrieved successfully",
