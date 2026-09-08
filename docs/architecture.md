@@ -76,20 +76,19 @@ principal's eligible provider connections; a generic upstream 400 alone does
 not identify the rejected field. Do not infer either cause from a successful
 request using a different provider or principal.
 
+### GoRouter v0.0.21 streaming and telemetry
 
-#### Pinned-router inference compatibility
+GoRouter v0.0.21 must run with `OTEL_ENABLED=false` when it serves streaming
+inference. Its Fiber handler registers a lazy response stream after starting
+the provider request with the handler context. With OTEL middleware enabled,
+that context ends when the handler returns, which can terminate the upstream
+response after its first buffered fragment. The client then sees HTTP 200 and
+`[DONE]` without a finish reason; Router records 502, and repeated failures can
+produce `503 no healthy credentials available`. Non-streaming calls can appear
+healthy because they finish before handler return.
 
-Runtime uses blocking provider responses for `cx/` and `cc/`, alongside the
-existing OpenCode workaround. Local probes against GoRouter v0.0.21 returned
-complete text and usage for non-streaming Codex and Claude requests, while
-streaming Codex returned partial text without a finish reason. Codex blocking
-tool calls also completed. Browser run/tool events remain SSE; answer text
-arrives after each provider inference completes. Smart-route selection applies
-the same compatibility behavior. No router API or release pin changes are needed.
-
-For `cc/`, Runtime omits `temperature` and `top_p` and uses provider defaults:
-the tested Claude Opus route rejected each override independently with HTTP 400.
-Other provider prefixes retain their existing sampling behavior.
-These are compatibility workarounds, not evidence that the upstream stream
-failure has been repaired. Revalidate full conversation/tool/delegation flows
-before removing them or claiming provider-wide compatibility.
+Runtime does not disable token streaming or infer transport behavior from model
+or provider prefixes. All centralized models use the router's configured
+OpenAI-compatible streaming contract. Re-enable router traces only after the
+router owns a stream-lifetime context that survives handler return, and verify
+text, tool calls, terminal finish reason, usage, cancellation, and health state.

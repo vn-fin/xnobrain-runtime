@@ -405,8 +405,6 @@ class ConversationRunnerMixin:
         model = str(decision.get("model") or "").strip()
         if model:
             agent.model = model
-            if model.split("/", 1)[0] in {"oc", "ocg", "ocz", "cx", "cc"}:
-                agent._disable_streaming = True
         reasoning = str(decision.get("reasoning") or "").strip().lower()
         if reasoning:
             from hermes_constants import parse_reasoning_effort
@@ -457,12 +455,6 @@ class ConversationRunnerMixin:
                 if "tools_for_api" not in str(error):
                     raise
                 kwargs = original_build_api_kwargs(api_messages)
-            # Claude Code models reject sampling overrides on the tested
-            # route. Use provider defaults without changing other providers.
-            owner = str(kwargs.get("model") or getattr(agent, "model", "")).split("/", 1)[0]
-            if owner == "cc":
-                kwargs.pop("temperature", None)
-                kwargs.pop("top_p", None)
             messages = kwargs.get("messages")
             if isinstance(messages, list):
                 kwargs["messages"] = [
@@ -599,18 +591,6 @@ class ConversationRunnerMixin:
         agent._active_children = SmartRouteChildren(current)
         agent._xnobrain_smart_children = True
 
-    @staticmethod
-    def _apply_provider_runtime_compatibility(agent: Any, model: str) -> None:
-        """Apply narrow workarounds for known router/provider wire defects."""
-        owner = str(model or "").strip().split("/", 1)[0]
-        if owner in {"oc", "ocg", "ocz", "cx", "cc"}:
-            # With the pinned router, live Codex/Claude streaming probes can
-            # end after partial text without a finish_reason. OpenCode has the
-            # same terminal-frame incompatibility. Blocking responses preserve
-            # complete text, usage and tool calls without continuation retries.
-            # The browser run-event stream remains active independently.
-            agent._disable_streaming = True
-
     async def _run_session_agent(
         self,
         prepared: Mapping[str, Any],
@@ -683,10 +663,6 @@ class ConversationRunnerMixin:
 
             def _create_agent(self, *args: Any, **kwargs: Any) -> Any:
                 agent = super()._create_agent(*args, **kwargs)
-                manager._apply_provider_runtime_compatibility(
-                    agent,
-                    str(active_smart_decision.get("model") or prepared.get("model") or ""),
-                )
                 manager._install_provider_runtime_request_guard(agent)
                 manager._install_model_fallbacks(agent, prepared)
                 if smart_route_name:

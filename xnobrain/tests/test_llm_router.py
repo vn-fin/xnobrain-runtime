@@ -112,33 +112,6 @@ class ProviderRuntimeRequestGuardTests(unittest.TestCase):
         AgentManager._install_provider_runtime_request_guard(agent)
         self.assertEqual(agent._build_api_kwargs(messages)["messages"], messages[:1])
 
-    def test_provider_sampling_compatibility(self):
-        for model in ("cc/claude-opus-4-8", "anthropic/claude-sonnet", "openai/gpt-5"):
-            with self.subTest(model=model):
-                agent = SimpleNamespace()
-                agent._build_api_kwargs = lambda messages: {
-                    "model": model, "messages": messages, "temperature": 0.7, "top_p": 0.95,
-                }
-                AgentManager._install_provider_runtime_request_guard(agent)
-                result = agent._build_api_kwargs([])
-                self.assertEqual("temperature" in result, not model.startswith("cc/"))
-                self.assertEqual("top_p" in result, not model.startswith("cc/"))
-
-    def test_claude_code_top_p_alone_is_removed(self):
-        agent = SimpleNamespace()
-        agent._build_api_kwargs = lambda messages: {
-            "model": "cc/claude-opus-4-8", "messages": messages, "top_p": 0.95,
-        }
-        AgentManager._install_provider_runtime_request_guard(agent)
-        self.assertNotIn("top_p", agent._build_api_kwargs([]))
-
-    def test_smart_route_switch_applies_blocking_compatibility(self):
-        for model in ("cx/gpt-5.4-mini", "cc/claude-opus-4-8"):
-            agent = SimpleNamespace(_disable_streaming=False)
-            AgentManager._apply_smart_route_decision(agent, {"model": model})
-            self.assertTrue(agent._disable_streaming)
-
-
 class LLMRouterConfigTests(unittest.TestCase):
     def test_global_config_accepts_model_derived_auto_reasoning(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -380,23 +353,6 @@ class LLMRouterConfigTests(unittest.TestCase):
                     "api-key",
                 )
                 self.assertIsNone(os.environ.get("LLM_ROUTER_API_KEY"))
-
-    def test_affected_router_models_use_blocking_provider_response(self) -> None:
-        for model in (
-            "cx/gpt-5.4-mini",
-            "cx/gpt-5.6-luna",
-            "cc/claude-opus-4-8",
-            "oc/big-pickle",
-            "ocg/gpt-5.6-luna",
-            "ocz/gpt-5.6-luna",
-        ):
-            agent = SimpleNamespace(_disable_streaming=False)
-            AgentManager._apply_provider_runtime_compatibility(agent, model)
-            self.assertTrue(agent._disable_streaming, model)
-
-        codex = SimpleNamespace(_disable_streaming=False)
-        AgentManager._apply_provider_runtime_compatibility(codex, "openai/gpt-5")
-        self.assertFalse(codex._disable_streaming)
 
     def test_legacy_opencode_free_model_routes_through_user_zen_connection(self) -> None:
         config: dict[str, Any] = {}
