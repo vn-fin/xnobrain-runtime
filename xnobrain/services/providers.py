@@ -35,15 +35,12 @@ class ProvidersServiceMixin:
         for provider in SUPPORTED_PROVIDERS:
             definition = PROVIDER_DEFINITIONS.get(provider, {})
             available_models = [
-                item["id"]
-                for item in models
-                if item.get("provider") == provider and item.get("id") != "auto"
+                item["id"] for item in models if item.get("provider") == provider
             ]
             model_assignments = {
                 str(item["id"]): list(item.get("assignments", []))
                 for item in models
                 if item.get("provider") == provider
-                and item.get("id") != "auto"
                 and item.get("assignments")
             }
             result.append(
@@ -66,7 +63,7 @@ class ProvidersServiceMixin:
                         else "disconnected"
                     ),
                     "last_test_status": "unknown",
-                    "default_model": "auto" if available_models else "",
+                    "default_model": available_models[0] if available_models else "",
                     "connection_count": 0,
                     "available_models": available_models,
                     "model_assignments": model_assignments,
@@ -79,7 +76,7 @@ class ProvidersServiceMixin:
         items = [
             item
             for item in (await self.router.list_models())["data"]
-            if item.get("provider") == provider and item.get("id") != "auto"
+            if item.get("provider") == provider
         ]
         reasoning = [
             level
@@ -97,14 +94,8 @@ class ProvidersServiceMixin:
         ]
         return {
             "provider_id": provider,
-            "default_model": "auto",
+            "default_model": str(items[0]["id"] if items else ""),
             "models": [
-                {
-                    "id": "auto",
-                    "reasoning": reasoning,
-                    "default_reasoning": default_reasoning_level(reasoning),
-                },
-                *[
                     {
                         "id": item["id"],
                         "reasoning": list(item.get("reasoning_levels", [])),
@@ -115,7 +106,6 @@ class ProvidersServiceMixin:
                     }
                     for item in items
                 ],
-            ],
         }
 
     async def provider_model_reasoning(self, provider: str, model: str) -> dict[str, Any]:

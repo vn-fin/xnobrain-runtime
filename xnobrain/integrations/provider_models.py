@@ -44,7 +44,7 @@ class ProviderModelsMixin:
             if not isinstance(item, Mapping):
                 continue
             model_id = str(item.get("id") or "").strip()
-            if not model_id or model_id == LLM_ROUTER_DEFAULT_MODEL or model_id in seen:
+            if not model_id or model_id in seen:
                 continue
             # GoRouter's OpenAI envelope uses owned_by="gorouter" for every
             # route. Provider ownership is encoded in the stable public model
@@ -88,15 +88,12 @@ class ProviderModelsMixin:
         return {
             "object": "list",
             "provider": LLM_ROUTER_PROVIDER_KEY,
-            "default_model": LLM_ROUTER_DEFAULT_MODEL,
-            "data": [
-                {
-                    "id": LLM_ROUTER_DEFAULT_MODEL,
-                    "provider": LLM_ROUTER_PROVIDER_KEY,
-                    "name": "Auto",
-                },
-                *models,
-            ],
+            "default_model": (
+                LLM_ROUTER_DEFAULT_MODEL
+                if any(item["id"] == LLM_ROUTER_DEFAULT_MODEL for item in models)
+                else str(models[0]["id"] if models else "")
+            ),
+            "data": models,
         }
 
     async def reasoning_for_model(self, model: str) -> dict[str, Any]:

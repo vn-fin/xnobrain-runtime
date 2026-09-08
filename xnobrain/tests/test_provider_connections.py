@@ -17,6 +17,7 @@ class _Router:
         return {
             "data": [
                 {"id": "auto", "provider": "xnobrain"},
+                {"id": "openai/auto", "provider": "openai"},
                 {
                     "id": "openai/gpt-5",
                     "provider": "openai",
@@ -58,7 +59,7 @@ class ProviderCatalogTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(openai["connected"])
         self.assertEqual(openai["connection_mode"], "managed")
-        self.assertEqual(openai["available_models"], ["openai/gpt-5"])
+        self.assertEqual(openai["available_models"], ["openai/auto", "openai/gpt-5"])
         self.assertEqual(
             openai["model_assignments"]["openai/gpt-5"][0]["id"],
             "llma_org",
@@ -75,7 +76,7 @@ class ProviderCatalogTests(unittest.IsolatedAsyncioTestCase):
 
         catalog = await Router().list_models()
 
-        self.assertEqual(catalog["data"][1]["provider"], "opencode")
+        self.assertEqual(catalog["data"][0]["provider"], "opencode")
 
     async def test_reasoning_catalog_remains_read_only(self):
         service = _Service()
