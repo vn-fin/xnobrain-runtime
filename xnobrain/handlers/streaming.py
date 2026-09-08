@@ -8,6 +8,7 @@ from fastapi import Request
 from fastapi.responses import Response, StreamingResponse
 
 from ..services import EXPECTED_ERRORS
+from ..services.public_text import public_error_message
 
 
 class StreamingHandlers:
@@ -131,7 +132,7 @@ class StreamingHandlers:
                 async for chunk in self.service.stream_conversation(agent, conversation_id, body):
                     yield chunk
             except EXPECTED_ERRORS as error:
-                yield f"event: error\ndata: {json.dumps({'message': str(error)})}\n\n".encode()
+                yield f"event: error\ndata: {json.dumps({'message': public_error_message(error)})}\n\n".encode()
 
         return StreamingResponse(
             events(),
@@ -198,7 +199,7 @@ class StreamingHandlers:
                             continue
                         yield f"id: {cursor}\nevent: task\ndata: {json.dumps(item, separators=(',', ':'))}\n\n"
                 except EXPECTED_ERRORS as error:
-                    yield f"event: error\ndata: {json.dumps({'message': str(error)})}\n\n"
+                    yield f"event: error\ndata: {json.dumps({'message': public_error_message(error)})}\n\n"
                     return
                 await asyncio.sleep(1)
 
@@ -232,7 +233,7 @@ class StreamingHandlers:
                 try:
                     record = runs.get_run(team_id, run_id)
                 except EXPECTED_ERRORS as error:
-                    yield f"event: error\ndata: {json.dumps({'message': str(error)})}\n\n"
+                    yield f"event: error\ndata: {json.dumps({'message': public_error_message(error)})}\n\n"
                     return
                 revision = int(record.get("revision", 0))
                 if revision > cursor:
@@ -289,7 +290,7 @@ class StreamingHandlers:
                     yield f"id: {sequence}\nevent: {name}\ndata: {payload}\n\n".encode()
                 yield b"data: [DONE]\n\n"
             except EXPECTED_ERRORS as error:
-                yield f"event: error\ndata: {json.dumps({'message': str(error)})}\n\n".encode()
+                yield f"event: error\ndata: {json.dumps({'message': public_error_message(error)})}\n\n".encode()
 
         return StreamingResponse(
             events(),

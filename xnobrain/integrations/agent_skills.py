@@ -13,6 +13,7 @@ from .hermes_support import (
     json,
     os,
     shutil,
+    tempfile,
     uuid,
     yaml,
 )
@@ -321,15 +322,12 @@ class AgentSkillsMixin:
         return payload
 
     def set_skill_enabled(
-        self,
-        raw_name: Any,
-        raw_skill_id: Any,
-        body: Mapping[str, Any],
+        self, raw_name: Any, raw_skill_id: Any, body: Mapping[str, Any]
     ) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
-        if not isinstance(body, Mapping):
-            raise AgentAPIError("request body must be an object", code="invalid_skill_request")
+        if not isinstance(body, Mapping) or not ({"enabled", "description"} & set(body)):
+            raise AgentAPIError("enabled or description is required", code="invalid_skill_request")
         skill_id = self._skill_id(raw_skill_id)
         if skill_id == BIG_BROTHER_SKILL_ID:
             raise AgentAPIError(
@@ -337,12 +335,52 @@ class AgentSkillsMixin:
                 code="protected_skill",
                 status=403,
             )
-        if self._find_agent_skill(profile_dir, skill_id) is None:
+        skill_dir = self._find_agent_skill(profile_dir, skill_id)
+        if skill_dir is None:
             raise AgentAPIError(f"Skill not found: {skill_id}", code="skill_not_found", status=404)
-        if "enabled" not in body:
-            raise AgentAPIError("enabled is required", code="invalid_skill_request")
-        self._set_skill_enabled(profile_dir, skill_id, self._coerce_bool(body["enabled"]))
+        if "description" in body:
+            skill_file = skill_dir / "SKILL.md"
+            self._update_agent_skill_description(skill_file, body["description"])
+        if "enabled" in body:
+            self._set_skill_enabled(profile_dir, skill_id, self._coerce_bool(body["enabled"]))
         return self.list_skills(name)
+
+    def _update_agent_skill_description(self, path: Path, value: Any) -> None:
+        if not isinstance(value, str):
+            raise AgentAPIError("description must be a string", code="invalid_skill_request")
+        description = value.strip()
+        if not description or len(description) > 1000 or "\n" in description or "\r" in description:
+            raise AgentAPIError(
+                "description must be one non-empty line", code="invalid_skill_request"
+            )
+        text = path.read_text(encoding="utf-8")
+        parts = text.split("---", 2)
+        if len(parts) < 3 or parts[0].strip():
+            raise AgentAPIError("skill frontmatter is invalid", code="invalid_skill")
+        frontmatter = yaml.safe_load(parts[1]) or {}
+        if not isinstance(frontmatter, dict):
+            raise AgentAPIError("skill frontmatter is invalid", code="invalid_skill")
+        frontmatter["description"] = description
+        payload = (
+            "---\n"
+            + yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)
+            + "---"
+            + parts[2]
+        )
+        descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        try:
+            os.fchmod(descriptor, 0o640)
+            with os.fdopen(descriptor, "wb") as file:
+                file.write(payload.encode("utf-8"))
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary, path)
+        except Exception:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+            raise
 
     def remove_skill(self, raw_name: Any, raw_skill_id: Any) -> dict[str, Any]:
         name = self._agent_name(raw_name)

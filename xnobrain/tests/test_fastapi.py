@@ -912,6 +912,22 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse((self.root / "skills" / "notes" / "SKILL.md").exists())
 
+    async def test_authored_skill_description_can_be_updated_and_snapshotted(self):
+        skill = self.root / "skills" / "custom" / "writer" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("---\nname: writer\ndescription: Old trigger\n---\n# Writer\n", encoding="utf-8")
+        async with self.client() as client:
+            response = await client.patch(
+                "/xnobrain/api/runtime/v1/agents-skills/writer",
+                json={"description": "Use when drafting polished documents."},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        updated = next(item for item in response.json()["data"] if item["skill_id"] == "writer")
+        self.assertEqual(updated["description"], "Use when drafting polished documents.")
+        snapshots = list((self.root / "snapshots" / "skills").rglob("*.md"))
+        self.assertTrue(snapshots)
+        self.assertIn("Old trigger", snapshots[0].read_text(encoding="utf-8"))
+
     async def test_agent_can_install_existing_default_skill_by_id(self):
         default_skill = self.root / "skills" / "custom" / "shared-notes" / "SKILL.md"
         default_skill.parent.mkdir(parents=True)

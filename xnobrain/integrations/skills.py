@@ -84,33 +84,46 @@ class CommonSkillsMixin:
             "skills": skills,
         }
 
-    def set_skill_enabled(
-        self,
-        raw_skill_id: Any,
-        body: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        if not isinstance(body, Mapping):
-            raise ConfigAPIError("request body must be an object", code="invalid_skill_request")
-        if "enabled" not in body:
-            raise ConfigAPIError("enabled is required", code="invalid_skill_request")
-
+    def set_skill_enabled(self, raw_skill_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
+        if not isinstance(body, Mapping) or not ({"enabled", "description"} & set(body)):
+            raise ConfigAPIError("enabled or description is required", code="invalid_skill_request")
         skill_id = self._skill_id(raw_skill_id)
         config = self._read_config()
-        if (
-            self._find_owned_skill_dir(skill_id) is None
-            and self._find_external_skill_dir(skill_id, config) is None
-        ):
+        owned = self._find_owned_skill_dir(skill_id)
+        external = self._find_external_skill_dir(skill_id, config)
+        if owned is None and external is None:
             raise ConfigAPIError("skill not found", code="skill_not_found", status=404)
-
-        disabled = self._disabled_skills(config)
-        if self._coerce_bool(body["enabled"], field="enabled"):
-            disabled.discard(skill_id)
-        else:
-            disabled.add(skill_id)
-        self._snapshot_config()
-        self._set_nested(config, ("skills", "disabled"), sorted(disabled))
-        self._write_config(config)
+        if "description" in body:
+            if owned is None:
+                raise ConfigAPIError("external skills are read-only", code="external_skill_update_forbidden", status=403)
+            before = self._skill_files()
+            self._update_skill_description(owned / "SKILL.md", body["description"])
+            self._snapshot_skill_changes(before, self._skill_files())
+        if "enabled" in body:
+            disabled = self._disabled_skills(config)
+            if self._coerce_bool(body["enabled"], field="enabled"):
+                disabled.discard(skill_id)
+            else:
+                disabled.add(skill_id)
+            self._snapshot_config()
+            self._set_nested(config, ("skills", "disabled"), sorted(disabled))
+            self._write_config(config)
         return self.list_skills()
+
+    def _update_skill_description(self, path: Path, value: Any) -> None:
+        description = self._text_value(value, field="description", max_chars=1000).strip()
+        if not description or "\n" in description or "\r" in description:
+            raise ConfigAPIError("description must be one non-empty line", code="invalid_skill_request")
+        text = path.read_text(encoding="utf-8")
+        parts = text.split("---", 2)
+        if len(parts) < 3 or parts[0].strip():
+            raise ConfigAPIError("skill frontmatter is invalid", code="invalid_skill")
+        frontmatter = yaml.safe_load(parts[1]) or {}
+        if not isinstance(frontmatter, dict):
+            raise ConfigAPIError("skill frontmatter is invalid", code="invalid_skill")
+        frontmatter["description"] = description
+        payload = "---\n" + yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True) + "---" + parts[2]
+        self._atomic_write(path, payload.encode("utf-8"))
 
     def delete_skill(self, raw_skill_id: Any) -> dict[str, Any]:
         skill_id = self._skill_id(raw_skill_id)

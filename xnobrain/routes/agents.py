@@ -4,7 +4,7 @@ from ..models import (
     AgentCreate,
     AgentMetadataPatch,
     ConfigPatch,
-    EnabledPatch,
+    SkillPatch,
     MemoryPatch,
     SkillInstall,
     SkillSyncRequest,
@@ -50,7 +50,7 @@ ROUTES = (
     ),
     route("POST", "/agents-skills/sync", "skills_sync", SkillSyncRequest, tags=("Skills",)),
     route(
-        "PATCH", "/agents-skills/{skill_id}", "skills_default_patch", EnabledPatch, tags=("Skills",)
+        "PATCH", "/agents-skills/{skill_id}", "skills_default_patch", SkillPatch, tags=("Skills",)
     ),
     route("GET", "/agents-skills/{agent_id}", "skills_list", tags=("Skills",)),
     route("POST", "/agents-skills/{agent_id}", "skills_install", SkillInstall, tags=("Skills",)),
@@ -58,7 +58,7 @@ ROUTES = (
         "PATCH",
         "/agents-skills/{agent_id}/{skill_id}",
         "skills_patch",
-        EnabledPatch,
+        SkillPatch,
         tags=("Skills",),
     ),
     route("DELETE", "/agents-skills/{agent_id}/{skill_id}", "skills_delete", tags=("Skills",)),

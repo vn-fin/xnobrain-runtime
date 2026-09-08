@@ -44,8 +44,9 @@ class SkillSyncRequest(BaseModel):
     expected_source_revision: str | None = Field(default=None, max_length=128)
 
 
-class EnabledPatch(BaseModel):
-    enabled: bool
+class SkillPatch(BaseModel):
+    enabled: bool | None = None
+    description: str | None = Field(default=None, min_length=1, max_length=1000)
 
 
 class MemoryPatch(BaseModel):

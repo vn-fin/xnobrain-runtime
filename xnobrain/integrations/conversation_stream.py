@@ -2,6 +2,7 @@
 
 from xnobrain.runtime_limits import max_parallel_agents
 
+from ..services.public_text import public_error_message
 from .hermes_support import (
     LLM_ROUTER_DEFAULT_MODEL,
     PROVIDER_ERROR_OUTPUT_RE,
@@ -633,7 +634,7 @@ class ConversationStreamMixin:
                             "event": "run.failed",
                             "run_id": run_id,
                             "timestamp": time.time(),
-                            "message": str(result.get("error") or "agent command failed"),
+                            "message": public_error_message(result.get("error"), "Agent command failed"),
                         }
                     )
                 else:
@@ -704,7 +705,7 @@ class ConversationStreamMixin:
                     "event": "run.failed",
                     "run_id": run_id,
                     "timestamp": time.time(),
-                    "message": str(exc) or "agent command failed",
+                    "message": public_error_message(exc, "Agent command failed"),
                 }
             )
             yield b"data: [DONE]\n\n"
@@ -819,7 +820,9 @@ class ConversationStreamMixin:
         )
 
     def _chat_sse_error(self, message: str) -> bytes:
-        payload = json.dumps({"error": {"message": message}}, separators=(",", ":"))
+        payload = json.dumps(
+            {"error": {"message": public_error_message(message)}}, separators=(",", ":")
+        )
         return f"event: error\ndata: {payload}\n\n".encode("utf-8")
 
     @staticmethod

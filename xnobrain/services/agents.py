@@ -629,11 +629,19 @@ class AgentsServiceMixin:
         if self._is_big_brother(agent_id):
             return self.config.set_skill_enabled(skill_id, body)["skills"]
         self._reject_control_skill(skill_id)
-        payload = self.agents.set_skill_enabled(agent_id, skill_id, body)
-        path = self.repository.profile_path(agent_id) / "skills" / skill_id / "SKILL.md"
-        if path.is_file():
+        profile = self.repository.profile_path(agent_id)
+        library_skill = next(
+            (
+                item
+                for item in self.agents.list_skills(agent_id)["skills"]
+                if item["skill_id"] == skill_id
+            ),
+            None,
+        )
+        path = profile / "skills" / str((library_skill or {}).get("path") or skill_id) / "SKILL.md"
+        if path.is_file() and "description" in body:
             self.repository.snapshot(agent_id, "skills", skill_id, path.read_bytes())
-        return payload["skills"]
+        return self.agents.set_skill_enabled(agent_id, skill_id, body)["skills"]
 
     def remove_skill(self, agent_id: str, skill_id: str) -> list[dict[str, Any]]:
         if self._is_big_brother(agent_id):

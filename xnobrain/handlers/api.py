@@ -10,6 +10,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
 from ..services import EXPECTED_ERRORS, PlatformService
+from ..services.public_text import public_error_message
 from .operations import resolve as resolve_operation
 from .portability import PortabilityHandlers
 from .streaming import StreamingHandlers
@@ -36,7 +37,7 @@ class APIHandlers(WorkspaceHandlers, PortabilityHandlers, StreamingHandlers):
         return JSONResponse(
             {
                 "success": False,
-                "message": str(error),
+                "message": public_error_message(error),
                 "error": {"code": str(getattr(error, "code", "internal_error"))},
                 "status_code": status,
             },
