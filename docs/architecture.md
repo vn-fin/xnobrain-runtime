@@ -62,7 +62,7 @@ Compose collector or a loopback endpoint.
 ### Router protocol and failed inference
 
 The Runtime uses GoRouter's `/v1/chat/completions` contract for prefixed models.
-In GoRouter v0.0.21, `cx/` is translated to the Codex Responses backend and
+In GoRouter v0.1.0, `cx/` is translated to the Codex Responses backend and
 `cc/` to Anthropic Messages. The public `/v1/responses` handler also delegates
 to the same chat routing pipeline; switching the public endpoint does not
 bypass credential health, quota, or provider request validation.
@@ -76,9 +76,9 @@ principal's eligible provider connections; a generic upstream 400 alone does
 not identify the rejected field. Do not infer either cause from a successful
 request using a different provider or principal.
 
-### GoRouter v0.0.21 streaming and telemetry
+### GoRouter v0.1.0 streaming and telemetry
 
-GoRouter v0.0.21 must run with `OTEL_ENABLED=false` when it serves streaming
+GoRouter v0.1.0 must run with `OTEL_ENABLED=false` when it serves streaming
 inference. Its Fiber handler registers a lazy response stream after starting
 the provider request with the handler context. With OTEL middleware enabled,
 that context ends when the handler returns, which can terminate the upstream
@@ -92,3 +92,18 @@ or provider prefixes. All centralized models use the router's configured
 OpenAI-compatible streaming contract. Re-enable router traces only after the
 router owns a stream-lifetime context that survives handler return, and verify
 text, tool calls, terminal finish reason, usage, cancellation, and health state.
+
+### Router tool-name wire codec
+
+The centralized router boundary aliases Runtime tool names to stable neutral
+wire identifiers and restores the original names before Hermes validates,
+persists, displays, or executes calls. Historical assistant/tool messages and
+explicit tool choices use the same aliases, and delegated child agents install
+the same codec. The original tool identity is included in each description so
+models retain semantic selection context.
+
+This is provider-independent: every model sent through the centralized router
+uses the same codec. It avoids upstream coding-client reserved-name
+interactions without dropping tools, reducing schemas, switching API mode, or
+checking public model prefixes. The alias is derived only from the public tool
+name and never contains credentials or tool arguments.

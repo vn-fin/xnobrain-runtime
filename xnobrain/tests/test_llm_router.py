@@ -112,6 +112,125 @@ class ProviderRuntimeRequestGuardTests(unittest.TestCase):
         AgentManager._install_provider_runtime_request_guard(agent)
         self.assertEqual(agent._build_api_kwargs(messages)["messages"], messages[:1])
 
+    def test_aliases_router_tool_names_and_restores_runtime_names(self):
+        generated: list[str] = []
+        agent = SimpleNamespace()
+        agent._build_api_kwargs = lambda messages: {
+            "messages": messages,
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "session_search",
+                        "description": "Search sessions.",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "delegate_task",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                },
+            ],
+            "tool_choice": {
+                "type": "function",
+                "function": {"name": "session_search"},
+            },
+        }
+        agent._repair_tool_call = lambda name: None
+        agent._fire_tool_gen_started = generated.append
+
+        AgentManager._install_provider_runtime_request_guard(agent)
+        result = agent._build_api_kwargs(
+            [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": "session_search", "arguments": "{}"},
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "name": "session_search",
+                    "tool_call_id": "call-1",
+                    "content": "result",
+                },
+            ]
+        )
+
+        tool_names = [item["function"]["name"] for item in result["tools"]]
+        self.assertEqual(len(set(tool_names)), 2)
+        self.assertTrue(all(name.startswith("xno_") for name in tool_names))
+        self.assertIn('Runtime tool "session_search".', result["tools"][0]["function"]["description"])
+        self.assertEqual(result["tool_choice"]["function"]["name"], tool_names[0])
+        self.assertEqual(result["messages"][0]["tool_calls"][0]["function"]["name"], tool_names[0])
+        self.assertEqual(result["messages"][1]["name"], tool_names[0])
+        self.assertEqual(agent._repair_tool_call(tool_names[0]), "session_search")
+        agent._fire_tool_gen_started(tool_names[0])
+        self.assertEqual(generated, ["session_search"])
+
+    def test_delegated_children_receive_the_router_tool_codec(self):
+        manager = object.__new__(AgentManager)
+        parent = SimpleNamespace(_active_children=[])
+        child = SimpleNamespace(
+            _active_children=[],
+            _build_api_kwargs=lambda messages: {
+                "messages": messages,
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                ],
+            },
+            _repair_tool_call=lambda name: None,
+            _fire_tool_gen_started=lambda name: None,
+        )
+
+        manager._install_provider_runtime_child_guards(parent)
+        parent._active_children.append(child)
+        result = child._build_api_kwargs([])
+        wire_name = result["tools"][0]["function"]["name"]
+
+        self.assertTrue(wire_name.startswith("xno_"))
+        self.assertEqual(child._repair_tool_call(wire_name), "read_file")
+        self.assertTrue(child._xnobrain_router_child_guards)
+
+    def test_router_tool_aliases_are_stable_across_requests(self):
+        agent = SimpleNamespace(
+            _build_api_kwargs=lambda messages: {
+                "messages": messages,
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                ],
+            },
+            _repair_tool_call=lambda name: None,
+            _fire_tool_gen_started=lambda name: None,
+        )
+        AgentManager._install_provider_runtime_request_guard(agent)
+
+        first = agent._build_api_kwargs([])["tools"][0]["function"]["name"]
+        second = agent._build_api_kwargs([])["tools"][0]["function"]["name"]
+
+        self.assertEqual(first, second)
+        self.assertEqual(agent._repair_tool_call(first), "read_file")
+
 class LLMRouterConfigTests(unittest.TestCase):
     def test_global_config_accepts_model_derived_auto_reasoning(self) -> None:
         with TemporaryDirectory() as temp_dir:

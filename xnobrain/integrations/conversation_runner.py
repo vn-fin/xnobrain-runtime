@@ -1,6 +1,8 @@
 """Conversation preparation and embedded Hermes runner methods."""
 
 import asyncio
+import copy
+import hashlib
 import threading
 
 from xnobrain.runtime_limits import max_parallel_agents, session_timeout_seconds
@@ -441,9 +443,52 @@ class ConversationRunnerMixin:
         resolves the public model prefix itself and forwards request JSON, so
         neither field belongs in the upstream body.
         """
+        if getattr(agent, "_xnobrain_router_tool_codec", False):
+            return
         original_build_api_kwargs = getattr(agent, "_build_api_kwargs", None)
         if not callable(original_build_api_kwargs):
             return
+
+        wire_to_runtime: dict[str, str] = {}
+
+        def wire_name(runtime_name: Any) -> str:
+            normalized = str(runtime_name or "").strip()
+            if not normalized:
+                return normalized
+            alias = "xno_" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
+            wire_to_runtime[alias] = normalized
+            return alias
+
+        def encode_tool(tool: Any) -> Any:
+            if not isinstance(tool, dict):
+                return tool
+            encoded = copy.deepcopy(tool)
+            function = encoded.get("function")
+            target = function if isinstance(function, dict) else encoded
+            runtime_name = str(target.get("name") or "").strip()
+            if not runtime_name:
+                return encoded
+            target["name"] = wire_name(runtime_name)
+            description = str(target.get("description") or "").strip()
+            identity = f'Runtime tool "{runtime_name}".'
+            target["description"] = f"{identity} {description}".strip()
+            return encoded
+
+        def encode_message(message: Any) -> Any:
+            if not isinstance(message, dict):
+                return message
+            encoded = copy.deepcopy(message)
+            if encoded.get("role") == "tool" and encoded.get("name"):
+                encoded["name"] = wire_name(encoded["name"])
+            tool_calls = encoded.get("tool_calls")
+            if isinstance(tool_calls, list):
+                for tool_call in tool_calls:
+                    if not isinstance(tool_call, dict):
+                        continue
+                    function = tool_call.get("function")
+                    if isinstance(function, dict) and function.get("name"):
+                        function["name"] = wire_name(function["name"])
+            return encoded
 
         def build_provider_runtime_api_kwargs(
             api_messages: list[Any],
@@ -458,7 +503,7 @@ class ConversationRunnerMixin:
             messages = kwargs.get("messages")
             if isinstance(messages, list):
                 kwargs["messages"] = [
-                    message
+                    encode_message(message)
                     for message in messages
                     if not (
                         isinstance(message, dict)
@@ -467,6 +512,29 @@ class ConversationRunnerMixin:
                         and (message.get("content") is None or message.get("content") == "")
                     )
                 ]
+            tools = kwargs.get("tools")
+            if isinstance(tools, list):
+                kwargs["tools"] = [encode_tool(tool) for tool in tools]
+            responses_input = kwargs.get("input")
+            if isinstance(responses_input, list):
+                responses_input = copy.deepcopy(responses_input)
+                for item in responses_input:
+                    if (
+                        isinstance(item, dict)
+                        and item.get("type") == "function_call"
+                        and item.get("name")
+                    ):
+                        item["name"] = wire_name(item["name"])
+                kwargs["input"] = responses_input
+            tool_choice = kwargs.get("tool_choice")
+            if isinstance(tool_choice, dict):
+                tool_choice = copy.deepcopy(tool_choice)
+                function = tool_choice.get("function")
+                if isinstance(function, dict) and function.get("name"):
+                    function["name"] = wire_name(function["name"])
+                elif tool_choice.get("type") == "function" and tool_choice.get("name"):
+                    tool_choice["name"] = wire_name(tool_choice["name"])
+                kwargs["tool_choice"] = tool_choice
             kwargs.pop("custom_llm_provider", None)
             kwargs.pop("timeout", None)
             extra_body = kwargs.get("extra_body")
@@ -477,6 +545,43 @@ class ConversationRunnerMixin:
             return kwargs
 
         agent._build_api_kwargs = build_provider_runtime_api_kwargs
+
+        original_repair_tool_call = getattr(agent, "_repair_tool_call", None)
+        if callable(original_repair_tool_call):
+            def repair_provider_runtime_tool_call(tool_name: str) -> str | None:
+                runtime_name = wire_to_runtime.get(str(tool_name or ""))
+                if runtime_name:
+                    return runtime_name
+                return original_repair_tool_call(tool_name)
+
+            agent._repair_tool_call = repair_provider_runtime_tool_call
+
+        original_tool_gen_started = getattr(agent, "_fire_tool_gen_started", None)
+        if callable(original_tool_gen_started):
+            def fire_provider_runtime_tool_gen_started(tool_name: str) -> None:
+                original_tool_gen_started(wire_to_runtime.get(tool_name, tool_name))
+
+            agent._fire_tool_gen_started = fire_provider_runtime_tool_gen_started
+
+        agent._xnobrain_router_tool_codec = True
+
+    def _install_provider_runtime_child_guards(self, agent: Any) -> None:
+        """Apply the router wire codec to every delegated child agent."""
+        if getattr(agent, "_xnobrain_router_child_guards", False):
+            return
+        current = getattr(agent, "_active_children", None)
+        if not isinstance(current, list):
+            return
+        manager = self
+
+        class ProviderRuntimeChildren(list):
+            def append(self, child: Any) -> None:
+                manager._install_provider_runtime_request_guard(child)
+                manager._install_provider_runtime_child_guards(child)
+                super().append(child)
+
+        agent._active_children = ProviderRuntimeChildren(current)
+        agent._xnobrain_router_child_guards = True
 
     @staticmethod
     def _install_model_fallbacks(agent: Any, prepared: Mapping[str, Any]) -> None:
@@ -664,6 +769,7 @@ class ConversationRunnerMixin:
             def _create_agent(self, *args: Any, **kwargs: Any) -> Any:
                 agent = super()._create_agent(*args, **kwargs)
                 manager._install_provider_runtime_request_guard(agent)
+                manager._install_provider_runtime_child_guards(agent)
                 manager._install_model_fallbacks(agent, prepared)
                 if smart_route_name:
                     manager._install_smart_route_step_routing(
