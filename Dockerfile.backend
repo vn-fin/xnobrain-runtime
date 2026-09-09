@@ -127,47 +127,45 @@ RUN uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
 
 FROM runtime-base AS endpoint-builder
 
-ARG BUILD_MODE=onefile
+ARG BUILD_MODE=source
 WORKDIR /opt/xnobrain-build
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ccache patchelf \
-    && rm -rf /var/lib/apt/lists/* \
-    && uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
-      'nuitka[onefile]==4.1.3'
 COPY xnobrain ./xnobrain
 COPY server.py ./server.py
-RUN --mount=type=cache,target=/root/.cache/ccache \
-    case "${BUILD_MODE}" in \
-      onefile) nuitka_mode="--mode=onefile --onefile-tempdir-spec={TEMP}/xnobrain-runtime-${HERMES_COMMIT}" ;; \
-      module) nuitka_mode='--mode=standalone' ;; \
-      *) echo "BUILD_MODE must be onefile or module; got: ${BUILD_MODE}" >&2; exit 2 ;; \
-    esac \
-    && /usr/local/lib/hermes-agent/venv/bin/python -m nuitka \
-      ${nuitka_mode} \
-      --assume-yes-for-downloads \
-      --lto=no \
-      --output-dir=/opt/xnobrain-dist \
-      --output-filename=xnobrain-runtime \
-      --include-package=xnobrain \
-      --include-package=hermes_cli \
-      --include-module=hermes_constants \
-      --include-module=hermes_state \
-      --include-package=gateway \
-      --include-package=tools \
-      --include-package-data=xnobrain \
-      --nofollow-import-to='*.tests' \
-      server.py \
-    && install -d /opt/xnobrain-artifact \
-    && case "${BUILD_MODE}" in \
-      onefile) cp /opt/xnobrain-dist/xnobrain-runtime /opt/xnobrain-artifact/app.so ;; \
-      module) cp -a /opt/xnobrain-dist/server.dist/. /opt/xnobrain-artifact/; mv /opt/xnobrain-artifact/xnobrain-runtime /opt/xnobrain-artifact/app.so ;; \
-    esac \
-    && test -x /opt/xnobrain-artifact/app.so
+RUN if [ "${BUILD_MODE}" = "source" ]; then \
+      install -d /opt/xnobrain-artifact \
+      && cp -a xnobrain /opt/xnobrain-artifact/xnobrain \
+      && cp server.py /opt/xnobrain-artifact/server.py \
+      && touch /opt/xnobrain-artifact/source-mode; \
+    else \
+      apt-get update \
+      && apt-get install -y --no-install-recommends ccache patchelf \
+      && rm -rf /var/lib/apt/lists/* \
+      && uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python 'nuitka[onefile]==4.1.3' \
+      && case "${BUILD_MODE}" in \
+        onefile) nuitka_mode="--mode=onefile --onefile-tempdir-spec={TEMP}/xnobrain-runtime-${HERMES_COMMIT}" ;; \
+        module) nuitka_mode='--mode=standalone' ;; \
+        *) echo "BUILD_MODE must be source, onefile or module; got: ${BUILD_MODE}" >&2; exit 2 ;; \
+      esac \
+      && /usr/local/lib/hermes-agent/venv/bin/python -m nuitka \
+        ${nuitka_mode} --assume-yes-for-downloads --lto=no \
+        --output-dir=/opt/xnobrain-dist --output-filename=xnobrain-runtime \
+        --include-package=xnobrain --include-package=hermes_cli \
+        --include-module=hermes_constants --include-module=hermes_state \
+        --include-package=gateway --include-package=tools \
+        --include-package-data=xnobrain --nofollow-import-to='*.tests' server.py \
+      && install -d /opt/xnobrain-artifact \
+      && case "${BUILD_MODE}" in \
+        onefile) cp /opt/xnobrain-dist/xnobrain-runtime /opt/xnobrain-artifact/app.so ;; \
+        module) cp -a /opt/xnobrain-dist/server.dist/. /opt/xnobrain-artifact/; mv /opt/xnobrain-artifact/xnobrain-runtime /opt/xnobrain-artifact/app.so ;; \
+      esac \
+      && test -x /opt/xnobrain-artifact/app.so; \
+    fi
 
 FROM runtime-base AS runtime
-
+ARG BUILD_MODE=source
 COPY --from=endpoint-builder /opt/xnobrain-artifact /opt/xnobrain-app
-RUN ln -s /opt/xnobrain-app/app.so /usr/local/bin/app.so
+
+RUN if [ "${BUILD_MODE}" != "source" ]; then ln -s /opt/xnobrain-app/app.so /usr/local/bin/app.so; fi
 
 ARG RUN_ENV=dev
 LABEL com.xno.run-environment="${RUN_ENV}"
@@ -187,7 +185,7 @@ RUN install -d -m 0700 /opt/data /opt/data/home /opt/data/home/.config \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       systemd-resolved \
     && chmod 0755 /usr/local/bin/xnobrain-runtime /usr/local/bin/xnobrain-systemd-entrypoint /usr/local/bin/xnobrain-prepare-resolv-conf /usr/local/bin/xnobrain-apply-profile-templates \
-      /usr/local/bin/app.so \
+    && if [ "${BUILD_MODE}" != "source" ]; then chmod 0755 /usr/local/bin/app.so; fi \
     && ln -sfn /usr/local/lib/hermes-agent/venv/bin/hermes /usr/local/bin/agent \
     && ln -sfn /etc/systemd/system/xnobrain-runtime.service \
       /etc/systemd/system/multi-user.target.wants/xnobrain-runtime.service \
@@ -198,7 +196,8 @@ RUN install -d -m 0700 /opt/data /opt/data/home /opt/data/home/.config \
     && ln -sfn /etc/systemd/system/xnobrain-resolv-conf.service \
       /etc/systemd/system/sysinit.target.wants/xnobrain-resolv-conf.service
 
-ENV PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr/local/bin:${PATH}" \
+ENV XNOBRAIN_BUILD_MODE=${BUILD_MODE} \
+    PATH="/usr/local/lib/hermes-agent/venv/bin:/opt/hermes-office-tools/bin:/usr/local/bin:${PATH}" \
     RUN_ENV=${RUN_ENV} \
     HERMES_INSTALL_DIR=/usr/local/lib/hermes-agent \
     HERMES_RUNTIME_PYTHON=/usr/local/lib/hermes-agent/venv/bin/python \

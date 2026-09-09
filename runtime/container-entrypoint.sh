@@ -69,4 +69,7 @@ XNOBRAIN_SKILL_OVERRIDES_DIR=/opt/xnobrain/skill-overrides \
 XNOBRAIN_REQUIRED_SKILLS_DIR=/opt/xnobrain/required-skills \
   /usr/local/bin/xnobrain-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 
+if [[ "${XNOBRAIN_BUILD_MODE:-source}" == "source" ]]; then
+  exec "$hermes_python" /opt/xnobrain-app/server.py
+fi
 exec /usr/local/bin/app.so
