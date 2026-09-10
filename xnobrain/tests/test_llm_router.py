@@ -168,7 +168,9 @@ class ProviderRuntimeRequestGuardTests(unittest.TestCase):
         tool_names = [item["function"]["name"] for item in result["tools"]]
         self.assertEqual(len(set(tool_names)), 2)
         self.assertTrue(all(name.startswith("xno_") for name in tool_names))
-        self.assertIn('Runtime tool "session_search".', result["tools"][0]["function"]["description"])
+        self.assertIn(
+            'Runtime tool "session_search".', result["tools"][0]["function"]["description"]
+        )
         self.assertEqual(result["tool_choice"]["function"]["name"], tool_names[0])
         self.assertEqual(result["messages"][0]["tool_calls"][0]["function"]["name"], tool_names[0])
         self.assertEqual(result["messages"][1]["name"], tool_names[0])
@@ -230,6 +232,7 @@ class ProviderRuntimeRequestGuardTests(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertEqual(agent._repair_tool_call(first), "read_file")
+
 
 class LLMRouterConfigTests(unittest.TestCase):
     def test_global_config_accepts_model_derived_auto_reasoning(self) -> None:
@@ -1908,7 +1911,10 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(observed["session_id"], conversation_id)
             self.assertEqual(observed["gateway_session_key"], conversation_id)
             self.assertEqual(observed["approval_session_key"], "run_" + "a" * 32)
-            self.assertEqual(observed["route"], {"model": prepared["model"]})
+            self.assertEqual(observed["route"]["model"], prepared["model"])
+            if manager.llm_router.base_url:
+                self.assertEqual(observed["route"]["provider"], "custom:xnobrain")
+                self.assertEqual(observed["route"]["base_url"], manager.llm_router.base_url)
             self.assertNotIn("requested_model", observed)
             self.assertNotIn("session_model", observed)
             self.assertIn("tool_progress_callback", observed)

@@ -565,6 +565,7 @@ class ConversationRunnerMixin:
 
         original_repair_tool_call = getattr(agent, "_repair_tool_call", None)
         if callable(original_repair_tool_call):
+
             def repair_provider_runtime_tool_call(tool_name: str) -> str | None:
                 runtime_name = wire_to_runtime.get(str(tool_name or ""))
                 if runtime_name:
@@ -575,6 +576,7 @@ class ConversationRunnerMixin:
 
         original_tool_gen_started = getattr(agent, "_fire_tool_gen_started", None)
         if callable(original_tool_gen_started):
+
             def fire_provider_runtime_tool_gen_started(tool_name: str) -> None:
                 original_tool_gen_started(wire_to_runtime.get(tool_name, tool_name))
 
@@ -729,8 +731,9 @@ class ConversationRunnerMixin:
             APIServerAdapter,
             _api_request_profile,
         )
-        from gateway.run import _profile_runtime_scope
         from tools.approval import register_gateway_notify, unregister_gateway_notify
+
+        from .conversation_credentials import conversation_model_route, conversation_profile_scope
 
         profile_dir = Path(prepared["profile_dir"])
         name = str(prepared["name"])
@@ -1171,7 +1174,7 @@ class ConversationRunnerMixin:
         # XNOBrain may also expose legacy agent directories. Pin the native
         # adapter to the already validated profile path instead of resolving
         # the profile name a second time.
-        adapter._profile_scope = lambda _profile: _profile_runtime_scope(profile_dir)
+        adapter._profile_scope = lambda _profile: conversation_profile_scope(profile_dir)
         profile_token = _api_request_profile.set(str(prepared["name"]))
         register_gateway_notify(run_id, approval_notify_callback)
         try:
@@ -1187,11 +1190,11 @@ class ConversationRunnerMixin:
             from .conversation_goals import _goal_payload, ensure_composer_goal
 
             def read_goal():
-                with _profile_runtime_scope(profile_dir):
+                with conversation_profile_scope(profile_dir):
                     return GoalManager(conversation_id).state
 
             def judge_goal(response: str, user_initiated: bool):
-                with _profile_runtime_scope(profile_dir):
+                with conversation_profile_scope(profile_dir):
                     return GoalManager(conversation_id).evaluate_after_turn(
                         response,
                         user_initiated=user_initiated,
@@ -1210,7 +1213,7 @@ class ConversationRunnerMixin:
             if capabilities is None:
                 capabilities = [str(prepared.get("feature") or "")]
             if "goal" in capabilities:
-                with _profile_runtime_scope(profile_dir):
+                with conversation_profile_scope(profile_dir):
                     ensure_composer_goal(
                         GoalManager(conversation_id),
                         str(prepared["message"]),
@@ -1221,11 +1224,14 @@ class ConversationRunnerMixin:
                 emit_goal(initial_goal)
 
             prompt = str(prepared["message"])
-            feature_prompt = "\n\n".join(
-                self._FEATURE_PROMPTS[value]
-                for value in capabilities
-                if value in self._FEATURE_PROMPTS
-            ) or None
+            feature_prompt = (
+                "\n\n".join(
+                    self._FEATURE_PROMPTS[value]
+                    for value in capabilities
+                    if value in self._FEATURE_PROMPTS
+                )
+                or None
+            )
             aggregate_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
             result: dict[str, Any] = {}
             first_turn = True
@@ -1260,7 +1266,8 @@ class ConversationRunnerMixin:
                     tool_complete_callback=skill_tool_complete,
                     agent_ref=agent_ref,
                     gateway_session_key=conversation_id,
-                    route={"model": selected_model} if selected_model else None,
+                    route=conversation_model_route(selected_model, self.llm_router.base_url)
+                    or None,
                 )
                 for key in aggregate_usage:
                     aggregate_usage[key] += int(turn_usage.get(key) or 0)
