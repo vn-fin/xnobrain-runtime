@@ -20,9 +20,6 @@ from typing import Any, Mapping
 import yaml
 
 from ..integrations.accounting_context import accounting_enabled
-from ..integrations.control_accounting import ControlAccountingClient
-from ..integrations.router_accounting import AccountingUnavailable
-from ..repositories.agent_budgets import AgentBudgetStore
 from ..integrations.analytics import (
     aggregate_profile,
     bucket_start_iso,
@@ -30,6 +27,9 @@ from ..integrations.analytics import (
     profile_model_usage,
     skill_usage_profile,
 )
+from ..integrations.control_accounting import ControlAccountingClient
+from ..integrations.router_accounting import AccountingUnavailable
+from ..repositories.agent_budgets import AgentBudgetStore
 from ..repositories.skill_usage import SKILL_USAGE_INSTRUMENTATION_VERSION
 from .base import ServiceError
 
@@ -310,23 +310,35 @@ class AnalyticsService:
         item = self._require_item(agent_id)
         settings = self._budget_settings(agent_id)
         self._budgets().set(
-            settings["workspace_id"], settings["context_id"], agent_id,
-            patch.get("weekly_usd"), patch.get("revision"),
+            settings["workspace_id"],
+            settings["context_id"],
+            agent_id,
+            patch.get("weekly_usd"),
+            patch.get("revision"),
         )
         self._merged.clear()
         return await self._budget_status(agent_id, item)
 
-    async def require_execution_budget(self, agent_id: str) -> dict[str, Any]:
+    async def require_execution_budget(
+        self, agent_id: str, context_id: str = "personal"
+    ) -> dict[str, Any]:
         """Reject a new top-level execution once weekly spend reaches its limit."""
+        if accounting_enabled() and context_id != "personal":
+            raise ServiceError(
+                "Organization accounting is not activated; personal funding is not a fallback.",
+                status=503,
+                code="budget_check_unavailable",
+            )
         status = await self.get_budget(agent_id)
         if status.get("status") == "unavailable":
             raise ServiceError(
                 "Authoritative budget check unavailable. New work is paused; accepted work may finish.",
-                status=503, code="budget_check_unavailable",
+                status=503,
+                code="budget_check_unavailable",
             )
         if not status["accepting_chats"]:
             raise ServiceError(
-                "Weekly budget reached. Increase the agent budget or wait until Sunday.",
+                "Weekly budget reached. Increase the agent budget or wait for the Router quota-week reset.",
                 status=429,
                 code="weekly_budget_exceeded",
             )
@@ -567,20 +579,31 @@ class AnalyticsService:
         basis = "estimated"
         if accounting_enabled():
             common = {
-                "weekly_usd": weekly, "configured": settings["configured"],
+                "weekly_usd": weekly,
+                "configured": settings["configured"],
                 "default_weekly_usd": DEFAULT_WEEKLY_BUDGET_USD,
-                "revision": settings["revision"], "accounting_id": settings["accounting_id"],
-                "enforcement": "soft_admission", "cost_basis": "accounted", "currency": "USD",
-                "source": "gorouter", "accounting_status": "unavailable",
+                "revision": settings["revision"],
+                "accounting_id": settings["accounting_id"],
+                "enforcement": "soft_admission",
+                "cost_basis": "accounted",
+                "currency": "USD",
+                "source": "gorouter",
+                "accounting_status": "unavailable",
             }
             try:
                 decision = await self.accounting.weekly(agent_id, weekly)
                 return {**common, **decision}
             except AccountingUnavailable:
                 return {
-                    **common, "status": "unavailable", "accepting_chats": False,
-                    "spend_usd": None, "remaining_usd": None, "percent_used": None,
-                    "period_start": None, "period_end": None, "week_starts_on": None,
+                    **common,
+                    "status": "unavailable",
+                    "accepting_chats": False,
+                    "spend_usd": None,
+                    "remaining_usd": None,
+                    "percent_used": None,
+                    "period_start": None,
+                    "period_end": None,
+                    "week_starts_on": None,
                     "severity": "normal",
                 }
         profile_dir = self._profile_dir(item or {})
@@ -704,7 +727,8 @@ class AnalyticsService:
         if accounting_enabled():
             raise ServiceError(
                 "Financial usage is owned by Control/Router. Use the financial usage API; legacy totals are not authoritative.",
-                status=503, code="router_accounting_required",
+                status=503,
+                code="router_accounting_required",
             )
 
     def _budgets(self):
@@ -717,7 +741,9 @@ class AnalyticsService:
         # not sent to Router and never substitutes for Control's binding.
         return self._budgets().get(
             os.environ.get("RUNTIME_ACCOUNTING_WORKSPACE_ID", "local_workspace"),
-            "personal", agent_id, self.repository.profile_path(agent_id) / "config.yaml",
+            "personal",
+            agent_id,
+            self.repository.profile_path(agent_id) / "config.yaml",
         )
 
     def _read_config(self, agent_id: str) -> tuple[dict[str, Any], Path]:

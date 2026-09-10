@@ -118,7 +118,19 @@ class ConversationRunService:
         # This is the only enforcement point. Once accepted, a run is allowed
         # to finish even when its cost pushes the weekly total over 100%.
         if self.analytics is not None:
-            await self.analytics.require_execution_budget(agent_id)
+            from ..integrations.accounting_context import accounting_enabled
+
+            if accounting_enabled():
+                await self.analytics.require_execution_budget(
+                    agent_id,
+                    context_id=str(
+                        context.get("organization_id")
+                        or context.get("payer_organization_id")
+                        or "personal"
+                    ),
+                )
+            else:
+                await self.analytics.require_execution_budget(agent_id)
         # Budget verification yields to the event loop. Another request may
         # have claimed this conversation while it was pending. Recheck before
         # the synchronous record/worker registration critical section below.

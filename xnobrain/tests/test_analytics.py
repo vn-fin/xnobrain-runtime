@@ -435,9 +435,9 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(over["severity"], "red")
             self.assertFalse(over["accepting_chats"])
 
-            # config.yaml carries the weekly block; a config snapshot was written
+            # First-party SQLite is authoritative; config.yaml is no longer writable budget state
             config = yaml.safe_load((self.profiles / a / "config.yaml").read_text("utf-8"))
-            self.assertIn("xnobrain_budget", config)
+            self.assertNotIn("xnobrain_budget", config)
 
             cleared = (
                 await client.put(

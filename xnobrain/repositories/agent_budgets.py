@@ -2,6 +2,7 @@
 
 import hashlib
 import math
+import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -14,8 +15,11 @@ from .base import StoreError
 
 class BudgetStoreError(StoreError):
     def __init__(self, message="Budget settings unavailable", *, conflict=False):
-        super().__init__(message, status=409 if conflict else 503,
-                         code="budget_revision_conflict" if conflict else "budget_store_unavailable")
+        super().__init__(
+            message,
+            status=409 if conflict else 503,
+            code="budget_revision_conflict" if conflict else "budget_store_unavailable",
+        )
 
 
 class AgentBudgetStore:
@@ -27,6 +31,12 @@ class AgentBudgetStore:
         self.path = root / "agent_budgets.sqlite3"
         if self.path.is_symlink():
             raise BudgetStoreError()
+        if not self.path.exists():
+            try:
+                descriptor = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                os.close(descriptor)
+            except FileExistsError:
+                pass
         with self._connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS agent_budgets (
@@ -94,7 +104,10 @@ class AgentBudgetStore:
             with self._connect() as db:
                 db.execute("BEGIN IMMEDIATE")
                 args = (workspace, context, agent)
-                row = db.execute("SELECT * FROM agent_budgets WHERE workspace_id=? AND context_id=? AND local_agent_id=?", args).fetchone()
+                row = db.execute(
+                    "SELECT * FROM agent_budgets WHERE workspace_id=? AND context_id=? AND local_agent_id=?",
+                    args,
+                ).fetchone()
                 if row is None:
                     path = Path(config_path)
                     if path.is_symlink():
@@ -110,9 +123,22 @@ class AgentBudgetStore:
                         raise BudgetStoreError("Invalid legacy budget")
                     weekly = self._limit(legacy.get("weekly_usd"))
                     identity = "agent_" + uuid.uuid4().hex
-                    db.execute("INSERT INTO agent_budgets(workspace_id,context_id,local_agent_id,accounting_id,weekly_usd,migration_source) VALUES(?,?,?,?,?,?)", (*args, identity, weekly, "yaml" if "xnobrain_budget" in config else "default"))
-                    db.execute("INSERT INTO agent_budget_migrations VALUES(?,?,?)", (identity, hashlib.sha256(original).hexdigest(), original))
-                    row = db.execute("SELECT * FROM agent_budgets WHERE accounting_id=?", (identity,)).fetchone()
+                    db.execute(
+                        "INSERT INTO agent_budgets(workspace_id,context_id,local_agent_id,accounting_id,weekly_usd,migration_source) VALUES(?,?,?,?,?,?)",
+                        (
+                            *args,
+                            identity,
+                            weekly,
+                            "yaml" if "xnobrain_budget" in config else "default",
+                        ),
+                    )
+                    db.execute(
+                        "INSERT INTO agent_budget_migrations VALUES(?,?,?)",
+                        (identity, hashlib.sha256(original).hexdigest(), original),
+                    )
+                    row = db.execute(
+                        "SELECT * FROM agent_budgets WHERE accounting_id=?", (identity,)
+                    ).fetchone()
                 return self._public(row)
         except (sqlite3.Error, OSError, yaml.YAMLError) as error:
             raise BudgetStoreError() from error
@@ -124,12 +150,23 @@ class AgentBudgetStore:
             with self._connect() as db:
                 db.execute("BEGIN IMMEDIATE")
                 args = (workspace, context, agent)
-                row = db.execute("SELECT * FROM agent_budgets WHERE workspace_id=? AND context_id=? AND local_agent_id=?", args).fetchone()
+                row = db.execute(
+                    "SELECT * FROM agent_budgets WHERE workspace_id=? AND context_id=? AND local_agent_id=?",
+                    args,
+                ).fetchone()
                 if row is None:
                     raise BudgetStoreError()
                 if revision is not None and row["revision"] != revision:
                     raise BudgetStoreError("Budget changed. Reload before saving.", conflict=True)
-                db.execute("UPDATE agent_budgets SET weekly_usd=?, revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE workspace_id=? AND context_id=? AND local_agent_id=?", (weekly, *args))
-                return self._public(db.execute("SELECT * FROM agent_budgets WHERE workspace_id=? AND context_id=? AND local_agent_id=?", args).fetchone())
+                db.execute(
+                    "UPDATE agent_budgets SET weekly_usd=?, revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE workspace_id=? AND context_id=? AND local_agent_id=?",
+                    (weekly, *args),
+                )
+                return self._public(
+                    db.execute(
+                        "SELECT * FROM agent_budgets WHERE workspace_id=? AND context_id=? AND local_agent_id=?",
+                        args,
+                    ).fetchone()
+                )
         except sqlite3.Error as error:
             raise BudgetStoreError() from error

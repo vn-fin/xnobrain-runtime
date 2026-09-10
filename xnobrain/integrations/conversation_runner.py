@@ -552,6 +552,14 @@ class ConversationRunnerMixin:
                 elif tool_choice.get("type") == "function" and tool_choice.get("name"):
                     tool_choice["name"] = wire_name(tool_choice["name"])
                 kwargs["tool_choice"] = tool_choice
+            from .accounting_context import current_accounting
+
+            accounting = current_accounting()
+            if accounting:
+                kwargs["extra_headers"] = {
+                    **kwargs.get("extra_headers", {}),
+                    **accounting["headers"],
+                }
             kwargs.pop("custom_llm_provider", None)
             kwargs.pop("timeout", None)
             extra_body = kwargs.get("extra_body")
@@ -724,7 +732,9 @@ class ConversationRunnerMixin:
         context_id = str(ownership.get("organization_id") or "personal")
         binding = accounting_binding(str(prepared["name"]), context_id)
         with inference_accounting(
-            binding, str(prepared["conversation_id"]), str(kwargs.get("run_id") or ""),
+            binding,
+            str(prepared["conversation_id"]),
+            str(kwargs.get("run_id") or ""),
             str(prepared.get("parent_run_id") or ""),
         ):
             return await self._run_session_agent_scoped(prepared, **kwargs)
@@ -803,11 +813,18 @@ class ConversationRunnerMixin:
             def _create_agent(self, *args: Any, **kwargs: Any) -> Any:
                 agent = super()._create_agent(*args, **kwargs)
                 from .accounting_context import current_accounting
+
                 accounting = current_accounting()
                 if accounting:
-                    for client in (getattr(agent, "client", None), getattr(agent, "async_client", None)):
+                    for client in (
+                        getattr(agent, "client", None),
+                        getattr(agent, "async_client", None),
+                    ):
                         if client is not None and hasattr(client, "_custom_headers"):
-                            client._custom_headers = {**(client._custom_headers or {}), **accounting["headers"]}
+                            client._custom_headers = {
+                                **(client._custom_headers or {}),
+                                **accounting["headers"],
+                            }
                 manager._install_provider_runtime_request_guard(agent)
                 manager._install_provider_runtime_child_guards(agent)
                 manager._install_model_fallbacks(agent, prepared)
@@ -1195,6 +1212,7 @@ class ConversationRunnerMixin:
         # adapter to the already validated profile path instead of resolving
         # the profile name a second time.
         from contextlib import contextmanager
+
         from .accounting_context import current_accounting, inference_accounting
 
         accounting = current_accounting()
@@ -1203,10 +1221,15 @@ class ConversationRunnerMixin:
         def scoped_profile(_profile):
             if accounting:
                 headers = accounting["headers"]
-                with inference_accounting(
-                    accounting["binding"], headers.get("X-GoRouter-Conversation-Id", ""),
-                    headers.get("X-GoRouter-Run-Id", ""), headers.get("X-GoRouter-Parent-Run-Id", ""),
-                ), conversation_profile_scope(profile_dir):
+                with (
+                    inference_accounting(
+                        accounting["binding"],
+                        headers.get("X-GoRouter-Conversation-Id", ""),
+                        headers.get("X-GoRouter-Run-Id", ""),
+                        headers.get("X-GoRouter-Parent-Run-Id", ""),
+                    ),
+                    conversation_profile_scope(profile_dir),
+                ):
                     yield
             else:
                 with conversation_profile_scope(profile_dir):

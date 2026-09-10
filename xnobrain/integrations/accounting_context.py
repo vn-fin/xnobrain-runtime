@@ -14,12 +14,17 @@ _OPAQUE = re.compile(r"^[A-Za-z0-9._:/-]{1,128}$")
 
 
 def accounting_enabled():
-    return bool(os.environ.get("RUNTIME_LLM_ROUTER_URL", "").strip())
+    mode = os.environ.get("RUNTIME_ACCOUNTING_MODE", "legacy").strip()
+    if mode not in {"legacy", "router"}:
+        raise AccountingUnavailable("Unsupported accounting mode")
+    return mode == "router"
 
 
 def accounting_binding(agent_id, context_id="personal"):
     # A Control lifecycle provisioner must install this protected mapping. This
     # read cannot mint credentials or infer identities from names/current keys.
+    if context_id != "personal":
+        raise AccountingUnavailable("Organization accounting binding not activated")
     configured = os.environ.get("RUNTIME_ACCOUNTING_BINDINGS_FILE", "").strip()
     try:
         path = Path(configured)
@@ -33,9 +38,15 @@ def accounting_binding(agent_id, context_id="personal"):
             raise ValueError
         for binding in data["bindings"]:
             if binding["local_agent_id"] == agent_id and binding["context_id"] == context_id:
-                if not all(_OPAQUE.fullmatch(binding[field]) for field in ["application", "workspace_id", "agent_id"]):
+                if not all(
+                    _OPAQUE.fullmatch(binding[field])
+                    for field in ["application", "workspace_id", "agent_id"]
+                ):
                     raise ValueError
-                if not binding.get("workload_key") or binding.get("capability_version") != "gorouter-workload-usage-v1":
+                if (
+                    not binding.get("workload_key")
+                    or binding.get("capability_version") != "gorouter-workload-usage-v1"
+                ):
                     raise ValueError
                 return dict(binding)
     except (OSError, ValueError, TypeError, KeyError) as error:
@@ -50,7 +61,11 @@ def current_accounting():
 @contextmanager
 def inference_accounting(binding, conversation_id="", run_id="", parent_run_id=""):
     headers = {}
-    for name, value in [("Conversation", conversation_id), ("Run", run_id), ("Parent-Run", parent_run_id)]:
+    for name, value in [
+        ("Conversation", conversation_id),
+        ("Run", run_id),
+        ("Parent-Run", parent_run_id),
+    ]:
         if value:
             if not _OPAQUE.fullmatch(value):
                 raise AccountingUnavailable("Invalid accounting correlation")

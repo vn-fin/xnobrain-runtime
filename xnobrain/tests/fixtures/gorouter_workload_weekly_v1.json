@@ -1,0 +1,32 @@
+{
+  "capability_version": "gorouter-workload-usage-v1",
+  "application": "xnobrain",
+  "environment": "test",
+  "workspace_id": "workspace_test",
+  "agent_ids": ["agent_test"],
+  "period_start": "2026-09-06T00:00:00Z",
+  "period_end": "2026-09-13T00:00:00Z",
+  "timezone": "UTC",
+  "week_starts_on": "sunday",
+  "as_of": "2026-09-10T00:00:00Z",
+  "accounting_state": "settled",
+  "completeness": "durable_records",
+  "freshness": "settled_only",
+  "attribution_coverage": "attributed",
+  "summary": {
+    "requests": 2,
+    "cache_hits": 1,
+    "cost_usd": 0.2,
+    "input_cost_usd": 0.1,
+    "output_cost_usd": 0.05,
+    "cache_read_cost_usd": 0.025,
+    "cache_write_cost_usd": 0.025,
+    "prompt_tokens": 100,
+    "completion_tokens": 50,
+    "cache_read_tokens": 25,
+    "cache_write_tokens": 25,
+    "unpriced_requests": 0,
+    "by_model": {},
+    "by_key": {}
+  }
+}

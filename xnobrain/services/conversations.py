@@ -1,6 +1,5 @@
 """Conversation and streaming run service behavior."""
 
-from ..integrations.accounting_context import accounting_enabled
 from __future__ import annotations
 
 import asyncio
@@ -30,6 +29,7 @@ from ..defaults import (
     LEGACY_BIG_BROTHER_TOOLSET,
 )
 from ..integrations import AgentAPIError, ConfigAPIError, LLMRouterAPIError
+from ..integrations.accounting_context import accounting_enabled
 from ..models.conversations import ConversationOwnershipContext
 from ..repositories import StoreError
 from .base import ServiceError, iso, utc_now

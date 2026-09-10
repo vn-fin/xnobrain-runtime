@@ -32,9 +32,12 @@ class ControlAccountingClient:
                 if cutover > period:
                     raise AccountingUnavailable("Accounting cutover is not active for this week")
                 return weekly_budget_decision(
-                    payload, application=binding["application"],
-                    environment=binding.get("environment", ""), workspace_id=binding["workspace_id"],
-                    agent_id=binding["agent_id"], weekly_usd=weekly_usd,
+                    payload,
+                    application=binding["application"],
+                    environment=binding.get("environment", ""),
+                    workspace_id=binding["workspace_id"],
+                    agent_id=binding["agent_id"],
+                    weekly_usd=weekly_usd,
                     now=datetime.now(timezone.utc),
                 )
         except (httpx.HTTPError, ValueError, TypeError, KeyError) as error:

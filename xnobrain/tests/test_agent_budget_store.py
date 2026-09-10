@@ -32,7 +32,10 @@ class AgentBudgetStoreTests(unittest.TestCase):
         self.assertEqual(second["weekly_usd"], 12)
         self.assertEqual(second["accounting_id"], first["accounting_id"])
         with sqlite3.connect(self.store.path) as db:
-            self.assertEqual(db.execute("SELECT original_yaml FROM agent_budget_migrations").fetchone()[0], original)
+            self.assertEqual(
+                db.execute("SELECT original_yaml FROM agent_budget_migrations").fetchone()[0],
+                original,
+            )
 
     def test_null_resets_default_and_conflicting_revision_rejected(self):
         first = self.store.get("w", "personal", "agent-a", self.yaml)
