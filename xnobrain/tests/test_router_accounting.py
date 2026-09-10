@@ -67,3 +67,15 @@ class RouterAccountingTests(unittest.TestCase):
         for value in [None, float("nan"), float("inf"), -1]:
             with self.subTest(value=value), self.assertRaises(AccountingUnavailable):
                 self.decision({**FIXTURE, "summary": {"cost_usd": value}})
+
+    def test_router_monday_policy_is_not_overridden_by_sandbox_timezone(self):
+        from unittest.mock import patch
+
+        value = {
+            **FIXTURE,
+            "period_start": "2026-09-07T00:00:00Z",
+            "period_end": "2026-09-14T00:00:00Z",
+            "week_starts_on": "monday",
+        }
+        with patch.dict("os.environ", {"TZ": "Pacific/Honolulu"}):
+            self.assertEqual(self.decision(value)["week_starts_on"], "monday")

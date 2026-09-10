@@ -66,3 +66,20 @@ class AgentBudgetStoreTests(unittest.TestCase):
         for amount in [0, -1, float("nan"), float("inf")]:
             with self.assertRaises(BudgetStoreError):
                 self.store.set("w", "personal", "agent-a", amount, None)
+
+    def test_corrupted_database_is_unavailable_not_default_budget(self):
+        self.store.path.write_bytes(b"not sqlite")
+        with self.assertRaises(BudgetStoreError):
+            self.store.get("w", "personal", "agent-a", self.yaml)
+
+    def test_failed_import_can_retry_without_partial_row(self):
+        self.yaml.write_text("xnobrain_budget:\n  weekly_usd: invalid\n")
+        with self.assertRaises(BudgetStoreError):
+            self.store.get("w", "personal", "agent-a", self.yaml)
+        self.yaml.write_text("xnobrain_budget:\n  weekly_usd: 25\n")
+        result = self.store.get("w", "personal", "agent-a", self.yaml)
+        self.assertEqual(result["weekly_usd"], 25)
+        with sqlite3.connect(self.store.path) as db:
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM agent_budget_migrations").fetchone()[0], 1
+            )

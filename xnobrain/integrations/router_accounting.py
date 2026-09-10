@@ -52,6 +52,8 @@ def weekly_budget_decision(
         cost = float(payload["summary"]["cost_usd"])
         if not math.isfinite(cost) or cost < 0 or not math.isfinite(weekly_usd) or weekly_usd < 1:
             raise ValueError
+        if start.hour or start.minute or start.second or end.hour or end.minute or end.second:
+            raise ValueError
         if payload.get("attribution_coverage") not in {"attributed", "no_usage"}:
             raise ValueError
     except (ValueError, KeyError, TypeError, AttributeError) as error:
