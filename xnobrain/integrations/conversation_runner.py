@@ -715,7 +715,21 @@ class ConversationRunnerMixin:
         agent._active_children = SmartRouteChildren(current)
         agent._xnobrain_smart_children = True
 
-    async def _run_session_agent(
+    async def _run_session_agent(self, prepared, **kwargs):
+        from .accounting_context import accounting_binding, accounting_enabled, inference_accounting
+
+        if not accounting_enabled():
+            return await self._run_session_agent_scoped(prepared, **kwargs)
+        ownership = prepared.get("ownership_context") or {}
+        context_id = str(ownership.get("organization_id") or "personal")
+        binding = accounting_binding(str(prepared["name"]), context_id)
+        with inference_accounting(
+            binding, str(prepared["conversation_id"]), str(kwargs.get("run_id") or ""),
+            str(prepared.get("parent_run_id") or ""),
+        ):
+            return await self._run_session_agent_scoped(prepared, **kwargs)
+
+    async def _run_session_agent_scoped(
         self,
         prepared: Mapping[str, Any],
         *,
@@ -788,6 +802,12 @@ class ConversationRunnerMixin:
 
             def _create_agent(self, *args: Any, **kwargs: Any) -> Any:
                 agent = super()._create_agent(*args, **kwargs)
+                from .accounting_context import current_accounting
+                accounting = current_accounting()
+                if accounting:
+                    for client in (getattr(agent, "client", None), getattr(agent, "async_client", None)):
+                        if client is not None and hasattr(client, "_custom_headers"):
+                            client._custom_headers = {**(client._custom_headers or {}), **accounting["headers"]}
                 manager._install_provider_runtime_request_guard(agent)
                 manager._install_provider_runtime_child_guards(agent)
                 manager._install_model_fallbacks(agent, prepared)
@@ -1174,7 +1194,25 @@ class ConversationRunnerMixin:
         # XNOBrain may also expose legacy agent directories. Pin the native
         # adapter to the already validated profile path instead of resolving
         # the profile name a second time.
-        adapter._profile_scope = lambda _profile: conversation_profile_scope(profile_dir)
+        from contextlib import contextmanager
+        from .accounting_context import current_accounting, inference_accounting
+
+        accounting = current_accounting()
+
+        @contextmanager
+        def scoped_profile(_profile):
+            if accounting:
+                headers = accounting["headers"]
+                with inference_accounting(
+                    accounting["binding"], headers.get("X-GoRouter-Conversation-Id", ""),
+                    headers.get("X-GoRouter-Run-Id", ""), headers.get("X-GoRouter-Parent-Run-Id", ""),
+                ), conversation_profile_scope(profile_dir):
+                    yield
+            else:
+                with conversation_profile_scope(profile_dir):
+                    yield
+
+        adapter._profile_scope = scoped_profile
         profile_token = _api_request_profile.set(str(prepared["name"]))
         register_gateway_notify(run_id, approval_notify_callback)
         try:

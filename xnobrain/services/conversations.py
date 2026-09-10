@@ -1,5 +1,6 @@
 """Conversation and streaming run service behavior."""
 
+from ..integrations.accounting_context import accounting_enabled
 from __future__ import annotations
 
 import asyncio
@@ -294,7 +295,7 @@ class ConversationsServiceMixin:
         )
         cost_source = str(session.get("cost_source") or "")
         cost_status = str(session.get("cost_status") or "")
-        if actual_cost is None and cost <= 0:
+        if actual_cost is None and cost <= 0 and not accounting_enabled():
             cost = await self.analytics.conversation_estimated_cost(
                 agent_id,
                 conversation_id,
@@ -336,6 +337,10 @@ class ConversationsServiceMixin:
                 }
             )
 
+        if accounting_enabled():
+            cost = None
+            cost_source = "gorouter"
+            cost_status = "unavailable"
         return {
             "conversation_id": conversation_id,
             "api_calls": integer("api_call_count"),

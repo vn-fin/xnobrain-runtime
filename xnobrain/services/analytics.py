@@ -1,9 +1,8 @@
-"""Runtime-local usage analytics and agent budgets, computed on read.
+"""Runtime budget settings and local operational analytics.
 
-Current profile ``state.db`` files are the only Runtime usage source. Central
-router usage, organization attribution, and organization limits belong to
-Control and the router's PostgreSQL store. Budget config is the only mutation
-here and is written to the agent's ``config.yaml`` with a snapshot first.
+Managed financial reads require Control/Router accounting. Legacy profile sums
+are available only for explicitly non-Router execution and are not invoice facts.
+Budget settings import once to first-party SQLite; YAML is never written here.
 """
 
 from __future__ import annotations
@@ -12,6 +11,7 @@ import asyncio
 import base64
 import copy
 import json
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,6 +19,10 @@ from typing import Any, Mapping
 
 import yaml
 
+from ..integrations.accounting_context import accounting_enabled
+from ..integrations.control_accounting import ControlAccountingClient
+from ..integrations.router_accounting import AccountingUnavailable
+from ..repositories.agent_budgets import AgentBudgetStore
 from ..integrations.analytics import (
     aggregate_profile,
     bucket_start_iso,
@@ -49,6 +53,8 @@ class AnalyticsService:
         self.agents = agents
         self.router = router
         self.repository = repository
+        self.accounting = ControlAccountingClient()
+        self._budget_store = None
         self._partials: dict[tuple, tuple[int, dict[str, Any]]] = {}
         self._merged: dict[tuple, tuple[float, dict[str, Any]]] = {}
         self._workspace: dict[tuple, tuple[float, dict[str, Any]]] = {}
@@ -78,6 +84,7 @@ class AnalyticsService:
         end_epoch: float,
         bucket: str,
     ) -> dict[str, Any]:
+        self._require_financial_mode()
         items, available = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items,
@@ -97,6 +104,7 @@ class AnalyticsService:
         bucket: str,
     ) -> dict[str, Any]:
         """Return dashboard totals and attribution without chart payloads."""
+        self._require_financial_mode()
         items, available = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items,
@@ -152,6 +160,7 @@ class AnalyticsService:
         end_epoch: float,
         bucket: str,
     ) -> dict[str, Any]:
+        self._require_financial_mode()
         item = self._require_item(agent_id)
         summary = await self._summary([item], start_epoch, end_epoch, bucket)
         agent_row = (
@@ -180,6 +189,7 @@ class AnalyticsService:
         end_epoch: float,
         bucket: str,
     ) -> dict[str, Any]:
+        self._require_financial_mode()
         items, _ = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items,
@@ -206,6 +216,7 @@ class AnalyticsService:
         end_epoch: float,
         bucket: str,
     ) -> dict[str, Any]:
+        self._require_financial_mode()
         items, _ = self._resolve_items(agent_ids)
         summary = await self._workspace_summary(
             items,
@@ -297,28 +308,22 @@ class AnalyticsService:
         patch: Mapping[str, Any],
     ) -> dict[str, Any]:
         item = self._require_item(agent_id)
-        config, path = self._read_config(agent_id)
-        weekly = patch.get("weekly_usd")
-        new_config = dict(config)
-        if weekly is None:
-            new_config.pop(_BUDGET_KEY, None)
-        else:
-            new_config[_BUDGET_KEY] = {
-                "weekly_usd": _num_or_none(weekly),
-                "cost_basis": (
-                    "actual" if str(patch.get("cost_basis")) == "actual" else "estimated"
-                ),
-                "currency": "USD",
-            }
-        if path.is_file():
-            self.repository.snapshot(agent_id, "config", "config", path.read_bytes())
-        self.repository.atomic_yaml(path, new_config)
+        settings = self._budget_settings(agent_id)
+        self._budgets().set(
+            settings["workspace_id"], settings["context_id"], agent_id,
+            patch.get("weekly_usd"), patch.get("revision"),
+        )
         self._merged.clear()
         return await self._budget_status(agent_id, item)
 
     async def require_execution_budget(self, agent_id: str) -> dict[str, Any]:
         """Reject a new top-level execution once weekly spend reaches its limit."""
         status = await self.get_budget(agent_id)
+        if status.get("status") == "unavailable":
+            raise ServiceError(
+                "Authoritative budget check unavailable. New work is paused; accepted work may finish.",
+                status=503, code="budget_check_unavailable",
+            )
         if not status["accepting_chats"]:
             raise ServiceError(
                 "Weekly budget reached. Increase the agent budget or wait until Sunday.",
@@ -556,11 +561,28 @@ class AnalyticsService:
         *,
         attribution_items: list[Mapping[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        config, _ = self._read_config(agent_id)
-        budget = config.get(_BUDGET_KEY) if isinstance(config.get(_BUDGET_KEY), dict) else {}
-        configured_weekly = _num_or_none(budget.get("weekly_usd"))
-        weekly = configured_weekly or DEFAULT_WEEKLY_BUDGET_USD
-        basis = "actual" if str(budget.get("cost_basis")) == "actual" else "estimated"
+        settings = self._budget_settings(agent_id)
+        weekly = settings["weekly_usd"]
+        configured_weekly = weekly if settings["configured"] else None
+        basis = "estimated"
+        if accounting_enabled():
+            common = {
+                "weekly_usd": weekly, "configured": settings["configured"],
+                "default_weekly_usd": DEFAULT_WEEKLY_BUDGET_USD,
+                "revision": settings["revision"], "accounting_id": settings["accounting_id"],
+                "enforcement": "soft_admission", "cost_basis": "accounted", "currency": "USD",
+                "source": "gorouter", "accounting_status": "unavailable",
+            }
+            try:
+                decision = await self.accounting.weekly(agent_id, weekly)
+                return {**common, **decision}
+            except AccountingUnavailable:
+                return {
+                    **common, "status": "unavailable", "accepting_chats": False,
+                    "spend_usd": None, "remaining_usd": None, "percent_used": None,
+                    "period_start": None, "period_end": None, "week_starts_on": None,
+                    "severity": "normal",
+                }
         profile_dir = self._profile_dir(item or {})
         now = datetime.now(timezone.utc)
         week_start = _sunday_start(now)
@@ -594,6 +616,9 @@ class AnalyticsService:
             else "normal"
         )
         return {
+            "source": "legacy_local",
+            "enforcement": "soft_admission",
+            "revision": settings["revision"],
             "weekly_usd": weekly,
             "configured": configured_weekly is not None,
             "default_weekly_usd": DEFAULT_WEEKLY_BUDGET_USD,
@@ -659,6 +684,7 @@ class AnalyticsService:
         conversation_id: str,
     ) -> float:
         """Return the estimated cost recorded in one conversation ledger."""
+        self._require_financial_mode()
         item = self._require_item(agent_id)
         profile_dir = self._profile_dir(item)
         if profile_dir is None:
@@ -673,6 +699,26 @@ class AnalyticsService:
             session_id=conversation_id,
         )
         return round(sum(float(row.get("estimated_cost_usd") or 0) for row in rows), 6)
+
+    def _require_financial_mode(self):
+        if accounting_enabled():
+            raise ServiceError(
+                "Financial usage is owned by Control/Router. Use the financial usage API; legacy totals are not authoritative.",
+                status=503, code="router_accounting_required",
+            )
+
+    def _budgets(self):
+        if self._budget_store is None:
+            self._budget_store = AgentBudgetStore(self.repository.data_dir)
+        return self._budget_store
+
+    def _budget_settings(self, agent_id):
+        # Settings remain local to this mounted workspace. This namespace is
+        # not sent to Router and never substitutes for Control's binding.
+        return self._budgets().get(
+            os.environ.get("RUNTIME_ACCOUNTING_WORKSPACE_ID", "local_workspace"),
+            "personal", agent_id, self.repository.profile_path(agent_id) / "config.yaml",
+        )
 
     def _read_config(self, agent_id: str) -> tuple[dict[str, Any], Path]:
         path = self.repository.profile_path(agent_id) / "config.yaml"

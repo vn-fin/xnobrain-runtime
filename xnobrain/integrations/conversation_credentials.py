@@ -4,11 +4,15 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 
+from .accounting_context import current_accounting
 from .llm_router_support import LLM_ROUTER_KEY_ENV, LLM_ROUTER_PROVIDER
 
 
 def workspace_router_key() -> str:
     """Read the existing workload secret without rotating or persisting it."""
+    context = current_accounting()
+    if context is not None:
+        return context["binding"]["workload_key"]
     token = os.environ.get("RUNTIME_LLM_API_KEY", "").strip()
     token_file = os.environ.get("RUNTIME_LLM_API_KEY_FILE", "").strip()
     if token_file:

@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AgentBudgetPatch(BaseModel):
+    revision: int | None = Field(default=None, ge=1)
     weekly_usd: float | None = Field(default=None, ge=1)
     cost_basis: Literal["estimated", "actual"] = "estimated"
     currency: Literal["USD"] = "USD"
