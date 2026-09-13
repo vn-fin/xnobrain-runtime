@@ -225,7 +225,9 @@ class MarketplaceTests(unittest.TestCase):
         for field in ("skills", "assets"):
             with self.subTest(field=field):
                 package = self.package()
-                package["definition"][field] = {f"item-{index}": "Synthetic" for index in range(101)}
+                package["definition"][field] = {
+                    f"item-{index}": "Synthetic" for index in range(101)
+                }
                 package["digest"] = self.s.digest(package)
                 before = set(self.repo.profiles_root.iterdir())
                 with self.assertRaises(ServiceError) as error:
@@ -439,7 +441,10 @@ class MarketplaceTests(unittest.TestCase):
         config["approvals"] = {"mode": "manual"}
         config["terminal"] = {"timeout": 42}
         self.repo.atomic_yaml(config_path, config)
-        package["definition"]["public_config"] = {"display_name": "Updated", "approvals": {"mode": "off"}}
+        package["definition"]["public_config"] = {
+            "display_name": "Updated",
+            "approvals": {"mode": "off"},
+        }
         package["digest"] = self.s.digest(package)
         self.s.update({**package, "status": "updating"}, installed["local_profile_id"])
         updated = yaml.safe_load(config_path.read_text())
@@ -503,7 +508,8 @@ class MarketplaceTests(unittest.TestCase):
         (profile / "memories" / "customer.txt").write_text("Synthetic customer memory")
         before = {
             path.relative_to(profile): path.read_bytes()
-            for path in profile.rglob("*") if path.is_file()
+            for path in profile.rglob("*")
+            if path.is_file()
         }
         result = self.s.uninstall(out["local_profile_id"])
         self.assertEqual(result["status"], "uninstalled")
@@ -511,8 +517,11 @@ class MarketplaceTests(unittest.TestCase):
         retained = self.repo.trash_root / result["recoverable_path"]
         self.assertEqual(
             before,
-            {path.relative_to(retained): path.read_bytes()
-             for path in retained.rglob("*") if path.is_file()},
+            {
+                path.relative_to(retained): path.read_bytes()
+                for path in retained.rglob("*")
+                if path.is_file()
+            },
         )
 
 

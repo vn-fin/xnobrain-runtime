@@ -262,6 +262,7 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([item["id"] for item in history.json()["data"]["tasks"]], [root_id])
 
     async def test_compatibility_cron_creation_is_visible_on_default_board(self):
+        """Native Cron is the sole scheduler and does not double-dispatch Kanban."""
         async with AsyncClient(
             transport=ASGITransport(app=self.app), base_url="http://test"
         ) as client:
@@ -281,14 +282,11 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(cron.status_code, 201, cron.text)
             job = cron.json()["data"]
-            self.assertEqual(job["kanban_board"], "default")
-            self.assertTrue(job["kanban_task_id"])
+            self.assertIsNone(job["kanban_board"])
+            self.assertIsNone(job["kanban_task_id"])
             tasks = await client.get("/xnobrain/api/runtime/v1/kanban/boards/default/tasks")
             self.assertEqual(tasks.status_code, 200, tasks.text)
-            self.assertEqual(tasks.json()["data"]["tasks"][0]["title"], "Morning review")
-            self.assertEqual(tasks.json()["data"]["tasks"][0]["status"], "scheduled")
-            self.assertEqual(tasks.json()["data"]["tasks"][0]["kanban_status"], "scheduled")
-            self.assertIsNotNone(tasks.json()["data"]["tasks"][0]["schedule"])
+            self.assertEqual(tasks.json()["data"]["tasks"], [])
 
     async def test_deleting_agent_hard_deletes_profile_and_assigned_tasks_on_every_board(self):
         async with AsyncClient(

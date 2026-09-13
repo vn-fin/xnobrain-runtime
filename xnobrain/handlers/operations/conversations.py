@@ -117,6 +117,28 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "conversation run retrieved",
             200,
         ),
+        "conversation_child_run_stop": (
+            lambda: s.stop_conversation_child_run(
+                agent(),
+                p["conversation_id"],
+                p["run_id"],
+                p["child_run_id"],
+                body,
+            ),
+            "child run cancellation requested",
+            202,
+        ),
+        "conversation_run_todo_update": (
+            lambda: s.update_conversation_run_todo(
+                agent(),
+                p["conversation_id"],
+                p["run_id"],
+                p["todo_id"],
+                body,
+            ),
+            "todo updated successfully",
+            200,
+        ),
         "run_stop": (
             lambda: s.stop_run(agent(), p["conversation_id"], p["run_id"]),
             "run stopped successfully",

@@ -81,10 +81,12 @@ class ProviderCatalogTests(unittest.IsolatedAsyncioTestCase):
     async def test_catalog_preserves_upstream_auto_without_injecting_another(self):
         class Router(LLMRouterClient):
             async def _request(self, *_args, **_kwargs):
-                return {"data": [
-                    {"id": "cc/auto", "owned_by": "gorouter", "reasoning_levels": ["low"]},
-                    {"id": "cc/claude", "owned_by": "gorouter"},
-                ]}
+                return {
+                    "data": [
+                        {"id": "cc/auto", "owned_by": "gorouter", "reasoning_levels": ["low"]},
+                        {"id": "cc/claude", "owned_by": "gorouter"},
+                    ]
+                }
 
         catalog = await Router().list_models()
         self.assertEqual([item["id"] for item in catalog["data"]], ["cc/auto", "cc/claude"])

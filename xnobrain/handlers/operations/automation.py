@@ -20,13 +20,24 @@ def _threaded(operation: Callable[[], Any]) -> Callable[[], Any]:
 
 def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Operation]:
     p, q, s = request.path_params, request.query_params, handler.service
+    time_token = request.headers.get("x-xnobrain-time-token")
     agent = lambda: (
         str(q.get("agent") or "").strip() or (_ for _ in ()).throw(ValueError("agent is required"))
     )
     return {
-        "cron_schedule_preview": (_threaded(lambda: s.preview_cron_schedule(body)), "schedule preview calculated", 200),
+        "cron_schedule_preview": (
+            _threaded(lambda: s.preview_cron_schedule(body)),
+            "schedule preview calculated",
+            200,
+        ),
         "cron_list": (
-            _threaded(lambda: s.list_crons(q.get("agent_id"))),
+            _threaded(
+                lambda: (
+                    s.time_control.schedules(time_token=time_token)
+                    if time_token is not None
+                    else s.list_crons(q.get("agent_id"))
+                )
+            ),
             "cron jobs retrieved successfully",
             200,
         ),

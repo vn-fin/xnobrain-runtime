@@ -102,3 +102,13 @@ Use native `agent kanban ...` CLI commands for board-wide administration.
 Use `kanban_*` tools when operating inside an assigned Kanban task. The
 `kanban_show` tool requires a task ID or dispatcher-provided task context; do
 not call it merely to list skills or inspect the platform.
+
+## Runtime updates
+
+Use only `workspace_update_check`, `workspace_update_plan`,
+`workspace_update_request`, and `workspace_update_status`. Plans do not authorize
+downtime. Request execution only with an approval ID issued by the trusted approval
+service and repeat the forward-only/no-version-rollback warning. Never use terminal,
+Docker/Incus commands, package managers, Git, URLs, or host shell to update Runtime.
+A failed mutated update may retry the selected target or require a newer approved fix;
+it must never activate an older image or run a reverse migration.

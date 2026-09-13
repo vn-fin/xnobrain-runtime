@@ -178,6 +178,28 @@ class RuntimeGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(b"".join(frame.data for frame in body_frames), b"stream-result")
         self.assertEqual(responses[-1].WhichOneof("frame"), "end")
 
+    async def test_injects_time_token_only_for_fixed_time_control_paths(self) -> None:
+        for path, expected in (
+            ("/xnobrain/api/runtime/v1/system/time-control", TOKEN),
+            (
+                "/xnobrain/api/runtime/v1/system/time-control/schedule-migrate",
+                TOKEN,
+            ),
+            ("/xnobrain/api/runtime/v1/cron/jobs", None),
+            ("/xnobrain/api/runtime/v1/system/time-control-forged", None),
+        ):
+            self.received.clear()
+            call = self.stub.Proxy(
+                _frames(
+                    _head(path=path),
+                    gateway_pb2.RuntimeGatewayServiceProxyRequest(end=http_pb2.StreamEnd()),
+                ),
+                metadata=(("x-xnobrain-internal-token", TOKEN),),
+            )
+            _ = [response async for response in call]
+            relayed = {name.lower(): value for name, value in self.received["headers"]}
+            self.assertEqual(relayed.get("x-xnobrain-time-token"), expected)
+
     async def test_relays_only_control_signed_conversation_context_claims(self) -> None:
         context = {
             "schema_version": 1,

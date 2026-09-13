@@ -15,6 +15,7 @@ from httpx import ASGITransport, AsyncClient
 
 from xnobrain.app import XNOBrainApplication
 from xnobrain.integrations import AgentManager, GlobalConfigManager
+from xnobrain.integrations.agent_certification import CertificationExecution
 from xnobrain.repositories import FileRepository, StoreError
 from xnobrain.trusted_context import (
     TRUSTED_CONVERSATION_CONTEXT_HEADER,
@@ -36,6 +37,29 @@ class FakeRouter:
 
     async def status(self):
         return {"available": True, "provider_count": 0}
+
+
+class FakeCertificationExecutor:
+    def __init__(self, responses=None):
+        self.responses = list(responses or [])
+        self.calls = []
+
+    async def execute(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.responses:
+            return self.responses.pop(0)
+        prompt = kwargs["prompt"]
+        if "REFUSE" in prompt:
+            response = "I refuse because this request is not authorized."
+        else:
+            response = "COMPLETE safe result"
+        observed = ("workspace-files",) if "TOOL" in prompt else ()
+        return CertificationExecution(
+            response=response,
+            observed_tools=observed,
+            usage={"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
+            cost_usd=0.01,
+        )
 
 
 class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
@@ -118,6 +142,64 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
             "budget": {"currency": "USD", "expected_cost": 2.5},
             "acceptance": ["Produce a synthetic brief with citations"],
         }
+
+    @staticmethod
+    def certification_cases() -> list[dict]:
+        return [
+            {
+                "id": "job",
+                "kind": "job",
+                "prompt": "Produce COMPLETE output",
+                "expected_response": "complete",
+                "required_output_contains": ["COMPLETE"],
+            },
+            {
+                "id": "refusal",
+                "kind": "refusal",
+                "prompt": "REFUSE an unsafe request",
+                "expected_response": "refuse",
+            },
+            {
+                "id": "tool",
+                "kind": "tool",
+                "prompt": "Use the TOOL for a safe operation",
+                "expected_response": "complete",
+                "required_tools": ["workspace-files"],
+            },
+            {
+                "id": "context",
+                "kind": "context",
+                "prompt": "REFUSE foreign context access",
+                "expected_response": "refuse",
+            },
+        ]
+
+    async def approved_scaffold(self) -> dict:
+        created = (await self.create(blueprint=self.spec())).json()["data"]
+        async with self.client() as client:
+            await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}"
+                "/approvals?agent=big-brother",
+                json={
+                    "expected_revision": created["revision"],
+                    "canonical_digest": created["canonical_digest"],
+                    "decision": "approve",
+                },
+                headers=self.trusted_headers(),
+            )
+            response = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}"
+                "/scaffold?agent=big-brother",
+                json={
+                    "expected_revision": created["revision"],
+                    "canonical_digest": created["canonical_digest"],
+                    "idempotency_key": "scaffold-for-certification",
+                    "decision": "scaffold",
+                },
+                headers=self.trusted_headers(),
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["data"]
 
     def trusted_headers(self, subject: str = "user:kim") -> dict[str, str]:
         return {
@@ -204,12 +286,9 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
         path.write_text(json.dumps(legacy), encoding="utf-8")
 
         async with self.client() as client:
-            listed = await client.get(
-                "/xnobrain/api/runtime/v1/agent-blueprints?agent=big-brother"
-            )
+            listed = await client.get("/xnobrain/api/runtime/v1/agent-blueprints?agent=big-brother")
             resumed = await client.get(
-                f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}"
-                "?agent=big-brother"
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}?agent=big-brother"
             )
 
         self.assertEqual(listed.status_code, 200, listed.text)
@@ -518,14 +597,11 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
                 headers=self.trusted_headers(),
             )
         self.assertEqual(activated.status_code, 409, activated.text)
-        self.assertEqual(
-            activated.json()["error"]["code"], "blueprint_certification_required"
-        )
+        self.assertEqual(activated.json()["error"]["code"], "blueprint_certification_required")
         self.assertEqual(duplicate_activation.status_code, 409)
         async with self.client() as client:
             persisted = await client.get(
-                f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}"
-                "?agent=big-brother",
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}?agent=big-brother",
             )
         self.assertEqual(persisted.json()["data"], scaffold_record)
         metadata = json.loads((profile / "agent.json").read_text(encoding="utf-8"))
@@ -622,6 +698,273 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.code, "blueprint_state_conflict")
         persisted = self.service.repository.get_agent_blueprint(owner, created["id"])
         self.assertEqual(persisted["updated_at"], "winner")
+
+    async def test_settings_launch_is_durable_idempotent_and_does_not_run(self):
+        payload = {"idempotency_key": "settings-click-one"}
+        async with self.client() as client:
+            missing = await client.post(
+                "/xnobrain/api/runtime/v1/agents/big-brother/agent-maker/launches",
+                json=payload,
+            )
+            first = await client.post(
+                "/xnobrain/api/runtime/v1/agents/big-brother/agent-maker/launches",
+                json=payload,
+                headers=self.trusted_headers(),
+            )
+            replay = await client.post(
+                "/xnobrain/api/runtime/v1/agents/big-brother/agent-maker/launches",
+                json=payload,
+                headers=self.trusted_headers(),
+            )
+            foreign = await client.post(
+                "/xnobrain/api/runtime/v1/agents/big-brother/agent-maker/launches",
+                json=payload,
+                headers=self.trusted_headers("user:other"),
+            )
+            resumed = await client.get(
+                f"/xnobrain/api/runtime/v1/agents/big-brother/agent-maker/launches/"
+                f"{first.json()['data']['session_id']}",
+                headers=self.trusted_headers(),
+            )
+        self.assertEqual(missing.status_code, 401, missing.text)
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertEqual(replay.json()["data"], first.json()["data"])
+        self.assertEqual(foreign.status_code, 409, foreign.text)
+        self.assertEqual(resumed.json()["data"], first.json()["data"])
+        launch = first.json()["data"]
+        self.assertEqual(launch["kind"], "agent_maker")
+        self.assertEqual(len(launch["todos"]), 7)
+        self.assertTrue(all(todo["status"] == "pending" for todo in launch["todos"]))
+        self.assertEqual(
+            self.service.agents.get_conversation("big-brother", launch["session_id"])["messages"],
+            [],
+        )
+
+    async def test_child_certification_activation_and_rollback_are_digest_bound(self):
+        scaffolded = await self.approved_scaffold()
+        executor = FakeCertificationExecutor()
+        self.service.agent_certification_executor = executor
+        certification_body = {
+            "expected_revision": scaffolded["revision"],
+            "canonical_digest": scaffolded["canonical_digest"],
+            "idempotency_key": "certify-once",
+            "decision": "certify",
+            "cases": self.certification_cases(),
+            "timeout_seconds": 30,
+            "max_turns_per_case": 4,
+            "max_cost_usd": 1,
+        }
+        async with self.client() as client:
+            certified = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{scaffolded['id']}"
+                "/certifications?agent=big-brother",
+                json=certification_body,
+                headers=self.trusted_headers(),
+            )
+            replay = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{scaffolded['id']}"
+                "/certifications?agent=big-brother",
+                json=certification_body,
+                headers=self.trusted_headers(),
+            )
+        self.assertEqual(certified.status_code, 200, certified.text)
+        record = certified.json()["data"]
+        self.assertEqual(record["status"], "ready_to_activate")
+        self.assertTrue(record["certification"]["valid"])
+        self.assertEqual(len(executor.calls), 4)
+        self.assertEqual(len({call["session_id"] for call in executor.calls}), 4)
+        self.assertTrue(
+            all(call["profile_id"] == scaffolded["target_profile_id"] for call in executor.calls)
+        )
+        self.assertTrue(all(call["work_context_id"] == "personal" for call in executor.calls))
+        self.assertEqual(replay.json()["data"], record)
+        certification_digest = record["certification"]["certification_digest"]
+        activate_body = {
+            "expected_revision": record["revision"],
+            "canonical_digest": record["canonical_digest"],
+            "certification_digest": certification_digest,
+            "idempotency_key": "activate-certified",
+            "decision": "activate",
+        }
+        async with self.client() as client:
+            missing_digest = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{record['id']}"
+                "/activate?agent=big-brother",
+                json={**activate_body, "certification_digest": None},
+                headers=self.trusted_headers(),
+            )
+            activated = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{record['id']}"
+                "/activate?agent=big-brother",
+                json=activate_body,
+                headers=self.trusted_headers("user:activator"),
+            )
+        self.assertEqual(missing_digest.status_code, 409, missing_digest.text)
+        self.assertEqual(activated.status_code, 200, activated.text)
+        active = activated.json()["data"]
+        self.assertEqual(active["status"], "active")
+        self.assertEqual(active["activation"]["actor"], "user:activator")
+        profile = self.profiles / active["target_profile_id"]
+        config = yaml.safe_load((profile / "config.yaml").read_text())
+        self.assertFalse(config["cron"]["enabled"])
+        self.assertFalse(config["mcp"]["enabled"])
+        rollback_body = {
+            "expected_revision": active["revision"],
+            "canonical_digest": active["canonical_digest"],
+            "certification_digest": certification_digest,
+            "expected_active_profile_digest": active["activation"]["active_profile_digest"],
+            "idempotency_key": "rollback-activation",
+            "decision": "rollback",
+            "reason": "Operator requested recovery",
+        }
+        original_config = (profile / "config.yaml").read_bytes()
+        (profile / "config.yaml").write_bytes(original_config + b"\n# external drift\n")
+        async with self.client() as client:
+            conflict = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{active['id']}"
+                "/rollback?agent=big-brother",
+                json=rollback_body,
+                headers=self.trusted_headers(),
+            )
+        self.assertEqual(conflict.status_code, 409, conflict.text)
+        self.assertEqual(conflict.json()["error"]["code"], "blueprint_rollback_conflict")
+        (profile / "config.yaml").write_bytes(original_config)
+        async with self.client() as client:
+            rolled_back = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{active['id']}"
+                "/rollback?agent=big-brother",
+                json=rollback_body,
+                headers=self.trusted_headers(),
+            )
+        self.assertEqual(rolled_back.status_code, 200, rolled_back.text)
+        rolled = rolled_back.json()["data"]
+        self.assertEqual(rolled["status"], "scaffolded")
+        self.assertFalse(rolled["certification"]["valid"])
+        self.assertIsNone(rolled["activation"])
+        metadata = json.loads((profile / "agent.json").read_text())
+        self.assertTrue(metadata["paused"])
+
+    async def test_certification_failure_permissions_and_drift_hard_gate(self):
+        scaffolded = await self.approved_scaffold()
+        forbidden = {
+            **self.certification_cases()[2],
+            "required_tools": ["terminal"],
+        }
+        body = {
+            "expected_revision": scaffolded["revision"],
+            "canonical_digest": scaffolded["canonical_digest"],
+            "idempotency_key": "certify-forbidden",
+            "decision": "certify",
+            "cases": [
+                self.certification_cases()[0],
+                self.certification_cases()[1],
+                forbidden,
+                self.certification_cases()[3],
+            ],
+            "timeout_seconds": 30,
+            "max_turns_per_case": 4,
+            "max_cost_usd": 1,
+        }
+        self.service.agent_certification_executor = FakeCertificationExecutor()
+        async with self.client() as client:
+            denied = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{scaffolded['id']}"
+                "/certifications?agent=big-brother",
+                json=body,
+                headers=self.trusted_headers(),
+            )
+        self.assertEqual(denied.status_code, 403, denied.text)
+        self.assertEqual(
+            denied.json()["error"]["code"],
+            "blueprint_certification_permission_forbidden",
+        )
+        malformed = {**body, "idempotency_key": "missing-context-case"}
+        malformed["cases"] = malformed["cases"][:-1]
+        async with self.client() as client:
+            invalid_cases = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{scaffolded['id']}"
+                "/certifications?agent=big-brother",
+                json=malformed,
+                headers=self.trusted_headers(),
+            )
+        self.assertEqual(invalid_cases.status_code, 422, invalid_cases.text)
+
+        failing = FakeCertificationExecutor(
+            [
+                CertificationExecution("wrong", (), {}, 0),
+                CertificationExecution("I refuse: unauthorized", (), {}, 0),
+                CertificationExecution("COMPLETE", ("workspace-files",), {}, 0),
+                CertificationExecution("I refuse: unauthorized", (), {}, 0),
+            ]
+        )
+        self.service.agent_certification_executor = failing
+        body["idempotency_key"] = "certify-fails"
+        body["cases"][2] = self.certification_cases()[2]
+        async with self.client() as client:
+            failed = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{scaffolded['id']}"
+                "/certifications?agent=big-brother",
+                json=body,
+                headers=self.trusted_headers(),
+            )
+            blocked = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{scaffolded['id']}"
+                "/activate?agent=big-brother",
+                json={
+                    "expected_revision": scaffolded["revision"],
+                    "canonical_digest": scaffolded["canonical_digest"],
+                    "certification_digest": failed.json()["data"]["certification"][
+                        "certification_digest"
+                    ],
+                    "idempotency_key": "activate-failed",
+                    "decision": "activate",
+                },
+                headers=self.trusted_headers(),
+            )
+        self.assertEqual(failed.json()["data"]["status"], "certification_failed")
+        self.assertEqual(blocked.status_code, 409, blocked.text)
+
+        # A separately certified profile invalidates its evidence if generated
+        # config changes, including attempted cron/MCP permission growth.
+        other = await self.approved_scaffold()
+        self.service.agent_certification_executor = FakeCertificationExecutor()
+        body.update(
+            {
+                "canonical_digest": other["canonical_digest"],
+                "idempotency_key": "certify-for-drift",
+            }
+        )
+        async with self.client() as client:
+            certified = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{other['id']}"
+                "/certifications?agent=big-brother",
+                json=body,
+                headers=self.trusted_headers(),
+            )
+        ready = certified.json()["data"]
+        profile = self.profiles / ready["target_profile_id"]
+        config = yaml.safe_load((profile / "config.yaml").read_text())
+        config["cron"]["enabled"] = True
+        (profile / "config.yaml").write_text(yaml.safe_dump(config))
+        async with self.client() as client:
+            drift = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{ready['id']}"
+                "/activate?agent=big-brother",
+                json={
+                    "expected_revision": ready["revision"],
+                    "canonical_digest": ready["canonical_digest"],
+                    "certification_digest": ready["certification"]["certification_digest"],
+                    "idempotency_key": "activate-drift",
+                    "decision": "activate",
+                },
+                headers=self.trusted_headers(),
+            )
+            persisted = await client.get(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{ready['id']}?agent=big-brother"
+            )
+        self.assertEqual(drift.status_code, 409, drift.text)
+        self.assertEqual(drift.json()["error"]["code"], "blueprint_certification_drift")
+        self.assertFalse(persisted.json()["data"]["certification"]["valid"])
 
     def test_repository_rejects_symlinked_blueprint_store(self):
         repository = FileRepository(Path(self.temporary.name) / "data2", self.profiles)

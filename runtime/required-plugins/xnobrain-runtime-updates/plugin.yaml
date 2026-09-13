@@ -1,0 +1,12 @@
+name: xnobrain-runtime-updates
+version: 1.0.0
+description: Narrow Big Brother tools for user-approved workspace Runtime updates.
+author: XNOBrain
+kind: standalone
+provides_tools:
+  - workspace_update_check
+  - workspace_update_plan
+  - workspace_update_request
+  - workspace_update_status
+requires_env:
+  - RUNTIME_CONTROL_URL

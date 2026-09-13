@@ -15,6 +15,12 @@ DEFAULT_SESSION_TIMEOUT_SECONDS = 86400
 MAX_SESSION_TIMEOUT_SECONDS = 86400
 DEFAULT_PARALLEL_AGENTS = 3
 MAX_PARALLEL_AGENTS = 5
+CONCURRENT_WORK_TURNS_ENV = "RUNTIME_CONCURRENT_WORK_MAX_TURNS"
+CONCURRENT_WORK_DEPTH_ENV = "RUNTIME_CONCURRENT_WORK_MAX_DEPTH"
+DEFAULT_CONCURRENT_WORK_TURNS = 90
+MAX_CONCURRENT_WORK_TURNS = 500
+DEFAULT_CONCURRENT_WORK_DEPTH = 1
+MAX_CONCURRENT_WORK_DEPTH = 4
 
 
 def _bounded_int(value: Any, *, default: int, maximum: int) -> int:
@@ -52,4 +58,22 @@ def max_parallel_agents(configured: Any = None) -> int:
         value,
         default=DEFAULT_PARALLEL_AGENTS,
         maximum=MAX_PARALLEL_AGENTS,
+    )
+
+
+def concurrent_work_max_turns() -> int:
+    """Return the shared provider-request cap for one parent run."""
+    return _bounded_int(
+        os.getenv(CONCURRENT_WORK_TURNS_ENV),
+        default=DEFAULT_CONCURRENT_WORK_TURNS,
+        maximum=MAX_CONCURRENT_WORK_TURNS,
+    )
+
+
+def concurrent_work_max_depth() -> int:
+    """Return the server-owned delegation depth cap for one parent run."""
+    return _bounded_int(
+        os.getenv(CONCURRENT_WORK_DEPTH_ENV),
+        default=DEFAULT_CONCURRENT_WORK_DEPTH,
+        maximum=MAX_CONCURRENT_WORK_DEPTH,
     )

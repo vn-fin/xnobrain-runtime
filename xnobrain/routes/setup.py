@@ -21,15 +21,21 @@ from . import (
     organization_artifacts,
     portability,
     providers,
+    runtime_updates,
     sandboxes,
+    skill_doctor,
+    skill_optimizations,
     system,
     teams,
+    time_control,
     workspaces,
 )
 from .definition import Route
 
 ROUTE_GROUPS = (
     system.ROUTES,
+    time_control.ROUTES,
+    runtime_updates.ROUTES,
     events.ROUTES,
     agents.ROUTES,
     agent_blueprints.ROUTES,
@@ -45,6 +51,8 @@ ROUTE_GROUPS = (
     teams.ROUTES,
     providers.ROUTES,
     analytics.ROUTES,
+    skill_doctor.ROUTES,
+    skill_optimizations.ROUTES,
     sandboxes.ROUTES,
     portability.ROUTES,
 )

@@ -11,9 +11,17 @@ from .hermes_support import AgentAPIError, Path
 @contextmanager
 def _goal_profile_scope(profile_dir: Path):
     """Redirect Hermes state access without bootstrapping the full gateway."""
+    from hermes_cli import goals as goals_module
     from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+    from hermes_state import SessionDB
 
     token = set_hermes_home_override(str(profile_dir))
+    cache_key = str(profile_dir)
+    # Upstream SessionDB.DEFAULT_DB_PATH is resolved at module import time.  Seed
+    # the goal cache with an explicitly profile-local database so context-local
+    # profile switching cannot reuse the process profile's state.db.
+    if cache_key not in goals_module._DB_CACHE:
+        goals_module._DB_CACHE[cache_key] = SessionDB(profile_dir / "state.db")
     try:
         yield
     finally:

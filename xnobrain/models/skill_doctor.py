@@ -1,0 +1,333 @@
+"""Typed Skill Doctor report, plan, apply, rollback, and launch contracts."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from .analytics import SkillUsageResponse
+from .skill_optimizations import SkillOptimizationApply, SkillOptimizationRollback
+
+_SAFE_ID = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+_SHA256 = r"^sha256:[0-9a-f]{64}$"
+
+
+class SkillDoctorReportCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    work_context_id: str = Field(default="personal", pattern=_SAFE_ID)
+    range_from: float
+    range_to: float
+    mode: Literal["static", "selected_sessions"] = "static"
+    session_ids: list[str] = Field(default_factory=list, max_length=20)
+    consent_to_read_session_content: bool = False
+    max_session_bytes: int = Field(default=262_144, ge=0, le=1_048_576)
+    inventory_limit: int = Field(default=100, ge=1, le=200)
+    finding_limit: int = Field(default=100, ge=1, le=200)
+    idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_ID)
+    workflow_session_id: str | None = Field(default=None, min_length=1, max_length=256)
+
+    @field_validator("session_ids")
+    @classmethod
+    def unique_sessions(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)) or any(
+            not value or len(value) > 256 for value in values
+        ):
+            raise ValueError("session_ids must be unique bounded references")
+        return values
+
+    @model_validator(mode="after")
+    def valid_scope(self):
+        if not self.range_from < self.range_to:
+            raise ValueError("range_from must be before range_to")
+        if self.range_to - self.range_from > 366 * 86400:
+            raise ValueError("report range exceeds 366 days")
+        selected = self.mode == "selected_sessions"
+        if selected != bool(self.session_ids):
+            raise ValueError("selected_sessions mode requires one or more session_ids")
+        if selected and not self.consent_to_read_session_content:
+            raise ValueError("selected session analysis requires explicit content consent")
+        if not selected and self.consent_to_read_session_content:
+            raise ValueError("static reports do not accept content consent")
+        return self
+
+
+class SkillDoctorPlanAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["disable", "re_enable", "improve"]
+    skill_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+    finding_ids: list[str] = Field(min_length=1, max_length=20)
+    optimization_id: str | None = Field(default=None, pattern=r"^sop_[0-9a-f]{32}$")
+
+    @field_validator("finding_ids")
+    @classmethod
+    def unique_findings(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("finding_ids must be unique")
+        return values
+
+    @model_validator(mode="after")
+    def valid_optimization_link(self):
+        if (self.action == "improve") != bool(self.optimization_id):
+            raise ValueError("improve actions require exactly one optimization_id")
+        return self
+
+
+class SkillDoctorPlanCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_report_revision: int = Field(ge=1)
+    expected_inventory_digest: str = Field(pattern=_SHA256)
+    actions: list[SkillDoctorPlanAction] = Field(min_length=1, max_length=20)
+
+    @field_validator("actions")
+    @classmethod
+    def unique_actions(cls, values: list[SkillDoctorPlanAction]) -> list[SkillDoctorPlanAction]:
+        keys = [(item.action, item.skill_id) for item in values]
+        if len(keys) != len(set(keys)):
+            raise ValueError("plan actions must be unique")
+        return values
+
+
+class SkillDoctorOptimizationApply(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    optimization_id: str = Field(pattern=r"^sop_[0-9a-f]{32}$")
+    request: SkillOptimizationApply
+
+
+class SkillDoctorApply(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    plan_digest: str = Field(pattern=_SHA256)
+    confirmation: Literal["confirm"]
+    idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_ID)
+    optimization_applies: list[SkillDoctorOptimizationApply] = Field(
+        default_factory=list, max_length=10
+    )
+
+
+class SkillDoctorOptimizationRollback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    optimization_id: str = Field(pattern=r"^sop_[0-9a-f]{32}$")
+    request: SkillOptimizationRollback
+
+
+class SkillDoctorRollback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    expected_applied_digest: str = Field(pattern=_SHA256)
+    confirmation: Literal["confirm"]
+    idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_ID)
+    reason: str = Field(min_length=1, max_length=2_000)
+    optimization_rollbacks: list[SkillDoctorOptimizationRollback] = Field(
+        default_factory=list, max_length=10
+    )
+
+
+class SkillDoctorLaunch(BaseModel):
+    """Server-persisted counterpart of the UI's Skill Doctor launch seed."""
+
+    model_config = ConfigDict(extra="forbid")
+    creation_intent: str | None = Field(default=None, min_length=1, max_length=256)
+    ownership_context: dict[str, object] | None = None
+    idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_ID)
+
+
+class SkillDoctorTodo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    content: str
+    status: Literal["pending", "running", "blocked", "failed", "cancelled", "completed"]
+    finding_ids: list[str]
+    skill_ids: list[str]
+    depends_on: list[str]
+    priority: Literal["high", "medium", "low"] | None = None
+    evidence: str | None = None
+
+
+class SkillDoctorLaunchRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal[1]
+    kind: Literal["skill_doctor"]
+    agent_id: str
+    work_context_id: str
+    session_id: str
+    request: str
+    capabilities: list[Literal["todo"]]
+    todos: list[SkillDoctorTodo]
+    report_ids: list[str]
+    plan_ids: list[str]
+    operation_ids: list[str]
+    created_at: str
+    updated_at: str
+
+
+class SkillDoctorInventoryIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str
+    message: str
+    references: list[str] | None = None
+
+
+class SkillDoctorInventoryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    skill_id: str
+    version: str | None
+    digest: str | None
+    source_scope: Literal["agent", "inherited", "packaged"]
+    relative_path: str
+    enabled: bool
+    protected: bool
+    discovered: bool
+    shadowed: bool
+    description: str
+    description_chars: int = Field(ge=0)
+    body_bytes: int = Field(ge=0)
+    support_file_count: int = Field(ge=0)
+    support_bytes: int = Field(ge=0)
+    related_skills: list[str]
+    issues: list[SkillDoctorInventoryIssue]
+
+
+class SkillDoctorPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    returned: int = Field(ge=0)
+    total: int = Field(ge=0)
+    truncated: bool
+    limit: int = Field(ge=1, le=200)
+    next_cursor: str | None
+
+
+class SkillDoctorFinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    code: str
+    severity: Literal["error", "warning", "info"]
+    confidence: Literal["high", "medium", "low"]
+    scope: Literal["selected_agent"]
+    skill_ids: list[str]
+    summary: str
+    evidence: str
+    suggested_action: Literal["review", "improve", "disable", "re_enable"]
+    automatic_disable: Literal[False]
+
+
+class SkillDoctorSessionAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    consented: bool
+    selected: int = Field(ge=0)
+    analyzed: int = Field(ge=0)
+    bytes: int = Field(ge=0)
+    content_retained: Literal[False]
+    model_used: Literal[False]
+    untrusted_evidence: Literal[True] | None = None
+
+
+class SkillDoctorTotals(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    skills: int = Field(ge=0)
+    enabled: int = Field(ge=0)
+    disabled: int = Field(ge=0)
+    discovered: int = Field(ge=0)
+    shadowed: int = Field(ge=0)
+    unreadable_or_invalid: int = Field(ge=0)
+    findings: int = Field(ge=0)
+    requested: int | None = Field(default=None, ge=0)
+    observed_loads: int | None = Field(default=None, ge=0)
+    distinct_sessions: int | None = Field(default=None, ge=0)
+    distinct_runs: int | None = Field(default=None, ge=0)
+    dedupe_rule: str
+
+
+class SkillDoctorContextCost(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tokenizer: Literal["unicode-codepoint-estimate-v1"]
+    model: str | None
+    discovery_payload_bytes: int = Field(ge=0)
+    discovery_estimated_tokens: int = Field(ge=0)
+    on_demand_available_bytes: int = Field(ge=0)
+    on_demand_estimated_tokens: int = Field(ge=0)
+    spend_usd: None
+    savings_claim: None
+
+
+class SkillDoctorReportRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal[1]
+    id: str
+    revision: int = Field(ge=1)
+    status: Literal["completed", "partial", "failed", "cancelled"]
+    agent_id: str
+    work_context_id: str
+    workflow_session_id: str | None
+    mode: Literal["static", "selected_sessions"]
+    range_from: float
+    range_to: float
+    selected_session_ids: list[str]
+    session_analysis: SkillDoctorSessionAnalysis
+    inventory_digest: str = Field(pattern=_SHA256)
+    inventory: list[SkillDoctorInventoryItem]
+    inventory_page: SkillDoctorPage
+    findings: list[SkillDoctorFinding]
+    finding_page: SkillDoctorPage
+    usage: SkillUsageResponse
+    totals: SkillDoctorTotals
+    context_cost: SkillDoctorContextCost
+    todos: list[SkillDoctorTodo]
+    plan_ids: list[str]
+    created_at: str
+    updated_at: str
+
+
+class SkillDoctorDependency(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["active_run", "schedule", "team", "skill", "template"]
+    id: str
+    detail: str
+
+
+class SkillDoctorPlanActionRecord(SkillDoctorPlanAction):
+    dependencies: list[SkillDoctorDependency]
+    blocked: bool
+
+
+class SkillDoctorApplyRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str
+    applied_by: str
+    applied_at: str
+    applied_digest: str = Field(pattern=_SHA256)
+    config_digest: str = Field(pattern=_SHA256)
+    optimization_ids: list[str]
+    checkpoint_retained: Literal[True]
+
+
+class SkillDoctorRollbackRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str
+    rolled_back_by: str
+    rolled_back_at: str
+    reason: str
+    optimization_ids: list[str]
+
+
+class SkillDoctorPlanRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal[1]
+    id: str
+    revision: int = Field(ge=1)
+    status: Literal["ready", "blocked", "applied", "rolled_back"]
+    agent_id: str
+    work_context_id: str
+    report_id: str
+    report_revision: int = Field(ge=1)
+    inventory_digest: str = Field(pattern=_SHA256)
+    actions: list[SkillDoctorPlanActionRecord]
+    digest: str = Field(pattern=_SHA256)
+    apply: SkillDoctorApplyRecord | None
+    rollback: SkillDoctorRollbackRecord | None
+    created_at: str
+    updated_at: str

@@ -2,6 +2,7 @@
 
 from ..models import (
     ChatRequest,
+    ChildRunCancel,
     ConversationCompact,
     ConversationCreate,
     ConversationRename,
@@ -9,6 +10,7 @@ from ..models import (
     GoalUpdate,
     RunApproval,
     SubgoalCreate,
+    TodoRevisionUpdate,
 )
 from .definition import route
 
@@ -163,6 +165,22 @@ def session_routes(root: str, tags: tuple[str, ...], *, include_in_schema: bool 
             f"{root}/{{conversation_id}}/runs/{{run_id}}/events",
             "conversation_run_events",
             special="conversation_run_stream",
+            tags=("Runs",),
+            include_in_schema=include_in_schema,
+        ),
+        route(
+            "POST",
+            f"{root}/{{conversation_id}}/runs/{{run_id}}/children/{{child_run_id}}/stop",
+            "conversation_child_run_stop",
+            ChildRunCancel,
+            tags=("Runs",),
+            include_in_schema=include_in_schema,
+        ),
+        route(
+            "PATCH",
+            f"{root}/{{conversation_id}}/runs/{{run_id}}/todos/{{todo_id}}",
+            "conversation_run_todo_update",
+            TodoRevisionUpdate,
             tags=("Runs",),
             include_in_schema=include_in_schema,
         ),

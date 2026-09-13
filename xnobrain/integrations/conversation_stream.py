@@ -147,6 +147,7 @@ class ConversationStreamMixin:
         agent_ref: list[Any] = AgentRef([None])
         state["agent_ref"] = agent_ref
         output_chunks: list[str] = []
+        delegation_assignments: dict[int, dict[str, Any]] = {}
 
         def on_delta(delta: str | None) -> None:
             if not delta:
@@ -253,6 +254,33 @@ class ConversationStreamMixin:
                 except (AttributeError, RuntimeError, TypeError, ValueError):
                     return {}
 
+            if event_type == "execution.budget":
+                enqueue_event(
+                    {
+                        "event": "execution.budget.updated",
+                        "run_id": run_id,
+                        "timestamp": timestamp,
+                        "request_id": kwargs.get("request_id"),
+                        "turns_used": int(kwargs.get("turns_used") or 0),
+                        "turn_limit": int(kwargs.get("turn_limit") or 0),
+                        "depth": int(kwargs.get("depth") or 0),
+                    }
+                )
+                return
+
+            if event_type == "execution.concurrency":
+                enqueue_event(
+                    {
+                        "event": "execution.concurrency.updated",
+                        "run_id": run_id,
+                        "timestamp": timestamp,
+                        "active_children": int(kwargs.get("active_children") or 0),
+                        "peak_children": int(kwargs.get("peak_children") or 0),
+                        "concurrency_limit": int(kwargs.get("concurrency_limit") or 0),
+                    }
+                )
+                return
+
             if event_type == "goal.updated":
                 enqueue_event(
                     {
@@ -278,15 +306,28 @@ class ConversationStreamMixin:
                 task_index = kwargs.get("task_index")
                 if not isinstance(task_index, int):
                     return
+                subagent_id = safe_text(kwargs.get("subagent_id"), 128)
                 event = {
                     "event": event_name,
                     "run_id": run_id,
+                    "parent_run_id": run_id,
+                    "child_run_id": (
+                        f"{run_id}:child:{subagent_id}"
+                        if subagent_id
+                        else f"{run_id}:child:{task_index}"
+                    ),
+                    "subagent_id": subagent_id,
+                    "child_session_id": safe_text(kwargs.get("child_session_id"), 128),
+                    "depth": int(kwargs.get("depth") or 0) + 1,
                     "timestamp": timestamp,
                     "task_index": task_index,
                     "task_count": int(kwargs.get("task_count") or 1),
                     "concurrency": int(kwargs.get("concurrency") or 1),
                     "goal": safe_text(kwargs.get("goal") or preview),
                 }
+                assignment = delegation_assignments.get(task_index)
+                if assignment is not None:
+                    event.update(assignment)
                 if event_type != "subagent.queued":
                     event.update(live_subagent_usage(kwargs.get("subagent_id")))
                 if event_type == "subagent.queued":
@@ -339,6 +380,20 @@ class ConversationStreamMixin:
                 }
                 if normalized_tool == "delegate_task" and isinstance(args, Mapping):
                     event["args"] = dict(args)
+                    raw_tasks = args.get("tasks")
+                    if not isinstance(raw_tasks, list):
+                        raw_tasks = [args]
+                    for task_index, raw_task in enumerate(raw_tasks):
+                        if not isinstance(raw_task, Mapping):
+                            continue
+                        assignment: dict[str, Any] = {}
+                        todo_id = safe_text(raw_task.get("todo_id"), 256)
+                        if todo_id:
+                            assignment["todo_id"] = todo_id
+                        expected_revision = raw_task.get("expected_revision")
+                        if isinstance(expected_revision, int) and expected_revision >= 0:
+                            assignment["expected_todo_revision"] = expected_revision
+                        delegation_assignments[task_index] = assignment
                     try:
                         from tools.delegate_tool import _get_max_concurrent_children
 
@@ -539,6 +594,17 @@ class ConversationStreamMixin:
             )
             return status
 
+        from .concurrent_work import RunExecutionCoordinator
+
+        coordinator = RunExecutionCoordinator(
+            run_id,
+            prepared.get("ownership_context"),
+            on_tool_progress,
+        )
+        if isinstance(prepared, dict):
+            prepared["execution_coordinator"] = coordinator
+        state["execution_coordinator"] = coordinator
+
         async def run_agent() -> None:
             try:
                 result, usage = await self._run_session_agent(
@@ -640,7 +706,9 @@ class ConversationStreamMixin:
                             "event": "run.failed",
                             "run_id": run_id,
                             "timestamp": time.time(),
-                            "message": public_error_message(result.get("error"), "Agent command failed"),
+                            "message": public_error_message(
+                                result.get("error"), "Agent command failed"
+                            ),
                         }
                     )
                 else:
@@ -730,6 +798,9 @@ class ConversationStreamMixin:
             raise AgentAPIError("run not found", code="run_not_found", status=404)
         self._stopped_runs.add(run_id)
         state["stop_requested"] = True
+        coordinator = state.get("execution_coordinator")
+        if coordinator is not None:
+            coordinator.cancel()
         agent = state["agent_ref"][0]
         if agent is not None:
             await asyncio.to_thread(agent.interrupt, "run stopped by user")
@@ -740,6 +811,27 @@ class ConversationStreamMixin:
         except ImportError:
             pass
         return {"run_id": run_id, "stopped": True, "status": "stopping"}
+
+    async def stop_child_run(self, run_id: str, subagent_id: str) -> bool:
+        """Request cancellation of one child without stopping sibling work."""
+        state = self._active_runs.get(run_id)
+        if state is None or state["task"].done():
+            return False
+        parent = state["agent_ref"][0]
+        if parent is None:
+            return False
+
+        def interrupt_child() -> bool:
+            pending = list(getattr(parent, "_active_children", ()) or ())
+            while pending:
+                child = pending.pop()
+                if str(getattr(child, "_subagent_id", "") or "") == subagent_id:
+                    child.interrupt("child run stopped by user")
+                    return True
+                pending.extend(list(getattr(child, "_active_children", ()) or ()))
+            return False
+
+        return await asyncio.to_thread(interrupt_child)
 
     def resolve_approval(self, run_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         choice = str(body.get("choice") or "").strip().lower()

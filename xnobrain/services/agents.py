@@ -248,6 +248,18 @@ class AgentsServiceMixin:
             xnobrain_config = {}
             config["xnobrain"] = xnobrain_config
             changed = True
+        plugins = config.get("plugins")
+        if not isinstance(plugins, dict):
+            plugins = {}
+            config["plugins"] = plugins
+            changed = True
+        enabled_plugins = plugins.get("enabled")
+        if not isinstance(enabled_plugins, list):
+            enabled_plugins = []
+        if "xnobrain-runtime-updates" not in enabled_plugins:
+            plugins["enabled"] = [*enabled_plugins, "xnobrain-runtime-updates"]
+            changed = True
+
         if not bool(xnobrain_config.get(BIG_BROTHER_MODEL_DEFAULT_MARKER)):
             model = config.get("model")
             if not isinstance(model, dict):

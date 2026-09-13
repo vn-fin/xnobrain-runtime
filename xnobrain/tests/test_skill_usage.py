@@ -84,7 +84,7 @@ class SkillUsageRepositoryTests(unittest.TestCase):
             work_context_id="personal:analyst",
         )
         self.assertEqual(rows, [event])
-        event_files = list((self.profile / "skill-usage/v1/events").glob("*.json"))
+        event_files = list((self.profile / "skill-usage/v1/events").rglob("*.json"))
         self.assertEqual(len(event_files), 1)
 
         with self.assertRaises(StoreError) as conflict:
@@ -262,6 +262,7 @@ class SkillUsageInstrumentationTests(unittest.TestCase):
         types = [event["event_type"] for event in events]
         self.assertIn("skill.requested", types)
         self.assertIn("skill.loaded", types)
+        self.assertIn("skill.run_associated", types)
         self.assertIn("skill.reference_read", types)
         self.assertIn("skill.tool_invoked", types)
         self.assertIn("skill.tool_completed", types)
@@ -272,3 +273,41 @@ class SkillUsageInstrumentationTests(unittest.TestCase):
         digest = "sha256:" + hashlib.sha256(self.skill_content).hexdigest()
         self.assertTrue(any(event.get("skill_digest") == digest for event in events))
         self.assertTrue(all(event["run_id"] == "run_one" for event in events))
+
+
+class SkillUsageBoundedRollupTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        root = Path(self.temporary.name)
+        self.profiles = root / "profiles"
+        (self.profiles / "analyst").mkdir(parents=True)
+        self.repository = FileRepository(root / "data", self.profiles)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def test_daily_partition_rollup_gap_and_retention(self) -> None:
+        old = SkillUsageRepositoryTests.event(
+            occurred_at="2026-01-01T12:00:00Z",
+        )
+        recent = SkillUsageRepositoryTests.event(
+            "sue_" + "b" * 64,
+            occurred_at="2026-09-07T12:00:00Z",
+        )
+        self.repository.append_skill_usage_event(old)
+        self.repository.append_skill_usage_event(recent)
+        self.repository.record_skill_usage_gap("analyst")
+        root = self.profiles / "analyst/skill-usage/v1"
+        self.assertFalse((root / "events/2026-01-01").exists())
+        self.assertTrue((root / "rollups/2026-01-01.json").is_file())
+        self.assertTrue((root / "events/2026-09-07" / f"{recent['event_id']}.json").is_file())
+        state = self.repository.skill_usage_state("analyst")
+        self.assertEqual(state["dropped_events"], 1)
+        window = self.repository.read_skill_usage_window(
+            "analyst",
+            start_epoch=datetime(2025, 12, 31, tzinfo=timezone.utc).timestamp(),
+            end_epoch=datetime(2026, 9, 8, tzinfo=timezone.utc).timestamp(),
+            work_context_ids={"personal:analyst"},
+        )
+        self.assertEqual(len(window["events"]), 1)
+        self.assertEqual(len(window["rollups"]), 1)

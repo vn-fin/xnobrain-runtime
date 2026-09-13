@@ -563,6 +563,40 @@ class ConversationsServiceMixin:
     ) -> dict[str, Any]:
         return self.conversation_runs.get_run(agent_id, conversation_id, run_id)
 
+    async def stop_conversation_child_run(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        run_id: str,
+        child_run_id: str,
+        body: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        self._stored_context(agent_id, conversation_id)
+        return await self.conversation_runs.cancel_child_run(
+            agent_id,
+            conversation_id,
+            run_id,
+            child_run_id,
+            body,
+        )
+
+    def update_conversation_run_todo(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        run_id: str,
+        todo_id: str,
+        body: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        self._stored_context(agent_id, conversation_id)
+        return self.conversation_runs.update_todo(
+            agent_id,
+            conversation_id,
+            run_id,
+            todo_id,
+            body,
+        )
+
     async def stop_run(
         self,
         agent_id: str,

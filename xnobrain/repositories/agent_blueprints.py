@@ -138,3 +138,98 @@ class AgentBlueprintRepositoryMixin:
                 raise StoreError("invalid next blueprint revision")
             self.atomic_json(path, next_record)
         return next_record
+
+    def _agent_maker_launch_path(self, profile_root: Path, key_hash: str) -> Path:
+        if len(key_hash) != 64 or any(char not in "0123456789abcdef" for char in key_hash):
+            raise StoreError("invalid agent maker launch key")
+        root = self._agent_blueprints_root(profile_root) / "launches"
+        path = root / f"{key_hash}.json"
+        if path.is_symlink() or path.resolve(strict=False).parent != root.resolve(strict=False):
+            raise StoreError("invalid agent maker launch path")
+        return path
+
+    def get_agent_maker_launch(self, profile_root: Path, key_hash: str) -> dict[str, Any] | None:
+        path = self._agent_maker_launch_path(profile_root, key_hash)
+        if not path.is_file():
+            return None
+        return self._decode_agent_blueprint(path)
+
+    def create_agent_maker_launch(
+        self,
+        profile_root: Path,
+        key_hash: str,
+        record: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        path = self._agent_maker_launch_path(profile_root, key_hash)
+        with self._lock:
+            if path.exists():
+                current = self._decode_agent_blueprint(path)
+                if current != dict(record):
+                    raise StoreError(
+                        "agent maker launch key conflict",
+                        status=409,
+                        code="agent_maker_launch_conflict",
+                    )
+                return current
+            self.atomic_json(path, dict(record))
+        return dict(record)
+
+    def find_agent_maker_launch_by_session(
+        self, profile_root: Path, session_id: str
+    ) -> tuple[str, dict[str, Any]] | None:
+        root = self._agent_blueprints_root(profile_root) / "launches"
+        if not root.is_dir():
+            return None
+        for path in sorted(root.glob("*.json")):
+            if path.is_file() and not path.is_symlink():
+                record = self._decode_agent_blueprint(path)
+                if record.get("session_id") == session_id:
+                    return path.stem, record
+        return None
+
+    def _agent_blueprint_checkpoint_path(
+        self, profile_root: Path, blueprint_id: Any, checkpoint_id: Any
+    ) -> Path:
+        blueprint = self._id(blueprint_id, "blueprint id")
+        checkpoint = self._id(checkpoint_id, "checkpoint id")
+        root = self._agent_blueprints_root(profile_root) / "checkpoints" / blueprint
+        path = root / f"{checkpoint}.json"
+        if path.is_symlink() or path.resolve(strict=False).parent != root.resolve(strict=False):
+            raise StoreError("invalid agent blueprint checkpoint path")
+        return path
+
+    def write_agent_blueprint_checkpoint(
+        self,
+        profile_root: Path,
+        blueprint_id: Any,
+        checkpoint_id: Any,
+        checkpoint: Mapping[str, Any],
+    ) -> None:
+        path = self._agent_blueprint_checkpoint_path(profile_root, blueprint_id, checkpoint_id)
+        payload = dict(checkpoint)
+        with self._lock:
+            if path.is_file():
+                if path.is_symlink() or self._decode_agent_blueprint(path) != payload:
+                    raise StoreError(
+                        "agent blueprint checkpoint conflict",
+                        status=409,
+                        code="blueprint_checkpoint_conflict",
+                    )
+                return
+            self.atomic_write(
+                path,
+                (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(),
+                mode=0o440,
+                replace=False,
+            )
+
+    def read_agent_blueprint_checkpoint(
+        self, profile_root: Path, blueprint_id: Any, checkpoint_id: Any
+    ) -> dict[str, Any]:
+        path = self._agent_blueprint_checkpoint_path(profile_root, blueprint_id, checkpoint_id)
+        try:
+            return self._decode_agent_blueprint(path)
+        except StoreError as exc:
+            if exc.code == "not_found":
+                exc.code = "blueprint_checkpoint_missing"
+            raise

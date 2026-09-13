@@ -900,7 +900,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
 
         models = await manager.list_models()
 
-        self.assertEqual([item["id"] for item in models["data"]], ["auto", "openai/gpt-5"])
+        self.assertEqual([item["id"] for item in models["data"]], ["openai/gpt-5"])
         self.assertEqual(manager.requests, [("GET", "/models?kind=llm", None)])
 
     async def test_transport_rejects_router_management_paths(self) -> None:

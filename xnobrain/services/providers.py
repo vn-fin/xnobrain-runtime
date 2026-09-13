@@ -34,14 +34,11 @@ class ProvidersServiceMixin:
         result: list[dict[str, Any]] = []
         for provider in SUPPORTED_PROVIDERS:
             definition = PROVIDER_DEFINITIONS.get(provider, {})
-            available_models = [
-                item["id"] for item in models if item.get("provider") == provider
-            ]
+            available_models = [item["id"] for item in models if item.get("provider") == provider]
             model_assignments = {
                 str(item["id"]): list(item.get("assignments", []))
                 for item in models
-                if item.get("provider") == provider
-                and item.get("assignments")
+                if item.get("provider") == provider and item.get("assignments")
             }
             result.append(
                 {
@@ -96,16 +93,14 @@ class ProvidersServiceMixin:
             "provider_id": provider,
             "default_model": str(items[0]["id"] if items else ""),
             "models": [
-                    {
-                        "id": item["id"],
-                        "reasoning": list(item.get("reasoning_levels", [])),
-                        "default_reasoning": default_reasoning_level(
-                            item.get("reasoning_levels", [])
-                        ),
-                        "assignments": list(item.get("assignments", [])),
-                    }
-                    for item in items
-                ],
+                {
+                    "id": item["id"],
+                    "reasoning": list(item.get("reasoning_levels", [])),
+                    "default_reasoning": default_reasoning_level(item.get("reasoning_levels", [])),
+                    "assignments": list(item.get("assignments", [])),
+                }
+                for item in items
+            ],
         }
 
     async def provider_model_reasoning(self, provider: str, model: str) -> dict[str, Any]:

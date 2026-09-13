@@ -6,6 +6,7 @@ project_dir="$(cd -- "$script_dir/.." && pwd)"
 templates_dir="${XNOBRAIN_PROFILE_TEMPLATES_DIR:-$project_dir/runtime/profile-templates}"
 skill_overrides_dir="${XNOBRAIN_SKILL_OVERRIDES_DIR:-$project_dir/runtime/skill-overrides}"
 required_skills_dir="${XNOBRAIN_REQUIRED_SKILLS_DIR:-$project_dir/runtime/required-skills}"
+required_plugins_dir="${XNOBRAIN_REQUIRED_PLUGINS_DIR:-$project_dir/runtime/required-plugins}"
 hermes_home="${1:-${HERMES_HOME:-$HOME/.hermes}}"
 profiles_root="${2:-$hermes_home/profiles}"
 backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -71,6 +72,20 @@ for profile_dir in "$profiles_root"/*; do
   [[ -d "$profile_dir" ]] || continue
   install_required_skills "$profile_dir"
 done
+
+
+install_required_plugins() {
+  local profile_dir="$1"
+  [[ -d "$required_plugins_dir" ]] || return 0
+  local plugin_dir plugin_id
+  for plugin_dir in "$required_plugins_dir"/*; do
+    [[ -d "$plugin_dir" && -f "$plugin_dir/plugin.yaml" && -f "$plugin_dir/__init__.py" ]] || continue
+    plugin_id="$(basename "$plugin_dir")"
+    apply_file "$profile_dir" "$plugin_dir/plugin.yaml" "$profile_dir/plugins/$plugin_id/plugin.yaml" "plugins/$plugin_id/plugin.yaml"
+    apply_file "$profile_dir" "$plugin_dir/__init__.py" "$profile_dir/plugins/$plugin_id/__init__.py" "plugins/$plugin_id/__init__.py"
+  done
+}
+install_required_plugins "$hermes_home"
 
 # The upstream PDF helper renders visible URLs as plain text. Apply the
 # runtime-owned compatible helper after skill synchronization so every profile

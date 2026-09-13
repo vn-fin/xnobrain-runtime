@@ -4,9 +4,9 @@ from ..models import (
     AgentCreate,
     AgentMetadataPatch,
     ConfigPatch,
-    SkillPatch,
     MemoryPatch,
     SkillInstall,
+    SkillPatch,
     SkillSyncRequest,
 )
 from .definition import route

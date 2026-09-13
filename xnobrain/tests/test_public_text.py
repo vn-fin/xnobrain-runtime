@@ -38,7 +38,10 @@ class PublicErrorMessageTests(unittest.TestCase):
             assert b"Agent failed" in payload
         """)
         result = subprocess.run(
-            [sys.executable, "-c", script], capture_output=True, text=True,
-            timeout=30, check=False,
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)

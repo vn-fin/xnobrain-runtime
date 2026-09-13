@@ -17,7 +17,9 @@ class ConcurrentWorkToolsContractTests(unittest.TestCase):
         for size in range(4):
             for subset in itertools.combinations(names, size):
                 with self.subTest(subset=subset):
-                    request = ChatRequest(input="Synthetic task", capabilities=list(reversed(subset)))
+                    request = ChatRequest(
+                        input="Synthetic task", capabilities=list(reversed(subset))
+                    )
                     self.assertEqual(request.capabilities, list(subset))
                     self.assertEqual(request.input, "Synthetic task")
                     self.assertIsNone(request.feature)
@@ -101,12 +103,13 @@ class ComposerGoalPreservationTests(unittest.TestCase):
 
 class ComposerGoalPersistenceTests(unittest.TestCase):
     def test_reopening_preserves_real_goal_and_profile_isolation(self):
+        from hermes_cli.goals import GoalManager, save_goal
+
         from xnobrain.app import XNOBrainApplication
         from xnobrain.integrations.conversation_goals import (
             _goal_profile_scope,
             ensure_composer_goal,
         )
-        from hermes_cli.goals import GoalManager, save_goal
 
         self.assertIsNotNone(XNOBrainApplication)
         with TemporaryDirectory() as directory:
@@ -129,7 +132,9 @@ class ComposerGoalPersistenceTests(unittest.TestCase):
                 other = GoalManager("synthetic-session")
                 self.assertIsNone(other.state)
                 ensure_composer_goal(other, "Other profile objective", 3)
-                self.assertEqual(GoalManager("synthetic-session").state.goal, "Other profile objective")
+                self.assertEqual(
+                    GoalManager("synthetic-session").state.goal, "Other profile objective"
+                )
             with _goal_profile_scope(first):
                 self.assertEqual(asdict(GoalManager("synthetic-session").state), before)
 
@@ -138,12 +143,13 @@ class ComposerGoalBudgetTests(unittest.TestCase):
     def test_real_goal_judge_stops_at_shared_turn_limit(self):
         from unittest.mock import patch
 
+        from hermes_cli.goals import GoalManager
+
         from xnobrain.app import XNOBrainApplication
         from xnobrain.integrations.conversation_goals import (
             _goal_profile_scope,
             ensure_composer_goal,
         )
-        from hermes_cli.goals import GoalManager
 
         self.assertIsNotNone(XNOBrainApplication)
         with TemporaryDirectory() as directory, _goal_profile_scope(Path(directory)):
@@ -164,3 +170,91 @@ class ComposerGoalBudgetTests(unittest.TestCase):
             self.assertEqual(reopened.state.max_turns, 1)
             self.assertEqual(reopened.state.turns_used, 1)
             self.assertEqual(reopened.state.status, "paused")
+
+
+class RunExecutionCoordinatorTests(unittest.TestCase):
+    def test_shared_turn_budget_is_idempotent_and_cancel_fails_closed(self):
+        from types import SimpleNamespace
+
+        from xnobrain.integrations.concurrent_work import (
+            ConcurrentWorkLimitError,
+            RunExecutionCoordinator,
+        )
+
+        events = []
+        coordinator = RunExecutionCoordinator(
+            "run_" + "a" * 32,
+            {"id": "personal", "payer_kind": "personal"},
+            lambda *args, **kwargs: events.append((args, kwargs)),
+        )
+        coordinator.turn_limit = 2
+        original_calls = []
+        agent = SimpleNamespace(
+            session_id="parent-session",
+            _delegate_depth=0,
+            _current_turn_id="turn-one",
+            _api_call_count=1,
+            _build_api_kwargs=lambda value: original_calls.append(value) or {"value": value},
+        )
+        coordinator.install(agent)
+
+        self.assertEqual(agent._build_api_kwargs("first"), {"value": "first"})
+        self.assertEqual(agent._build_api_kwargs("retry"), {"value": "retry"})
+        agent._api_call_count = 2
+        self.assertEqual(agent._build_api_kwargs("second"), {"value": "second"})
+        agent._api_call_count = 3
+        with self.assertRaisesRegex(ConcurrentWorkLimitError, "turn limit"):
+            agent._build_api_kwargs("blocked")
+        self.assertEqual(original_calls, ["first", "retry", "second"])
+        self.assertEqual(len(events), 2)
+        self.assertEqual(
+            dict(coordinator.ownership_context), {"id": "personal", "payer_kind": "personal"}
+        )
+        with self.assertRaises(TypeError):
+            coordinator.ownership_context["id"] = "forged"
+        coordinator.cancel()
+        agent._api_call_count = 4
+        with self.assertRaisesRegex(ConcurrentWorkLimitError, "cancellation"):
+            agent._build_api_kwargs("cancelled")
+
+    def test_child_inherits_shared_coordinator_depth_and_concurrency(self):
+        from types import SimpleNamespace
+
+        from xnobrain.integrations.concurrent_work import (
+            ConcurrentWorkLimitError,
+            RunExecutionCoordinator,
+        )
+
+        coordinator = RunExecutionCoordinator(
+            "run_" + "b" * 32,
+            {"id": "org-one", "payer_kind": "organization_sponsor"},
+            lambda *args, **kwargs: None,
+        )
+        coordinator.depth_limit = 1
+        coordinator.concurrency_limit = 1
+        child = SimpleNamespace(
+            session_id="child-session",
+            _delegate_depth=1,
+            _build_api_kwargs=lambda: {},
+            run_conversation=lambda: "done",
+        )
+        coordinator.install_child(child)
+        self.assertEqual(child.run_conversation(), "done")
+        self.assertIs(child._xnobrain_ownership_context, coordinator.ownership_context)
+
+        coordinator.acquire_child()
+        try:
+            with self.assertRaisesRegex(ConcurrentWorkLimitError, "concurrency"):
+                child.run_conversation()
+        finally:
+            coordinator.release_child()
+
+        too_deep = SimpleNamespace(
+            session_id="grandchild-session",
+            _delegate_depth=2,
+            _build_api_kwargs=lambda: {},
+            run_conversation=lambda: "must not run",
+        )
+        coordinator.install_child(too_deep)
+        with self.assertRaisesRegex(ConcurrentWorkLimitError, "depth"):
+            too_deep.run_conversation()

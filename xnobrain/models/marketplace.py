@@ -17,13 +17,17 @@ class MarketplaceInstallRequest(BaseModel):
 
 class MarketplaceUninstallRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    local_profile_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    local_profile_id: str = Field(
+        min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    )
 
 
 class MarketplaceUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     package: dict
-    local_profile_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    local_profile_id: str = Field(
+        min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    )
 
 
 class MarketplaceExportRequest(BaseModel):

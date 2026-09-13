@@ -143,6 +143,39 @@ class AgentBlueprintSpec(BaseModel):
         return values
 
 
+class AgentMakerLaunchCreate(BaseModel):
+    """Create one durable settings-launched maker session without running it."""
+
+    model_config = ConfigDict(extra="forbid")
+    creation_intent: str | None = Field(default=None, min_length=1, max_length=256)
+    ownership_context: dict[str, object] | None = None
+    idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
+
+
+class AgentMakerTodo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(pattern=_SAFE_COMPONENT)
+    content: str = Field(min_length=1, max_length=2_000)
+    status: Literal["pending", "running", "blocked", "failed", "cancelled", "completed"]
+    depends_on: list[str] = Field(default_factory=list, max_length=8)
+    evidence: str | None = Field(default=None, max_length=10_000)
+
+
+class AgentMakerLaunchRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal[1]
+    kind: Literal["agent_maker"]
+    agent_id: str = Field(min_length=1, max_length=128)
+    work_context_id: str = Field(pattern=_SAFE_REFERENCE)
+    session_id: str = Field(min_length=1, max_length=256)
+    request: str = Field(min_length=1, max_length=20_000)
+    capabilities: list[Literal["todo"]]
+    todos: list[AgentMakerTodo] = Field(min_length=7, max_length=7)
+    blueprint_ids: list[str] = Field(default_factory=list, max_length=64)
+    created_at: str
+    updated_at: str
+
+
 class AgentBlueprintCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     intent: str = Field(min_length=1, max_length=20_000)
@@ -178,6 +211,63 @@ class AgentBlueprintLifecycleRequest(BaseModel):
     canonical_digest: str = Field(pattern=_SHA256)
     idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
     decision: Literal["scaffold", "activate"]
+    certification_digest: str | None = Field(default=None, pattern=_SHA256)
+
+
+class BlueprintCertificationCase(BaseModel):
+    """A deterministic rubric executed by the child, never by the maker."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=128, pattern=_SAFE_COMPONENT)
+    kind: Literal["job", "refusal", "tool", "context"]
+    prompt: str = Field(min_length=1, max_length=20_000)
+    expected_response: Literal["complete", "refuse"]
+    required_output_contains: list[str] = Field(default_factory=list, max_length=16)
+    forbidden_output_contains: list[str] = Field(default_factory=list, max_length=16)
+    required_tools: list[str] = Field(default_factory=list, max_length=16)
+
+    @field_validator(
+        "required_output_contains",
+        "forbidden_output_contains",
+        "required_tools",
+    )
+    @classmethod
+    def bounded_unique_values(cls, values: list[str]) -> list[str]:
+        normalized = [str(value).strip() for value in values]
+        if any(not value or len(value) > 512 for value in normalized):
+            raise ValueError("certification rubric values must be non-empty and bounded")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("certification rubric values must be unique")
+        return normalized
+
+    @model_validator(mode="after")
+    def kind_matches_expectation(self):
+        if self.kind in {"refusal", "context"} and self.expected_response != "refuse":
+            raise ValueError("refusal and context cases must require refusal")
+        return self
+
+
+class AgentBlueprintCertificationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    canonical_digest: str = Field(pattern=_SHA256)
+    idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
+    decision: Literal["certify"]
+    cases: list[BlueprintCertificationCase] = Field(min_length=4, max_length=16)
+    timeout_seconds: int = Field(default=180, ge=10, le=900)
+    max_turns_per_case: int = Field(default=8, ge=1, le=20)
+    max_cost_usd: float = Field(gt=0, le=1_000)
+
+    @model_validator(mode="after")
+    def includes_required_case_kinds(self):
+        identifiers = [case.id for case in self.cases]
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("certification case ids must be unique")
+        kinds = {case.kind for case in self.cases}
+        required = {"job", "refusal", "tool", "context"}
+        if not required.issubset(kinds):
+            raise ValueError("job, refusal, tool, and context cases are required")
+        return self
 
 
 class AgentBlueprintCancel(BaseModel):
@@ -187,6 +277,17 @@ class AgentBlueprintCancel(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
     decision: Literal["cancel"]
     reason: str | None = Field(default=None, min_length=1, max_length=2_000)
+
+
+class AgentBlueprintRollbackCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    canonical_digest: str = Field(pattern=_SHA256)
+    certification_digest: str = Field(pattern=_SHA256)
+    expected_active_profile_digest: str = Field(pattern=_SHA256)
+    idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
+    decision: Literal["rollback"]
+    reason: str = Field(min_length=1, max_length=2_000)
 
 
 class BlueprintFileManifestEntry(BaseModel):
@@ -214,7 +315,7 @@ class BlueprintApproval(BaseModel):
 
 
 class BlueprintLifecycleOperation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="allow")
     revision: int = Field(ge=1)
     canonical_digest: str = Field(pattern=_SHA256)
     idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
@@ -228,6 +329,43 @@ class BlueprintCancellation(BlueprintLifecycleOperation):
     reason: str | None = Field(default=None, max_length=2_000)
 
 
+class BlueprintCertificationCaseResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(pattern=_SAFE_COMPONENT)
+    kind: Literal["job", "refusal", "tool", "context"]
+    passed: bool
+    terminal_status: Literal["completed", "failed", "timed_out", "cancelled"]
+    response_digest: str = Field(pattern=_SHA256)
+    observed_tools: list[str] = Field(max_length=128)
+    checks: dict[str, bool]
+    usage: dict[str, int]
+    session_id: str = Field(min_length=1, max_length=256)
+
+
+class BlueprintCertification(BlueprintLifecycleOperation):
+    status: Literal["running", "passed", "failed", "timed_out", "cancelled", "invalidated"]
+    cases_digest: str = Field(pattern=_SHA256)
+    blueprint_digest: str = Field(pattern=_SHA256)
+    scaffold_manifest_digest: str = Field(pattern=_SHA256)
+    config_digest: str = Field(pattern=_SHA256)
+    profile_digest: str = Field(pattern=_SHA256)
+    result_digest: str | None = Field(default=None, pattern=_SHA256)
+    certification_digest: str | None = Field(default=None, pattern=_SHA256)
+    valid: bool = False
+    invalidated_at: str | None = None
+    invalidation_reason: str | None = Field(default=None, max_length=256)
+    results: list[BlueprintCertificationCaseResult] = Field(default_factory=list, max_length=16)
+    budget: dict[str, int | float | str | None]
+
+
+class BlueprintRollback(BlueprintLifecycleOperation):
+    certification_digest: str = Field(pattern=_SHA256)
+    checkpoint_id: str = Field(pattern=_SAFE_REFERENCE)
+    expected_active_profile_digest: str = Field(pattern=_SHA256)
+    restored_profile_digest: str = Field(pattern=_SHA256)
+    reason: str = Field(min_length=1, max_length=2_000)
+
+
 class AgentBlueprintRecord(BaseModel):
     """Validated representation returned by every blueprint lifecycle endpoint."""
 
@@ -236,6 +374,7 @@ class AgentBlueprintRecord(BaseModel):
     revision: int = Field(ge=1)
     owner_agent_id: str = Field(min_length=1, max_length=128)
     work_context_id: str = Field(pattern=_SAFE_REFERENCE)
+    ownership_context: dict[str, object] | None = None
     target_profile_id: str = Field(pattern=r"^agent-[0-9a-f]{12}$")
     intent: str = Field(min_length=1, max_length=20_000)
     blueprint: AgentBlueprintSpec | None
@@ -245,13 +384,19 @@ class AgentBlueprintRecord(BaseModel):
         "approved",
         "scaffolding",
         "scaffolded",
+        "certifying",
+        "certification_failed",
+        "ready_to_activate",
         "activating",
         "active",
+        "rolling_back",
         "cancelled",
     ]
     approval: BlueprintApproval | None
     scaffold: BlueprintLifecycleOperation | None = None
+    certification: BlueprintCertification | None = None
     activation: BlueprintLifecycleOperation | None = None
+    rollback: BlueprintRollback | None = None
     cancellation: BlueprintCancellation | None = None
     created_at: str
     updated_at: str

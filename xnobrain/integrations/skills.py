@@ -95,7 +95,11 @@ class CommonSkillsMixin:
             raise ConfigAPIError("skill not found", code="skill_not_found", status=404)
         if "description" in body:
             if owned is None:
-                raise ConfigAPIError("external skills are read-only", code="external_skill_update_forbidden", status=403)
+                raise ConfigAPIError(
+                    "external skills are read-only",
+                    code="external_skill_update_forbidden",
+                    status=403,
+                )
             before = self._skill_files()
             self._update_skill_description(owned / "SKILL.md", body["description"])
             self._snapshot_skill_changes(before, self._skill_files())
@@ -113,7 +117,9 @@ class CommonSkillsMixin:
     def _update_skill_description(self, path: Path, value: Any) -> None:
         description = self._text_value(value, field="description", max_chars=1000).strip()
         if not description or "\n" in description or "\r" in description:
-            raise ConfigAPIError("description must be one non-empty line", code="invalid_skill_request")
+            raise ConfigAPIError(
+                "description must be one non-empty line", code="invalid_skill_request"
+            )
         text = path.read_text(encoding="utf-8")
         parts = text.split("---", 2)
         if len(parts) < 3 or parts[0].strip():
@@ -122,7 +128,12 @@ class CommonSkillsMixin:
         if not isinstance(frontmatter, dict):
             raise ConfigAPIError("skill frontmatter is invalid", code="invalid_skill")
         frontmatter["description"] = description
-        payload = "---\n" + yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True) + "---" + parts[2]
+        payload = (
+            "---\n"
+            + yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True)
+            + "---"
+            + parts[2]
+        )
         self._atomic_write(path, payload.encode("utf-8"))
 
     def delete_skill(self, raw_skill_id: Any) -> dict[str, Any]:

@@ -10,10 +10,10 @@ class CompiledContainerTests(unittest.TestCase):
     def test_runtime_endpoint_supports_onefile_and_module_layouts(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
 
-        self.assertIn("ARG BUILD_MODE=onefile", dockerfile)
+        self.assertIn("ARG BUILD_MODE=source", dockerfile)
         self.assertIn('onefile) nuitka_mode="--mode=onefile', dockerfile)
         self.assertIn("module) nuitka_mode='--mode=standalone'", dockerfile)
-        self.assertIn("BUILD_MODE must be onefile or module", dockerfile)
+        self.assertIn("BUILD_MODE must be source, onefile or module", dockerfile)
         self.assertIn(
             'nuitka_mode="--mode=onefile --onefile-tempdir-spec={TEMP}/xnobrain-runtime-${HERMES_COMMIT}"',
             dockerfile,
@@ -37,7 +37,7 @@ class CompiledContainerTests(unittest.TestCase):
             dockerfile,
         )
         self.assertIn(
-            "RUN ln -s /opt/xnobrain-app/app.so /usr/local/bin/app.so",
+            'RUN if [ "${BUILD_MODE}" != "source" ]; then ln -s /opt/xnobrain-app/app.so /usr/local/bin/app.so; fi',
             dockerfile,
         )
         final_stage = dockerfile.split("FROM runtime-base AS runtime\n", 1)[1]

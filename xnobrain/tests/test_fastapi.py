@@ -915,7 +915,9 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     async def test_authored_skill_description_can_be_updated_and_snapshotted(self):
         skill = self.root / "skills" / "custom" / "writer" / "SKILL.md"
         skill.parent.mkdir(parents=True)
-        skill.write_text("---\nname: writer\ndescription: Old trigger\n---\n# Writer\n", encoding="utf-8")
+        skill.write_text(
+            "---\nname: writer\ndescription: Old trigger\n---\n# Writer\n", encoding="utf-8"
+        )
         async with self.client() as client:
             response = await client.patch(
                 "/xnobrain/api/runtime/v1/agents-skills/writer",
@@ -1157,10 +1159,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cycle.json()["error"]["code"], "workflow_cycle")
 
     async def test_due_profile_cron_executes_in_the_unified_process(self):
-        from hermes_cli import kanban_db
-
-        from xnobrain.integrations import kanban as kanban_adapter
-
+        """Compatibility create is native-only and never double-schedules Kanban."""
         async with self.client() as client:
             created = await client.post(
                 "/xnobrain/api/runtime/v1/agents", json={"name": "Scheduler"}
@@ -1175,28 +1174,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                     "interval_minutes": 60,
                 },
             )
+        self.assertEqual(response.status_code, 201, response.text)
         job = response.json()["data"]
-        scheduled_task_id = job["kanban_task_id"]
-        with kanban_adapter.connection("default") as conn:
-            conn.execute(
-                "UPDATE xnobrain_task_schedules SET next_run_at = 1 WHERE task_id = ?",
-                (scheduled_task_id,),
-            )
-            released = kanban_adapter.release_due_schedules(
-                conn,
-                board="default",
-                now=2,
-            )
-            tasks = kanban_db.list_tasks(conn, include_archived=True)
-            schedule = kanban_adapter.task_schedule(conn, scheduled_task_id)
-        self.assertEqual(len(released), 1)
-        self.assertEqual(schedule["occurrence_count"], 1)
-        self.assertTrue(
-            any(
-                str(task.idempotency_key or "").startswith(f"schedule:{scheduled_task_id}:")
-                for task in tasks
-            )
-        )
+        self.assertIsNone(job["kanban_task_id"])
+        self.assertIsNone(job["kanban_board"])
+        self.assertTrue(job["enabled"])
+        self.assertEqual(job["schedule_kind"], "interval")
 
     async def test_swagger_documents_typed_management_and_stream_requests(self):
         schema = self.app.openapi()
@@ -1211,6 +1194,19 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 "post"
             ]["requestBody"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ChatRequest",
+        )
+        run_root = "/xnobrain/api/runtime/v1/sessions/{conversation_id}/runs/{run_id}"
+        self.assertEqual(
+            schema["paths"][run_root + "/todos/{todo_id}"]["patch"]["requestBody"]["content"][
+                "application/json"
+            ]["schema"]["$ref"],
+            "#/components/schemas/TodoRevisionUpdate",
+        )
+        self.assertEqual(
+            schema["paths"][run_root + "/children/{child_run_id}/stop"]["post"]["requestBody"][
+                "content"
+            ]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ChildRunCancel",
         )
 
     async def test_workspace_office_preview_returns_inline_pdf(self):

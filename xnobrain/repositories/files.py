@@ -7,6 +7,8 @@ from .conversations import ConversationRepositoryMixin
 from .cron import CronRepositoryMixin
 from .notifications import NotificationRepositoryMixin
 from .profiles import ProfileRepositoryMixin
+from .skill_doctor import SkillDoctorRepositoryMixin
+from .skill_optimizations import SkillOptimizationRepositoryMixin
 from .skill_usage import SkillUsageRepositoryMixin
 from .teams import TeamRepositoryMixin
 
@@ -19,6 +21,8 @@ class FileRepository(
     CronRepositoryMixin,
     TeamRepositoryMixin,
     NotificationRepositoryMixin,
+    SkillDoctorRepositoryMixin,
+    SkillOptimizationRepositoryMixin,
     SkillUsageRepositoryMixin,
     RepositoryBase,
 ):

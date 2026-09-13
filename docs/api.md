@@ -321,3 +321,46 @@ not human display text. Consumers must retain unknown/mixed-version handling.
 Cron readback also includes `interval_minutes`: a positive persisted integer for
 interval schedules, otherwise null. Consumers should prefer this over display-text
 parsing; absence on older servers permits compatibility handling, null is unknown.
+
+## Private Runtime Time Control adapter (FT0013)
+
+Control and its node gateway call these fixed Runtime-local endpoints:
+
+- `GET /xnobrain/api/runtime/v1/system/time-control`
+- `POST /xnobrain/api/runtime/v1/system/time-control/schedule-migration-preview`
+- `POST /xnobrain/api/runtime/v1/system/time-control/apply`
+- `POST /xnobrain/api/runtime/v1/system/time-control/schedule-migrate`
+
+Every call requires `X-XNOBrain-Time-Token` equal to the workspace-scoped
+`RUNTIME_INTERNAL_SERVICE_TOKEN`. Control derives that value with its
+`RuntimeServiceToken`; the private gRPC relay injects the already-authenticated
+Runtime token only for these fixed paths. Browser credentials and request-body
+workspace fields do not grant access.
+
+Observation reads the actual atomic `DATA_DIR/time-control/timezone.json` setting,
+reports current UTC and zone-local observations, and identifies the Runtime and
+per-job adapters. Apply binds the exact operation ID, positive maintenance fence,
+`sha256:` plan hash, target zone, and expected persisted revision. It writes only
+Runtime configuration beneath `DATA_DIR`, performs an immediate disk readback, and
+journals the terminal result. It does not invoke a shell, alter the host clock,
+write `/etc/localtime`, or change process-wide `TZ`; existing processes may need to
+be reopened while Runtime scheduling reads explicit persisted zones.
+
+Calendar schedules created by Runtime now carry an authoritative revision plus a
+digest of their schedule definition. Inventory marks interval, absolute one-shot,
+legacy timezone-less, externally changed, and unsupported-policy records ineligible
+instead of guessing authority. Preview uses the same bounded calendar evaluator as
+the executor and returns five target-zone occurrences. Migration revalidates each
+selected revision while holding Hermes' native job-store lock, snapshots `jobs.json`,
+changes only the calendar timezone binding/revision and future `next_run_at` after the
+explicit UTC cutoff, and preserves run claims, in-flight execution ledger, completed
+history, delivery records, repeat/misfire state, and output artifacts. Cross-item
+atomicity is not claimed: every item returns `succeeded`, `stale`, `unsupported`, or
+`failed`, and any non-success makes the operation partial.
+
+`DATA_DIR/time-control/operations` and `fence.json` are atomically written journals.
+An exact retry replays a terminal result; reuse of an operation ID with another
+fence/hash/target/revision conflicts. A newer fence supersedes an older one, and stale
+workers fail with `409`. Startup validates incomplete journals and leaves them
+resumable by the exact Control retry; already committed settings and per-item schedule
+operation markers make recovery idempotent without replaying execution history.

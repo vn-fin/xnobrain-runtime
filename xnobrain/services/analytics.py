@@ -243,12 +243,24 @@ class AnalyticsService:
         work_context_id: str | None = None,
         cursor: str | None = None,
         limit: int = 100,
+        skill_digest: str | None = None,
+        skill_id: str | None = None,
+        trusted_context: Any = None,
     ) -> dict[str, Any]:
         """Return paged, privacy-safe skill lifecycle metrics for one agent."""
         item = self._require_item(agent_id)
         profile = self._profile_dir(item)
-        context_id = work_context_id or "personal"
-        _validate_work_context_id(context_id)
+        context_id = authorize_work_context(work_context_id or "personal", trusted_context)
+        if end_epoch - start_epoch > 366 * 86400:
+            raise ServiceError(
+                "skill usage range exceeds 366 days",
+                status=422,
+                code="skill_usage_range_too_large",
+            )
+        if skill_digest is not None and (
+            not skill_digest.startswith("sha256:") or len(skill_digest) != 71
+        ):
+            raise ServiceError("invalid skill digest", code="invalid_skill_digest")
         after = _decode_skill_cursor(cursor) if cursor else None
         page_limit = max(1, min(100, int(limit or 100)))
         if profile is None:
@@ -259,15 +271,18 @@ class AnalyticsService:
             agent_id,
         )
         if has_events:
-            events = await asyncio.to_thread(
-                self.repository.list_skill_usage_events,
+            context_ids = {context_id}
+            if context_id == "personal":
+                context_ids.add(f"personal:{agent_id}")
+            window = await asyncio.to_thread(
+                self.repository.read_skill_usage_window,
                 agent_id,
                 start_epoch=start_epoch,
                 end_epoch=end_epoch,
-                work_context_id=context_id,
+                work_context_ids=context_ids,
             )
-            result = _aggregate_skill_events(
-                events,
+            result = _aggregate_skill_window(
+                window,
                 start_epoch=start_epoch,
                 end_epoch=end_epoch,
                 context_id=context_id,
@@ -285,6 +300,10 @@ class AnalyticsService:
             result = _empty_skill_usage(agent_id, context_id, start_epoch, end_epoch)
 
         items = result["items"]
+        if skill_id is not None:
+            items = [item for item in items if item.get("skill_id") == skill_id]
+        if skill_digest is not None:
+            items = [item for item in items if item.get("skill_digest") == skill_digest]
         if after is not None:
             items = [item for item in items if _skill_item_key(item) > after]
         page = items[:page_limit]
@@ -788,6 +807,15 @@ def _empty_skill_usage(
             "instrumentation_version": SKILL_USAGE_INSTRUMENTATION_VERSION,
             "event_count": 0,
             "unattributed_tool_invocations": 0,
+            "multiple_attributed_tool_invocations": 0,
+            "total_tool_invocations": 0,
+            "compacted_event_count": 0,
+            "dropped_event_count": 0,
+            "coverage_start": None,
+            "coverage_end": None,
+            "raw_retention_days": 90,
+            "rollup_retention_days": 730,
+            "data_complete": True,
             "message": "No measured data",
         },
     }
@@ -802,6 +830,7 @@ def _aggregate_skill_events(
 ) -> dict[str, Any]:
     measured: dict[tuple[str, str], dict[str, Any]] = {}
     unattributed_tools = 0
+    multiple_tools = 0
     for event in events:
         event_type = str(event.get("event_type") or "")
         associations = event.get("associated_skills")
@@ -813,6 +842,8 @@ def _aggregate_skill_events(
             linked = []
         if event_type == "skill.tool_invoked" and not linked:
             unattributed_tools += 1
+        if event_type == "skill.tool_invoked" and event.get("attribution") == "multiple":
+            multiple_tools += 1
         for association in linked:
             skill_id = str(association.get("skill_id") or "")
             digest = str(association.get("skill_digest") or "")
@@ -828,10 +859,14 @@ def _aggregate_skill_events(
                     "loaded_count": 0,
                     "reference_reads": 0,
                     "distinct_runs": set(),
+                    "distinct_sessions": set(),
                     "last_used_at": None,
                     "tool_invocations": 0,
                     "tool_completed": 0,
                     "errors": 0,
+                    "duration_total_ms": 0,
+                    "duration_count": 0,
+                    "average_duration_ms": None,
                     "attribution": "observed",
                 },
             )
@@ -848,6 +883,11 @@ def _aggregate_skill_events(
                 item["tool_completed"] += 1
             elif event_type == "skill.tool_failed":
                 item["errors"] += 1
+            if event.get("session_id"):
+                item["distinct_sessions"].add(str(event["session_id"]))
+            if event.get("duration_ms") is not None:
+                item["duration_total_ms"] += int(event["duration_ms"])
+                item["duration_count"] += 1
             occurred_at = str(event.get("occurred_at") or "")
             if occurred_at and (item["last_used_at"] is None or occurred_at > item["last_used_at"]):
                 item["last_used_at"] = occurred_at
@@ -856,6 +896,12 @@ def _aggregate_skill_events(
     items = []
     for item in measured.values():
         item["distinct_runs"] = len(item["distinct_runs"])
+        item["distinct_sessions"] = len(item["distinct_sessions"])
+        item["average_duration_ms"] = (
+            round(item["duration_total_ms"] / item["duration_count"], 2)
+            if item["duration_count"]
+            else None
+        )
         items.append(item)
     items.sort(key=_skill_item_key)
     return {
@@ -870,6 +916,17 @@ def _aggregate_skill_events(
             "instrumentation_version": SKILL_USAGE_INSTRUMENTATION_VERSION,
             "event_count": len(events),
             "unattributed_tool_invocations": unattributed_tools,
+            "multiple_attributed_tool_invocations": multiple_tools,
+            "total_tool_invocations": sum(
+                1 for event in events if event.get("event_type") == "skill.tool_invoked"
+            ),
+            "compacted_event_count": 0,
+            "dropped_event_count": 0,
+            "coverage_start": None,
+            "coverage_end": None,
+            "raw_retention_days": 90,
+            "rollup_retention_days": 730,
+            "data_complete": True,
             "message": (
                 "Measured skill lifecycle metadata"
                 if events
@@ -877,6 +934,145 @@ def _aggregate_skill_events(
             ),
         },
     }
+
+
+def authorize_work_context(value: str, trusted_context: Any = None) -> str:
+    """Normalize Personal and require signed exact claims for non-personal data."""
+    _validate_work_context_id(value)
+    if value == "personal" or value.startswith("personal:"):
+        return "personal"
+    subject = str(getattr(trusted_context, "subject", "") or "").strip()
+    verified = getattr(trusted_context, "ownership_context", None)
+    if not subject:
+        raise ServiceError(
+            "trusted context is required",
+            status=401,
+            code="trusted_context_required",
+        )
+    if not isinstance(verified, Mapping) or str(verified.get("id") or "") != value:
+        raise ServiceError(
+            "work context was not verified by Control",
+            status=403,
+            code="skill_usage_context_not_verified",
+        )
+    return value
+
+
+def _aggregate_skill_window(
+    window: Mapping[str, Any],
+    *,
+    start_epoch: float,
+    end_epoch: float,
+    context_id: str,
+) -> dict[str, Any]:
+    result = _aggregate_skill_events(
+        list(window.get("events") or []),
+        start_epoch=start_epoch,
+        end_epoch=end_epoch,
+        context_id=context_id,
+    )
+    rows = {_skill_item_key(item): item for item in result["items"]}
+    run_ids: dict[tuple[str, str], set[str]] = {key: set() for key in rows}
+    session_ids: dict[tuple[str, str], set[str]] = {key: set() for key in rows}
+    for event in window.get("events") or []:
+        associations = event.get("associated_skills")
+        linked = (
+            [item for item in associations if isinstance(item, Mapping)]
+            if isinstance(associations, list) and associations
+            else [event]
+            if event.get("skill_id")
+            else []
+        )
+        for association in linked:
+            key = (
+                str(association.get("skill_id") or ""),
+                str(association.get("skill_digest") or ""),
+            )
+            if key not in rows:
+                continue
+            if event.get("event_type") in {"skill.loaded", "skill.run_associated"}:
+                run_ids.setdefault(key, set()).add(str(event.get("run_id") or ""))
+            session_ids.setdefault(key, set()).add(str(event.get("session_id") or ""))
+    compacted_events = 0
+    unattributed = result["coverage"]["unattributed_tool_invocations"]
+    multiple_total = result["coverage"]["multiple_attributed_tool_invocations"]
+    total_tools = result["coverage"]["total_tool_invocations"]
+    for rollup in window.get("rollups") or []:
+        compacted_events += int(rollup.get("event_count") or 0)
+        unattributed += int(rollup.get("unattributed_tool_invocations") or 0)
+        multiple_total += int(rollup.get("multiple_attributed_tool_invocations") or 0)
+        total_tools += int(rollup.get("total_tool_invocations") or 0)
+        for raw in (rollup.get("items") or {}).values():
+            if not isinstance(raw, Mapping):
+                continue
+            key = (str(raw.get("skill_id") or ""), str(raw.get("skill_digest") or ""))
+            if not key[0]:
+                continue
+            item = rows.setdefault(
+                key,
+                {
+                    "skill_id": key[0],
+                    "skill_digest": key[1] or None,
+                    "requested_count": 0,
+                    "loaded_count": 0,
+                    "reference_reads": 0,
+                    "distinct_runs": 0,
+                    "distinct_sessions": 0,
+                    "last_used_at": None,
+                    "tool_invocations": 0,
+                    "tool_completed": 0,
+                    "errors": 0,
+                    "duration_total_ms": 0,
+                    "duration_count": 0,
+                    "average_duration_ms": None,
+                    "attribution": "observed",
+                },
+            )
+            for field in (
+                "requested_count",
+                "loaded_count",
+                "reference_reads",
+                "tool_invocations",
+                "tool_completed",
+                "errors",
+                "duration_total_ms",
+                "duration_count",
+            ):
+                item[field] = int(item.get(field) or 0) + int(raw.get(field) or 0)
+            run_ids.setdefault(key, set()).update(str(value) for value in raw.get("run_ids") or [])
+            session_ids.setdefault(key, set()).update(
+                str(value) for value in raw.get("session_ids") or []
+            )
+            last = raw.get("last_used_at")
+            if last and (not item.get("last_used_at") or last > item["last_used_at"]):
+                item["last_used_at"] = last
+            if raw.get("multiple_attribution"):
+                item["attribution"] = "multiple"
+    for key, item in rows.items():
+        item["distinct_runs"] = len(run_ids.get(key, set()) - {""})
+        item["distinct_sessions"] = len(session_ids.get(key, set()) - {""})
+        count = int(item.get("duration_count") or 0)
+        item["average_duration_ms"] = (
+            round(int(item.get("duration_total_ms") or 0) / count, 2) if count else None
+        )
+    state = dict(window.get("state") or {})
+    result["items"] = sorted(rows.values(), key=_skill_item_key)
+    result["coverage"].update(
+        event_count=int(result["coverage"].get("event_count") or 0) + compacted_events,
+        compacted_event_count=compacted_events,
+        dropped_event_count=int(state.get("dropped_events") or 0),
+        coverage_start=state.get("coverage_start"),
+        coverage_end=state.get("coverage_end"),
+        raw_retention_days=90,
+        rollup_retention_days=730,
+        unattributed_tool_invocations=unattributed,
+        multiple_attributed_tool_invocations=multiple_total,
+        total_tool_invocations=total_tools,
+        data_complete=int(state.get("dropped_events") or 0) == 0,
+    )
+    if state.get("dropped_events"):
+        result["coverage"]["message"] = "Measured metadata with reported data gaps"
+    return result
 
 
 def _validate_work_context_id(value: str) -> None:

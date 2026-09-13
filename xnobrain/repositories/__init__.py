@@ -7,6 +7,8 @@ from .cron import CronRepositoryMixin
 from .files import FileRepository
 from .notifications import NotificationRepositoryMixin
 from .profiles import ProfileRepositoryMixin
+from .skill_doctor import SkillDoctorRepositoryMixin
+from .skill_optimizations import SkillOptimizationRepositoryMixin
 from .skill_usage import (
     SKILL_USAGE_INSTRUMENTATION_VERSION,
     SKILL_USAGE_SCHEMA_VERSION,
@@ -24,6 +26,8 @@ __all__ = [
     "RepositoryBase",
     "SKILL_USAGE_INSTRUMENTATION_VERSION",
     "SKILL_USAGE_SCHEMA_VERSION",
+    "SkillDoctorRepositoryMixin",
+    "SkillOptimizationRepositoryMixin",
     "SkillUsageRepositoryMixin",
     "StoreError",
     "TEAM_RUN_RETENTION",

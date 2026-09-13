@@ -45,6 +45,7 @@ def skill_usage_filters(query: Any) -> dict[str, Any]:
         "work_context_id": str(query.get("context") or "").strip() or None,
         "cursor": str(query.get("cursor") or "").strip() or None,
         "limit": _clamp_int(query.get("limit"), 100, 1, 100),
+        "skill_digest": str(query.get("digest") or "").strip() or None,
     }
 
 

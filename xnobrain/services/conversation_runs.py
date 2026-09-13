@@ -14,7 +14,12 @@ from typing import Any, AsyncIterator, Mapping
 from pydantic import ValidationError
 
 from xnobrain.models.conversations import ChatRequest
-from xnobrain.runtime_limits import session_timeout_seconds
+from xnobrain.runtime_limits import (
+    concurrent_work_max_depth,
+    concurrent_work_max_turns,
+    max_parallel_agents,
+    session_timeout_seconds,
+)
 
 from .base import ServiceError
 
@@ -81,14 +86,38 @@ class ConversationRunService:
         *,
         ownership_context: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
+        runtime_updates = getattr(self, "runtime_updates", None)
+        if runtime_updates is not None:
+            runtime_updates.require_dispatch()
         self.agents.get_conversation(agent_id, conversation_id)
         context = dict(ownership_context or {})
         self._reject_conflicting_context(body, context)
+        context_state = str(context.get("state") or "active")
+        if context_state != "active":
+            raise ServiceError(
+                "conversation context does not permit new execution",
+                status=403,
+                code="conversation_context_inactive",
+            )
         try:
-            selection = ChatRequest(
-                input=str(body.get("input") or body.get("message") or " "),
-                feature=body.get("feature"),
-                capabilities=body.get("capabilities"),
+            selection = ChatRequest.model_validate(
+                {
+                    key: value
+                    for key, value in body.items()
+                    if key
+                    in {
+                        "input",
+                        "model",
+                        "skills",
+                        "toolsets",
+                        "timeout_seconds",
+                        "run_mode",
+                        "idempotency_key",
+                        "feature",
+                        "capabilities",
+                    }
+                }
+                | {"input": str(body.get("input") or body.get("message") or " ")}
             )
         except ValidationError as exc:
             raise ServiceError(
@@ -99,6 +128,31 @@ class ConversationRunService:
         capabilities = selection.capabilities
         if capabilities is None:
             capabilities = [selection.feature] if selection.feature else []
+        idempotency_key = str(body.get("idempotency_key") or "").strip()
+        fingerprint = self.repository.conversation_run_fingerprint(body)
+
+        def replay_idempotent() -> dict[str, Any] | None:
+            if not idempotency_key:
+                return None
+            existing = self.repository.find_conversation_run_by_idempotency(
+                agent_id,
+                conversation_id,
+                idempotency_key,
+            )
+            if existing is None:
+                return None
+            if existing.get("request_fingerprint") != fingerprint:
+                raise ServiceError(
+                    "run idempotency key was already used for different input",
+                    status=409,
+                    code="run_idempotency_conflict",
+                )
+            return self._heal_if_stale(existing)
+
+        if idempotency_key:
+            replay = replay_idempotent()
+            if replay is not None:
+                return replay
         key = (str(agent_id), str(conversation_id))
         active_id = self._by_conversation.get(key)
         if active_id and active_id in self._active:
@@ -135,6 +189,9 @@ class ConversationRunService:
         # have claimed this conversation while it was pending. Recheck before
         # the synchronous record/worker registration critical section below.
         active_id = self._by_conversation.get(key)
+        replay = replay_idempotent()
+        if replay is not None:
+            return replay
         if (active_id and active_id in self._active) or self.active_run(
             agent_id, conversation_id
         ) is not None:
@@ -161,6 +218,26 @@ class ConversationRunService:
             "last_activity_at": now,
             "deadline_at": None,
             "revision": 0,
+            "idempotency_key": idempotency_key or None,
+            "request_fingerprint": fingerprint,
+            "links": {
+                "goal_id": (f"goal:{conversation_id}" if "goal" in capabilities else None),
+                "todo_revision": 0 if "todo" in capabilities else None,
+                "children": {},
+            },
+            "execution_budget": {
+                "turn_limit": concurrent_work_max_turns(),
+                "turns_used": 0,
+                "concurrency_limit": max_parallel_agents(),
+                "active_children": 0,
+                "peak_children": 0,
+                "depth_limit": concurrent_work_max_depth(),
+            },
+            "cancellation": {
+                "requested": False,
+                "children_pending": [],
+                "unknown_in_flight": False,
+            },
             "error": None,
             "output": "",
             "usage": {},
@@ -207,11 +284,200 @@ class ConversationRunService:
         entry = self._active.get(run_id)
         if entry is None or entry.agent_id != agent_id or entry.conversation_id != conversation_id:
             return self._mark_terminal(record, "cancelled", "run is no longer attached to a worker")
+
+        def request_cancellation(current: dict[str, Any]) -> dict[str, Any]:
+            links = dict(current.get("links") or {})
+            children = dict(links.get("children") or {})
+            pending = [
+                child_id
+                for child_id, child in children.items()
+                if isinstance(child, Mapping)
+                and str(child.get("status") or "") in {"pending", "running"}
+            ]
+            current["cancellation"] = {
+                "requested": True,
+                "requested_at": time.time(),
+                "children_pending": pending,
+                "unknown_in_flight": bool(pending),
+            }
+            return current
+
+        self.repository.mutate_conversation_run(
+            agent_id,
+            conversation_id,
+            run_id,
+            request_cancellation,
+        )
         if entry.task and not entry.task.done():
             entry.task.cancel()
             with suppress(asyncio.CancelledError, asyncio.TimeoutError):
                 await asyncio.wait_for(asyncio.shield(entry.task), timeout=10)
         return self.get_run(agent_id, conversation_id, run_id)
+
+    async def cancel_child_run(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        run_id: str,
+        child_run_id: str,
+        body: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        expected_revision = int(body.get("expected_revision") or 0)
+        idempotency_key = str(body.get("idempotency_key") or "")
+        subagent_id = ""
+        replayed = False
+
+        def mutate(current: dict[str, Any]) -> dict[str, Any]:
+            nonlocal subagent_id, replayed
+            receipts = dict(current.get("child_cancel_receipts") or {})
+            fingerprint = f"{child_run_id}:{expected_revision}"
+            receipt = receipts.get(idempotency_key)
+            if isinstance(receipt, Mapping):
+                if receipt.get("fingerprint") != fingerprint:
+                    raise ServiceError(
+                        "child cancellation idempotency key was reused",
+                        status=409,
+                        code="child_cancel_idempotency_conflict",
+                    )
+                replayed = True
+                return current
+            links = dict(current.get("links") or {})
+            children = dict(links.get("children") or {})
+            child = dict(children.get(child_run_id) or {})
+            if not child:
+                raise ServiceError("child run not found", status=404, code="child_run_not_found")
+            revision = int(child.get("revision") or 0)
+            if revision != expected_revision:
+                raise ServiceError(
+                    "child run revision changed; reconcile before cancelling",
+                    status=409,
+                    code="child_run_revision_conflict",
+                )
+            if str(child.get("status") or "") in {
+                "completed",
+                "failed",
+                "cancelled",
+                "error",
+                "timeout",
+                "interrupted",
+            }:
+                raise ServiceError(
+                    "child run has already finished",
+                    status=409,
+                    code="child_run_already_finished",
+                )
+            subagent_id = str(child.get("subagent_id") or "")
+            child["status"] = "cancellation_pending"
+            child["revision"] = revision + 1
+            child["cancellation_requested_at"] = time.time()
+            children[child_run_id] = child
+            links["children"] = children
+            current["links"] = links
+            receipts[idempotency_key] = {
+                "fingerprint": fingerprint,
+                "child_revision": revision + 1,
+            }
+            current["child_cancel_receipts"] = receipts
+            current["updated_at"] = time.time()
+            return current
+
+        updated = self.repository.mutate_conversation_run(
+            agent_id,
+            conversation_id,
+            run_id,
+            mutate,
+        )
+        if not replayed and subagent_id:
+            stopped = await self.agents.stop_child_run(run_id, subagent_id)
+            if not stopped:
+
+                def mark_unknown(current: dict[str, Any]) -> dict[str, Any]:
+                    links = dict(current.get("links") or {})
+                    children = dict(links.get("children") or {})
+                    child = dict(children.get(child_run_id) or {})
+                    child["status"] = "unknown"
+                    child["unknown_in_flight"] = True
+                    children[child_run_id] = child
+                    links["children"] = children
+                    current["links"] = links
+                    return current
+
+                updated = self.repository.mutate_conversation_run(
+                    agent_id,
+                    conversation_id,
+                    run_id,
+                    mark_unknown,
+                )
+        return updated
+
+    def update_todo(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        run_id: str,
+        todo_id: str,
+        body: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        expected_revision = int(body.get("expected_revision") or 0)
+        idempotency_key = str(body.get("idempotency_key") or "")
+        status = str(body.get("status") or "")
+        evidence = body.get("evidence")
+
+        def mutate(current: dict[str, Any]) -> dict[str, Any]:
+            receipts = dict(current.get("todo_update_receipts") or {})
+            fingerprint = json.dumps(
+                {
+                    "todo_id": todo_id,
+                    "expected_revision": expected_revision,
+                    "status": status,
+                    "evidence": evidence,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            receipt = receipts.get(idempotency_key)
+            if isinstance(receipt, Mapping):
+                if receipt.get("fingerprint") != fingerprint:
+                    raise ServiceError(
+                        "todo update idempotency key was reused",
+                        status=409,
+                        code="todo_idempotency_conflict",
+                    )
+                return current
+            links = dict(current.get("links") or {})
+            revision = int(links.get("todo_revision") or 0)
+            if revision != expected_revision:
+                raise ServiceError(
+                    "todo revision changed; reconcile before updating",
+                    status=409,
+                    code="todo_revision_conflict",
+                )
+            todos = [dict(item) for item in list(links.get("todos") or [])]
+            selected = next((item for item in todos if str(item.get("id")) == todo_id), None)
+            if selected is None:
+                raise ServiceError("todo not found", status=404, code="todo_not_found")
+            next_revision = revision + 1
+            selected["status"] = status
+            selected["revision"] = next_revision
+            if evidence is not None:
+                selected["evidence"] = str(evidence)
+            links["todo_revision"] = next_revision
+            links["todos"] = todos
+            current["links"] = links
+            receipts[idempotency_key] = {
+                "fingerprint": fingerprint,
+                "revision": next_revision,
+            }
+            current["todo_update_receipts"] = receipts
+            current["updated_at"] = time.time()
+            return current
+
+        return self.repository.mutate_conversation_run(
+            agent_id,
+            conversation_id,
+            run_id,
+            mutate,
+        )
 
     async def events(
         self,
@@ -317,6 +583,10 @@ class ConversationRunService:
 
     def _append(self, record: Mapping[str, Any], event: Mapping[str, Any]) -> dict[str, Any]:
         now = time.time()
+        latest = self.repository.get_conversation_run(
+            record["agent_id"], record["conversation_id"], record["id"]
+        )
+        record = {**dict(record), **latest}
         payload = (
             dict(event.get("data") or {})
             if isinstance(event.get("data"), Mapping)
@@ -356,8 +626,15 @@ class ConversationRunService:
                 }
             )
         elif isinstance(payload, Mapping) and event_name == "run.cancelled":
+            cancellation = dict(next_record.get("cancellation") or {})
+            cancellation["requested"] = True
+            cancellation["unknown_in_flight"] = bool(cancellation.get("children_pending"))
             next_record.update(
-                {"status": "cancelled", "ended_at": float(payload.get("timestamp") or now)}
+                {
+                    "status": "cancelled",
+                    "ended_at": float(payload.get("timestamp") or now),
+                    "cancellation": cancellation,
+                }
             )
         elif isinstance(payload, Mapping) and event_name == "run.failed":
             message = str(payload.get("message") or "conversation run failed")
@@ -368,6 +645,74 @@ class ConversationRunService:
                     "ended_at": float(payload.get("timestamp") or now),
                 }
             )
+        if isinstance(payload, Mapping):
+            links = dict(next_record.get("links") or {})
+            if event_name == "todo.updated":
+                todo_revision = int(links.get("todo_revision") or 0) + 1
+                links["todo_revision"] = todo_revision
+                links["todos"] = []
+                for item in list(payload.get("todos") or []):
+                    if not isinstance(item, Mapping):
+                        continue
+                    todo = {**dict(item), "revision": todo_revision}
+                    if todo.get("status") == "in_progress":
+                        todo["status"] = "running"
+                    links["todos"].append(todo)
+                payload["todo_revision"] = todo_revision
+            elif event_name == "goal.updated":
+                links["goal"] = dict(payload.get("goal") or {})
+            elif event_name.startswith("delegation.worker."):
+                children = dict(links.get("children") or {})
+                child_id = str(payload.get("child_run_id") or "")
+                if child_id:
+                    previous = dict(children.get(child_id) or {})
+                    state = {
+                        "delegation.worker.queued": "pending",
+                        "delegation.worker.started": "running",
+                        "delegation.worker.completed": str(payload.get("status") or "completed"),
+                    }.get(event_name, previous.get("status") or "running")
+                    child = {
+                        **previous,
+                        "id": child_id,
+                        "revision": int(previous.get("revision") or 0) + 1,
+                        "parent_run_id": next_record["id"],
+                        "status": state,
+                        "task_index": payload.get("task_index"),
+                        "subagent_id": payload.get("subagent_id"),
+                        "child_session_id": payload.get("child_session_id"),
+                        "depth": payload.get("depth"),
+                        "goal": payload.get("goal"),
+                        "updated_at": float(payload.get("timestamp") or now),
+                    }
+                    for field in (
+                        "todo_id",
+                        "expected_todo_revision",
+                        "summary",
+                        "api_calls",
+                        "input_tokens",
+                        "output_tokens",
+                        "reasoning_tokens",
+                        "files_read",
+                        "files_written",
+                    ):
+                        if field in payload:
+                            child[field] = payload.get(field)
+                    children[child_id] = child
+                    links["children"] = children
+            elif event_name == "execution.budget.updated":
+                budget = dict(next_record.get("execution_budget") or {})
+                budget["turns_used"] = int(payload.get("turns_used") or 0)
+                budget["turn_limit"] = int(payload.get("turn_limit") or 0)
+                next_record["execution_budget"] = budget
+            elif event_name == "execution.concurrency.updated":
+                budget = dict(next_record.get("execution_budget") or {})
+                budget["active_children"] = int(payload.get("active_children") or 0)
+                budget["peak_children"] = max(
+                    int(budget.get("peak_children") or 0),
+                    int(payload.get("peak_children") or 0),
+                )
+                next_record["execution_budget"] = budget
+            next_record["links"] = links
         stored = self.repository.append_conversation_run_event(
             next_record["agent_id"],
             next_record["conversation_id"],

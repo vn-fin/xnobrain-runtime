@@ -57,6 +57,12 @@ class ChatRequest(BaseModel):
     toolsets: list[str] | None = None
     timeout_seconds: int | None = Field(default=None, gt=0)
     run_mode: Literal["auto", "interactive", "background"] = "auto"
+    idempotency_key: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
     feature: (
         Literal["todo", "delegate", "goal", "learn", "agent_maker", "optimize_skills"] | None
     ) = None
@@ -104,3 +110,25 @@ class RunApproval(BaseModel):
     choice: Literal["once", "session", "always", "deny"]
     resolve_all: bool = False
     subsystem: Literal["skills", "memory"] | None = None
+
+
+class ChildRunCancel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=0)
+    idempotency_key: str = Field(
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
+
+
+class TodoRevisionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=0)
+    idempotency_key: str = Field(
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
+    status: Literal["pending", "running", "blocked", "failed", "cancelled", "completed"]
+    evidence: str | None = Field(default=None, max_length=10_000)

@@ -48,7 +48,12 @@ class XNOBrainApplication:
                     from .integrations.kanban import dispatcher_loop
 
                     dispatcher = asyncio.create_task(
-                        dispatcher_loop(on_tick=self.service.cron.reconcile_deliveries),
+                        dispatcher_loop(
+                            on_tick=self.service.cron.reconcile_deliveries,
+                            dispatch_allowed=lambda: (
+                                not self.service.runtime_updates.dispatch_paused
+                            ),
+                        ),
                         name="xnobrain-kanban-dispatcher",
                     )
                 except Exception:

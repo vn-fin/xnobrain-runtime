@@ -15,9 +15,13 @@ from .mcp import operations as mcp_operations
 from .organization_artifacts import operations as organization_artifacts_operations
 from .portability import operations as portability_operations
 from .providers import operations as providers_operations
+from .runtime_updates import operations as runtime_updates_operations
 from .sandboxes import operations as sandboxes_operations
+from .skill_doctor import operations as skill_doctor_operations
+from .skill_optimizations import operations as skill_optimizations_operations
 from .system import operations as system_operations
 from .teams import operations as teams_operations
+from .time_control import operations as time_control_operations
 from .workspaces import operations as workspaces_operations
 
 Operation = tuple[Callable[[], Any], str, int]
@@ -35,9 +39,13 @@ OPERATION_GROUPS = (
     mcp_operations,
     portability_operations,
     providers_operations,
+    runtime_updates_operations,
     sandboxes_operations,
+    skill_doctor_operations,
+    skill_optimizations_operations,
     system_operations,
     teams_operations,
+    time_control_operations,
     workspaces_operations,
 )
 

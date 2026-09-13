@@ -601,9 +601,10 @@ class MarketplaceService:
                 status=422,
                 code="package_rejected",
             )
-        if len(contents) > MAX_EXPORT_FILES or sum(
-            len(content.encode("utf-8")) for content in contents
-        ) > MAX_EXPORT_TOTAL_BYTES:
+        if (
+            len(contents) > MAX_EXPORT_FILES
+            or sum(len(content.encode("utf-8")) for content in contents) > MAX_EXPORT_TOTAL_BYTES
+        ):
             self._reject_limit()
         installation_id = package.get("id")
         if not isinstance(installation_id, str) or not re.fullmatch(
@@ -637,9 +638,10 @@ class MarketplaceService:
                     code="installation_profile_conflict",
                 )
             legacy_binding = legacy_config.get("xnobrain") or {}
-            if isinstance(legacy_binding, dict) and legacy_binding.get(
-                "marketplace_installation_id"
-            ) == installation_id:
+            if (
+                isinstance(legacy_binding, dict)
+                and legacy_binding.get("marketplace_installation_id") == installation_id
+            ):
                 raise ServiceError(
                     "installation profile already exists", status=409, code="installation_exists"
                 )
@@ -739,9 +741,7 @@ class MarketplaceService:
             raw_definition.get("public_config") is not None
             and not isinstance(raw_definition.get("public_config"), Mapping)
         ):
-            raise ServiceError(
-                "marketplace package is unsafe", status=422, code="package_rejected"
-            )
+            raise ServiceError("marketplace package is unsafe", status=422, code="package_rejected")
         if self.digest(package) != package.get("digest"):
             raise ServiceError(
                 "marketplace package digest mismatch", status=422, code="package_digest_mismatch"
@@ -749,9 +749,7 @@ class MarketplaceService:
         definition = dict(package["definition"])
         soul = definition.get("soul")
         if not isinstance(soul, str) or not soul.strip() or len(soul.encode("utf-8")) > 100_000:
-            raise ServiceError(
-                "marketplace package is unsafe", status=422, code="package_rejected"
-            )
+            raise ServiceError("marketplace package is unsafe", status=422, code="package_rejected")
         if any(pattern.search(soul) for pattern in _SECRET_PATTERNS):
             raise ServiceError(
                 "marketplace package contains credential-like content",
@@ -759,11 +757,13 @@ class MarketplaceService:
                 code="package_rejected",
             )
         public = dict(old_config)
-        public.update({
-            key: value
-            for key, value in dict(definition.get("public_config") or {}).items()
-            if key in {"model", "reasoning", "display_name", "description"}
-        })
+        public.update(
+            {
+                key: value
+                for key, value in dict(definition.get("public_config") or {}).items()
+                if key in {"model", "reasoning", "display_name", "description"}
+            }
+        )
         public["xnobrain"] = dict(old_config.get("xnobrain") or {})
         public["xnobrain"]["package_digest"] = package["digest"]
         # Customer memory/workspace are not update targets. Never replay a
@@ -798,14 +798,16 @@ class MarketplaceService:
         config_path = profile / "config.yaml"
         if config_path.is_symlink():
             raise ServiceError(
-                "installation configuration is unsafe", status=409,
+                "installation configuration is unsafe",
+                status=409,
                 code="installation_profile_conflict",
             )
         try:
             config = self.repository._read_yaml(config_path)
         except (OSError, UnicodeError, yaml.YAMLError) as error:
             raise ServiceError(
-                "installation configuration cannot be read", status=409,
+                "installation configuration cannot be read",
+                status=409,
                 code="installation_profile_conflict",
             ) from error
         metadata = config.get("xnobrain") if isinstance(config, Mapping) else None
@@ -816,7 +818,8 @@ class MarketplaceService:
             r"inst_[A-Za-z0-9_-]{1,64}", installation_id
         ):
             raise ServiceError(
-                "profile is not a marketplace installation", status=409,
+                "profile is not a marketplace installation",
+                status=409,
                 code="installation_profile_conflict",
             )
         target = self.repository.soft_delete_profile(local_profile_id)

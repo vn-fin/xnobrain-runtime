@@ -3,6 +3,7 @@
 import time
 from typing import Any, Callable
 
+from ...trusted_context import from_request
 from ..query import bucket, csv, skill_usage_filters, time_range
 
 Operation = tuple[Callable[[], Any], str, int]
@@ -10,6 +11,7 @@ Operation = tuple[Callable[[], Any], str, int]
 
 def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Operation]:
     p, q, s = request.path_params, request.query_params, handler.service
+    trusted = from_request(request)
     agent = lambda: (
         str(q.get("agent") or "").strip() or (_ for _ in ()).throw(ValueError("agent is required"))
     )
@@ -40,7 +42,21 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         ),
         "analytics_agent_skill_usage": (
             lambda: s.analytics.skill_usage(
-                p["agent_id"], **time_range(q), **skill_usage_filters(q)
+                p["agent_id"],
+                **time_range(q),
+                **skill_usage_filters(q),
+                trusted_context=trusted,
+            ),
+            "agent skill usage retrieved successfully",
+            200,
+        ),
+        "analytics_agent_skill_detail_usage": (
+            lambda: s.analytics.skill_usage(
+                p["agent_id"],
+                **time_range(q),
+                **skill_usage_filters(q),
+                trusted_context=trusted,
+                skill_id=p["skill_id"],
             ),
             "agent skill usage retrieved successfully",
             200,

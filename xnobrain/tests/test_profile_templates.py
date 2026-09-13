@@ -65,6 +65,10 @@ class ProfileTemplateInstallerTests(unittest.TestCase):
                 runtime_skill = profile / "skills" / "runtime-skill" / "SKILL.md"
                 self.assertTrue(runtime_skill.is_file())
                 self.assertIn("name: runtime-skill", runtime_skill.read_text(encoding="utf-8"))
+            update_plugin = root / "plugins" / "xnobrain-runtime-updates"
+            self.assertTrue((update_plugin / "plugin.yaml").is_file())
+            self.assertTrue((update_plugin / "__init__.py").is_file())
+            self.assertFalse((named / "plugins" / "xnobrain-runtime-updates").exists())
             for retired in ("hermes-agent", "codex", "claude-code", "opencode"):
                 self.assertFalse((root / "skills" / retired).exists())
                 self.assertFalse((named / "skills" / retired).exists())

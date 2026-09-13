@@ -27,6 +27,9 @@ class SkillUsageItem(BaseModel):
     tool_invocations: int | None = Field(default=None, ge=0)
     tool_completed: int | None = Field(default=None, ge=0)
     errors: int | None = Field(default=None, ge=0)
+    duration_total_ms: int | None = Field(default=None, ge=0)
+    duration_count: int | None = Field(default=None, ge=0)
+    average_duration_ms: float | None = Field(default=None, ge=0)
     attribution: Literal["observed", "multiple", "estimated"]
 
 
@@ -42,6 +45,15 @@ class SkillUsageCoverage(BaseModel):
     instrumentation_version: str | None = None
     event_count: int | None = Field(default=None, ge=0)
     unattributed_tool_invocations: int | None = Field(default=None, ge=0)
+    multiple_attributed_tool_invocations: int | None = Field(default=None, ge=0)
+    total_tool_invocations: int | None = Field(default=None, ge=0)
+    compacted_event_count: int | None = Field(default=None, ge=0)
+    dropped_event_count: int | None = Field(default=None, ge=0)
+    coverage_start: str | None = None
+    coverage_end: str | None = None
+    raw_retention_days: int | None = Field(default=None, ge=1)
+    rollup_retention_days: int | None = Field(default=None, ge=1)
+    data_complete: bool | None = None
     message: str
 
 

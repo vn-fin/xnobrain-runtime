@@ -26,6 +26,10 @@ class FakeAgents:
     def get_conversation(self, agent_id: str, conversation_id: str) -> dict:
         return {"conversation": {"id": conversation_id, "agent_id": agent_id}, "messages": []}
 
+    async def stop_child_run(self, run_id: str, subagent_id: str) -> bool:
+        self.stopped_child = (run_id, subagent_id)
+        return True
+
     async def chat_stream(self, agent_id: str, body: dict):
         self.received = {"agent_id": agent_id, **dict(body)}
         run_id = body["run_id"]
@@ -87,7 +91,11 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         selected.clear()
         await self.wait_for_revision(record["id"], 2)
-        expected = {"schema_version": 1, "feature": None, "capabilities": ["todo", "delegate", "goal"]}
+        expected = {
+            "schema_version": 1,
+            "feature": None,
+            "capabilities": ["todo", "delegate", "goal"],
+        }
         self.assertEqual(record["composer_selection"], expected)
         self.assertEqual(self.agents.received["capabilities"], expected["capabilities"])
         self.assertEqual(self.analytics.calls, ["agent-one"])
@@ -101,7 +109,8 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ServiceError) as error:
             await self.service.start_run(
-                "agent-one", "session-one",
+                "agent-one",
+                "session-one",
                 {"input": "Synthetic task", "feature": "todo", "capabilities": ["goal"]},
             )
         self.assertEqual(error.exception.code, "invalid_capabilities")
@@ -201,6 +210,20 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.analytics.calls, [])
         self.assertEqual(self.agents.received, {})
 
+    async def test_inactive_context_denied_before_budget_or_dispatch(self) -> None:
+        from xnobrain.services.base import ServiceError
+
+        with self.assertRaises(ServiceError) as denied:
+            await self.service.start_run(
+                "agent-one",
+                "session-one",
+                {"input": "hello"},
+                ownership_context={"id": "org-one", "state": "revoked_read_only"},
+            )
+        self.assertEqual(denied.exception.code, "conversation_context_inactive")
+        self.assertEqual(self.analytics.calls, [])
+        self.assertEqual(self.agents.received, {})
+
     async def test_budget_is_checked_once_when_the_run_is_accepted(self) -> None:
         record = await self.service.start_run(
             "agent-one",
@@ -254,6 +277,163 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second["mode"], "background")
         self.assertEqual(second["timeout_seconds"], 86400)
         await self.service.cancel_run("agent-one", "session-one", second["id"])
+
+    async def test_idempotent_start_replays_one_parent_and_conflicts_on_change(self):
+        from xnobrain.services.base import ServiceError
+
+        body = {
+            "input": "Synthetic task",
+            "capabilities": ["todo", "delegate", "goal"],
+            "idempotency_key": "send-once",
+        }
+        first = await self.service.start_run("agent-one", "session-one", body)
+        second = await self.service.start_run("agent-one", "session-one", body)
+        self.assertEqual(second["id"], first["id"])
+        self.assertEqual(self.analytics.calls, ["agent-one"])
+        self.assertEqual(first["links"]["goal_id"], "goal:session-one")
+        self.assertEqual(first["links"]["todo_revision"], 0)
+        self.assertEqual(first["execution_budget"]["turn_limit"], 90)
+        self.assertEqual(first["execution_budget"]["concurrency_limit"], 3)
+        self.assertEqual(first["execution_budget"]["depth_limit"], 1)
+        self.assertEqual(len(self.repository.list_conversation_runs("agent-one", "session-one")), 1)
+        with self.assertRaises(ServiceError) as conflict:
+            await self.service.start_run(
+                "agent-one",
+                "session-one",
+                {**body, "input": "Different task"},
+            )
+        self.assertEqual(conflict.exception.code, "run_idempotency_conflict")
+
+    async def test_linked_goal_todo_child_and_revision_conflict_survive_reload(self):
+        record = await self.service.start_run(
+            "agent-one",
+            "session-one",
+            {
+                "input": "Synthetic task",
+                "capabilities": ["todo", "delegate", "goal"],
+            },
+        )
+        await self.wait_for_revision(record["id"], 2)
+        current = self.repository.get_conversation_run("agent-one", "session-one", record["id"])
+        current = self.service._append(
+            current,
+            {
+                "event": "message",
+                "data": {
+                    "event": "todo.updated",
+                    "todos": [{"id": "todo-1", "content": "Inspect", "status": "pending"}],
+                },
+            },
+        )
+        current = self.service._append(
+            current,
+            {
+                "event": "message",
+                "data": {
+                    "event": "goal.updated",
+                    "goal": {"objective": "Ship safely", "status": "active"},
+                },
+            },
+        )
+        current = self.service._append(
+            current,
+            {
+                "event": "message",
+                "data": {
+                    "event": "delegation.worker.completed",
+                    "child_run_id": f"{record['id']}:child:sa-one",
+                    "subagent_id": "sa-one",
+                    "task_index": 0,
+                    "todo_id": "todo-1",
+                    "expected_todo_revision": 1,
+                    "status": "completed",
+                    "summary": "Evidence collected",
+                },
+            },
+        )
+        updated = self.service.update_todo(
+            "agent-one",
+            "session-one",
+            record["id"],
+            "todo-1",
+            {
+                "expected_revision": 1,
+                "idempotency_key": "todo-once",
+                "status": "completed",
+                "evidence": "Focused check passed",
+            },
+        )
+        replay = self.service.update_todo(
+            "agent-one",
+            "session-one",
+            record["id"],
+            "todo-1",
+            {
+                "expected_revision": 1,
+                "idempotency_key": "todo-once",
+                "status": "completed",
+                "evidence": "Focused check passed",
+            },
+        )
+        self.assertEqual(replay["links"], updated["links"])
+        from xnobrain.services.base import ServiceError
+
+        with self.assertRaises(ServiceError) as conflict:
+            self.service.update_todo(
+                "agent-one",
+                "session-one",
+                record["id"],
+                "todo-1",
+                {
+                    "expected_revision": 1,
+                    "idempotency_key": "todo-stale",
+                    "status": "failed",
+                },
+            )
+        self.assertEqual(conflict.exception.code, "todo_revision_conflict")
+        reopened = FileRepository(Path(self.temp.name) / "data", Path(self.temp.name) / "profiles")
+        stored = reopened.get_conversation_run("agent-one", "session-one", record["id"])
+        child = next(iter(stored["links"]["children"].values()))
+        self.assertEqual(stored["links"]["goal"]["status"], "active")
+        self.assertEqual(stored["links"]["todos"][0]["evidence"], "Focused check passed")
+        self.assertEqual(child["todo_id"], "todo-1")
+        self.assertEqual(child["summary"], "Evidence collected")
+
+    async def test_child_cancel_is_revisioned_idempotent_and_keeps_parent_running(self):
+        record = await self.service.start_run(
+            "agent-one", "session-one", {"input": "Synthetic task", "capabilities": ["delegate"]}
+        )
+        await self.wait_for_revision(record["id"], 2)
+        current = self.repository.get_conversation_run("agent-one", "session-one", record["id"])
+        child_id = f"{record['id']}:child:sa-one"
+        current = self.service._append(
+            current,
+            {
+                "event": "message",
+                "data": {
+                    "event": "delegation.worker.started",
+                    "child_run_id": child_id,
+                    "subagent_id": "sa-one",
+                    "task_index": 0,
+                    "status": "running",
+                },
+            },
+        )
+        revision = current["links"]["children"][child_id]["revision"]
+        body = {"expected_revision": revision, "idempotency_key": "stop-child-once"}
+        first = await self.service.cancel_child_run(
+            "agent-one", "session-one", record["id"], child_id, body
+        )
+        second = await self.service.cancel_child_run(
+            "agent-one", "session-one", record["id"], child_id, body
+        )
+        self.assertEqual(first["links"], second["links"])
+        self.assertEqual(self.agents.stopped_child, (record["id"], "sa-one"))
+        self.assertFalse(self.service.registry_entry(record["id"]).task.done())
+        self.assertEqual(
+            first["links"]["children"][child_id]["status"],
+            "cancellation_pending",
+        )
 
 
 if __name__ == "__main__":

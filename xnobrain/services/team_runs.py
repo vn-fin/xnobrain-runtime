@@ -49,6 +49,7 @@ class TeamRunService:
     # ---- public API -----------------------------------------------------
 
     async def start_run(self, team_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        self.platform.runtime_updates.require_dispatch()
         team = self.platform.get_team(team_id)
         if not team.get("enabled", True):
             raise ServiceError("team is disabled", status=409, code="team_disabled")
@@ -64,6 +65,7 @@ class TeamRunService:
         return record
 
     async def run_sync(self, team_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        self.platform.runtime_updates.require_dispatch()
         team = self.platform.get_team(team_id)
         if not team.get("enabled", True):
             raise ServiceError("team is disabled", status=409, code="team_disabled")

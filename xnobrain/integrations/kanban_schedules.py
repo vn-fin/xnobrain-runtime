@@ -276,7 +276,9 @@ def release_due_schedules(conn: Any, *, board: str, now: int | None = None) -> l
     return released
 
 
-async def dispatcher_loop(*, interval_seconds: float = 15.0, on_tick=None) -> None:
+async def dispatcher_loop(
+    *, interval_seconds: float = 15.0, on_tick=None, dispatch_allowed=None
+) -> None:
     """Run Hermes' supported dispatcher tick inside the host FastAPI process.
 
     The worker spawning, claiming, recovery, and board lock all remain in
@@ -285,6 +287,9 @@ async def dispatcher_loop(*, interval_seconds: float = 15.0, on_tick=None) -> No
     """
     while True:
         try:
+            if dispatch_allowed is not None and not dispatch_allowed():
+                await asyncio.sleep(max(1.0, float(interval_seconds)))
+                continue
             kb = _module()
             for board in kb.list_boards(include_archived=False):
                 slug = str(board.get("slug") or "default")

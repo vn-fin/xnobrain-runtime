@@ -20,6 +20,13 @@ ROUTES = (
         response_data=SkillUsageResponse,
     ),
     route(
+        "GET",
+        "/agents/{agent_id}/skills/{skill_id}/usage",
+        "analytics_agent_skill_detail_usage",
+        tags=("Analytics", "Skills"),
+        response_data=SkillUsageResponse,
+    ),
+    route(
         "GET", "/analytics/agents/{agent_id}/budget", "analytics_budget_get", tags=("Analytics",)
     ),
     route(

@@ -22,8 +22,7 @@ def preview_calendar_runs(
     if len(expression) > 256 or len(expression.split()) != 5:
         raise ValueError("five-field calendar cron is required")
     if any(
-        re.search(r"(?:^|,)[rh](?:$|[,(/])", field, re.IGNORECASE)
-        for field in expression.split()
+        re.search(r"(?:^|,)[rh](?:$|[,(/])", field, re.IGNORECASE) for field in expression.split()
     ):
         raise ValueError("random or hashed calendar fields are unsupported")
     zone = ZoneInfo(zone_name)
@@ -56,11 +55,13 @@ def preview_calendar_runs(
         instant = min(instants)
         if instant <= cutoff:
             continue
-        result.append({
-            "utc": instant.isoformat().replace("+00:00", "Z"),
-            "local": instant.astimezone(zone).isoformat(),
-            "timezone": zone_name,
-        })
+        result.append(
+            {
+                "utc": instant.isoformat().replace("+00:00", "Z"),
+                "local": instant.astimezone(zone).isoformat(),
+                "timezone": zone_name,
+            }
+        )
         if len(result) == count:
             return result
     raise ValueError("no bounded schedule preview available")

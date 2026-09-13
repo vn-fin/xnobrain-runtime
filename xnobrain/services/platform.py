@@ -39,9 +39,13 @@ from .organization_artifacts import OrganizationArtifactsServiceMixin
 from .organization_connector import OrganizationConnector
 from .portability import PortabilityService, PortabilityServiceMixin
 from .providers import ProvidersServiceMixin
+from .runtime_updates import RuntimeUpdateService
 from .sandboxes import SandboxesServiceMixin
+from .skill_doctor import SkillDoctorService
+from .skill_optimizations import SkillOptimizationService
 from .team_runs import TeamRunService
 from .teams import TeamsServiceMixin
+from .time_control import TimeControlService
 from .workspace_preview import WorkspacePreviewError, WorkspacePreviewService
 from .workspace_upload import WorkspaceUploadError, WorkspaceUploadService
 from .workspaces import WorkspacesServiceMixin
@@ -93,6 +97,8 @@ class PlatformService(
         from .analytics import AnalyticsService
 
         self.analytics = AnalyticsService(agents, router, repository)
+        self.skill_optimizations = SkillOptimizationService(self)
+        self.skill_doctor = SkillDoctorService(self)
         from .blends import BlendService
 
         self.blends = BlendService(router)
@@ -100,6 +106,11 @@ class PlatformService(
         from .team_runs import TeamRunService
 
         self.team_runs = TeamRunService(repository, agents, self, self.analytics)
+        self.runtime_updates = RuntimeUpdateService(self)
+        self.time_control = TimeControlService(self)
+        self.cron.default_timezone = self.time_control.default_timezone
+        self.conversation_runs.runtime_updates = self.runtime_updates
+        self.cron.dispatch_allowed = lambda: not self.runtime_updates.dispatch_paused
         self._cache = MemoryCache()
         self._agent_activity_kanban_ids: set[str] = set()
         self._agent_activity_kanban_checked_at = float("-inf")

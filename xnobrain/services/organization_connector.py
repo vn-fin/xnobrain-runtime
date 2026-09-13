@@ -32,6 +32,8 @@ class OrganizationConnector:
         self.interval = max(2, int(os.getenv("RUNTIME_CONNECTOR_INTERVAL_SECONDS", "10")))
         self.task = None
         self.stop_event = asyncio.Event()
+        self.dispatch_paused = False
+        self.active_commands: dict[str, tuple[str, str, str]] = {}
         self.key_path = self.store.root / "device-ed25519.key"
 
     @property
@@ -41,6 +43,19 @@ class OrganizationConnector:
     async def start(self):
         if self.enabled and self.task is None:
             self.task = asyncio.create_task(self.run(), name="xnobrain-organization-connector")
+
+    async def pause_dispatch(self) -> None:
+        self.dispatch_paused = True
+
+    def resume_dispatch(self) -> None:
+        self.dispatch_paused = False
+
+    async def cancel_active_commands(self) -> None:
+        for agent_id, conversation_id, run_id in list(self.active_commands.values()):
+            try:
+                await self.platform.stop_run(agent_id, conversation_id, run_id)
+            except Exception:
+                continue
 
     async def stop(self):
         self.stop_event.set()
@@ -295,6 +310,8 @@ class OrganizationConnector:
         }
 
     async def command(self, client, state, cmd):
+        if self.dispatch_paused:
+            return
         canonical = json.dumps(cmd, sort_keys=True, separators=(",", ":")).encode()
         digest = hashlib.sha256(canonical).hexdigest()
         cid = cmd["command_id"]
@@ -376,9 +393,15 @@ class OrganizationConnector:
                 },
             ),
         )
-        run = await self.platform.start_conversation_run(
-            agent_id, conversation["id"], self.execution_body(cmd, instruction, deadline)
-        )
+        self.platform.runtime_updates.register_organization_command(cid)
+        try:
+            run = await self.platform.start_conversation_run(
+                agent_id, conversation["id"], self.execution_body(cmd, instruction, deadline)
+            )
+        except Exception:
+            await self.platform.runtime_updates.release_organization_command(cid)
+            raise
+        self.active_commands[cid] = (agent_id, conversation["id"], run["id"])
         done = asyncio.Event()
         renew = asyncio.create_task(self.renew(client, state, cmd, done))
         try:
@@ -397,6 +420,8 @@ class OrganizationConnector:
         finally:
             done.set()
             renew.cancel()
+            self.active_commands.pop(cid, None)
+            await self.platform.runtime_updates.release_organization_command(cid)
             try:
                 await renew
             except asyncio.CancelledError:

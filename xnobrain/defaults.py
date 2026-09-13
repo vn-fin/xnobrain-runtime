@@ -25,6 +25,7 @@ BIG_BROTHER_NATIVE_TOOLSETS = (
     "todo",
     "tts",
     "vision",
+    "xnobrain_runtime_updates",
     "web",
 )
 BIG_BROTHER_APPROVAL_DEFAULT_MARKER = "approval_default_initialized"

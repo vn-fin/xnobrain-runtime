@@ -677,6 +677,30 @@ class KanbanService:
                         active.add(assignee)
         return active
 
+    def cancel_active_tasks_for_update(self) -> int:
+        """Use native task cancellation; never inspect or kill host processes."""
+        cancelled = 0
+        for board in self.list_boards(include_archived=False):
+            kb = self._ready()
+            with kb_adapter.connection(str(board["id"])) as conn:
+                running = []
+                for task in kb.list_tasks(conn, include_archived=False):
+                    if str(getattr(task, "status", "")) != "running":
+                        continue
+                    task_id = str(task.id)
+                    metadata, _ = self._team_metadata(kb_adapter.task_comments(conn, task_id))
+                    running.append((task_id, metadata is not None))
+            for task_id, is_team in running:
+                try:
+                    if is_team:
+                        self.cancel_team_task(str(board["id"]), task_id)
+                    else:
+                        self.cancel_task(str(board["id"]), task_id)
+                except ServiceError:
+                    continue
+                cancelled += 1
+        return cancelled
+
     def get_board(self, slug: str, *, include_archived: bool = False) -> dict[str, Any]:
         normalized = self._board(slug)
         try:

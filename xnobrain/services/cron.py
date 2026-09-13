@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import sqlite3
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -29,6 +30,13 @@ class CronServiceError(ValueError):
         self.code = code
 
 
+def _schedule_revision_digest(schedule: Mapping[str, Any]) -> str:
+    import json
+
+    payload = json.dumps(schedule, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(payload.encode()).hexdigest()
+
+
 def _iso(value: Any) -> str:
     if isinstance(value, datetime):
         if value.tzinfo is None:
@@ -45,6 +53,10 @@ class CronService:
         self.agents = agents
         self.delivery = CronDeliveryAdapter()
         self.kanban: Any | None = None
+        self.dispatch_allowed = lambda: True
+        self.default_timezone = lambda: "Etc/UTC"
+        self._active_execution_lock = threading.Lock()
+        self._active_executions = 0
 
     def list_jobs(self, agent_id: str | None = None) -> list[dict[str, Any]]:
         profile_jobs = self._jobs_by_profile([agent_id] if agent_id else None)
@@ -88,7 +100,9 @@ class CronService:
             from ..integrations.cron_timezone import cron_creation_timezone
             from ..models.automation import CronCreate
 
-            zone = CronCreate.validate_timezone(str(body.get("timezone") or "Etc/UTC"))
+            zone = CronCreate.validate_timezone(
+                str(body.get("timezone") or self.default_timezone())
+            )
             with cron_creation_timezone(zone):
                 created = self._native(
                     agent_id,
@@ -100,6 +114,16 @@ class CronService:
                 )
         except ValueError as exc:
             raise CronServiceError(str(exc), code="invalid_schedule") from exc
+        if created.get("schedule", {}).get("kind") == "cron":
+            created = self._native(
+                agent_id,
+                "update_job",
+                str(created["id"]),
+                {
+                    "xnobrain_time_revision": 1,
+                    "xnobrain_time_revision_digest": _schedule_revision_digest(created["schedule"]),
+                },
+            )
         # Native cron owns recurrence, claims and execution. Creating a second
         # scheduled Kanban task here would dispatch the same work independently.
         # Delivery-to-Kanban remains an explicit output target, not a scheduler.
@@ -132,7 +156,9 @@ class CronService:
             from ..integrations.cron_timezone import cron_creation_timezone
             from ..models.automation import CronCreate
 
-            zone = CronCreate.validate_timezone(str(body.get("timezone") or "Etc/UTC"))
+            zone = CronCreate.validate_timezone(
+                str(body.get("timezone") or self.default_timezone())
+            )
             with cron_creation_timezone(zone):
                 created = self._native(
                     agent_id,
@@ -145,6 +171,16 @@ class CronService:
                 )
         except ValueError as exc:
             raise CronServiceError(str(exc), status=422, code="invalid_schedule") from exc
+        if created.get("schedule", {}).get("kind") == "cron":
+            created = self._native(
+                agent_id,
+                "update_job",
+                str(created["id"]),
+                {
+                    "xnobrain_time_revision": 1,
+                    "xnobrain_time_revision_digest": _schedule_revision_digest(created["schedule"]),
+                },
+            )
         targets = list(body.get("deliver_targets") or [])
         if not targets and native_deliver not in {"local", "origin"}:
             targets = [
@@ -354,6 +390,8 @@ class CronService:
 
     def due_jobs(self) -> list[tuple[str, str]]:
         """Return profile jobs that should be handed to the native scheduler."""
+        if not self.dispatch_allowed():
+            return []
         now = datetime.now(timezone.utc)
         due: list[tuple[str, str]] = []
         try:
@@ -383,8 +421,15 @@ class CronService:
                     due.append((profile, str(job["id"])))
         return due
 
+    @property
+    def active_execution_count(self) -> int:
+        with self._active_execution_lock:
+            return self._active_executions
+
     def fire_due(self, profile: str, job_id: str) -> bool:
         """Claim and execute one due job using its profile-scoped Hermes home."""
+        if not self.dispatch_allowed():
+            return False
         from cron import jobs as cron_jobs
         from cron.scheduler_provider import resolve_cron_scheduler
         from hermes_constants import reset_hermes_home_override, set_hermes_home_override
@@ -394,6 +439,8 @@ class CronService:
         install_timezone_computation(cron_jobs)
         home = self._profile_home(profile)
         token = set_hermes_home_override(str(home))
+        with self._active_execution_lock:
+            self._active_executions += 1
         try:
             with cron_jobs.use_cron_store(home):
                 provider = resolve_cron_scheduler()
@@ -405,6 +452,8 @@ class CronService:
                     LOGGER.warning("Could not reconcile cron deliveries for job %s", job_id)
             return fired
         finally:
+            with self._active_execution_lock:
+                self._active_executions -= 1
             reset_hermes_home_override(token)
 
     def list_job_runs(
@@ -716,13 +765,24 @@ class CronService:
         result["schedule"] = str(display or schedule or "")
         kind = schedule.get("kind") if isinstance(schedule, Mapping) else None
         result["schedule_kind"] = (
-            kind if isinstance(kind, str) and kind in {"cron", "interval", "once"}
-            else None
+            kind if isinstance(kind, str) and kind in {"cron", "interval", "once"} else None
         )
+        revision = 0
+        if isinstance(schedule, Mapping):
+            raw_revision = job.get("xnobrain_time_revision")
+            raw_digest = job.get("xnobrain_time_revision_digest")
+            if (
+                type(raw_revision) is int
+                and raw_revision > 0
+                and raw_digest == _schedule_revision_digest(schedule)
+            ):
+                revision = raw_revision
+        result["revision"] = revision
+        result["editable"] = False
+        result["restriction"] = ""
         minutes = schedule.get("minutes") if isinstance(schedule, Mapping) else None
         result["interval_minutes"] = (
-            minutes if kind == "interval" and type(minutes) is int and minutes > 0
-            else None
+            minutes if kind == "interval" and type(minutes) is int and minutes > 0 else None
         )
         binding = schedule.get("xnobrain_time") if isinstance(schedule, Mapping) else None
         result["timezone"] = None
@@ -736,6 +796,14 @@ class CronService:
             except ValueError:
                 # Unsupported persisted state is unknown, never a verified zone.
                 pass
+        if kind == "cron" and result["timezone"] and revision > 0:
+            result["editable"] = True
+        elif kind != "cron":
+            result["restriction"] = "Only calendar schedules can be retimed."
+        elif not result["timezone"]:
+            result["restriction"] = "The persisted calendar timezone is unknown or unsupported."
+        else:
+            result["restriction"] = "This schedule has no revision-safe migration authority."
 
         result["next_run_at"] = _iso(job.get("next_run_at"))
         result["enabled"] = bool(job.get("enabled", True))

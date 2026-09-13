@@ -193,6 +193,10 @@ class RuntimeGatewayService(
             target += "?" + raw_query
         timeout = aiohttp.ClientTimeout(total=None, connect=10, sock_connect=10)
         relay_headers = _request_headers(head.headers)
+        if path == "/xnobrain/api/runtime/v1/system/time-control" or path.startswith(
+            "/xnobrain/api/runtime/v1/system/time-control/"
+        ):
+            relay_headers.append(("x-xnobrain-time-token", self._token))
         subject = str(head.principal.user_id)
         tenant_id = str(head.principal.tenant_id or "")
         organization_id = str(head.principal.organization_id or "")

@@ -245,6 +245,7 @@ class ConversationRunnerMixin:
             "goal_resume": bool(body.get("goal_resume", False)),
             "requested_skills": normalized_skills,
             "work_context_id": str((body.get("ownership_context") or {}).get("id") or "personal"),
+            "ownership_context": dict(body.get("ownership_context") or {}),
         }
 
     async def _resolve_prepared_model_route(self, prepared: dict[str, Any]) -> None:
@@ -699,6 +700,9 @@ class ConversationRunnerMixin:
 
         class SmartRouteChildren(list):
             def append(self, child: Any) -> None:
+                coordinator = getattr(agent, "_xnobrain_run_coordinator", None)
+                if coordinator is not None:
+                    coordinator.install_child(child)
                 if not delegation_model_pinned:
                     manager._install_smart_route_step_routing(
                         child,
@@ -748,6 +752,7 @@ class ConversationRunnerMixin:
         tool_progress_callback,
         approval_notify_callback,
         agent_ref: list[Any],
+        max_iterations: int | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Run one turn through Hermes' native session and approval machinery."""
         from gateway.config import PlatformConfig
@@ -812,6 +817,14 @@ class ConversationRunnerMixin:
 
             def _create_agent(self, *args: Any, **kwargs: Any) -> Any:
                 agent = super()._create_agent(*args, **kwargs)
+                if max_iterations is not None:
+                    agent.max_iterations = max(1, int(max_iterations))
+                    try:
+                        from agent.iteration_budget import IterationBudget
+
+                        agent.iteration_budget = IterationBudget(agent.max_iterations)
+                    except ImportError:
+                        pass
                 from .accounting_context import current_accounting
 
                 accounting = current_accounting()
@@ -827,6 +840,9 @@ class ConversationRunnerMixin:
                             }
                 manager._install_provider_runtime_request_guard(agent)
                 manager._install_provider_runtime_child_guards(agent)
+                coordinator = prepared.get("execution_coordinator")
+                if coordinator is not None:
+                    coordinator.install(agent)
                 manager._install_model_fallbacks(agent, prepared)
                 if smart_route_name:
                     manager._install_smart_route_step_routing(
@@ -866,6 +882,16 @@ class ConversationRunnerMixin:
                     and delegation_config.get("reasoning_effort") is not None
                 )
 
+                if coordinator is not None:
+                    current_children = getattr(agent, "_active_children", None)
+                    if isinstance(current_children, list):
+
+                        class CoordinatedChildren(list):
+                            def append(self, child: Any) -> None:
+                                coordinator.install_child(child)
+                                super().append(child)
+
+                        agent._active_children = CoordinatedChildren(current_children)
                 if smart_route_name:
                     manager._install_smart_route_child_routing(
                         agent,
@@ -877,6 +903,17 @@ class ConversationRunnerMixin:
                     )
 
                 def dispatch_delegate_sync(function_args: Mapping[str, Any]) -> str:
+                    if coordinator is not None:
+                        depth = int(getattr(agent, "_delegate_depth", 0) or 0)
+                        if depth >= coordinator.depth_limit:
+                            return json.dumps(
+                                {
+                                    "error": (
+                                        "Shared delegation depth limit reached "
+                                        f"({coordinator.depth_limit})."
+                                    )
+                                }
+                            )
                     tasks = _strip_model_hidden_task_fields(function_args.get("tasks"))
                     slots = max_parallel_agents(_get_max_concurrent_children())
                     max_batch_tasks = 20
@@ -1124,6 +1161,24 @@ class ConversationRunnerMixin:
                     )
                     tasks_schema = properties.get("tasks") if isinstance(properties, dict) else None
                     if isinstance(tasks_schema, dict):
+                        item_schema = tasks_schema.get("items")
+                        item_properties = (
+                            item_schema.get("properties") if isinstance(item_schema, dict) else None
+                        )
+                        if isinstance(item_properties, dict):
+                            item_properties["todo_id"] = {
+                                "type": "string",
+                                "description": (
+                                    "Existing todo ID assigned to this child, when applicable."
+                                ),
+                            }
+                            item_properties["expected_revision"] = {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": (
+                                    "Todo-list revision observed when the child was assigned."
+                                ),
+                            }
                         tasks_schema["description"] = (
                             "Batch mode: provide up to 20 independent tasks in one call. "
                             f"The runtime runs at most {max_parallel_agents(_get_max_concurrent_children())} workers "

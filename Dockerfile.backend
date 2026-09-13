@@ -172,6 +172,7 @@ LABEL com.xno.run-environment="${RUN_ENV}"
 
 COPY runtime/profile-templates /opt/xnobrain/profile-templates
 COPY runtime/required-skills /opt/xnobrain/required-skills
+COPY runtime/required-plugins /opt/xnobrain/required-plugins
 COPY runtime/skill-overrides /opt/xnobrain/skill-overrides
 COPY scripts/apply-profile-templates.sh /usr/local/bin/xnobrain-apply-profile-templates
 COPY runtime/container-entrypoint.sh /usr/local/bin/xnobrain-runtime

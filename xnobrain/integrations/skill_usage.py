@@ -29,7 +29,7 @@ class SkillUsageInstrumentationMixin:
         if not agent_id:
             return
         session_id = str(prepared.get("conversation_id") or run_id)
-        context_id = str(prepared.get("work_context_id") or f"personal:{agent_id}")
+        context_id = str(prepared.get("work_context_id") or "personal")
         occurred_at = _iso_now()
         requested_skills = list(prepared.get("requested_skills") or [])
         feature_skill = {
@@ -72,7 +72,7 @@ class SkillUsageInstrumentationMixin:
         profile_dir = Path(prepared["profile_dir"])
         agent_id = str(prepared["name"])
         session_id = str(prepared.get("conversation_id") or run_id)
-        context_id = str(prepared.get("work_context_id") or f"personal:{agent_id}")
+        context_id = str(prepared.get("work_context_id") or "personal")
         active_skills: dict[str, str] = {}
         starts: dict[str, tuple[float, str, list[dict[str, str | None]], str]] = {}
 
@@ -135,7 +135,29 @@ class SkillUsageInstrumentationMixin:
                 identity = self._skill_usage_identity(profile_dir, function_args.get("name"))
                 if identity is not None:
                     skill_id, skill_digest = identity
+                    first_load = skill_id not in active_skills
                     active_skills[skill_id] = skill_digest
+                    if first_load:
+                        self._skill_usage_append(
+                            {
+                                "schema_version": SKILL_USAGE_SCHEMA_VERSION,
+                                "instrumentation_version": SKILL_USAGE_INSTRUMENTATION_VERSION,
+                                "event_id": _event_id(
+                                    "run_associated", run_id, skill_id, skill_digest
+                                ),
+                                "event_type": "skill.run_associated",
+                                "agent_id": agent_id,
+                                "work_context_id": context_id,
+                                "run_id": run_id,
+                                "session_id": session_id,
+                                "skill_id": skill_id,
+                                "skill_digest": skill_digest,
+                                "attribution": "observed",
+                                "occurred_at": _iso_now(),
+                                "duration_ms": None,
+                                "outcome": None,
+                            }
+                        )
                     event_type = (
                         "skill.reference_read"
                         if str(function_args.get("file_path") or "").strip()
@@ -249,7 +271,12 @@ class SkillUsageInstrumentationMixin:
         try:
             repository.append_skill_usage_event(event)
         except Exception:
-            # Usage metadata is best effort and must never interrupt a chat.
+            # Usage metadata is best effort and must never interrupt a chat,
+            # but a durable gap counter makes incomplete coverage visible.
+            try:
+                repository.record_skill_usage_gap(event.get("agent_id"))
+            except Exception:
+                pass
             return
 
 

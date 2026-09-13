@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -62,6 +63,57 @@ class ConversationRunRepositoryMixin:
                 result.append(item)
         result.sort(key=lambda item: float(item.get("created_at") or 0), reverse=True)
         return result[: max(1, min(100, int(limit or 20)))]
+
+    def find_conversation_run_by_idempotency(
+        self,
+        agent_id: Any,
+        conversation_id: Any,
+        idempotency_key: Any,
+    ) -> dict[str, Any] | None:
+        key = str(idempotency_key or "").strip()
+        if not key:
+            return None
+        for record in self.list_conversation_runs(agent_id, conversation_id, limit=100):
+            if record.get("idempotency_key") == key:
+                return record
+        return None
+
+    @staticmethod
+    def conversation_run_fingerprint(body: Mapping[str, Any]) -> str:
+        material = {
+            key: body.get(key)
+            for key in (
+                "input",
+                "message",
+                "model",
+                "skills",
+                "toolsets",
+                "timeout_seconds",
+                "run_mode",
+                "feature",
+                "capabilities",
+            )
+            if key in body
+        }
+        encoded = json.dumps(
+            material,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+    def mutate_conversation_run(
+        self,
+        agent_id: Any,
+        conversation_id: Any,
+        run_id: Any,
+        mutate,
+    ) -> dict[str, Any]:
+        with self._lock:
+            record = self.get_conversation_run(agent_id, conversation_id, run_id)
+            updated = mutate(dict(record))
+            return self.put_conversation_run(updated)
 
     def append_conversation_run_event(
         self,

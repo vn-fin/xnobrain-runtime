@@ -1,7 +1,6 @@
 """Opt-in per-job timezone computation without replacing native claims/storage."""
 
 import re
-
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -11,7 +10,6 @@ from threading import RLock
 from xnobrain.models.automation import CronCreate
 
 from .schedule_preview import preview_calendar_runs
-
 
 POLICY = "skip_gap_earlier_fold"
 _install_lock = RLock()
@@ -65,14 +63,13 @@ def _install_timezone_computation(jobs_module) -> None:
             if last_run_at
             else datetime.now(timezone.utc)
         )
-        return preview_calendar_runs(
-            schedule["expr"], zone, cutoff, count=1
-        )[0]["utc"]
+        return preview_calendar_runs(schedule["expr"], zone, cutoff, count=1)[0]["utc"]
 
     compute._xnobrain_timezone_adapter = True
     jobs_module.compute_next_run = compute
     original_parse = getattr(jobs_module, "parse_schedule", None)
     if original_parse is not None:
+
         @wraps(original_parse)
         def parse(schedule):
             zone = _creation_zone.get()
@@ -92,18 +89,21 @@ def _install_timezone_computation(jobs_module) -> None:
                     raise
                 # Native parsing recognizes numeric cron only. Validate named
                 # fields with the same bounded evaluator used for execution.
-                preview_calendar_runs(
-                    schedule, zone, datetime.now(timezone.utc), count=1
-                )
+                preview_calendar_runs(schedule, zone, datetime.now(timezone.utc), count=1)
                 parsed = {
-                    "kind": "cron", "expr": schedule.strip(),
+                    "kind": "cron",
+                    "expr": schedule.strip(),
                     "display": schedule.strip(),
                 }
             if zone is not None and parsed.get("kind") == "cron":
-                parsed = {**parsed, "xnobrain_time": {
-                    "schema_version": 1, "timezone": zone, "dst_policy": POLICY,
-                }}
+                parsed = {
+                    **parsed,
+                    "xnobrain_time": {
+                        "schema_version": 1,
+                        "timezone": zone,
+                        "dst_policy": POLICY,
+                    },
+                }
             return parsed
 
         jobs_module.parse_schedule = parse
-
