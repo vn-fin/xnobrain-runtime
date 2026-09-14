@@ -1,9 +1,9 @@
 {
-  "capability_version": "gorouter-workload-usage-v1",
+  "capability_version": "gorouter-user-usage-v1",
   "application": "xnobrain",
   "environment": "test",
   "workspace_id": "workspace_test",
-  "agent_ids": ["agent_test"],
+  "agent_ids": ["local"],
   "period_start": "2026-09-06T00:00:00Z",
   "period_end": "2026-09-13T00:00:00Z",
   "timezone": "UTC",
@@ -12,7 +12,7 @@
   "accounting_state": "settled",
   "completeness": "durable_records",
   "freshness": "settled_only",
-  "attribution_coverage": "attributed",
+  "attribution_coverage": "user_scoped",
   "summary": {
     "requests": 2,
     "cache_hits": 1,

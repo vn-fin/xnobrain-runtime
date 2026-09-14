@@ -1,6 +1,5 @@
 """Request-local workload credentials and attribution. No process env mutation."""
 
-import json
 import os
 import re
 from contextlib import contextmanager
@@ -21,37 +20,30 @@ def accounting_enabled():
 
 
 def accounting_binding(agent_id, context_id="personal"):
-    # A Control lifecycle provisioner must install this protected mapping. This
-    # read cannot mint credentials or infer identities from names/current keys.
     if context_id != "personal":
-        raise AccountingUnavailable("Organization accounting binding not activated")
-    configured = os.environ.get("RUNTIME_ACCOUNTING_BINDINGS_FILE", "").strip()
-    try:
-        path = Path(configured)
-        if not configured or path.is_symlink() or path.stat().st_mode & 0o077:
-            raise ValueError
-        raw = path.read_bytes()
-        if len(raw) > 1024 * 1024:
-            raise ValueError
-        data = json.loads(raw)
-        if data.get("schema_version") != 1:
-            raise ValueError
-        for binding in data["bindings"]:
-            if binding["local_agent_id"] == agent_id and binding["context_id"] == context_id:
-                if not all(
-                    _OPAQUE.fullmatch(binding[field])
-                    for field in ["application", "workspace_id", "agent_id"]
-                ):
-                    raise ValueError
-                if (
-                    not binding.get("workload_key")
-                    or binding.get("capability_version") != "gorouter-workload-usage-v1"
-                ):
-                    raise ValueError
-                return dict(binding)
-    except (OSError, ValueError, TypeError, KeyError) as error:
-        raise AccountingUnavailable("Agent accounting binding unavailable") from error
-    raise AccountingUnavailable("Agent accounting binding unavailable")
+        raise AccountingUnavailable("Organization accounting is not activated")
+    agent_id = str(agent_id or "").strip()
+    if not _OPAQUE.fullmatch(agent_id):
+        raise AccountingUnavailable("Agent accounting correlation is invalid")
+    token = os.environ.get("RUNTIME_LLM_API_KEY", "").strip()
+    token_file = os.environ.get("RUNTIME_LLM_API_KEY_FILE", "").strip()
+    if token_file:
+        try:
+            path = Path(token_file)
+            if path.is_symlink() or path.stat().st_mode & 0o077:
+                raise ValueError
+            token = path.read_text(encoding="utf-8").strip() or token
+        except (OSError, ValueError) as error:
+            raise AccountingUnavailable("Router user key unavailable") from error
+    if not token:
+        raise AccountingUnavailable("Router user key unavailable")
+    return {
+        "local_agent_id": agent_id,
+        "context_id": context_id,
+        "agent_id": agent_id,
+        "user_key": token,
+        "capability_version": "gorouter-user-usage-v1",
+    }
 
 
 def current_accounting():
@@ -60,7 +52,7 @@ def current_accounting():
 
 @contextmanager
 def inference_accounting(binding, conversation_id="", run_id="", parent_run_id=""):
-    headers = {}
+    headers = {"X-GoRouter-Agent-Id": binding["agent_id"]}
     for name, value in [
         ("Conversation", conversation_id),
         ("Run", run_id),

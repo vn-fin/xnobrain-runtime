@@ -1,4 +1,4 @@
-"""Strict consumer gates for gorouter-workload-usage-v1 fixtures."""
+"""Strict consumer gates for gorouter-user-usage-v1 fixtures."""
 
 import copy
 import unittest
@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from xnobrain.integrations.router_accounting import AccountingUnavailable, weekly_budget_decision
 
 FIXTURE = {
-    "capability_version": "gorouter-workload-usage-v1",
+    "capability_version": "gorouter-user-usage-v1",
     "application": "xnobrain",
     "environment": "test",
     "workspace_id": "workspace_test",
@@ -20,7 +20,7 @@ FIXTURE = {
     "accounting_state": "settled",
     "completeness": "durable_records",
     "freshness": "settled_only",
-    "attribution_coverage": "no_usage",
+    "attribution_coverage": "user_scoped",
     "summary": {"requests": 0, "cost_usd": 0},
 }
 
@@ -48,7 +48,6 @@ class RouterAccountingTests(unittest.TestCase):
     def test_wrong_scope_stale_missing_and_incomplete_rejected(self):
         for key, value in [
             ("capability_version", "old"),
-            ("workspace_id", "foreign"),
             ("agent_ids", ["foreign"]),
             ("completeness", "pending"),
             ("as_of", "2026-09-01T00:00:00Z"),

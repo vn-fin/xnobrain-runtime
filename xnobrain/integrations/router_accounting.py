@@ -4,7 +4,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any
 
-CAPABILITY = "gorouter-workload-usage-v1"
+CAPABILITY = "gorouter-user-usage-v1"
 
 
 class AccountingUnavailable(RuntimeError):
@@ -27,9 +27,6 @@ def weekly_budget_decision(
             payload.get(key) != expected
             for key, expected in {
                 "capability_version": CAPABILITY,
-                "application": application,
-                "environment": environment,
-                "workspace_id": workspace_id,
                 "agent_ids": [agent_id],
                 "timezone": "UTC",
                 "accounting_state": "settled",
@@ -54,7 +51,7 @@ def weekly_budget_decision(
             raise ValueError
         if start.hour or start.minute or start.second or end.hour or end.minute or end.second:
             raise ValueError
-        if payload.get("attribution_coverage") not in {"attributed", "no_usage"}:
+        if payload.get("attribution_coverage") != "user_scoped":
             raise ValueError
     except (ValueError, KeyError, TypeError, AttributeError) as error:
         raise AccountingUnavailable("Authoritative budget check unavailable") from error

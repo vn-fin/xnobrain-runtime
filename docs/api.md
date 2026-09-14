@@ -916,5 +916,5 @@ OpenAI clients can ignore unknown fields.
 ## Managed session usage
 
 In managed Router-accounting mode, session usage reads request, token, cache,
-and cost totals from GoRouter through Control's private workload-key facade.
+and cost totals from GoRouter through Control's private canonical-user-key facade.
 Weekly admission checks are Router-accounted and fail closed when unavailable.

@@ -20,7 +20,10 @@ class ControlAccountingClient:
             async with httpx.AsyncClient(timeout=8, follow_redirects=False) as client:
                 response = await client.get(
                     endpoint + "/xnobrain/api/control/internal/v1/accounting/weekly",
-                    headers={"Authorization": "Bearer " + binding["workload_key"]},
+                    headers={
+                        "Authorization": "Bearer " + binding["user_key"],
+                        "X-GoRouter-Agent-Id": binding["agent_id"],
+                    },
                 )
                 if response.status_code != 200:
                     raise AccountingUnavailable("Authoritative budget check unavailable")
@@ -28,15 +31,11 @@ class ControlAccountingClient:
                 if body.get("success") is not True:
                     raise AccountingUnavailable("Authoritative budget check unavailable")
                 payload = body["data"]
-                cutover = datetime.fromisoformat(binding["cutover_at"].replace("Z", "+00:00"))
-                period = datetime.fromisoformat(payload["period_start"].replace("Z", "+00:00"))
-                if cutover > period:
-                    raise AccountingUnavailable("Accounting cutover is not active for this week")
                 return weekly_budget_decision(
                     payload,
-                    application=binding["application"],
-                    environment=binding.get("environment", ""),
-                    workspace_id=binding["workspace_id"],
+                    application="",
+                    environment="",
+                    workspace_id="",
                     agent_id=binding["agent_id"],
                     weekly_usd=weekly_usd,
                     now=datetime.now(timezone.utc),
@@ -57,7 +56,10 @@ class ControlAccountingClient:
                     endpoint
                     + "/xnobrain/api/control/internal/v1/accounting/conversations/"
                     + quote(str(conversation_id), safe=""),
-                    headers={"Authorization": "Bearer " + binding["workload_key"]},
+                    headers={
+                        "Authorization": "Bearer " + binding["user_key"],
+                        "X-GoRouter-Agent-Id": binding["agent_id"],
+                    },
                 )
                 if response.status_code != 200:
                     raise AccountingUnavailable("Conversation accounting unavailable")

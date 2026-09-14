@@ -9,10 +9,10 @@ from .llm_router_support import LLM_ROUTER_KEY_ENV, LLM_ROUTER_PROVIDER
 
 
 def workspace_router_key() -> str:
-    """Read the existing workload secret without rotating or persisting it."""
+    """Read the existing Router user secret without rotating or persisting it."""
     context = current_accounting()
     if context is not None:
-        return context["binding"]["workload_key"]
+        return context["binding"]["user_key"]
     token = os.environ.get("RUNTIME_LLM_API_KEY", "").strip()
     token_file = os.environ.get("RUNTIME_LLM_API_KEY_FILE", "").strip()
     if token_file:
@@ -25,7 +25,7 @@ def workspace_router_key() -> str:
 
 @contextmanager
 def conversation_profile_scope(profile_dir: Path):
-    """Keep native profile isolation while admitting the workspace workload key.
+    """Keep native profile isolation while admitting the workspace Router user key.
 
     Native background/goal turns install an authoritative profile secret scope.
     A key injected by Control into the workspace environment/file otherwise need
