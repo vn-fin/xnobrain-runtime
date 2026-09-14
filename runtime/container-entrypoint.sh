@@ -22,6 +22,8 @@ export RUNTIME_LLM_ROUTER_URL="${RUNTIME_LLM_ROUTER_URL:-}"
 # provisioning has not supplied one yet so health/reconciliation can repair the
 # assignment; inference remains unauthorized until the scoped key is injected.
 export RUNTIME_LLM_API_KEY="${RUNTIME_LLM_API_KEY:-}"
+export RUNTIME_ACCOUNTING_MODE="${RUNTIME_ACCOUNTING_MODE:-legacy}"
+export RUNTIME_CONTROL_URL="${RUNTIME_CONTROL_URL:-}"
 
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 hermes_python="${HERMES_RUNTIME_PYTHON:-/usr/local/lib/hermes-agent/venv/bin/python}"

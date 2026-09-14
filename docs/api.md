@@ -915,9 +915,13 @@ OpenAI clients can ignore unknown fields.
 
 ## Managed session usage
 
-In managed Router-accounting mode, session usage reads request, token, cache,
-and cost totals from GoRouter through Control's private canonical-user-key facade.
-Runtime reuses its Control HTTP connection pool and fetches conversation totals and the
-weekly budget concurrently. Control uses GoRouter's summary endpoint for conversation
-usage rather than the activity/timeline endpoint. Weekly admission checks remain fresh,
-Router-accounted, and fail closed when unavailable.
+In managed Router-accounting mode, session usage reads request, four-component
+token, and cost totals from GoRouter v0.2.2 through Control's private
+canonical-user-key facade. Runtime reuses its Control HTTP connection pool and
+fetches conversation totals with one lightweight request; it does not duplicate a
+weekly read while rendering session metadata or before the browser sends. Control
+uses `GET /admin/usage/summary?breakdown=none` rather than activity/timeline.
+Runtime performs the authoritative weekly admission check immediately before new
+top-level work, uses `gorouter-user-usage-v1`, and fails closed when
+unavailable. Stored-only reports do not prove durable acceptance or complete
+in-flight coverage.

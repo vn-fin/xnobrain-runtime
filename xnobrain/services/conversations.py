@@ -261,9 +261,17 @@ class ConversationsServiceMixin:
         agent_id: str,
         conversation_id: str,
     ) -> dict[str, Any]:
-        payload = self.agents.get_conversation(agent_id, conversation_id)
-        session = dict(payload["conversation"])
-        messages = list(payload["messages"])
+        name = self.agents._agent_name(agent_id)
+        profile = self.agents._require_profile(name)
+        session_key = self.agents._session_id(conversation_id)
+        stored_session = self.agents._session(profile, session_key)
+        if stored_session is None:
+            raise AgentAPIError(
+                f"Conversation not found: {session_key}",
+                code="conversation_not_found",
+                status=404,
+            )
+        session = dict(stored_session)
 
         def integer(field: str) -> int:
             try:
@@ -277,6 +285,53 @@ class ConversationsServiceMixin:
             except (TypeError, ValueError):
                 return 0.0
 
+        # Usage needs counts and token totals, never message content. Use
+        # session counters when available; query only missing aggregates.
+        count_missing = "message_count" not in session
+        steps_missing = "tool_call_count" not in session
+        message_count = integer("message_count")
+        tool_steps = integer("tool_call_count")
+        message_tokens = 0
+        token_fields = (
+            "input_tokens",
+            "output_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
+        )
+        needs_message_tokens = not any(integer(field) for field in token_fields)
+        db_path = profile / "state.db"
+        if db_path.is_file() and (count_missing or steps_missing or needs_message_tokens):
+            connection = self.agents._open_readonly_db(db_path)
+            try:
+                message_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(messages)").fetchall()
+                }
+                projections = []
+                if count_missing:
+                    projections.append("COUNT(*) AS message_count")
+                if steps_missing:
+                    projections.append(
+                        "SUM(CASE WHEN role = 'tool' THEN 1 ELSE 0 END) AS tool_steps"
+                    )
+                if needs_message_tokens and "token_count" in message_columns:
+                    projections.append("COALESCE(SUM(MAX(token_count, 0)), 0) AS tokens")
+                if projections:
+                    # Column projections are fixed above; only the session ID is input.
+                    statement = (
+                        "SELECT " + ", ".join(projections) + " FROM messages WHERE session_id = ?"
+                    )
+                    row = connection.execute(statement, (session_key,)).fetchone()
+                    if row is not None:
+                        if count_missing:
+                            message_count = max(0, int(row["message_count"] or 0))
+                        if steps_missing:
+                            tool_steps = max(0, int(row["tool_steps"] or 0))
+                        if needs_message_tokens and "token_count" in message_columns:
+                            message_tokens = max(0, int(row["tokens"] or 0))
+            finally:
+                connection.close()
+
         input_tokens = integer("input_tokens")
         output_tokens = integer("output_tokens")
         cache_read_tokens = integer("cache_read_tokens")
@@ -284,16 +339,11 @@ class ConversationsServiceMixin:
         reasoning_tokens = integer("reasoning_tokens")
         total_tokens = input_tokens + output_tokens + cache_read_tokens + cache_write_tokens
         if total_tokens == 0:
-            total_tokens = sum(
-                max(0, int(message.get("token_count") or 0))
-                for message in messages
-                if str(message.get("token_count") or "").lstrip("-").isdigit()
-            )
+            total_tokens = message_tokens
 
         started_at = number("started_at")
         ended_at = number("ended_at")
         execution_seconds = max(0.0, ended_at - started_at) if started_at and ended_at else 0.0
-        tool_steps = sum(1 for message in messages if message.get("role") == "tool")
         actual_cost = session.get("actual_cost_usd")
         cost = (
             number("actual_cost_usd") if actual_cost is not None else number("estimated_cost_usd")
@@ -343,9 +393,6 @@ class ConversationsServiceMixin:
             )
 
         managed_accounting = accounting_enabled()
-        budget_task = (
-            asyncio.create_task(self.analytics.get_budget(agent_id)) if managed_accounting else None
-        )
         if managed_accounting:
             cost = None
             cost_source = "gorouter"
@@ -357,9 +404,9 @@ class ConversationsServiceMixin:
                 output_tokens = max(0, int(accounted.get("completion_tokens") or 0))
                 cache_read_tokens = max(0, int(accounted.get("cache_read_tokens") or 0))
                 cache_write_tokens = max(0, int(accounted.get("cache_write_tokens") or 0))
-                total_tokens = input_tokens + output_tokens
+                total_tokens = input_tokens + output_tokens + cache_read_tokens + cache_write_tokens
                 cost = max(0.0, float(accounted["cost_usd"]))
-                cost_status = "accounted"
+                cost_status = "accounted" if session["api_call_count"] > 0 else "unknown"
             except (AccountingUnavailable, KeyError, TypeError, ValueError):
                 pass
         return {
@@ -367,7 +414,7 @@ class ConversationsServiceMixin:
             "api_calls": integer("api_call_count"),
             "duration": f"{execution_seconds:.2f}s",
             "execution_seconds": round(execution_seconds, 3),
-            "messages": len(messages),
+            "messages": message_count,
             "steps": tool_steps,
             "tool_calls": tool_steps,
             "model": str(session.get("model") or ""),
@@ -386,11 +433,11 @@ class ConversationsServiceMixin:
                 "total_usd": cost,
             },
             "context": context_payload,
-            "weekly_budget": (
-                await budget_task
-                if budget_task is not None
-                else await self.analytics.get_budget(agent_id)
-            ),
+            # The lightweight session-usage read must not duplicate the
+            # admission/budget query. Budget is checked immediately before a run.
+            "weekly_budget": None
+            if managed_accounting
+            else await self.analytics.get_budget(agent_id),
         }
 
     def rename_conversation(

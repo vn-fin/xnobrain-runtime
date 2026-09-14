@@ -1,4 +1,4 @@
-"""Strict consumer for the Router v0.2.0 workload accounting contract."""
+"""Strict consumer for the GoRouter user-weekly usage contract."""
 
 import math
 from datetime import datetime, timezone

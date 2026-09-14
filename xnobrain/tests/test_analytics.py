@@ -582,7 +582,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
                     self.analytics,
                     "get_budget",
                     new=AsyncMock(return_value=budget),
-                ),
+                ) as get_budget,
             ):
                 response = await client.get(
                     f"/xnobrain/api/runtime/v1/sessions/{session_id}/usage?agent={agent_id}"
@@ -595,7 +595,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(usage["tokens"]["output"], 30)
             self.assertEqual(usage["tokens"]["cache_read"], 40)
             self.assertEqual(usage["tokens"]["cache_write"], 5)
-            self.assertEqual(usage["tokens"]["total"], 150)
+            self.assertEqual(usage["tokens"]["total"], 195)
             self.assertEqual(
                 usage["cost"],
                 {
@@ -605,6 +605,70 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
             conversation_usage.assert_awaited_once_with(agent_id, session_id)
+            get_budget.assert_not_awaited()
+            self.assertIsNone(usage["weekly_budget"])
+
+    async def test_empty_managed_summary_does_not_claim_accounted_zero(self):
+        async with self.client() as client:
+            agent_id = await self._create_agent(client, "Unknown zero")
+            session_id = self._insert(agent_id, model="model", inp=1, out=1, est=1)
+            with (
+                patch("xnobrain.services.conversations.accounting_enabled", return_value=True),
+                patch.object(
+                    self.analytics.accounting,
+                    "conversation",
+                    new=AsyncMock(
+                        return_value={
+                            "requests": 0,
+                            "prompt_tokens": 0,
+                            "completion_tokens": 0,
+                            "cache_read_tokens": 0,
+                            "cache_write_tokens": 0,
+                            "cost_usd": 0,
+                        }
+                    ),
+                ),
+            ):
+                response = await client.get(
+                    f"/xnobrain/api/runtime/v1/sessions/{session_id}/usage?agent={agent_id}"
+                )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            response.json()["data"]["cost"],
+            {"source": "gorouter", "status": "unknown", "total_usd": 0.0},
+        )
+
+    async def test_managed_usage_does_not_load_message_content(self):
+        async with self.client() as client:
+            agent_id = await self._create_agent(client, "Fast usage")
+            session_id = self._insert(agent_id, model="model", inp=10, out=5, est=0.1)
+            with (
+                patch("xnobrain.services.conversations.accounting_enabled", return_value=True),
+                patch.object(
+                    self.composition.service.agents,
+                    "get_conversation",
+                    side_effect=AssertionError("usage must not load messages"),
+                ),
+                patch.object(
+                    self.analytics.accounting,
+                    "conversation",
+                    new=AsyncMock(
+                        return_value={
+                            "requests": 1,
+                            "prompt_tokens": 10,
+                            "completion_tokens": 5,
+                            "cache_read_tokens": 0,
+                            "cache_write_tokens": 0,
+                            "cost_usd": 0.01,
+                        }
+                    ),
+                ),
+            ):
+                response = await client.get(
+                    f"/xnobrain/api/runtime/v1/sessions/{session_id}/usage?agent={agent_id}"
+                )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["data"]["cost"]["total_usd"], 0.01)
 
     async def test_usage_is_read_only(self):
         async with self.client() as client:
