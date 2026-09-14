@@ -367,6 +367,10 @@ operation markers make recovery idempotent without replaying execution history.
 
 ## Personal Agent Custom Page v1 (FT0015, in progress)
 
+> Release exposure is controlled by the coordinated root flags `FT_ENABLE_UI_CUSTOMIZATION` and `FT_ENABLE_AGENT_CUSTOM_PAGE`; both default off. Disabled backend paths fail closed and retained data is not deleted.
+
+
+
 The additive `/xnobrain/api/runtime/v1/agents/{agent_id}/custom-page` family serves
 verified Personal workspace owners only. Managed requests use the existing Control
 proxy and verified-principal facade. `agent_id` selects a resource, never identity.
