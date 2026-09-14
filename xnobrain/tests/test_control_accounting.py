@@ -37,7 +37,9 @@ class ControlAccountingTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = httpx.Response(200, json={"success": True, "data": fixture})
             with patch("httpx.AsyncClient.get", new=AsyncMock(return_value=response)) as get:
-                result = await ControlAccountingClient().weekly("local", 20)
+                accounting = ControlAccountingClient()
+                self.addAsyncCleanup(accounting.close)
+                result = await accounting.weekly("local", 20)
                 self.assertTrue(result["accepting_chats"])
                 args, kwargs = get.call_args
                 self.assertEqual(
@@ -58,7 +60,7 @@ class ControlAccountingTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 self.assertRaises(AccountingUnavailable),
             ):
-                await ControlAccountingClient().weekly("local", 20)
+                await accounting.weekly("local", 20)
 
     async def test_conversation_usage_uses_user_key_and_encoded_id(self):
         response = httpx.Response(
@@ -75,7 +77,9 @@ class ControlAccountingTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch("httpx.AsyncClient.get", new=AsyncMock(return_value=response)) as get,
         ):
-            result = await ControlAccountingClient().conversation("local", "ses/encoded")
+            accounting = ControlAccountingClient()
+            self.addAsyncCleanup(accounting.close)
+            result = await accounting.conversation("local", "ses/encoded")
         self.assertEqual(result["requests"], 2)
         args, kwargs = get.call_args
         self.assertTrue(args[0].endswith("/conversations/ses%2Fencoded"))
@@ -89,4 +93,6 @@ class ControlAccountingTests(unittest.IsolatedAsyncioTestCase):
             patch.dict(os.environ, {"RUNTIME_LLM_API_KEY": "", "RUNTIME_CONTROL_URL": ""}),
             self.assertRaises(AccountingUnavailable),
         ):
-            await ControlAccountingClient().weekly("local", 20)
+            accounting = ControlAccountingClient()
+            self.addAsyncCleanup(accounting.close)
+            await accounting.weekly("local", 20)

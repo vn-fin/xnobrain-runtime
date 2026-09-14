@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections.abc import Mapping
@@ -341,7 +342,11 @@ class ConversationsServiceMixin:
                 }
             )
 
-        if accounting_enabled():
+        managed_accounting = accounting_enabled()
+        budget_task = (
+            asyncio.create_task(self.analytics.get_budget(agent_id)) if managed_accounting else None
+        )
+        if managed_accounting:
             cost = None
             cost_source = "gorouter"
             cost_status = "unavailable"
@@ -381,7 +386,11 @@ class ConversationsServiceMixin:
                 "total_usd": cost,
             },
             "context": context_payload,
-            "weekly_budget": await self.analytics.get_budget(agent_id),
+            "weekly_budget": (
+                await budget_task
+                if budget_task is not None
+                else await self.analytics.get_budget(agent_id)
+            ),
         }
 
     def rename_conversation(

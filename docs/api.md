@@ -917,4 +917,7 @@ OpenAI clients can ignore unknown fields.
 
 In managed Router-accounting mode, session usage reads request, token, cache,
 and cost totals from GoRouter through Control's private canonical-user-key facade.
-Weekly admission checks are Router-accounted and fail closed when unavailable.
+Runtime reuses its Control HTTP connection pool and fetches conversation totals and the
+weekly budget concurrently. Control uses GoRouter's summary endpoint for conversation
+usage rather than the activity/timeline endpoint. Weekly admission checks remain fresh,
+Router-accounted, and fail closed when unavailable.

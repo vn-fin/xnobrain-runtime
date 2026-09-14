@@ -104,6 +104,8 @@ class XNOBrainApplication:
                         await self.service.conversation_runs.shutdown()
                     with suppress(Exception):
                         await self.service.team_runs.shutdown()
+                    with suppress(Exception):
+                        await self.service.analytics.accounting.close()
                     if dispatcher is not None:
                         dispatcher.cancel()
                         with suppress(asyncio.CancelledError):
