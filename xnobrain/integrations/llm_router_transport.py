@@ -20,7 +20,6 @@ class LLMRouterTransportMixin:
             try:
                 value = Path(token_file).read_text(encoding="utf-8").strip()
                 if value:
-                    os.environ["RUNTIME_LLM_API_KEY"] = value
                     return value
             except OSError:
                 pass

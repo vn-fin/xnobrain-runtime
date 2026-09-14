@@ -2217,4 +2217,11 @@ class RuntimeRouterKeyFileTests(unittest.TestCase):
             ):
                 client = LLMRouterClient(data_dir=temp_dir)
                 self.assertEqual(client._request_headers()["Authorization"], "Bearer rotated-key")
-                self.assertEqual(os.environ["RUNTIME_LLM_API_KEY"], "rotated-key")
+                self.assertEqual(os.environ["RUNTIME_LLM_API_KEY"], "stale")
+
+                key_file.write_text("next-user-key\n", encoding="utf-8")
+                self.assertEqual(
+                    client._request_headers()["Authorization"],
+                    "Bearer next-user-key",
+                )
+                self.assertEqual(os.environ["RUNTIME_LLM_API_KEY"], "stale")

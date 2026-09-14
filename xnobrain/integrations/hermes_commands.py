@@ -77,8 +77,10 @@ class HermesCommandsMixin:
         }
 
     def _command_env(self, hermes_home: Path, engine: str) -> dict[str, str]:
-        self._ensure_router_api_key()
+        router_api_key = self._ensure_router_api_key()
         env = os.environ.copy()
+        if router_api_key:
+            env[LLM_ROUTER_KEY_ENV] = router_api_key
         env["HERMES_HOME"] = str(hermes_home)
         env.setdefault("HOME", str(Path.home()))
         env.setdefault("HERMES_ACCEPT_HOOKS", "1")
@@ -86,18 +88,21 @@ class HermesCommandsMixin:
         return env
 
     @staticmethod
-    def _ensure_router_api_key() -> None:
+    def _ensure_router_api_key() -> str:
         """Map the provisioned API key to Hermes' provider key env."""
         token_file = os.environ.get("RUNTIME_LLM_API_KEY_FILE", "").strip()
         token = os.environ.get("RUNTIME_LLM_API_KEY", "").strip()
         if token_file:
             try:
                 token = Path(token_file).read_text(encoding="utf-8").strip() or token
-                os.environ["RUNTIME_LLM_API_KEY"] = token
             except OSError:
                 pass
         if token:
-            os.environ[LLM_ROUTER_KEY_ENV] = token
+            # Hermes subprocesses receive a fresh copy above. Keep the long-lived
+            # Runtime environment unchanged so another verified source-stack user
+            # cannot inherit a previously selected Router credential.
+            return token
+        return ""
 
     def _hermes_binary(self) -> str:
         return os.environ.get("HERMES_CLI", "hermes")

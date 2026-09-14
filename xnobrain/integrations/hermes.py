@@ -67,9 +67,9 @@ class AgentManager(
             or os.environ.get("HERMES_AGENTS_ROOT")
             or self.root_profile.parent / "legacy-agents"
         )
-        # The embedded streaming runner uses this process environment directly,
-        # while one-shot commands inherit it in _command_env().
-        self._ensure_router_api_key()
+        # Embedded turns read the private Router key file when their request
+        # scope is created. One-shot commands receive the same current value in
+        # _command_env(); do not cache it in the long-lived process environment.
         configured_template = (
             profile_template
             or os.environ.get("XNOBRAIN_PROFILE_TEMPLATE")
