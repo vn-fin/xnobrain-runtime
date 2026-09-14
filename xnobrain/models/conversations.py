@@ -18,6 +18,7 @@ class ConversationOwnershipContext(BaseModel):
     sponsor_grant_id: str | None = Field(default=None, min_length=1, max_length=256)
     membership_revision_at_create: int | None = Field(default=None, ge=1)
     policy_revision_at_create: int | None = Field(default=None, ge=1)
+    revocation_version: int | None = Field(default=None, ge=1)
     state: Literal["active", "revoked_read_only", "suspended", "archived"] = "active"
 
     @model_validator(mode="after")
@@ -64,11 +65,14 @@ class ChatRequest(BaseModel):
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
     )
     feature: (
-        Literal["todo", "delegate", "goal", "learn", "agent_maker", "optimize_skills"] | None
+        Literal[
+            "todo", "delegate", "goal", "learn", "agent_maker", "optimize_skills", "custom_page"
+        ]
+        | None
     ) = None
 
-    capabilities: list[Literal["todo", "delegate", "goal"]] | None = Field(
-        default=None, max_length=3
+    capabilities: list[Literal["todo", "delegate", "goal", "custom_page"]] | None = Field(
+        default=None, max_length=4
     )
 
     @model_validator(mode="after")
@@ -79,7 +83,7 @@ class ChatRequest(BaseModel):
             raise ValueError("capabilities must be unique")
         if self.feature is not None and self.capabilities != [self.feature]:
             raise ValueError("feature and capabilities must describe the same selection")
-        order = ("todo", "delegate", "goal")
+        order = ("todo", "delegate", "goal", "custom_page")
         self.capabilities = [value for value in order if value in self.capabilities]
         return self
 

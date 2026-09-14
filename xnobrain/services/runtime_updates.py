@@ -14,6 +14,8 @@ from ..integrations.runtime_update_storage import (
     RuntimeUpdateStorage,
     RuntimeUpdateStorageError,
 )
+from ..repositories.base import StoreError
+from ..repositories.runtime_update_gate import activity_present, checkpoint_gate, update_operation
 from ..repositories.runtime_updates import RuntimeUpdateRepository
 from .base import ServiceError, iso
 
@@ -45,9 +47,10 @@ class RuntimeUpdateService:
 
     @property
     def dispatch_paused(self) -> bool:
-        return bool(self._maintenance.get("dispatch_paused"))
+        return bool(self.repository.maintenance().get("dispatch_paused"))
 
     def require_dispatch(self) -> None:
+        self.platform.repository.storage_mount.check()
         if self.dispatch_paused:
             raise ServiceError(
                 "Runtime is draining for an approved update",
@@ -72,11 +75,28 @@ class RuntimeUpdateService:
         async with self._condition:
             self._condition.notify_all()
 
+    @staticmethod
+    async def _durable_io(operation, *args):
+        # Keep OS command/activity gates while submitted storage work finishes,
+        # even after observer cancellation. A late fsync/rename/scan cannot race a
+        # new command or release checkpoint exclusivity before its worker exits.
+        task = asyncio.create_task(asyncio.to_thread(operation, *args))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    continue
+            task.result()
+            raise
+
     async def preflight(
         self, request: Mapping[str, Any], *, update_token: str | None = None
     ) -> dict[str, Any]:
         self._authorize(update_token)
-        async with self._lock:
+        async with self._lock, _UpdateCommand(self.platform.repository.data_dir):
             self._validate_request(request)
             layout = str(request["expected_layout"])
             if layout not in _ALLOWED_LAYOUTS:
@@ -128,7 +148,7 @@ class RuntimeUpdateService:
         self, request: Mapping[str, Any], *, update_token: str | None = None
     ) -> dict[str, Any]:
         self._authorize(update_token)
-        async with self._lock:
+        async with self._lock, _UpdateCommand(self.platform.repository.data_dir):
             self._validate_request(request)
             self._maintenance = {
                 "operation_id": request["operation_id"],
@@ -138,7 +158,7 @@ class RuntimeUpdateService:
                 "phase": "draining",
                 "updated_at": iso(),
             }
-            self.repository.save_maintenance(self._maintenance)
+            await self._durable_io(self.repository.save_maintenance, dict(self._maintenance))
             await self.platform.organization_connector.pause_dispatch()
             deadline = asyncio.get_running_loop().time() + float(
                 request.get("deadline_seconds") or 0
@@ -165,7 +185,7 @@ class RuntimeUpdateService:
                 )
             self._maintenance["phase"] = "drained"
             self._maintenance["updated_at"] = iso()
-            self.repository.save_maintenance(self._maintenance)
+            await self._durable_io(self.repository.save_maintenance, dict(self._maintenance))
             result = {
                 "operation_id": request["operation_id"],
                 "generation": request["generation"],
@@ -182,69 +202,74 @@ class RuntimeUpdateService:
         self, request: Mapping[str, Any], *, update_token: str | None = None
     ) -> dict[str, Any]:
         self._authorize(update_token)
-        async with self._lock:
+        async with self._lock, _UpdateCommand(self.platform.repository.data_dir):
             self._validate_request(request, require_maintenance=True)
-            if self._active_counts()["total"]:
-                raise ServiceError(
-                    "Runtime must be fully drained before checkpoint",
-                    status=409,
-                    code="runtime_update_not_drained",
+            with checkpoint_gate(self.platform.repository.data_dir):
+                if self._active_counts(include_leases=False)["total"]:
+                    raise ServiceError(
+                        "Runtime must be fully drained before checkpoint",
+                        status=409,
+                        code="runtime_update_not_drained",
+                    )
+                existing = self.repository.operation(str(request["operation_id"]))
+                completed = (existing.get("steps") or {}).get("checkpoint")
+                if isinstance(completed, dict):
+                    self._validate_checkpoint(request, completed)
+                    return completed
+                try:
+
+                    def inspect_and_flush():
+                        self.storage.manifest()
+                        paths = self.storage.flush_sqlite()
+                        return paths, self.storage.manifest()
+
+                    sqlite_paths, manifest = await self._durable_io(inspect_and_flush)
+                except RuntimeUpdateStorageError as error:
+                    self._storage_error(error)
+                target = dict(request["target"])
+                checkpoint_id = (
+                    "ckp_"
+                    + hashlib.sha256(
+                        json.dumps(
+                            {
+                                "operation_id": request["operation_id"],
+                                "generation": request["generation"],
+                                "target": target,
+                                "manifest": manifest["digest"],
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode()
+                    ).hexdigest()
                 )
-            existing = self.repository.operation(str(request["operation_id"]))
-            completed = (existing.get("steps") or {}).get("checkpoint")
-            if isinstance(completed, dict):
-                self._validate_checkpoint(request, completed)
-                return completed
-            try:
-                self.storage.manifest()
-                sqlite_paths = self.storage.flush_sqlite()
-                manifest = self.storage.manifest()
-            except RuntimeUpdateStorageError as error:
-                self._storage_error(error)
-            target = dict(request["target"])
-            checkpoint_id = (
-                "ckp_"
-                + hashlib.sha256(
-                    json.dumps(
-                        {
-                            "operation_id": request["operation_id"],
-                            "generation": request["generation"],
-                            "target": target,
-                            "manifest": manifest["digest"],
-                        },
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ).encode()
-                ).hexdigest()
-            )
-            checkpoint = {
-                "checkpoint_id": checkpoint_id,
-                "operation_id": request["operation_id"],
-                "generation": request["generation"],
-                "target": target,
-                "manifest": manifest,
-                "sqlite_checkpoints": sqlite_paths,
-                "created_at": iso(),
-                "recovery_mode": "forward_only",
-            }
-            try:
-                self.repository.save_checkpoint(checkpoint)
-            except Exception:
-                existing = self.repository.checkpoint(checkpoint_id)
-                if existing != checkpoint:
-                    raise
-            self._maintenance["phase"] = "checkpointed"
-            self._maintenance["checkpoint_id"] = checkpoint_id
-            self._maintenance["updated_at"] = iso()
-            self.repository.save_maintenance(self._maintenance)
-            self._record(request, "checkpoint", checkpoint)
-            return checkpoint
+                checkpoint = {
+                    "checkpoint_id": checkpoint_id,
+                    "operation_id": request["operation_id"],
+                    "generation": request["generation"],
+                    "target": target,
+                    "manifest": manifest,
+                    "sqlite_checkpoints": sqlite_paths,
+                    "created_at": iso(),
+                    "recovery_mode": "forward_only",
+                }
+                try:
+                    self.repository.save_checkpoint(checkpoint)
+                except Exception:
+                    existing = self.repository.checkpoint(checkpoint_id)
+                    if existing != checkpoint:
+                        raise
+                self._maintenance["phase"] = "checkpointed"
+                self._maintenance["checkpoint_id"] = checkpoint_id
+                self._maintenance["updated_at"] = iso()
+                await self._durable_io(self.repository.save_maintenance, dict(self._maintenance))
+                self._record(request, "checkpoint", checkpoint)
+                return checkpoint
 
     async def readiness(
         self, request: Mapping[str, Any], *, update_token: str | None = None
     ) -> dict[str, Any]:
         self._authorize(update_token)
-        async with self._lock:
+        async with self._lock, _UpdateCommand(self.platform.repository.data_dir):
             self._validate_request(request, require_maintenance=True)
             checkpoint_id = str(request.get("checkpoint_id") or "")
             if checkpoint_id:
@@ -284,49 +309,50 @@ class RuntimeUpdateService:
         self, request: Mapping[str, Any], *, update_token: str | None = None
     ) -> dict[str, Any]:
         self._authorize(update_token)
-        async with self._lock:
+        async with self._lock, _UpdateCommand(self.platform.repository.data_dir):
             self._validate_request(request, require_maintenance=True)
-            checkpoint = self.repository.checkpoint(str(request["checkpoint_id"]))
-            if not checkpoint:
-                self._conflict("approved Runtime update checkpoint was not found")
-            self._validate_checkpoint(request, checkpoint)
-            try:
-                current = self.storage.manifest()
-            except RuntimeUpdateStorageError as error:
-                self._storage_error(error)
-            preserved = current["digest"] == checkpoint["manifest"]["digest"]
-            installed = self._installed_identity()
-            target = self._effective_target(request)
-            identity_matches = (
-                installed["version"] == target["version"]
-                and installed["source_commit"] == target["source_commit"]
-                and installed["runtime_digest"] == target["runtime_digest"]
-                and installed["data_schema"] >= target["data_schema"]
-            )
-            result = {
-                "operation_id": request["operation_id"],
-                "generation": request["generation"],
-                "verified": preserved and identity_matches,
-                "data_preserved": preserved,
-                "installed_identity_matches": identity_matches,
-                "manifest_digest": current["digest"],
-                "installed": installed,
-                "verified_at": iso(),
-            }
-            self._record(request, "post_verify", result)
-            if not result["verified"]:
-                raise ServiceError(
-                    "candidate Runtime post-verification failed",
-                    status=409,
-                    code="runtime_update_post_verify_failed",
+            with checkpoint_gate(self.platform.repository.data_dir):
+                checkpoint = self.repository.checkpoint(str(request["checkpoint_id"]))
+                if not checkpoint:
+                    self._conflict("approved Runtime update checkpoint was not found")
+                self._validate_checkpoint(request, checkpoint)
+                try:
+                    current = await self._durable_io(self.storage.manifest)
+                except RuntimeUpdateStorageError as error:
+                    self._storage_error(error)
+                preserved = current["digest"] == checkpoint["manifest"]["digest"]
+                installed = self._installed_identity()
+                target = self._effective_target(request)
+                identity_matches = (
+                    installed["version"] == target["version"]
+                    and installed["source_commit"] == target["source_commit"]
+                    and installed["runtime_digest"] == target["runtime_digest"]
+                    and installed["data_schema"] >= target["data_schema"]
                 )
-            return result
+                result = {
+                    "operation_id": request["operation_id"],
+                    "generation": request["generation"],
+                    "verified": preserved and identity_matches,
+                    "data_preserved": preserved,
+                    "installed_identity_matches": identity_matches,
+                    "manifest_digest": current["digest"],
+                    "installed": installed,
+                    "verified_at": iso(),
+                }
+                self._record(request, "post_verify", result)
+                if not result["verified"]:
+                    raise ServiceError(
+                        "candidate Runtime post-verification failed",
+                        status=409,
+                        code="runtime_update_post_verify_failed",
+                    )
+                return result
 
     async def recover(
         self, request: Mapping[str, Any], *, update_token: str | None = None
     ) -> dict[str, Any]:
         self._authorize(update_token)
-        async with self._lock:
+        async with self._lock, _UpdateCommand(self.platform.repository.data_dir):
             self._validate_request(request, require_maintenance=True)
             action = str(request["action"])
             phase = "needs_operator" if action == "needs_operator" else "recovering"
@@ -356,7 +382,7 @@ class RuntimeUpdateService:
                     "updated_at": iso(),
                 }
             )
-            self.repository.save_maintenance(self._maintenance)
+            await self._durable_io(self.repository.save_maintenance, dict(self._maintenance))
             result = {
                 "operation_id": request["operation_id"],
                 "generation": request["generation"],
@@ -378,7 +404,7 @@ class RuntimeUpdateService:
         self, request: Mapping[str, Any], *, update_token: str | None = None
     ) -> dict[str, Any]:
         self._authorize(update_token)
-        async with self._lock:
+        async with self._lock, _UpdateCommand(self.platform.repository.data_dir):
             self._validate_request(request, require_maintenance=True)
             operation = self.repository.operation(str(request["operation_id"]))
             verified = operation.get("steps", {}).get("post_verify", {}).get("verified") is True
@@ -388,7 +414,7 @@ class RuntimeUpdateService:
                     status=409,
                     code="runtime_update_not_verified",
                 )
-            self.repository.clear_maintenance()
+            await self._durable_io(self.repository.clear_maintenance)
             self._maintenance = {}
             self.platform.organization_connector.resume_dispatch()
             result = {
@@ -446,6 +472,7 @@ class RuntimeUpdateService:
                 )
             if existing.get("target") != request["target"]:
                 self._conflict("Runtime update target is immutable after preparation")
+        self._maintenance = self.repository.maintenance()
         maintenance = self._maintenance
         if require_maintenance and not maintenance:
             self._conflict("Runtime update maintenance fence is not active")
@@ -485,7 +512,7 @@ class RuntimeUpdateService:
         ):
             self._conflict("Runtime update checkpoint does not match the selected target")
 
-    def _active_counts(self) -> dict[str, int]:
+    def _active_counts(self, *, include_leases=True) -> dict[str, int]:
         try:
             kanban_workers = len(self.platform.kanban.active_agent_ids())
         except ServiceError as error:
@@ -509,6 +536,16 @@ class RuntimeUpdateService:
             "cron_executions": self.platform.cron.active_execution_count,
             "kanban_workers": kanban_workers,
         }
+        try:
+            counts["workspace_activity"] = int(
+                include_leases and activity_present(self.platform.repository.data_dir)
+            )
+        except StoreError as error:
+            raise ServiceError(
+                "Runtime cannot verify workspace activity",
+                status=503,
+                code="runtime_update_activity_unavailable",
+            ) from error
         counts["total"] = sum(counts.values())
         return counts
 
@@ -534,3 +571,30 @@ class RuntimeUpdateService:
     @staticmethod
     def _storage_error(error: RuntimeUpdateStorageError) -> None:
         raise ServiceError(str(error), status=409, code=error.code) from error
+
+
+class _UpdateCommand:
+    """Hold the cross-process command lock across awaits and translate gate errors."""
+
+    def __init__(self, root):
+        self.context = update_operation(root)
+
+    async def __aenter__(self):
+        try:
+            self.context.__enter__()
+        except StoreError as error:
+            raise ServiceError(
+                "Another update command is active or storage is unavailable",
+                status=409,
+                code="runtime_update_fence_conflict",
+            ) from error
+        return self
+
+    async def __aexit__(self, kind, error, traceback):
+        self.context.__exit__(kind, error, traceback)
+        if isinstance(error, StoreError) and error.code == "custom_page_jobs_active":
+            raise ServiceError(
+                "Runtime must be fully drained before storage verification",
+                status=409,
+                code="runtime_update_not_drained",
+            ) from error

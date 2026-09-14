@@ -8,6 +8,10 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Iterable
 
+from ..repositories.base import StoreError
+from ..repositories.runtime_update_gate import is_coordination_file, validate_coordination_file
+from ..repositories.storage_mount import StorageMountGuard
+
 
 class RuntimeUpdateStorageError(RuntimeError):
     def __init__(self, message: str, *, code: str):
@@ -19,6 +23,7 @@ class RuntimeUpdateStorage:
     """Inspect durable roots directly; never invoke a host shell."""
 
     def __init__(self, data_dir: Path, profiles_root: Path, root_profile: Path):
+        self.storage_mount = StorageMountGuard(data_dir)
         self.data_dir = data_dir.resolve()
         self.profiles_root = profiles_root.resolve()
         self.root_profile = root_profile.resolve()
@@ -27,6 +32,7 @@ class RuntimeUpdateStorage:
         self.max_bytes = max(1, int(os.getenv("RUNTIME_UPDATE_MAX_MANIFEST_BYTES", str(1 << 40))))
 
     def durable_roots(self) -> list[tuple[str, Path]]:
+        self.storage_mount.check()
         candidates = (
             ("data", self.data_dir),
             ("root_profile", self.root_profile),
@@ -99,7 +105,12 @@ class RuntimeUpdateStorage:
                 try:
                     connection = sqlite3.connect(f"file:{path}?mode=rw", uri=True, timeout=5)
                     try:
-                        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+                        result = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                        if result and result[0]:
+                            raise RuntimeUpdateStorageError(
+                                "a durable SQLite database is busy",
+                                code="runtime_update_sqlite_checkpoint_failed",
+                            )
                     finally:
                         connection.close()
                 except sqlite3.DatabaseError as error:
@@ -118,6 +129,14 @@ class RuntimeUpdateStorage:
                 continue
             for path in self._walk_files(root):
                 if self.data_dir == root and path.is_relative_to(self.data_dir / "runtime-updates"):
+                    continue
+                if is_coordination_file(path, self.data_dir):
+                    try:
+                        validate_coordination_file(path)
+                    except (StoreError, OSError) as error:
+                        raise RuntimeUpdateStorageError(
+                            "unsafe coordination file", code="runtime_update_unsafe_data"
+                        ) from error
                     continue
                 stat = path.stat(follow_symlinks=False)
                 total += stat.st_size

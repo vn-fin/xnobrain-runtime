@@ -8,8 +8,10 @@ import os
 import re
 import stat
 import tempfile
+from collections.abc import Mapping
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping
+from typing import Any
 
 import yaml
 
@@ -49,6 +51,12 @@ _EXCLUDED_PARTS = {
     "cache",
     "caches",
     "conversations",
+    "conversation-runs",
+    "agent-apps",
+    "ui-assistance",
+    "runtime-updates",
+    "transfers",
+    "cron",
     "credentials",
     "history",
     "logs",
@@ -223,14 +231,23 @@ class MarketplaceService:
             )
         }
         skill_paths = sorted(
-            (path for path in root.rglob("SKILL.md") if path.is_file()),
+            (
+                path
+                for path in root.rglob("SKILL.md")
+                if path.is_file() and not self._excluded(path.relative_to(root))
+            ),
             key=lambda item: item.as_posix(),
         )
         if len(skill_paths) > MAX_SKILLS:
             self._reject_limit()
         skill_directories = {path.parent for path in skill_paths}
         for path in root.rglob("*"):
-            if path.is_symlink() or not path.is_file() or path.name == "SKILL.md":
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or path.name == "SKILL.md"
+                or self._excluded(path.relative_to(root))
+            ):
                 continue
             if not any(skill_dir in path.parents for skill_dir in skill_directories):
                 self._reject_export()
@@ -350,7 +367,7 @@ class MarketplaceService:
                     "marketplace export requires a complete agent definition",
                     status=422,
                     code="marketplace_export_incomplete",
-                )
+                ) from None
             return ""
         resolved_root = root.resolve()
         if resolved_root not in resolved.parents or not resolved.is_file():
@@ -359,6 +376,8 @@ class MarketplaceService:
         try:
             descriptor = os.open(resolved, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
             details = os.fstat(descriptor)
+            if details.st_nlink != 1:
+                MarketplaceService._reject_export()
             if not stat.S_ISREG(details.st_mode) or details.st_size > max_bytes:
                 MarketplaceService._reject_limit()
             chunks = []
@@ -555,7 +574,45 @@ class MarketplaceService:
             code="marketplace_export_too_large",
         )
 
+    @contextmanager
+    def _profile_mutation(self, profile_id: str, *, removing=False, installing=False):
+        from ..repositories.custom_page import CustomPageRepository
+        from ..repositories.custom_page_locks import lifecycle_gate
+
+        profile_id = self.repository._id(profile_id, "agent id")
+        pages = CustomPageRepository(self.repository)
+        # Serialize with app creation, retention/deletion and actual executor work.
+        # Marketplace consent does not imply app-data retention/deletion consent.
+        with lifecycle_gate(self.repository.data_dir, profile_id), pages.lock(mutation=True):
+            if (self.repository.profiles_root / profile_id).is_symlink():
+                raise ServiceError(
+                    "installation profile must not be a symlink",
+                    status=409,
+                    code="installation_profile_conflict",
+                )
+            if removing or (installing and not self.repository.profile_path(profile_id).exists()):
+                app = pages.directory(profile_id)
+                if app.exists() and (not app.is_dir() or any(app.iterdir())):
+                    raise ServiceError(
+                        "Resolve retained custom-page data before changing this installation's writer",
+                        status=409,
+                        code="custom_page_retention_required",
+                    )
+            yield
+
     def install(self, package: Mapping[str, Any]) -> dict[str, Any]:
+        installation_id = package.get("id")
+        if not isinstance(installation_id, str) or not re.fullmatch(
+            r"inst_[A-Za-z0-9_-]{1,64}", installation_id
+        ):
+            raise ServiceError(
+                "marketplace installation id is invalid", status=422, code="package_rejected"
+            )
+        profile_id = "market-" + installation_id.removeprefix("inst_")
+        with self._profile_mutation(profile_id, installing=True):
+            return self._install(package)
+
+    def _install(self, package: Mapping[str, Any]) -> dict[str, Any]:
         raw_definition = package.get("definition")
         if not isinstance(raw_definition, Mapping):
             raise ServiceError("marketplace package is unsafe", status=422, code="package_rejected")
@@ -690,6 +747,10 @@ class MarketplaceService:
         }
 
     def update(self, package: Mapping[str, Any], local_profile_id: str) -> dict[str, Any]:
+        with self._profile_mutation(local_profile_id):
+            return self._update(package, local_profile_id)
+
+    def _update(self, package: Mapping[str, Any], local_profile_id: str) -> dict[str, Any]:
         if package.get("status") != "updating":
             raise ServiceError(
                 "installation update is unavailable", status=409, code="installation_unavailable"
@@ -794,6 +855,10 @@ class MarketplaceService:
         }
 
     def uninstall(self, local_profile_id: str) -> dict[str, Any]:
+        with self._profile_mutation(local_profile_id, removing=True):
+            return self._uninstall(local_profile_id)
+
+    def _uninstall(self, local_profile_id: str) -> dict[str, Any]:
         profile = self.repository.profile_path(local_profile_id)
         config_path = profile / "config.yaml"
         if config_path.is_symlink():

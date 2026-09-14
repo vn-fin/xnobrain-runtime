@@ -23,7 +23,7 @@ class XNOBrainApplication:
         )
         profiles_root = Path(os.getenv("HERMES_PROFILES_ROOT") or root_profile / "profiles")
         data_dir = Path(os.getenv("DATA_DIR") or root_profile / "xnobrain")
-        self.repository = FileRepository(data_dir, profiles_root)
+        self.repository = FileRepository(data_dir, profiles_root, root_profile=root_profile)
         if runtime is None:
             from .integrations import LocalRuntimeManager
 
@@ -58,6 +58,7 @@ class XNOBrainApplication:
                     )
                 except Exception:
                     dispatcher = None
+                self.service.custom_page.schedules.loop = asyncio.get_running_loop()
                 cron_tasks: dict[tuple[str, str], asyncio.Task] = {}
 
                 def finish_cron_task(key: tuple[str, str], task: asyncio.Task) -> None:

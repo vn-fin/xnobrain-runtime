@@ -29,9 +29,16 @@ portable bundles, and streaming runs.
 
 The default profile is `HERMES_ROOT_PROFILE`. Named profiles live at
 `DATA_DIR/profiles/<agent-id>` and are discovered through the Hermes CLI
-profile inventory. There is no application database. Hermes may use its own
-profile-local `state.db` for native session history; that is an upstream
-profile file, not an XNOBrain database or schema.
+profile inventory. Hermes uses its own profile-local `state.db` for native session
+history; that remains an upstream profile file, not an XNOBrain schema. FT0015 adds
+one separate, Runtime-mediated SQLite app store at
+`DATA_DIR/agent-apps/<agent-id>/app.sqlite3` on verified persistent workspace
+storage. The human tenant/subject owns it; the agent is a scoped writer. It is not
+Control's database, is not stored in the portable profile directory, and persists
+when the user explicitly retains a page after removing its writer. It contains
+validated app revisions, typed records, provenance, action/schedule receipts and
+activity. Attachments/backups live in that app directory. No SQL or filesystem
+path is selected by the browser.
 
 Every named profile owns config, prompts, skills, memory, workspace, session,
 cron, log, MCP, and snapshot data. Portable bundles include every regular file
@@ -107,3 +114,39 @@ uses the same codec. It avoids upstream coding-client reserved-name
 interactions without dropping tools, reducing schemas, switching API mode, or
 checking public model prefixes. The alias is derived only from the public tool
 name and never contains credentials or tool arguments.
+
+### Custom-page native scheduling coordination
+
+Native cron owns recurrence, fire claims, execution history and delivery. Approved
+app-owned `xcp_` jobs dispatch into the existing durable conversation runner, not
+an unrestricted cron prompt or separate timer. Personal conversation/payer, exact
+page/action digests, revision, occurrence count and budget are rechecked. The
+330-second native-to-async bridge exceeds the maximum 300-second approved action;
+app-native claims therefore use a minimum 600-second TTL. TTL is not a process lock.
+
+Runtime holds a per-agent/schedule kernel lock through claim, async execution,
+native history/output finalization and reconciliation. A second live worker returns
+not-fired without changing the schedule or admitting work. Shared lifecycle/update
+activity prevents removal/checkpoint before native finalization is done. The lock
+has no clock expiry and releases on close/process death; uncertain durable receipts
+remain blocked until explicit recovery. Zero-content hashed coordination inodes live
+outside deletable app/profile trees and are validated/excluded by update manifests.
+Old Runtime processes do not acquire the new fence, so mixed-process operation is
+not a supported isolation claim. The supported local persistent filesystem and
+cooperating Runtime processes are assumptions; this is not a same-user shell sandbox.
+
+### Community publication versus private app portability
+
+Community definitions use an allowlist, not the full-profile portability exporter.
+Private app SQLite, attachments, backups and runtime history are not publication
+artifacts. Public text must be a regular, single-link inode; reserved runtime paths
+are excluded even within skill assets. This is not a classifier for intentionally
+copied private prose. Full profile backups remain private artifacts and retain their
+existing contents policy; nested managed DATA_DIR is excluded from them.
+
+Community profile install/update/uninstall takes the existing per-agent lifecycle
+and app storage/update gates. An update cannot mutate a live executor's definition,
+and uninstall cannot silently orphan an unresolved private app. Reinstall cannot
+reattach a replacement writer to retained data. No second lifecycle database or
+scheduler is introduced; combined Community retain/uninstall reconciliation remains
+an explicit future integration rather than automatic consent.

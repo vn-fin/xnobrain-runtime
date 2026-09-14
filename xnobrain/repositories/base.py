@@ -28,7 +28,17 @@ class StoreError(ValueError):
 class RepositoryBase:
     """Lock-protected atomic filesystem primitives shared by repository groups."""
 
-    def __init__(self, data_dir: str | Path, profiles_root: str | Path):
+    def __init__(
+        self,
+        data_dir: str | Path,
+        profiles_root: str | Path,
+        *,
+        root_profile: str | Path | None = None,
+    ):
+        from .storage_mount import StorageMountGuard
+
+        self.storage_mount = StorageMountGuard(data_dir)
+        self.root_profile = Path(root_profile) if root_profile is not None else None
         self.data_dir = Path(data_dir).resolve()
         self.profiles_root = Path(profiles_root).resolve()
         self.teams_root = self.data_dir / "teams"

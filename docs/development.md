@@ -42,3 +42,18 @@ make smoke-api
 After a profile mutation, verify its files remain under
 `DATA_DIR/profiles/<id>`, mutable content was atomically replaced, and an
 immutable snapshot exists where required.
+
+## Disposable custom-page persistence verification (source only)
+
+The workspace-root `scripts/dev/verify_custom_page_volume.sh` reuses the image ID of
+an existing source Runtime container. It creates a fresh disposable named volume,
+starts isolated readonly/network-disabled source-test containers and verifies stored
+pages across separate container instances, update checkpoint/post-verify, and an
+abrupt process exit. No production build or image pull. Only the volume/containers
+created by the script are removed; existing development volumes are not mounted.
+
+Docker source Compose requires `RUNTIME_CUSTOM_PAGE_STORAGE_MOUNT=/opt/data`. For
+unit tests using temporary fixture directories, run them with an empty value rather
+than redirecting them into the real workspace volume. The volume verifier uses the
+actual strict mount check. Native/Incus root storage needs its own explicit storage
+policy and is not inferred durable solely from a Docker source test.

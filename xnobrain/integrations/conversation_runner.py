@@ -28,6 +28,13 @@ from .hermes_support import (
 
 class ConversationRunnerMixin:
     _FEATURE_PROMPTS = {
+        "custom_page": (
+            "The user explicitly requested an Agent custom page. Call custom_page_inspect "
+            "for the approved schema and current app. Prepare a validated private draft "
+            "with custom_page_prepare and return the preview link. Use stored queries and "
+            "authorized data only. Do not activate, migrate destructively, schedule, or "
+            "install executable UI. Explain unsupported requirements honestly."
+        ),
         "todo": (
             "For this turn, begin by creating a concise todo list with the todo tool. "
             "Keep it updated as work progresses and verify every item before finishing."
@@ -246,6 +253,8 @@ class ConversationRunnerMixin:
             "requested_skills": normalized_skills,
             "work_context_id": str((body.get("ownership_context") or {}).get("id") or "personal"),
             "ownership_context": dict(body.get("ownership_context") or {}),
+            "_custom_page_principal": body.get("_custom_page_principal"),
+            "_ui_assistance": body.get("_ui_assistance"),
         }
 
     async def _resolve_prepared_model_route(self, prepared: dict[str, Any]) -> None:
@@ -728,6 +737,21 @@ class ConversationRunnerMixin:
         agent._xnobrain_smart_children = True
 
     async def _run_session_agent(self, prepared, **kwargs):
+        from ..repositories.custom_page_locks import ExecutionLease
+
+        pages = getattr(self, "custom_page_service", None)
+        lease = (
+            ExecutionLease(pages.repository.files.data_dir, str(prepared["name"]))
+            if pages
+            else None
+        )
+        try:
+            return await self._run_session_agent_accounted(prepared, **kwargs)
+        finally:
+            if lease is not None:
+                lease.close()
+
+    async def _run_session_agent_accounted(self, prepared, **kwargs):
         from .accounting_context import accounting_binding, accounting_enabled, inference_accounting
 
         if not accounting_enabled():
@@ -1258,6 +1282,12 @@ class ConversationRunnerMixin:
                         terminal_tool.set_approval_callback(previous_callback)
 
                 agent.run_conversation = run_with_memory_approval
+                from .custom_page_tools import install_tools
+
+                install_tools(agent, conversation_id)
+                from .ui_composition_tools import install_tools as install_layout_tools
+
+                install_layout_tools(agent, conversation_id)
                 return agent
 
         adapter = RunScopedAPIServerAdapter(PlatformConfig(enabled=True))
@@ -1274,23 +1304,87 @@ class ConversationRunnerMixin:
 
         @contextmanager
         def scoped_profile(_profile):
-            if accounting:
-                headers = accounting["headers"]
-                with (
-                    inference_accounting(
-                        accounting["binding"],
-                        headers.get("X-GoRouter-Conversation-Id", ""),
-                        headers.get("X-GoRouter-Run-Id", ""),
-                        headers.get("X-GoRouter-Parent-Run-Id", ""),
-                    ),
-                    conversation_profile_scope(profile_dir),
-                ):
-                    yield
-            else:
-                with conversation_profile_scope(profile_dir):
-                    yield
+            from ..repositories.custom_page_locks import ExecutionLease
+
+            pages = getattr(manager, "custom_page_service", None)
+            lease = (
+                ExecutionLease(pages.repository.files.data_dir, str(prepared["name"]))
+                if pages
+                else None
+            )
+            try:
+                if not profile_dir.is_dir() or profile_dir.is_symlink():
+                    raise AgentAPIError(
+                        "agent profile is unavailable", status=404, code="agent_not_found"
+                    )
+                if pages and prepared.get("_custom_page_principal"):
+                    record = pages.platform.repository.get_conversation_run(
+                        str(prepared["name"]), conversation_id, run_id
+                    )
+                    if record["status"] not in {"queued", "running"} or (
+                        record.get("cancellation") or {}
+                    ).get("requested"):
+                        raise AgentAPIError(
+                            "run no longer active", status=409, code="custom_page_run_inactive"
+                        )
+                    if record.get("custom_page_datasets") is not None:
+                        page = pages.read(str(prepared["name"]), prepared["_custom_page_principal"])
+                        if (
+                            page["status"] != "active"
+                            or page["active"] != record["custom_page_revision"]
+                        ):
+                            raise AgentAPIError(
+                                "page no longer active",
+                                status=409,
+                                code="custom_page_revision_conflict",
+                            )
+                if accounting:
+                    headers = accounting["headers"]
+                    with (
+                        inference_accounting(
+                            accounting["binding"],
+                            headers.get("X-GoRouter-Conversation-Id", ""),
+                            headers.get("X-GoRouter-Run-Id", ""),
+                            headers.get("X-GoRouter-Parent-Run-Id", ""),
+                        ),
+                        conversation_profile_scope(profile_dir),
+                    ):
+                        yield
+                else:
+                    with conversation_profile_scope(profile_dir):
+                        yield
+            finally:
+                if lease is not None:
+                    lease.close()
 
         adapter._profile_scope = scoped_profile
+        from contextlib import ExitStack
+
+        from .custom_page_tools import bind_run
+
+        page_scope = ExitStack()
+        if getattr(manager, "custom_page_service", None) and prepared.get("_custom_page_principal"):
+            page_scope.enter_context(
+                bind_run(
+                    manager.custom_page_service,
+                    str(prepared["name"]),
+                    conversation_id,
+                    run_id,
+                    prepared["_custom_page_principal"],
+                )
+            )
+        if prepared.get("_ui_assistance"):
+            from .ui_composition_tools import bind_run as bind_layout_run
+
+            page_scope.enter_context(
+                bind_layout_run(
+                    manager.ui_composition_service,
+                    str(prepared["name"]),
+                    conversation_id,
+                    run_id,
+                    prepared["_ui_assistance"],
+                )
+            )
         profile_token = _api_request_profile.set(str(prepared["name"]))
         register_gateway_notify(run_id, approval_notify_callback)
         try:
@@ -1446,6 +1540,7 @@ class ConversationRunnerMixin:
                 unregister_gateway_notify(run_id)
             finally:
                 _api_request_profile.reset(profile_token)
+                page_scope.close()
                 close = getattr(session_db, "close", None)
                 if callable(close):
                     close()

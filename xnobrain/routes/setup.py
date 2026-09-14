@@ -13,6 +13,7 @@ from . import (
     automation,
     checkpoints,
     conversations,
+    custom_page,
     events,
     hosted,
     kanban,
@@ -28,11 +29,14 @@ from . import (
     system,
     teams,
     time_control,
+    ui_composition,
     workspaces,
 )
 from .definition import Route
 
 ROUTE_GROUPS = (
+    custom_page.ROUTES,
+    ui_composition.ROUTES,
     system.ROUTES,
     time_control.ROUTES,
     runtime_updates.ROUTES,

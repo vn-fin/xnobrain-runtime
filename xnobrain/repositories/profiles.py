@@ -16,6 +16,17 @@ from .base import StoreError
 class ProfileRepositoryMixin:
     """Profile lifecycle and snapshot operations."""
 
+    def live_profile_path(self, agent_id: Any) -> Path:
+        """Resolve existing writer presence without relocating legacy run storage."""
+        identifier = self._id(agent_id, "agent id")
+        if identifier == "big-brother" and self.root_profile is not None:
+            path = self.root_profile
+        else:
+            path = self.profiles_root / identifier
+        if path.is_symlink():
+            raise StoreError("unsafe agent profile", status=404, code="not_found")
+        return path
+
     def profile_path(self, agent_id: Any) -> Path:
         agent_id = self._id(agent_id, "agent id")
         candidate = (self.profiles_root / agent_id).resolve()

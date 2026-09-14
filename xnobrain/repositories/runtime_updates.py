@@ -3,10 +3,24 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
+from collections.abc import Mapping
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from .base import StoreError
+from .runtime_update_gate import admission_gate
+
+
+def _unique_fields(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate journal field")
+        result[key] = value
+    return result
 
 
 class RuntimeUpdateRepository:
@@ -23,23 +37,46 @@ class RuntimeUpdateRepository:
 
     @staticmethod
     def _read(path: Path) -> dict[str, Any]:
-        if not path.is_file() or path.is_symlink():
-            return {}
+        # An absent journal is the only empty state. Symlinked, unreadable or
+        # malformed maintenance must not become an implicit admission grant.
+        descriptor = None
         try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
+            if path.parent.is_symlink() or path.parent.parent.is_symlink():
+                raise ValueError("unsafe journal parent")
+            descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
+            info = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_nlink != 1
+                or info.st_size > (16384 if path.name == "maintenance.json" else 64 * 1024 * 1024)
+            ):
+                raise ValueError("invalid journal file")
+            with os.fdopen(descriptor, encoding="utf-8") as source:
+                descriptor = None
+                value = json.load(source, object_pairs_hook=_unique_fields)
+            if not isinstance(value, dict):
+                raise ValueError("invalid journal shape")
+            if path.name == "maintenance.json":
+                if not isinstance(value.get("dispatch_paused"), bool):
+                    raise ValueError("missing maintenance state")
+                if value["dispatch_paused"] and (
+                    not value.get("operation_id")
+                    or not isinstance(value.get("generation"), int)
+                    or not isinstance(value.get("target"), dict)
+                ):
+                    raise ValueError("invalid maintenance binding")
+            return value
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError) as error:
             raise StoreError(
                 "Runtime update journal is invalid",
-                status=500,
+                status=503,
                 code="runtime_update_journal_invalid",
             ) from error
-        if not isinstance(value, dict):
-            raise StoreError(
-                "Runtime update journal is invalid",
-                status=500,
-                code="runtime_update_journal_invalid",
-            )
-        return value
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
 
     def operation(self, operation_id: str) -> dict[str, Any]:
         operation = self.base._id(operation_id, "operation id")
@@ -54,17 +91,30 @@ class RuntimeUpdateRepository:
     def maintenance(self) -> dict[str, Any]:
         return self._read(self.maintenance_path)
 
+    @contextmanager
+    def _maintenance_write(self):
+        if not self.base._lock.acquire(timeout=2):
+            raise StoreError(
+                "Runtime update storage is busy", status=503, code="runtime_update_storage_busy"
+            )
+        try:
+            with admission_gate(self.base.data_dir):
+                yield
+        finally:
+            self.base._lock.release()
+
     def save_maintenance(self, value: Mapping[str, Any]) -> dict[str, Any]:
         item = dict(value)
-        self.base.atomic_write(
-            self.maintenance_path,
-            (json.dumps(item, ensure_ascii=False, indent=2) + "\n").encode(),
-            mode=0o600,
-        )
+        with self._maintenance_write():
+            self.base.atomic_write(
+                self.maintenance_path,
+                (json.dumps(item, ensure_ascii=False, indent=2) + "\n").encode(),
+                mode=0o600,
+            )
         return item
 
     def clear_maintenance(self) -> None:
-        with self.base._lock:
+        with self._maintenance_write():
             try:
                 self.maintenance_path.unlink()
             except FileNotFoundError:

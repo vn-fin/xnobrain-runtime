@@ -29,6 +29,7 @@ from .checkpoints import CheckpointService, CheckpointsServiceMixin
 from .conversation_runs import ConversationRunService
 from .conversations import ConversationsServiceMixin
 from .cron import CronService, CronServiceError
+from .custom_page import CustomPageService
 from .errors import EXPECTED_ERRORS
 from .helpers import MemoryCache
 from .hosted import HostedRuntimeService
@@ -106,6 +107,16 @@ class PlatformService(
         from .team_runs import TeamRunService
 
         self.team_runs = TeamRunService(repository, agents, self, self.analytics)
+        from .ui_composition import UICompositionService
+
+        self.ui_composition = UICompositionService(self)
+        self.agents.ui_composition_service = self.ui_composition
+        self.custom_page = CustomPageService(self)
+        from .custom_page_schedules import CustomPageScheduleService
+
+        self.custom_page.schedules = CustomPageScheduleService(self.custom_page)
+        self.cron.custom_page_schedules = self.custom_page.schedules
+        self.agents.custom_page_service = self.custom_page
         self.runtime_updates = RuntimeUpdateService(self)
         self.time_control = TimeControlService(self)
         self.cron.default_timezone = self.time_control.default_timezone

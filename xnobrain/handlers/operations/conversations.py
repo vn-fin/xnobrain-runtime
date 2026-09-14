@@ -1,10 +1,10 @@
 """Feature-owned operation handlers."""
 
-import time
-from typing import Any, Callable
+import inspect
+from collections.abc import Callable
+from typing import Any
 
 from ...trusted_context import from_request
-from ..query import bucket, csv, time_range
 
 Operation = tuple[Callable[[], Any], str, int]
 
@@ -12,15 +12,20 @@ Operation = tuple[Callable[[], Any], str, int]
 def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Operation]:
     p, q, s = request.path_params, request.query_params, handler.service
     trusted = from_request(request)
-    agent = lambda: (
-        str(q.get("agent") or "").strip() or (_ for _ in ()).throw(ValueError("agent is required"))
-    )
-    return {
+
+    def agent():
+        identifier = str(q.get("agent") or "").strip()
+        if not identifier:
+            raise ValueError("agent is required")
+        return identifier
+
+    result = {
         "conversations_list": (
             lambda: s.list_conversations(
                 agent(),
                 page=int(q.get("page") or 1),
                 limit=int(q.get("limit") or 50),
+                trusted_context=trusted,
             ),
             "conversations retrieved successfully",
             200,
@@ -103,7 +108,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             200,
         ),
         "conversation_runs_start": (
-            lambda: s.start_conversation_run(agent(), p["conversation_id"], body),
+            lambda: s.start_conversation_run(agent(), p["conversation_id"], body, trusted),
             "conversation run started",
             202,
         ),
@@ -150,3 +155,57 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             200,
         ),
     }
+
+    # The operation factories are assembled eagerly; authorize only the selected
+    # operation, never touch another session while resolving an unrelated route.
+    if trusted.subject:
+        for name, (operation, message, status) in list(result.items()):
+            if name in {"conversations_create", "conversations_list"}:
+                continue
+
+            def checked(operation=operation, name=name):
+                readonly = name in {
+                    "conversations_get",
+                    "messages_list",
+                    "conversations_usage",
+                    "conversation_goal_get",
+                    "conversation_runs_get",
+                    "conversation_runs_active",
+                }
+                stopping = name in {
+                    "run_stop",
+                    "conversation_child_run_stop",
+                    "conversation_goal_pause",
+                }
+                s.authorize_conversation(
+                    agent(), p["conversation_id"], trusted, active=not readonly and not stopping
+                )
+                if name == "run_approval":
+                    # Approval dispatch accepts a run ID internally; bind the URL
+                    # session too before handing it to that existing subsystem.
+                    s.repository.get_conversation_run(agent(), p["conversation_id"], p["run_id"])
+                return operation()
+
+            result[name] = (checked, message, status)
+    from ...services.conversation_authority import public_run
+
+    for name in {
+        "conversation_runs_start",
+        "conversation_runs_get",
+        "conversation_runs_active",
+        "conversation_child_run_stop",
+        "conversation_run_todo_update",
+        "run_stop",
+    }:
+        operation, message, status = result[name]
+
+        async def projected(operation=operation, name=name):
+            value = operation()
+            if inspect.isawaitable(value):
+                value = await value
+            if name == "conversation_runs_active":
+                return {**value, "run": public_run(value.get("run"))}
+            return public_run(value)
+
+        result[name] = (projected, message, status)
+    return result

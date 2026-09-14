@@ -51,13 +51,16 @@ class APIHandlers(WorkspaceHandlers, PortabilityHandlers, StreamingHandlers):
             result = operation()
             if inspect.isawaitable(result):
                 result = await result
-            return self.success(result, message, status)
+            response = self.success(result, message, status)
         except EXPECTED_ERRORS as error:
-            return self.failure(error)
+            response = self.failure(error)
         except (ValueError, KeyError, TypeError) as error:
             if not hasattr(error, "status"):
                 error.status, error.code = 400, "invalid_request"
-            return self.failure(error)
+            response = self.failure(error)
+        if name.startswith(("custom_page_", "ui_composition_", "ui_assistance_")):
+            response.headers["Cache-Control"] = "private, no-store"
+        return response
 
     def _operation(
         self, name: str, request: Request, body: dict[str, Any]

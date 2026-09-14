@@ -8,9 +8,10 @@ import sqlite3
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from ..integrations import (
     CronBlueprintInvalid,
@@ -40,8 +41,8 @@ def _schedule_revision_digest(schedule: Mapping[str, Any]) -> str:
 def _iso(value: Any) -> str:
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
     return str(value or "")
 
 
@@ -55,6 +56,7 @@ class CronService:
         self.kanban: Any | None = None
         self.dispatch_allowed = lambda: True
         self.default_timezone = lambda: "Etc/UTC"
+        self.custom_page_schedules = None
         self._active_execution_lock = threading.Lock()
         self._active_executions = 0
 
@@ -313,8 +315,14 @@ class CronService:
             "id": uuid.uuid4().hex[:12],
             "target_type": target_type,
             "destination": destination,
-            "created_at": _iso(datetime.now(timezone.utc)),
+            "created_at": _iso(datetime.now(UTC)),
         }
+        if str(job["id"]).startswith("xcp_"):
+            raise CronServiceError(
+                "App schedules have no external delivery",
+                status=409,
+                code="custom_page_schedule_managed",
+            )
         targets = [dict(item) for item in job.get("xnobrain_delivery_targets") or []]
         targets.append(target)
         self._snapshot_store(profile)
@@ -361,11 +369,23 @@ class CronService:
         agent_id: str | None = None,
     ) -> dict[str, Any]:
         profile, job = self._find_job(job_id, agent_id)
+        if str(job["id"]).startswith("xcp_"):
+            raise CronServiceError(
+                "Use the custom page schedule controls",
+                status=409,
+                code="custom_page_schedule_managed",
+            )
         action = "resume_job" if enabled else "pause_job"
         return self._dto(profile, self._native(profile, action, job["id"]))
 
     def delete_job(self, job_id: str, agent_id: str | None = None) -> dict[str, Any]:
         profile, job = self._find_job(job_id, agent_id)
+        if str(job["id"]).startswith("xcp_"):
+            raise CronServiceError(
+                "Use the custom page schedule controls",
+                status=409,
+                code="custom_page_schedule_managed",
+            )
         self._snapshot_store(profile)
         self._snapshot_job_output(profile, str(job["id"]))
         if not self._native(profile, "remove_job", job["id"]):
@@ -374,10 +394,14 @@ class CronService:
 
     def request_run(self, job_id: str, agent_id: str | None = None) -> dict[str, Any]:
         profile, job = self._find_job(job_id, agent_id)
+        if str(job["id"]).startswith("xcp_"):
+            raise CronServiceError(
+                "Use explicit custom page actions", status=409, code="custom_page_schedule_managed"
+            )
         triggered = self._native(profile, "trigger_job", job["id"])
         if not triggered:
             raise CronServiceError("cron job not found", status=404, code="cron_not_found")
-        now = _iso(datetime.now(timezone.utc))
+        now = _iso(datetime.now(UTC))
         return {
             "job": self._dto(profile, triggered),
             "run": {
@@ -392,7 +416,7 @@ class CronService:
         """Return profile jobs that should be handed to the native scheduler."""
         if not self.dispatch_allowed():
             return []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         due: list[tuple[str, str]] = []
         try:
             profiles = self._profiles()
@@ -416,7 +440,7 @@ class CronService:
                 except ValueError:
                     continue
                 if next_run.tzinfo is None:
-                    next_run = next_run.replace(tzinfo=timezone.utc)
+                    next_run = next_run.replace(tzinfo=UTC)
                 if next_run <= now:
                     due.append((profile, str(job["id"])))
         return due
@@ -437,24 +461,42 @@ class CronService:
         from ..integrations.cron_timezone import install_timezone_computation
 
         install_timezone_computation(cron_jobs)
-        home = self._profile_home(profile)
-        token = set_hermes_home_override(str(home))
-        with self._active_execution_lock:
-            self._active_executions += 1
-        try:
-            with cron_jobs.use_cron_store(home):
-                provider = resolve_cron_scheduler()
-                fired = bool(provider.fire_due(job_id, adapters=None, loop=None))
-            if fired:
-                try:
-                    self.reconcile_deliveries([(profile, self._native(profile, "list_jobs", True))])
-                except Exception:
-                    LOGGER.warning("Could not reconcile cron deliveries for job %s", job_id)
-            return fired
-        finally:
+        from ..integrations.custom_page_cron import (
+            dispatch_scope,
+            execution_scope,
+            install_executor,
+        )
+
+        install_executor()
+        # App-owned claims must not expire into a second worker while the first
+        # is still executing or finalizing native history/output. No such lock is
+        # applied to ordinary cron jobs.
+        with dispatch_scope(self, profile, job_id) as admitted:
+            if not admitted:
+                return False
+            home = self._profile_home(profile)
+            token = set_hermes_home_override(str(home))
             with self._active_execution_lock:
-                self._active_executions -= 1
-            reset_hermes_home_override(token)
+                self._active_executions += 1
+            try:
+                with (
+                    cron_jobs.use_cron_store(home),
+                    execution_scope(self.custom_page_schedules, profile),
+                ):
+                    provider = resolve_cron_scheduler()
+                    fired = bool(provider.fire_due(job_id, adapters=None, loop=None))
+                if fired:
+                    try:
+                        self.reconcile_deliveries(
+                            [(profile, self._native(profile, "list_jobs", True))]
+                        )
+                    except Exception:
+                        LOGGER.warning("Could not reconcile cron deliveries for job %s", job_id)
+                return fired
+            finally:
+                with self._active_execution_lock:
+                    self._active_executions -= 1
+                reset_hermes_home_override(token)
 
     def list_job_runs(
         self,
@@ -501,7 +543,7 @@ class CronService:
                             "target_id": str(target["id"]),
                             "target_type": str(target["target_type"]),
                             "status": result["status"],
-                            "at": _iso(datetime.now(timezone.utc)),
+                            "at": _iso(datetime.now(UTC)),
                             "reason": result.get("reason"),
                         }
                         if previous:
@@ -848,7 +890,7 @@ class CronService:
         )[: max(1, min(limit, 100))]
         synthesized: list[dict[str, Any]] = []
         for index, artifact in enumerate(artifacts):
-            finished = datetime.fromtimestamp(artifact.stat().st_mtime, timezone.utc)
+            finished = datetime.fromtimestamp(artifact.stat().st_mtime, UTC)
             text = artifact.read_text(encoding="utf-8", errors="replace")
             failed = "\n## Error\n" in text or (
                 index == 0 and str(job.get("last_status") or "ok") != "ok"

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import importlib.util
 import json
 import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -66,7 +68,9 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
         (self.data / "durable").mkdir(parents=True)
         (self.data / "durable" / "memory.txt").write_text("preserve me", encoding="utf-8")
         database = self.data / "state.db"
-        with sqlite3.connect(database) as connection:
+        # A sqlite connection's context manager commits but does not close it.
+        # Keep no abandoned WAL connection whose later GC changes the manifest.
+        with closing(sqlite3.connect(database)) as connection, connection:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("CREATE TABLE state(value TEXT)")
             connection.execute("INSERT INTO state VALUES ('preserve me')")
@@ -140,6 +144,7 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         ready = await self.call("readiness", request(checkpoint_id=checkpoint["checkpoint_id"]))
         self.assertTrue(ready["ready"])
+        gc.collect()  # Unrelated object collection cannot alter durable fixture files.
         verified = await self.call(
             "post_verify", request(checkpoint_id=checkpoint["checkpoint_id"])
         )

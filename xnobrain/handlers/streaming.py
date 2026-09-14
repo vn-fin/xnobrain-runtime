@@ -9,6 +9,7 @@ from fastapi.responses import Response, StreamingResponse
 
 from ..services import EXPECTED_ERRORS
 from ..services.public_text import public_error_message
+from ..trusted_context import from_request
 
 
 class StreamingHandlers:
@@ -71,7 +72,7 @@ class StreamingHandlers:
                         kind, payload = await asyncio.wait_for(queue.get(), timeout=15)
                         sequence += 1
                         yield f"id: {sequence}\nevent: {kind}\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n"
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         yield ": keep-alive\n\n"
             finally:
                 stopped.set()
@@ -126,10 +127,17 @@ class StreamingHandlers:
     async def stream(self, request: Request, body: dict[str, Any]) -> StreamingResponse:
         agent = str(request.query_params.get("agent") or "").strip()
         conversation_id = request.path_params["conversation_id"]
+        trusted = from_request(request)
+        try:
+            self.service.authorize_conversation(agent, conversation_id, trusted, active=True)
+        except EXPECTED_ERRORS as error:
+            return self.failure(error)
 
         async def events():
             try:
-                async for chunk in self.service.stream_conversation(agent, conversation_id, body):
+                async for chunk in self.service.stream_conversation(
+                    agent, conversation_id, body, trusted
+                ):
                     yield chunk
             except EXPECTED_ERRORS as error:
                 yield f"event: error\ndata: {json.dumps({'message': public_error_message(error)})}\n\n".encode()
@@ -248,7 +256,7 @@ class StreamingHandlers:
                 if entry is not None:
                     try:
                         await asyncio.wait_for(entry.changed.wait(), timeout=1.0)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         pass
                 else:
                     await asyncio.sleep(1)
@@ -268,6 +276,11 @@ class StreamingHandlers:
         agent_id = str(request.query_params.get("agent") or "").strip()
         conversation_id = request.path_params["conversation_id"]
         run_id = request.path_params["run_id"]
+        trusted = from_request(request)
+        try:
+            self.service.authorize_conversation(agent_id, conversation_id, trusted)
+        except EXPECTED_ERRORS as error:
+            return self.failure(error)
         raw_cursor = request.headers.get("Last-Event-ID") or request.query_params.get("after")
         try:
             cursor = max(0, int(raw_cursor)) if raw_cursor else 0
@@ -282,6 +295,7 @@ class StreamingHandlers:
                     run_id,
                     cursor,
                 ):
+                    self.service.authorize_conversation(agent_id, conversation_id, trusted)
                     sequence = int(item.get("sequence") or 0)
                     name = str(item.get("event") or "message")
                     payload = json.dumps(

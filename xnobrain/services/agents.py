@@ -369,27 +369,57 @@ class AgentsServiceMixin:
         self._cache.invalidate("agents")
         return self.get_agent(agent_id)
 
-    def delete_agent(self, agent_id: str) -> dict[str, Any]:
+    def delete_agent(
+        self, agent_id: str, *, retained_page_owner: str | None = None
+    ) -> dict[str, Any]:
         if self._is_big_brother(agent_id):
             raise ServiceError(
                 "Big Brother is a protected system profile",
                 status=409,
                 code="protected_agent",
             )
-        # Validate the profile before mutating Kanban so a missing assistant
-        # cannot trigger an unrelated cleanup.
-        profile = self.repository.profile_path(agent_id)
-        if not profile.is_dir():
-            raise StoreError("agent not found", status=404, code="not_found")
-        deleted_tasks = self.kanban.delete_assignee_tasks(agent_id)
-        self.repository.hard_delete_profile(agent_id)
-        self.agents.sync_profiles_registry()
-        self._cache.invalidate("agents")
-        return {
-            "deleted": True,
-            "recoverable": False,
-            "kanban_tasks_deleted": deleted_tasks,
-        }
+        from ..repositories.custom_page import CustomPageRepository
+        from ..repositories.custom_page_locks import lifecycle_gate
+
+        updates = getattr(self, "runtime_updates", None)
+        if updates is not None:
+            updates.require_dispatch()
+        runs = getattr(self, "conversation_runs", None)
+        if runs is not None and any(run.agent_id == agent_id for run in runs._active.values()):
+            raise ServiceError(
+                "Agent work is still active", status=409, code="custom_page_jobs_active"
+            )
+        pages = CustomPageRepository(self.repository)
+        with lifecycle_gate(self.repository.data_dir, agent_id), pages.lock():
+            raw_profile = self.repository.profiles_root / self.repository._id(agent_id)
+            profile = self.repository.profile_path(agent_id)
+            if raw_profile.is_symlink() or not profile.is_dir():
+                raise StoreError("agent not found", status=404, code="not_found")
+            app = pages.directory(agent_id)
+            # Damaged files/backups still require deliberate resolution.
+            if app.exists() and any(app.iterdir()):
+                if retained_page_owner is None:
+                    raise ServiceError(
+                        "Archive and retain or explicitly delete the custom page before removing this agent",
+                        status=409,
+                        code="custom_page_retention_required",
+                    )
+                with pages.database(agent_id, retained_page_owner) as db:
+                    if pages.state(db)["status"] != "archived":
+                        raise ServiceError(
+                            "Custom page must be archived",
+                            status=409,
+                            code="custom_page_archive_required",
+                        )
+            deleted_tasks = self.kanban.delete_assignee_tasks(agent_id)
+            self.repository.hard_delete_profile(agent_id)
+            self.agents.sync_profiles_registry()
+            self._cache.invalidate("agents")
+            return {
+                "deleted": True,
+                "recoverable": False,
+                "kanban_tasks_deleted": deleted_tasks,
+            }
 
     def global_config(self) -> dict[str, Any]:
         return self.config.get_config()

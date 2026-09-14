@@ -278,6 +278,76 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second["timeout_seconds"], 86400)
         await self.service.cancel_run("agent-one", "session-one", second["id"])
 
+    async def test_custom_page_scope_is_in_run_receipt_not_browser_payload(self):
+        from xnobrain.services.base import ServiceError
+        from xnobrain.trusted_context import TrustedRequestContext
+
+        body = {"input": "Approved analysis", "idempotency_key": "page-action-01"}
+        from xnobrain.services.conversations import ConversationsServiceMixin
+
+        context = ConversationsServiceMixin._personal_context()
+        self.repository.create_conversation_context(
+            self.repository.live_profile_path("agent-one"),
+            {
+                **context,
+                "agent_id": "agent-one",
+                "conversation_id": "session-one",
+                "actor_user_id": "owner",
+                "actor_tenant_id": "tenant",
+            },
+        )
+        scope = {
+            "ownership_context": context,
+            "trusted_context": TrustedRequestContext("owner", "tenant"),
+            "custom_page_datasets": ["articles"],
+            "custom_page_revision": 1,
+        }
+        first = await self.service.start_run("agent-one", "session-one", body, **scope)
+        replay = await self.service.start_run("agent-one", "session-one", body, **scope)
+        self.assertEqual(first["id"], replay["id"])
+        self.assertEqual(self.analytics.calls, ["agent-one"])
+        for change in ({"custom_page_datasets": ["private"]}, {"custom_page_revision": 2}):
+            with self.assertRaises(ServiceError) as caught:
+                await self.service.start_run("agent-one", "session-one", body, **(scope | change))
+            self.assertEqual(caught.exception.code, "run_idempotency_conflict")
+        stored = self.repository.get_conversation_run("agent-one", "session-one", first["id"])
+        self.assertEqual(stored["custom_page_datasets"], ["articles"])
+        self.assertEqual(stored["custom_page_revision"], 1)
+        self.assertEqual(stored["ownership_context"]["payer_kind"], "personal")
+
+    async def test_all_four_capabilities_share_one_verified_parent_and_budget(self):
+        from xnobrain.services.conversations import ConversationsServiceMixin
+        from xnobrain.trusted_context import TrustedRequestContext
+
+        context = ConversationsServiceMixin._personal_context()
+        self.repository.create_conversation_context(
+            self.repository.live_profile_path("agent-one"),
+            {
+                **context,
+                "agent_id": "agent-one",
+                "conversation_id": "session-one",
+                "actor_user_id": "owner",
+                "actor_tenant_id": "tenant",
+            },
+        )
+        first = await self.service.start_run(
+            "agent-one",
+            "session-one",
+            {
+                "input": "Create a news page",
+                "capabilities": ["custom_page", "goal", "todo", "delegate"],
+                "idempotency_key": "four-capabilities",
+            },
+            ownership_context=context,
+            trusted_context=TrustedRequestContext("owner", "tenant"),
+        )
+        await self.wait_for_revision(first["id"], 2)
+        self.assertEqual(
+            first["composer_selection"]["capabilities"], ["todo", "delegate", "goal", "custom_page"]
+        )
+        self.assertEqual(self.analytics.calls, ["agent-one"])
+        self.assertEqual(len(self.repository.list_conversation_runs("agent-one", "session-one")), 1)
+
     async def test_idempotent_start_replays_one_parent_and_conflicts_on_change(self):
         from xnobrain.services.base import ServiceError
 

@@ -2,53 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import json
-import logging
-import os
 import time
 import uuid
-from datetime import timedelta
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
-import yaml
-
-from ..defaults import (
-    BIG_BROTHER_AGENT_ID,
-    BIG_BROTHER_APPROVAL_DEFAULT_MARKER,
-    BIG_BROTHER_DESCRIPTION,
-    BIG_BROTHER_DISPLAY_NAME,
-    BIG_BROTHER_MODEL_DEFAULT_MARKER,
-    BIG_BROTHER_NATIVE_TOOLSETS,
-    BIG_BROTHER_SKILL_CATEGORY,
-    BIG_BROTHER_SKILL_ID,
-    CUSTOM_SKILL_CATEGORY,
-    DEFAULT_PROFILE_MODEL,
-    LEGACY_BIG_BROTHER_TOOLSET,
-)
-from ..integrations import AgentAPIError, ConfigAPIError, LLMRouterAPIError
 from ..integrations.accounting_context import accounting_enabled
 from ..models.conversations import ConversationOwnershipContext
 from ..repositories import StoreError
-from .base import ServiceError, iso, utc_now
-from .constants import (
-    API_KEY_PROVIDERS,
-    DEFAULT_TEAM_COORDINATOR_PROMPT,
-    DEFAULT_TEAM_SYNTHESIS_PROMPT,
-    EVERY_SCHEDULE,
-    FREE_MODEL_PROVIDERS,
-    NO_AUTH_PROVIDERS,
-    OPENAI_COMPATIBLE_PROVIDER_DEFINITIONS,
-    PROVIDER_DEFINITIONS,
-    SAFE_TOOLSETS,
-    SUPPORTED_PROVIDERS,
-)
-from .cron import CronServiceError
-from .helpers import cached_method
-from .workspace_preview import WorkspacePreview, WorkspacePreviewError
-from .workspace_upload import WorkspaceUploadError
+from ..repositories.conversation_creation import ConversationCreationRepository
+from .base import ServiceError, iso
+from .conversation_creation import create_bound, signed_creation
 
 
 class ConversationsServiceMixin:
@@ -83,7 +48,7 @@ class ConversationsServiceMixin:
         if raw is None and creation_intent:
             if (
                 not isinstance(verified, Mapping)
-                or str(verified.get("id") or "") != creation_intent
+                or str(verified.get("creation_intent") or "") != creation_intent
             ):
                 raise ServiceError(
                     "conversation creation intent was not verified by Control",
@@ -108,7 +73,16 @@ class ConversationsServiceMixin:
                 code="conversation_context_not_verified",
             )
         try:
-            context = ConversationOwnershipContext.model_validate(raw).model_dump(mode="json")
+            normalized = {
+                key: value
+                for key, value in raw.items()
+                if key not in {"creation_intent", "conversation_id"}
+            }
+            context = ConversationOwnershipContext.model_validate(normalized).model_dump(
+                mode="json"
+            )
+            if context.get("revocation_version") is None:
+                context.pop("revocation_version", None)
         except Exception as exc:
             raise ServiceError(
                 "conversation ownership context is invalid",
@@ -167,7 +141,7 @@ class ConversationsServiceMixin:
         return {
             field: context.get(field)
             for field in ConversationOwnershipContext.model_fields
-            if field != "owner_label" or context.get(field) is not None
+            if field not in {"owner_label", "revocation_version"} or context.get(field) is not None
         }
 
     def _bind_conversation_context(
@@ -183,14 +157,24 @@ class ConversationsServiceMixin:
             "conversation_id": conversation_id,
             "agent_id": agent_id,
             "actor_user_id": str(getattr(trusted_context, "subject", "") or "") or None,
+            "actor_tenant_id": str(getattr(trusted_context, "tenant_id", "") or ""),
             "executor_workspace_id": None,
             "created_at": iso(),
             "legacy_backfill": False,
         }
         return self._public_context(self.repository.create_conversation_context(profile, record))
 
+    def authorize_conversation(self, agent_id, conversation_id, trusted_context, *, active=False):
+        from .conversation_authority import require_binding
+
+        if getattr(trusted_context, "subject", ""):
+            return require_binding(
+                self.repository, agent_id, conversation_id, trusted_context, active=active
+            )
+        return None
+
     def list_conversations(
-        self, agent_id: str, *, page: int = 1, limit: int = 50
+        self, agent_id: str, *, page: int = 1, limit: int = 50, trusted_context=None
     ) -> dict[str, Any]:
         bounded_page = max(1, int(page))
         bounded_limit = max(1, min(int(limit), 1000))
@@ -202,6 +186,18 @@ class ConversationsServiceMixin:
             },
         )
         conversations = payload["conversations"]
+        if getattr(trusted_context, "subject", ""):
+            visible = []
+            for item in conversations:
+                identifier = str(item.get("id") or item.get("session_id") or "")
+                try:
+                    self.authorize_conversation(agent_id, identifier, trusted_context)
+                except ServiceError as error:
+                    if error.code != "conversation_owner_forbidden":
+                        raise
+                else:
+                    visible.append(item)
+            conversations = visible
         pagination = dict(payload.get("pagination") or {})
         return {
             "conversations": [self._conversation_dto(agent_id, item) for item in conversations],
@@ -219,6 +215,13 @@ class ConversationsServiceMixin:
         trusted_context: Any = None,
     ) -> dict[str, Any]:
         context = self._normalize_context(body, trusted_context)
+        if context["state"] != "active":
+            raise ServiceError(
+                "conversation context is inactive", status=403, code="conversation_context_revoked"
+            )
+        bound_id = signed_creation(body, trusted_context)
+        if bound_id:
+            return create_bound(self, agent_id, bound_id, body, context, trusted_context)
         conversation_id = f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         bound = self._bind_conversation_context(
             agent_id,
@@ -395,7 +398,15 @@ class ConversationsServiceMixin:
                 status=409,
                 code="conversation_running",
             )
-        result = self.agents.delete_conversation(agent_id, conversation_id)
+        creation = ConversationCreationRepository(
+            self.repository, self._conversation_profile(agent_id), agent_id, conversation_id
+        )
+        with creation.locked():
+            receipt = creation.read()
+            if receipt is not None:
+                receipt["state"] = "deleted"
+                creation.save(receipt)
+            result = self.agents.delete_conversation(agent_id, conversation_id)
         self.repository.delete_conversation_runs(agent_id, conversation_id)
         self.repository.delete_conversation_context(
             self._conversation_profile(agent_id), conversation_id
@@ -403,8 +414,17 @@ class ConversationsServiceMixin:
         return result
 
     async def stream_conversation(
-        self, agent_id: str, conversation_id: str, body: Mapping[str, Any]
+        self, agent_id: str, conversation_id: str, body: Mapping[str, Any], trusted_context=None
     ):
+        if getattr(trusted_context, "subject", ""):
+            run = await self.start_conversation_run(
+                agent_id, conversation_id, body, trusted_context
+            )
+            async for event in self.conversation_runs.events(agent_id, conversation_id, run["id"]):
+                self.authorize_conversation(agent_id, conversation_id, trusted_context)
+                yield self.conversation_runs._sse(event)
+            yield b"data: [DONE]\n\n"
+            return
         context = self._stored_context(agent_id, conversation_id)
         async for event in self.conversation_runs.legacy_stream(
             agent_id,
@@ -419,10 +439,35 @@ class ConversationsServiceMixin:
         agent_id: str,
         conversation_id: str,
         body: Mapping[str, Any],
+        trusted_context: Any = None,
+        *,
+        custom_page_datasets: list[str] | None = None,
+        custom_page_revision: int | None = None,
+        dispatch_guard=None,
+        custom_page_schedule: str | None = None,
+        ui_assistance: dict | None = None,
     ) -> dict[str, Any]:
-        context = self._stored_context(agent_id, conversation_id)
+        if trusted_context is not None and getattr(trusted_context, "subject", ""):
+            from .conversation_authority import require_binding
+
+            context = self._public_context(
+                require_binding(
+                    self.repository, agent_id, conversation_id, trusted_context, active=True
+                )
+            )
+        else:
+            context = self._stored_context(agent_id, conversation_id)
         return await self.conversation_runs.start_run(
-            agent_id, conversation_id, body, ownership_context=context
+            agent_id,
+            conversation_id,
+            body,
+            ownership_context=context,
+            trusted_context=trusted_context,
+            custom_page_datasets=custom_page_datasets,
+            custom_page_revision=custom_page_revision,
+            dispatch_guard=dispatch_guard,
+            custom_page_schedule=custom_page_schedule,
+            ui_assistance=ui_assistance,
         )
 
     def _with_context(

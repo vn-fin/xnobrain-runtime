@@ -7,9 +7,10 @@ import json
 import re
 import time
 import uuid
-from contextlib import suppress
+from collections.abc import AsyncIterator, Mapping
+from contextlib import AsyncExitStack, suppress
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Mapping
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -37,6 +38,8 @@ class _ActiveConversationRun:
     agent_id: str
     conversation_id: str
     task: asyncio.Task | None = None
+    lifecycle_lease: Any = None
+    conversation_lease: Any = None
     changed: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -63,10 +66,10 @@ class ConversationRunService:
             "payer_kind": context.get("payer_kind"),
             "sponsor_grant_id": context.get("sponsor_grant_id"),
         }
-        for field, expected in aliases.items():
-            if field not in body:
+        for name, expected in aliases.items():
+            if name not in body:
                 continue
-            supplied = body.get(field)
+            supplied = body.get(name)
             if supplied != expected:
                 raise ServiceError(
                     "run ownership or payer conflicts with the conversation binding",
@@ -85,12 +88,36 @@ class ConversationRunService:
         body: Mapping[str, Any],
         *,
         ownership_context: Mapping[str, Any] | None = None,
+        trusted_context: Any = None,
+        custom_page_datasets: list[str] | None = None,
+        custom_page_revision: int | None = None,
+        dispatch_guard=None,
+        custom_page_schedule: str | None = None,
+        ui_assistance: dict | None = None,
     ) -> dict[str, Any]:
         runtime_updates = getattr(self, "runtime_updates", None)
         if runtime_updates is not None:
             runtime_updates.require_dispatch()
+        if dispatch_guard is not None:
+            dispatch_guard()
         self.agents.get_conversation(agent_id, conversation_id)
         context = dict(ownership_context or {})
+        signed = bool(getattr(trusted_context, "subject", ""))
+
+        def require_current_binding():
+            if signed:
+                from .conversation_authority import require_binding
+
+                require_binding(
+                    self.repository,
+                    agent_id,
+                    conversation_id,
+                    trusted_context,
+                    active=True,
+                    expected=context,
+                )
+
+        require_current_binding()
         self._reject_conflicting_context(body, context)
         context_state = str(context.get("state") or "active")
         if context_state != "active":
@@ -128,8 +155,28 @@ class ConversationRunService:
         capabilities = selection.capabilities
         if capabilities is None:
             capabilities = [selection.feature] if selection.feature else []
+        if ("custom_page" in capabilities or custom_page_datasets is not None) and (
+            context.get("owner_kind") != "personal" or not getattr(trusted_context, "subject", "")
+        ):
+            raise ServiceError(
+                "Custom pages require a verified Personal conversation",
+                status=403,
+                code="custom_page_personal_required",
+            )
         idempotency_key = str(body.get("idempotency_key") or "").strip()
-        fingerprint = self.repository.conversation_run_fingerprint(body)
+        scope = None
+        if custom_page_datasets is not None:
+            if not custom_page_datasets or not custom_page_revision:
+                raise ServiceError(
+                    "invalid custom page scope", status=422, code="custom_page_scope_invalid"
+                )
+            custom_page_datasets = sorted(set(custom_page_datasets))
+            scope = {"datasets": custom_page_datasets, "revision": custom_page_revision}
+            if custom_page_schedule:
+                scope["schedule_id"] = custom_page_schedule
+        if ui_assistance is not None:
+            scope = {"ui_assistance": ui_assistance}
+        fingerprint = self.repository.conversation_run_fingerprint(body, custom_page_scope=scope)
 
         def replay_idempotent() -> dict[str, Any] | None:
             if not idempotency_key:
@@ -141,6 +188,15 @@ class ConversationRunService:
             )
             if existing is None:
                 return None
+            if signed:
+                from .conversation_authority import principal_matches
+
+                if not principal_matches(existing, trusted_context):
+                    raise ServiceError(
+                        "Run identity is unavailable",
+                        status=403,
+                        code="conversation_owner_forbidden",
+                    )
             if existing.get("request_fingerprint") != fingerprint:
                 raise ServiceError(
                     "run idempotency key was already used for different input",
@@ -200,70 +256,128 @@ class ConversationRunService:
                 status=409,
                 code="conversation_running",
             )
-        mode = self._mode(body)
-        timeout_seconds = session_timeout_seconds(body.get("timeout_seconds"))
-        now = time.time()
-        run_id = "run_" + uuid.uuid4().hex
-        record = {
-            "id": run_id,
-            "agent_id": str(agent_id),
-            "conversation_id": str(conversation_id),
-            "status": "queued",
-            "mode": mode,
-            "timeout_seconds": timeout_seconds,
-            "created_at": now,
-            "started_at": None,
-            "ended_at": None,
-            "updated_at": now,
-            "last_activity_at": now,
-            "deadline_at": None,
-            "revision": 0,
-            "idempotency_key": idempotency_key or None,
-            "request_fingerprint": fingerprint,
-            "links": {
-                "goal_id": (f"goal:{conversation_id}" if "goal" in capabilities else None),
-                "todo_revision": 0 if "todo" in capabilities else None,
-                "children": {},
-            },
-            "execution_budget": {
-                "turn_limit": concurrent_work_max_turns(),
-                "turns_used": 0,
-                "concurrency_limit": max_parallel_agents(),
-                "active_children": 0,
-                "peak_children": 0,
-                "depth_limit": concurrent_work_max_depth(),
-            },
-            "cancellation": {
-                "requested": False,
-                "children_pending": [],
-                "unknown_in_flight": False,
-            },
-            "error": None,
-            "output": "",
-            "usage": {},
-            "ownership_context": context,
-            "composer_selection": {
-                "schema_version": 1,
-                "feature": selection.feature,
-                "capabilities": list(capabilities),
-            },
-        }
-        self.repository.put_conversation_run(record)
-        entry = _ActiveConversationRun(run_id, str(agent_id), str(conversation_id))
-        self._active[run_id] = entry
-        self._by_conversation[key] = run_id
-        payload = dict(body)
-        if selection.capabilities is not None:
-            payload["capabilities"] = list(selection.capabilities)
-        payload["timeout_seconds"] = timeout_seconds
-        payload["run_id"] = run_id
-        payload["run_mode"] = mode
-        payload["conversation_id"] = str(conversation_id)
-        payload["ownership_context"] = context
-        task = asyncio.create_task(self._drive(record, payload), name=f"conversation-run-{run_id}")
-        entry.task = task
-        task.add_done_callback(lambda _task, rid=run_id: self._deregister(rid))
-        return dict(record)
+        from ..repositories.custom_page_locks import ConversationLease, ExecutionLease
+
+        lease = ExecutionLease(self.repository.data_dir, str(agent_id))
+        registered = False
+        conversation_lease = None
+        try:
+            conversation_lease = ConversationLease(
+                self.repository.data_dir, str(agent_id), str(conversation_id)
+            )
+            # Another process may have committed while budget admission waited
+            # or between the earlier check and this exclusive conversation lock.
+            replay = replay_idempotent()
+            if replay is not None:
+                return replay
+            if self.active_run(agent_id, conversation_id) is not None:
+                raise ServiceError(
+                    "conversation has an active writer", status=409, code="conversation_running"
+                )
+            profile = self.repository.live_profile_path(agent_id)
+            if profile.is_symlink() or not profile.is_dir():
+                raise ServiceError("agent not found", status=404, code="agent_not_found")
+            if runtime_updates is not None:
+                runtime_updates.require_dispatch()
+            require_current_binding()
+            if dispatch_guard is not None:
+                dispatch_guard()
+            mode = self._mode(body)
+            timeout_seconds = session_timeout_seconds(body.get("timeout_seconds"))
+            now = time.time()
+            run_id = "run_" + uuid.uuid4().hex
+            record = {
+                "custom_page_datasets": custom_page_datasets,
+                "custom_page_revision": custom_page_revision,
+                "custom_page_schedule": custom_page_schedule,
+                "ui_assistance": ui_assistance,
+                "id": run_id,
+                "actor_user_id": trusted_context.subject if signed else None,
+                "actor_tenant_id": trusted_context.tenant_id if signed else None,
+                "agent_id": str(agent_id),
+                "conversation_id": str(conversation_id),
+                "status": "queued",
+                "mode": mode,
+                "timeout_seconds": timeout_seconds,
+                "created_at": now,
+                "started_at": None,
+                "ended_at": None,
+                "updated_at": now,
+                "last_activity_at": now,
+                "deadline_at": None,
+                "revision": 0,
+                "idempotency_key": idempotency_key or None,
+                "request_fingerprint": fingerprint,
+                "links": {
+                    "goal_id": (f"goal:{conversation_id}" if "goal" in capabilities else None),
+                    "todo_revision": 0 if "todo" in capabilities else None,
+                    "children": {},
+                },
+                "execution_budget": {
+                    "turn_limit": 10
+                    if ui_assistance is not None
+                    else 20
+                    if custom_page_datasets is not None
+                    else concurrent_work_max_turns(),
+                    "turns_used": 0,
+                    "concurrency_limit": max_parallel_agents(),
+                    "active_children": 0,
+                    "peak_children": 0,
+                    "depth_limit": concurrent_work_max_depth(),
+                },
+                "cancellation": {
+                    "requested": False,
+                    "children_pending": [],
+                    "unknown_in_flight": False,
+                },
+                "error": None,
+                "output": "",
+                "usage": {},
+                "ownership_context": context,
+                "composer_selection": {
+                    "schema_version": 1,
+                    "feature": selection.feature,
+                    "capabilities": list(capabilities),
+                },
+            }
+            self.repository.put_conversation_run(record)
+            entry = _ActiveConversationRun(
+                run_id,
+                str(agent_id),
+                str(conversation_id),
+                lifecycle_lease=lease,
+                conversation_lease=conversation_lease,
+            )
+            self._active[run_id] = entry
+            self._by_conversation[key] = run_id
+            payload = dict(body)
+            if selection.capabilities is not None:
+                payload["capabilities"] = list(selection.capabilities)
+            payload["timeout_seconds"] = timeout_seconds
+            payload["run_id"] = run_id
+            payload["run_mode"] = mode
+            if ui_assistance:
+                payload["_ui_assistance"] = ui_assistance
+            payload["conversation_id"] = str(conversation_id)
+            payload["ownership_context"] = context
+            if (
+                context.get("owner_kind") == "personal"
+                and trusted_context is not None
+                and not ui_assistance
+            ):
+                payload["_custom_page_principal"] = trusted_context
+            task = asyncio.create_task(
+                self._drive(record, payload), name=f"conversation-run-{run_id}"
+            )
+            entry.task = task
+            task.add_done_callback(lambda _task, rid=run_id: self._deregister(rid))
+            registered = True
+            return dict(record)
+        finally:
+            if not registered:
+                lease.close()
+                if conversation_lease is not None:
+                    conversation_lease.close()
 
     def get_run(self, agent_id: str, conversation_id: str, run_id: str) -> dict[str, Any]:
         return self._heal_if_stale(
@@ -283,6 +397,14 @@ class ConversationRunService:
             raise ServiceError("run has already finished", status=409, code="run_already_finished")
         entry = self._active.get(run_id)
         if entry is None or entry.agent_id != agent_id or entry.conversation_id != conversation_id:
+            from ..repositories.custom_page_locks import execution_active
+
+            if execution_active(self.repository.data_dir, agent_id):
+                raise ServiceError(
+                    "run belongs to another live executor",
+                    status=409,
+                    code="run_executor_unavailable",
+                )
             return self._mark_terminal(record, "cancelled", "run is no longer attached to a worker")
 
         def request_cancellation(current: dict[str, Any]) -> dict[str, Any]:
@@ -509,7 +631,7 @@ class ConversationRunService:
             entry.changed.clear()
             try:
                 await asyncio.wait_for(entry.changed.wait(), timeout=1.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     async def legacy_stream(
@@ -555,21 +677,33 @@ class ConversationRunService:
         record = dict(initial)
         run_id = str(record["id"])
         try:
-            buffer = ""
-            async for chunk in self.agents.chat_stream(record["agent_id"], body):
-                buffer += chunk.decode("utf-8", errors="replace")
-                frames, buffer = self._frames(buffer)
-                for frame in frames:
-                    event = self._parse_frame(frame)
-                    if event is None:
-                        continue
-                    record = self._append(record, event)
-            if buffer.strip():
-                event = self._parse_frame(buffer)
-                if event is not None:
-                    record = self._append(record, event)
-            if record.get("status") not in TERMINAL_STATUSES:
-                self._mark_terminal(record, "failed", "run ended without a completion event")
+            async with AsyncExitStack() as scope:
+                if initial.get("ui_assistance") or initial.get("custom_page_datasets") is not None:
+                    await scope.enter_async_context(
+                        asyncio.timeout(int(initial["timeout_seconds"]))
+                    )
+                buffer = ""
+                async for chunk in self.agents.chat_stream(record["agent_id"], body):
+                    buffer += chunk.decode("utf-8", errors="replace")
+                    frames, buffer = self._frames(buffer)
+                    for frame in frames:
+                        event = self._parse_frame(frame)
+                        if event is None:
+                            continue
+                        record = self._append(record, event)
+                if buffer.strip():
+                    event = self._parse_frame(buffer)
+                    if event is not None:
+                        record = self._append(record, event)
+                if record.get("status") not in TERMINAL_STATUSES:
+                    self._mark_terminal(record, "failed", "run ended without a completion event")
+        except TimeoutError as error:
+            if initial.get("ui_assistance"):
+                self._mark_terminal(record, "timed_out", "layout assistance deadline exceeded")
+            elif initial.get("custom_page_datasets") is not None:
+                self._mark_terminal(record, "timed_out", "custom page action deadline exceeded")
+            else:
+                self._mark_terminal(record, "failed", str(error) or "conversation run failed")
         except asyncio.CancelledError:
             if record.get("status") not in TERMINAL_STATUSES:
                 self._mark_terminal(record, "cancelled", "run cancelled")
@@ -753,11 +887,31 @@ class ConversationRunService:
         current = dict(record)
         if current.get("status") in TERMINAL_STATUSES or str(current.get("id")) in self._active:
             return current
-        return self._mark_terminal(current, "failed", "run interrupted by runtime restart")
+        from ..repositories.custom_page_locks import execution_active
+
+        # Absence from this process is not evidence that another Runtime process
+        # or an engine executor thread has stopped. Conservatively wait for the
+        # agent's execution fence before repairing abandoned nonterminal records.
+        if execution_active(self.repository.data_dir, str(current["agent_id"])):
+            return current
+        from ..repositories.base import StoreError
+        from ..repositories.runtime_update_gate import WorkspaceActivity
+
+        try:
+            with WorkspaceActivity(self.repository.data_dir):
+                return self._mark_terminal(current, "failed", "run interrupted by runtime restart")
+        except StoreError as error:
+            if error.code == "runtime_update_maintenance":
+                return current
+            raise
 
     def _deregister(self, run_id: str) -> None:
         entry = self._active.pop(run_id, None)
         if entry is not None:
+            if entry.conversation_lease is not None:
+                entry.conversation_lease.close()
+            if entry.lifecycle_lease is not None:
+                entry.lifecycle_lease.close()
             key = (entry.agent_id, entry.conversation_id)
             if self._by_conversation.get(key) == run_id:
                 self._by_conversation.pop(key, None)

@@ -8,6 +8,7 @@ from .analytics import operations as analytics_operations
 from .automation import operations as automation_operations
 from .checkpoints import operations as checkpoints_operations
 from .conversations import operations as conversations_operations
+from .custom_page import operations as custom_page_operations
 from .hosted import operations as hosted_operations
 from .kanban import operations as kanban_operations
 from .marketplace import operations as marketplace_operations
@@ -22,10 +23,13 @@ from .skill_optimizations import operations as skill_optimizations_operations
 from .system import operations as system_operations
 from .teams import operations as teams_operations
 from .time_control import operations as time_control_operations
+from .ui_composition import operations as ui_composition_operations
 from .workspaces import operations as workspaces_operations
 
 Operation = tuple[Callable[[], Any], str, int]
 OPERATION_GROUPS = (
+    custom_page_operations,
+    ui_composition_operations,
     agent_blueprints_operations,
     agents_operations,
     analytics_operations,

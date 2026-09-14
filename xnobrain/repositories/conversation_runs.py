@@ -79,7 +79,9 @@ class ConversationRunRepositoryMixin:
         return None
 
     @staticmethod
-    def conversation_run_fingerprint(body: Mapping[str, Any]) -> str:
+    def conversation_run_fingerprint(
+        body: Mapping[str, Any], *, custom_page_scope: Mapping[str, Any] | None = None
+    ) -> str:
         material = {
             key: body.get(key)
             for key in (
@@ -95,6 +97,8 @@ class ConversationRunRepositoryMixin:
             )
             if key in body
         }
+        if custom_page_scope is not None:
+            material["custom_page_scope"] = dict(custom_page_scope)
         encoded = json.dumps(
             material,
             ensure_ascii=False,
