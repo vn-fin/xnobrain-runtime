@@ -911,3 +911,10 @@ budget admission. The endpoint does not accept workspace, Router, provider
 credential, payer, or tenant selectors. The access token's verified user owns
 the request. Responses may include additive `xnobrain` conversation/run IDs;
 OpenAI clients can ignore unknown fields.
+
+
+## Managed session usage
+
+In managed Router-accounting mode, session usage reads request, token, cache,
+and cost totals from GoRouter through Control's private workload-key facade.
+Weekly admission checks are Router-accounted and fail closed when unavailable.

@@ -13,7 +13,7 @@ import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import yaml
 from fastapi import FastAPI
@@ -77,7 +77,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             ),
             encoding="utf-8",
         )
-        from unittest.mock import patch
+        from unittest.mock import AsyncMock, patch
 
         self.environment = patch.dict(
             os.environ,
@@ -100,6 +100,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             FakeRouter(self.router_data),
         )
         composition.register(app)
+        self.composition = composition
         self.analytics = composition.service.analytics
         self.app = app
 
@@ -532,6 +533,78 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             _sunday_start(value),
             datetime(2026, 8, 16, 0, 0, tzinfo=timezone.utc),
         )
+
+    async def test_managed_conversation_usage_uses_router_accounting(self):
+        async with self.client() as client:
+            agent_id = await self._create_agent(client, "Accounted agent")
+            session_id = self._insert(
+                agent_id,
+                model="local-stale-model",
+                inp=1,
+                out=1,
+                est=9.99,
+            )
+            accounted = {
+                "requests": 3,
+                "prompt_tokens": 120,
+                "completion_tokens": 30,
+                "cache_read_tokens": 40,
+                "cache_write_tokens": 5,
+                "cost_usd": 0.42,
+            }
+            budget = {
+                "weekly_usd": 20,
+                "configured": False,
+                "default_weekly_usd": 20,
+                "cost_basis": "accounted",
+                "currency": "USD",
+                "period_start": "2026-09-13T00:00:00Z",
+                "period_end": "2026-09-20T00:00:00Z",
+                "week_starts_on": "sunday",
+                "spend_usd": 0.42,
+                "remaining_usd": 19.58,
+                "percent_used": 2.1,
+                "status": "ok",
+                "severity": "normal",
+                "accepting_chats": True,
+            }
+            with (
+                patch(
+                    "xnobrain.services.conversations.accounting_enabled",
+                    return_value=True,
+                ),
+                patch.object(
+                    self.analytics.accounting,
+                    "conversation",
+                    new=AsyncMock(return_value=accounted),
+                ) as conversation_usage,
+                patch.object(
+                    self.analytics,
+                    "get_budget",
+                    new=AsyncMock(return_value=budget),
+                ),
+            ):
+                response = await client.get(
+                    f"/xnobrain/api/runtime/v1/sessions/{session_id}/usage?agent={agent_id}"
+                )
+
+            self.assertEqual(response.status_code, 200, response.text)
+            usage = response.json()["data"]
+            self.assertEqual(usage["api_calls"], 3)
+            self.assertEqual(usage["tokens"]["input"], 120)
+            self.assertEqual(usage["tokens"]["output"], 30)
+            self.assertEqual(usage["tokens"]["cache_read"], 40)
+            self.assertEqual(usage["tokens"]["cache_write"], 5)
+            self.assertEqual(usage["tokens"]["total"], 150)
+            self.assertEqual(
+                usage["cost"],
+                {
+                    "source": "gorouter",
+                    "status": "accounted",
+                    "total_usd": 0.42,
+                },
+            )
+            conversation_usage.assert_awaited_once_with(agent_id, session_id)
 
     async def test_usage_is_read_only(self):
         async with self.client() as client:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ..integrations.accounting_context import accounting_enabled
+from ..integrations.router_accounting import AccountingUnavailable
 from ..models.conversations import ConversationOwnershipContext
 from ..repositories import StoreError
 from ..repositories.conversation_creation import ConversationCreationRepository
@@ -344,6 +345,18 @@ class ConversationsServiceMixin:
             cost = None
             cost_source = "gorouter"
             cost_status = "unavailable"
+            try:
+                accounted = await self.analytics.accounting.conversation(agent_id, conversation_id)
+                session["api_call_count"] = max(0, int(accounted.get("requests") or 0))
+                input_tokens = max(0, int(accounted.get("prompt_tokens") or 0))
+                output_tokens = max(0, int(accounted.get("completion_tokens") or 0))
+                cache_read_tokens = max(0, int(accounted.get("cache_read_tokens") or 0))
+                cache_write_tokens = max(0, int(accounted.get("cache_write_tokens") or 0))
+                total_tokens = input_tokens + output_tokens
+                cost = max(0.0, float(accounted["cost_usd"]))
+                cost_status = "accounted"
+            except (AccountingUnavailable, KeyError, TypeError, ValueError):
+                pass
         return {
             "conversation_id": conversation_id,
             "api_calls": integer("api_call_count"),

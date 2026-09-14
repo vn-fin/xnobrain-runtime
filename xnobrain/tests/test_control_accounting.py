@@ -84,6 +84,53 @@ class ControlAccountingTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     await ControlAccountingClient().weekly("local", 20)
 
+    async def test_conversation_usage_uses_scoped_workload_key_and_encoded_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bindings.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "bindings": [
+                            {
+                                "local_agent_id": "local",
+                                "context_id": "personal",
+                                "application": "xnobrain",
+                                "workspace_id": "workspace_test",
+                                "agent_id": "agent_test",
+                                "environment": "test",
+                                "workload_key": "synthetic-workload",
+                                "capability_version": "gorouter-workload-usage-v1",
+                                "cutover_at": datetime.now(timezone.utc).isoformat(),
+                            }
+                        ],
+                    }
+                )
+            )
+            path.chmod(0o600)
+            response = httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {"requests": 2, "cost_usd": 0.2},
+                },
+            )
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "RUNTIME_ACCOUNTING_BINDINGS_FILE": str(path),
+                        "RUNTIME_CONTROL_URL": "https://control.invalid",
+                    },
+                ),
+                patch("httpx.AsyncClient.get", new=AsyncMock(return_value=response)) as get,
+            ):
+                result = await ControlAccountingClient().conversation("local", "ses/encoded")
+            self.assertEqual(result["requests"], 2)
+            args, kwargs = get.call_args
+            self.assertTrue(args[0].endswith("/conversations/ses%2Fencoded"))
+            self.assertEqual(kwargs["headers"], {"Authorization": "Bearer synthetic-workload"})
+
     async def test_unconfigured_control_does_not_fall_back_to_local_spend(self):
         with (
             patch.dict(
