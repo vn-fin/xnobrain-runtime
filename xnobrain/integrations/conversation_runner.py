@@ -10,6 +10,13 @@ from pydantic import ValidationError
 from xnobrain.models.conversations import ChatRequest
 from xnobrain.runtime_limits import max_parallel_agents, session_timeout_seconds
 
+from ..feature_flags import (
+    FEATURE_AGENT_CUSTOM_PAGE,
+    FEATURE_UI_CUSTOMIZATION,
+)
+from ..feature_flags import (
+    enabled as feature_enabled,
+)
 from .hermes_support import (
     BIG_BROTHER_AGENT_ID,
     LLM_ROUTER_DEFAULT_MODEL,
@@ -1282,12 +1289,16 @@ class ConversationRunnerMixin:
                         terminal_tool.set_approval_callback(previous_callback)
 
                 agent.run_conversation = run_with_memory_approval
-                from .custom_page_tools import install_tools
+                if feature_enabled(FEATURE_AGENT_CUSTOM_PAGE):
+                    from .custom_page_tools import install_tools
 
-                install_tools(agent, conversation_id)
-                from .ui_composition_tools import install_tools as install_layout_tools
+                    install_tools(agent, conversation_id)
+                if feature_enabled(FEATURE_UI_CUSTOMIZATION):
+                    from .ui_composition_tools import (
+                        install_tools as install_layout_tools,
+                    )
 
-                install_layout_tools(agent, conversation_id)
+                    install_layout_tools(agent, conversation_id)
                 return agent
 
         adapter = RunScopedAPIServerAdapter(PlatformConfig(enabled=True))
@@ -1360,10 +1371,14 @@ class ConversationRunnerMixin:
         adapter._profile_scope = scoped_profile
         from contextlib import ExitStack
 
-        from .custom_page_tools import bind_run
-
         page_scope = ExitStack()
-        if getattr(manager, "custom_page_service", None) and prepared.get("_custom_page_principal"):
+        if (
+            feature_enabled(FEATURE_AGENT_CUSTOM_PAGE)
+            and getattr(manager, "custom_page_service", None)
+            and prepared.get("_custom_page_principal")
+        ):
+            from .custom_page_tools import bind_run
+
             page_scope.enter_context(
                 bind_run(
                     manager.custom_page_service,
@@ -1373,7 +1388,7 @@ class ConversationRunnerMixin:
                     prepared["_custom_page_principal"],
                 )
             )
-        if prepared.get("_ui_assistance"):
+        if feature_enabled(FEATURE_UI_CUSTOMIZATION) and prepared.get("_ui_assistance"):
             from .ui_composition_tools import bind_run as bind_layout_run
 
             page_scope.enter_context(

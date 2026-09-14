@@ -5,6 +5,13 @@ from typing import Any
 from fastapi import Body, Request
 from fastapi.responses import Response
 
+from ..feature_flags import (
+    FEATURE_AGENT_CUSTOM_PAGE,
+    FEATURE_UI_CUSTOMIZATION,
+)
+from ..feature_flags import (
+    enabled as feature_enabled,
+)
 from ..models import APIEnvelope
 from . import (
     agent_blueprints,
@@ -34,9 +41,7 @@ from . import (
 )
 from .definition import Route
 
-ROUTE_GROUPS = (
-    custom_page.ROUTES,
-    ui_composition.ROUTES,
+BASE_ROUTE_GROUPS = (
     system.ROUTES,
     time_control.ROUTES,
     runtime_updates.ROUTES,
@@ -60,6 +65,21 @@ ROUTE_GROUPS = (
     sandboxes.ROUTES,
     portability.ROUTES,
 )
+
+
+def route_groups() -> tuple[tuple[Route, ...], ...]:
+    """Resolve startup routes from deployment flags; disabled routes are absent."""
+    optional = ()
+    if feature_enabled(FEATURE_AGENT_CUSTOM_PAGE):
+        optional += (custom_page.ROUTES,)
+    if feature_enabled(FEATURE_UI_CUSTOMIZATION):
+        optional += (ui_composition.ROUTES,)
+    return optional + BASE_ROUTE_GROUPS
+
+
+# Compatibility snapshots for route-contract tests. setup_routes resolves flags
+# again so test/process environment changes before app startup are honored.
+ROUTE_GROUPS = route_groups()
 ROUTES = tuple(route for group in ROUTE_GROUPS for route in group)
 
 
@@ -149,7 +169,8 @@ def _endpoint(handlers: Any, route: Route):
 
 
 def setup_routes(app: Any, handlers: Any) -> None:
-    for route in ROUTES:
+    routes = tuple(route for group in route_groups() for route in group)
+    for route in routes:
         raw_response = route.special in {
             "stream",
             "workspace_upload",

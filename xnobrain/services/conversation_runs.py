@@ -22,6 +22,13 @@ from xnobrain.runtime_limits import (
     session_timeout_seconds,
 )
 
+from ..feature_flags import (
+    FEATURE_AGENT_CUSTOM_PAGE,
+    FEATURE_UI_CUSTOMIZATION,
+)
+from ..feature_flags import (
+    enabled as feature_enabled,
+)
 from .base import ServiceError
 
 TERMINAL_STATUSES = frozenset({"completed", "failed", "timed_out", "cancelled"})
@@ -155,6 +162,11 @@ class ConversationRunService:
         capabilities = selection.capabilities
         if capabilities is None:
             capabilities = [selection.feature] if selection.feature else []
+        custom_page_requested = "custom_page" in capabilities or custom_page_datasets is not None
+        if custom_page_requested and not feature_enabled(FEATURE_AGENT_CUSTOM_PAGE):
+            raise ServiceError("custom pages are disabled", status=404, code="feature_disabled")
+        if ui_assistance is not None and not feature_enabled(FEATURE_UI_CUSTOMIZATION):
+            raise ServiceError("UI customization is disabled", status=404, code="feature_disabled")
         if ("custom_page" in capabilities or custom_page_datasets is not None) and (
             context.get("owner_kind") != "personal" or not getattr(trusted_context, "subject", "")
         ):
