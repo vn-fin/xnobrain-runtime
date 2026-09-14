@@ -83,6 +83,25 @@ def _persist_cancelled_terminal(agent, output: str = "") -> bool:
 
 class ConversationStreamMixin:
     async def _chat_stream_events(self, prepared: Mapping[str, Any]):
+        from .accounting_context import accounting_binding, accounting_enabled, inference_accounting
+
+        if not accounting_enabled():
+            async for event in self._chat_stream_events_scoped(prepared):
+                yield event
+            return
+        prepared = dict(prepared)
+        prepared.setdefault("run_id", "run_" + uuid.uuid4().hex)
+        ownership = prepared.get("ownership_context") or {}
+        binding = accounting_binding(
+            str(prepared["name"]), str(ownership.get("organization_id") or "personal")
+        )
+        with inference_accounting(
+            binding, str(prepared.get("conversation_id") or ""), prepared["run_id"]
+        ):
+            async for event in self._chat_stream_events_scoped(prepared):
+                yield event
+
+    async def _chat_stream_events_scoped(self, prepared: Mapping[str, Any]):
         timeout_seconds = int(prepared["timeout_seconds"])
         conversation_id = str(prepared.get("conversation_id") or "")
         model = str(prepared.get("model") or "")

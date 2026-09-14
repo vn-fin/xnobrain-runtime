@@ -277,7 +277,7 @@ def release_due_schedules(conn: Any, *, board: str, now: int | None = None) -> l
 
 
 async def dispatcher_loop(
-    *, interval_seconds: float = 15.0, on_tick=None, dispatch_allowed=None
+    *, interval_seconds: float = 15.0, on_tick=None, dispatch_allowed=None, spawn_fn=None
 ) -> None:
     """Run Hermes' supported dispatcher tick inside the host FastAPI process.
 
@@ -290,12 +290,16 @@ async def dispatcher_loop(
             if dispatch_allowed is not None and not dispatch_allowed():
                 await asyncio.sleep(max(1.0, float(interval_seconds)))
                 continue
-            kb = _module()
-            for board in kb.list_boards(include_archived=False):
-                slug = str(board.get("slug") or "default")
-                with connection(slug) as conn:
-                    release_due_schedules(conn, board=slug)
-                    kb.dispatch_once(conn, board=slug)
+
+            def tick():
+                kb = _module()
+                for board in kb.list_boards(include_archived=False):
+                    slug = str(board.get("slug") or "default")
+                    with connection(slug) as conn:
+                        release_due_schedules(conn, board=slug)
+                        kb.dispatch_once(conn, board=slug, spawn_fn=spawn_fn)
+
+            await asyncio.to_thread(tick)
             if on_tick is not None:
                 result = on_tick()
                 if inspect.isawaitable(result):

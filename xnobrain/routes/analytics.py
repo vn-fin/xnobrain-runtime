@@ -4,6 +4,7 @@ from ..models import AgentBudgetPatch, SkillUsageResponse
 from .definition import route
 
 ROUTES = (
+    route("GET", "/analytics/agents/budgets", "analytics_budgets", tags=("Analytics",)),
     route("GET", "/analytics/agents", "analytics_agents", tags=("Analytics",)),
     route("GET", "/analytics/usage", "analytics_usage", tags=("Analytics",)),
     route("GET", "/analytics/overview", "analytics_overview", tags=("Analytics",)),

@@ -3,7 +3,10 @@
 import asyncio
 import copy
 import hashlib
+import sys
 import threading
+import uuid
+from contextlib import nullcontext
 
 from pydantic import ValidationError
 
@@ -82,30 +85,61 @@ class ConversationRunnerMixin:
             return {name for name, count in self._active_agent_counts.items() if count > 0}
 
     async def chat(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
-        prepared = self._prepare_chat_command(raw_name, body, require_conversation=False)
-        if prepared["model"] == LLM_ROUTER_DEFAULT_MODEL:
-            await self.llm_router.ensure_auto_combo()
-        else:
-            await self._resolve_prepared_smart_route(prepared)
-        name = prepared["name"]
-        profile_dir = prepared["profile_dir"]
-        before = self._latest_session_ids(profile_dir)
+        from .accounting_context import accounting_binding, accounting_enabled, inference_accounting
 
-        started = time.time()
-        self._mark_agent_active(name)
-        try:
-            result = await self._run_profile_command(
-                name,
-                prepared["command"],
-                engine=str(prepared.get("engine") or "xnobrain"),
-                timeout_seconds=prepared["timeout_seconds"],
+        prepared = self._prepare_chat_command(raw_name, body, require_conversation=False)
+        name = prepared["name"]
+        binding = accounting_binding(name) if accounting_enabled() else None
+        scope = (
+            inference_accounting(
+                binding,
+                conversation_id=str(prepared.get("conversation_id") or ""),
+                run_id="run_" + uuid.uuid4().hex,
+                parent_run_id=str(body.get("parent_run_id") or ""),
             )
-        finally:
-            self._mark_agent_idle(name)
+            if binding
+            else nullcontext()
+        )
+        # Smart-route classification is inference too: keep it under the same
+        # accepted user/agent/run context as the worker it selects a model for.
+        with scope:
+            if prepared["model"] == LLM_ROUTER_DEFAULT_MODEL:
+                await self.llm_router.ensure_auto_combo()
+            else:
+                await self._resolve_prepared_smart_route(prepared)
+            profile_dir = prepared["profile_dir"]
+            before = self._latest_session_ids(profile_dir)
+
+            started = time.time()
+            self._mark_agent_active(name)
+            try:
+                if binding:
+                    result = await self._run_profile_command(
+                        name,
+                        [
+                            sys.executable,
+                            "-m",
+                            "xnobrain.integrations.worker_cli",
+                            *prepared["command"][1:-2],
+                            "--xnobrain-input-stdin",
+                        ],
+                        engine=str(prepared.get("engine") or "xnobrain"),
+                        timeout_seconds=prepared["timeout_seconds"],
+                        input_bytes=prepared["message"].encode("utf-8"),
+                    )
+                else:
+                    result = await self._run_profile_command(
+                        name,
+                        prepared["command"],
+                        engine=str(prepared.get("engine") or "xnobrain"),
+                        timeout_seconds=prepared["timeout_seconds"],
+                    )
+            finally:
+                self._mark_agent_idle(name)
         provider_error = self._provider_error(result["stdout"])
         if result["exit_code"] != 0 or provider_error:
             raise AgentAPIError(
-                provider_error or result["stderr"].strip() or "agent command failed",
+                "Agent provider request failed",
                 code="provider_request_failed",
                 status=502,
             )

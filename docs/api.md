@@ -918,10 +918,44 @@ OpenAI clients can ignore unknown fields.
 In managed Router-accounting mode, session usage reads request, four-component
 token, and cost totals from GoRouter v0.2.2 through Control's private
 canonical-user-key facade. Runtime reuses its Control HTTP connection pool and
-fetches conversation totals with one lightweight request; it does not duplicate a
-weekly read while rendering session metadata or before the browser sends. Control
-uses `GET /admin/usage/summary?breakdown=none` rather than activity/timeline.
+returns both conversation totals and `weekly_budget` in the existing session
+usage response. These two read queries run concurrently; the browser makes one
+usage call and no duplicate pre-send budget call. Control uses `GET /admin/usage/summary?breakdown=none` rather than activity/timeline.
 Runtime performs the authoritative weekly admission check immediately before new
 top-level work, uses `gorouter-user-usage-v1`, and fails closed when
 unavailable. Stored-only reports do not prove durable acceptance or complete
 in-flight coverage.
+
+
+### Worker accounting and per-agent week limits
+
+Kanban uses the native dispatcher `spawn_fn` extension. Claims, PID recovery,
+review/goal flags and completion remain engine-owned. The Runtime spawn adapter
+checks the assigned agent's configured weekly limit against Router spending before
+launch. It refreshes the managed provider URL and supplies the canonical user key
+only to the child process; `big-brother` uses the root profile, not a legacy named
+profile. Review and scheduled occurrences pass through the same admission gate.
+
+Teams check participants before acceptance. Coordinator, workers, dialogue and
+synthesis use the private accounted CLI bootstrap. Every model call carries
+agent, native session and execution IDs; `parent_run_id` identifies the team run.
+Large composed prompts use stdin instead of OS argv. Provider failures, empty
+worker results and failed prerequisites cannot be reported as completed. No
+arbitrary inference or side-effecting task is automatically replayed.
+
+`GET /analytics/agents/budgets?agents=a,b` returns an object keyed by local agent ID.
+Omitted selection means all current profiles (maximum 100). Runtime owns stored
+weekly limits and revisions; Router owns recorded spending and quota-week bounds.
+The batch uses one private Control call and two constant-count Router reads
+(calendar-week anchor + grouped report), never one query per selected agent.
+Budget errors keep configured limits visible but return null spending and
+`status=unavailable`; no error becomes zero usage. Existing `PUT
+/analytics/agents/{agent_id}/budget` edits the limit with revision checking.
+Historical requests without correlation remain unattributed. Reports are stored
+facts, not atomic reservations; admitted work may finish above its soft limit.
+
+Worker lifecycle isolation: the shared host reaps only Kanban-owned child PIDs,
+not `waitpid(-1)` across unrelated Teams subprocesses. Teams use standard `Popen`
+with an asynchronously awaited communication thread, avoiding the observed
+uvloop child-launch SIGSEGV in the multithreaded gRPC host. Cancellation and
+timeout terminate/reap the child before publishing a terminal state.

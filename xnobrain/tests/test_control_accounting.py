@@ -96,3 +96,49 @@ class ControlAccountingTests(unittest.IsolatedAsyncioTestCase):
             accounting = ControlAccountingClient()
             self.addAsyncCleanup(accounting.close)
             await accounting.weekly("local", 20)
+
+    async def test_weekly_agents_requires_every_requested_agent_and_uses_one_call(self):
+        from xnobrain.tests.test_router_accounting import FIXTURE
+
+        now = datetime.now(timezone.utc)
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start -= timedelta(days=(start.weekday() + 1) % 7)
+        rows = [
+            {
+                **FIXTURE,
+                "agent_ids": [name],
+                "period_start": start.isoformat(),
+                "period_end": (start + timedelta(days=7)).isoformat(),
+                "as_of": now.isoformat(),
+                "summary": {"cost_usd": 3},
+            }
+            for name in ["a", "b"]
+        ]
+        with patch.dict(
+            os.environ,
+            {
+                "RUNTIME_CONTROL_URL": "http://control",
+                "RUNTIME_LLM_API_KEY": "synthetic",
+                "RUNTIME_LLM_API_KEY_FILE": "",
+            },
+        ):
+            accounting = ControlAccountingClient()
+            self.addAsyncCleanup(accounting.close)
+            with patch.object(
+                accounting._client,
+                "get",
+                new=AsyncMock(
+                    return_value=httpx.Response(200, json={"success": True, "data": rows})
+                ),
+            ) as get:
+                result = await accounting.weekly_agents(
+                    {"a": {"weekly_usd": 5}, "b": {"weekly_usd": 2}}
+                )
+                self.assertEqual(get.await_count, 1)
+                self.assertEqual(get.call_args.kwargs["headers"]["X-GoRouter-Agent-Id"], "a,b")
+                self.assertTrue(result["a"]["accepting_chats"])
+                self.assertFalse(result["b"]["accepting_chats"])
+                rows.pop()
+                get.return_value = httpx.Response(200, json={"success": True, "data": rows})
+                with self.assertRaises(AccountingUnavailable):
+                    await accounting.weekly_agents({"a": {"weekly_usd": 5}, "b": {"weekly_usd": 2}})

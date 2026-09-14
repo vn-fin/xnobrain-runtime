@@ -16,6 +16,11 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         str(q.get("agent") or "").strip() or (_ for _ in ()).throw(ValueError("agent is required"))
     )
     return {
+        "analytics_budgets": (
+            lambda: s.analytics.get_budgets(csv(q.get("agents"))),
+            "budgets retrieved successfully",
+            200,
+        ),
         "analytics_agents": (
             s.analytics.list_selectable_agents,
             "analytics agents retrieved successfully",

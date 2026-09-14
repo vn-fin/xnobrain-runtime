@@ -29,7 +29,12 @@ class LLMRouterTransportMixin:
         headers = {
             "Accept": "application/json",
         }
-        workload_token = self._workload_token()
+        from .accounting_context import current_accounting
+
+        accounting = current_accounting()
+        workload_token = accounting["binding"]["user_key"] if accounting else self._workload_token()
+        if accounting:
+            headers.update(accounting["headers"])
         if workload_token:
             headers["Authorization"] = f"Bearer {workload_token}"
         return headers

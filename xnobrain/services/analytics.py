@@ -317,7 +317,52 @@ class AnalyticsService:
         result["limit"] = page_limit
         return {"agent_id": agent_id, **result}
 
+    async def get_budgets(self, agent_ids):
+        names = self.agents.list_agent_names()
+        selected = list(dict.fromkeys(agent_ids or names))
+        if len(selected) > 100 or any(name not in names for name in selected):
+            raise ServiceError("Invalid agent budget selection", status=400)
+        settings = {name: self._budget_settings(name) for name in selected}
+        if not accounting_enabled():
+            return {name: await self.get_budget(name) for name in selected}
+        try:
+            decisions = await self.accounting.weekly_agents(settings)
+        except AccountingUnavailable:
+            decisions = {}
+        result = {}
+        for name, preference in settings.items():
+            result[name] = {
+                "weekly_usd": preference["weekly_usd"],
+                "configured": preference["configured"],
+                "revision": preference["revision"],
+                "default_weekly_usd": DEFAULT_WEEKLY_BUDGET_USD,
+                "source": "gorouter",
+                "currency": "USD",
+                "cost_basis": "accounted",
+                "enforcement": "soft_admission",
+                "status": "unavailable",
+                "accounting_status": "unavailable",
+                "accepting_chats": False,
+                "spend_usd": None,
+                "remaining_usd": None,
+                "percent_used": None,
+                "period_start": None,
+                "period_end": None,
+                "week_starts_on": None,
+                "severity": "normal",
+                **decisions.get(name, {}),
+            }
+        return result
+
     async def get_budget(self, agent_id: str) -> dict[str, Any]:
+        if accounting_enabled():
+            # Validate one profile, not the expensive full skills/config inventory.
+            if hasattr(self.agents, "profile_path"):
+                agent_id = self.agents._agent_name(agent_id)
+                self.agents.profile_path(agent_id)
+            else:
+                self._require_item(agent_id)
+            return await self._budget_status(agent_id, None)
         item = self._require_item(agent_id)
         return await self._budget_status(agent_id, item)
 
@@ -762,7 +807,12 @@ class AnalyticsService:
             os.environ.get("RUNTIME_ACCOUNTING_WORKSPACE_ID", "local_workspace"),
             "personal",
             agent_id,
-            self.repository.profile_path(agent_id) / "config.yaml",
+            (
+                self.agents.profile_path(agent_id)
+                if hasattr(self.agents, "profile_path")
+                else self.repository.profile_path(agent_id)
+            )
+            / "config.yaml",
         )
 
     def _read_config(self, agent_id: str) -> tuple[dict[str, Any], Path]:

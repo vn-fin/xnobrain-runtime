@@ -334,13 +334,23 @@ class TeamRunService:
             await self._finalize(
                 record, "failed", error=str(getattr(error, "code", "worker_failed"))
             )
-        except Exception:  # noqa: BLE001 - never leak provider output; log the type only
-            logger.exception("team run %s failed with an unexpected error", record["id"])
+        except Exception as error:
+            logger.warning("Team execution failed: %s", type(error).__name__)
             await self._finalize(record, "failed", error="internal_error")
 
     async def _execute_workflow(
         self, record: dict[str, Any], team: Mapping[str, Any], workflow: list[Mapping[str, Any]]
     ) -> str:
+        async def chat(agent_id, request):
+            result = await self.agents.chat(agent_id, {**request, "parent_run_id": record["id"]})
+            if (
+                result.get("failed")
+                or result.get("exit_code", 0) != 0
+                or not str(result.get("response") or "").strip()
+            ):
+                raise ServiceError("Team worker did not complete", status=502, code="worker_failed")
+            return result
+
         communication_level = max(0, min(3, int(team.get("communication_level", 1))))
         # L3 is deliberately turn-based. Serializing stages avoids two dialogue
         # participants holding each other's per-profile execution lock.
@@ -390,7 +400,7 @@ class TeamRunService:
                 coordinator_request["skills"] = list(coordinator_skills)
             if team.get("coordinator_allowed_tools"):
                 coordinator_request["toolsets"] = list(team["coordinator_allowed_tools"])
-            coordinated = await self.agents.chat(
+            coordinated = await chat(
                 str(team["orchestrator_id"]),
                 coordinator_request,
             )
@@ -423,6 +433,15 @@ class TeamRunService:
             step: Mapping[str, Any], completed: Mapping[str, Mapping[str, Any]]
         ) -> dict[str, Any]:
             step_record = steps_by_id[str(step["id"])]
+            if any(completed[dependency]["status"] != "completed" for dependency in step["needs"]):
+                step_record.update(status="failed", error="dependency_failed", ended_at=iso())
+                await self._persist(record)
+                return {
+                    "id": step["id"],
+                    "role": step["role"],
+                    "status": "failed",
+                    "error": "dependency_failed",
+                }
             agent_lock = agent_locks.setdefault(str(step["agent_id"]), asyncio.Lock())
             async with agent_lock, semaphore:
                 step_record["status"] = "running"
@@ -452,7 +471,7 @@ class TeamRunService:
                         "when file access is enabled; do not overwrite other agents' entries."
                     )
                 try:
-                    result = await self.agents.chat(
+                    result = await chat(
                         str(step["agent_id"]),
                         request_for(step, prompt),
                     )
@@ -473,13 +492,13 @@ class TeamRunService:
                             )
                             try:
                                 if str(parent["agent_id"]) == str(step["agent_id"]):
-                                    response = await self.agents.chat(
+                                    response = await chat(
                                         str(parent["agent_id"]),
                                         {"message": feedback_prompt, "toolsets": ["todo"]},
                                     )
                                 else:
                                     async with parent_lock:
-                                        response = await self.agents.chat(
+                                        response = await chat(
                                             str(parent["agent_id"]),
                                             {"message": feedback_prompt, "toolsets": ["todo"]},
                                         )
@@ -498,7 +517,7 @@ class TeamRunService:
                                 f"Task: {step['task']}\n\nDraft:\n{summary}\n\n"
                                 "Team feedback:\n" + "\n\n".join(feedback)
                             )
-                            result = await self.agents.chat(
+                            result = await chat(
                                 str(step["agent_id"]),
                                 {"message": revision_prompt, "toolsets": ["todo"]},
                             )
@@ -552,6 +571,8 @@ class TeamRunService:
                 pending.pop(result["id"], None)
 
         results = [completed[str(step["id"])] for step in workflow]
+        if any(item["status"] != "completed" for item in results):
+            raise ServiceError("Team workflow has failed stages", status=502, code="worker_failed")
         synthesis = (
             record["synthesis_instruction"]
             + "\n\nBefore making exact claims about shared artifacts, re-read their current "
@@ -572,7 +593,7 @@ class TeamRunService:
                 synthesis_request["skills"] = list(synthesis_skills)
             if team.get("synthesis_allowed_tools"):
                 synthesis_request["toolsets"] = list(team["synthesis_allowed_tools"])
-            final = await self.agents.chat(
+            final = await chat(
                 synthesis_agent,
                 synthesis_request,
             )

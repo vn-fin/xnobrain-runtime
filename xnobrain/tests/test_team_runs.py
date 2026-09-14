@@ -220,6 +220,27 @@ class _TeamRunBase(unittest.IsolatedAsyncioTestCase):
 
 
 class TeamRunLifecycleTests(_TeamRunBase):
+    async def test_failed_worker_prevents_successful_final_synthesis(self):
+        async with self.client() as client:
+            team_id, ids = await self._make_team(client)
+            chat = self._mock_completing_chat(ids)
+
+            async def respond(agent_id, body):
+                if agent_id == ids[1]:
+                    return {"response": "not completed", "exit_code": 1}
+                return {"response": "verified", "conversation_id": "session"}
+
+            chat.side_effect = respond
+            response = await client.post(
+                f"/xnobrain/api/runtime/v1/teams/{team_id}/runs", json=self._dag_body()
+            )
+            run = await self._poll_until_terminal(client, team_id, response.json()["data"]["id"])
+            self.assertEqual(run["status"], "failed")
+            self.assertEqual(run["error"], "worker_failed")
+            self.assertIsNone(run["synthesis_conversation_id"])
+            for call in chat.await_args_list:
+                self.assertEqual(call.args[1]["parent_run_id"], run["id"])
+
     async def test_budget_is_checked_once_per_participant_before_team_task_starts(self):
         async with self.client() as client:
             team_id, ids = await self._make_team(client)
@@ -624,16 +645,14 @@ class TeamRunLifecycleTests(_TeamRunBase):
     async def test_cancel_kills_subprocess(self):
         manager = self.composition.service.agents
         created: dict[str, int] = {}
-        real = asyncio.create_subprocess_exec
+        real = subprocess.Popen
 
-        async def recording(*args, **kwargs):
-            proc = await real(*args, **kwargs)
+        def recording(*args, **kwargs):
+            proc = real(*args, **kwargs)
             created["pid"] = proc.pid
             return proc
 
-        with patch(
-            "xnobrain.integrations.hermes.asyncio.create_subprocess_exec", side_effect=recording
-        ):
+        with patch("xnobrain.integrations.hermes_commands.subprocess.Popen", side_effect=recording):
             task = asyncio.ensure_future(
                 manager._run_hermes_command(
                     self.root, self.root, ["/bin/sleep", "60"], timeout_seconds=120

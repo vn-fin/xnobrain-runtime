@@ -393,12 +393,21 @@ class ConversationsServiceMixin:
             )
 
         managed_accounting = accounting_enabled()
+        weekly_budget = None
         if managed_accounting:
             cost = None
             cost_source = "gorouter"
             cost_status = "unavailable"
             try:
-                accounted = await self.analytics.accounting.conversation(agent_id, conversation_id)
+                accounted, weekly_budget = await asyncio.gather(
+                    self.analytics.accounting.conversation(agent_id, conversation_id),
+                    self.analytics.get_budget(agent_id),
+                    return_exceptions=True,
+                )
+                if isinstance(weekly_budget, Exception):
+                    weekly_budget = None
+                if isinstance(accounted, Exception):
+                    raise AccountingUnavailable() from accounted
                 session["api_call_count"] = max(0, int(accounted.get("requests") or 0))
                 input_tokens = max(0, int(accounted.get("prompt_tokens") or 0))
                 output_tokens = max(0, int(accounted.get("completion_tokens") or 0))
@@ -433,9 +442,9 @@ class ConversationsServiceMixin:
                 "total_usd": cost,
             },
             "context": context_payload,
-            # The lightweight session-usage read must not duplicate the
-            # admission/budget query. Budget is checked immediately before a run.
-            "weekly_budget": None
+            # One browser response includes session totals and the agent-wide
+            # quota-week status. Admission still obtains a fresh check on POST.
+            "weekly_budget": weekly_budget
             if managed_accounting
             else await self.analytics.get_budget(agent_id),
         }

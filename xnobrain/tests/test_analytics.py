@@ -605,8 +605,8 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
             conversation_usage.assert_awaited_once_with(agent_id, session_id)
-            get_budget.assert_not_awaited()
-            self.assertIsNone(usage["weekly_budget"])
+            get_budget.assert_awaited_once_with(agent_id)
+            self.assertEqual(usage["weekly_budget"], budget)
 
     async def test_empty_managed_summary_does_not_claim_accounted_zero(self):
         async with self.client() as client:

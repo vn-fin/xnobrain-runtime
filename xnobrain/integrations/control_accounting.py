@@ -75,3 +75,42 @@ class ControlAccountingClient:
             return body["data"]
         except (httpx.HTTPError, ValueError, TypeError, KeyError) as error:
             raise AccountingUnavailable("Conversation accounting unavailable") from error
+
+    async def weekly_agents(self, settings):
+        """One Control call for all local agent limits and Router week totals."""
+        if not settings:
+            return {}
+        agent_ids = list(settings)
+        binding = accounting_binding(agent_ids[0])
+        endpoint = os.environ.get("RUNTIME_CONTROL_URL", "").rstrip("/")
+        if not endpoint or len(agent_ids) > 100:
+            raise AccountingUnavailable("Weekly accounting unavailable")
+        try:
+            response = await self._client.get(
+                endpoint + "/xnobrain/api/control/internal/v1/accounting/agents/weekly",
+                headers={
+                    "Authorization": "Bearer " + binding["user_key"],
+                    "X-GoRouter-Agent-Id": ",".join(agent_ids),
+                },
+            )
+            body = response.json()
+            if response.status_code != 200 or body.get("success") is not True:
+                raise AccountingUnavailable("Weekly accounting unavailable")
+            result = {}
+            for payload in body["data"]:
+                agent_id = payload["agent_ids"][0]
+                if agent_id not in settings or agent_id in result:
+                    raise ValueError
+                result[agent_id] = weekly_budget_decision(
+                    payload,
+                    application="",
+                    environment="",
+                    workspace_id="",
+                    agent_id=agent_id,
+                    weekly_usd=settings[agent_id]["weekly_usd"],
+                )
+            if set(result) != set(settings):
+                raise ValueError
+            return result
+        except (httpx.HTTPError, ValueError, TypeError, KeyError, IndexError) as error:
+            raise AccountingUnavailable("Weekly accounting unavailable") from error

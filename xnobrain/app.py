@@ -46,9 +46,15 @@ class XNOBrainApplication:
                 dispatcher = None
                 try:
                     from .integrations.kanban import dispatcher_loop
+                    from .integrations.kanban_workers import KanbanWorkerSpawner
 
                     dispatcher = asyncio.create_task(
                         dispatcher_loop(
+                            spawn_fn=KanbanWorkerSpawner(
+                                self.service.agents,
+                                self.service.analytics,
+                                asyncio.get_running_loop(),
+                            ),
                             on_tick=self.service.cron.reconcile_deliveries,
                             dispatch_allowed=lambda: (
                                 not self.service.runtime_updates.dispatch_paused
