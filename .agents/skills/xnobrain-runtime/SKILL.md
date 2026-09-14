@@ -14,7 +14,11 @@ Read `AGENTS.md`, `.agents/rules/01-start-here.md`,
 1. Trace the existing route, model, operation, service, repository or
    integration, caller, and tests before editing.
 2. Give the feature one stable service-group name across routes, models,
-   handlers, services, and repositories. Keep composition modules as
+   handlers, services, and repositories. Register new rollout controls as
+   `FT_ENABLE_<SEMANTIC_FEATURE_NAME>` in `xnobrain/feature_flags.py`. Stable new
+   features default enabled; only documented experiments default disabled.
+   Gate route registration, agent-tool installation, and crafted capability
+   admission rather than relying on the UI. Keep composition modules as
    composition only.
 3. Keep HTTP translation in handlers, business rules in services, atomic file
    persistence in repositories, and Hermes/central-router adaptation in integrations.
