@@ -894,3 +894,20 @@ not a claim of full cross-product lifecycle acceptance.
 No new public paths/schema fields, migrations, upstream code, executable extensions,
 images or production deployment are introduced. Mixed older Runtime code can lack
 these guards, so coordinated process replacement is still required.
+
+## OpenAI-compatible agent invocation
+
+`POST /xnobrain/api/control/v1/agents/{agent_id}/chat/completions` is the
+managed public endpoint. Control authenticates the bearer token, resolves the
+caller's workspace server-side, and proxies to the private Runtime endpoint
+`POST /xnobrain/api/runtime/v1/agents/{agent_id}/chat/completions`. The request
+uses the OpenAI chat-completions shape; `model` must equal `{agent_id}` and
+`messages` must contain text. `stream: true` returns OpenAI-compatible SSE
+`chat.completion.chunk` objects followed by `[DONE]`.
+
+Each request creates a retained Personal API conversation and uses the normal
+agent run lifecycle, model policy, tool approvals, and authoritative weekly
+budget admission. The endpoint does not accept workspace, Router, provider
+credential, payer, or tenant selectors. The access token's verified user owns
+the request. Responses may include additive `xnobrain` conversation/run IDs;
+OpenAI clients can ignore unknown fields.

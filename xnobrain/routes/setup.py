@@ -14,6 +14,7 @@ from ..feature_flags import (
 )
 from ..models import APIEnvelope
 from . import (
+    agent_api,
     agent_blueprints,
     agents,
     analytics,
@@ -47,6 +48,7 @@ BASE_ROUTE_GROUPS = (
     runtime_updates.ROUTES,
     events.ROUTES,
     agents.ROUTES,
+    agent_api.ROUTES,
     agent_blueprints.ROUTES,
     checkpoints.ROUTES,
     mcp.ROUTES,
@@ -152,6 +154,15 @@ def _endpoint(handlers: Any, route: Route):
 
         async def endpoint(request: Request) -> Response:
             return await handlers.conversation_run_event_stream(request)
+    elif route.special == "agent_chat_completions":
+
+        async def endpoint(request: Request, body=Body(...)) -> Response:
+            return await handlers.agent_chat_completions(
+                request,
+                body.model_dump(exclude_unset=True),
+            )
+
+        endpoint.__annotations__["body"] = route.body
     elif route.body is not None:
 
         async def endpoint(request: Request, body=Body(...)) -> Response:
@@ -188,6 +199,7 @@ def setup_routes(app: Any, handlers: Any) -> None:
             "kanban_stream",
             "team_run_stream",
             "conversation_run_stream",
+            "agent_chat_completions",
         }
         response_model = APIEnvelope
         if route.response_data is not None:

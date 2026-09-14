@@ -19,6 +19,7 @@ from ..integrations import (
     LLMRouterClient,
 )
 from ..repositories import FileRepository, StoreError
+from .agent_api import AgentAPIService
 from .agent_blueprints import AgentBlueprintsServiceMixin
 from .agents import AgentsServiceMixin
 from .analytics import AnalyticsService
@@ -98,6 +99,7 @@ class PlatformService(
         from .analytics import AnalyticsService
 
         self.analytics = AnalyticsService(agents, router, repository)
+        self.agent_api = AgentAPIService(self)
         self.skill_optimizations = SkillOptimizationService(self)
         self.skill_doctor = SkillDoctorService(self)
         from .blends import BlendService

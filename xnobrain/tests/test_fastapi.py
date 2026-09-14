@@ -73,6 +73,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 # Unit profiles must not inherit the source container's packaged
                 # Hermes catalog; tests add only the skills they assert below.
                 "RUNTIME_INCLUDE_PACKAGED_SKILLS": "false",
+                "RUNTIME_CUSTOM_PAGE_STORAGE_MOUNT": "",
             },
         )
         self.environment.start()
@@ -1051,6 +1052,27 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             {item["skill_id"] for item in refreshed_overview.json()["data"]["agents"][agent_id]},
         )
 
+    async def test_agent_id_is_slugged_from_normalized_display_name(self):
+        async with self.client() as client:
+            big = await client.post(
+                "/xnobrain/api/runtime/v1/agents",
+                json={"display_name": "  Big   Brother  "},
+            )
+            analysis = await client.post(
+                "/xnobrain/api/runtime/v1/agents",
+                json={"display_name": "  HPG   Analysis  "},
+            )
+            duplicate = await client.post(
+                "/xnobrain/api/runtime/v1/agents",
+                json={"display_name": "HPG Analysis"},
+            )
+
+        self.assertEqual(big.status_code, 409, big.text)
+        self.assertEqual(analysis.status_code, 201, analysis.text)
+        self.assertEqual(analysis.json()["data"]["id"], "hpg-analysis")
+        self.assertEqual(analysis.json()["data"]["display_name"], "HPG Analysis")
+        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+
     async def test_team_files_and_cron_kanban_database_persist(self):
         ids = []
         async with self.client() as client:
@@ -1188,6 +1210,12 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
                 "application/json"
             ]["schema"]["$ref"],
             "#/components/schemas/AgentCreate",
+        )
+        self.assertEqual(
+            schema["paths"]["/xnobrain/api/runtime/v1/agents/{agent_id}/chat/completions"]["post"][
+                "requestBody"
+            ]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/AgentChatCompletionRequest",
         )
         self.assertEqual(
             schema["paths"]["/xnobrain/api/runtime/v1/sessions/{conversation_id}/chat/stream"][

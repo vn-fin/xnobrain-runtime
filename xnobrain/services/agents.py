@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from datetime import timedelta
@@ -286,12 +287,29 @@ class AgentsServiceMixin:
         if changed:
             self.config.update_config({"config": config})
 
+    @staticmethod
+    def _agent_id_from_display_name(display_name: str) -> str:
+        """Create the stable profile ID from the normalized display name."""
+        normalized = " ".join(display_name.split())
+        identifier = re.sub(r"[^a-z0-9]+", "-", normalized.casefold()).strip("-")
+        if not identifier:
+            raise ServiceError(
+                "display_name must contain letters or numbers",
+                status=422,
+                code="invalid_agent_name",
+            )
+        return identifier[:64].rstrip("-")
+
     def create_agent(self, body: Mapping[str, Any]) -> dict[str, Any]:
-        display_name = str(body.get("display_name") or body.get("name") or "").strip()
+        display_name = " ".join(str(body.get("display_name") or body.get("name") or "").split())
         if not display_name:
             raise ServiceError("display_name is required")
-        payload = {**dict(body), "title": display_name, "display_name": display_name}
-        payload.pop("name", None)
+        payload = {
+            **dict(body),
+            "name": self._agent_id_from_display_name(display_name),
+            "title": display_name,
+            "display_name": display_name,
+        }
         if "description" in body:
             payload["description"] = body["description"]
         raw, _ = self.agents.create_agent(payload)
