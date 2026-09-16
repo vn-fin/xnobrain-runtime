@@ -7,42 +7,16 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class CompiledContainerTests(unittest.TestCase):
-    def test_runtime_endpoint_supports_onefile_and_module_layouts(self):
+    def test_runtime_endpoint_is_source_only(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
 
-        self.assertIn("ARG BUILD_MODE=source", dockerfile)
-        self.assertIn('onefile) nuitka_mode="--mode=onefile', dockerfile)
-        self.assertIn("module) nuitka_mode='--mode=standalone'", dockerfile)
-        self.assertIn("BUILD_MODE must be source, onefile or module", dockerfile)
-        self.assertIn(
-            'nuitka_mode="--mode=onefile --onefile-tempdir-spec={TEMP}/xnobrain-runtime-${HERMES_COMMIT}"',
-            dockerfile,
-        )
-        self.assertNotIn(
-            "nuitka_mode='--mode=onefile --onefile-tempdir-spec={TEMP}/xnobrain-runtime-${HERMES_COMMIT}'",
-            dockerfile,
-        )
-        self.assertIn("--output-filename=xnobrain-runtime", dockerfile)
-        self.assertIn(
-            "module) cp -a /opt/xnobrain-dist/server.dist/. /opt/xnobrain-artifact/",
-            dockerfile,
-        )
-        self.assertNotIn("/opt/xnobrain-dist/xnobrain-runtime.dist/", dockerfile)
-        self.assertIn("--lto=no", dockerfile)
-        for package in ("xnobrain", "hermes_cli", "gateway", "tools"):
-            self.assertIn(f"--include-package={package}", dockerfile)
-        self.assertIn("--include-package-data=xnobrain", dockerfile)
-        self.assertIn(
-            "COPY --from=endpoint-builder /opt/xnobrain-artifact /opt/xnobrain-app",
-            dockerfile,
-        )
-        self.assertIn(
-            'RUN if [ "${BUILD_MODE}" != "source" ]; then ln -s /opt/xnobrain-app/app.so /usr/local/bin/app.so; fi',
-            dockerfile,
-        )
-        final_stage = dockerfile.split("FROM runtime-base AS runtime\n", 1)[1]
-        self.assertNotIn("COPY xnobrain ", final_stage)
-        self.assertNotIn("COPY server.py ", final_stage)
+        self.assertIn("FROM runtime-base AS runtime", dockerfile)
+        self.assertIn("WORKDIR /opt/xnobrain-app", dockerfile)
+        self.assertIn("COPY xnobrain ./xnobrain", dockerfile)
+        self.assertIn("COPY server.py ./server.py", dockerfile)
+        self.assertNotIn("BUILD_MODE", dockerfile)
+        self.assertNotIn("nuitka", dockerfile.lower())
+        self.assertNotIn("app.so", dockerfile)
 
     def test_hermes_installer_download_retries_transient_failures(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
@@ -61,11 +35,12 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertNotIn('VOLUME ["/opt/data"]', active)
         self.assertIn("install -d -m 0700 /opt/data", dockerfile)
 
-    def test_container_entrypoint_starts_compiled_endpoint(self):
+    def test_container_entrypoint_starts_source_endpoint(self):
         entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(encoding="utf-8")
 
-        self.assertIn("exec /usr/local/bin/app.so", entrypoint)
-        self.assertNotIn("/opt/xnobrain/server.py", entrypoint)
+        self.assertIn('exec "$hermes_python" /opt/xnobrain-app/server.py', entrypoint)
+        self.assertNotIn("app.so", entrypoint)
+        self.assertNotIn("XNOBRAIN_BUILD_MODE", entrypoint)
 
     def test_runtime_uses_only_a_generic_central_router_client(self):
         entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(encoding="utf-8")
@@ -79,7 +54,7 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertIn("RUNTIME_LLM_ROUTER_URL is required", entrypoint)
         self.assertIn('RUNTIME_LLM_API_KEY="${RUNTIME_LLM_API_KEY:-}"', entrypoint)
         self.assertNotIn("RUNTIME_LLM_API_KEY is required", entrypoint)
-        self.assertIn("exec /usr/local/bin/app.so", entrypoint)
+        self.assertIn('exec "$hermes_python" /opt/xnobrain-app/server.py', entrypoint)
         self.assertNotIn("omniroute serve", entrypoint)
         self.assertNotIn("omniroute@", dockerfile)
         self.assertNotIn("20128", dockerfile)

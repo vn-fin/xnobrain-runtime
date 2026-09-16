@@ -11,14 +11,11 @@ API key issued by Control. The workspace does not install or start
 router and stores no provider credentials or router usage database. There
 is no per-profile API server.
 
-The production OCI image compiles the XNOBrain API endpoint and its required
-Python imports with Nuitka. `BUILD_MODE=onefile` (default) packages one
-executable, while `BUILD_MODE=module` uses Nuitka standalone mode and copies the
-compiled application directory for faster packaging and startup without
-one-file extraction. Both modes expose `/usr/local/bin/app.so`. The image still
-contains the upstream Hermes Python environment and office Python tools because
-agent CLI, skill synchronization, and document tooling execute independently of
-the API endpoint.
+The production OCI image and Incus installation both execute the checked-in
+Python source directly. There is no environment-selectable compiled build mode.
+The image still contains the upstream Hermes Python environment and office
+Python tools because agent CLI, skill synchronization, and document tooling
+execute independently of the API endpoint.
 
 ```text
 browser -> Traefik -> React UI

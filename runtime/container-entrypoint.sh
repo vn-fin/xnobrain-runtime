@@ -73,7 +73,4 @@ XNOBRAIN_REQUIRED_SKILLS_DIR=/opt/xnobrain/required-skills \
 XNOBRAIN_REQUIRED_PLUGINS_DIR=/opt/xnobrain/required-plugins \
   /usr/local/bin/xnobrain-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 
-if [[ "${XNOBRAIN_BUILD_MODE:-source}" == "source" ]]; then
-  exec "$hermes_python" /opt/xnobrain-app/server.py
-fi
-exec /usr/local/bin/app.so
+exec "$hermes_python" /opt/xnobrain-app/server.py
