@@ -44,6 +44,14 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertNotIn("COPY xnobrain ", final_stage)
         self.assertNotIn("COPY server.py ", final_stage)
 
+    def test_hermes_installer_download_retries_transient_failures(self):
+        dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
+
+        self.assertIn("--retry 8 --retry-all-errors --retry-delay 3", dockerfile)
+        self.assertIn("scripts/install.sh?ref=${HERMES_COMMIT}", dockerfile)
+        self.assertIn("-o /tmp/hermes-install.sh", dockerfile)
+        self.assertNotIn('install.sh" \\\n      |', dockerfile)
+
     def test_incus_image_does_not_declare_oci_data_volume(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
         active = "\n".join(

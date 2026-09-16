@@ -81,14 +81,27 @@ RUN printf '%s\n' \
 RUN --mount=type=cache,target=/root/.npm \
     --mount=type=cache,target=/root/.cache/uv \
     --mount=type=cache,target=/root/.cache/node-gyp \
-    curl -fsSL "https://raw.githubusercontent.com/NousResearch/hermes-agent/${HERMES_COMMIT}/scripts/install.sh" \
-      | env HERMES_HOME=/opt/hermes-build-home bash -s -- \
-          --branch "${HERMES_VERSION}" --commit "${HERMES_COMMIT}" \
-          --force-commit --skip-setup --non-interactive \
+    installer_url="https://raw.githubusercontent.com/NousResearch/hermes-agent/${HERMES_COMMIT}/scripts/install.sh?ref=${HERMES_COMMIT}" \
+    && curl --fail --show-error --silent --location \
+      --retry 8 --retry-all-errors --retry-delay 3 \
+      "$installer_url" -o /tmp/hermes-install.sh \
+    && installer_attempt=1 \
+    && until env HERMES_HOME=/opt/hermes-build-home \
+      NODE_DEPS_TIMEOUT=1200 npm_config_fetch_retries=8 \
+      npm_config_fetch_retry_mintimeout=3000 npm_config_fetch_retry_maxtimeout=120000 \
+      bash /tmp/hermes-install.sh \
+        --branch "${HERMES_VERSION}" --commit "${HERMES_COMMIT}" \
+        --force-commit --skip-setup --non-interactive; do \
+        if [ "$installer_attempt" -ge 3 ]; then exit 1; fi; \
+        installer_attempt=$((installer_attempt + 1)); \
+        echo "Hermes installer failed; retrying ($installer_attempt/3)" >&2; \
+        sleep 5; \
+      done \
     && install -m 0755 /opt/hermes-build-home/bin/uv /usr/local/bin/uv \
     && test "$(git -C /usr/local/lib/hermes-agent rev-parse HEAD)" = "${HERMES_COMMIT}" \
     && uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
       'edge-tts==7.2.7' \
+    && rm -f /tmp/hermes-install.sh \
     && rm -rf /opt/hermes-build-home
 
 # Match the interactive sandbox image: office Python helpers and common agent
