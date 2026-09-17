@@ -15,6 +15,11 @@ class CronCreate(BaseModel):
     schedule: str | None = Field(default=None, min_length=1, max_length=256)
     timezone: str = "Etc/UTC"
     mode: Literal["local"] = "local"
+    # Optional per-job inference pin. `provider` is a connector display hint
+    # (e.g. "codex", "grok-cli"), not the native provider. When pinned, the
+    # job always runs through the LLM router. Omit to follow the agent model.
+    provider: str | None = Field(default=None, max_length=128)
+    model: str | None = Field(default=None, max_length=256)
 
     @model_validator(mode="after")
     def unambiguous_schedule(self):
@@ -34,6 +39,31 @@ class CronCreate(BaseModel):
         except (ValueError, ZoneInfoNotFoundError) as error:
             raise ValueError("timezone is unavailable") from error
         return value
+
+
+class CronUpdate(BaseModel):
+    """Partial update to a cron job: name, prompt, and/or inference pin.
+
+    `provider` is a connector display hint. The native job stores the LLM
+    router provider when pinned.
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=256)
+    prompt: str | None = Field(default=None, min_length=1, max_length=8192)
+    provider: str | None = Field(default=None, max_length=128)
+    model: str | None = Field(default=None, max_length=256)
+    # Explicitly clear the pin (revert to following the agent's current model).
+    unpin: bool = False
+
+    @model_validator(mode="after")
+    def has_change(self):
+        pins = self.provider is not None or self.model is not None
+        edits = self.name is not None or self.prompt is not None
+        if not self.unpin and not pins and not edits:
+            raise ValueError("provide name/prompt/provider/model to update, or unpin=true")
+        if self.unpin and pins:
+            raise ValueError("choose unpin or provider/model, not both")
+        return self
 
 
 CronDeliveryTargetType = Literal["channel", "email", "kanban", "file"]

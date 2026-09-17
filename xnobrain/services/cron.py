@@ -46,6 +46,110 @@ def _iso(value: Any) -> str:
     return str(value or "")
 
 
+_PINNED_CONNECTOR_KEY = "xnobrain_pinned_connector"
+_PINNED_LABEL_KEY = "xnobrain_pinned_label"
+_CONNECTOR_DISPLAY_NAMES = {
+    "amazon-q": "Amazon Q",
+    "anthropic": "Anthropic",
+    "antigravity": "Antigravity",
+    "claude": "Claude",
+    "cline": "Cline",
+    "clinepass": "Cline",
+    "codex": "Codex",
+    "cursor": "Cursor",
+    "cx": "Codex",
+    "gb": "Grok",
+    "gc": "Grok",
+    "gemini": "Gemini",
+    "github": "GitHub",
+    "grok-cli": "Grok",
+    "kilocode": "Kilo Code",
+    "kimi-coding": "Kimi",
+    "kiro": "Kiro",
+    "oc": "OpenCode",
+    "ocg": "OpenCode",
+    "ocz": "OpenCode",
+    "openai": "OpenAI",
+    "opencode": "OpenCode",
+    "opencode-go": "OpenCode",
+    "xai-oauth": "Grok",
+}
+
+
+def _router_pin_override(model: Any) -> dict[str, str] | None:
+    """Native inference override that authenticates through the LLM router.
+
+    Never persist ``api_key`` from ``conversation_model_route`` onto the job;
+    the router provider resolves that credential from workspace config.
+    """
+    chosen = str(model or "").strip()
+    if not chosen:
+        return None
+    from ..integrations import llm_router_support
+    from ..integrations.conversation_credentials import conversation_model_route
+
+    base_url = str(llm_router_support.LLM_ROUTER_BASE_URL or "").strip()
+    if not base_url:
+        return None
+    route = conversation_model_route(chosen, base_url)
+    provider = str(route.get("provider") or llm_router_support.LLM_ROUTER_PROVIDER or "").strip()
+    url = str(route.get("base_url") or base_url).strip()
+    routed_model = str(route.get("model") or chosen).strip()
+    if not provider or not url or not routed_model:
+        return None
+    return {"provider": provider, "base_url": url, "model": routed_model}
+
+
+def _pin_connector_hint(connector: Any, model: str) -> str:
+    from ..integrations import llm_router_support
+
+    hint = str(connector or "").strip()
+    router = str(llm_router_support.LLM_ROUTER_PROVIDER or "").strip().lower()
+    if hint.lower() in {"", router, "custom:xnobrain", "xnobrain"}:
+        owner = model.split("/", 1)[0].strip().lower() if "/" in model else ""
+        hint = str(llm_router_support.ROUTER_PROVIDER_BY_MODEL_OWNER.get(owner) or "")
+    return hint
+
+
+def _pin_display_label(connector: str, model: str) -> str:
+    chosen = str(model or "").strip()
+    name = _CONNECTOR_DISPLAY_NAMES.get(connector.lower()) if connector else None
+    if not name and connector:
+        name = connector.replace("-", " ").replace("_", " ").strip().title()
+    if name and chosen:
+        return f"{name} · {chosen}"
+    return chosen
+
+
+def _pin_label_updates(connector: Any, model: str) -> dict[str, str]:
+    hint = _pin_connector_hint(connector, model)
+    return {
+        _PINNED_CONNECTOR_KEY: hint,
+        _PINNED_LABEL_KEY: _pin_display_label(hint, model),
+    }
+
+
+def _legacy_pin_needs_normalize(job: Mapping[str, Any]) -> bool:
+    from ..integrations import llm_router_support
+
+    model = str(job.get("model") or "").strip()
+    if not model:
+        return False
+    base_url = str(llm_router_support.LLM_ROUTER_BASE_URL or "").strip()
+    if not base_url:
+        return False
+    provider = str(job.get("provider") or "").strip()
+    if not provider:
+        return False
+    router = str(llm_router_support.LLM_ROUTER_PROVIDER or "").strip()
+    native_base = str(job.get("base_url") or "").rstrip("/")
+    if provider != router:
+        return True
+    if native_base != base_url.rstrip("/"):
+        return True
+    return not str(job.get(_PINNED_LABEL_KEY) or "").strip()
+
+
 class CronService:
     """Translate the stable XNOBrain contract to Hermes native Cron calls."""
 
@@ -98,6 +202,12 @@ class CronService:
             schedule = f"every {interval}m"
         if not schedule:
             raise CronServiceError("interval_minutes or schedule is required")
+        # Optional inference pin: `provider` is a connector display hint. The
+        # native job always stores the LLM router route so headless runs auth
+        # the same way interactive chat does.
+        provider_hint = str(body.get("provider") or "").strip() or None
+        model = str(body.get("model") or "").strip() or None
+        pin = _router_pin_override(model) if model else None
         try:
             from ..integrations.cron_timezone import cron_creation_timezone
             from ..models.automation import CronCreate
@@ -105,27 +215,30 @@ class CronService:
             zone = CronCreate.validate_timezone(
                 str(body.get("timezone") or self.default_timezone())
             )
+            create_kwargs: dict[str, Any] = {
+                "prompt": prompt,
+                "schedule": schedule,
+                "name": name,
+                "deliver": "local",
+            }
+            if pin:
+                create_kwargs.update(pin)
             with cron_creation_timezone(zone):
-                created = self._native(
-                    agent_id,
-                    "create_job",
-                    prompt=prompt,
-                    schedule=schedule,
-                    name=name,
-                    deliver="local",
-                )
+                created = self._native(agent_id, "create_job", **create_kwargs)
         except ValueError as exc:
             raise CronServiceError(str(exc), code="invalid_schedule") from exc
+        followup: dict[str, Any] = {}
         if created.get("schedule", {}).get("kind") == "cron":
-            created = self._native(
-                agent_id,
-                "update_job",
-                str(created["id"]),
+            followup.update(
                 {
                     "xnobrain_time_revision": 1,
                     "xnobrain_time_revision_digest": _schedule_revision_digest(created["schedule"]),
-                },
+                }
             )
+        if pin:
+            followup.update(_pin_label_updates(provider_hint, pin["model"]))
+        if followup:
+            created = self._native(agent_id, "update_job", str(created["id"]), followup) or created
         # Native cron owns recurrence, claims and execution. Creating a second
         # scheduled Kanban task here would dispatch the same work independently.
         # Delivery-to-Kanban remains an explicit output target, not a scheduler.
@@ -378,6 +491,77 @@ class CronService:
         action = "resume_job" if enabled else "pause_job"
         return self._dto(profile, self._native(profile, action, job["id"]))
 
+    def update_job(
+        self,
+        job_id: str,
+        body: Mapping[str, Any],
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Pin/change (or clear) a job's inference provider+model.
+
+        Passing provider/model pins the job through the LLM router; unpin
+        reverts to following the agent's current model. ``provider`` is a
+        connector display hint, not the native provider.
+        """
+        profile, job = self._find_job(job_id, agent_id)
+        if str(job["id"]).startswith("xcp_"):
+            raise CronServiceError(
+                "Use the custom page schedule controls",
+                status=409,
+                code="custom_page_schedule_managed",
+            )
+        updates: dict[str, Any] = {}
+        name = str(body.get("name") or "").strip()
+        if name:
+            updates["name"] = name
+        if body.get("prompt") is not None:
+            prompt = str(body.get("prompt") or "").strip()
+            if not prompt:
+                raise CronServiceError("prompt cannot be empty", status=422, code="invalid_update")
+            updates["prompt"] = prompt
+        if bool(body.get("unpin")):
+            updates.update(
+                {
+                    "provider": None,
+                    "model": None,
+                    "base_url": None,
+                    _PINNED_CONNECTOR_KEY: None,
+                    _PINNED_LABEL_KEY: None,
+                }
+            )
+        else:
+            provider_hint = str(body.get("provider") or "").strip() or None
+            model = str(body.get("model") or "").strip() or None
+            if provider_hint is not None or model is not None:
+                pin = _router_pin_override(model)
+                if pin:
+                    updates.update(pin)
+                    updates.update(_pin_label_updates(provider_hint, pin["model"]))
+            elif _legacy_pin_needs_normalize(job):
+                pin = _router_pin_override(str(job.get("model") or "").strip())
+                if pin:
+                    updates.update(pin)
+                    updates.update(
+                        _pin_label_updates(
+                            job.get(_PINNED_CONNECTOR_KEY) or job.get("provider"),
+                            pin["model"],
+                        )
+                    )
+        if not updates:
+            raise CronServiceError(
+                "provide name/prompt/provider/model to update, or unpin=true",
+                status=422,
+                code="invalid_update",
+            )
+        try:
+            updated = self._native(profile, "update_job", str(job["id"]), updates)
+        except ValueError as exc:
+            raise CronServiceError(str(exc), code="invalid_update") from exc
+        if not updated:
+            raise CronServiceError("cron job not found", status=404, code="cron_not_found")
+        self._clear_pin_alerts(profile, str(job["id"]))
+        return self._dto(profile, updated)
+
     def delete_job(self, job_id: str, agent_id: str | None = None) -> dict[str, Any]:
         profile, job = self._find_job(job_id, agent_id)
         if str(job["id"]).startswith("xcp_"):
@@ -479,9 +663,12 @@ class CronService:
             with self._active_execution_lock:
                 self._active_executions += 1
             try:
+                from ..integrations.conversation_credentials import cron_profile_scope
+
                 with (
                     cron_jobs.use_cron_store(home),
                     execution_scope(self.custom_page_schedules, profile),
+                    cron_profile_scope(home),
                 ):
                     provider = resolve_cron_scheduler()
                     fired = bool(provider.fire_due(job_id, adapters=None, loop=None))
@@ -648,10 +835,39 @@ class CronService:
         rows: list[tuple[str, list[dict[str, Any]]]] = []
         for profile in profiles if profiles is not None else self._profiles():
             try:
-                rows.append((profile, self._native(profile, "list_jobs", True)))
+                jobs = self._native(profile, "list_jobs", True)
             except Exception:
                 continue
+            rows.append(
+                (profile, [self._normalize_legacy_pin(profile, job) for job in jobs])
+            )
         return rows
+
+    def _normalize_legacy_pin(self, profile: str, job: dict[str, Any]) -> dict[str, Any]:
+        """Rewrite a raw-slug pin onto the LLM router and clear drift alerts."""
+        if not _legacy_pin_needs_normalize(job):
+            return job
+        model = str(job.get("model") or "").strip()
+        pin = _router_pin_override(model)
+        if not pin:
+            return job
+        connector = job.get(_PINNED_CONNECTOR_KEY) or job.get("provider")
+        updates = {**pin, **_pin_label_updates(connector, pin["model"])}
+        try:
+            self._snapshot_store(profile)
+            updated = self._native(profile, "update_job", str(job["id"]), updates)
+        except Exception:
+            LOGGER.debug("Could not persist normalized cron pin for job %s", job.get("id"))
+            return job
+        self._clear_pin_alerts(profile, str(job["id"]))
+        return updated or {**job, **updates}
+
+    def _clear_pin_alerts(self, profile: str, job_id: str) -> None:
+        for function in ("clear_drift_alerted", "clear_preflight_alerted"):
+            try:
+                self._native(profile, function, job_id)
+            except Exception:  # noqa: BLE001 — alert reset is best effort
+                pass
 
     def _find(
         self,
@@ -854,6 +1070,25 @@ class CronService:
         ]
         result["kanban_board"] = str(job.get("xnobrain_kanban_board") or "") or None
         result["kanban_task_id"] = str(job.get("xnobrain_kanban_task_id") or "") or None
+        # Inference pin status: native provider/model/base_url are the router
+        # route. Connector slug + label are display-only extras.
+        pinned_provider = str(job.get("provider") or "") or None
+        pinned_model = str(job.get("model") or "") or None
+        pinned_connector = str(job.get(_PINNED_CONNECTOR_KEY) or "") or None
+        pinned_label = str(job.get(_PINNED_LABEL_KEY) or "") or None
+        if pinned_model and not pinned_label:
+            pinned_label = _pin_display_label(
+                pinned_connector or pinned_provider or "", pinned_model
+            )
+        result["pinned_provider"] = pinned_provider
+        result["pinned_model"] = pinned_model
+        result["pinned_connector"] = pinned_connector
+        result["pinned_label"] = pinned_label
+        result["pinned"] = bool(pinned_provider or pinned_model)
+        result["provider_snapshot"] = str(job.get("provider_snapshot") or "") or None
+        result["model_snapshot"] = str(job.get("model_snapshot") or "") or None
+        result.pop(_PINNED_CONNECTOR_KEY, None)
+        result.pop(_PINNED_LABEL_KEY, None)
         result.pop("xnobrain_delivery_records", None)
         result.pop("origin", None)
         return result

@@ -81,6 +81,14 @@ class AutomationServiceMixin:
     ) -> dict[str, Any]:
         return self.cron.set_enabled(cron_id, enabled, agent_id)
 
+    def update_cron(
+        self,
+        cron_id: str,
+        body: Mapping[str, Any],
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.cron.update_job(cron_id, body, agent_id)
+
     def delete_cron(self, cron_id: str, agent_id: str | None = None) -> dict[str, Any]:
         return self.cron.delete_job(cron_id, agent_id)
 
