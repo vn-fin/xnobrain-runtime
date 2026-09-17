@@ -135,3 +135,32 @@ class ConversationCredentialsTests(TestCase):
                 self.assertEqual(runtime.get("base_url"), "https://router.invalid/v1")
         finally:
             set_multiplex_active(previous_mode)
+
+    def test_cron_profile_scope_keeps_file_key_after_scheduler_rebuilds_scope(self):
+        from agent import secret_scope as secret_scope_module
+        from agent.secret_scope import get_secret, set_secret_scope
+
+        from xnobrain.integrations.conversation_credentials import cron_profile_scope
+
+        previous_mode = is_multiplex_active()
+        try:
+            set_multiplex_active(True)
+            with TemporaryDirectory() as directory:
+                profile = Path(directory) / "profile"
+                profile.mkdir()
+                key_file = Path(directory) / "key"
+                key_file.write_text("synthetic-cron-file-key\n", encoding="utf-8")
+                with patch.dict(
+                    os.environ,
+                    {
+                        "RUNTIME_LLM_API_KEY": "",
+                        "RUNTIME_LLM_API_KEY_FILE": str(key_file),
+                    },
+                ):
+                    with cron_profile_scope(profile):
+                        rebuilt = secret_scope_module.build_profile_secret_scope(profile)
+                        self.assertEqual(rebuilt[LLM_ROUTER_KEY_ENV], "synthetic-cron-file-key")
+                        set_secret_scope(rebuilt)
+                        self.assertEqual(get_secret(LLM_ROUTER_KEY_ENV), "synthetic-cron-file-key")
+        finally:
+            set_multiplex_active(previous_mode)

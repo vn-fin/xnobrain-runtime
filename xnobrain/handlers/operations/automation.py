@@ -66,6 +66,11 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "cron job triggered",
             200,
         ),
+        "cron_update": (
+            _threaded(lambda: s.update_cron(p["job_id"], body, q.get("agent_id"))),
+            "cron job updated",
+            200,
+        ),
         "cron_delete": (
             _threaded(lambda: s.delete_cron(p["job_id"], q.get("agent_id"))),
             "cron job deleted",

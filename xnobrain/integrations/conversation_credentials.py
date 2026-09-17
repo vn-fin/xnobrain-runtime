@@ -47,6 +47,35 @@ def conversation_profile_scope(profile_dir: Path):
             reset_secret_scope(token)
 
 
+@contextmanager
+def cron_profile_scope(profile_dir: Path):
+    """Admit the workspace Router key into every profile scope cron rebuilds.
+
+    Hermes ``run_one_job`` replaces the secret scope with
+    ``build_profile_secret_scope(home)`` (profile ``.env`` only). The Router
+    key lives in ``RUNTIME_LLM_API_KEY_FILE``, not that file, so cron would
+    send an empty/placeholder key and the router would 401. Patch the builder
+    for the fire so nested scopes still see the same key chat uses.
+    """
+    from agent import secret_scope
+
+    original = secret_scope.build_profile_secret_scope
+
+    def build(home):
+        secrets = dict(original(home) or {})
+        key = workspace_router_key()
+        if key:
+            secrets[LLM_ROUTER_KEY_ENV] = key
+        return secrets
+
+    secret_scope.build_profile_secret_scope = build
+    try:
+        with conversation_profile_scope(profile_dir):
+            yield
+    finally:
+        secret_scope.build_profile_secret_scope = original
+
+
 def conversation_model_route(model: str, base_url: str) -> dict[str, str]:
     """Use the same server-owned inference endpoint for chat and resumed goals."""
     route = {"model": model} if model else {}
