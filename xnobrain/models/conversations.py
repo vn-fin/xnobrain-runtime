@@ -50,9 +50,21 @@ class ConversationCompact(BaseModel):
     focus: str | None = Field(default=None, max_length=500)
 
 
+class DiagramAttachment(BaseModel):
+    """Request-scoped flowchart XML. Never persist before send; extra fields forbidden."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["diagram"]
+    filename: Literal["sketch.xml"]
+    mime_type: Literal["application/xml", "text/xml"]
+    content: str = Field(min_length=1, max_length=64_000)
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    input: str = Field(min_length=1)
+    input: str = Field(default="")
+    attachment: DiagramAttachment | None = None
+
     model: str | None = None
     skills: list[str] | None = None
     toolsets: list[str] | None = None
@@ -74,6 +86,12 @@ class ChatRequest(BaseModel):
     capabilities: list[Literal["todo", "delegate", "goal", "custom_page"]] | None = Field(
         default=None, max_length=4
     )
+
+    @model_validator(mode="after")
+    def require_input_or_attachment(self):
+        if not self.input.strip() and self.attachment is None:
+            raise ValueError("input or attachment is required")
+        return self
 
     @model_validator(mode="after")
     def validate_capability_selection(self):

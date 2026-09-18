@@ -18,8 +18,12 @@ class TimeWorkspaceSpec(BaseModel):
 
     # Go's encoding/json emits exported field names today. Accept snake_case as
     # an additive compatibility shape if Control adds tags in a later release.
+    # Ignore (not forbid) unknown fields: Control owns this context struct and
+    # may add fields (e.g. ControlURL, feature flags) ahead of the runtime. It is
+    # never used for local authorization, so dropping unknown keys is safe and
+    # keeps apply/migrate working across control/runtime version drift.
     model_config = ConfigDict(
-        extra="forbid",
+        extra="ignore",
         populate_by_name=True,
         alias_generator=lambda value: "".join(part.capitalize() for part in value.split("_")),
     )

@@ -22,6 +22,7 @@ from xnobrain.runtime_limits import (
     session_timeout_seconds,
 )
 
+from ..diagram_attachment import DiagramAttachmentError, merge_into_message, validate_attachment
 from ..feature_flags import (
     FEATURE_AGENT_CUSTOM_PAGE,
     FEATURE_UI_CUSTOMIZATION,
@@ -134,6 +135,9 @@ class ConversationRunService:
                 code="conversation_context_inactive",
             )
         try:
+            raw_input = str(body.get("input") or body.get("message") or "")
+            if not raw_input.strip() and "attachment" not in body:
+                raw_input = " "
             selection = ChatRequest.model_validate(
                 {
                     key: value
@@ -149,9 +153,10 @@ class ConversationRunService:
                         "idempotency_key",
                         "feature",
                         "capabilities",
+                        "attachment",
                     }
                 }
-                | {"input": str(body.get("input") or body.get("message") or " ")}
+                | {"input": raw_input}
             )
         except ValidationError as exc:
             raise ServiceError(
@@ -159,6 +164,12 @@ class ConversationRunService:
                 status=422,
                 code="invalid_capabilities",
             ) from exc
+        try:
+            attachment = validate_attachment(body.get("attachment") if "attachment" in body else None)
+        except DiagramAttachmentError as exc:
+            raise ServiceError(str(exc), status=exc.status, code=exc.code) from exc
+        runner_message = merge_into_message(selection.input, attachment)
+
         capabilities = selection.capabilities
         if capabilities is None:
             capabilities = [selection.feature] if selection.feature else []
@@ -363,6 +374,9 @@ class ConversationRunService:
             self._active[run_id] = entry
             self._by_conversation[key] = run_id
             payload = dict(body)
+            payload.pop("attachment", None)
+            payload["input"] = runner_message
+            payload["message"] = runner_message
             if selection.capabilities is not None:
                 payload["capabilities"] = list(selection.capabilities)
             payload["timeout_seconds"] = timeout_seconds
@@ -372,6 +386,7 @@ class ConversationRunService:
                 payload["_ui_assistance"] = ui_assistance
             payload["conversation_id"] = str(conversation_id)
             payload["ownership_context"] = context
+
             if (
                 context.get("owner_kind") == "personal"
                 and trusted_context is not None

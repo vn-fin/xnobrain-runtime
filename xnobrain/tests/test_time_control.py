@@ -1329,6 +1329,35 @@ class RuntimeTimeControlAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["partial"])
         self.assertEqual(result["item_results"][0]["status"], "stale")
 
+    async def test_failed_operation_uses_failed_terminal_state(self):
+        service = self.fixture.composition.service.time_control
+        request = {
+            "workspace": self._workspace(),
+            "operation_id": "failed_terminal_state",
+            "fence": 16,
+            "plan_hash": self._hash("failed"),
+            "target_timezone": "UTC",
+            "expected_revision": 0,
+            "items": [],
+        }
+        service._begin(request, "settings")
+
+        result = service._finish(
+            request,
+            "settings",
+            verified=False,
+            partial=False,
+            error_code="time_readback_mismatch",
+            observations=[],
+        )
+
+        self.assertFalse(result["verified"])
+        self.assertFalse(result["partial"])
+        self.assertEqual(
+            service.repository.operation(request["operation_id"])["state"],
+            "failed",
+        )
+
     async def test_mutations_require_matching_relay_verified_workspace(self):
         from httpx import ASGITransport, AsyncClient
 

@@ -94,9 +94,11 @@ class ConversationRunRepositoryMixin:
                 "run_mode",
                 "feature",
                 "capabilities",
+                "attachment",
             )
             if key in body
         }
+
         if custom_page_scope is not None:
             material["custom_page_scope"] = dict(custom_page_scope)
         encoded = json.dumps(

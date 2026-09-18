@@ -3,6 +3,10 @@ aiohttp>=3.10,<4
 grpcio>=1.78,<2
 protobuf>=6.33,<8
 PyYAML>=6,<7
+# Full IANA time-zone database inside the venv. The base image does not ship
+# system tzdata, so zoneinfo.ZoneInfo() would fail for real zones (including
+# deprecated aliases like Asia/Saigon), breaking Time Control apply.
+tzdata>=2024.1
 fastapi>=0.115,<1
 httpx>=0.27,<1
 uvicorn>=0.34,<1
