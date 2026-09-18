@@ -59,8 +59,9 @@ class FakeAnalytics:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    async def require_execution_budget(self, agent_id: str) -> None:
+    async def require_execution_budget(self, agent_id: str, **_: object) -> None:
         self.calls.append(agent_id)
+
 
 
 class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -504,6 +505,41 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
             first["links"]["children"][child_id]["status"],
             "cancellation_pending",
         )
+
+    async def test_diagram_attachment_merges_into_message_and_is_stripped(self) -> None:
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<flowchart>\n"
+            '  <node id="n1" x="0" y="0">Start</node>\n'
+            "</flowchart>\n"
+        )
+        record = await self.service.start_run(
+            "agent-one",
+            "session-one",
+            {
+                "input": "Describe this flow",
+                "attachment": {
+                    "kind": "diagram",
+                    "filename": "sketch.xml",
+                    "mime_type": "application/xml",
+                    "content": xml,
+                },
+            },
+        )
+        self.agents.release.set()
+        await self.wait_for_revision(record["id"], 2)
+        self.assertIn("<flowchart>", self.agents.received["message"])
+        self.assertIn("Describe this flow", self.agents.received["message"])
+        self.assertNotIn("attachment", self.agents.received)
+
+    async def test_text_only_run_ignores_missing_attachment(self) -> None:
+        record = await self.service.start_run(
+            "agent-one", "session-one", {"input": "hello only"}
+        )
+        self.agents.release.set()
+        await self.wait_for_revision(record["id"], 2)
+        self.assertEqual(self.agents.received["input"], "hello only")
+        self.assertNotIn("attachment", self.agents.received)
 
 
 if __name__ == "__main__":

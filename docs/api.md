@@ -16,6 +16,17 @@ grouped by feature:
 JSON responses use `{success,data,message,status_code}`. SSE sends structured
 Hermes lifecycle objects and terminates with `data: [DONE]`.
 
+Conversation runs accept an optional request-scoped `attachment` on
+`POST /xnobrain/api/runtime/v1/sessions/{id}/runs`. The current sketch
+contract is `{kind:"diagram", filename:"sketch.xml", mime_type:"application/xml",
+content}` with a `flowchart` XML root of boxes and arrows. Runtime validates
+size and XML, then merges the XML into the model prompt. The UI must not put
+the XML in `input`. Text-only mixed-version requests omit `attachment`.
+`FT_ENABLE_COMPOSER_SKETCH` defaults on. Disabled runtimes return `404`
+`feature_disabled`. Malformed XML is `422`; oversized graphs are `413`.
+The attachment is never forwarded as an unknown Hermes field.
+
+
 The namespace and current version are defined once in
 `xnobrain/routes/definition.py`. Each feature owns a route module in
 `xnobrain/routes/` and a matching operation module in

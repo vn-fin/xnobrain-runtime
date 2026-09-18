@@ -10,6 +10,8 @@ import os
 
 FEATURE_UI_CUSTOMIZATION = "UI_CUSTOMIZATION"
 FEATURE_AGENT_CUSTOM_PAGE = "AGENT_CUSTOM_PAGE"
+FEATURE_COMPOSER_SKETCH = "COMPOSER_SKETCH"
+
 
 # Experimental features are the only exceptions to the enabled-by-default rule.
 _DEFAULTS = {
