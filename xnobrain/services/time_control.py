@@ -165,6 +165,27 @@ class TimeControlService:
                         now,
                     ),
                 )
+            # Validate against the sandbox tz database BEFORE persisting. The
+            # Control plane validates with Go's embedded tzdata, which resolves
+            # deprecated aliases (e.g. "Asia/Saigon") that a slim runtime image
+            # may lack. Persisting an unloadable zone would fail the readback and
+            # leave settings.json poisoned so every later call raises 500.
+            try:
+                ZoneInfo(target)
+            except (ZoneInfoNotFoundError, ValueError):
+                return self._finish(
+                    request,
+                    "settings",
+                    verified=False,
+                    partial=True,
+                    error_code="time_zone_unavailable",
+                    observations=self._observations(
+                        current["timezone"],
+                        "failed",
+                        "The requested timezone is not available in the sandbox tz database.",
+                        now,
+                    ),
+                )
             previous = dict(current)
             persisted = {
                 "schema_version": 1,
@@ -408,10 +429,15 @@ class TimeControlService:
             observed_at=now,
         ).model_dump(mode="json")
         operation = self.repository.operation(str(request["operation_id"]))
+        state = "succeeded"
+        if not verified or partial:
+            state = "partial"
+        if error_code and not partial:
+            state = "failed"
         operation.update(
             {
                 "kind": kind,
-                "state": "succeeded" if verified and not partial else "partial",
+                "state": state,
                 "result": result,
                 "item_results": result["item_results"],
                 "updated_at": _utc_iso(now),
