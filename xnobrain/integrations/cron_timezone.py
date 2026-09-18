@@ -1,11 +1,14 @@
 """Opt-in per-job timezone computation without replacing native claims/storage."""
 
+import os
 import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from functools import wraps
+from pathlib import Path
 from threading import RLock
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from xnobrain.models.automation import CronCreate
 
@@ -14,6 +17,55 @@ from .schedule_preview import preview_calendar_runs
 POLICY = "skip_gap_earlier_fold"
 _install_lock = RLock()
 _creation_zone: ContextVar[str | None] = ContextVar("cron_creation_zone", default=None)
+
+
+def effective_local_timezone() -> str:
+    """Return the scheduler host's effective local IANA timezone.
+
+    Containers commonly expose the host zone through ``/etc/localtime`` while
+    test runners and service managers may set ``TZ``.  Prefer an explicit,
+    named zone from either source and fall back to UTC when the host only
+    exposes a fixed offset or an unreadable zone file.
+    """
+    candidates: list[str | None] = []
+    configured = os.environ.get("TZ", "").strip().lstrip(":")
+    if configured:
+        if configured.startswith("/"):
+            candidates.append(_zone_name_from_path(Path(configured)))
+        else:
+            candidates.append(configured)
+    candidates.append(_zone_name_from_path(Path("/etc/localtime")))
+    try:
+        candidates.append(Path("/etc/timezone").read_text(encoding="utf-8").strip())
+    except OSError:
+        pass
+    local_tzinfo = datetime.now().astimezone().tzinfo
+    candidates.append(getattr(local_tzinfo, "key", None))
+
+    for candidate in candidates:
+        if not candidate or candidate.startswith(("/", ".")):
+            continue
+        try:
+            ZoneInfo(candidate)
+        except (ZoneInfoNotFoundError, ValueError):
+            continue
+        return candidate
+    return "UTC"
+
+
+def _zone_name_from_path(path: Path) -> str | None:
+    """Extract an IANA name from a zoneinfo file or symlink."""
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError:
+        return None
+    parts = resolved.parts
+    try:
+        marker = max(index for index, value in enumerate(parts) if value == "zoneinfo")
+    except ValueError:
+        return None
+    name = "/".join(parts[marker + 1 :])
+    return name or None
 
 
 @contextmanager

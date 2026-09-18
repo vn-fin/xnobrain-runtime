@@ -319,7 +319,7 @@ class SchedulePage(Closed):
     action_id: Identifier
     conversation_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
     schedule: str = Field(min_length=1, max_length=256)
-    timezone: str = Field(min_length=1, max_length=128)
+    timezone: str | None = Field(default=None, min_length=1, max_length=128)
     payer_kind: Literal["personal"]
     timeout_seconds: int = Field(ge=10, le=300)
     max_runs: int = Field(ge=1, le=100)
@@ -328,7 +328,8 @@ class SchedulePage(Closed):
     def calendar_timezone(self):
         from .automation import CronCreate
 
-        CronCreate.validate_timezone(self.timezone)
+        if self.timezone is not None:
+            CronCreate.validate_timezone(self.timezone)
         if len(self.schedule.split()) != 5:
             raise ValueError("five-field calendar schedule required")
         return self
