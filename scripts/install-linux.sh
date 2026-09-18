@@ -128,8 +128,8 @@ install_apt_packages() {
   sudo debconf-set-selections <<'EOF'
 ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true
 EOF
-  sudo apt-get update
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+  sudo apt-get -o Acquire::Retries=5 update
+  sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends "${packages[@]}"
 }
 
 install_dnf_packages() {
@@ -153,6 +153,17 @@ if [[ "$skip_system_packages" == false ]]; then
   esac
 fi
 
+# These values apply to the pinned Hermes installer and its Python/npm
+# dependencies too. Individual CLI requests retry with exponential backoff;
+# a failed command still aborts the image build rather than publishing a
+# partial installation.
+export PIP_RETRIES="${PIP_RETRIES:-5}"
+export PIP_TIMEOUT="${PIP_TIMEOUT:-30}"
+export npm_config_fetch_retries="${npm_config_fetch_retries:-5}"
+export npm_config_fetch_retry_mintimeout="${npm_config_fetch_retry_mintimeout:-10000}"
+export npm_config_fetch_retry_maxtimeout="${npm_config_fetch_retry_maxtimeout:-120000}"
+export npm_config_fetch_timeout="${npm_config_fetch_timeout:-120000}"
+
 mkdir -p "$tools_dir" "$npm_prefix/bin" "$hermes_home"
 
 arch="$(uname -m)"
@@ -175,9 +186,17 @@ if [[ "$use_system_node" == false ]]; then
   node_install_dir="$tools_dir/$node_archive"
   if [[ ! -x "$node_install_dir/bin/node" ]]; then
     archive_path="$tools_dir/$node_archive.tar.xz"
-    curl -fsSL "https://nodejs.org/dist/v${node_version}/${node_archive}.tar.xz" -o "$archive_path"
+    # curl retries HTTP 429 with Retry-After or its exponential fallback;
+    # retry transient 5xx/network failures too, but not a
+    # permanent 404. Never extract a partial download after exhausting retries.
+    if ! curl -fsSL --retry 8 --retry-max-time 300 \
+      --connect-timeout 20 --max-time 90 \
+      "https://nodejs.org/dist/v${node_version}/${node_archive}.tar.xz" -o "$archive_path"; then
+      rm -f -- "$archive_path"
+      exit 1
+    fi
     tar -xJf "$archive_path" -C "$tools_dir"
-    rm -f "$archive_path"
+    rm -f -- "$archive_path"
   fi
   if [[ -e "$node_root" && ! -L "$node_root" ]]; then
     echo "$node_root exists and is not the installer-managed Node symlink." >&2
@@ -197,7 +216,8 @@ npm --version
 
 installer_file="$(mktemp)"
 trap 'rm -f "$installer_file"' EXIT
-curl -fsSL \
+curl -fsSL --retry 8 --retry-max-time 300 \
+  --connect-timeout 20 --max-time 90 \
   "https://raw.githubusercontent.com/NousResearch/hermes-agent/${hermes_commit}/scripts/install.sh" \
   -o "$installer_file"
 hermes_args=(

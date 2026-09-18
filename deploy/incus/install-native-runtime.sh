@@ -21,8 +21,8 @@ if [[ -e "$install_root" ]]; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl sudo
+apt-get -o Acquire::Retries=5 update
+apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates curl sudo
 
 if ! getent passwd "$service_user" >/dev/null; then
   useradd \
