@@ -42,7 +42,7 @@ class CronCreate(BaseModel):
 
 
 class CronUpdate(BaseModel):
-    """Partial update to a cron job: name, prompt, and/or inference pin.
+    """Partial update to a cron job, including its recurrence.
 
     `provider` is a connector display hint. The native job stores the LLM
     router provider when pinned.
@@ -50,6 +50,9 @@ class CronUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=256)
     prompt: str | None = Field(default=None, min_length=1, max_length=8192)
+    interval_minutes: int | None = Field(default=None, gt=0)
+    schedule: str | None = Field(default=None, min_length=1, max_length=256)
+    timezone: str | None = Field(default=None, max_length=128)
     provider: str | None = Field(default=None, max_length=128)
     model: str | None = Field(default=None, max_length=256)
     # Explicitly clear the pin (revert to following the agent's current model).
@@ -59,11 +62,25 @@ class CronUpdate(BaseModel):
     def has_change(self):
         pins = self.provider is not None or self.model is not None
         edits = self.name is not None or self.prompt is not None
-        if not self.unpin and not pins and not edits:
-            raise ValueError("provide name/prompt/provider/model to update, or unpin=true")
+        schedule_change = self.interval_minutes is not None or self.schedule is not None
+        if self.interval_minutes is not None and self.schedule is not None:
+            raise ValueError("choose interval_minutes or schedule, not both")
+        if self.timezone is not None and self.schedule is None:
+            raise ValueError("timezone requires schedule")
+        if self.schedule is not None and self.timezone is None:
+            raise ValueError("calendar schedule requires timezone")
+        if not self.unpin and not pins and not edits and not schedule_change:
+            raise ValueError(
+                "provide name/prompt/schedule/provider/model to update, or unpin=true"
+            )
         if self.unpin and pins:
             raise ValueError("choose unpin or provider/model, not both")
         return self
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str | None) -> str | None:
+        return CronCreate.validate_timezone(value) if value is not None else None
 
 
 CronDeliveryTargetType = Literal["channel", "email", "kanban", "file"]

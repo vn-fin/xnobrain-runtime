@@ -174,6 +174,89 @@ class CronPinServiceTests(TestCase):
         self.assertFalse(unpinned["pinned"])
         self.assertTrue(any(item[1] == "clear_drift_alerted" for item in calls))
 
+    def test_update_job_changes_interval_and_clears_calendar_binding(self):
+        job = {
+            "id": "job-1",
+            "name": "Scheduled",
+            "prompt": "run",
+            "schedule": {"kind": "interval", "minutes": 60, "display": "every 60m"},
+            "xnobrain_time_revision": 3,
+            "xnobrain_time_revision_digest": "old",
+        }
+        calls: list[tuple] = []
+
+        def native(profile, function, *args, **kwargs):
+            calls.append((profile, function, args, kwargs))
+            if function == "list_jobs":
+                return [job]
+            if function == "update_job":
+                updates = dict(args[1])
+                if isinstance(updates.get("schedule"), str):
+                    updates["schedule"] = {
+                        "kind": "interval",
+                        "minutes": 15,
+                        "display": "every 15m",
+                    }
+                job.update(updates)
+                return dict(job)
+            if function in {"clear_drift_alerted", "clear_preflight_alerted"}:
+                return True
+            raise AssertionError(function)
+
+        with patch.object(self.service, "_native", side_effect=native):
+            result = self.service.update_job(
+                "job-1", {"interval_minutes": 15}, "agent-1"
+            )
+
+        schedule_update = next(
+            item
+            for item in calls
+            if item[1] == "update_job" and item[2][1].get("schedule") == "every 15m"
+        )
+        self.assertEqual(schedule_update[0], "agent-1")
+        self.assertEqual(result["schedule_kind"], "interval")
+        self.assertEqual(result["interval_minutes"], 15)
+        self.assertIsNone(job["xnobrain_time_revision"])
+        self.assertIsNone(job["xnobrain_time_revision_digest"])
+
+    def test_update_job_binds_calendar_timezone_and_revision(self):
+        from cron import jobs
+
+        from xnobrain.integrations.cron_timezone import install_timezone_computation
+
+        install_timezone_computation(jobs)
+        job = {
+            "id": "job-1",
+            "name": "Scheduled",
+            "prompt": "run",
+            "schedule": {"kind": "interval", "minutes": 60, "display": "every 60m"},
+        }
+
+        def native(_profile, function, *args, **_kwargs):
+            if function == "list_jobs":
+                return [job]
+            if function == "update_job":
+                updates = dict(args[1])
+                if isinstance(updates.get("schedule"), str):
+                    updates["schedule"] = jobs.parse_schedule(updates["schedule"])
+                job.update(updates)
+                return dict(job)
+            if function in {"clear_drift_alerted", "clear_preflight_alerted"}:
+                return True
+            raise AssertionError(function)
+
+        with patch.object(self.service, "_native", side_effect=native):
+            result = self.service.update_job(
+                "job-1",
+                {"schedule": "0 9 * * *", "timezone": "Asia/Ho_Chi_Minh"},
+                "agent-1",
+            )
+
+        self.assertEqual(result["schedule_kind"], "cron")
+        self.assertEqual(result["timezone"], "Asia/Ho_Chi_Minh")
+        self.assertEqual(result["dst_policy"], "skip_gap_earlier_fold")
+        self.assertEqual(result["revision"], 1)
+
     def test_list_jobs_normalizes_legacy_codex_pin(self):
         job = {
             "id": "job-legacy",
@@ -237,6 +320,16 @@ class CronPinContractTests(TestCase):
         self.assertEqual(created.model, "cx/gpt-5.6-luna")
         updated = CronUpdate(provider="grok-cli", model="gb/grok-4.6")
         self.assertEqual(updated.model, "gb/grok-4.6")
+
+    def test_update_accepts_one_schedule_shape(self):
+        interval = CronUpdate(interval_minutes=15)
+        calendar = CronUpdate(schedule="0 9 * * *", timezone="Asia/Ho_Chi_Minh")
+        self.assertEqual(interval.interval_minutes, 15)
+        self.assertEqual(calendar.timezone, "Asia/Ho_Chi_Minh")
+        with self.assertRaises(ValueError):
+            CronUpdate(interval_minutes=15, schedule="0 9 * * *", timezone="Etc/UTC")
+        with self.assertRaises(ValueError):
+            CronUpdate(schedule="0 9 * * *")
 
 
 class _Agents:

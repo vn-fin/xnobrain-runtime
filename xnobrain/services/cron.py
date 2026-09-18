@@ -497,7 +497,7 @@ class CronService:
         body: Mapping[str, Any],
         agent_id: str | None = None,
     ) -> dict[str, Any]:
-        """Pin/change (or clear) a job's inference provider+model.
+        """Update a job's content, recurrence, or inference pin.
 
         Passing provider/model pins the job through the LLM router; unpin
         reverts to following the agent's current model. ``provider`` is a
@@ -519,6 +519,24 @@ class CronService:
             if not prompt:
                 raise CronServiceError("prompt cannot be empty", status=422, code="invalid_update")
             updates["prompt"] = prompt
+        interval = body.get("interval_minutes")
+        schedule = str(body.get("schedule") or "").strip()
+        schedule_changed = interval is not None or bool(schedule)
+        schedule_zone: str | None = None
+        if interval is not None:
+            interval = int(interval)
+            if interval < 1:
+                raise CronServiceError(
+                    "interval_minutes must be positive",
+                    status=422,
+                    code="invalid_schedule",
+                )
+            updates["schedule"] = f"every {interval}m"
+        elif schedule:
+            from ..models.automation import CronCreate
+
+            schedule_zone = CronCreate.validate_timezone(str(body.get("timezone") or ""))
+            updates["schedule"] = schedule
         if bool(body.get("unpin")):
             updates.update(
                 {
@@ -549,16 +567,42 @@ class CronService:
                     )
         if not updates:
             raise CronServiceError(
-                "provide name/prompt/provider/model to update, or unpin=true",
+                "provide name/prompt/schedule/provider/model to update, or unpin=true",
                 status=422,
                 code="invalid_update",
             )
         try:
-            updated = self._native(profile, "update_job", str(job["id"]), updates)
+            self._snapshot_store(profile)
+            if schedule_zone is not None:
+                from ..integrations.cron_timezone import cron_creation_timezone
+
+                with cron_creation_timezone(schedule_zone):
+                    updated = self._native(profile, "update_job", str(job["id"]), updates)
+            else:
+                updated = self._native(profile, "update_job", str(job["id"]), updates)
         except ValueError as exc:
             raise CronServiceError(str(exc), code="invalid_update") from exc
         if not updated:
             raise CronServiceError("cron job not found", status=404, code="cron_not_found")
+        if schedule_changed:
+            parsed = updated.get("schedule")
+            time_updates: dict[str, Any]
+            if isinstance(parsed, Mapping) and parsed.get("kind") == "cron":
+                previous_revision = job.get("xnobrain_time_revision")
+                revision = previous_revision + 1 if type(previous_revision) is int else 1
+                time_updates = {
+                    "xnobrain_time_revision": revision,
+                    "xnobrain_time_revision_digest": _schedule_revision_digest(parsed),
+                }
+            else:
+                time_updates = {
+                    "xnobrain_time_revision": None,
+                    "xnobrain_time_revision_digest": None,
+                }
+            updated = (
+                self._native(profile, "update_job", str(job["id"]), time_updates)
+                or updated
+            )
         self._clear_pin_alerts(profile, str(job["id"]))
         return self._dto(profile, updated)
 
