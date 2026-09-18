@@ -62,9 +62,10 @@ class AutomationServiceMixin:
 
         request = CronSchedulePreview.model_validate(dict(body))
         cutoff = request.after or datetime.now(timezone.utc)
+        schedule_timezone = request.timezone or self.cron.default_timezone()
         return {
             "occurrences": preview_calendar_runs(
-                request.schedule, request.timezone, cutoff, count=request.count
+                request.schedule, schedule_timezone, cutoff, count=request.count
             ),
             "dst_policy": "skip_gap_earlier_fold",
             "executor_parity_verified": False,

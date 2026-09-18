@@ -535,7 +535,18 @@ class CronService:
         elif schedule:
             from ..models.automation import CronCreate
 
-            schedule_zone = CronCreate.validate_timezone(str(body.get("timezone") or ""))
+            persisted_zone = None
+            existing_schedule = job.get("schedule")
+            if isinstance(existing_schedule, Mapping):
+                try:
+                    from ..integrations.cron_timezone import validated_schedule_timezone
+
+                    persisted_zone = validated_schedule_timezone(dict(existing_schedule))
+                except (KeyError, TypeError, ValueError):
+                    persisted_zone = None
+            schedule_zone = CronCreate.validate_timezone(
+                str(body.get("timezone") or persisted_zone or self.default_timezone())
+            )
             updates["schedule"] = schedule
         if bool(body.get("unpin")):
             updates.update(

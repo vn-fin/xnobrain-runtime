@@ -13,7 +13,7 @@ class CronCreate(BaseModel):
     prompt: str
     interval_minutes: int | None = Field(default=None, gt=0)
     schedule: str | None = Field(default=None, min_length=1, max_length=256)
-    timezone: str = "Etc/UTC"
+    timezone: str | None = None
     mode: Literal["local"] = "local"
     # Optional per-job inference pin. `provider` is a connector display hint
     # (e.g. "codex", "grok-cli"), not the native provider. When pinned, the
@@ -29,7 +29,9 @@ class CronCreate(BaseModel):
 
     @field_validator("timezone")
     @classmethod
-    def validate_timezone(cls, value: str) -> str:
+    def validate_timezone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if value != "UTC" and ("/" not in value or value.startswith("/")):
             raise ValueError("timezone must be an IANA name")
         if len(value) > 128 or any(part in {"", ".", ".."} for part in value.split("/")):
@@ -67,8 +69,6 @@ class CronUpdate(BaseModel):
             raise ValueError("choose interval_minutes or schedule, not both")
         if self.timezone is not None and self.schedule is None:
             raise ValueError("timezone requires schedule")
-        if self.schedule is not None and self.timezone is None:
-            raise ValueError("calendar schedule requires timezone")
         if not self.unpin and not pins and not edits and not schedule_change:
             raise ValueError(
                 "provide name/prompt/schedule/provider/model to update, or unpin=true"
@@ -92,12 +92,12 @@ class CronDeliveryTargetCreate(BaseModel):
 
 
 class CronBlueprintInstantiate(BaseModel):
-    timezone: str = "Etc/UTC"
+    timezone: str | None = None
 
     @field_validator("timezone")
     @classmethod
-    def validate_timezone(cls, value: str) -> str:
-        return CronCreate.validate_timezone(value)
+    def validate_timezone(cls, value: str | None) -> str | None:
+        return CronCreate.validate_timezone(value) if value is not None else None
 
     blueprint: str = Field(min_length=1, max_length=128)
     agent_id: str = Field(min_length=1, max_length=128)
@@ -108,14 +108,14 @@ class CronBlueprintInstantiate(BaseModel):
 class CronSchedulePreview(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schedule: str = Field(min_length=1, max_length=256)
-    timezone: str = "Etc/UTC"
+    timezone: str | None = None
     after: datetime | None = None
     count: int = Field(default=5, ge=1, le=20)
 
     @field_validator("timezone")
     @classmethod
-    def validate_timezone(cls, value: str) -> str:
-        return CronCreate.validate_timezone(value)
+    def validate_timezone(cls, value: str | None) -> str | None:
+        return CronCreate.validate_timezone(value) if value is not None else None
 
     @field_validator("after")
     @classmethod

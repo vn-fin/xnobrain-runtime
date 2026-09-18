@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from ..integrations.cron_timezone import effective_local_timezone
 from .base import StoreError
 
 
@@ -51,7 +52,7 @@ class TimeControlRepository:
         if not value:
             return {
                 "schema_version": 1,
-                "timezone": "Etc/UTC",
+                "timezone": effective_local_timezone(),
                 "revision": 0,
                 "operation_id": "bootstrap",
             }
