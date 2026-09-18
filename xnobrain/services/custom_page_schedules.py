@@ -30,6 +30,8 @@ class CustomPageScheduleService:
     def preview(self, agent, body, trusted):
         owner = self.pages.authority(agent, trusted)
         selected = validated(SchedulePage, body)
+        if not selected.get("timezone"):
+            selected["timezone"] = self.platform.cron.default_timezone()
         page, action = self.pages.action_scope(agent, selected["action_id"], selected, trusted)
         occurrences = preview_calendar_runs(
             selected["schedule"], selected["timezone"], datetime.now(UTC), count=5
