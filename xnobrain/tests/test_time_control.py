@@ -1,6 +1,7 @@
 """Time Control request validation; no live settings changes."""
 
 import unittest
+from unittest.mock import patch
 
 from pydantic import ValidationError
 
@@ -8,6 +9,12 @@ from xnobrain.models.automation import CronCreate
 
 
 class CronTimezoneContractTests(unittest.TestCase):
+    def test_missing_timezone_uses_named_scheduler_machine_zone(self):
+        from xnobrain.integrations.cron_timezone import effective_local_timezone
+
+        with patch.dict("os.environ", {"TZ": "Pacific/Honolulu"}):
+            self.assertEqual(effective_local_timezone(), "Pacific/Honolulu")
+
     def test_supported_iana_zones(self):
         for zone in ("UTC", "Etc/UTC", "Asia/Ho_Chi_Minh", "Europe/Berlin", "Australia/Lord_Howe"):
             request = CronCreate(agent_id="synthetic", name="Test", prompt="Test", timezone=zone)
@@ -1109,6 +1116,7 @@ class RuntimeTimeControlAdapterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_service_token_required_and_observation_reads_persisted_config(self):
         from pathlib import Path
+        from xnobrain.integrations.cron_timezone import effective_local_timezone
 
         from httpx import ASGITransport, AsyncClient
 
@@ -1124,8 +1132,9 @@ class RuntimeTimeControlAdapterTests(unittest.IsolatedAsyncioTestCase):
             observed = await client.get(path)
         self.assertEqual(observed.status_code, 200, observed.text)
         data = observed.json()["data"]
-        self.assertEqual(data["effective_timezone"], "Etc/UTC")
-        self.assertEqual(data["scheduler_timezone"], "Etc/UTC")
+        expected_zone = effective_local_timezone()
+        self.assertEqual(data["effective_timezone"], expected_zone)
+        self.assertEqual(data["scheduler_timezone"], expected_zone)
         self.assertTrue(all(item["supported"] for item in data["capabilities"]))
         self.assertFalse(Path(self.fixture.tmp.name, "data", "time-control", "fence.json").exists())
 
