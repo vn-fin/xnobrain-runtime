@@ -127,10 +127,19 @@ class PortabilityHandlers:
             part_number = request.path_params["part_number"]
             operation = request.scope["route"].name
             if operation == "bundle_upload_part":
-                content_length = int(request.headers.get("content-length") or 0)
-                if content_length <= 0 or content_length > CHUNK_SIZE:
+                content_length = request.headers.get("content-length")
+                if content_length is not None:
+                    declared_length = int(content_length)
+                    if declared_length <= 0 or declared_length > CHUNK_SIZE:
+                        raise ValueError("upload part size is invalid")
+                payload_buffer = bytearray()
+                async for chunk in request.stream():
+                    if len(payload_buffer) + len(chunk) > CHUNK_SIZE:
+                        raise ValueError("upload part size is invalid")
+                    payload_buffer.extend(chunk)
+                if not payload_buffer:
                     raise ValueError("upload part size is invalid")
-                payload = await request.body()
+                payload = bytes(payload_buffer)
                 expected_hash = str(request.headers.get("x-part-sha256") or "").lower()
                 if (
                     expected_hash

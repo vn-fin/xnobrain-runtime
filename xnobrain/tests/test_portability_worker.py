@@ -60,6 +60,30 @@ class PortabilityWorkerTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(stopping, 3)
         await self.wait_status(task, "COMPLETED")
 
+    async def test_success_callback_runs_only_after_the_task_is_committed(self):
+        task = self.admit("IMPORT")
+        observed = []
+
+        def completed(claim):
+            row = self.store.get(claim["id"], scope="workspace", actor="actor")
+            observed.append(row["status"])
+
+        worker = PortabilityWorker(
+            self.store,
+            lambda claim: {"task_id": claim["id"]},
+            poll_seconds=0.01,
+            on_completed=completed,
+        )
+        await worker.start()
+        try:
+            await self.wait_status(task, "COMPLETED")
+            async with asyncio.timeout(2):
+                while not observed:
+                    await asyncio.sleep(0.01)
+            self.assertEqual(observed, ["COMPLETED"])
+        finally:
+            await worker.shutdown()
+
     async def test_prepublication_import_failure_releases_pin_and_keeps_receipt(self):
         task = self.admit("IMPORT")
 

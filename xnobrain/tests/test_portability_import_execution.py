@@ -33,7 +33,10 @@ class ImportExecutionTests(unittest.IsolatedAsyncioTestCase):
             portability.complete_upload(
                 upload["upload_id"], {"sha256": hashlib.sha256(payload).hexdigest()}
             )
-            tasks = PortabilityTasks(portability)
+            completed = []
+            tasks = PortabilityTasks(
+                portability, on_import_completed=lambda: completed.append(True)
+            )
             repository.portability_task_store = tasks.store
             body = {"upload_id": upload["upload_id"]}
             task, _ = tasks.create_import(body, scope="workspace", actor="actor", key="once")
@@ -46,6 +49,10 @@ class ImportExecutionTests(unittest.IsolatedAsyncioTestCase):
                             break
                         await asyncio.sleep(0.01)
                 self.assertEqual(current["status"], "COMPLETED", current)
+                async with asyncio.timeout(2):
+                    while not completed:
+                        await asyncio.sleep(0.01)
+                self.assertEqual(completed, [True])
                 target = current["result"]["agent_id_mappings"]["source"]
                 self.assertEqual(
                     (repository.profile_path(target) / "workspace" / "note.txt").read_text(),

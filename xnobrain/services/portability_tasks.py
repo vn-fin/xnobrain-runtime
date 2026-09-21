@@ -24,9 +24,10 @@ def timestamp(value: float | None) -> str | None:
 class PortabilityTasks:
     """Coordinates durable tasks without making the HTTP request own execution."""
 
-    def __init__(self, portability, *, store=None):
+    def __init__(self, portability, *, store=None, on_import_completed=None):
         self.portability = portability
         self.store = store or portability.task_store
+        self.on_import_completed = on_import_completed
         self.artifacts = portability.transfer_root / "task-exports"
         self.artifacts.mkdir(mode=0o700, exist_ok=True)
         self.store.capacity = self._positive_setting("RUNTIME_PORTABILITY_QUEUE_LIMIT", 100)
@@ -34,8 +35,15 @@ class PortabilityTasks:
             "RUNTIME_PORTABILITY_MIN_FREE_BYTES", 256 * 1024 * 1024
         )
         self.worker = PortabilityWorker(
-            self.store, self.execute, maintenance=self.cleanup_terminal_inputs
+            self.store,
+            self.execute,
+            maintenance=self.cleanup_terminal_inputs,
+            on_completed=self._task_completed,
         )
+
+    def _task_completed(self, claim):
+        if claim["kind"] == "IMPORT" and self.on_import_completed is not None:
+            self.on_import_completed()
 
     def create_export(self, body, *, scope: str, actor: str, key: str | None = None):
         self.store.validate_key(key, required=False)

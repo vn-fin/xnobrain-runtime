@@ -34,6 +34,7 @@ class PortabilityWorker:
         lease_seconds: float = 30,
         poll_seconds: float = 1,
         maintenance: Callable[[], None] | None = None,
+        on_completed: Callable[[dict[str, Any]], None] | None = None,
     ):
         self.store = store
         self.execute = execute
@@ -41,6 +42,7 @@ class PortabilityWorker:
         self.lease_seconds = lease_seconds
         self.poll_seconds = poll_seconds
         self.maintenance = maintenance
+        self.on_completed = on_completed
         self._next_maintenance = 0.0
         self._stop = asyncio.Event()
         self._loop_task: asyncio.Task | None = None
@@ -162,7 +164,7 @@ class PortabilityWorker:
                         "retryable": False,
                     }
             if not lost.is_set():
-                await asyncio.to_thread(
+                finished = await asyncio.to_thread(
                     self.store.finish,
                     claim["id"],
                     self.owner,
@@ -170,6 +172,11 @@ class PortabilityWorker:
                     result=result,
                     error=error,
                 )
+                if finished and error is None and self.on_completed is not None:
+                    try:
+                        await asyncio.to_thread(self.on_completed, claim)
+                    except Exception:
+                        logger.warning("Portability completion callback failed")
         finally:
             completed.set()
             await heartbeat
