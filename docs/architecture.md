@@ -150,3 +150,29 @@ and uninstall cannot silently orphan an unresolved private app. Reinstall cannot
 reattach a replacement writer to retained data. No second lifecycle database or
 scheduler is introduced; combined Community retain/uninstall reconciliation remains
 an explicit future integration rather than automatic consent.
+
+### Workspace working overlay and Python environments
+
+The installer seeds both `workspace/AGENTS.md` (durable product instructions,
+unchanged marketplace/UI/blueprint contract) and `workspace/HERMES.md` (profile
+working rules). Big Brother's copies refresh with snapshots on installation;
+named-profile copies are backfilled only when missing. The independent
+`profile-template` never inherits Big Brother edits.
+
+Upstream context discovery selects HERMES before AGENTS, rather than merging.
+The Runtime conversation prompt adapter explicitly includes both workspace
+files for new/cached and resumed prompts, including Big Brother, without
+changing the upstream loader. Working rules are authored only in HERMES.
+Big Brother remains free of the named-agent CWD lock.
+
+Profile Python environments use `/opt/data/python/.<profile-id>-venv`, including
+`.big-brother-venv`. The container entrypoint provisions the shared root as 0700
+for the runtime identity on the existing persistent data mount. It shares that
+mount's quota (not a new unlimited disk); persistence across replacement depends
+on retaining the data volume. Environments are not portable profile artifacts.
+Use the explicit `uv --no-cache venv` and `uv --no-cache pip --python` command
+shapes in HERMES, remaining in workspace CWD. No workspace `.venv`, separate uv
+cache, runtime-interpreter relocation, or office-tools changes are needed.
+These are model instructions, not command enforcement or an OS sandbox. The
+named-agent exception permits only its own environment, never arbitrary `/opt`
+writes or external deliverables. Full-disk errors must be reported, not bypassed.

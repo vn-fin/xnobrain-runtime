@@ -15,6 +15,9 @@ AGENT_WORKSPACE_GUIDANCE = """# Agent workspace
 Your default and only project workspace is `{workspace}`.
 Create and modify user-requested files only inside this directory. Prefer paths
 relative to it, and do not change the working directory to another location.
+The sole Python-environment exception is the current profile's exact uv venv
+specified by the working overlay; user deliverables must still stay here.
+This grants no arbitrary /opt writes or access to other profiles' environments.
 Use dedicated Hermes tools for agent configuration, skills, memory, and schedules
 instead of editing profile state directly."""
 
@@ -52,6 +55,51 @@ class ConversationPromptMixin:
                 rendered = f"{rendered}\n\n{guidance}" if rendered else guidance
         return rendered
 
+    def _workspace_context(self, profile_dir: Path, workspace_dir: Path | None) -> str:
+        """Bypass first-match context discovery without changing the upstream loader."""
+        workspace = workspace_dir or profile_dir / "workspace"
+        sections = []
+        for filename in ("AGENTS.md", "HERMES.md"):
+            path = workspace / filename
+            # Context must be a regular workspace file, not a symlink to secrets.
+            if path.is_file() and not path.is_symlink():
+                try:
+                    text = path.read_text(encoding="utf-8").strip()
+                except (OSError, UnicodeError):
+                    continue
+                if text:
+                    try:
+                        from agent.prompt_builder import _scan_context_content, _truncate_content
+                    except ImportError:
+                        # Without the embedded scanner, do not bypass its safety policy.
+                        text = "[Workspace context unavailable: scanner not installed.]"
+                    else:
+                        text = _scan_context_content(text, filename)
+                        text = _truncate_content(text, filename, read_path=str(path))
+                    sections.append(f"# Workspace {filename}\n{text}")
+        profile_id = (
+            "big-brother"
+            if profile_dir == self.root_profile
+            else (profile_dir.parent.name if profile_dir.name == ".profile" else profile_dir.name)
+        )
+        sections.append(f"Current profile uv venv: `/opt/data/python/.{profile_id}-venv`.")
+        return (
+            "<!-- runtime-workspace-context -->\n"
+            + "\n\n".join(sections)
+            + "\n<!-- /runtime-workspace-context -->"
+        )
+
+    @staticmethod
+    def _with_workspace_context(prompt: Any, context: str) -> str:
+        rendered = str(prompt or "")
+        start = rendered.find("<!-- runtime-workspace-context -->")
+        end = rendered.find("<!-- /runtime-workspace-context -->", start)
+        if start >= 0 and end >= 0:
+            rendered = (
+                rendered[:start] + rendered[end + len("<!-- /runtime-workspace-context -->") :]
+            )
+        return f"{rendered.rstrip()}\n\n{context}"
+
     def _apply_runtime_help_guidance_override(
         self,
         agent: Any,
@@ -59,6 +107,7 @@ class ConversationPromptMixin:
         workspace_dir: Path | None = None,
     ) -> None:
         """Apply product-neutral identity and Markdown response policy."""
+        context = self._workspace_context(profile_dir, workspace_dir)
         if profile_dir == self.root_profile:
             workspace_dir = None
         original_build = getattr(agent, "_build_system_prompt", None)
@@ -66,7 +115,7 @@ class ConversationPromptMixin:
 
             def build_system_prompt(system_message: Any = None) -> str:
                 return self._format_runtime_prompt(
-                    original_build(system_message),
+                    self._with_workspace_context(original_build(system_message), context),
                     workspace_dir=workspace_dir,
                 )
 
@@ -75,7 +124,7 @@ class ConversationPromptMixin:
         cached = getattr(agent, "_cached_system_prompt", None)
         if isinstance(cached, str) and cached:
             agent._cached_system_prompt = self._format_runtime_prompt(
-                cached,
+                self._with_workspace_context(cached, context),
                 workspace_dir=workspace_dir,
             )
 
@@ -106,13 +155,16 @@ class ConversationPromptMixin:
                 (session_id,),
             ).fetchone()
             stored = str(row["system_prompt"] or "") if row else ""
+            original_stored = stored
             if profile_dir == self.root_profile:
                 workspace_dir = None
+            context = self._workspace_context(profile_dir, workspace_dir)
+            stored = self._with_workspace_context(stored, context)
             replacement = self._format_runtime_prompt(
                 stored,
                 workspace_dir=workspace_dir,
             )
-            if row and replacement != stored:
+            if row and replacement != original_stored:
                 conn.execute(
                     "UPDATE sessions SET system_prompt = ? WHERE id = ?",
                     (replacement, session_id),

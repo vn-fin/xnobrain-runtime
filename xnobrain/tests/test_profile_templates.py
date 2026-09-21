@@ -81,3 +81,23 @@ class ProfileTemplateInstallerTests(unittest.TestCase):
                 (root / "SOUL.md").read_text(encoding="utf-8"),
                 (template / "SOUL.md").read_text(encoding="utf-8"),
             )
+
+            for filename in ("AGENTS.md", "HERMES.md"):
+                packaged = (templates / filename).read_text(encoding="utf-8")
+                self.assertEqual((root / "workspace" / filename).read_text(), packaged)
+                self.assertEqual((named / "workspace" / filename).read_text(), packaged)
+                (root / "workspace" / filename).write_text("Big Brother edit\n")
+                (root / filename).write_text("Big Brother home edit\n")
+                (named / "workspace" / filename).write_text("Named edit\n")
+                self.assertEqual((template / filename).read_text(), packaged)
+            subprocess.run(
+                ["bash", str(script), str(root), str(root / "profiles")],
+                check=True,
+                capture_output=True,
+                env=environment,
+            )
+            for filename in ("AGENTS.md", "HERMES.md"):
+                packaged = (templates / filename).read_text()
+                self.assertEqual((root / "workspace" / filename).read_text(), packaged)
+                self.assertEqual((template / filename).read_text(), packaged)
+                self.assertEqual((named / "workspace" / filename).read_text(), "Named edit\n")

@@ -26,6 +26,10 @@ export RUNTIME_ACCOUNTING_MODE="${RUNTIME_ACCOUNTING_MODE:-legacy}"
 export RUNTIME_CONTROL_URL="${RUNTIME_CONTROL_URL:-}"
 
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
+# Profile environments share persistent, quota-accounted data storage, not the
+# instance root disk. Run as the same identity as the agent; never chmod 777.
+install -d -m 0700 /opt/data/python
+[[ -w /opt/data/python ]] || { echo "Python profile root is not writable" >&2; exit 1; }
 hermes_python="${HERMES_RUNTIME_PYTHON:-/usr/local/lib/hermes-agent/venv/bin/python}"
 if [[ ! -x "$hermes_python" ]]; then
   echo "XNOBrain runtime Python not found: $hermes_python" >&2

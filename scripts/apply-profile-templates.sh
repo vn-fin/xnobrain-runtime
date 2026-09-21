@@ -12,7 +12,7 @@ profiles_root="${2:-$hermes_home/profiles}"
 backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 profile_template="$hermes_home/profile-template"
 
-if [[ ! -f "$templates_dir/config.yaml" || ! -f "$templates_dir/AGENTS.md" || ! -f "$templates_dir/SOUL.md" ]]; then
+if [[ ! -f "$templates_dir/config.yaml" || ! -f "$templates_dir/AGENTS.md" || ! -f "$templates_dir/HERMES.md" || ! -f "$templates_dir/SOUL.md" ]]; then
   echo "XNOBrain profile templates are missing from $templates_dir" >&2
   exit 1
 fi
@@ -36,7 +36,7 @@ apply_file() {
 }
 
 mkdir -p "$hermes_home" "$profile_template" "$hermes_home/workspace"
-for filename in config.yaml SOUL.md AGENTS.md; do
+for filename in config.yaml SOUL.md AGENTS.md HERMES.md; do
   apply_file \
     "$hermes_home" \
     "$templates_dir/$filename" \
@@ -49,6 +49,22 @@ done
 apply_file "$hermes_home" "$templates_dir/SOUL.md" "$hermes_home/SOUL.md" "SOUL.md"
 apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/AGENTS.md" "AGENTS.md"
 apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/workspace/AGENTS.md" "workspace/AGENTS.md"
+
+apply_file "$hermes_home" "$templates_dir/HERMES.md" "$hermes_home/HERMES.md" "HERMES.md"
+apply_file "$hermes_home" "$templates_dir/HERMES.md" "$hermes_home/workspace/HERMES.md" "workspace/HERMES.md"
+
+# Backfill missing context only; named profiles own their existing edits.
+for profile_dir in "$profiles_root"/*; do
+  [[ -d "$profile_dir" ]] || continue
+  for filename in AGENTS.md HERMES.md; do
+    if [[ ! -e "$profile_dir/$filename" && ! -L "$profile_dir/$filename" ]]; then
+      apply_file "$profile_dir" "$templates_dir/$filename" "$profile_dir/$filename" "$filename"
+    fi
+    if [[ ! -e "$profile_dir/workspace/$filename" && ! -L "$profile_dir/workspace/$filename" ]]; then
+      apply_file "$profile_dir" "$profile_dir/$filename" "$profile_dir/workspace/$filename" "workspace/$filename"
+    fi
+  done
+done
 
 # Every runtime profile receives product-owned operating guidance. Remove upstream
 # delegation/branding skills that require standalone coding agents or reveal the
