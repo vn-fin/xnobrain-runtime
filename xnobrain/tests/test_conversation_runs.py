@@ -532,6 +532,34 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Describe this flow", self.agents.received["message"])
         self.assertNotIn("attachment", self.agents.received)
 
+    async def test_mindmap_attachment_merges_with_tree_label(self) -> None:
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<mindmap>\n"
+            '  <node id="n1">Root</node>\n'
+            '  <node id="n2" parent="n1" order="0">Child</node>\n'
+            "</mindmap>\n"
+        )
+        record = await self.service.start_run(
+            "agent-one",
+            "session-one",
+            {
+                "input": "Plan this",
+                "attachment": {
+                    "kind": "diagram",
+                    "filename": "sketch.xml",
+                    "mime_type": "application/xml",
+                    "content": xml,
+                },
+            },
+        )
+        self.agents.release.set()
+        await self.wait_for_revision(record["id"], 2)
+        self.assertIn("User mind map (tree):", self.agents.received["message"])
+        self.assertIn("<mindmap>", self.agents.received["message"])
+        self.assertIn("Plan this", self.agents.received["message"])
+        self.assertNotIn("attachment", self.agents.received)
+
     async def test_text_only_run_ignores_missing_attachment(self) -> None:
         record = await self.service.start_run(
             "agent-one", "session-one", {"input": "hello only"}
