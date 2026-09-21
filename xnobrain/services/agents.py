@@ -60,6 +60,9 @@ class AgentsServiceMixin:
         registry = {item["name"]: item for item in self.agents.sync_profiles_registry()["profiles"]}
         result = []
         for item in list_profiles():
+            store = getattr(self.repository, "portability_task_store", None)
+            if store is not None and not store.resource_visible("PROFILE", item.name):
+                continue
             updated_at = item.path.stat().st_mtime if item.path.exists() else None
             metadata = registry.get(item.name, {})
             result.append(

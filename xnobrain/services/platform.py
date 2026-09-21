@@ -86,6 +86,11 @@ class PlatformService(
         self.marketplace = MarketplaceService(repository, agents)
         self.hosted = HostedRuntimeService(self)
         self.portability = PortabilityService(repository, config.root_profile)
+        from .portability_tasks import PortabilityTasks
+
+        self.portability_tasks = PortabilityTasks(self.portability)
+        repository.portability_task_store = self.portability_tasks.store
+        self.agents.portability_task_store = self.portability_tasks.store
         self.cron = CronService(repository, agents)
         self.workspace_previews = WorkspacePreviewService(
             repository.data_dir / "workspace-previews"

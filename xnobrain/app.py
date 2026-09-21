@@ -95,9 +95,11 @@ class XNOBrainApplication:
                 cron_dispatcher = asyncio.create_task(
                     profile_cron_loop(), name="xnobrain-profile-cron-dispatcher"
                 )
+                await self.service.portability_tasks.worker.start()
                 try:
                     yield
                 finally:
+                    await self.service.portability_tasks.worker.shutdown()
                     await self.service.organization_connector.stop()
                     if grpc_server is not None:
                         await grpc_server.stop(grace=5)

@@ -145,6 +145,9 @@ class PortabilityService:
         self.root_profile = Path(
             root_profile or os.environ.get("HERMES_ROOT_PROFILE") or Path.home() / ".hermes"
         )
+        from ..repositories.portability_tasks import PortabilityTaskStore
+
+        self.task_store = PortabilityTaskStore(repository.data_dir)
         self.transfer_root = repository.data_dir / "transfers"
         self.upload_root = self.transfer_root / "uploads"
         self.export_root = self.transfer_root / "exports"
@@ -223,6 +226,14 @@ class PortabilityService:
         return metadata
 
     def put_upload_part(self, transfer_id: Any, part_number: Any, payload: bytes) -> dict[str, Any]:
+        with self.task_store.publication_lock():
+            if self.task_store.pinned(str(transfer_id)):
+                raise StoreError("Upload is in use", status=409, code="transfer_in_use")
+            return self._put_upload_part_unpinned(transfer_id, part_number, payload)
+
+    def _put_upload_part_unpinned(
+        self, transfer_id: Any, part_number: Any, payload: bytes
+    ) -> dict[str, Any]:
         directory = self._transfer_dir(self.upload_root, transfer_id)
         metadata = self._read_metadata(directory)
         if metadata.get("complete"):
@@ -243,6 +254,10 @@ class PortabilityService:
         }
 
     def complete_upload(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
+        with self.task_store.publication_lock():
+            return self._complete_upload_locked(transfer_id, body)
+
+    def _complete_upload_locked(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         directory = self._transfer_dir(self.upload_root, transfer_id)
         metadata = self._read_metadata(directory)
         if metadata.get("complete") and (directory / "bundle.zip").is_file():
@@ -286,6 +301,12 @@ class PortabilityService:
         return metadata
 
     def apply_upload(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
+        with self.task_store.publication_lock():
+            if self.task_store.pinned(str(transfer_id)):
+                raise StoreError("Upload is in use", status=409, code="transfer_in_use")
+            return self._apply_upload_unpinned(transfer_id, body)
+
+    def _apply_upload_unpinned(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         directory = self._transfer_dir(self.upload_root, transfer_id)
         metadata = self._read_metadata(directory)
         if not metadata.get("complete") or not (directory / "bundle.zip").is_file():
@@ -298,6 +319,12 @@ class PortabilityService:
         return report
 
     def delete_transfer(self, kind: str, transfer_id: Any) -> dict[str, Any]:
+        with self.task_store.publication_lock():
+            if kind == "upload" and self.task_store.pinned(str(transfer_id)):
+                raise StoreError("Upload is in use", status=409, code="transfer_in_use")
+            return self._delete_transfer(kind, transfer_id)
+
+    def _delete_transfer(self, kind: str, transfer_id: Any) -> dict[str, Any]:
         root = self.upload_root if kind == "upload" else self.export_root
         directory = self._transfer_dir(root, transfer_id)
         shutil.rmtree(directory)
@@ -530,6 +557,9 @@ class PortabilityService:
                 continue
             team_id = str(team.get("id") or "")
             if team_id:
+                # Local publication ownership belongs to the durable journal,
+                # never to a portable snapshot or a destination workspace.
+                team = {key: value for key, value in team.items() if key != "_portability_task_id"}
                 teams.append({"id": team_id, "name": str(team.get("name") or team_id)})
                 team_payloads.append(
                     (f"teams/{team_id}.yaml", yaml.safe_dump(team, sort_keys=False).encode())
@@ -690,6 +720,8 @@ class PortabilityService:
         # The root/default profile is also the parent of managed XNOBrain data,
         # so those nested stores remain outside the profile boundary to prevent
         # recursively exporting sibling profiles and transfer staging data.
+        if relative == Path(".portability-owner.json"):
+            return False
         if root_profile and relative.parts and relative.parts[0].lower() in ROOT_EXCLUDED_PARTS:
             return False
         if any(relative == subtree or subtree in relative.parents for subtree in managed_subtrees):
@@ -1152,10 +1184,16 @@ class PortabilityService:
             path.unlink(missing_ok=True)
 
     def _cleanup_transfers(self) -> None:
+        with self.task_store.publication_lock():
+            self._cleanup_unpinned_transfers()
+
+    def _cleanup_unpinned_transfers(self) -> None:
         cutoff = datetime.now(timezone.utc).timestamp() - TRANSFER_TTL_SECONDS
         for root in (self.upload_root, self.export_root):
             for directory in root.iterdir():
                 try:
+                    if root == self.upload_root and self.task_store.pinned(directory.name):
+                        continue
                     if directory.is_dir() and directory.stat().st_mtime < cutoff:
                         shutil.rmtree(directory)
                 except OSError:

@@ -118,6 +118,17 @@ def _endpoint(handlers: Any, route: Route):
             return await handlers.bundle_export(request, body.model_dump(exclude_unset=True))
 
         endpoint.__annotations__["body"] = route.body
+    elif route.special == "bundle_task":
+        if route.body is not None:
+
+            async def endpoint(request: Request, body=Body(...)) -> Response:
+                return await handlers.bundle_task(request, body.model_dump(exclude_unset=True))
+
+            endpoint.__annotations__["body"] = route.body
+        else:
+
+            async def endpoint(request: Request) -> Response:
+                return await handlers.bundle_task(request, {})
     elif route.special == "bundle_upload":
 
         async def endpoint(request: Request) -> Response:
