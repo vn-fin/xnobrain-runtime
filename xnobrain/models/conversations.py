@@ -51,11 +51,11 @@ class ConversationCompact(BaseModel):
 
 
 class DiagramAttachment(BaseModel):
-    """Request-scoped flowchart XML. Never persist before send; extra fields forbidden."""
+    """Request-scoped flowchart or mind map XML. Never persist before send; extra fields forbidden."""
 
     model_config = ConfigDict(extra="forbid")
     kind: Literal["diagram"]
-    filename: Literal["sketch.xml"]
+    filename: str = Field(min_length=10, max_length=32, pattern=r"^(?:sketch|flowchart|mindmap)(?:-[1-9]\d*)?\.xml$")
     mime_type: Literal["application/xml", "text/xml"]
     content: str = Field(min_length=1, max_length=64_000)
 
@@ -64,6 +64,7 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     input: str = Field(default="")
     attachment: DiagramAttachment | None = None
+    attachments: list[DiagramAttachment] | None = Field(default=None, min_length=1, max_length=8)
 
     model: str | None = None
     skills: list[str] | None = None
@@ -89,7 +90,7 @@ class ChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_input_or_attachment(self):
-        if not self.input.strip() and self.attachment is None:
+        if not self.input.strip() and self.attachment is None and not self.attachments:
             raise ValueError("input or attachment is required")
         return self
 

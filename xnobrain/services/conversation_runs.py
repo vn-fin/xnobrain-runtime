@@ -22,7 +22,11 @@ from xnobrain.runtime_limits import (
     session_timeout_seconds,
 )
 
-from ..diagram_attachment import DiagramAttachmentError, merge_into_message, validate_attachment
+from ..diagram_attachment import (
+    DiagramAttachmentError,
+    merge_attachments,
+    validate_attachments,
+)
 from ..feature_flags import (
     FEATURE_AGENT_CUSTOM_PAGE,
     FEATURE_UI_CUSTOMIZATION,
@@ -136,7 +140,11 @@ class ConversationRunService:
             )
         try:
             raw_input = str(body.get("input") or body.get("message") or "")
-            if not raw_input.strip() and "attachment" not in body:
+            if (
+                not raw_input.strip()
+                and "attachment" not in body
+                and "attachments" not in body
+            ):
                 raw_input = " "
             selection = ChatRequest.model_validate(
                 {
@@ -154,6 +162,7 @@ class ConversationRunService:
                         "feature",
                         "capabilities",
                         "attachment",
+                        "attachments",
                     }
                 }
                 | {"input": raw_input}
@@ -165,10 +174,22 @@ class ConversationRunService:
                 code="invalid_capabilities",
             ) from exc
         try:
-            attachment = validate_attachment(body.get("attachment") if "attachment" in body else None)
+            raw_attachments: list[object] = []
+            if "attachment" in body and body.get("attachment") is not None:
+                raw_attachments.append(body.get("attachment"))
+            extra_attachments = body.get("attachments") if "attachments" in body else None
+            if extra_attachments is not None:
+                if not isinstance(extra_attachments, list):
+                    raise DiagramAttachmentError(
+                        "diagram XML is malformed",
+                        status=422,
+                        code="attachment_malformed",
+                    )
+                raw_attachments.extend(extra_attachments)
+            attachments = validate_attachments(raw_attachments or None)
         except DiagramAttachmentError as exc:
             raise ServiceError(str(exc), status=exc.status, code=exc.code) from exc
-        runner_message = merge_into_message(selection.input, attachment)
+        runner_message = merge_attachments(selection.input, attachments)
 
         capabilities = selection.capabilities
         if capabilities is None:
@@ -375,6 +396,7 @@ class ConversationRunService:
             self._by_conversation[key] = run_id
             payload = dict(body)
             payload.pop("attachment", None)
+            payload.pop("attachments", None)
             payload["input"] = runner_message
             payload["message"] = runner_message
             if selection.capabilities is not None:

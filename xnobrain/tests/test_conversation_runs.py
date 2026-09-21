@@ -569,6 +569,49 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.agents.received["input"], "hello only")
         self.assertNotIn("attachment", self.agents.received)
 
+    async def test_multiple_diagram_attachments_merge_in_order(self) -> None:
+        flowchart = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<flowchart>\n"
+            '  <node id="n1" x="0" y="0">Start</node>\n'
+            "</flowchart>\n"
+        )
+        mindmap = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<mindmap>\n"
+            '  <node id="n1">Root</node>\n'
+            "</mindmap>\n"
+        )
+        record = await self.service.start_run(
+            "agent-one",
+            "session-one",
+            {
+                "input": "Use both",
+                "attachments": [
+                    {
+                        "kind": "diagram",
+                        "filename": "sketch.xml",
+                        "mime_type": "application/xml",
+                        "content": flowchart,
+                    },
+                    {
+                        "kind": "diagram",
+                        "filename": "sketch-2.xml",
+                        "mime_type": "application/xml",
+                        "content": mindmap,
+                    },
+                ],
+            },
+        )
+        self.agents.release.set()
+        await self.wait_for_revision(record["id"], 2)
+        message = self.agents.received["message"]
+        self.assertLess(message.index("Use both"), message.index("<flowchart>"))
+        self.assertLess(message.index("<flowchart>"), message.index("User mind map (tree):"))
+        self.assertIn("<mindmap>", message)
+        self.assertNotIn("attachment", self.agents.received)
+        self.assertNotIn("attachments", self.agents.received)
+
 
 if __name__ == "__main__":
     unittest.main()

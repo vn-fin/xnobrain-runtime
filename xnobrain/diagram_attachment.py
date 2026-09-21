@@ -17,7 +17,9 @@ MAX_XML_CHARS = 64_000
 MAX_NODES = 40
 MAX_EDGES = 60
 MAX_LABEL = 200
+MAX_ATTACHMENTS = 8
 ALLOWED_FILENAME = "sketch.xml"
+FILENAME_PATTERN = re.compile(r"^(?:sketch|flowchart|mindmap)(?:-[1-9]\d*)?\.xml$")
 ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,31}$")
 MINDMAP_PROMPT_LABEL = "User mind map (tree):"
 _LAYOUT_ATTRS = frozenset({"x", "y", "w", "h"})
@@ -150,7 +152,7 @@ def validate_attachment(value: Mapping[str, Any] | None) -> dict[str, Any] | Non
             status=422,
             code="attachment_unsupported",
         )
-    if filename != ALLOWED_FILENAME:
+    if FILENAME_PATTERN.fullmatch(filename) is None:
         raise DiagramAttachmentError(
             "diagram attachment is unsupported",
             status=422,
@@ -176,7 +178,7 @@ def validate_attachment(value: Mapping[str, Any] | None) -> dict[str, Any] | Non
         raise _malformed()
     return {
         "kind": "diagram",
-        "filename": ALLOWED_FILENAME,
+        "filename": filename,
         "mime_type": "application/xml",
         "content": content,
         "node_count": node_count,
@@ -194,15 +196,42 @@ def _is_mindmap_xml(xml: str) -> bool:
 
 def merge_into_message(text: str, attachment: Mapping[str, Any] | None) -> str:
     """Adapter translation: XML is model text, never mixed into the UI input field."""
+    return merge_attachments(text, [attachment] if attachment is not None else [])
+
+
+def merge_attachments(text: str, attachments: list[Mapping[str, Any]]) -> str:
     prompt = (text or "").strip()
-    if attachment is None:
-        return prompt
+    for attachment in attachments:
+        prompt = _append_attachment(prompt, attachment)
+    return prompt
+
+
+def validate_attachments(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise _malformed()
+    if len(value) > MAX_ATTACHMENTS:
+        raise _too_large()
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    for item in value:
+        parsed = validate_attachment(item)
+        if parsed is None:
+            raise _malformed()
+        name = str(parsed["filename"])
+        if name in seen:
+            raise _malformed()
+        seen.add(name)
+        result.append(parsed)
+    return result
+
+
+def _append_attachment(prompt: str, attachment: Mapping[str, Any]) -> str:
     xml = str(attachment.get("content") or "").strip()
     if not xml:
         return prompt
     if attachment.get("diagram_kind") == "mindmap" or _is_mindmap_xml(xml):
         labeled = f"{MINDMAP_PROMPT_LABEL}\n{xml}"
         return f"{prompt}\n\n{labeled}" if prompt else labeled
-    if prompt:
-        return f"{prompt}\n\n{xml}"
-    return xml
+    return f"{prompt}\n\n{xml}" if prompt else xml

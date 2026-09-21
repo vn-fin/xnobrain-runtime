@@ -5,8 +5,10 @@ from unittest.mock import patch
 
 from xnobrain.diagram_attachment import (
     DiagramAttachmentError,
+    merge_attachments,
     merge_into_message,
     validate_attachment,
+    validate_attachments,
 )
 
 XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -110,3 +112,20 @@ class DiagramAttachmentTests(unittest.TestCase):
             with self.assertRaises(DiagramAttachmentError) as error:
                 validate_attachment(_attachment(MINDMAP))
         self.assertEqual(error.exception.code, "feature_disabled")
+
+    def test_numbered_filename_and_multiple_attachments(self) -> None:
+        flowchart = validate_attachment({**_attachment(XML), "filename": "flowchart.xml"})
+        mindmap = validate_attachment({**_attachment(MINDMAP), "filename": "mindmap-2.xml"})
+        self.assertEqual(flowchart["filename"], "flowchart.xml")
+        self.assertEqual(mindmap["filename"], "mindmap-2.xml")
+        merged = merge_attachments("Use both", [flowchart, mindmap])
+        self.assertIn("Use both", merged)
+        self.assertIn("<flowchart>", merged)
+        self.assertIn("User mind map (tree):", merged)
+        self.assertIn("<mindmap>", merged)
+        with self.assertRaises(DiagramAttachmentError) as error:
+            validate_attachments([_attachment(XML), _attachment(MINDMAP)])
+        self.assertEqual(error.exception.code, "attachment_malformed")
+        with self.assertRaises(DiagramAttachmentError) as error:
+            validate_attachment({**_attachment(XML), "filename": "diagram.xml"})
+        self.assertEqual(error.exception.code, "attachment_unsupported")

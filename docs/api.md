@@ -16,18 +16,20 @@ grouped by feature:
 JSON responses use `{success,data,message,status_code}`. SSE sends structured
 Hermes lifecycle objects and terminates with `data: [DONE]`.
 
-Conversation runs accept an optional request-scoped `attachment` on
-`POST /xnobrain/api/runtime/v1/sessions/{id}/runs`. The sketch contract is
-`{kind:"diagram", filename:"sketch.xml", mime_type:"application/xml",
+Conversation runs accept an optional request-scoped `attachment` or
+`attachments` list on `POST /xnobrain/api/runtime/v1/sessions/{id}/runs`.
+Each sketch is `{kind:"diagram", filename, mime_type:"application/xml",
 content}` with XML root `flowchart` (boxes and arrows) or `mindmap` (one
 rooted tree: `parent`, `order`, optional `collapsed="true"`; no `x/y` or
-`<edge>`). Runtime validates size and XML, then merges the XML into the
-model prompt. Mind maps are prefixed with `User mind map (tree):`.
-Flowchart merge remains `{input}` then a blank line then `{xml}`. The UI must not put the XML
-in `input`. Text-only mixed-version requests omit `attachment`.
+`<edge>`). Filenames are `flowchart.xml`, `mindmap.xml`, or `sketch.xml`, with
+`-2` and later for extra files of the same kind; at most eight diagrams per run.
+Runtime validates size and XML, then merges each XML into the model prompt in order. Mind maps
+are prefixed with `User mind map (tree):`. Flowchart merge remains `{input}`
+then a blank line then `{xml}`. The UI must not put the XML in `input`.
+Text-only mixed-version requests omit `attachment` and `attachments`.
 `FT_ENABLE_COMPOSER_SKETCH` defaults on. Disabled runtimes return `404`
 `feature_disabled`. Malformed XML is `422`; oversized graphs are `413`.
-The attachment is never forwarded as an unknown Hermes field.
+Attachments are never forwarded as unknown Hermes fields.
 
 
 The namespace and current version are defined once in
