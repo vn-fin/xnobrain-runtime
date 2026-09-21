@@ -40,9 +40,13 @@ class XNOBrainApplication:
             async with upstream_lifespan(application):
                 await self.service.ensure_default_agent()
                 await self.service.organization_connector.start()
-                from .integrations.runtime_gateway import start_runtime_gateway
+                from .integrations.runtime_gateway import RuntimeGatewaySupervisor
 
-                grpc_server = await start_runtime_gateway()
+                grpc_supervisor = RuntimeGatewaySupervisor()
+                await grpc_supervisor.start()
+                grpc_supervisor_task = asyncio.create_task(
+                    grpc_supervisor.run(), name="xnobrain-grpc-supervisor"
+                )
                 dispatcher = None
                 try:
                     from .integrations.kanban import dispatcher_loop
@@ -101,8 +105,10 @@ class XNOBrainApplication:
                 finally:
                     await self.service.portability_tasks.worker.shutdown()
                     await self.service.organization_connector.stop()
-                    if grpc_server is not None:
-                        await grpc_server.stop(grace=5)
+                    await grpc_supervisor.stop()
+                    grpc_supervisor_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await grpc_supervisor_task
                     cron_dispatcher.cancel()
                     with suppress(asyncio.CancelledError):
                         await cron_dispatcher

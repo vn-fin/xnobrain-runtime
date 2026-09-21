@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import logging
 import os
 import re
 from collections.abc import AsyncIterator
+from contextlib import suppress
 
 import aiohttp
 import grpc
@@ -259,16 +261,17 @@ class RuntimeGatewayService(
                 )
 
 
+_TRUE = frozenset({"1", "true", "yes", "on"})
+_LOGGER = logging.getLogger(__name__)
+
+
+def _grpc_enabled() -> bool:
+    return os.getenv("RUNTIME_GRPC_ENABLED", "").strip().lower() in _TRUE
+
+
 async def start_runtime_gateway():
     """Start the optional private gRPC listener in the FastAPI process."""
-
-    enabled = os.getenv("RUNTIME_GRPC_ENABLED", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    if not enabled:
+    if not _grpc_enabled():
         return None
     token = os.getenv("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
     if not token:
@@ -295,4 +298,75 @@ async def start_runtime_gateway():
     return server
 
 
-__all__ = ["RuntimeGatewayService", "start_runtime_gateway"]
+class RuntimeGatewaySupervisor:
+    """Rebind private gRPC while FastAPI is still up; process death is systemd."""
+
+    def __init__(self, check_interval: float = 5.0, backoff_cap: float = 30.0):
+        self._check_interval = check_interval
+        self._backoff_cap = backoff_cap
+        self._backoff = check_interval
+        self._lock = asyncio.Lock()
+        self._stopping = False
+        self._server = None
+
+    async def start(self):
+        self._server = await start_runtime_gateway()
+        return self._server
+
+    async def run(self) -> None:
+        if not _grpc_enabled():
+            return
+        while not self._stopping:
+            await asyncio.sleep(self._backoff)
+            if self._stopping:
+                return
+            if await self._accepts_connections():
+                self._backoff = self._check_interval
+                continue
+            async with self._lock:
+                if self._stopping:
+                    return
+                await self._rebind()
+
+    async def stop(self) -> None:
+        self._stopping = True
+        async with self._lock:
+            server = self._server
+            self._server = None
+            if server is not None:
+                await server.stop(grace=5)
+
+    async def _accepts_connections(self) -> bool:
+        try:
+            port = int(os.getenv("RUNTIME_GRPC_PORT", "3001"))
+        except ValueError:
+            return False
+        try:
+            _, writer = await asyncio.open_connection("127.0.0.1", port)
+        except OSError:
+            return False
+        writer.close()
+        with suppress(Exception):
+            await writer.wait_closed()
+        return True
+
+    async def _rebind(self) -> None:
+        server = self._server
+        self._server = None
+        if server is not None:
+            with suppress(Exception):
+                await server.stop(grace=1)
+        try:
+            self._server = await start_runtime_gateway()
+            self._backoff = self._check_interval
+            _LOGGER.warning("Runtime gRPC listener rebound")
+        except Exception:
+            self._backoff = min(max(self._backoff, self._check_interval) * 2, self._backoff_cap)
+            _LOGGER.warning("Runtime gRPC listener rebind failed; retrying")
+
+
+__all__ = [
+    "RuntimeGatewayService",
+    "RuntimeGatewaySupervisor",
+    "start_runtime_gateway",
+]
