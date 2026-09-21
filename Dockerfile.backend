@@ -129,7 +129,14 @@ RUN --mount=type=cache,target=/root/.npm \
 RUN --mount=type=cache,target=/root/.npm \
     npm install -g --no-audit --no-fund --include=optional pnpm
 
-RUN agent-browser install --with-deps
+# Install Chromium ARM64 + dependencies
+RUN apt-get update && apt-get install -y \
+    chromium \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Tell agent-browser to use system Chromium
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY requirements.txt /opt/xnobrain/requirements.txt
 COPY THIRD_PARTY_NOTICES.md /opt/xnobrain/THIRD_PARTY_NOTICES.md
