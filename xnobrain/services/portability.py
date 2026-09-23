@@ -99,6 +99,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import stat
 import tempfile
 import uuid
@@ -514,6 +515,9 @@ class PortabilityService:
         )
         if not agent_ids and not requested_team_ids:
             raise StoreError("at least one agent or team is required")
+        # Portability exports the complete selected profile. The historical
+        # include_conversations knob is accepted for compatibility but does
+        # not strip agent-owned state or SQLite history.
         include_conversations = bool(body.get("include_conversations", False))
         export_id = uuid.uuid4().hex
         created_at = datetime.now(timezone.utc).isoformat()
@@ -546,6 +550,12 @@ class PortabilityService:
                     root_profile=agent_id == BIG_BROTHER_AGENT_ID,
                     managed_subtrees=managed_subtrees,
                 ):
+                    if relative.name in {
+                        "state.db-wal",
+                        "state.db-shm",
+                    } and relative.parent == Path("."):
+                        # SQLite backup below includes committed WAL frames.
+                        continue
                     entries.append((f"profiles/{agent_id}/{relative.as_posix()}", item))
 
         selected = set(agent_ids)
@@ -596,6 +606,17 @@ class PortabilityService:
                 elif source.name == "config.yaml":
                     payload = self._sanitized_config(source)
                     checksums[name] = self._write_zip_payload(archive, name, payload, secrets)
+                elif name.endswith("/state.db") and name.count("/") == 2:
+                    # Do not copy a live profile-root DB without its WAL or substitute
+                    # secret bytes in SQLite pages; either would corrupt history.
+                    with tempfile.TemporaryDirectory(dir=self.transfer_root) as staging:
+                        snapshot = Path(staging) / "state.db"
+                        self._backup_state_db(source, snapshot)
+                        # Replacing secret bytes inside SQLite pages corrupts
+                        # its indexes/checksums. Refuse instead of exporting
+                        # credentials or a broken database.
+                        self._reject_database_secrets(snapshot, secrets)
+                        checksums[name] = self._write_zip_file(archive, name, snapshot, set())
                 else:
                     checksums[name] = self._write_zip_file(archive, name, source, secrets)
             for name, payload in sorted(team_payloads):
@@ -828,6 +849,15 @@ class PortabilityService:
                         model[key] = deepcopy(root_model[key])
                     elif key == "assignment_id":
                         model.pop(key, None)
+        # Always bind a cloned profile to this Runtime's router. A portability
+        # ZIP must never select the publisher's URL or scoped workload key.
+        from ..integrations.llm_router_support import (
+            LLM_ROUTER_API_BASE_URL,
+            normalize_llm_router_config,
+        )
+
+        if LLM_ROUTER_API_BASE_URL:
+            normalize_llm_router_config(config)
         config["approval_mode"] = "manual"
         approvals = config.setdefault("approvals", {})
         if isinstance(approvals, dict):
@@ -1025,6 +1055,43 @@ class PortabilityService:
                 raise StoreError(f"environment value is invalid: {key}", code="invalid_environment")
             result[key] = value
         return result
+
+    @staticmethod
+    def _backup_state_db(source: Path, destination: Path) -> None:
+        try:
+            with sqlite3.connect(
+                source.resolve().as_uri() + "?mode=ro", uri=True, timeout=5
+            ) as live:
+                with sqlite3.connect(destination) as snapshot:
+                    live.backup(snapshot, pages=256, sleep=0.05)
+                    if (
+                        snapshot.execute("PRAGMA integrity_check").fetchone() != ("ok",)
+                        or snapshot.execute("PRAGMA foreign_key_check").fetchone() is not None
+                    ):
+                        raise StoreError(
+                            "agent database snapshot is invalid", code="invalid_bundle"
+                        )
+        except sqlite3.Error as error:
+            raise StoreError(
+                "agent database snapshot is unavailable", code="invalid_bundle"
+            ) from error
+
+    @staticmethod
+    def _reject_database_secrets(snapshot: Path, secrets: set[bytes]) -> None:
+        known = tuple(value for value in secrets if len(value) >= 6)
+        if not known:
+            return
+        overlap = max(map(len, known)) - 1
+        previous = b""
+        with snapshot.open("rb") as file:
+            while chunk := file.read(1024 * 1024):
+                sample = previous + chunk
+                if any(value in sample for value in known):
+                    raise StoreError(
+                        "agent database contains credential material",
+                        code="invalid_bundle",
+                    )
+                previous = sample[-overlap:]
 
     def _write_zip_file(
         self, archive: ZipFile, name: str, source: Path, secrets: set[bytes]

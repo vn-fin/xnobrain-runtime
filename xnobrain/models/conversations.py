@@ -51,7 +51,7 @@ class ConversationCompact(BaseModel):
 
 
 class DiagramAttachment(BaseModel):
-    """Request-scoped flowchart or mind map XML. Never persist before send; extra fields forbidden."""
+    """Request-scoped mind map XML. Never persist before send; extra fields forbidden."""
 
     model_config = ConfigDict(extra="forbid")
     kind: Literal["diagram"]

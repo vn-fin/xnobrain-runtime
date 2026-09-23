@@ -24,9 +24,13 @@ class WorkspaceContextTests(unittest.TestCase):
                 profile = manager._profile_dir(name)
                 workspace = profile / "workspace"
                 manager._ensure_workspace_agents(profile, workspace)
-                self.assertTrue((workspace / "HERMES.md").is_file())
+                self.assertFalse((workspace / "HERMES.md").exists())
                 self.assertTrue((workspace / "AGENTS.md").is_file())
-                overlay = (workspace / "HERMES.md").read_text()
+                overlay = (
+                    (profile / "HERMES.md").read_text()
+                    if (profile / "HERMES.md").is_file()
+                    else (manager.profile_template / "HERMES.md").read_text()
+                )
                 agent = SimpleNamespace(
                     _build_system_prompt=lambda _: overlay,
                     _cached_system_prompt=overlay,
@@ -54,8 +58,9 @@ class WorkspaceContextTests(unittest.TestCase):
                     "SELECT system_prompt FROM sessions WHERE id = ?", (session_id,)
                 ).fetchone()[0]
             self.assertEqual(prompt.count("<!-- runtime-workspace-context -->"), 1)
-            self.assertIn("Custom working rules", prompt)
+            self.assertNotIn("Custom working rules", prompt)
             self.assertIn("## Source citations", prompt)
+            self.assertIn("## Python environments", prompt)
             self.assertIn("user deliverables must still stay here", prompt)
 
     def test_template_keeps_environment_rules_out_of_agents(self):
@@ -85,12 +90,17 @@ class WorkspaceContextTests(unittest.TestCase):
             workspace = profile / "workspace"
             first = manager._workspace_context(profile, workspace)
             prompt = manager._with_workspace_context("Identity", first)
-            (workspace / "HERMES.md").write_text("Updated rules")
+            (workspace / "HERMES.md").write_text("Workspace overlay must be ignored")
+            ignored = manager._workspace_context(profile, workspace)
+            self.assertNotIn("Workspace overlay must be ignored", ignored)
+            self.assertIn("## Python environments", ignored)
+            (profile / "HERMES.md").write_text("Updated rules")
             second = manager._workspace_context(profile, workspace)
             prompt = manager._with_workspace_context(prompt, second)
             self.assertIn("Updated rules", prompt)
             self.assertNotIn("## Python environments", prompt)
             self.assertEqual(prompt.count("<!-- runtime-workspace-context -->"), 1)
+
             (workspace / "AGENTS.md").unlink()
             private = root / "private"
             private.write_text("DO NOT LOAD")

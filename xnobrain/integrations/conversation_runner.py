@@ -327,9 +327,18 @@ class ConversationRunnerMixin:
         selected_model = str(decision["model"])
         prepared["model"] = selected_model
         prepared["requested_model"] = selected_model
-        prepared["smart_route"] = route_name
-        prepared["smart_route_tier"] = str(decision.get("tier") or "")
-        prepared["route_reasoning"] = str(decision.get("reasoning") or "")
+        prepared["blend_route"] = route_name
+        # Only Smart Route decisions have a tier. Ordinary blends must not
+        # install the classifier or override the agent's configured reasoning.
+        if decision.get("tier"):
+            prepared["smart_route"] = route_name
+            prepared["smart_route_tier"] = str(decision["tier"])
+            prepared["route_reasoning"] = str(decision.get("reasoning") or "")
+        candidates = decision.get("candidates") or []
+        if candidates:
+            prepared["model_fallbacks"] = [
+                str(model) for model in candidates if str(model) != selected_model
+            ]
         command = list(prepared.get("command") or [])
         if "--model" in command:
             index = command.index("--model")
@@ -663,7 +672,7 @@ class ConversationRunnerMixin:
 
     @staticmethod
     def _install_model_fallbacks(agent: Any, prepared: Mapping[str, Any]) -> None:
-        """Attach alternate Auto candidates to Hermes' native failure chain."""
+        """Attach ordered blend alternates to Hermes' native failure chain."""
         models = list(
             dict.fromkeys(
                 str(model) for model in (prepared.get("model_fallbacks") or []) if str(model)
@@ -703,7 +712,9 @@ class ConversationRunnerMixin:
         reuse_initial = reuse_initial_decision
         last_step_input = ""
 
-        def build_smart_route_api_kwargs(api_messages: list[Any]) -> dict[str, Any]:
+        def build_smart_route_api_kwargs(
+            api_messages: list[Any], *args: Any, **kwargs: Any
+        ) -> dict[str, Any]:
             nonlocal reuse_initial, last_step_input
             step_input = self._smart_route_step_input(api_messages)
             if reuse_initial:
@@ -724,7 +735,9 @@ class ConversationRunnerMixin:
                     if not apply_reasoning:
                         decision = {**decision, "reasoning": ""}
                     self._apply_smart_route_decision(agent, decision)
-            return original_build_api_kwargs(api_messages)
+            # Preserve the native builder contract, including tools_for_api
+            # (and an explicit empty tool list), through every routing layer.
+            return original_build_api_kwargs(api_messages, *args, **kwargs)
 
         agent._build_api_kwargs = build_smart_route_api_kwargs
         agent._xnobrain_smart_step_route = route_marker
@@ -1572,7 +1585,7 @@ class ConversationRunnerMixin:
                 "threshold": max(0, context_threshold),
                 "auto_compaction": auto_compaction,
                 "model": actual_model,
-                "route": str(prepared.get("smart_route") or ""),
+                "route": str(prepared.get("blend_route") or prepared.get("smart_route") or ""),
                 "route_tier": str(active_smart_decision.get("tier") or ""),
                 "reasoning": str(active_smart_decision.get("reasoning") or ""),
             }

@@ -54,12 +54,12 @@ AGENT_ACTIVITY_KANBAN_TTL_SECONDS = 10.0
 
 class AgentsServiceMixin:
     def list_profiles(self) -> list[dict[str, Any]]:
-        """Use Hermes' native profile inventory, including the default profile."""
-        from hermes_cli.profiles import list_profiles
+        """Inventory configured Runtime roots, including the default profile."""
+        from ..integrations.profile_inventory import list_profile_inventory
 
         registry = {item["name"]: item for item in self.agents.sync_profiles_registry()["profiles"]}
         result = []
-        for item in list_profiles():
+        for item in list_profile_inventory(self.agents, registry):
             store = getattr(self.repository, "portability_task_store", None)
             if store is not None and not store.resource_visible("PROFILE", item.name):
                 continue

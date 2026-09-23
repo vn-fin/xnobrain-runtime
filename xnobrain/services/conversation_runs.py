@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import re
 import time
@@ -35,6 +36,7 @@ from ..feature_flags import (
     enabled as feature_enabled,
 )
 from .base import ServiceError
+from .conversation_failure import conversation_failure
 
 TERMINAL_STATUSES = frozenset({"completed", "failed", "timed_out", "cancelled"})
 BACKGROUND_HINT = re.compile(
@@ -140,11 +142,7 @@ class ConversationRunService:
             )
         try:
             raw_input = str(body.get("input") or body.get("message") or "")
-            if (
-                not raw_input.strip()
-                and "attachment" not in body
-                and "attachments" not in body
-            ):
+            if not raw_input.strip() and "attachment" not in body and "attachments" not in body:
                 raw_input = " "
             selection = ChatRequest.model_validate(
                 {
@@ -432,6 +430,55 @@ class ConversationRunService:
         return self._heal_if_stale(
             self.repository.get_conversation_run(agent_id, conversation_id, run_id)
         )
+
+    def list_runs(
+        self, agent_id: str, conversation_id: str, limit: int = 20, cursor: str = ""
+    ) -> dict[str, Any]:
+        if not 1 <= limit <= 100:
+            raise ServiceError("limit must be between 1 and 100", status=422)
+        before = None
+        if cursor:
+            try:
+                if len(cursor) > 2048:
+                    raise ValueError()
+                scope_agent, scope_session, created, run_id = json.loads(
+                    base64.urlsafe_b64decode(cursor).decode()
+                )
+                if (scope_agent, scope_session) != (agent_id, conversation_id):
+                    raise ValueError()
+                before = (float(created), str(run_id))
+            except (ValueError, TypeError, UnicodeError) as exc:
+                raise ServiceError("invalid run history cursor", status=422) from exc
+        records = self.repository.list_conversation_runs(
+            agent_id, conversation_id, limit=limit, before=before
+        )
+        fields = (
+            "id",
+            "agent_id",
+            "conversation_id",
+            "status",
+            "mode",
+            "timeout_seconds",
+            "created_at",
+            "started_at",
+            "ended_at",
+            "revision",
+        )
+        runs = []
+        for record in records:
+            item = {key: record.get(key) for key in fields}
+            item["error"] = conversation_failure(record["error"]) if record.get("error") else None
+            item["user_message_id"] = record.get("user_message_id")
+            runs.append(item)
+        next_cursor = None
+        if len(records) == limit:
+            last = records[-1]
+            next_cursor = base64.urlsafe_b64encode(
+                json.dumps(
+                    [agent_id, conversation_id, last.get("created_at") or 0, last["id"]]
+                ).encode()
+            ).decode()
+        return {"runs": runs, "next_cursor": next_cursor}
 
     def active_run(self, agent_id: str, conversation_id: str) -> dict[str, Any] | None:
         for record in self.repository.list_conversation_runs(agent_id, conversation_id, limit=20):
@@ -776,10 +823,28 @@ class ConversationRunService:
             else event.get("data")
         )
         event_name = str(
-            payload.get("event")
-            if isinstance(payload, Mapping)
-            else event.get("event") or "message"
+            (payload.get("event") if isinstance(payload, Mapping) else None)
+            or event.get("event")
+            or "message"
         )
+        if event_name == "error":
+            detail = payload
+            for _ in range(5):
+                if not isinstance(detail, Mapping):
+                    break
+                detail = detail.get("message") or detail.get("error") or detail.get("detail")
+            payload = {
+                "event": "run.failed",
+                "run_id": record["id"],
+                "timestamp": now,
+                "message": conversation_failure(detail),
+            }
+            event_name = "run.failed"
+        if (
+            event_name in {"run.failed", "run.completed", "run.cancelled"}
+            and record.get("status") in TERMINAL_STATUSES
+        ):
+            return dict(record)
         next_record = dict(record)
         if isinstance(payload, dict) and event_name == "run.started":
             started = float(payload.get("timestamp") or now)
@@ -820,7 +885,8 @@ class ConversationRunService:
                 }
             )
         elif isinstance(payload, Mapping) and event_name == "run.failed":
-            message = str(payload.get("message") or "conversation run failed")
+            message = conversation_failure(payload.get("message"))
+            payload = {**payload, "message": message}
             next_record.update(
                 {
                     "status": "timed_out" if "timed out" in message.lower() else "failed",

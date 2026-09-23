@@ -35,6 +35,22 @@ apply_file() {
   install -m 0644 "$source" "$target"
 }
 
+remove_workspace_hermes() {
+  local profile_dir="$1"
+  local target="$profile_dir/workspace/HERMES.md"
+  if [[ -L "$target" ]]; then
+    rm -f "$target"
+    return
+  fi
+  if [[ -f "$target" ]]; then
+    local backup="$profile_dir/snapshots/profile-templates/$backup_stamp/workspace/HERMES.md"
+    mkdir -p "$(dirname "$backup")"
+    cp -p "$target" "$backup"
+    rm -f "$target"
+  fi
+}
+
+
 mkdir -p "$hermes_home" "$profile_template" "$hermes_home/workspace"
 for filename in config.yaml SOUL.md AGENTS.md HERMES.md; do
   apply_file \
@@ -49,22 +65,24 @@ done
 apply_file "$hermes_home" "$templates_dir/SOUL.md" "$hermes_home/SOUL.md" "SOUL.md"
 apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/AGENTS.md" "AGENTS.md"
 apply_file "$hermes_home" "$templates_dir/AGENTS.md" "$hermes_home/workspace/AGENTS.md" "workspace/AGENTS.md"
-
 apply_file "$hermes_home" "$templates_dir/HERMES.md" "$hermes_home/HERMES.md" "HERMES.md"
-apply_file "$hermes_home" "$templates_dir/HERMES.md" "$hermes_home/workspace/HERMES.md" "workspace/HERMES.md"
+remove_workspace_hermes "$hermes_home"
 
 # Backfill missing context only; named profiles own their existing edits.
+# HERMES.md stays on the profile root so working rules are not a user workspace file.
 for profile_dir in "$profiles_root"/*; do
-  [[ -d "$profile_dir" ]] || continue
+  [[ -d "$profile_dir" && ! -L "$profile_dir" && "$profile_dir" != "$hermes_home" ]] || continue
   for filename in AGENTS.md HERMES.md; do
     if [[ ! -e "$profile_dir/$filename" && ! -L "$profile_dir/$filename" ]]; then
       apply_file "$profile_dir" "$templates_dir/$filename" "$profile_dir/$filename" "$filename"
     fi
-    if [[ ! -e "$profile_dir/workspace/$filename" && ! -L "$profile_dir/workspace/$filename" ]]; then
-      apply_file "$profile_dir" "$profile_dir/$filename" "$profile_dir/workspace/$filename" "workspace/$filename"
-    fi
   done
+  if [[ ! -e "$profile_dir/workspace/AGENTS.md" && ! -L "$profile_dir/workspace/AGENTS.md" ]]; then
+    apply_file "$profile_dir" "$profile_dir/AGENTS.md" "$profile_dir/workspace/AGENTS.md" "workspace/AGENTS.md"
+  fi
+  remove_workspace_hermes "$profile_dir"
 done
+
 
 # Every runtime profile receives product-owned operating guidance. Remove upstream
 # delegation/branding skills that require standalone coding agents or reveal the
@@ -85,7 +103,7 @@ install_required_skills() {
 install_required_skills "$profile_template"
 install_required_skills "$hermes_home"
 for profile_dir in "$profiles_root"/*; do
-  [[ -d "$profile_dir" ]] || continue
+  [[ -d "$profile_dir" && ! -L "$profile_dir" && "$profile_dir" != "$hermes_home" ]] || continue
   install_required_skills "$profile_dir"
 done
 
@@ -118,7 +136,7 @@ if [[ -f "$pdf_override" ]]; then
   }
   install_pdf_override "$hermes_home"
   for profile_dir in "$profiles_root"/*; do
-    [[ -d "$profile_dir" ]] || continue
+    [[ -d "$profile_dir" && ! -L "$profile_dir" && "$profile_dir" != "$hermes_home" ]] || continue
     install_pdf_override "$profile_dir"
   done
 fi

@@ -1,4 +1,4 @@
-"""Bounded request-scoped flowchart and mind map XML validation.
+"""Bounded request-scoped mind map XML validation.
 
 User diagram text is never logged. The decoder rejects DTDs/entities, caps
 size and graph cardinality, and keeps a typed attachment out of ``input``.
@@ -15,13 +15,14 @@ from .feature_flags import enabled as feature_enabled
 
 MAX_XML_CHARS = 64_000
 MAX_NODES = 40
-MAX_EDGES = 60
+MAX_EDGES = 80
 MAX_LABEL = 200
 MAX_ATTACHMENTS = 8
 ALLOWED_FILENAME = "sketch.xml"
 FILENAME_PATTERN = re.compile(r"^(?:sketch|flowchart|mindmap)(?:-[1-9]\d*)?\.xml$")
 ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,31}$")
-MINDMAP_PROMPT_LABEL = "User mind map (tree):"
+MINDMAP_PROMPT_LABEL = "User mind map (hierarchy with optional directed references):"
+_POINTS_PATTERN = re.compile(r"-?(?:0|[1-9][0-9]*)(?:,-?(?:0|[1-9][0-9]*)){7}")
 _LAYOUT_ATTRS = frozenset({"x", "y", "w", "h"})
 
 
@@ -62,36 +63,57 @@ def _validate_ids_and_labels(nodes: list[ElementTree.Element]) -> set[str]:
     return ids
 
 
-def _validate_flowchart(root: ElementTree.Element) -> tuple[int, int]:
-    nodes = list(root.findall("node"))
-    edges = list(root.findall("edge"))
-    if len(nodes) > MAX_NODES or len(edges) > MAX_EDGES:
-        raise _too_large()
-    ids = _validate_ids_and_labels(nodes)
-    for edge in edges:
-        ident = str(edge.get("id") or "")
-        source = str(edge.get("from") or "")
-        target = str(edge.get("to") or "")
-        if (
-            not ID_PATTERN.fullmatch(ident)
-            or source not in ids
-            or target not in ids
-            or source == target
-        ):
-            raise _malformed()
-    return len(nodes), len(edges)
+def _mindmap_has_cycle(children: dict[str, list[str]]) -> bool:
+    """Report a back edge into the active parent-to-child search."""
+    visited: set[str] = set()
+    path: set[str] = set()
+
+    def search(ident: str) -> bool:
+        if ident in path:
+            return True
+        if ident in visited:
+            return False
+        visited.add(ident)
+        path.add(ident)
+        for child in children.get(ident, ()):
+            if search(child):
+                return True
+        path.remove(ident)
+        return False
+
+    for ident in children:
+        if ident not in visited and search(ident):
+            return True
+    return False
 
 
 def _validate_mindmap(root: ElementTree.Element) -> tuple[int, int]:
-    if any(child.tag != "node" for child in list(root)):
+    version = root.get("version")
+    if root.attrib.keys() - {"version"}:
+        raise _malformed()
+    if version not in {None, "2"}:
+        raise DiagramAttachmentError(
+            "diagram attachment version is unsupported",
+            status=422,
+            code="attachment_unsupported",
+        )
+    allowed_children = {"node"} if version is None else {"node", "edge"}
+    if any(child.tag not in allowed_children for child in list(root)):
         raise _malformed()
     nodes = list(root.findall("node"))
-    if len(nodes) > MAX_NODES:
+    edges = list(root.findall("edge"))
+    if version is None and edges:
+        raise _malformed()
+    if len(nodes) > MAX_NODES or len(edges) > MAX_EDGES:
         raise _too_large()
     ids = _validate_ids_and_labels(nodes)
     parents: dict[str, str | None] = {}
     for node in nodes:
         ident = str(node.get("id") or "")
+        if set(node.attrib) - {"id", "parent", "order", "collapsed"}:
+            raise _malformed()
+        if list(node):
+            raise _malformed()
         if _LAYOUT_ATTRS.intersection(node.attrib):
             raise _malformed()
         collapsed = node.get("collapsed")
@@ -104,27 +126,54 @@ def _validate_mindmap(root: ElementTree.Element) -> tuple[int, int]:
         if parent is None:
             parents[ident] = None
             continue
-        if parent not in ids or parent == ident:
+        if parent not in ids:
             raise _malformed()
         parents[ident] = parent
     roots = [ident for ident, parent in parents.items() if parent is None]
-    if len(roots) != 1:
+    if nodes and len(roots) != 1:
+        raise _malformed()
+    if not nodes:
         raise _malformed()
     children: dict[str, list[str]] = {ident: [] for ident in ids}
     for ident, parent in parents.items():
         if parent is not None:
             children[parent].append(ident)
-    seen: set[str] = set()
-    stack = [roots[0]]
-    while stack:
-        ident = stack.pop()
-        if ident in seen:
-            raise _malformed()
-        seen.add(ident)
-        stack.extend(children[ident])
-    if seen != ids:
+    if _mindmap_has_cycle(children):
         raise _malformed()
-    return len(nodes), 0
+
+    edge_ids: set[str] = set()
+    pairs: set[tuple[str, str]] = set()
+    for edge in edges:
+        if set(edge.attrib) - {"id", "source", "target", "curveX", "curveY", "points"}:
+            raise _malformed()
+        if not {"id", "source", "target"} <= set(edge.attrib):
+            raise _malformed()
+        for name in ("curveX", "curveY"):
+            if name in edge.attrib:
+                value = edge.attrib[name]
+                if not re.fullmatch(r"-?(?:0|[1-9][0-9]*)", value) or abs(int(value)) > 1000:
+                    raise _malformed()
+        if "points" in edge.attrib:
+            values = edge.attrib["points"]
+            if not _POINTS_PATTERN.fullmatch(values):
+                raise _malformed()
+            if any(abs(int(value)) > 1000 for value in values.split(",")):
+                raise _malformed()
+        if list(edge) or (edge.text or "").strip():
+            raise _malformed()
+        edge_id = str(edge.get("id") or "")
+        source = str(edge.get("source") or "")
+        target = str(edge.get("target") or "")
+        pair = (source, target)
+        if not ID_PATTERN.fullmatch(edge_id) or edge_id in edge_ids:
+            raise _malformed()
+        if source not in ids or target not in ids or source == target:
+            raise _malformed()
+        if pair in pairs or parents.get(target) == source:
+            raise _malformed()
+        edge_ids.add(edge_id)
+        pairs.add(pair)
+    return len(nodes), len(edges)
 
 
 def validate_attachment(value: Mapping[str, Any] | None) -> dict[str, Any] | None:
@@ -168,14 +217,10 @@ def validate_attachment(value: Mapping[str, Any] | None) -> dict[str, Any] | Non
         root = ElementTree.fromstring(content)
     except ElementTree.ParseError as exc:
         raise _malformed() from exc
-    if root.tag == "flowchart":
-        node_count, edge_count = _validate_flowchart(root)
-        diagram_kind = "flowchart"
-    elif root.tag == "mindmap":
-        node_count, edge_count = _validate_mindmap(root)
-        diagram_kind = "mindmap"
-    else:
+    if root.tag != "mindmap":
         raise _malformed()
+    node_count, edge_count = _validate_mindmap(root)
+    diagram_kind = "mindmap"
     return {
         "kind": "diagram",
         "filename": filename,

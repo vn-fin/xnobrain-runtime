@@ -1,7 +1,9 @@
-<!-- Working overlay: project-context discovery selects this file before AGENTS.md.
-The Runtime conversation prompt adapter explicitly includes workspace/AGENTS.md
-alongside this overlay (including Big Brother and resumed sessions). Do not copy
-product guidance here or use this file as the exported instructions field. -->
+<!-- Working overlay: authored here and copied to the profile root, never the
+user workspace. The Runtime conversation prompt adapter injects this file
+alongside workspace/AGENTS.md (including Big Brother and resumed sessions).
+Do not copy product guidance here or use this file as the exported instructions
+field. -->
+
 # Profile working rules
 
 ## Python environments

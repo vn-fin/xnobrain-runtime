@@ -17,6 +17,9 @@ def create_app():
     # Configure before middleware registration as `app` is imported at module
     # load by both the source reloader and compiled entrypoint.
     configure_logging()
+    from .agent_layout import configure_layout
+
+    configure_layout()
     from hermes_cli.web_server import app
 
     from .app import XNOBrainApplication

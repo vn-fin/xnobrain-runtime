@@ -82,22 +82,38 @@ class ProfileTemplateInstallerTests(unittest.TestCase):
                 (template / "SOUL.md").read_text(encoding="utf-8"),
             )
 
-            for filename in ("AGENTS.md", "HERMES.md"):
-                packaged = (templates / filename).read_text(encoding="utf-8")
-                self.assertEqual((root / "workspace" / filename).read_text(), packaged)
-                self.assertEqual((named / "workspace" / filename).read_text(), packaged)
-                (root / "workspace" / filename).write_text("Big Brother edit\n")
-                (root / filename).write_text("Big Brother home edit\n")
-                (named / "workspace" / filename).write_text("Named edit\n")
-                self.assertEqual((template / filename).read_text(), packaged)
+            agents = (templates / "AGENTS.md").read_text(encoding="utf-8")
+            hermes = (templates / "HERMES.md").read_text(encoding="utf-8")
+            self.assertEqual((root / "workspace" / "AGENTS.md").read_text(encoding="utf-8"), agents)
+            self.assertEqual(
+                (named / "workspace" / "AGENTS.md").read_text(encoding="utf-8"), agents
+            )
+            self.assertFalse((root / "workspace" / "HERMES.md").exists())
+            self.assertFalse((named / "workspace" / "HERMES.md").exists())
+            self.assertEqual((root / "HERMES.md").read_text(encoding="utf-8"), hermes)
+            self.assertEqual((named / "HERMES.md").read_text(encoding="utf-8"), hermes)
+            self.assertEqual((template / "HERMES.md").read_text(encoding="utf-8"), hermes)
+            (root / "workspace" / "AGENTS.md").write_text("Big Brother edit\n")
+            (root / "AGENTS.md").write_text("Big Brother home edit\n")
+            (root / "HERMES.md").write_text("Big Brother home edit\n")
+            (root / "workspace" / "HERMES.md").write_text("Leftover overlay\n")
+            (named / "workspace" / "AGENTS.md").write_text("Named edit\n")
+            (named / "workspace" / "HERMES.md").write_text("Named leftover\n")
+            (named / "HERMES.md").write_text("Named home edit\n")
+            self.assertEqual((template / "AGENTS.md").read_text(encoding="utf-8"), agents)
             subprocess.run(
                 ["bash", str(script), str(root), str(root / "profiles")],
                 check=True,
                 capture_output=True,
                 env=environment,
             )
-            for filename in ("AGENTS.md", "HERMES.md"):
-                packaged = (templates / filename).read_text()
-                self.assertEqual((root / "workspace" / filename).read_text(), packaged)
-                self.assertEqual((template / filename).read_text(), packaged)
-                self.assertEqual((named / "workspace" / filename).read_text(), "Named edit\n")
+            self.assertEqual((root / "workspace" / "AGENTS.md").read_text(encoding="utf-8"), agents)
+            self.assertFalse((root / "workspace" / "HERMES.md").exists())
+            self.assertEqual((root / "HERMES.md").read_text(encoding="utf-8"), hermes)
+            self.assertEqual((template / "AGENTS.md").read_text(encoding="utf-8"), agents)
+            self.assertEqual((template / "HERMES.md").read_text(encoding="utf-8"), hermes)
+            self.assertEqual(
+                (named / "workspace" / "AGENTS.md").read_text(encoding="utf-8"), "Named edit\n"
+            )
+            self.assertFalse((named / "workspace" / "HERMES.md").exists())
+            self.assertEqual((named / "HERMES.md").read_text(encoding="utf-8"), "Named home edit\n")

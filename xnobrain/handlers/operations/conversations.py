@@ -112,6 +112,13 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "conversation run started",
             202,
         ),
+        "conversation_runs_list": (
+            lambda: s.list_conversation_runs(
+                agent(), p["conversation_id"], int(q.get("limit") or 20), q.get("cursor") or ""
+            ),
+            "conversation run history retrieved",
+            200,
+        ),
         "conversation_runs_active": (
             lambda: s.active_conversation_run(agent(), p["conversation_id"]),
             "active conversation run retrieved",

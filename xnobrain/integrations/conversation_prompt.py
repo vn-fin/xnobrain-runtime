@@ -59,24 +59,18 @@ class ConversationPromptMixin:
         """Bypass first-match context discovery without changing the upstream loader."""
         workspace = workspace_dir or profile_dir / "workspace"
         sections = []
-        for filename in ("AGENTS.md", "HERMES.md"):
-            path = workspace / filename
-            # Context must be a regular workspace file, not a symlink to secrets.
-            if path.is_file() and not path.is_symlink():
-                try:
-                    text = path.read_text(encoding="utf-8").strip()
-                except (OSError, UnicodeError):
-                    continue
-                if text:
-                    try:
-                        from agent.prompt_builder import _scan_context_content, _truncate_content
-                    except ImportError:
-                        # Without the embedded scanner, do not bypass its safety policy.
-                        text = "[Workspace context unavailable: scanner not installed.]"
-                    else:
-                        text = _scan_context_content(text, filename)
-                        text = _truncate_content(text, filename, read_path=str(path))
-                    sections.append(f"# Workspace {filename}\n{text}")
+        agents = self._scanned_context_text(workspace / "AGENTS.md", "AGENTS.md")
+        if agents:
+            sections.append(f"# Workspace AGENTS.md\n{agents}")
+        overlay_candidates = [profile_dir / "HERMES.md"]
+        template = getattr(self, "profile_template", None)
+        if template is not None:
+            overlay_candidates.append(Path(template) / "HERMES.md")
+        for overlay_path in overlay_candidates:
+            overlay = self._scanned_context_text(overlay_path, "HERMES.md")
+            if overlay:
+                sections.append(f"# Working overlay\n{overlay}")
+                break
         profile_id = (
             "big-brother"
             if profile_dir == self.root_profile
@@ -88,6 +82,25 @@ class ConversationPromptMixin:
             + "\n\n".join(sections)
             + "\n<!-- /runtime-workspace-context -->"
         )
+
+    @staticmethod
+    def _scanned_context_text(path: Path, filename: str) -> str:
+        # Context must be a regular file, not a symlink to secrets.
+        if path.is_symlink() or not path.is_file():
+            return ""
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            return ""
+        if not text:
+            return ""
+        try:
+            from agent.prompt_builder import _scan_context_content, _truncate_content
+        except ImportError:
+            # Without the embedded scanner, do not bypass its safety policy.
+            return "[Workspace context unavailable: scanner not installed.]"
+        text = _scan_context_content(text, filename)
+        return _truncate_content(text, filename, read_path=str(path))
 
     @staticmethod
     def _with_workspace_context(prompt: Any, context: str) -> str:

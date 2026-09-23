@@ -153,17 +153,19 @@ an explicit future integration rather than automatic consent.
 
 ### Workspace working overlay and Python environments
 
-The installer seeds both `workspace/AGENTS.md` (durable product instructions,
-unchanged marketplace/UI/blueprint contract) and `workspace/HERMES.md` (profile
-working rules). Big Brother's copies refresh with snapshots on installation;
-named-profile copies are backfilled only when missing. The independent
-`profile-template` never inherits Big Brother edits.
+The installer seeds `workspace/AGENTS.md` (durable product instructions,
+unchanged marketplace/UI/blueprint contract). Profile working rules live in
+the packaged `HERMES.md` template and the profile-root copy beside
+`config.yaml`, not in the user workspace. Big Brother's profile-root copy
+refreshes with snapshots on installation; named-profile copies are backfilled
+only when missing. Leftover `workspace/HERMES.md` files are removed on apply.
+The independent `profile-template` never inherits Big Brother edits.
 
 Upstream context discovery selects HERMES before AGENTS, rather than merging.
-The Runtime conversation prompt adapter explicitly includes both workspace
-files for new/cached and resumed prompts, including Big Brother, without
-changing the upstream loader. Working rules are authored only in HERMES.
-Big Brother remains free of the named-agent CWD lock.
+The Runtime conversation prompt adapter injects workspace `AGENTS.md` plus the
+internal HERMES overlay for new/cached and resumed prompts, including Big
+Brother, without changing the upstream loader. Working rules are authored only
+in HERMES. Big Brother remains free of the named-agent CWD lock.
 
 Profile Python environments use `/opt/data/python/.<profile-id>-venv`, including
 `.big-brother-venv`. The container entrypoint provisions the shared root as 0700

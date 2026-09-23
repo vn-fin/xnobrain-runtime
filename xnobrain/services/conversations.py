@@ -672,6 +672,12 @@ class ConversationsServiceMixin:
             self.agents.remove_conversation_subgoal(agent_id, conversation_id, index),
         )
 
+    def list_conversation_runs(
+        self, agent_id: str, conversation_id: str, limit: int = 20, cursor: str = ""
+    ) -> dict[str, Any]:
+        self._stored_context(agent_id, conversation_id)
+        return self.conversation_runs.list_runs(agent_id, conversation_id, limit, cursor)
+
     def active_conversation_run(self, agent_id: str, conversation_id: str) -> dict[str, Any]:
         return {
             "run": self.conversation_runs.active_run(agent_id, conversation_id),

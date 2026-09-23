@@ -126,6 +126,8 @@ class AgentProfilesMixin:
         if name == BIG_BROTHER_AGENT_ID:
             return self.root_profile if self.root_profile.is_dir() else None
         native = self._native_profile_dir(name)
+        if native.is_symlink():
+            raise AgentAPIError("Agent profile must not be a symlink", code="invalid_agent_path")
         if native.is_dir():
             return native
         legacy = self._legacy_profile_dir(name)
@@ -144,7 +146,7 @@ class AgentProfilesMixin:
         store = getattr(self, "portability_task_store", None)
         if store is not None and not store.resource_visible("PROFILE", path.name):
             return False
-        if not path.is_dir():
+        if path.is_symlink() or not path.is_dir():
             return False
         if not AGENT_NAME_RE.match(path.name) or ".." in path.name:
             return False
@@ -269,20 +271,19 @@ class AgentProfilesMixin:
             yaml.safe_dump(payload, file, sort_keys=False, allow_unicode=False)
 
     def _ensure_workspace_agents(self, profile_dir: Path, workspace_dir: Path) -> None:
-        for filename in ("AGENTS.md", "HERMES.md"):
-            target = workspace_dir / filename
-            if target.exists() or target.is_symlink():
-                continue
-            bundled = Path(__file__).resolve().parents[2] / "runtime/profile-templates"
-            for source in (
-                profile_dir / filename,
-                self.profile_template / filename,
-                bundled / filename,
-            ):
-                if source.is_file():
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(source, target)
-                    break
+        target = workspace_dir / "AGENTS.md"
+        if target.exists() or target.is_symlink():
+            return
+        bundled = Path(__file__).resolve().parents[2] / "runtime/profile-templates"
+        for source in (
+            profile_dir / "AGENTS.md",
+            self.profile_template / "AGENTS.md",
+            bundled / "AGENTS.md",
+        ):
+            if source.is_file():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+                break
 
     def _read_metadata(self, profile_dir: Path) -> dict[str, Any]:
         path = profile_dir / METADATA_FILE

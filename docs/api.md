@@ -19,16 +19,18 @@ Hermes lifecycle objects and terminates with `data: [DONE]`.
 Conversation runs accept an optional request-scoped `attachment` or
 `attachments` list on `POST /xnobrain/api/runtime/v1/sessions/{id}/runs`.
 Each sketch is `{kind:"diagram", filename, mime_type:"application/xml",
-content}` with XML root `flowchart` (boxes and arrows) or `mindmap` (one
-rooted tree: `parent`, `order`, optional `collapsed="true"`; no `x/y` or
-`<edge>`). Filenames are `flowchart.xml`, `mindmap.xml`, or `sketch.xml`, with
-`-2` and later for extra files of the same kind; at most eight diagrams per run.
+content}` with XML root `mindmap`. Legacy unversioned XML contains one rooted
+hierarchy (`parent`, `order`, optional `collapsed="true"`). Version 2 may also
+contain up to 80 directed references as
+`<edge id="…" source="…" target="…" />`; an edge may also carry eight comma-separated `points` offsets for four draggable corners, each bounded to ±1000; hierarchy connectors remain implicit.
+A `flowchart` root is malformed. Filenames are `mindmap.xml` or `sketch.xml`, with `-2` and later
+for extra files; `flowchart.xml` still matches the filename pattern but its
+content must be a mind map. At most eight diagrams per run.
 Runtime validates size and XML, then merges each XML into the model prompt in order. Mind maps
-are prefixed with `User mind map (tree):`. Flowchart merge remains `{input}`
-then a blank line then `{xml}`. The UI must not put the XML in `input`.
+are prefixed with `User mind map (hierarchy with optional directed references):`. The UI must not put the XML in `input`.
 Text-only mixed-version requests omit `attachment` and `attachments`.
 `FT_ENABLE_COMPOSER_SKETCH` defaults on. Disabled runtimes return `404`
-`feature_disabled`. Malformed XML is `422`; oversized graphs are `413`.
+`feature_disabled`. Malformed XML is `422`; unsupported explicit versions are `422` `attachment_unsupported`; oversized graphs are `413`.
 Attachments are never forwarded as unknown Hermes fields.
 
 
@@ -108,7 +110,11 @@ material.
 The export allowlist contains required `SOUL.md` and `workspace/AGENTS.md`,
 enabled skill `SKILL.md` files, and UTF-8 regular files in each skill's
 `references/`, `scripts/`, and `assets/` directories with approved extensions.
-Only display name, description, model slot, and reasoning effort are copied
+Exact category-level `DESCRIPTION.md` packaging metadata below `skills/` is
+validated and omitted; it is never included in the package or digest. Other
+visible files outside a discovered skill package fail with HTTP 422 and code
+`marketplace_export_unsupported_skill_file`. Only display name, description,
+model slot, and reasoning effort are copied
 from profile configuration/metadata. Tool and MCP names are declarations; MCP
 URLs, commands, headers, environment and other connection details are not
 exported. Runtime grants no requested permission as a side effect of export.
@@ -1054,3 +1060,30 @@ Import ownership markers are local recovery metadata and excluded from subsequen
 portable archives. Team get/update/delete and live-profile resolution reject
 uncommitted journal targets; these checks are not a substitute for filesystem
 permissions or exclusive workspace ownership.
+
+### Conversation run outcome history
+
+`GET /xnobrain/api/runtime/v1/sessions/{conversation_id}/runs?agent={agent_id}&limit=20&cursor=...`
+returns the normal envelope with `data.runs` and nullable `data.next_cursor`.
+Limits must be 1–100. Records are ordered newest-first by `(created_at, id)`;
+cursors are scoped to agent and conversation and do not grant authorization.
+Only public run identity, lifecycle timestamps/status, mode, timeout, revision,
+sanitary error text, and nullable `user_message_id` are returned; prompts,
+internal routing/ownership objects, tool output, and credentials are excluded.
+Current records without authoritative message correlation return null; consumers
+must display a run-level notice rather than guess a message association.
+A full final page may return a cursor followed by an empty final page.
+Legacy `event: error` frames become durable failed runs; late duplicate terminal
+events cannot overwrite the established terminal outcome. History is read-only.
+
+### Installed skill file browsing
+
+`GET /agents-workspaces/{agent_id}?scope=skills&path=<relative>` lists files
+beneath the selected profile's `skills/`. `GET /agents-workspaces/{agent_id}/file?scope=skills&path=<relative>`
+serves a skill file for preview/download. These paths share the existing
+`/xnobrain/api/runtime/v1` namespace and authenticated Control routing.
+Skill scope is read-only; mutation endpoints retain workspace-only semantics.
+Absolute paths, traversal and symlink paths are rejected. No profile-root,
+config, credential, memory or session browsing is exposed by this scope.
+The browser presents virtual `workspace` and `skills` roots; virtual prefixes
+are removed by its API adapter, not treated as disk paths.

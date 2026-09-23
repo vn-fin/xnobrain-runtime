@@ -17,7 +17,7 @@ import yaml
 
 from .base import ServiceError
 
-_SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_SAFE = re.compile(r"^[A-Za-z_][A-Za-z0-9._-]{0,127}$")
 _SAFE_REFERENCE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 _SECRET_PATTERNS = (
     re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----"),
@@ -249,8 +249,15 @@ class MarketplaceService:
                 or self._excluded(path.relative_to(root))
             ):
                 continue
-            if not any(skill_dir in path.parents for skill_dir in skill_directories):
-                self._reject_export()
+            if any(skill_dir in path.parents for skill_dir in skill_directories):
+                continue
+            relative = path.relative_to(root)
+            # Validate every visible orphan before deciding whether it is safe to
+            # omit. This keeps malformed paths fail-closed even for metadata.
+            self._safe_relative(relative)
+            if self._is_category_description(root, path):
+                continue
+            self._reject_unsupported_skill_file()
         skills: dict[str, str] = {}
         assets: dict[str, str] = {}
         files: list[dict[str, Any]] = []
@@ -317,6 +324,17 @@ class MarketplaceService:
         return any(
             part.casefold() in _EXCLUDED_PARTS or part.startswith(".") for part in path.parts
         )
+
+    @staticmethod
+    def _is_category_description(root: Path, path: Path) -> bool:
+        if path.name != "DESCRIPTION.md" or path.parent == root:
+            return False
+        current = path.parent
+        while current != root:
+            if (current / "SKILL.md").is_file():
+                return False
+            current = current.parent
+        return True
 
     @staticmethod
     def _add_unique(folded: set[str], path: str) -> None:
@@ -564,6 +582,14 @@ class MarketplaceService:
             "marketplace export rejected unsafe profile content",
             status=422,
             code="marketplace_export_rejected",
+        )
+
+    @staticmethod
+    def _reject_unsupported_skill_file() -> None:
+        raise ServiceError(
+            "marketplace export found unsupported skill-tree content",
+            status=422,
+            code="marketplace_export_unsupported_skill_file",
         )
 
     @staticmethod
