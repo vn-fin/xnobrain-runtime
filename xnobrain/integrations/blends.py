@@ -366,7 +366,8 @@ class BlendsIntegrationMixin:
             counters = state.get("roundRobin")
             counters = dict(counters) if isinstance(counters, Mapping) else {}
             index = int(counters.get(str(combo["id"])) or 0)
-            selected = models[index % len(models)]
+            sticky_limit = max(1, int(state.get("stickyLimit") or 1))
+            selected = models[(index // sticky_limit) % len(models)]
             counters[str(combo["id"])] = index + 1
             state["roundRobin"] = counters
             self._write_blend_state(state)
@@ -376,6 +377,13 @@ class BlendsIntegrationMixin:
             selected = models[0]
         return {
             "model": route_llm_model(selected),
+            # Hermes owns retries within an inference, not whole-turn replay.
+            # Preserve ordered alternates for priority blends only.
+            **(
+                {"candidates": [route_llm_model(model) for model in models]}
+                if native == "priority"
+                else {}
+            ),
             "reasoning": "auto",
             "tier": "",
             "route": name,

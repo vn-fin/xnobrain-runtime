@@ -623,6 +623,83 @@ class MarketplaceExportTests(unittest.TestCase):
         changed = self.service.export("owned-agent", "MIT")
         self.assertNotEqual(changed["digest"], first["digest"])
 
+    def test_export_allows_private_script_module_names(self):
+        private_script = (
+            self.profile / "skills" / "custom" / "research" / "scripts" / "_hermes_home.py"
+        )
+        private_script.write_text("HOME = '/tmp'\n", encoding="utf-8")
+
+        package = self.service.export("owned-agent", "MIT")
+
+        self.assertIn(
+            "skills/custom/research/scripts/_hermes_home.py",
+            package["definition"]["assets"],
+        )
+
+    def test_export_omits_category_descriptions_without_changing_digest(self):
+        category = self.profile / "skills" / "custom" / "DESCRIPTION.md"
+        category.write_text("Private packaging description\n", encoding="utf-8")
+        empty_category = self.profile / "skills" / "mlops" / "evaluation"
+        empty_category.mkdir(parents=True)
+        nested_description = empty_category / "DESCRIPTION.md"
+        nested_description.write_text("Empty category metadata\n", encoding="utf-8")
+
+        first = self.service.export("owned-agent", "MIT")
+        category.write_text("Changed packaging description\n", encoding="utf-8")
+        nested_description.write_text("Changed empty metadata\n", encoding="utf-8")
+        second = self.service.export("owned-agent", "MIT")
+
+        self.assertEqual(first["digest"], second["digest"])
+        self.assertEqual(first["definition"], second["definition"])
+        self.assertEqual(first["files"], second["files"])
+        self.assertGreaterEqual(first["exclusions"]["omitted_file_count"], 9)
+        exported = json.dumps(first, sort_keys=True)
+        self.assertNotIn("Private packaging description", exported)
+        self.assertNotIn("Empty category metadata", exported)
+
+    def test_export_rejects_unsupported_orphan_skill_files_actionably(self):
+        unsupported = (
+            self.profile / "skills" / "DESCRIPTION.md",
+            self.profile / "skills" / "custom" / "description.md",
+            self.profile / "skills" / "custom" / "orphan.py",
+        )
+        for path in unsupported:
+            with self.subTest(path=path.name):
+                path.write_text("synthetic metadata\n", encoding="utf-8")
+                with self.assertRaises(ServiceError) as error:
+                    self.service.export("owned-agent", "MIT")
+                self.assertEqual(error.exception.status, 422)
+                self.assertEqual(
+                    error.exception.code,
+                    "marketplace_export_unsupported_skill_file",
+                )
+                path.unlink()
+
+    def test_category_description_does_not_bypass_other_export_checks(self):
+        category = self.profile / "skills" / "custom" / "DESCRIPTION.md"
+        category.write_text("Category metadata\n", encoding="utf-8")
+        (self.profile / "SOUL.md").write_text(
+            "api_key = sk-this-is-a-real-looking-secret\n",
+            encoding="utf-8",
+        )
+        with self.assertRaises(ServiceError) as error:
+            self.service.export("owned-agent", "MIT")
+        self.assertEqual(
+            error.exception.code,
+            "marketplace_export_credentials_detected",
+        )
+
+    def test_export_rejects_symlinked_category_description(self):
+        outside = Path(self.tmp.name) / "outside-description.md"
+        outside.write_text("Outside metadata\n", encoding="utf-8")
+        category = self.profile / "skills" / "custom" / "DESCRIPTION.md"
+        category.symlink_to(outside)
+
+        with self.assertRaises(ServiceError) as error:
+            self.service.export("owned-agent", "MIT")
+
+        self.assertEqual(error.exception.code, "marketplace_export_rejected")
+
     def test_export_rejects_profile_and_skill_symlink_attacks(self):
         outside = Path(self.tmp.name) / "outside.txt"
         outside.write_text("outside secret")
@@ -643,6 +720,47 @@ class MarketplaceExportTests(unittest.TestCase):
         (self.profile / "SOUL.md").write_text(
             "api_key = sk-this-is-a-real-looking-secret\n", encoding="utf-8"
         )
+        with self.assertRaises(ServiceError) as error:
+            self.service.export("owned-agent", "MIT")
+        self.assertEqual(error.exception.code, "marketplace_export_credentials_detected")
+
+    def test_export_allows_python_password_references(self):
+        script = self.profile / "skills" / "custom" / "research" / "scripts" / "collect.py"
+        script.write_text(
+            "image = rasterize_page(password=args.password_value)\n"
+            "ws.protection.password = password_from_user\n",
+            encoding="utf-8",
+        )
+
+        package = self.service.export("owned-agent", "MIT")
+        self.assertIn("skills/custom/research/scripts/collect.py", package["definition"]["assets"])
+
+    def test_export_rejects_literal_password_in_python_script(self):
+        script = self.profile / "skills" / "custom" / "research" / "scripts" / "collect.py"
+        script.write_text('password = "synthetic-hardcoded-secret"\n', encoding="utf-8")
+
+        with self.assertRaises(ServiceError) as error:
+            self.service.export("owned-agent", "MIT")
+        self.assertEqual(error.exception.code, "marketplace_export_credentials_detected")
+
+    def test_export_rejects_python_comment_and_mapping_secrets(self):
+        script = self.profile / "skills" / "custom" / "research" / "scripts" / "collect.py"
+        for text in (
+            "# password=synthetic-hardcoded-secret\n",
+            'settings = {"password": "synthetic-hardcoded-secret"}\n',
+            'call(password="synthetic-hardcoded-secret")\n',
+        ):
+            with self.subTest(kind=text.splitlines()[0][:12]):
+                script.write_text(text, encoding="utf-8")
+                with self.assertRaises(ServiceError) as error:
+                    self.service.export("owned-agent", "MIT")
+                self.assertEqual(error.exception.code, "marketplace_export_credentials_detected")
+
+    def test_export_rejects_password_assignment_in_public_text(self):
+        (self.profile / "SOUL.md").write_text(
+            "password=synthetic-hardcoded-secret\n", encoding="utf-8"
+        )
+
         with self.assertRaises(ServiceError) as error:
             self.service.export("owned-agent", "MIT")
         self.assertEqual(error.exception.code, "marketplace_export_credentials_detected")

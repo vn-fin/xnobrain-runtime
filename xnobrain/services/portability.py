@@ -94,11 +94,13 @@ class PortabilityServiceMixin:
         return self.portability.delete_transfer(kind, transfer_id)
 
 
+import fcntl
 import hashlib
 import json
 import os
 import re
 import shutil
+import sqlite3
 import stat
 import tempfile
 import uuid
@@ -136,6 +138,8 @@ ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,127}$")
 ENV_REFERENCE = re.compile(r"\$\{([A-Z][A-Z0-9_]{1,127})\}")
 REDACTED = b"[REDACTED]"
 
+SHAREABLE_REQUIRED = frozenset({"config.yaml", "state.db", "HERMES.md", "workspace/AGENTS.md"})
+SHAREABLE_ROOT_AUTHORITY = frozenset({"profile.json", "permissions.json", "approvals.json"})
 
 class PortabilityService:
     """Export, validate, preview, and atomically install local profiles."""
@@ -145,6 +149,9 @@ class PortabilityService:
         self.root_profile = Path(
             root_profile or os.environ.get("HERMES_ROOT_PROFILE") or Path.home() / ".hermes"
         )
+        from ..repositories.portability_tasks import PortabilityTaskStore
+
+        self.task_store = PortabilityTaskStore(repository.data_dir)
         self.transfer_root = repository.data_dir / "transfers"
         self.upload_root = self.transfer_root / "uploads"
         self.export_root = self.transfer_root / "exports"
@@ -165,6 +172,144 @@ class PortabilityService:
             return temporary.read_bytes(), metadata["filename"]
         finally:
             temporary.unlink(missing_ok=True)
+
+    @staticmethod
+    def owner_record(context: Any) -> dict[str, str]:
+        return {
+            "subject": str(getattr(context, "subject", "") or ""),
+            "tenant_id": str(getattr(context, "tenant_id", "") or ""),
+            "organization_id": str(getattr(context, "organization_id", "") or ""),
+        }
+
+    def export_shareable(self, agent_id: str, target: Path, *, owner: Any) -> dict[str, Any]:
+        """Export only a profile with a durable matching verified owner."""
+        self.repository._id(agent_id, "agent id")
+        if agent_id == BIG_BROTHER_AGENT_ID:
+            raise StoreError("snapshot owner is unavailable", status=403, code="permission_denied")
+        owner_path = self.repository.profile_path(agent_id) / ".community-profile-owner.json"
+        try:
+            stored = json.loads(owner_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            stored = None
+        expected = self.owner_record(owner)
+        if not expected["subject"] or stored != expected:
+            raise StoreError("snapshot owner is unavailable", status=403, code="permission_denied")
+        try:
+            return self._export_to_path({"agent_ids": [agent_id]}, target, shareable=True)
+        except Exception:
+            target.unlink(missing_ok=True)
+            raise
+
+    def apply_shareable_file(
+        self, path: Path, *, operation_id: str, digest: str, recipient: str
+    ) -> dict[str, Any]:
+        """Install a content snapshot only with this Runtime's Router binding."""
+        from ..integrations.llm_router_support import LLM_ROUTER_API_BASE_URL
+
+        if not LLM_ROUTER_API_BASE_URL:
+            raise StoreError("receiving Router URL is unavailable", code="router_unavailable")
+        if len(recipient) > 512 or len(recipient.split("\x00")) != 3 or not recipient.split("\x00", 1)[0]:
+            raise StoreError("verified clone recipient required", status=403, code="permission_denied")
+        if not re.fullmatch(r"[0-9a-f]{64}", digest) or self._hash_file(path) != digest:
+            raise StoreError("snapshot digest mismatch", code="invalid_bundle_checksum")
+        archive, files, _ = self._validated_archive_file(path)
+        with archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            agents = manifest.get("agents")
+            if (
+                manifest.get("snapshot_kind") != "community-full-profile-v1"
+                or not isinstance(agents, list)
+                or len(agents) != 1
+                or not isinstance(agents[0], Mapping)
+                or manifest.get("teams")
+            ):
+                raise StoreError("not a shareable profile snapshot", code="invalid_bundle")
+            if not isinstance(manifest.get("file_inventory"), dict) or not isinstance(
+                manifest.get("excluded_paths"), list
+            ):
+                raise StoreError("snapshot inventory is missing", code="invalid_bundle")
+            agent_id = self.repository._id(agents[0].get("id"), "agent id")
+            prefix = f"profiles/{agent_id}/"
+            for name in files:
+                if name not in {"manifest.json", "checksums.json"} and (
+                    not name.startswith(prefix)
+                    or self._shareable_excluded(Path(name[len(prefix) :]))
+                ):
+                    raise StoreError("snapshot contains local authority", code="invalid_bundle")
+            expected = {name: files[name] for name in files if name.startswith(prefix)}
+            if not SHAREABLE_REQUIRED <= {name[len(prefix):] for name in expected}:
+                raise StoreError("snapshot is missing required profile data", code="invalid_bundle")
+            checksums = json.loads(archive.read("checksums.json"))
+            if manifest["file_inventory"] != {name: checksums[name] for name in expected}:
+                raise StoreError("snapshot inventory does not match checksums", code="invalid_bundle")
+            excluded_paths = manifest["excluded_paths"]
+            if len(excluded_paths) != len(set(excluded_paths)):
+                raise StoreError("snapshot exclusions are invalid", code="invalid_bundle")
+            for excluded in excluded_paths:
+                if (
+                    not isinstance(excluded, str)
+                    or not excluded.startswith(prefix)
+                    or excluded in files
+                    or ".." in PurePosixPath(excluded).parts
+                    or len(PurePosixPath(excluded).parts) > MAX_PATH_DEPTH
+                ):
+                    raise StoreError("snapshot exclusions are invalid", code="invalid_bundle")
+            if set(excluded_paths) & set(expected):
+                raise StoreError("snapshot exclusions are invalid", code="invalid_bundle")
+            try:
+                config = yaml.safe_load(archive.read(f"{prefix}config.yaml")) or {}
+            except yaml.YAMLError as error:
+                raise StoreError("invalid snapshot config", code="invalid_bundle") from error
+            if not isinstance(config, Mapping) or self._sanitize_value(config) != config:
+                raise StoreError("snapshot contains publisher configuration", code="invalid_bundle")
+            if "providers" in config or "fallback_providers" in config or "mcp_servers" in config:
+                raise StoreError("snapshot contains provider authority", code="invalid_bundle")
+            model = config.get("model")
+            if isinstance(model, Mapping) and any(
+                key in model for key in ("base_url", "assignment_id", "api_key")
+            ):
+                raise StoreError("snapshot contains router authority", code="invalid_bundle")
+        self.repository._id(operation_id, "clone operation id")
+        # Deterministic target and a marker staged before rename close the
+        target_id = f"clone-{hashlib.sha256((recipient + chr(0) + operation_id).encode()).hexdigest()[:32]}"
+        lock_path = self.repository.data_dir / ".community-clone.lock"
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            target = self.repository.profile_path(target_id)
+            marker = target / ".community-clone-receipt.json"
+            if target.is_symlink():
+                raise StoreError("clone target is unsafe", status=409, code="clone_conflict")
+            if target.exists():
+                try:
+                    receipt = json.loads(marker.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    raise StoreError(
+                        "clone target requires recovery", status=409, code="clone_conflict"
+                    ) from None
+                if receipt != {
+                    "operation_id": operation_id,
+                    "digest": digest,
+                    "source_id": agent_id,
+                    "recipient": recipient,
+                }:
+                    raise StoreError("clone operation conflicts", status=409, code="clone_conflict")
+                return {"agent_id_mappings": {agent_id: target_id}, "sha256": digest}
+            return self.apply_file(
+                path,
+                {},
+                clone=True,
+                clone_target_id=target_id,
+                clone_receipt={
+                    "operation_id": operation_id,
+                    "digest": digest,
+                    "source_id": agent_id,
+                    "recipient": recipient,
+                },
+            )
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
 
     def inspect(self, payload: bytes) -> dict[str, Any]:
         return self._with_payload(payload, self.inspect_file)
@@ -223,6 +368,14 @@ class PortabilityService:
         return metadata
 
     def put_upload_part(self, transfer_id: Any, part_number: Any, payload: bytes) -> dict[str, Any]:
+        with self.task_store.publication_lock():
+            if self.task_store.pinned(str(transfer_id)):
+                raise StoreError("Upload is in use", status=409, code="transfer_in_use")
+            return self._put_upload_part_unpinned(transfer_id, part_number, payload)
+
+    def _put_upload_part_unpinned(
+        self, transfer_id: Any, part_number: Any, payload: bytes
+    ) -> dict[str, Any]:
         directory = self._transfer_dir(self.upload_root, transfer_id)
         metadata = self._read_metadata(directory)
         if metadata.get("complete"):
@@ -243,6 +396,10 @@ class PortabilityService:
         }
 
     def complete_upload(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
+        with self.task_store.publication_lock():
+            return self._complete_upload_locked(transfer_id, body)
+
+    def _complete_upload_locked(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         directory = self._transfer_dir(self.upload_root, transfer_id)
         metadata = self._read_metadata(directory)
         if metadata.get("complete") and (directory / "bundle.zip").is_file():
@@ -286,6 +443,12 @@ class PortabilityService:
         return metadata
 
     def apply_upload(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
+        with self.task_store.publication_lock():
+            if self.task_store.pinned(str(transfer_id)):
+                raise StoreError("Upload is in use", status=409, code="transfer_in_use")
+            return self._apply_upload_unpinned(transfer_id, body)
+
+    def _apply_upload_unpinned(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         directory = self._transfer_dir(self.upload_root, transfer_id)
         metadata = self._read_metadata(directory)
         if not metadata.get("complete") or not (directory / "bundle.zip").is_file():
@@ -298,6 +461,12 @@ class PortabilityService:
         return report
 
     def delete_transfer(self, kind: str, transfer_id: Any) -> dict[str, Any]:
+        with self.task_store.publication_lock():
+            if kind == "upload" and self.task_store.pinned(str(transfer_id)):
+                raise StoreError("Upload is in use", status=409, code="transfer_in_use")
+            return self._delete_transfer(kind, transfer_id)
+
+    def _delete_transfer(self, kind: str, transfer_id: Any) -> dict[str, Any]:
         root = self.upload_root if kind == "upload" else self.export_root
         directory = self._transfer_dir(root, transfer_id)
         shutil.rmtree(directory)
@@ -361,7 +530,15 @@ class PortabilityService:
             "credentials_source": "default_profile",
         }
 
-    def apply_file(self, path: Path, environment: Mapping[str, str]) -> dict[str, Any]:
+    def apply_file(
+        self,
+        path: Path,
+        environment: Mapping[str, str],
+        *,
+        clone: bool = False,
+        clone_target_id: str | None = None,
+        clone_receipt: Mapping[str, str] | None = None,
+    ) -> dict[str, Any]:
         preview = self.dry_run_file(path)
         manifest = preview["inspection"]["manifest"]
         allowed_environment = set(preview["missing_environment"])
@@ -377,7 +554,11 @@ class PortabilityService:
             with ZipFile(path) as archive:
                 for source in manifest.get("agents", []):
                     source_id = self.repository._id(source.get("id"), "agent id")
-                    target_id = self._available_profile_id(source_id)
+                    target_id = (
+                        clone_target_id or self._available_clone_id(source_id)
+                        if clone
+                        else self._available_profile_id(source_id)
+                    )
                     mappings[source_id] = target_id
                     target_stage = stage / "profiles" / target_id
                     prefix = f"profiles/{source_id}/"
@@ -389,15 +570,27 @@ class PortabilityService:
                         destination.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
                         with (
                             archive.open(info) as input_file,
-                            destination.open("wb") as output_file,
+                            destination.open("xb") as output_file,
                         ):
                             shutil.copyfileobj(input_file, output_file, length=1024 * 1024)
-                    self._reset_imported_profile(target_stage, supplied)
+                    if clone:
+                        self._validate_shareable_database(target_stage / "state.db", detach_identity=True)
+                    self._reset_imported_profile(target_stage, supplied, clone=clone)
                     self._reset_imported_identity(
                         target_stage,
                         source_id=source_id,
                         target_id=target_id,
                     )
+                    if clone_receipt is not None:
+                        subject, tenant, organization = clone_receipt["recipient"].split("\x00", 2)
+                        self.repository.atomic_json(
+                            target_stage / ".community-profile-owner.json",
+                            {"subject": subject, "tenant_id": tenant, "organization_id": organization},
+                        )
+                    if clone_receipt is not None:
+                        self.repository.atomic_json(
+                            target_stage / ".community-clone-receipt.json", dict(clone_receipt)
+                        )
                     final = self.repository.profile_path(target_id)
                     final.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
                     os.replace(target_stage, final)
@@ -459,7 +652,9 @@ class PortabilityService:
         finally:
             shutil.rmtree(stage, ignore_errors=True)
 
-    def _export_to_path(self, body: Mapping[str, Any], target: Path) -> dict[str, Any]:
+    def _export_to_path(
+        self, body: Mapping[str, Any], target: Path, *, shareable: bool = False
+    ) -> dict[str, Any]:
         requested_team_ids = list(
             dict.fromkeys(
                 str(item).strip() for item in body.get("team_ids", []) if str(item).strip()
@@ -485,8 +680,13 @@ class PortabilityService:
                 if str(item).strip()
             )
         )
+        if shareable and (len(agent_ids) != 1 or requested_team_ids):
+            raise StoreError("shareable snapshot requires one agent", code="invalid_bundle")
         if not agent_ids and not requested_team_ids:
             raise StoreError("at least one agent or team is required")
+        # Portability exports the complete selected profile. The historical
+        # include_conversations knob is accepted for compatibility but does
+        # not strip agent-owned state or SQLite history.
         include_conversations = bool(body.get("include_conversations", False))
         export_id = uuid.uuid4().hex
         created_at = datetime.now(timezone.utc).isoformat()
@@ -494,6 +694,10 @@ class PortabilityService:
         entries: list[tuple[str, Path]] = []
         required_environment: set[str] = set()
         secrets = self._known_secret_values()
+        if shareable:
+            secrets = set()
+        excluded_paths: list[str] = []
+        snapshot_conversations = 0
 
         for agent_id in agent_ids:
             profile = (
@@ -504,32 +708,70 @@ class PortabilityService:
             if not profile.is_dir():
                 raise StoreError(f"agent not found: {agent_id}", status=404, code="not_found")
             agents.append(self._metadata(profile, agent_id))
+            if shareable:
+                agents[-1] = {
+                    key: value
+                    for key, value in agents[-1].items()
+                    if key in {"id", "name", "display_name", "title"}
+                }
             config_path = profile / "config.yaml"
             if config_path.is_file():
                 required_environment.update(self._required_environment(config_path))
             secrets.update(self._credential_values(profile))
+            if shareable and not config_path.is_file():
+                raise StoreError("agent config is required", code="invalid_agent_profile")
+            if shareable and not all((profile / required).is_file() for required in SHAREABLE_REQUIRED):
+                raise StoreError("required agent guidance or history is missing", code="invalid_agent_profile")
             managed_subtrees = self._managed_subtrees(profile)
             for item in profile.rglob("*"):
-                if not item.is_file() or item.is_symlink():
-                    continue
                 relative = item.relative_to(profile)
-                if self._portable(
+                if not self._portable(
                     relative,
                     include_conversations,
                     root_profile=agent_id == BIG_BROTHER_AGENT_ID,
                     managed_subtrees=managed_subtrees,
-                ):
-                    entries.append((f"profiles/{agent_id}/{relative.as_posix()}", item))
+                ) or (shareable and self._shareable_excluded(relative)):
+                    if shareable and item.is_file():
+                        excluded_paths.append(f"profiles/{agent_id}/{relative.as_posix()}")
+                    continue
+                if item.is_symlink():
+                    if shareable:
+                        raise StoreError("agent contains a symlink", code="invalid_bundle")
+                    continue
+                if item.is_dir():
+                    continue
+                if not item.is_file() or (shareable and item.stat().st_nlink != 1):
+                    if shareable:
+                        raise StoreError("agent contains unsupported profile content", code="invalid_bundle")
+                    continue
+                if relative.name in {"state.db-wal", "state.db-shm"} and relative.parent == Path("."):
+                    if shareable:
+                        excluded_paths.append(f"profiles/{agent_id}/{relative.as_posix()}")
+                    continue
+                entries.append((f"profiles/{agent_id}/{relative.as_posix()}", item))
+            if shareable and (len(entries) + len(excluded_paths) > MAX_FILES - 2):
+                raise StoreError("too many profile files", code="invalid_bundle")
+            if shareable and not any(
+                name == f"profiles/{agent_id}/state.db" for name, _ in entries
+            ):
+                raise StoreError("agent history database is required", code="invalid_bundle")
 
         selected = set(agent_ids)
         teams: list[dict[str, str]] = []
         team_payloads: list[tuple[str, bytes]] = []
-        team_rows = selected_teams if requested_team_ids else self.repository.list_teams()
+        team_rows = (
+            []
+            if shareable
+            else (selected_teams if requested_team_ids else self.repository.list_teams())
+        )
         for team in team_rows:
             if not requested_team_ids and str(team.get("orchestrator_id") or "") not in selected:
                 continue
             team_id = str(team.get("id") or "")
             if team_id:
+                # Local publication ownership belongs to the durable journal,
+                # never to a portable snapshot or a destination workspace.
+                team = {key: value for key, value in team.items() if key != "_portability_task_id"}
                 teams.append({"id": team_id, "name": str(team.get("name") or team_id)})
                 team_payloads.append(
                     (f"teams/{team_id}.yaml", yaml.safe_dump(team, sort_keys=False).encode())
@@ -545,31 +787,96 @@ class PortabilityService:
             "teams": teams,
             "included": ["profile_directory"],
             "required_capabilities": [],
-            "required_environment": sorted(required_environment),
+            "required_environment": [] if shareable else sorted(required_environment),
             "credentials_included": False,
         }
+        if shareable:
+            manifest["snapshot_kind"] = "community-full-profile-v1"
         target.parent.mkdir(parents=True, exist_ok=True)
+        expanded_written = 0
         checksums: dict[str, dict[str, Any]] = {}
         with ZipFile(target, "w", ZIP_DEFLATED, compresslevel=6, allowZip64=True) as archive:
-            manifest_payload = (json.dumps(manifest, indent=2) + "\n").encode()
-            checksums["manifest.json"] = self._write_zip_payload(
-                archive, "manifest.json", manifest_payload, secrets
-            )
+            if not shareable:
+                manifest_payload = (json.dumps(manifest, indent=2) + "\n").encode()
+                checksums["manifest.json"] = self._write_zip_payload(
+                    archive, "manifest.json", manifest_payload, secrets
+                )
             for name, source in sorted(entries):
                 if source.name.lower() in SECRET_FILES:
-                    checksums[name] = self._write_zip_payload(
-                        archive,
-                        name,
-                        REDACTED + b"\n",
-                        secrets,
-                    )
+                    if not shareable:
+                        checksums[name] = self._write_zip_payload(
+                            archive, name, REDACTED + b"\n", secrets
+                        )
+                    continue
                 elif source.name == "config.yaml":
                     payload = self._sanitized_config(source)
-                    checksums[name] = self._write_zip_payload(archive, name, payload, secrets)
+                    if shareable:
+                        config = yaml.safe_load(payload) or {}
+                        if not isinstance(config, dict):
+                            raise StoreError("agent config is invalid", code="invalid_bundle")
+                        config.pop("mcp_servers", None)
+                        config.pop("providers", None)
+                        config.pop("fallback_providers", None)
+                        config.pop("tool_permissions", None)
+                        config.pop("permissions", None)
+                        config.pop("approved_tools", None)
+                        if isinstance(config.get("cron"), dict):
+                            config["cron"]["enabled"] = False
+                        if isinstance(config.get("mcp"), dict):
+                            config["mcp"]["enabled"] = False
+                        model = config.get("model")
+                        if isinstance(model, dict):
+                            model.pop("assignment_id", None)
+                            model.pop("base_url", None)
+                            model.pop("api_key", None)
+                        payload = yaml.safe_dump(config, sort_keys=False).encode()
+                    checksums[name] = self._write_zip_payload(
+                        archive, name, payload, set() if shareable else secrets
+                    )
+                elif shareable and source.name == "agent.json" and source.parent == profile:
+                    try:
+                        metadata = json.loads(source.read_text(encoding="utf-8"))
+                    except (OSError, ValueError) as error:
+                        raise StoreError("agent metadata is invalid", code="invalid_bundle") from error
+                    if not isinstance(metadata, dict):
+                        raise StoreError("agent metadata is invalid", code="invalid_bundle")
+                    metadata = {
+                        key: value for key, value in metadata.items()
+                        if key in {"name", "profile_name", "display_name", "title", "description"}
+                    }
+                    checksums[name] = self._write_zip_payload(
+                        archive, name, json.dumps(metadata).encode(), set()
+                    )
+                elif name.endswith("/state.db") and name.count("/") == 2:
+                    with tempfile.TemporaryDirectory(dir=self.transfer_root) as staging:
+                        snapshot = Path(staging) / "state.db"
+                        self._backup_state_db(source, snapshot)
+                        if shareable:
+                            self._validate_shareable_database(snapshot)
+                            snapshot_conversations = self._conversation_count(snapshot)
+                        else:
+                            self._reject_database_secrets(snapshot, secrets)
+                        checksums[name] = self._write_zip_file(archive, name, snapshot, set())
                 else:
-                    checksums[name] = self._write_zip_file(archive, name, source, secrets)
+                    checksums[name] = self._write_zip_file(
+                        archive, name, source, set() if shareable else secrets
+                    )
+                if shareable:
+                    expanded_written += checksums[name]["size"]
+                    if len(checksums) > MAX_FILES - 2 or expanded_written > MAX_EXPANDED:
+                        raise StoreError("snapshot expansion limits exceeded", code="invalid_bundle")
             for name, payload in sorted(team_payloads):
                 checksums[name] = self._write_zip_payload(archive, name, payload, secrets)
+            if shareable:
+                manifest["file_inventory"] = dict(sorted(checksums.items()))
+                manifest["excluded_paths"] = sorted(set(excluded_paths))
+                manifest["category_counts"] = self._shareable_category_counts(checksums)
+                manifest_payload = (json.dumps(manifest, indent=2) + "\n").encode()
+                if len(manifest_payload) > 4 * 1024 * 1024:
+                    raise StoreError("snapshot manifest is too large", code="invalid_bundle")
+                checksums["manifest.json"] = self._write_zip_payload(
+                    archive, "manifest.json", manifest_payload, set()
+                )
             archive.writestr("checksums.json", json.dumps(checksums, indent=2) + "\n")
         size = target.stat().st_size
         if size > MAX_COMPRESSED:
@@ -586,12 +893,37 @@ class PortabilityService:
                 or "team"
             )
             filename = f"xnobrain-team-{team_name}-{export_id[:8]}.zip"
+        inventory: dict[str, Any] | None = None
+        if shareable:
+            inventory = {
+                "included_categories": [
+                    "agent_profile",
+                    "conversation_history",
+                    "memory",
+                    "workspace_files",
+                ],
+                "excluded_categories": [
+                    "credentials",
+                    "provider_authority",
+                    "publisher_identity",
+                    "local_execution_state",
+                ],
+                "file_count": len(checksums) + 1,
+                "compressed_size_bytes": size,
+                "expanded_size_bytes": sum(item["size"] for item in checksums.values())
+                + len(json.dumps(checksums, indent=2).encode())
+                + 1,
+                "conversation_count": snapshot_conversations,
+                "category_counts": manifest["category_counts"],
+                "excluded_paths": manifest["excluded_paths"],
+            }
         return {
             "bundle_export_id": export_id,
             "filename": filename,
             "size": size,
             "sha256": self._hash_file(target),
             "created_at": created_at,
+            **({"inventory": inventory} if inventory is not None else {}),
         }
 
     def _validated_archive_file(self, path: Path) -> tuple[ZipFile, dict[str, ZipInfo], int]:
@@ -608,20 +940,22 @@ class PortabilityService:
             for info in archive.infolist():
                 raw = info.filename
                 path_value = PurePosixPath(raw)
+                mode = info.external_attr >> 16
+                if stat.S_ISLNK(mode) or (mode and stat.S_IFMT(mode) not in {0, stat.S_IFREG, stat.S_IFDIR}):
+                    raise StoreError("bundle contains unsupported file type", code="invalid_bundle")
                 raw_parts = raw.split("/")
                 control = any(ord(character) < 32 for character in raw)
                 drive = bool(re.match(r"^[A-Za-z]:", raw))
                 if (
                     path_value.is_absolute()
-                    or any(part in {"", ".", ".."} for part in raw_parts)
+                    or any(part in {"", ".", ".."} for part in raw_parts[:-1])
+                    or (not info.is_dir() and raw_parts[-1] in {"", ".", ".."})
                     or "\\" in raw
                     or control
                     or drive
                     or len(path_value.parts) > MAX_PATH_DEPTH
                 ):
                     raise StoreError("bundle contains an unsafe path", code="invalid_bundle")
-                if stat.S_ISLNK(info.external_attr >> 16):
-                    raise StoreError("bundle symlinks are forbidden", code="invalid_bundle")
                 if info.is_dir():
                     continue
                 key = raw.casefold()
@@ -629,6 +963,8 @@ class PortabilityService:
                     raise StoreError(
                         "bundle file count or uniqueness is invalid", code="invalid_bundle"
                     )
+                if info.compress_size > MAX_COMPRESSED:
+                    raise StoreError("bundle contains an oversized member", code="invalid_bundle")
                 if info.file_size > MAX_FILE_BYTES or (info.file_size and not info.compress_size):
                     raise StoreError("bundle contains an oversized file", code="invalid_bundle")
                 expanded += info.file_size
@@ -650,12 +986,17 @@ class PortabilityService:
                 or files["checksums.json"].file_size > 16 * 1024 * 1024
             ):
                 raise StoreError("bundle metadata is too large", code="invalid_bundle")
-            manifest = json.loads(archive.read("manifest.json"))
+            try:
+                manifest = json.loads(archive.read("manifest.json"))
+                checksums = json.loads(archive.read("checksums.json"))
+            except (ValueError, UnicodeError, BadZipFile) as error:
+                raise StoreError("bundle metadata is invalid", code="invalid_bundle") from error
+            if not isinstance(manifest, dict) or not isinstance(checksums, dict):
+                raise StoreError("bundle metadata is invalid", code="invalid_bundle")
             if manifest.get("format") != BUNDLE_FORMAT or manifest.get("version") != BUNDLE_VERSION:
                 raise StoreError("unsupported bundle format or version", code="invalid_bundle")
             if manifest.get("required_capabilities"):
                 raise StoreError("bundle requires unsupported capabilities", code="invalid_bundle")
-            checksums = json.loads(archive.read("checksums.json"))
             for name, info in files.items():
                 if name == "checksums.json":
                     continue
@@ -690,11 +1031,100 @@ class PortabilityService:
         # The root/default profile is also the parent of managed XNOBrain data,
         # so those nested stores remain outside the profile boundary to prevent
         # recursively exporting sibling profiles and transfer staging data.
+        if relative in {
+            Path(".portability-owner.json"),
+            Path(".community-clone-receipt.json"),
+            Path(".community-profile-owner.json"),
+        }:
+            return False
         if root_profile and relative.parts and relative.parts[0].lower() in ROOT_EXCLUDED_PARTS:
             return False
         if any(relative == subtree or subtree in relative.parents for subtree in managed_subtrees):
             return False
         return True
+
+    @staticmethod
+    def _shareable_excluded(relative: Path) -> bool:
+        parts = tuple(part.casefold() for part in relative.parts)
+        return bool(
+            parts
+            and (
+                parts[0] in {
+                    "conversation-runs", ".xnobrain", "transfers", "imports", "exports",
+                    "backups", "snapshots", "logs", "profiles", ".git", ".cache",
+                }
+                or (len(parts) == 1 and parts[0] in SHAREABLE_ROOT_AUTHORITY)
+                or parts[-1] in SECRET_FILES
+                or parts[-1] == ".community-profile-owner.json"
+                or parts[-1] == ".community-clone-receipt.json"
+                or parts[-1].startswith(".env.")
+                or any(
+                    part in {".ssh", ".aws", "credentials", ".kube", ".gnupg", ".config"}
+                    for part in parts
+                )
+            )
+        )
+
+    @staticmethod
+    def _shareable_category_counts(checksums: Mapping[str, Any]) -> dict[str, int]:
+        counts = {"history": 0, "guidance": 0, "skills": 0, "memory": 0, "workspace": 0, "profile": 0}
+        for name in checksums:
+            relative = name.split("/", 2)[-1]
+            if relative == "state.db":
+                category = "history"
+            elif relative in {"HERMES.md", "SOUL.md", "AGENTS.md"}:
+                category = "guidance"
+            elif relative.startswith("skills/"):
+                category = "skills"
+            elif relative.startswith(("memory/", "memories/")):
+                category = "memory"
+            elif relative.startswith("workspace/"):
+                category = "workspace"
+            else:
+                category = "profile"
+            counts[category] += 1
+        return counts
+
+    @staticmethod
+    def _conversation_count(path: Path) -> int:
+        with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as db:
+            if db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+            ).fetchone():
+                return int(db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0])
+        return 0
+
+    @staticmethod
+    def _validate_shareable_database(path: Path, *, detach_identity: bool = False) -> None:
+        try:
+            with sqlite3.connect(
+                path.resolve().as_uri() + ("?mode=rw" if detach_identity else "?mode=ro"), uri=True
+            ) as db:
+                if db.execute("PRAGMA integrity_check").fetchone() != ("ok",) or db.execute(
+                    "PRAGMA foreign_key_check"
+                ).fetchone() is not None:
+                    raise StoreError("snapshot history is invalid", code="invalid_bundle")
+                tables = db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+                for (table,) in tables:
+                    if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", table):
+                        raise StoreError("unsupported history schema", code="history_unshareable")
+                    columns = {row[1].casefold() for row in db.execute(f'PRAGMA table_info("{table}")')}
+                    if columns & {
+                        "owner_id",
+                        "workspace_id",
+                        "tenant_id",
+                        "organization_id",
+                        "principal_id",
+                        "api_key",
+                    }:
+                        raise StoreError("history contains publisher authority", code="history_unshareable")
+                    if detach_identity and table == "sessions":
+                        if "user_id" in columns:
+                            db.execute("UPDATE sessions SET user_id = NULL")
+                        if "source" in columns:
+                            db.execute("UPDATE sessions SET source = 'imported'")
+        except sqlite3.Error as error:
+            raise StoreError("snapshot history is invalid", code="invalid_bundle") from error
 
     def _validate_hermes_profiles(
         self,
@@ -773,7 +1203,7 @@ class PortabilityService:
         }
 
     def _reset_imported_profile(
-        self, profile: Path, supplied_environment: Mapping[str, str]
+        self, profile: Path, supplied_environment: Mapping[str, str], *, clone: bool = False
     ) -> None:
         config_path = profile / "config.yaml"
         config = {}
@@ -786,7 +1216,7 @@ class PortabilityService:
         if root_config_path.is_file():
             root_config = yaml.safe_load(root_config_path.read_text()) or {}
         if isinstance(root_config, dict):
-            if isinstance(root_config.get("providers"), dict):
+            if not clone and isinstance(root_config.get("providers"), dict):
                 config["providers"] = deepcopy(root_config["providers"])
             root_model = root_config.get("model")
             model = config.setdefault("model", {})
@@ -796,6 +1226,21 @@ class PortabilityService:
                         model[key] = deepcopy(root_model[key])
                     elif key == "assignment_id":
                         model.pop(key, None)
+        # Always bind a cloned profile to this Runtime's router. A portability
+        # ZIP must never select the publisher's URL or scoped workload key.
+        from ..integrations.llm_router_support import normalize_llm_router_config
+
+        # The archive's assignment is publisher-owned; only the receiving
+        # Runtime's root configuration may select one for this clone.
+        normalize_llm_router_config(config)
+        if clone:
+            if isinstance(config.get("mcp"), dict):
+                config["mcp"]["enabled"] = False
+            config.pop("mcp_servers", None)
+            for key in ("permissions", "tool_permissions", "approved_tools"):
+                config.pop(key, None)
+            if isinstance(config.get("cron"), dict):
+                config["cron"]["enabled"] = False
         config["approval_mode"] = "manual"
         approvals = config.setdefault("approvals", {})
         if isinstance(approvals, dict):
@@ -812,7 +1257,7 @@ class PortabilityService:
         for filename in SECRET_FILES:
             (profile / filename).unlink(missing_ok=True)
             source = self.root_profile / filename
-            if source.is_file():
+            if not clone and source.is_file():
                 shutil.copy2(source, profile / filename)
         if supplied_environment:
             env_path = profile / ".env"
@@ -994,6 +1439,39 @@ class PortabilityService:
             result[key] = value
         return result
 
+    @staticmethod
+    def _backup_state_db(source: Path, destination: Path) -> None:
+        try:
+            with sqlite3.connect(
+                source.resolve().as_uri() + "?mode=ro", uri=True, timeout=5
+            ) as live:
+                with sqlite3.connect(destination) as snapshot:
+                    live.backup(snapshot, pages=256, sleep=0.05)
+                    if (
+                        snapshot.execute("PRAGMA integrity_check").fetchone() != ("ok",)
+                        or snapshot.execute("PRAGMA foreign_key_check").fetchone() is not None
+                    ):
+                        raise StoreError("agent database snapshot is invalid", code="invalid_bundle")
+        except sqlite3.Error as error:
+            raise StoreError("agent database snapshot is unavailable", code="invalid_bundle") from error
+
+    @staticmethod
+    def _reject_database_secrets(snapshot: Path, secrets: set[bytes]) -> None:
+        known = tuple(value for value in secrets if len(value) >= 6)
+        if not known:
+            return
+        overlap = max(map(len, known)) - 1
+        previous = b""
+        with snapshot.open("rb") as file:
+            while chunk := file.read(1024 * 1024):
+                sample = previous + chunk
+                if any(value in sample for value in known):
+                    raise StoreError(
+                        "agent database contains credential material",
+                        code="invalid_bundle",
+                    )
+                previous = sample[-overlap:]
+
     def _write_zip_file(
         self, archive: ZipFile, name: str, source: Path, secrets: set[bytes]
     ) -> dict[str, Any]:
@@ -1014,12 +1492,14 @@ class PortabilityService:
         size = 0
         info = ZipInfo(name)
         info.compress_type = ZIP_DEFLATED
-        info.external_attr = 0o640 << 16
+        info.external_attr = 0o100640 << 16
         with archive.open(info, "w", force_zip64=True) as output:
             for chunk in self._redacted_chunks(source, secrets):
+                size += len(chunk)
+                if size > MAX_FILE_BYTES:
+                    raise StoreError("profile file is too large", code="oversized_profile_file")
                 output.write(chunk)
                 digest.update(chunk)
-                size += len(chunk)
         return {"sha256": digest.hexdigest(), "size": size}
 
     @staticmethod
@@ -1066,8 +1546,10 @@ class PortabilityService:
         size = 0
         with archive.open(info) as file:
             while chunk := file.read(1024 * 1024):
-                digest.update(chunk)
                 size += len(chunk)
+                if size > info.file_size or size > MAX_FILE_BYTES:
+                    raise StoreError("bundle expansion limits exceeded", code="invalid_bundle")
+                digest.update(chunk)
         return digest.hexdigest(), size
 
     @staticmethod
@@ -1077,6 +1559,13 @@ class PortabilityService:
             while chunk := file.read(1024 * 1024):
                 digest.update(chunk)
         return digest.hexdigest()
+
+    def _available_clone_id(self, source: str) -> str:
+        for _ in range(100):
+            candidate = f"{source[:110]}-{uuid.uuid4().hex[:8]}"
+            if not self.repository.profile_path(candidate).exists():
+                return candidate
+        raise StoreError("could not allocate a cloned profile id", status=409, code="collision")
 
     def _available_profile_id(self, source: str) -> str:
         if source == BIG_BROTHER_AGENT_ID:
@@ -1152,10 +1641,16 @@ class PortabilityService:
             path.unlink(missing_ok=True)
 
     def _cleanup_transfers(self) -> None:
+        with self.task_store.publication_lock():
+            self._cleanup_unpinned_transfers()
+
+    def _cleanup_unpinned_transfers(self) -> None:
         cutoff = datetime.now(timezone.utc).timestamp() - TRANSFER_TTL_SECONDS
         for root in (self.upload_root, self.export_root):
             for directory in root.iterdir():
                 try:
+                    if root == self.upload_root and self.task_store.pinned(directory.name):
+                        continue
                     if directory.is_dir() and directory.stat().st_mtime < cutoff:
                         shutil.rmtree(directory)
                 except OSError:

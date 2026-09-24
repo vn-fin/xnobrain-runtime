@@ -16,15 +16,22 @@ grouped by feature:
 JSON responses use `{success,data,message,status_code}`. SSE sends structured
 Hermes lifecycle objects and terminates with `data: [DONE]`.
 
-Conversation runs accept an optional request-scoped `attachment` on
-`POST /xnobrain/api/runtime/v1/sessions/{id}/runs`. The current sketch
-contract is `{kind:"diagram", filename:"sketch.xml", mime_type:"application/xml",
-content}` with a `flowchart` XML root of boxes and arrows. Runtime validates
-size and XML, then merges the XML into the model prompt. The UI must not put
-the XML in `input`. Text-only mixed-version requests omit `attachment`.
+Conversation runs accept an optional request-scoped `attachment` or
+`attachments` list on `POST /xnobrain/api/runtime/v1/sessions/{id}/runs`.
+Each sketch is `{kind:"diagram", filename, mime_type:"application/xml",
+content}` with XML root `mindmap`. Legacy unversioned XML contains one rooted
+hierarchy (`parent`, `order`, optional `collapsed="true"`). Version 2 may also
+contain up to 80 directed references as
+`<edge id="…" source="…" target="…" />`; an edge may also carry eight comma-separated `points` offsets for four draggable corners, each bounded to ±1000; hierarchy connectors remain implicit.
+A `flowchart` root is malformed. Filenames are `mindmap.xml` or `sketch.xml`, with `-2` and later
+for extra files; `flowchart.xml` still matches the filename pattern but its
+content must be a mind map. At most eight diagrams per run.
+Runtime validates size and XML, then merges each XML into the model prompt in order. Mind maps
+are prefixed with `User mind map (hierarchy with optional directed references):`. The UI must not put the XML in `input`.
+Text-only mixed-version requests omit `attachment` and `attachments`.
 `FT_ENABLE_COMPOSER_SKETCH` defaults on. Disabled runtimes return `404`
-`feature_disabled`. Malformed XML is `422`; oversized graphs are `413`.
-The attachment is never forwarded as an unknown Hermes field.
+`feature_disabled`. Malformed XML is `422`; unsupported explicit versions are `422` `attachment_unsupported`; oversized graphs are `413`.
+Attachments are never forwarded as unknown Hermes fields.
 
 
 The namespace and current version are defined once in
@@ -88,6 +95,38 @@ of failing the run. Supported reasoning values come from provider model
 metadata and may include `none`, `minimal`, `xhigh`, `max`, and `ultra` in
 addition to `low`, `medium`, and `high`.
 
+## Private Community full-profile snapshot transport
+
+`POST /xnobrain/api/runtime/v1/community/snapshots/{agent_id}/export` has an empty
+request and streams `application/zip`; `X-Snapshot-SHA256` is the lowercase
+SHA-256 of the exact ZIP, `X-Snapshot-Size` its byte count, and
+`X-Snapshot-Inventory` a content-free JSON summary (categories, counts, sizes,
+conversation count, excluded paths). Export requires a named profile with a
+durable `.community-profile-owner.json` principal/tenant/organization binding
+matching the verified caller; existing unbound profiles and Big Brother fail
+closed. It requires `config.yaml`, a consistent `state.db`, `HERMES.md`, and
+`workspace/AGENTS.md`. Manifest `snapshot_kind=community-full-profile-v1`
+contains an exact checked `file_inventory`, `excluded_paths`, and category
+counts; the outer ZIP SHA-256 cannot be embedded in its own bytes. Credentials
+and local authorization files are excluded, but conversation content—including
+secrets inside chat—is copied unchanged after explicit Control confirmation.
+
+`POST /xnobrain/api/runtime/v1/community/snapshots/import` streams the exact ZIP
+with `Content-Type: application/zip` and private signed headers
+`X-XnoBrain-Community-Snapshot-SHA256`, `-Size`, and `-Idempotency-Key`.
+The signature binds the verified principal, exact method/path, archive digest,
+decimal size, and operation ID; imported bytes must match both claims. Runtime
+validates the ZIP and staged SQLite, detaches publisher session identity, resets
+approvals, cron, MCP grants and Router settings, then atomically creates a
+distinct receiving profile bound to the verified caller. The response is HTTP
+201 with `data.agent_id_mappings`, `data.sha256`, and `data.size` (bytes). The
+same verified recipient, operation ID, and archive replay the existing profile;
+different bytes or a conflicting marker return an error without overwriting
+data. Both routes require a verified Control principal and exact private snapshot
+HMAC assertion translated through the node gateway. The public Control Runtime
+wildcard must deny these paths; these routes are not browser APIs and cannot be
+used to bypass publisher consent, S3 validation or listing policy.
+
 ## Safe marketplace package export
 
 `POST /xnobrain/api/runtime/v1/marketplace/agents/{agent_id}/export` builds a
@@ -103,7 +142,11 @@ material.
 The export allowlist contains required `SOUL.md` and `workspace/AGENTS.md`,
 enabled skill `SKILL.md` files, and UTF-8 regular files in each skill's
 `references/`, `scripts/`, and `assets/` directories with approved extensions.
-Only display name, description, model slot, and reasoning effort are copied
+Exact category-level `DESCRIPTION.md` packaging metadata below `skills/` is
+validated and omitted; it is never included in the package or digest. Other
+visible files outside a discovered skill package fail with HTTP 422 and code
+`marketplace_export_unsupported_skill_file`. Only display name, description,
+model slot, and reasoning effort are copied
 from profile configuration/metadata. Tool and MCP names are declarations; MCP
 URLs, commands, headers, environment and other connection details are not
 exported. Runtime grants no requested permission as a side effect of export.
@@ -298,13 +341,15 @@ Consumers must use returned `local_profile_id`, not derive it from installation 
 ## Calendar schedule preview (Time Control foundation)
 
 `POST /xnobrain/api/runtime/v1/cron/schedule-preview` accepts a five-field `schedule`,
-IANA `timezone`, optional offset-aware `after`, and `count` (1–20, default 5).
+optional IANA `timezone`, optional offset-aware `after`, and `count` (1–20, default 5).
+When omitted, the workspace scheduler's effective local IANA timezone is used.
 Returns UTC/local occurrences and `dst_policy=skip_gap_earlier_fold`. It performs
 no job creation or timezone mutation. `executor_parity_verified=false` explicitly
 means local scheduler integration is still pending; preview is not execution proof.
 
 Cron blueprint instantiation (`POST /xnobrain/api/runtime/v1/cron/blueprints/instantiate`)
-accepts optional `timezone` (available IANA identifier, default `Etc/UTC`). Calendar
+accepts optional `timezone` (available IANA identifier). When omitted, the
+workspace scheduler's effective local IANA timezone is used. Calendar
 blueprints persist the versioned per-job timezone/DST binding before native first-run
 computation, matching direct cron creation. Interval/absolute schedules retain native
 semantics. Ambiguous names such as CST reject before blueprint filling. The workspace
@@ -313,6 +358,7 @@ or organization default and explicit preview/confirmation UI remain separate wor
 Direct cron creation rejects simultaneous `interval_minutes` and `schedule` with
 HTTP 422 instead of silently preferring the interval. Calendar expression input is
 bounded to 256 characters. Existing interval-only and schedule-only shapes remain.
+The optional `timezone` is resolved by the workspace scheduler when omitted.
 
 Explicit-zone calendar evaluation rejects random (`R`) and hashed (`H`) cron fields:
 preview and execution must use deterministic calendar expressions. Ordinary named
@@ -412,7 +458,8 @@ not imply public sharing, organization apps or executable custom components.
 
 `POST .../custom-page/schedules/preview` is a read-only preview of an active named
 `action_id` and the owner's existing Personal `conversation_id`. It requires
-`expected_revision`, a five-field `schedule`, explicit IANA `timezone`,
+`expected_revision`, a five-field `schedule`, and an optional IANA `timezone`;
+when omitted, the workspace scheduler's effective local IANA timezone is used.
 `payer_kind: "personal"`, `timeout_seconds` (10–300), and `max_runs` (1–100).
 The result binds the action/page digests and verified owner, returns five UTC/local
 occurrences and the existing `skip_gap_earlier_fold` policy. It also discloses a
@@ -970,3 +1017,105 @@ not `waitpid(-1)` across unrelated Teams subprocesses. Teams use standard `Popen
 with an asynchronously awaited communication thread, avoiding the observed
 uvloop child-launch SIGSEGV in the multithreaded gRPC host. Cancellation and
 timeout terminate/reap the child before publishing a terminal state.
+
+### Asynchronous profile snapshot tasks
+
+New clients use the additive task contract under `/xnobrain/api/runtime/v1/bundles`:
+
+- `POST /export-tasks`: `{agent_ids, team_ids, include_conversations?}`; optional
+  `Idempotency-Key`. Returns the persisted task in the standard envelope with 202.
+- `POST /import-tasks`: `{upload_id, environment?}` and required `Idempotency-Key`.
+  The upload must have completed the existing chunk/preview workflow. Replays
+  return the original task (202 while active, 200 when terminal); changed request
+  options with the same scoped key return 409.
+- `GET /tasks?limit=50&cursor=...` and `GET /tasks/{task_id}` provide authoritative
+  state: `PENDING`, `PROCESSING`, `COMPLETED`, or `FAILED`, with monotonic revision,
+  timestamps, safe error, and terminal result.
+- Completed exports expose their download descriptor. Use the returned same-origin
+  `download_parts_url_template`, currently `/bundles/task-exports/{export_id}/parts/{part_number}`.
+  Part responses preserve `X-Part-SHA256` and chunk metadata. Explicit deletion is
+  `DELETE /task-exports/{export_id}`. Expired/deleted artifacts return 410; receipts
+  remain available. Legacy `/exports` endpoints are unchanged.
+- `/events/stream` emits `bundle.task.updated` after durable transitions. Task event
+  payloads include `event_id`, task ID, revision, status, and result/error. Existing
+  connection-local SSE IDs are not durable replay cursors: reconcile task reads
+  after reconnect and deduplicate by task/revision.
+
+Managed task access requires the Control-verified principal. Browser authority
+fields do not select ownership. Tasks are scoped to the verified actor within the
+workspace's persistent Runtime storage. The queue and import journal live in
+`DATA_DIR/portability.sqlite3`, separate from upstream databases. Multiple API
+replicas must route to the same exclusive workspace owner; separate active-active
+Runtime disks are unsupported. Preserve the database and staged files together
+when relocating or restoring a workspace.
+
+Import keys are retained with task receipts. A FAILED replay does not restart the
+import. `import_recovery_required` preserves pinned inputs and journal evidence;
+do not delete the database or resubmit with a fresh key to bypass it. Accepted
+work continues after browser disconnect. Cancelling a download does not cancel
+the server task or delete its artifact. Default export retention is 24 hours.
+
+Task admission uses `RUNTIME_PORTABILITY_QUEUE_LIMIT` (default 100 active tasks)
+ and `RUNTIME_PORTABILITY_MIN_FREE_BYTES` (default 268435456 bytes). Values must be
+positive integers. Queue/disk pressure returns 429 with `Retry-After: 5`; clients
+must retain their original idempotency key. These admission guards supplement,
+not replace, existing archive compressed/expanded size and file-count limits.
+
+Publication-lock contention is bounded: a contending request waits at most about
+100 ms for that lock before returning 429 `task_storage_busy`; it does not wait
+for another archive's complete publication. Retain the idempotency key on retry.
+Successful chunk reads renew a persistent 120-second download grace period.
+Explicit artifact deletion returns 409 while a reader lease is active, and expiry
+cleanup defers until that grace period ends.
+
+
+The first task schema initialization is atomic with its persistent fingerprint
+secret and version. Startup rejects a database version newer than this Runtime.
+Schema failure cannot leave an accepted queue row, partial new schema, or a
+rotated idempotency secret.
+
+A pre-publication import failure is reported as `import_failed`; the same key
+still returns that FAILED receipt. Its upload pin is released and private staging
+and environment input are eligible for cleanup. A different-key retry is a new
+explicit operation, never an automatic replay. Once a PREPARED publication intent
+exists, failure is `import_recovery_required`: input and journal stay pinned and
+uncommitted targets stay hidden pending reconciliation. Cleanup errors are logged
+without storage paths and do not stop queue execution.
+
+The UI uses the immutable completed upload ID as its import Idempotency-Key, scoped
+by the server's verified actor/workspace. Retrying that upload after a view remount
+uses the same identity without persisting environment values in browser storage.
+Changed options under that identity produce a conflict rather than a second task.
+A separately uploaded archive is a distinct operation, not a retry of that upload.
+
+Import ownership markers are local recovery metadata and excluded from subsequent
+portable archives. Team get/update/delete and live-profile resolution reject
+uncommitted journal targets; these checks are not a substitute for filesystem
+permissions or exclusive workspace ownership.
+
+### Conversation run outcome history
+
+`GET /xnobrain/api/runtime/v1/sessions/{conversation_id}/runs?agent={agent_id}&limit=20&cursor=...`
+returns the normal envelope with `data.runs` and nullable `data.next_cursor`.
+Limits must be 1–100. Records are ordered newest-first by `(created_at, id)`;
+cursors are scoped to agent and conversation and do not grant authorization.
+Only public run identity, lifecycle timestamps/status, mode, timeout, revision,
+sanitary error text, and nullable `user_message_id` are returned; prompts,
+internal routing/ownership objects, tool output, and credentials are excluded.
+Current records without authoritative message correlation return null; consumers
+must display a run-level notice rather than guess a message association.
+A full final page may return a cursor followed by an empty final page.
+Legacy `event: error` frames become durable failed runs; late duplicate terminal
+events cannot overwrite the established terminal outcome. History is read-only.
+
+### Installed skill file browsing
+
+`GET /agents-workspaces/{agent_id}?scope=skills&path=<relative>` lists files
+beneath the selected profile's `skills/`. `GET /agents-workspaces/{agent_id}/file?scope=skills&path=<relative>`
+serves a skill file for preview/download. These paths share the existing
+`/xnobrain/api/runtime/v1` namespace and authenticated Control routing.
+Skill scope is read-only; mutation endpoints retain workspace-only semantics.
+Absolute paths, traversal and symlink paths are rejected. No profile-root,
+config, credential, memory or session browsing is exposed by this scope.
+The browser presents virtual `workspace` and `skills` roots; virtual prefixes
+are removed by its API adapter, not treated as disk paths.

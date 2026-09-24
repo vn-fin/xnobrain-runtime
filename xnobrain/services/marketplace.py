@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
+import io
 import json
 import os
 import re
 import stat
 import tempfile
+import tokenize
 from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
@@ -17,7 +20,7 @@ import yaml
 
 from .base import ServiceError
 
-_SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_SAFE = re.compile(r"^[A-Za-z_][A-Za-z0-9._-]{0,127}$")
 _SAFE_REFERENCE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 _SECRET_PATTERNS = (
     re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----"),
@@ -106,8 +109,8 @@ class MarketplaceService:
             required=True,
         )
         credential_values = self._credential_values(profile, config)
-        self._reject_secret_content(soul, credential_values)
-        self._reject_secret_content(instructions, credential_values)
+        self._reject_secret_content(soul, credential_values, "SOUL.md")
+        self._reject_secret_content(instructions, credential_values, "workspace/AGENTS.md")
 
         files = [
             self._manifest("SOUL.md", soul, "soul"),
@@ -249,8 +252,15 @@ class MarketplaceService:
                 or self._excluded(path.relative_to(root))
             ):
                 continue
-            if not any(skill_dir in path.parents for skill_dir in skill_directories):
-                self._reject_export()
+            if any(skill_dir in path.parents for skill_dir in skill_directories):
+                continue
+            relative = path.relative_to(root)
+            # Validate every visible orphan before deciding whether it is safe to
+            # omit. This keeps malformed paths fail-closed even for metadata.
+            self._safe_relative(relative)
+            if self._is_category_description(root, path):
+                continue
+            self._reject_unsupported_skill_file()
         skills: dict[str, str] = {}
         assets: dict[str, str] = {}
         files: list[dict[str, Any]] = []
@@ -267,7 +277,7 @@ class MarketplaceService:
                 if (parent / "SKILL.md").is_file():
                     self._reject_export()
             content = self._read_public_text(root, relative_skill / "SKILL.md", required=True)
-            self._reject_secret_content(content, credential_values)
+            self._reject_secret_content(content, credential_values, skill_file.as_posix())
             self._add_unique(folded, f"skills/{skill_ref}/SKILL.md")
             skills[skill_ref] = content
             files.append(self._manifest(f"skills/{skill_ref}/SKILL.md", content, "skill"))
@@ -284,7 +294,7 @@ class MarketplaceService:
                 package_path = f"skills/{skill_ref}/{safe_relative}"
                 self._add_unique(folded, package_path)
                 text = self._read_public_text(skill_dir, relative, required=True)
-                self._reject_secret_content(text, credential_values)
+                self._reject_secret_content(text, credential_values, path.as_posix())
                 assets[package_path] = text
                 kind = {"references": "reference", "scripts": "script", "assets": "asset"}[parts[0]]
                 files.append(self._manifest(package_path, text, kind))
@@ -317,6 +327,17 @@ class MarketplaceService:
         return any(
             part.casefold() in _EXCLUDED_PARTS or part.startswith(".") for part in path.parts
         )
+
+    @staticmethod
+    def _is_category_description(root: Path, path: Path) -> bool:
+        if path.name != "DESCRIPTION.md" or path.parent == root:
+            return False
+        current = path.parent
+        while current != root:
+            if (current / "SKILL.md").is_file():
+                return False
+            current = current.parent
+        return True
 
     @staticmethod
     def _add_unique(folded: set[str], path: str) -> None:
@@ -548,10 +569,53 @@ class MarketplaceService:
         return count
 
     @staticmethod
-    def _reject_secret_content(content: str, credential_values: set[str]) -> None:
-        if any(pattern.search(content) for pattern in _SECRET_PATTERNS) or any(
-            value in content for value in credential_values
-        ):
+    def _reject_secret_content(content: str, credential_values: set[str], path: str) -> None:
+        detected = any(pattern.search(content) for pattern in _SECRET_PATTERNS[:3])
+        detected = detected or any(value in content for value in credential_values)
+        if path.endswith(".py"):
+            try:
+                tree = ast.parse(content)
+            except SyntaxError:
+                # A malformed script is not a reason to skip credential checks.
+                detected = detected or bool(_SECRET_PATTERNS[3].search(content))
+            else:
+                for token in tokenize.generate_tokens(io.StringIO(content).readline):
+                    if token.type == tokenize.COMMENT:
+                        detected = detected or bool(_SECRET_PATTERNS[3].search(token.string))
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                        detected = detected or bool(_SECRET_PATTERNS[3].search(node.value))
+                    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
+                        value = node.value
+                        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                    elif isinstance(node, ast.keyword):
+                        value, targets = node.value, [node.arg]
+                    elif isinstance(node, ast.Dict):
+                        for key, value in zip(node.keys, node.values):
+                            if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                                detected = detected or MarketplaceService._sensitive_literal(
+                                    key.value, value
+                                )
+                        continue
+                    else:
+                        continue
+                    for target in targets:
+                        name = (
+                            target
+                            if isinstance(target, str)
+                            else (
+                                target.attr
+                                if isinstance(target, ast.Attribute)
+                                else target.id
+                                if isinstance(target, ast.Name)
+                                else None
+                            )
+                        )
+                        if name and MarketplaceService._sensitive_literal(name, value):
+                            detected = True
+        else:
+            detected = detected or bool(_SECRET_PATTERNS[3].search(content))
+        if detected:
             raise ServiceError(
                 "marketplace export rejected credential-like public content",
                 status=422,
@@ -559,11 +623,28 @@ class MarketplaceService:
             )
 
     @staticmethod
+    def _sensitive_literal(name: str, value: ast.expr) -> bool:
+        return bool(
+            re.search(r"(?i)(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)", name)
+            and isinstance(value, ast.Constant)
+            and isinstance(value.value, str)
+            and len(value.value) >= 12
+        )
+
+    @staticmethod
     def _reject_export() -> None:
         raise ServiceError(
             "marketplace export rejected unsafe profile content",
             status=422,
             code="marketplace_export_rejected",
+        )
+
+    @staticmethod
+    def _reject_unsupported_skill_file() -> None:
+        raise ServiceError(
+            "marketplace export found unsupported skill-tree content",
+            status=422,
+            code="marketplace_export_unsupported_skill_file",
         )
 
     @staticmethod

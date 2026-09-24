@@ -112,12 +112,27 @@ def _endpoint(handlers: Any, route: Route):
 
         async def endpoint(request: Request) -> Response:
             return await handlers.workspace_workbook(request)
+    elif route.special == "community_snapshot":
+
+        async def endpoint(request: Request) -> Response:
+            return await handlers.community_snapshot(request)
     elif route.special == "bundle_export":
 
         async def endpoint(request: Request, body=Body(...)) -> Response:
             return await handlers.bundle_export(request, body.model_dump(exclude_unset=True))
 
         endpoint.__annotations__["body"] = route.body
+    elif route.special == "bundle_task":
+        if route.body is not None:
+
+            async def endpoint(request: Request, body=Body(...)) -> Response:
+                return await handlers.bundle_task(request, body.model_dump(exclude_unset=True))
+
+            endpoint.__annotations__["body"] = route.body
+        else:
+
+            async def endpoint(request: Request) -> Response:
+                return await handlers.bundle_task(request, {})
     elif route.special == "bundle_upload":
 
         async def endpoint(request: Request) -> Response:
@@ -189,6 +204,7 @@ def setup_routes(app: Any, handlers: Any) -> None:
             "workspace_file",
             "workspace_preview",
             "workspace_workbook",
+            "community_snapshot",
             "bundle_export",
             "bundle_upload",
             "bundle_part",

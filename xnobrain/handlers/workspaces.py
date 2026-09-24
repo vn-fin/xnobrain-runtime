@@ -8,6 +8,7 @@ from fastapi import Request
 from fastapi.responses import FileResponse, Response
 
 from ..services import EXPECTED_ERRORS
+from ..services.skill_files import skill_path
 from ..services.workspace_upload import WORKSPACE_UPLOAD_CHUNK_BYTES
 
 
@@ -74,10 +75,18 @@ class WorkspaceHandlers:
 
     async def workspace_file(self, request: Request) -> Response:
         try:
-            source = self.service.workspace_file(
-                request.path_params["agent_id"],
-                request.query_params.get("path"),
-            )
+            if request.query_params.get("scope") == "skills":
+                source = skill_path(
+                    self.service.agents,
+                    request.path_params["agent_id"],
+                    request.query_params.get("path", ""),
+                    file=True,
+                )
+            else:
+                source = self.service.workspace_file(
+                    request.path_params["agent_id"],
+                    request.query_params.get("path"),
+                )
             return FileResponse(
                 source,
                 filename=source.name,

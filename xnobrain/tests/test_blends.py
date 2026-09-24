@@ -100,6 +100,30 @@ class LocalBlendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second["model"], "anthropic/deep")
         self.assertFalse(any(path.startswith("/api/") for _, path, _ in self.router.requests))
 
+    async def test_fallback_exposes_all_members_in_priority_order(self):
+        created = await self.service.create_blend(
+            {"name": "fallback", "models": ["openai/fast", "anthropic/deep"]}
+        )
+        route = await self.router.resolve_blend_route(created["name"], "hello")
+        self.assertEqual(route["model"], "openai/fast")
+        self.assertEqual(route.get("candidates"), ["openai/fast", "anthropic/deep"])
+
+    async def test_round_robin_honors_sticky_limit_across_client_restarts(self):
+        await self.service.create_blend(
+            {
+                "name": "sticky",
+                "models": ["openai/fast", "anthropic/deep"],
+                "strategy": "round-robin",
+                "sticky_limit": 3,
+            }
+        )
+        selected = []
+        for _ in range(7):
+            router = _Router(self.data_dir)
+            route = await router.resolve_blend_route("sticky", "hello")
+            selected.append(route["model"])
+        self.assertEqual(selected, ["openai/fast"] * 3 + ["anthropic/deep"] * 3 + ["openai/fast"])
+
     async def test_smart_route_uses_only_inference_endpoint(self):
         created = await self.service.create_blend(
             {

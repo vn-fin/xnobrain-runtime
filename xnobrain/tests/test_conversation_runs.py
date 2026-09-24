@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from xnobrain.repositories import FileRepository
+from xnobrain.services.base import ServiceError
 from xnobrain.services.conversation_runs import ConversationRunService
 
 
@@ -61,7 +62,6 @@ class FakeAnalytics:
 
     async def require_execution_budget(self, agent_id: str, **_: object) -> None:
         self.calls.append(agent_id)
-
 
 
 class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -506,18 +506,44 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
             "cancellation_pending",
         )
 
-    async def test_diagram_attachment_merges_into_message_and_is_stripped(self) -> None:
+    async def test_flowchart_attachment_is_rejected_before_the_run(self) -> None:
         xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<flowchart>\n"
             '  <node id="n1" x="0" y="0">Start</node>\n'
             "</flowchart>\n"
         )
+        with self.assertRaises(ServiceError) as error:
+            await self.service.start_run(
+                "agent-one",
+                "session-one",
+                {
+                    "input": "Describe this flow",
+                    "attachment": {
+                        "kind": "diagram",
+                        "filename": "sketch.xml",
+                        "mime_type": "application/xml",
+                        "content": xml,
+                    },
+                },
+            )
+        self.assertEqual(error.exception.status, 422)
+        self.assertEqual(error.exception.code, "attachment_malformed")
+        self.assertNotIn("message", self.agents.received)
+
+    async def test_mindmap_attachment_merges_with_tree_label(self) -> None:
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<mindmap>\n"
+            '  <node id="n1">Root</node>\n'
+            '  <node id="n2" parent="n1" order="0">Child</node>\n'
+            "</mindmap>\n"
+        )
         record = await self.service.start_run(
             "agent-one",
             "session-one",
             {
-                "input": "Describe this flow",
+                "input": "Plan this",
                 "attachment": {
                     "kind": "diagram",
                     "filename": "sketch.xml",
@@ -528,18 +554,65 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.agents.release.set()
         await self.wait_for_revision(record["id"], 2)
-        self.assertIn("<flowchart>", self.agents.received["message"])
-        self.assertIn("Describe this flow", self.agents.received["message"])
+        self.assertIn(
+            "User mind map (hierarchy with optional directed references):",
+            self.agents.received["message"],
+        )
+        self.assertIn("<mindmap>", self.agents.received["message"])
+        self.assertIn("Plan this", self.agents.received["message"])
         self.assertNotIn("attachment", self.agents.received)
 
     async def test_text_only_run_ignores_missing_attachment(self) -> None:
-        record = await self.service.start_run(
-            "agent-one", "session-one", {"input": "hello only"}
-        )
+        record = await self.service.start_run("agent-one", "session-one", {"input": "hello only"})
         self.agents.release.set()
         await self.wait_for_revision(record["id"], 2)
         self.assertEqual(self.agents.received["input"], "hello only")
         self.assertNotIn("attachment", self.agents.received)
+
+    async def test_multiple_diagram_attachments_merge_in_order(self) -> None:
+        first = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<mindmap>\n"
+            '  <node id="n1">First</node>\n'
+            "</mindmap>\n"
+        )
+        second = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<mindmap>\n"
+            '  <node id="n1">Second</node>\n'
+            "</mindmap>\n"
+        )
+        record = await self.service.start_run(
+            "agent-one",
+            "session-one",
+            {
+                "input": "Use both",
+                "attachments": [
+                    {
+                        "kind": "diagram",
+                        "filename": "mindmap.xml",
+                        "mime_type": "application/xml",
+                        "content": first,
+                    },
+                    {
+                        "kind": "diagram",
+                        "filename": "mindmap-2.xml",
+                        "mime_type": "application/xml",
+                        "content": second,
+                    },
+                ],
+            },
+        )
+        self.agents.release.set()
+        await self.wait_for_revision(record["id"], 2)
+        message = self.agents.received["message"]
+        self.assertLess(message.index("Use both"), message.index("First"))
+        self.assertLess(message.index("First"), message.index("Second"))
+        self.assertEqual(
+            message.count("User mind map (hierarchy with optional directed references):"), 2
+        )
+        self.assertNotIn("attachment", self.agents.received)
+        self.assertNotIn("attachments", self.agents.received)
 
 
 if __name__ == "__main__":

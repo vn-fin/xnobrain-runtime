@@ -54,12 +54,15 @@ AGENT_ACTIVITY_KANBAN_TTL_SECONDS = 10.0
 
 class AgentsServiceMixin:
     def list_profiles(self) -> list[dict[str, Any]]:
-        """Use Hermes' native profile inventory, including the default profile."""
-        from hermes_cli.profiles import list_profiles
+        """Inventory configured Runtime roots, including the default profile."""
+        from ..integrations.profile_inventory import list_profile_inventory
 
         registry = {item["name"]: item for item in self.agents.sync_profiles_registry()["profiles"]}
         result = []
-        for item in list_profiles():
+        for item in list_profile_inventory(self.agents, registry):
+            store = getattr(self.repository, "portability_task_store", None)
+            if store is not None and not store.resource_visible("PROFILE", item.name):
+                continue
             updated_at = item.path.stat().st_mtime if item.path.exists() else None
             metadata = registry.get(item.name, {})
             result.append(
@@ -300,7 +303,7 @@ class AgentsServiceMixin:
             )
         return identifier[:64].rstrip("-")
 
-    def create_agent(self, body: Mapping[str, Any]) -> dict[str, Any]:
+    def create_agent(self, body: Mapping[str, Any], *, trusted_context: Any = None) -> dict[str, Any]:
         display_name = " ".join(str(body.get("display_name") or body.get("name") or "").split())
         if not display_name:
             raise ServiceError("display_name is required")
@@ -312,7 +315,26 @@ class AgentsServiceMixin:
         }
         if "description" in body:
             payload["description"] = body["description"]
-        raw, _ = self.agents.create_agent(payload)
+        if getattr(trusted_context, "subject", ""):
+            profile = self.repository.profile_path(payload["name"])
+            if profile.exists():
+                from ..services.portability import PortabilityService
+
+                marker = profile / ".community-profile-owner.json"
+                try:
+                    stored = json.loads(marker.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    stored = None
+                if stored != PortabilityService.owner_record(trusted_context):
+                    raise ServiceError("agent ownership is unavailable", status=403, code="permission_denied")
+        raw, status = self.agents.create_agent(payload)
+        if status == 201 and getattr(trusted_context, "subject", ""):
+            from ..services.portability import PortabilityService
+
+            self.repository.atomic_json(
+                self.repository.profile_path(raw["name"]) / ".community-profile-owner.json",
+                PortabilityService.owner_record(trusted_context),
+            )
         self._cache.invalidate("agents")
         return self._agent_dto(raw)
 

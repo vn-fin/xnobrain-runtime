@@ -19,6 +19,9 @@ class ProfileRepositoryMixin:
     def live_profile_path(self, agent_id: Any) -> Path:
         """Resolve existing writer presence without relocating legacy run storage."""
         identifier = self._id(agent_id, "agent id")
+        store = getattr(self, "portability_task_store", None)
+        if store is not None and not store.resource_visible("PROFILE", identifier):
+            raise StoreError("agent not found", status=404, code="not_found")
         if identifier == "big-brother" and self.root_profile is not None:
             path = self.root_profile
         else:
@@ -29,6 +32,9 @@ class ProfileRepositoryMixin:
 
     def profile_path(self, agent_id: Any) -> Path:
         agent_id = self._id(agent_id, "agent id")
+        store = getattr(self, "portability_task_store", None)
+        if store is not None and not store.resource_visible("PROFILE", agent_id):
+            raise StoreError("agent not found", status=404, code="not_found")
         candidate = (self.profiles_root / agent_id).resolve()
         if candidate.parent != self.profiles_root:
             raise StoreError("agent path escapes profiles root")

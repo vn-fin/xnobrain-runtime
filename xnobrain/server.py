@@ -17,6 +17,9 @@ def create_app():
     # Configure before middleware registration as `app` is imported at module
     # load by both the source reloader and compiled entrypoint.
     configure_logging()
+    from .agent_layout import configure_layout
+
+    configure_layout()
     from hermes_cli.web_server import app
 
     from .app import XNOBrainApplication
@@ -115,7 +118,7 @@ def main() -> None:
         host=host,
         port=port,
         reload=reload_enabled,
-        reload_dirs=[os.path.dirname(os.path.dirname(__file__))] if reload_enabled else None,
+        reload_dirs=[os.path.dirname(__file__)] if reload_enabled else None,
         reload_excludes=["node_modules", "node_modules/*"] if reload_enabled else None,
         timeout_graceful_shutdown=reload_shutdown_timeout,
         log_config=None,

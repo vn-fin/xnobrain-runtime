@@ -128,8 +128,25 @@ install_apt_packages() {
   sudo debconf-set-selections <<'EOF'
 ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true
 EOF
-  sudo apt-get -o Acquire::Retries=5 update
-  sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends "${packages[@]}"
+  # Ubuntu's ARM archive endpoint intermittently drops long HTTP package
+  # transfers behind Colima NAT. Use HTTPS and retry the whole transaction;
+  # Acquire::Retries only retries individual downloads and can still leave a
+  # large install with dozens of failed archives.
+  if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+    sudo sed -i 's|http://ports.ubuntu.com/ubuntu-ports|https://ports.ubuntu.com/ubuntu-ports|g' \
+      /etc/apt/sources.list.d/ubuntu.sources
+  fi
+  local apt_args=(-o Acquire::Retries=10 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60)
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if sudo apt-get "${apt_args[@]}" update &&
+      sudo DEBIAN_FRONTEND=noninteractive apt-get "${apt_args[@]}" install -y --no-install-recommends "${packages[@]}"; then
+      return 0
+    fi
+    echo "apt package installation failed (attempt $attempt/5); retrying in 10s" >&2
+    sleep 10
+  done
+  return 1
 }
 
 install_dnf_packages() {
@@ -159,11 +176,15 @@ fi
 # partial installation.
 export PIP_RETRIES="${PIP_RETRIES:-5}"
 export PIP_TIMEOUT="${PIP_TIMEOUT:-30}"
-export npm_config_fetch_retries="${npm_config_fetch_retries:-5}"
+export npm_config_fetch_retries="${npm_config_fetch_retries:-8}"
 export npm_config_fetch_retry_mintimeout="${npm_config_fetch_retry_mintimeout:-10000}"
-export npm_config_fetch_retry_maxtimeout="${npm_config_fetch_retry_maxtimeout:-120000}"
-export npm_config_fetch_timeout="${npm_config_fetch_timeout:-120000}"
-
+export npm_config_fetch_retry_maxtimeout="${npm_config_fetch_retry_maxtimeout:-300000}"
+# Runtime VM builds may traverse Colima/NAT and npm's default request timeout
+# is too short for the browser package tree. Keep retries bounded while allowing
+# a slow but healthy registry response to finish.
+export npm_config_fetch_timeout="${npm_config_fetch_timeout:-600000}"
+export npm_config_maxsockets="${npm_config_maxsockets:-4}"
+export NODE_DEPS_TIMEOUT="${NODE_DEPS_TIMEOUT:-1800}"
 mkdir -p "$tools_dir" "$npm_prefix/bin" "$hermes_home"
 
 arch="$(uname -m)"

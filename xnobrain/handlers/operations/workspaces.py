@@ -3,6 +3,7 @@
 import time
 from typing import Any, Callable
 
+from ...services.skill_files import list_skill_files
 from ..query import bucket, csv, time_range
 
 Operation = tuple[Callable[[], Any], str, int]
@@ -15,7 +16,11 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
     )
     return {
         "workspace_list": (
-            lambda: s.list_workspace(p["agent_id"], q.get("path", ".")),
+            lambda: (
+                list_skill_files(s.agents, p["agent_id"], q.get("path", ""))
+                if q.get("scope") == "skills"
+                else s.list_workspace(p["agent_id"], q.get("path", "."))
+            ),
             "workspace retrieved successfully",
             200,
         ),

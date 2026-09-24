@@ -139,6 +139,13 @@ def session_routes(root: str, tags: tuple[str, ...], *, include_in_schema: bool 
             include_in_schema,
         ),
         route(
+            "GET",
+            f"{root}/{{conversation_id}}/runs",
+            "conversation_runs_list",
+            tags=("Runs",),
+            include_in_schema=include_in_schema,
+        ),
+        route(
             "POST",
             f"{root}/{{conversation_id}}/runs",
             "conversation_runs_start",
