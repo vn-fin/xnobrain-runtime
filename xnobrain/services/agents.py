@@ -303,7 +303,7 @@ class AgentsServiceMixin:
             )
         return identifier[:64].rstrip("-")
 
-    def create_agent(self, body: Mapping[str, Any]) -> dict[str, Any]:
+    def create_agent(self, body: Mapping[str, Any], *, trusted_context: Any = None) -> dict[str, Any]:
         display_name = " ".join(str(body.get("display_name") or body.get("name") or "").split())
         if not display_name:
             raise ServiceError("display_name is required")
@@ -315,7 +315,26 @@ class AgentsServiceMixin:
         }
         if "description" in body:
             payload["description"] = body["description"]
-        raw, _ = self.agents.create_agent(payload)
+        if getattr(trusted_context, "subject", ""):
+            profile = self.repository.profile_path(payload["name"])
+            if profile.exists():
+                from ..services.portability import PortabilityService
+
+                marker = profile / ".community-profile-owner.json"
+                try:
+                    stored = json.loads(marker.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    stored = None
+                if stored != PortabilityService.owner_record(trusted_context):
+                    raise ServiceError("agent ownership is unavailable", status=403, code="permission_denied")
+        raw, status = self.agents.create_agent(payload)
+        if status == 201 and getattr(trusted_context, "subject", ""):
+            from ..services.portability import PortabilityService
+
+            self.repository.atomic_json(
+                self.repository.profile_path(raw["name"]) / ".community-profile-owner.json",
+                PortabilityService.owner_record(trusted_context),
+            )
         self._cache.invalidate("agents")
         return self._agent_dto(raw)
 

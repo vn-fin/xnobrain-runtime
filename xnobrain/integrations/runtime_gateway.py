@@ -17,6 +17,10 @@ from xnobrain.common.v1 import http_stream_pb2 as http_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2 as gateway_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2_grpc as gateway_grpc
 from xnobrain.trusted_context import (
+    SNAPSHOT_SHA_HEADER,
+    SNAPSHOT_SIZE_HEADER,
+    SNAPSHOT_OPERATION_HEADER,
+    SNAPSHOT_SIGNATURE_HEADER,
     TRUSTED_CONVERSATION_CONTEXT_HEADER,
     TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER,
     TRUSTED_IDENTITY_HEADERS,
@@ -26,6 +30,8 @@ from xnobrain.trusted_context import (
     TRUSTED_TENANT_HEADER,
     decode_verified_conversation_context,
     principal_signature,
+    snapshot_intent,
+    snapshot_signature,
 )
 
 _MAX_CHUNK_BYTES = 64 * 1024
@@ -69,7 +75,18 @@ def _request_headers(values) -> list[tuple[str, str]]:
     result: list[tuple[str, str]] = []
     for header in values:
         name = str(header.name or "").strip().lower()
-        if not name or name in _FORBIDDEN_REQUEST_HEADERS or name in TRUSTED_IDENTITY_HEADERS:
+        if (
+            not name
+            or name in _FORBIDDEN_REQUEST_HEADERS
+            or name in TRUSTED_IDENTITY_HEADERS
+            or name
+            in {
+                SNAPSHOT_SHA_HEADER,
+                SNAPSHOT_SIZE_HEADER,
+                SNAPSHOT_OPERATION_HEADER,
+                SNAPSHOT_SIGNATURE_HEADER,
+            }
+        ):
             continue
         for value in header.values:
             result.append((name, bytes(value).decode("latin-1")))
@@ -114,6 +131,65 @@ def _verified_context_headers(
     return [
         (TRUSTED_CONVERSATION_CONTEXT_HEADER, encoded_context),
         (TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER, signature),
+    ]
+
+
+def _verified_snapshot_headers(
+    values,
+    token: str,
+    method: str,
+    path: str,
+    subject: str,
+    tenant_id: str,
+    organization_id: str,
+) -> list[tuple[str, str]]:
+    intent = snapshot_intent(method, path)
+    if not intent or not token or not subject:
+        return []
+    names = (
+        SNAPSHOT_SHA_HEADER,
+        SNAPSHOT_SIZE_HEADER,
+        SNAPSHOT_OPERATION_HEADER,
+        SNAPSHOT_SIGNATURE_HEADER,
+    )
+    captured: dict[str, list[str]] = {}
+    for header in values:
+        name = str(header.name or "").strip().lower()
+        if name in names:
+            captured.setdefault(name, []).extend(
+                bytes(value).decode("latin-1") for value in header.values
+            )
+    signatures = captured.get(SNAPSHOT_SIGNATURE_HEADER, [])
+    if len(signatures) != 1 or any(len(captured.get(name, [])) > 1 for name in names):
+        return []
+    sha256 = next(iter(captured.get(SNAPSHOT_SHA_HEADER, [])), "")
+    size = next(iter(captured.get(SNAPSHOT_SIZE_HEADER, [])), "")
+    operation_id = next(iter(captured.get(SNAPSHOT_OPERATION_HEADER, [])), "")
+    if intent == "export":
+        if sha256 or size or operation_id:
+            return []
+    elif not (
+        len(sha256) == 64
+        and all(char in "0123456789abcdef" for char in sha256)
+        and size.isdecimal()
+        and str(int(size)) == size
+        and operation_id
+    ):
+        return []
+    signature = snapshot_signature(
+        token, method, path, subject, tenant_id, organization_id, sha256, size, operation_id
+    )
+    if not hmac.compare_digest(signatures[0], signature):
+        return []
+    return [
+        (name, value)
+        for name, value in (
+            (SNAPSHOT_SHA_HEADER, sha256),
+            (SNAPSHOT_SIZE_HEADER, size),
+            (SNAPSHOT_OPERATION_HEADER, operation_id),
+            (SNAPSHOT_SIGNATURE_HEADER, signature),
+        )
+        if value
     ]
 
 
@@ -206,6 +282,17 @@ class RuntimeGatewayService(
             _verified_context_headers(
                 head.headers,
                 self._token,
+                subject,
+                tenant_id,
+                organization_id,
+            )
+        )
+        relay_headers.extend(
+            _verified_snapshot_headers(
+                head.headers,
+                self._token,
+                method,
+                path,
                 subject,
                 tenant_id,
                 organization_id,

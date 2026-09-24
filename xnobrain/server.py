@@ -118,7 +118,7 @@ def main() -> None:
         host=host,
         port=port,
         reload=reload_enabled,
-        reload_dirs=[os.path.dirname(os.path.dirname(__file__))] if reload_enabled else None,
+        reload_dirs=[os.path.dirname(__file__)] if reload_enabled else None,
         reload_excludes=["node_modules", "node_modules/*"] if reload_enabled else None,
         timeout_graceful_shutdown=reload_shutdown_timeout,
         log_config=None,

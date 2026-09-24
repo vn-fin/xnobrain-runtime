@@ -12,6 +12,22 @@ from .definition import route
 ROUTES = (
     route(
         "POST",
+        "/community/snapshots/{agent_id}/export",
+        "community_snapshot_export",
+        special="community_snapshot",
+        tags=("Portability",),
+        include_in_schema=False,
+    ),
+    route(
+        "POST",
+        "/community/snapshots/import",
+        "community_snapshot_import",
+        special="community_snapshot",
+        tags=("Portability",),
+        include_in_schema=False,
+    ),
+    route(
+        "POST",
         "/bundles/import-tasks",
         "bundle_task_import",
         BundleImportTask,

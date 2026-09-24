@@ -14,8 +14,14 @@ TRUSTED_SUBJECT_HEADER = "x-xnobrain-verified-subject"
 TRUSTED_TENANT_HEADER = "x-xnobrain-verified-tenant"
 TRUSTED_ORGANIZATION_HEADER = "x-xnobrain-verified-organization"
 TRUSTED_SIGNATURE_HEADER = "x-xnobrain-principal-signature"
+SNAPSHOT_SHA_HEADER = "x-xnobrain-community-snapshot-sha256"
+SNAPSHOT_SIZE_HEADER = "x-xnobrain-community-snapshot-size"
+SNAPSHOT_OPERATION_HEADER = "x-xnobrain-community-snapshot-idempotency-key"
+SNAPSHOT_SIGNATURE_HEADER = "x-xnobrain-community-snapshot-signature"
+SNAPSHOT_PREFIX = "/xnobrain/api/runtime/v1/community/snapshots/"
 TRUSTED_CONVERSATION_CONTEXT_HEADER = "x-xnobrain-verified-conversation-context"
 TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER = "x-xnobrain-conversation-context-signature"
+
 TRUSTED_IDENTITY_HEADERS = frozenset(
     {
         TRUSTED_SUBJECT_HEADER,
@@ -72,6 +78,72 @@ def encode_conversation_context(context: Mapping[str, Any]) -> str:
     if len(payload) > _MAX_CONTEXT_HEADER_BYTES:
         raise ValueError("conversation context header is too large")
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def snapshot_intent(method: str, path: str) -> str:
+    if method != "POST":
+        return ""
+    if path == SNAPSHOT_PREFIX + "import":
+        return "import"
+    if path.startswith(SNAPSHOT_PREFIX) and path.endswith("/export"):
+        agent_id = path[len(SNAPSHOT_PREFIX) : -len("/export")]
+        if agent_id and "/" not in agent_id:
+            return "export"
+    return ""
+
+
+def snapshot_signature(
+    token: str,
+    method: str,
+    path: str,
+    subject: str,
+    tenant_id: str,
+    organization_id: str,
+    sha256: str,
+    size: str,
+    operation_id: str,
+) -> str:
+    material = "\x00".join(
+        (subject, tenant_id, organization_id, method, path, sha256, size, operation_id)
+    ).encode("utf-8")
+    return hmac.new(token.encode("utf-8"), material, hashlib.sha256).hexdigest()
+
+
+def snapshot_authorized(request: Any) -> bool:
+    context = from_request(request)
+    intent = snapshot_intent(request.method, request.url.path)
+    if not context.subject or not intent:
+        return False
+    sha256 = request.headers.get(SNAPSHOT_SHA_HEADER, "")
+    size = request.headers.get(SNAPSHOT_SIZE_HEADER, "")
+    operation_id = request.headers.get(SNAPSHOT_OPERATION_HEADER, "")
+    signature = request.headers.get(SNAPSHOT_SIGNATURE_HEADER, "")
+    token = os.getenv("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
+    if not token or not signature:
+        return False
+    if intent == "export":
+        if sha256 or size or operation_id:
+            return False
+    elif not (
+        len(sha256) == 64
+        and all(char in "0123456789abcdef" for char in sha256)
+        and size.isdecimal()
+        and str(int(size)) == size
+        and operation_id
+    ):
+        return False
+    expected = snapshot_signature(
+        token,
+        request.method,
+        request.url.path,
+        context.subject,
+        context.tenant_id,
+        context.organization_id,
+        sha256,
+        size,
+        operation_id,
+    )
+    return hmac.compare_digest(signature, expected)
 
 
 def conversation_context_signature(

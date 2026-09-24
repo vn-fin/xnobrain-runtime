@@ -44,6 +44,13 @@ Every named profile owns config, prompts, skills, memory, workspace, session,
 cron, log, MCP, and snapshot data. Portable bundles include every regular file
 in the profile directory while redacting secret values. Imported credential
 files are discarded, approvals reset to manual, and cron jobs are paused.
+Community full-profile snapshots differ from legacy filtered definitions and
+private portability bundles. Newly created named agents bind their verified
+Control principal, tenant and organization in a local nonportable owner marker;
+unbound legacy profiles and Big Brother cannot be publicly snapshotted. A clone
+receives its own owner marker at atomic install, while publisher sidecars,
+credentials and execution grants are never transported.
+
 
 New named profiles are seeded from the installer-managed
 `HERMES_ROOT_PROFILE/profile-template`, whose default model is `auto`. They do

@@ -625,12 +625,7 @@ class MarketplaceExportTests(unittest.TestCase):
 
     def test_export_allows_private_script_module_names(self):
         private_script = (
-            self.profile
-            / "skills"
-            / "custom"
-            / "research"
-            / "scripts"
-            / "_hermes_home.py"
+            self.profile / "skills" / "custom" / "research" / "scripts" / "_hermes_home.py"
         )
         private_script.write_text("HOME = '/tmp'\n", encoding="utf-8")
 
@@ -725,6 +720,47 @@ class MarketplaceExportTests(unittest.TestCase):
         (self.profile / "SOUL.md").write_text(
             "api_key = sk-this-is-a-real-looking-secret\n", encoding="utf-8"
         )
+        with self.assertRaises(ServiceError) as error:
+            self.service.export("owned-agent", "MIT")
+        self.assertEqual(error.exception.code, "marketplace_export_credentials_detected")
+
+    def test_export_allows_python_password_references(self):
+        script = self.profile / "skills" / "custom" / "research" / "scripts" / "collect.py"
+        script.write_text(
+            "image = rasterize_page(password=args.password_value)\n"
+            "ws.protection.password = password_from_user\n",
+            encoding="utf-8",
+        )
+
+        package = self.service.export("owned-agent", "MIT")
+        self.assertIn("skills/custom/research/scripts/collect.py", package["definition"]["assets"])
+
+    def test_export_rejects_literal_password_in_python_script(self):
+        script = self.profile / "skills" / "custom" / "research" / "scripts" / "collect.py"
+        script.write_text('password = "synthetic-hardcoded-secret"\n', encoding="utf-8")
+
+        with self.assertRaises(ServiceError) as error:
+            self.service.export("owned-agent", "MIT")
+        self.assertEqual(error.exception.code, "marketplace_export_credentials_detected")
+
+    def test_export_rejects_python_comment_and_mapping_secrets(self):
+        script = self.profile / "skills" / "custom" / "research" / "scripts" / "collect.py"
+        for text in (
+            "# password=synthetic-hardcoded-secret\n",
+            'settings = {"password": "synthetic-hardcoded-secret"}\n',
+            'call(password="synthetic-hardcoded-secret")\n',
+        ):
+            with self.subTest(kind=text.splitlines()[0][:12]):
+                script.write_text(text, encoding="utf-8")
+                with self.assertRaises(ServiceError) as error:
+                    self.service.export("owned-agent", "MIT")
+                self.assertEqual(error.exception.code, "marketplace_export_credentials_detected")
+
+    def test_export_rejects_password_assignment_in_public_text(self):
+        (self.profile / "SOUL.md").write_text(
+            "password=synthetic-hardcoded-secret\n", encoding="utf-8"
+        )
+
         with self.assertRaises(ServiceError) as error:
             self.service.export("owned-agent", "MIT")
         self.assertEqual(error.exception.code, "marketplace_export_credentials_detected")

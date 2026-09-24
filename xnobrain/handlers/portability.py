@@ -1,19 +1,135 @@
 """Portable bundle transfer HTTP handlers."""
 
 import asyncio
+import hashlib
+import json
 import os
+import tempfile
+from pathlib import Path
 from typing import Any
 
 from fastapi import Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 from ..repositories.base import StoreError
 from ..services import EXPECTED_ERRORS
-from ..services.portability import CHUNK_SIZE
-from ..trusted_context import from_request
+from ..services.portability import CHUNK_SIZE, MAX_COMPRESSED
+from ..trusted_context import (
+    SNAPSHOT_OPERATION_HEADER,
+    SNAPSHOT_SHA_HEADER,
+    SNAPSHOT_SIZE_HEADER,
+    from_request,
+    snapshot_authorized,
+)
+
+
+def _snapshot_chunks(path: Path):
+    try:
+        with path.open("rb") as archive:
+            while chunk := archive.read(CHUNK_SIZE):
+                yield chunk
+    finally:
+        path.unlink(missing_ok=True)
 
 
 class PortabilityHandlers:
+    async def community_snapshot(self, request: Request) -> Response:
+        if not snapshot_authorized(request):
+            return self.failure(
+                StoreError(
+                    "Snapshot service authorization required", status=403, code="permission_denied"
+                )
+            )
+        try:
+            if request.scope["route"].name == "community_snapshot_export":
+                agent_id = request.path_params["agent_id"]
+                with tempfile.NamedTemporaryFile(
+                    prefix=".community-",
+                    suffix=".zip",
+                    dir=self.service.portability.transfer_root,
+                    delete=False,
+                ) as temporary:
+                    archive_path = Path(temporary.name)
+                try:
+                    metadata = await asyncio.to_thread(
+                        self.service.portability.export_shareable,
+                        agent_id,
+                        archive_path,
+                        owner=from_request(request),
+                    )
+                    response = StreamingResponse(
+                        _snapshot_chunks(archive_path),
+                        media_type="application/zip",
+                        headers={
+                            "X-Snapshot-SHA256": metadata["sha256"],
+                            "Content-Length": str(metadata["size"]),
+                            "X-Snapshot-Size": str(metadata["size"]),
+                            "X-Snapshot-Inventory": json.dumps(
+                                metadata["inventory"], separators=(",", ":")
+                            ),
+                        },
+                    )
+                    response.headers["Cache-Control"] = "private, no-store"
+                    return response
+                except Exception:
+                    archive_path.unlink(missing_ok=True)
+                    raise
+            if (
+                request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                != "application/zip"
+            ):
+                raise StoreError("ZIP content type required", code="invalid_bundle")
+            if not from_request(request).subject:
+                raise StoreError("Verified identity required", status=403, code="permission_denied")
+            with tempfile.NamedTemporaryFile(
+                prefix=".community-",
+                suffix=".zip",
+                dir=self.service.portability.transfer_root,
+                delete=False,
+            ) as temporary:
+                archive_path = Path(temporary.name)
+                digest = hashlib.sha256()
+                size = 0
+                try:
+                    async for chunk in request.stream():
+                        size += len(chunk)
+                        if size > MAX_COMPRESSED:
+                            raise StoreError(
+                                "snapshot exceeds size limit", status=413, code="invalid_bundle"
+                            )
+                        digest.update(chunk)
+                        temporary.write(chunk)
+                except Exception:
+                    archive_path.unlink(missing_ok=True)
+                    raise
+            try:
+                expected_digest = request.headers[SNAPSHOT_SHA_HEADER]
+                expected_size = int(request.headers[SNAPSHOT_SIZE_HEADER])
+                if expected_digest != digest.hexdigest() or expected_size != size:
+                    raise StoreError(
+                        "snapshot digest or size mismatch", code="invalid_bundle_checksum"
+                    )
+                operation_id = request.headers[SNAPSHOT_OPERATION_HEADER]
+                context = from_request(request)
+                report = await asyncio.to_thread(
+                    self.service.portability.apply_shareable_file,
+                    archive_path,
+                    operation_id=operation_id,
+                    digest=digest.hexdigest(),
+                    recipient="\x00".join((context.subject, context.tenant_id, context.organization_id)),
+                )
+            finally:
+                archive_path.unlink(missing_ok=True)
+            self.service.agents.sync_profiles_registry()
+            report["sha256"] = digest.hexdigest()
+            report["size"] = size
+            self.service._cache.invalidate("agents")
+            response = self.success(report, "community snapshot imported", 201)
+            response.headers["Cache-Control"] = "private, no-store"
+            return response
+        except EXPECTED_ERRORS as error:
+            return self.failure(error)
+
     @staticmethod
     def bundle_task_identity(request: Request) -> tuple[str, str]:
         context = from_request(request)

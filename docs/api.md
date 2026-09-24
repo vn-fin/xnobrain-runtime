@@ -95,6 +95,38 @@ of failing the run. Supported reasoning values come from provider model
 metadata and may include `none`, `minimal`, `xhigh`, `max`, and `ultra` in
 addition to `low`, `medium`, and `high`.
 
+## Private Community full-profile snapshot transport
+
+`POST /xnobrain/api/runtime/v1/community/snapshots/{agent_id}/export` has an empty
+request and streams `application/zip`; `X-Snapshot-SHA256` is the lowercase
+SHA-256 of the exact ZIP, `X-Snapshot-Size` its byte count, and
+`X-Snapshot-Inventory` a content-free JSON summary (categories, counts, sizes,
+conversation count, excluded paths). Export requires a named profile with a
+durable `.community-profile-owner.json` principal/tenant/organization binding
+matching the verified caller; existing unbound profiles and Big Brother fail
+closed. It requires `config.yaml`, a consistent `state.db`, `HERMES.md`, and
+`workspace/AGENTS.md`. Manifest `snapshot_kind=community-full-profile-v1`
+contains an exact checked `file_inventory`, `excluded_paths`, and category
+counts; the outer ZIP SHA-256 cannot be embedded in its own bytes. Credentials
+and local authorization files are excluded, but conversation content—including
+secrets inside chat—is copied unchanged after explicit Control confirmation.
+
+`POST /xnobrain/api/runtime/v1/community/snapshots/import` streams the exact ZIP
+with `Content-Type: application/zip` and private signed headers
+`X-XnoBrain-Community-Snapshot-SHA256`, `-Size`, and `-Idempotency-Key`.
+The signature binds the verified principal, exact method/path, archive digest,
+decimal size, and operation ID; imported bytes must match both claims. Runtime
+validates the ZIP and staged SQLite, detaches publisher session identity, resets
+approvals, cron, MCP grants and Router settings, then atomically creates a
+distinct receiving profile bound to the verified caller. The response is HTTP
+201 with `data.agent_id_mappings`, `data.sha256`, and `data.size` (bytes). The
+same verified recipient, operation ID, and archive replay the existing profile;
+different bytes or a conflicting marker return an error without overwriting
+data. Both routes require a verified Control principal and exact private snapshot
+HMAC assertion translated through the node gateway. The public Control Runtime
+wildcard must deny these paths; these routes are not browser APIs and cannot be
+used to bypass publisher consent, S3 validation or listing policy.
+
 ## Safe marketplace package export
 
 `POST /xnobrain/api/runtime/v1/marketplace/agents/{agent_id}/export` builds a

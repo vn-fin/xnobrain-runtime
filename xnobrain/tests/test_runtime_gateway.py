@@ -24,6 +24,7 @@ from xnobrain.runtime.v1 import runtime_gateway_pb2_grpc as gateway_grpc
 from xnobrain.trusted_context import (
     conversation_context_signature,
     encode_conversation_context,
+    snapshot_signature,
 )
 
 TOKEN = "runtime-internal-test-token"
@@ -239,6 +240,87 @@ class RuntimeGatewayTests(unittest.IsolatedAsyncioTestCase):
         relayed = {name.lower(): value for name, value in self.received["headers"]}
         self.assertEqual(relayed["x-xnobrain-verified-conversation-context"], encoded)
         self.assertEqual(relayed["x-xnobrain-conversation-context-signature"], signature)
+
+    async def test_snapshot_intent_only_relays_for_signed_exact_path(self) -> None:
+        path = "/xnobrain/api/runtime/v1/community/snapshots/source/export"
+        signature = snapshot_signature(
+            TOKEN, "POST", path, "user-1", "tenant-1", "org-1", "", "", ""
+        )
+        for candidate, expected in (
+            (signature, True),
+            ("forged", False),
+        ):
+            headers = (
+                http_pb2.Header(
+                    name="x-xnobrain-community-snapshot-signature",
+                    values=[candidate.encode()],
+                ),
+            )
+            call = self.stub.Proxy(
+                _frames(
+                    _head(path=path, headers=headers),
+                    gateway_pb2.RuntimeGatewayServiceProxyRequest(end=http_pb2.StreamEnd()),
+                ),
+                metadata=(("x-xnobrain-internal-token", TOKEN),),
+            )
+            _ = [response async for response in call]
+            relayed = {name.lower(): value for name, value in self.received["headers"]}
+            self.assertEqual(
+                relayed.get("x-xnobrain-community-snapshot-signature"),
+                signature if expected else None,
+            )
+        call = self.stub.Proxy(
+            _frames(
+                _head(path="/xnobrain/api/runtime/v1/test", headers=headers),
+                gateway_pb2.RuntimeGatewayServiceProxyRequest(end=http_pb2.StreamEnd()),
+            ),
+            metadata=(("x-xnobrain-internal-token", TOKEN),),
+        )
+        _ = [response async for response in call]
+        relayed = {name.lower(): value for name, value in self.received["headers"]}
+        self.assertNotIn("x-xnobrain-community-snapshot-signature", relayed)
+
+    async def test_snapshot_import_relay_binds_digest_size_and_operation(self) -> None:
+        path = "/xnobrain/api/runtime/v1/community/snapshots/import"
+        digest = "a" * 64
+        operation = "clone-op-1"
+        signature = snapshot_signature(
+            TOKEN, "POST", path, "user-1", "tenant-1", "org-1", digest, "4", operation
+        )
+        for supplied_signature, expected in ((signature, True), ("forged", False)):
+            headers = (
+                http_pb2.Header(
+                    name="x-xnobrain-community-snapshot-sha256", values=[digest.encode()]
+                ),
+                http_pb2.Header(name="x-xnobrain-community-snapshot-size", values=[b"4"]),
+                http_pb2.Header(
+                    name="x-xnobrain-community-snapshot-idempotency-key",
+                    values=[operation.encode()],
+                ),
+                http_pb2.Header(
+                    name="x-xnobrain-community-snapshot-signature",
+                    values=[supplied_signature.encode()],
+                ),
+            )
+            call = self.stub.Proxy(
+                _frames(
+                    _head(path=path, headers=headers),
+                    gateway_pb2.RuntimeGatewayServiceProxyRequest(end=http_pb2.StreamEnd()),
+                ),
+                metadata=(("x-xnobrain-internal-token", TOKEN),),
+            )
+            _ = [response async for response in call]
+            relayed = {name.lower(): value for name, value in self.received["headers"]}
+            self.assertEqual(
+                relayed.get("x-xnobrain-community-snapshot-sha256"), digest if expected else None
+            )
+            self.assertEqual(
+                relayed.get("x-xnobrain-community-snapshot-size"), "4" if expected else None
+            )
+            self.assertEqual(
+                relayed.get("x-xnobrain-community-snapshot-idempotency-key"),
+                operation if expected else None,
+            )
 
     async def test_rejects_invalid_internal_token(self) -> None:
         call = self.stub.Proxy(
