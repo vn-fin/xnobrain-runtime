@@ -55,7 +55,9 @@ class DiagramAttachment(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     kind: Literal["diagram"]
-    filename: str = Field(min_length=10, max_length=32, pattern=r"^(?:sketch|flowchart|mindmap)(?:-[1-9]\d*)?\.xml$")
+    filename: str = Field(
+        min_length=10, max_length=32, pattern=r"^(?:sketch|flowchart|mindmap)(?:-[1-9]\d*)?\.xml$"
+    )
     mime_type: Literal["application/xml", "text/xml"]
     content: str = Field(min_length=1, max_length=64_000)
 
@@ -155,3 +157,11 @@ class TodoRevisionUpdate(BaseModel):
     )
     status: Literal["pending", "running", "blocked", "failed", "cancelled", "completed"]
     evidence: str | None = Field(default=None, max_length=10_000)
+
+
+class ConversationReasoningUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reasoning_effort: (
+        Literal["auto", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] | None
+    )
+    expected_revision: int = Field(ge=0, strict=True)

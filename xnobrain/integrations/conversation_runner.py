@@ -296,6 +296,7 @@ class ConversationRunnerMixin:
             "ownership_context": dict(body.get("ownership_context") or {}),
             "_custom_page_principal": body.get("_custom_page_principal"),
             "_ui_assistance": body.get("_ui_assistance"),
+            "_reasoning_snapshot": body.get("_reasoning_snapshot"),
         }
 
     async def _resolve_prepared_model_route(self, prepared: dict[str, Any]) -> None:
@@ -869,6 +870,8 @@ class ConversationRunnerMixin:
             .strip()
             .lower()
         )
+        if prepared.get("_reasoning_snapshot") is not None:
+            configured_reasoning = prepared["_reasoning_snapshot"]["effective_preference"]
         if configured_reasoning == "auto" and not smart_route_name:
             try:
                 metadata = await self.llm_router.reasoning_for_model(active_smart_decision["model"])
@@ -922,12 +925,41 @@ class ConversationRunnerMixin:
                 if coordinator is not None:
                     coordinator.install(agent)
                 manager._install_model_fallbacks(agent, prepared)
+                reasoning_snapshot = prepared.get("_reasoning_snapshot")
+                if (
+                    reasoning_snapshot is not None
+                    and reasoning_snapshot.get("source") == "conversation"
+                ):
+                    from .conversation_reasoning import install_reasoning_guard
+
+                    preference = reasoning_snapshot["effective_preference"]
+
+                    def emit_reasoning(effective):
+                        active_smart_decision.update(reasoning=effective)
+                        tool_progress_callback(
+                            "reasoning.resolved",
+                            "",
+                            "",
+                            None,
+                            effective_effort=effective,
+                            model=str(agent.model),
+                        )
+
+                    install_reasoning_guard(
+                        agent,
+                        manager.llm_router,
+                        runtime_loop,
+                        preference,
+                        emit_reasoning,
+                    )
                 if smart_route_name:
                     manager._install_smart_route_step_routing(
                         agent,
                         runtime_loop,
                         runtime_loop_thread_id,
                         smart_route_name,
+                        apply_reasoning=configured_reasoning == "auto"
+                        or reasoning_snapshot is None,
                     )
                 # Hermes' API-server surface normally dispatches top-level
                 # delegations in the background and relies on GatewayRunner to
@@ -1263,8 +1295,14 @@ class ConversationRunnerMixin:
                             "at once and automatically queues the remainder. Do not split a larger "
                             "batch merely to match the concurrency limit."
                         )
+                if reasoning_snapshot is not None and configured_reasoning != "auto":
+                    from hermes_constants import parse_reasoning_effort
+
+                    agent.reasoning_config = parse_reasoning_effort(configured_reasoning)
                 route_reasoning = str(active_smart_decision.get("reasoning") or "")
-                if route_reasoning:
+                if route_reasoning and (
+                    reasoning_snapshot is None or configured_reasoning == "auto"
+                ):
                     manager._apply_smart_route_decision(
                         agent,
                         {

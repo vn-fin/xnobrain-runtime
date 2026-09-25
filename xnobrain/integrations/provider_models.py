@@ -133,9 +133,16 @@ class ProviderModelsMixin:
 
     @staticmethod
     def _model_reasoning_levels(item: Mapping[str, Any]) -> list[str]:
-        raw = item.get("reasoning_levels") or item.get("supported_reasoning")
+        raw = item.get("supported_reasoning_levels")
+        if not isinstance(raw, list):
+            raw = item.get("reasoning_levels") or item.get("supported_reasoning")
         if isinstance(raw, list):
-            values = {str(level).strip().lower() for level in raw}
+            values = {
+                str(level.get("effort", "") if isinstance(level, Mapping) else level)
+                .strip()
+                .lower()
+                for level in raw
+            }
             return [level for level in _REASONING_LEVELS if level in values]
         raw = item.get("supportedThinkingEfforts")
         if isinstance(raw, list):

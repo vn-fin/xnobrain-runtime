@@ -118,7 +118,7 @@ class GlobalConfigMixin:
             effort = str(effort or "medium").strip().lower()
             if "reasoning" in body and not self._coerce_bool(body["reasoning"]):
                 effort = "none"
-            elif effort == "none":
+            elif "reasoning" in body and effort == "none":
                 effort = "medium"
             self._set_reasoning_effort(config, effort)
             touched = True

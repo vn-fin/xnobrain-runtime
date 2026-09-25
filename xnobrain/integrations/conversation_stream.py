@@ -459,6 +459,16 @@ class ConversationStreamMixin:
                         "error": True,
                     }
                 )
+            elif event_type == "reasoning.resolved":
+                enqueue_event(
+                    {
+                        "event": "reasoning.resolved",
+                        "run_id": run_id,
+                        "timestamp": timestamp,
+                        "effective_effort": kwargs.get("effective_effort"),
+                        "model": kwargs.get("model"),
+                    }
+                )
             elif event_type == "reasoning.delta":
                 enqueue_event(
                     {

@@ -12,11 +12,27 @@ from ..models import (
     SubgoalCreate,
     TodoRevisionUpdate,
 )
+from ..models.conversations import ConversationReasoningUpdate
 from .definition import route
 
 
 def session_routes(root: str, tags: tuple[str, ...], *, include_in_schema: bool = True) -> tuple:
     return (
+        route(
+            "GET",
+            f"{root}/{{conversation_id}}/reasoning",
+            "conversation_reasoning_get",
+            tags=tags,
+            include_in_schema=include_in_schema,
+        ),
+        route(
+            "PATCH",
+            f"{root}/{{conversation_id}}/reasoning",
+            "conversation_reasoning_update",
+            ConversationReasoningUpdate,
+            tags=tags,
+            include_in_schema=include_in_schema,
+        ),
         route("GET", root, "conversations_list", tags=tags, include_in_schema=include_in_schema),
         route(
             "POST",

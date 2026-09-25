@@ -328,7 +328,23 @@ class ConversationRunService:
             timeout_seconds = session_timeout_seconds(body.get("timeout_seconds"))
             now = time.time()
             run_id = "run_" + uuid.uuid4().hex
+            from .conversation_reasoning import FEATURE, snapshot
+
+            reasoning = (
+                snapshot(self, agent_id, conversation_id) if feature_enabled(FEATURE) else None
+            )
+            if reasoning is not None and reasoning["source"] == "conversation":
+                from .conversation_reasoning import validate
+
+                config = self.agents.describe_agent(agent_id)["config"]
+                await validate(
+                    self.agents.llm_router,
+                    str(body.get("model") or config.get("model") or "auto"),
+                    reasoning["effective_preference"],
+                )
+                require_current_binding()
             record = {
+                "reasoning": reasoning,
                 "custom_page_datasets": custom_page_datasets,
                 "custom_page_revision": custom_page_revision,
                 "custom_page_schedule": custom_page_schedule,
@@ -393,6 +409,9 @@ class ConversationRunService:
             self._active[run_id] = entry
             self._by_conversation[key] = run_id
             payload = dict(body)
+            payload.pop("_reasoning_snapshot", None)
+            if reasoning is not None:
+                payload["_reasoning_snapshot"] = reasoning
             payload.pop("attachment", None)
             payload.pop("attachments", None)
             payload["input"] = runner_message
@@ -864,6 +883,12 @@ class ConversationRunService:
                     "ownership_context": next_record.get("ownership_context") or {},
                 }
             )
+        elif isinstance(payload, Mapping) and event_name == "reasoning.resolved":
+            next_record["reasoning"] = {
+                **(next_record.get("reasoning") or {}),
+                "effective_effort": payload.get("effective_effort"),
+                "model": payload.get("model"),
+            }
         elif isinstance(payload, Mapping) and event_name == "run.completed":
             next_record.update(
                 {

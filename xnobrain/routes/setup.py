@@ -76,7 +76,17 @@ def route_groups() -> tuple[tuple[Route, ...], ...]:
         optional += (custom_page.ROUTES,)
     if feature_enabled(FEATURE_UI_CUSTOMIZATION):
         optional += (ui_composition.ROUTES,)
-    return optional + BASE_ROUTE_GROUPS
+    groups = optional + BASE_ROUTE_GROUPS
+    if not feature_enabled("CONVERSATION_REASONING_EFFORT"):
+        groups = tuple(
+            tuple(
+                route
+                for route in group
+                if not route.operation.startswith("conversation_reasoning_")
+            )
+            for group in groups
+        )
+    return groups
 
 
 # Compatibility snapshots for route-contract tests. setup_routes resolves flags

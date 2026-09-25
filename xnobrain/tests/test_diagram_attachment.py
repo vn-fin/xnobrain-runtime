@@ -76,6 +76,17 @@ class DiagramAttachmentTests(unittest.TestCase):
         self.assertIn("hierarchy with optional directed references", merged)
         self.assertIn('source="test2" target="test1"', merged)
 
+    def test_reference_ports_are_validated(self) -> None:
+        for side in ("top", "right", "bottom", "left"):
+            content = MINDMAP_V2.replace(
+                "<edge ", f'<edge sourceSide="{side}" targetSide="{side}" '
+            )
+            self.assertEqual(validate_attachment(_attachment(content))["edge_count"], 2)
+        for side in ("diagonal", "", "TOP"):
+            content = MINDMAP_V2.replace("<edge ", f'<edge sourceSide="{side}" ')
+            with self.assertRaises(DiagramAttachmentError):
+                validate_attachment(_attachment(content))
+
     def test_v2_reference_validation_and_version_errors(self) -> None:
         malformed = [
             '<mindmap version="2"><node id="n1">A</node><edge id="e1" source="n1" target="n1" /></mindmap>',
