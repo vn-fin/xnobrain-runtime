@@ -6,7 +6,7 @@ import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from xnobrain.repositories import FileRepository
 from xnobrain.services.base import ServiceError
@@ -23,6 +23,9 @@ class FakeAgents:
         self.finished = asyncio.Event()
         self.cancelled = asyncio.Event()
         self.received: dict = {}
+
+    def describe_agent(self, agent_id):
+        return {"config": {"effort": "medium"}}
 
     def get_conversation(self, agent_id: str, conversation_id: str) -> dict:
         return {"conversation": {"id": conversation_id, "agent_id": agent_id}, "messages": []}
@@ -84,6 +87,24 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.service.shutdown()
         self.temp.cleanup()
         self.timeout_env.stop()
+
+    async def test_reasoning_snapshot_survives_preference_change_and_replay(self):
+        from xnobrain.services.conversation_reasoning import store
+
+        preference = store(self.service, "agent-one", "session-one")
+        preference.update("high", 0)
+        self.agents.llm_router = AsyncMock()
+        self.agents.llm_router.reasoning_for_model.return_value = {"reasoning": ["high", "none"]}
+        body = {"input": "Synthetic task", "idempotency_key": "reasoning-replay"}
+        first = await self.service.start_run("agent-one", "session-one", body)
+        preference.update("none", 1)
+        replay = await self.service.start_run("agent-one", "session-one", body)
+        self.assertEqual(first["id"], replay["id"])
+        self.assertEqual(replay["reasoning"]["effective_preference"], "high")
+        await self.wait_for_revision(first["id"], 2)
+        self.assertEqual(
+            self.agents.received["_reasoning_snapshot"]["effective_preference"], "high"
+        )
 
     async def test_combined_selection_persists_with_one_budget_check_and_parent(self):
         selected = ["goal", "todo", "delegate"]

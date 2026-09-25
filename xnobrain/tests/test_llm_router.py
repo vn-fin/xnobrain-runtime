@@ -235,6 +235,45 @@ class ProviderRuntimeRequestGuardTests(unittest.TestCase):
 
 
 class LLMRouterConfigTests(unittest.TestCase):
+    def test_reasoning_effort_round_trips_for_global_and_agent_config(self) -> None:
+        cases = [
+            ({"effort": level}, level)
+            for level in (
+                "auto",
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+                "ultra",
+            )
+        ] + [
+            ({"reasoning": False, "effort": "high"}, "none"),
+            ({"reasoning": True, "effort": "none"}, "medium"),
+            ({"effort": "none"}, "none"),
+            ({"reasoning": True}, "medium"),
+        ]
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            root_profile = root / "root"
+            root_profile.mkdir()
+            (root_profile / "config.yaml").write_text("model: {}\n", encoding="utf-8")
+            global_manager = GlobalConfigManager(root_profile=root_profile)
+            agent_manager = AgentManager(root_profile=root_profile, profiles_root=root / "profiles")
+            created, _ = agent_manager.create_agent({"display_name": "Reasoning settings"})
+            name = created["name"]
+            for body, expected in cases:
+                with self.subTest(body=body):
+                    global_manager.update_config(body)
+                    self.assertEqual(global_manager.get_config()["reasoning_effort"], expected)
+                    agent_manager.update_config(name, body)
+                    persisted = agent_manager._read_config(agent_manager._require_profile(name))
+                    self.assertEqual(persisted["agent"]["reasoning_effort"], expected)
+            global_manager.update_config({"reasoning_effort": "none"})
+            self.assertEqual(global_manager.get_config()["reasoning_effort"], "none")
+
     def test_global_config_accepts_model_derived_auto_reasoning(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

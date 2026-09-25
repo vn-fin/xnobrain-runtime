@@ -23,6 +23,12 @@ content}` with XML root `mindmap`. Legacy unversioned XML contains one rooted
 hierarchy (`parent`, `order`, optional `collapsed="true"`). Version 2 may also
 contain up to 80 directed references as
 `<edge id="…" source="…" target="…" />`; an edge may also carry eight comma-separated `points` offsets for four draggable corners, each bounded to ±1000; hierarchy connectors remain implicit.
+References also accept optional `sourceSide` and `targetSide`, each one of
+`top`, `right`, `bottom`, `left`, selecting the midpoint port on that topic.
+Omitted sides retain legacy right-source/left-target behavior. UI and Runtime
+must be updated together before sending these optional attributes to an older
+strict validator. Display routes avoid measured topic bounds; automatic detours
+are not serialized, while the selected ports and manual bend offsets are.
 A `flowchart` root is malformed. Filenames are `mindmap.xml` or `sketch.xml`, with `-2` and later
 for extra files; `flowchart.xml` still matches the filename pattern but its
 content must be a mind map. At most eight diagrams per run.
@@ -84,6 +90,15 @@ catalog: the second supported level is preferred, the only level is used when
 there is one, and models without reasoning metadata return `auto`. Agent and
 Smart Route reasoning may be stored as `auto`; concrete model execution
 resolves it through this metadata instead of a hard-coded effort.
+The Agent Settings reasoning-effort selector persists the profile default through
+`PATCH /agents/{agent_id}/config` using `reasoning_effort`. Supported configuration
+values are `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and
+`ultra`; the UI offers the selected model's advertised levels plus `auto`.
+An explicit `none` remains disabled; it must not be converted to `medium`.
+The legacy `reasoning: false` switch disables reasoning, while `reasoning: true`
+re-enables a disabled setting at `medium`. Effort is an inference setting, not a
+reasoning-text visibility toggle. This profile setting is not a per-session
+override and does not change an already-running agent instance.
 Smart Route blends resolve at model-inference boundaries rather than only once
 for an entire agent run. The initial user turn is classified once and reused;
 later model continuations after tool results, goal-continuation prompts, and
@@ -1119,3 +1134,40 @@ Absolute paths, traversal and symlink paths are rejected. No profile-root,
 config, credential, memory or session browsing is exposed by this scope.
 The browser presents virtual `workspace` and `skills` roots; virtual prefixes
 are removed by its API adapter, not treated as disk paths.
+
+## Conversation reasoning effort
+
+`GET /sessions/{conversation_id}/reasoning?agent={agent_id}` reads a profile-local
+conversation preference. `PATCH` accepts `reasoning_effort` (null to inherit, or
+`auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) and
+`expected_revision` (nonnegative integer). The response includes
+`reasoning_revision`, `effective_preference`, `source`, and `capability_status`.
+The hidden `/conversations` alias supports the same resource. Existing session
+ownership checks apply, including a recheck after model metadata lookup.
+
+Conflicting revisions return 409; unsupported explicit levels return 422;
+required metadata outages return 503. Changing this preference does not write
+agent configuration or alter an active run. Run admission snapshots the setting;
+idempotent replay retains the original snapshot. Explicit overrides are checked
+at model request boundaries. `reasoning.resolved` SSE events and run records
+expose effective effort and model without reasoning content.
+
+`FT_ENABLE_CONVERSATION_REASONING_EFFORT` defaults true. Disabled deployments
+omit the endpoints and ignore retained conversation preferences for new runs.
+The composer hides its selector if the backend capability is absent. Agent
+Settings remains the profile-wide default; text visibility is separate.
+
+
+Conversation effort is persisted in a session-local `.reasoning.json` sidecar,
+not in prompt/context text or the shared agent configuration. On the next run,
+the admitted preference is parsed into the embedded agent's `reasoning_config`.
+For an explicit conversation preference, Runtime supplies a per-agent router
+provider profile to Hermes' Chat Completions transport **before** serialization.
+Hermes retains ownership of model normalization and request construction; the
+profile maps normalized configuration to nested `reasoning: {effort, summary: "auto"}`
+for routed Codex (`cx`) models, and `reasoning_effort` for other supported routes. Runtime never overwrites the serialized effort. Conflicting generic
+request overrides are removed before serialization. Other transport types are
+unchanged, and no provider profile is registered globally.
+Auto uses the resolved model default, or omits the field when no reasoning
+default is available. Changes do not modify admitted runs or other conversations.
+This behavior does not assert child-agent enforcement.

@@ -144,10 +144,22 @@ def _validate_mindmap(root: ElementTree.Element) -> tuple[int, int]:
     edge_ids: set[str] = set()
     pairs: set[tuple[str, str]] = set()
     for edge in edges:
-        if set(edge.attrib) - {"id", "source", "target", "curveX", "curveY", "points"}:
+        if set(edge.attrib) - {
+            "id",
+            "source",
+            "target",
+            "curveX",
+            "curveY",
+            "points",
+            "sourceSide",
+            "targetSide",
+        }:
             raise _malformed()
         if not {"id", "source", "target"} <= set(edge.attrib):
             raise _malformed()
+        for name in ("sourceSide", "targetSide"):
+            if name in edge.attrib and edge.attrib[name] not in {"top", "right", "bottom", "left"}:
+                raise _malformed()
         for name in ("curveX", "curveY"):
             if name in edge.attrib:
                 value = edge.attrib[name]

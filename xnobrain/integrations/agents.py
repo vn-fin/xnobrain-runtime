@@ -549,7 +549,7 @@ class AgentOperationsMixin:
             )
             if "reasoning" in body and not self._coerce_bool(body["reasoning"]):
                 effort = "none"
-            elif effort == "none":
+            elif "reasoning" in body and effort == "none":
                 effort = "medium"
             if effort not in {
                 "auto",

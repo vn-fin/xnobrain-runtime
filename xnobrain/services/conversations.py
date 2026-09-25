@@ -16,9 +16,10 @@ from ..repositories import StoreError
 from ..repositories.conversation_creation import ConversationCreationRepository
 from .base import ServiceError, iso
 from .conversation_creation import create_bound, signed_creation
+from .conversation_reasoning import ConversationReasoningServiceMixin, store
 
 
-class ConversationsServiceMixin:
+class ConversationsServiceMixin(ConversationReasoningServiceMixin):
     @staticmethod
     def _personal_context() -> dict[str, Any]:
         return {
@@ -254,6 +255,9 @@ class ConversationsServiceMixin:
         payload = self.agents.get_conversation(agent_id, conversation_id)
         result = self._conversation_dto(agent_id, payload["conversation"])
         result["messages"] = payload["messages"]
+        preference_store = store(self, agent_id, conversation_id)
+        with preference_store.locked():
+            result.update(preference_store.read())
         return result
 
     async def conversation_usage(
@@ -485,6 +489,7 @@ class ConversationsServiceMixin:
                 receipt["state"] = "deleted"
                 creation.save(receipt)
             result = self.agents.delete_conversation(agent_id, conversation_id)
+        store(self, agent_id, conversation_id).delete()
         self.repository.delete_conversation_runs(agent_id, conversation_id)
         self.repository.delete_conversation_context(
             self._conversation_profile(agent_id), conversation_id

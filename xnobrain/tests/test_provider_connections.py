@@ -92,6 +92,42 @@ class ProviderCatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["id"] for item in catalog["data"]], ["cc/auto", "cc/claude"])
         self.assertEqual(catalog["default_model"], "cc/auto")
 
+    async def test_router_supported_reasoning_levels_reach_provider_and_run_catalogs(self):
+        class Router(LLMRouterClient):
+            async def _request(self, *_args, **_kwargs):
+                return {
+                    "data": [
+                        {
+                            "id": "cx/gpt-6-sol",
+                            "owned_by": "gorouter",
+                            "supported_reasoning_levels": [
+                                {"effort": level, "description": "Provider effort"}
+                                for level in ["low", "medium", "high", "xhigh", "max", "ultra"]
+                            ],
+                        }
+                    ]
+                }
+
+        service = _Service()
+        service.router = Router()
+        catalog = await service.router.list_models()
+        model = catalog["data"][0]
+        result = await service.provider_model_reasoning(model["provider"], model["id"])
+        self.assertEqual(result["reasoning"], ["low", "medium", "high", "xhigh", "max", "ultra"])
+        run_metadata = await service.router.reasoning_for_model(model["id"])
+        self.assertEqual(run_metadata["reasoning"], result["reasoning"])
+
+    def test_explicit_empty_effort_catalog_does_not_infer_levels(self):
+        self.assertEqual(
+            LLMRouterClient._model_reasoning_levels(
+                {
+                    "supported_reasoning_levels": [],
+                    "supportsThinking": True,
+                }
+            ),
+            [],
+        )
+
     async def test_reasoning_catalog_remains_read_only(self):
         service = _Service()
 
