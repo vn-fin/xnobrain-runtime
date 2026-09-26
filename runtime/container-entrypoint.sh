@@ -51,10 +51,21 @@ export RUNTIME_LLM_ROUTER_URL="${RUNTIME_LLM_ROUTER_URL:-}"
 # provisioning has not supplied one yet so health/reconciliation can repair the
 # assignment; inference remains unauthorized until the scoped key is injected.
 export RUNTIME_LLM_API_KEY="${RUNTIME_LLM_API_KEY:-}"
+if [[ -z "${RUNTIME_LLM_API_KEY_FILE:-}" && -n "$RUNTIME_LLM_API_KEY" ]]; then
+  # Give native CLI children a current workspace key without writing it into
+  # any persistent Hermes profile or relying on a terminal environment copy.
+  install -d -m 0700 /run/xnobrain-runtime
+  key_file="$(mktemp /run/xnobrain-runtime/router-api-key.XXXXXX)"
+  printf '%s\n' "$RUNTIME_LLM_API_KEY" > "$key_file"
+  chmod 0600 "$key_file"
+  mv -f "$key_file" /run/xnobrain-runtime/router-api-key
+  export RUNTIME_LLM_API_KEY_FILE=/run/xnobrain-runtime/router-api-key
+fi
 export RUNTIME_ACCOUNTING_MODE="${RUNTIME_ACCOUNTING_MODE:-legacy}"
 export RUNTIME_CONTROL_URL="${RUNTIME_CONTROL_URL:-}"
 
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
+/usr/local/bin/xnobrain-link-native-profiles
 # Profile environments share persistent, quota-accounted data storage, not the
 # instance root disk. Run as the same identity as the agent; never chmod 777.
 install -d -m 0700 /opt/data/python
