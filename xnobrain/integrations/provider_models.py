@@ -18,7 +18,6 @@ _REASONING_LEVELS = (
     "high",
     "xhigh",
     "max",
-    "ultra",
 )
 
 

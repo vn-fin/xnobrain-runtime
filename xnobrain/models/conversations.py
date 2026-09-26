@@ -162,6 +162,6 @@ class TodoRevisionUpdate(BaseModel):
 class ConversationReasoningUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reasoning_effort: (
-        Literal["auto", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] | None
+        Literal["auto", "none", "minimal", "low", "medium", "high", "xhigh", "max"] | None
     )
     expected_revision: int = Field(ge=0, strict=True)

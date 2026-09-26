@@ -31,6 +31,12 @@ def snapshot(service, agent_id, conversation_id):
 async def validate(router, model, effort):
     if effort in {None, "auto"}:
         return "available"
+    if effort == "ultra":
+        raise ServiceError(
+            "ultra reasoning is unavailable",
+            status=422,
+            code="unsupported_reasoning_effort",
+        )
     try:
         metadata = await router.reasoning_for_model(model)
     except Exception as error:

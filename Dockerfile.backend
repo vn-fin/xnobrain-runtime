@@ -159,6 +159,8 @@ COPY runtime/required-plugins /opt/xnobrain/required-plugins
 COPY runtime/skill-overrides /opt/xnobrain/skill-overrides
 COPY scripts/apply-profile-templates.sh /usr/local/bin/xnobrain-apply-profile-templates
 COPY runtime/container-entrypoint.sh /usr/local/bin/xnobrain-runtime
+COPY runtime/agent-cli.sh /usr/local/bin/agent
+COPY runtime/link-native-profiles.sh /usr/local/bin/xnobrain-link-native-profiles
 COPY runtime/systemd-entrypoint.sh /usr/local/bin/xnobrain-systemd-entrypoint
 COPY runtime/xnobrain-runtime.service /etc/systemd/system/xnobrain-runtime.service
 COPY runtime/10-incus-eth0.network /etc/systemd/network/10-incus-eth0.network
@@ -168,8 +170,7 @@ RUN install -d -m 0700 /opt/data /opt/data/home /opt/data/home/.config \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       systemd-resolved \
-    && chmod 0755 /usr/local/bin/xnobrain-runtime /usr/local/bin/xnobrain-systemd-entrypoint /usr/local/bin/xnobrain-prepare-resolv-conf /usr/local/bin/xnobrain-apply-profile-templates \
-    && ln -sfn /usr/local/lib/hermes-agent/venv/bin/hermes /usr/local/bin/agent \
+    && chmod 0755 /usr/local/bin/xnobrain-runtime /usr/local/bin/agent /usr/local/bin/xnobrain-link-native-profiles /usr/local/bin/xnobrain-systemd-entrypoint /usr/local/bin/xnobrain-prepare-resolv-conf /usr/local/bin/xnobrain-apply-profile-templates \
     && ln -sfn /etc/systemd/system/xnobrain-runtime.service \
       /etc/systemd/system/multi-user.target.wants/xnobrain-runtime.service \
     && ln -sfn /usr/lib/systemd/system/systemd-networkd.service \
