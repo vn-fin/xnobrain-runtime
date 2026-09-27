@@ -125,7 +125,9 @@ UPLOAD_CHUNK_SIZE = 1024 * 1024
 MAX_COMPRESSED = 2 * 1024 * 1024 * 1024
 MAX_EXPANDED = 8 * 1024 * 1024 * 1024
 MAX_FILE_BYTES = 512 * 1024 * 1024
-MAX_FILES = 20_000
+# Full workspace bundles can contain many complete agent profiles.
+MAX_FILES = 100_000
+MAX_SHAREABLE_FILES = 20_000
 MAX_PATH_DEPTH = 32
 TRANSFER_TTL_SECONDS = 24 * 60 * 60
 ROOT_EXCLUDED_PARTS = {"profiles"}
@@ -213,7 +215,7 @@ class PortabilityService:
             raise StoreError("verified clone recipient required", status=403, code="permission_denied")
         if not re.fullmatch(r"[0-9a-f]{64}", digest) or self._hash_file(path) != digest:
             raise StoreError("snapshot digest mismatch", code="invalid_bundle_checksum")
-        archive, files, _ = self._validated_archive_file(path)
+        archive, files, _ = self._validated_archive_file(path, max_files=MAX_SHAREABLE_FILES)
         with archive:
             manifest = json.loads(archive.read("manifest.json"))
             agents = manifest.get("agents")
@@ -751,8 +753,9 @@ class PortabilityService:
                         excluded_paths.append(f"profiles/{agent_id}/{relative.as_posix()}")
                     continue
                 entries.append((f"profiles/{agent_id}/{relative.as_posix()}", item))
-            if shareable and (len(entries) + len(excluded_paths) > MAX_FILES - 2):
+            if shareable and (len(entries) + len(excluded_paths) > MAX_SHAREABLE_FILES - 2):
                 raise StoreError("too many profile files", code="invalid_bundle")
+            self._validate_file_count(len(entries) + 2)
             if shareable and not any(
                 name == f"profiles/{agent_id}/state.db" for name, _ in entries
             ):
@@ -779,6 +782,7 @@ class PortabilityService:
                     (f"teams/{team_id}.yaml", yaml.safe_dump(team, sort_keys=False).encode())
                 )
 
+        self._validate_file_count(len(entries) + len(team_payloads) + 2)
         manifest = {
             "format": BUNDLE_FORMAT,
             "version": BUNDLE_VERSION,
@@ -865,7 +869,7 @@ class PortabilityService:
                     )
                 if shareable:
                     expanded_written += checksums[name]["size"]
-                    if len(checksums) > MAX_FILES - 2 or expanded_written > MAX_EXPANDED:
+                    if len(checksums) > MAX_SHAREABLE_FILES - 2 or expanded_written > MAX_EXPANDED:
                         raise StoreError("snapshot expansion limits exceeded", code="invalid_bundle")
             for name, payload in sorted(team_payloads):
                 checksums[name] = self._write_zip_payload(archive, name, payload, secrets)
@@ -880,6 +884,11 @@ class PortabilityService:
                     archive, "manifest.json", manifest_payload, set()
                 )
             archive.writestr("checksums.json", json.dumps(checksums, indent=2) + "\n")
+            # Reuse import's directory checks without decompressing or hashing
+            # the payload again. Never publish a bundle exceeding import limits.
+            self._archive_files(
+                archive, max_files=MAX_SHAREABLE_FILES if shareable else MAX_FILES
+            )
         size = target.stat().st_size
         if size > MAX_COMPRESSED:
             target.unlink(missing_ok=True)
@@ -928,66 +937,88 @@ class PortabilityService:
             **({"inventory": inventory} if inventory is not None else {}),
         }
 
-    def _validated_archive_file(self, path: Path) -> tuple[ZipFile, dict[str, ZipInfo], int]:
+    @staticmethod
+    def _validate_file_count(count: int, *, max_files: int | None = None) -> None:
+        if max_files is None:
+            max_files = MAX_FILES
+        if count > max_files:
+            raise StoreError(
+                f"bundle contains {count:,} files; maximum is {max_files:,}",
+                code="invalid_bundle",
+            )
+
+    def _archive_files(
+        self, archive: ZipFile, *, max_files: int | None = None
+    ) -> tuple[dict[str, ZipInfo], int]:
+        """Check ZIP directory bounds shared by export and import."""
+        self._validate_file_count(
+            sum(not info.is_dir() for info in archive.infolist()), max_files=max_files
+        )
+        files: dict[str, ZipInfo] = {}
+        folded: set[str] = set()
+        expanded = 0
+        for info in archive.infolist():
+            raw = info.filename
+            path_value = PurePosixPath(raw)
+            mode = info.external_attr >> 16
+            if stat.S_ISLNK(mode) or (mode and stat.S_IFMT(mode) not in {0, stat.S_IFREG, stat.S_IFDIR}):
+                raise StoreError("bundle contains unsupported file type", code="invalid_bundle")
+            raw_parts = raw.split("/")
+            control = any(ord(character) < 32 for character in raw)
+            drive = bool(re.match(r"^[A-Za-z]:", raw))
+            if (
+                path_value.is_absolute()
+                or any(part in {"", ".", ".."} for part in raw_parts[:-1])
+                or (not info.is_dir() and raw_parts[-1] in {"", ".", ".."})
+                or "\\" in raw
+                or control
+                or drive
+                or len(path_value.parts) > MAX_PATH_DEPTH
+            ):
+                raise StoreError("bundle contains an unsafe path", code="invalid_bundle")
+            if info.is_dir():
+                continue
+            key = raw.casefold()
+            if raw in files or key in folded:
+                raise StoreError(
+                    "bundle contains duplicate or case-colliding file paths", code="invalid_bundle"
+                )
+            if info.compress_size > MAX_COMPRESSED:
+                raise StoreError("bundle contains an oversized member", code="invalid_bundle")
+            if info.file_size > MAX_FILE_BYTES or (info.file_size and not info.compress_size):
+                raise StoreError("bundle contains an oversized file", code="invalid_bundle")
+            expanded += info.file_size
+            # Full Hermes profiles legitimately contain extremely
+            # compressible logs, sparse database pages, caches, and model
+            # output. A per-member ratio limit rejects archives produced
+            # by our own exporter. Bound extraction with absolute file,
+            # aggregate-byte, file-count, and path limits instead.
+            if expanded > MAX_EXPANDED:
+                raise StoreError("bundle expansion limits exceeded", code="invalid_bundle")
+            files[raw] = info
+            folded.add(key)
+        if "manifest.json" not in files or "checksums.json" not in files:
+            raise StoreError(
+                "bundle manifest and checksums are required", code="invalid_bundle"
+            )
+        if (
+            files["manifest.json"].file_size > 4 * 1024 * 1024
+            or files["checksums.json"].file_size > 16 * 1024 * 1024
+        ):
+            raise StoreError("bundle metadata is too large", code="invalid_bundle")
+        return files, expanded
+
+    def _validated_archive_file(
+        self, path: Path, *, max_files: int | None = None
+    ) -> tuple[ZipFile, dict[str, ZipInfo], int]:
         if not path.is_file() or path.stat().st_size <= 0 or path.stat().st_size > MAX_COMPRESSED:
             raise StoreError("bundle size is invalid", code="invalid_bundle")
         try:
             archive = ZipFile(path)
         except BadZipFile as error:
             raise StoreError("bundle is not a valid zip archive", code="invalid_bundle") from error
-        files: dict[str, ZipInfo] = {}
-        folded: set[str] = set()
-        expanded = 0
         try:
-            for info in archive.infolist():
-                raw = info.filename
-                path_value = PurePosixPath(raw)
-                mode = info.external_attr >> 16
-                if stat.S_ISLNK(mode) or (mode and stat.S_IFMT(mode) not in {0, stat.S_IFREG, stat.S_IFDIR}):
-                    raise StoreError("bundle contains unsupported file type", code="invalid_bundle")
-                raw_parts = raw.split("/")
-                control = any(ord(character) < 32 for character in raw)
-                drive = bool(re.match(r"^[A-Za-z]:", raw))
-                if (
-                    path_value.is_absolute()
-                    or any(part in {"", ".", ".."} for part in raw_parts[:-1])
-                    or (not info.is_dir() and raw_parts[-1] in {"", ".", ".."})
-                    or "\\" in raw
-                    or control
-                    or drive
-                    or len(path_value.parts) > MAX_PATH_DEPTH
-                ):
-                    raise StoreError("bundle contains an unsafe path", code="invalid_bundle")
-                if info.is_dir():
-                    continue
-                key = raw.casefold()
-                if raw in files or key in folded or len(files) >= MAX_FILES:
-                    raise StoreError(
-                        "bundle file count or uniqueness is invalid", code="invalid_bundle"
-                    )
-                if info.compress_size > MAX_COMPRESSED:
-                    raise StoreError("bundle contains an oversized member", code="invalid_bundle")
-                if info.file_size > MAX_FILE_BYTES or (info.file_size and not info.compress_size):
-                    raise StoreError("bundle contains an oversized file", code="invalid_bundle")
-                expanded += info.file_size
-                # Full Hermes profiles legitimately contain extremely
-                # compressible logs, sparse database pages, caches, and model
-                # output. A per-member ratio limit rejects archives produced
-                # by our own exporter. Bound extraction with absolute file,
-                # aggregate-byte, file-count, and path limits instead.
-                if expanded > MAX_EXPANDED:
-                    raise StoreError("bundle expansion limits exceeded", code="invalid_bundle")
-                files[raw] = info
-                folded.add(key)
-            if "manifest.json" not in files or "checksums.json" not in files:
-                raise StoreError(
-                    "bundle manifest and checksums are required", code="invalid_bundle"
-                )
-            if (
-                files["manifest.json"].file_size > 4 * 1024 * 1024
-                or files["checksums.json"].file_size > 16 * 1024 * 1024
-            ):
-                raise StoreError("bundle metadata is too large", code="invalid_bundle")
+            files, expanded = self._archive_files(archive, max_files=max_files)
             try:
                 manifest = json.loads(archive.read("manifest.json"))
                 checksums = json.loads(archive.read("checksums.json"))
