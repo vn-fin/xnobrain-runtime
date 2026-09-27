@@ -1543,6 +1543,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     "mcp__news__search",
                     "latest headlines",
                     {"query": "latest headlines"},
+                    tool_call_id="call-search",
                 )
                 tool_progress_callback(
                     "reasoning.available",
@@ -1564,6 +1565,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     duration=0.125,
                     is_error=False,
                     result="private tool output",
+                    tool_call_id="call-search",
                 )
                 tool_progress_callback(
                     "tool.started",
@@ -1728,6 +1730,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(b'"delta":"Review the search results."', payload)
             self.assertNotIn(b'"event":"reasoning.available"', payload)
             self.assertIn(b'"event":"tool.completed"', payload)
+            self.assertEqual(payload.count(b'"tool_call_id":"call-search"'), 2)
             self.assertIn(b'"duration":0.125', payload)
             self.assertNotIn(b"private tool output", payload)
             self.assertNotIn(b"private-args", payload)

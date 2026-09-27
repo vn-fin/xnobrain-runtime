@@ -58,6 +58,15 @@ Agent execution activity is available as a compatibility snapshot at
 `running`. The runtime caches the database-backed Kanban portion for ten
 seconds so status monitoring does not continuously scan every board.
 
+Conversation SSE `tool.started` and `tool.completed` events carry
+`tool_call_id` from the embedded executor. Clients correlate concurrent calls
+and persisted tool results by this ID, including multiple calls to the same
+tool. Each start/completion is projected once from the structured executor
+callbacks; existing preview, duration, error, and write-approval behavior is
+preserved. Older streams without IDs are supported only when a running tool
+can be matched unambiguously. History reconstruction uses persisted
+`tool_call_id` and tool result error fields.
+
 Agent budgets use `weekly_usd` at
 `GET|PUT /xnobrain/api/runtime/v1/analytics/agents/{agent_id}/budget`. The
 minimum configured limit is USD 1; clearing the value restores the USD 20
