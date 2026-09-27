@@ -10,6 +10,7 @@ from contextlib import nullcontext
 
 from pydantic import ValidationError
 
+from xnobrain.integrations.conversation_tools import ConversationToolCallbacks
 from xnobrain.models.conversations import ChatRequest
 from xnobrain.runtime_limits import max_parallel_agents, session_timeout_seconds
 
@@ -1549,6 +1550,9 @@ class ConversationRunnerMixin:
                 prepared,
                 run_id=run_id,
             )
+            tool_callbacks = ConversationToolCallbacks(
+                tool_progress_callback, skill_tool_start, skill_tool_complete
+            )
             while prompt:
                 history = await adapter._conversation_history_for_session(conversation_id)
                 if smart_route_name and not first_turn:
@@ -1571,9 +1575,9 @@ class ConversationRunnerMixin:
                     ephemeral_system_prompt=feature_prompt if first_turn else None,
                     session_id=conversation_id,
                     stream_delta_callback=stream_delta_callback,
-                    tool_progress_callback=tool_progress_callback,
-                    tool_start_callback=skill_tool_start,
-                    tool_complete_callback=skill_tool_complete,
+                    tool_progress_callback=tool_callbacks.progress,
+                    tool_start_callback=tool_callbacks.start,
+                    tool_complete_callback=tool_callbacks.complete,
                     agent_ref=agent_ref,
                     gateway_session_key=conversation_id,
                     route=conversation_model_route(selected_model, self.llm_router.base_url)
