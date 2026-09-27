@@ -32,6 +32,18 @@ and caches may be extremely compressible. Verify every checksum and reject
 unlisted payloads. Unsupported major versions fail; compatible minor additions
 are ignored unless declared required.
 
+Full profile bundles allow at most **100,000 files**, including `manifest.json`,
+`checksums.json`, and team files. Community snapshots retain their **20,000-file**
+limit. Directory entries do not count. Exports enforce the same archive-directory
+checks as imports, so an export cannot succeed with a file count, path collision,
+or size that the receiving importer rejects. Count errors report the actual count
+and limit; duplicate and case-colliding paths have a separate error message.
+
+Other bounds remain: 2 GiB compressed, 8 GiB expanded, 512 MiB per file,
+32 path components, 4 MiB manifest, and 16 MiB checksum inventory. Every payload
+checksum is still verified. Large bundles require a Runtime with the 100,000-file
+limit at the destination; older Runtimes still reject bundles over 20,000 files.
+
 Apply uses staging and atomic publish. Ownership and conflicting IDs are remapped consistently, crons are paused, persistent approvals reset, providers disconnected, and custom executable content quarantined. An import report lists every transformation and warning.
 
 Imported profiles discard archive credentials and authentication files. The
