@@ -1044,6 +1044,28 @@ timeout terminate/reap the child before publishing a terminal state.
 
 ### Asynchronous profile snapshot tasks
 
+Upload clients may keep up to four indexed part PUTs in flight, using the returned
+`chunk_size` and `total_parts` (currently 512 KiB per part). Each slot includes
+reading, SHA-256 hashing, request/response handling, and retry backoff. An identical
+part can be replayed before completion using the same index, bytes, and
+`X-Part-SHA256`. The UI supplies a stable `Idempotency-Key` derived from upload ID,
+index, and digest to enable its existing bounded transient-error retry policy;
+this adds no server idempotency ledger. Admission and completion are not replayed.
+
+Upload admission, part persistence, completion/preview, and deletion execute in
+the shared thread executor. Existing bounded body reads, checksums, atomic
+write/fsync, and publication/pin locks still apply. Cancelling an HTTP request
+does not interrupt a running disk operation or release its lock prematurely.
+Busy storage returns 429; clients must retain their retry slot and respect
+backoff. Completion assembles parts by index after all distinct acknowledgments.
+
+UI upload progress counts acknowledged bytes once. At 100 percent it changes to
+archive checking until the preview returns; import starts only after explicit
+acceptance. Cancelling or replacing an attempt aborts requests and settles client
+workers before best-effort deletion of its disposable input. Cleanup errors do
+not replace the original error. Inputs whose import admission was attempted are
+owned by the durable import flow, including uncertain acceptance responses.
+
 New clients use the additive task contract under `/xnobrain/api/runtime/v1/bundles`:
 
 - `POST /export-tasks`: `{agent_ids, team_ids, include_conversations?}`; optional
