@@ -116,6 +116,8 @@ import yaml
 from ..defaults import BIG_BROTHER_AGENT_ID
 from ..repositories import FileRepository, StoreError
 
+logger = logging.getLogger(__name__)
+
 BUNDLE_FORMAT = "xnobrain-bundle"
 BUNDLE_VERSION = 1
 # Downloads retain their existing size. Raw upload bodies fit the staging
@@ -368,6 +370,13 @@ class PortabilityService:
             "complete": False,
         }
         self.repository.atomic_json(directory / "metadata.json", metadata)
+        logger.info(
+            "bundle upload started upload_id=%s compressed_bytes=%d parts=%d max_files=%d",
+            transfer_id,
+            size,
+            metadata["total_parts"],
+            MAX_FILES,
+        )
         return metadata
 
     def put_upload_part(self, transfer_id: Any, part_number: Any, payload: bytes) -> dict[str, Any]:
@@ -408,6 +417,14 @@ class PortabilityService:
         metadata = self._read_metadata(directory)
         if metadata.get("complete") and (directory / "bundle.zip").is_file():
             return metadata
+        started = time.monotonic()
+        stage = "assembly"
+        logger.info(
+            "bundle upload completion started upload_id=%s compressed_bytes=%d parts=%d",
+            metadata["upload_id"],
+            metadata["size"],
+            metadata["total_parts"],
+        )
         target = directory / "bundle.zip"
         digest = hashlib.sha256()
         total = 0
@@ -434,16 +451,48 @@ class PortabilityService:
                     "merged bundle checksum is invalid", code="invalid_bundle_checksum"
                 )
             os.replace(temporary, target)
-        except Exception:
+        except Exception as error:
+            logger.warning(
+                "bundle upload completion failed upload_id=%s stage=%s error_code=%s "
+                "error_type=%s elapsed_seconds=%.2f",
+                metadata["upload_id"],
+                stage,
+                error.code if isinstance(error, StoreError) else "unexpected_error",
+                type(error).__name__,
+                time.monotonic() - started,
+            )
             try:
                 os.unlink(temporary)
             except FileNotFoundError:
                 pass
             raise
-        preview = self.dry_run_file(target)
-        metadata.update({"complete": True, "sha256": digest.hexdigest(), "preview": preview})
-        self.repository.atomic_json(directory / "metadata.json", metadata)
-        shutil.rmtree(directory / "parts", ignore_errors=True)
+        try:
+            stage = "preview"
+            preview = self.dry_run_file(target)
+            stage = "persistence"
+            metadata.update({"complete": True, "sha256": digest.hexdigest(), "preview": preview})
+            self.repository.atomic_json(directory / "metadata.json", metadata)
+            shutil.rmtree(directory / "parts", ignore_errors=True)
+        except Exception as error:
+            logger.warning(
+                "bundle upload completion failed upload_id=%s stage=%s error_code=%s "
+                "error_type=%s elapsed_seconds=%.2f",
+                metadata["upload_id"],
+                stage,
+                error.code if isinstance(error, StoreError) else "unexpected_error",
+                type(error).__name__,
+                time.monotonic() - started,
+            )
+            raise
+        inspection = preview.get("inspection", {})
+        logger.info(
+            "bundle upload preview completed upload_id=%s files=%s expanded_bytes=%s "
+            "elapsed_seconds=%.2f",
+            metadata["upload_id"],
+            inspection.get("files"),
+            inspection.get("expanded_bytes"),
+            time.monotonic() - started,
+        )
         return metadata
 
     def apply_upload(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -951,9 +1000,12 @@ class PortabilityService:
         self, archive: ZipFile, *, max_files: int | None = None
     ) -> tuple[dict[str, ZipInfo], int]:
         """Check ZIP directory bounds shared by export and import."""
-        self._validate_file_count(
-            sum(not info.is_dir() for info in archive.infolist()), max_files=max_files
-        )
+        count = sum(not info.is_dir() for info in archive.infolist())
+        limit = MAX_FILES if max_files is None else max_files
+        logger.info("bundle archive inventory files=%d max_files=%d", count, limit)
+        if count > limit:
+            logger.warning("bundle archive file limit exceeded files=%d max_files=%d", count, limit)
+        self._validate_file_count(count, max_files=max_files)
         files: dict[str, ZipInfo] = {}
         folded: set[str] = set()
         expanded = 0
@@ -980,6 +1032,7 @@ class PortabilityService:
                 continue
             key = raw.casefold()
             if raw in files or key in folded:
+                logger.warning("bundle archive duplicate path rejected files=%d", count)
                 raise StoreError(
                     "bundle contains duplicate or case-colliding file paths", code="invalid_bundle"
                 )
