@@ -10,6 +10,7 @@ from contextlib import nullcontext
 
 from pydantic import ValidationError
 
+from xnobrain.integrations.conversation_tools import ConversationToolCallbacks
 from xnobrain.models.conversations import ChatRequest
 from xnobrain.runtime_limits import max_parallel_agents, session_timeout_seconds
 
@@ -296,6 +297,7 @@ class ConversationRunnerMixin:
             "ownership_context": dict(body.get("ownership_context") or {}),
             "_custom_page_principal": body.get("_custom_page_principal"),
             "_ui_assistance": body.get("_ui_assistance"),
+            "_reasoning_snapshot": body.get("_reasoning_snapshot"),
         }
 
     async def _resolve_prepared_model_route(self, prepared: dict[str, Any]) -> None:
@@ -327,9 +329,18 @@ class ConversationRunnerMixin:
         selected_model = str(decision["model"])
         prepared["model"] = selected_model
         prepared["requested_model"] = selected_model
-        prepared["smart_route"] = route_name
-        prepared["smart_route_tier"] = str(decision.get("tier") or "")
-        prepared["route_reasoning"] = str(decision.get("reasoning") or "")
+        prepared["blend_route"] = route_name
+        # Only Smart Route decisions have a tier. Ordinary blends must not
+        # install the classifier or override the agent's configured reasoning.
+        if decision.get("tier"):
+            prepared["smart_route"] = route_name
+            prepared["smart_route_tier"] = str(decision["tier"])
+            prepared["route_reasoning"] = str(decision.get("reasoning") or "")
+        candidates = decision.get("candidates") or []
+        if candidates:
+            prepared["model_fallbacks"] = [
+                str(model) for model in candidates if str(model) != selected_model
+            ]
         command = list(prepared.get("command") or [])
         if "--model" in command:
             index = command.index("--model")
@@ -663,7 +674,7 @@ class ConversationRunnerMixin:
 
     @staticmethod
     def _install_model_fallbacks(agent: Any, prepared: Mapping[str, Any]) -> None:
-        """Attach alternate Auto candidates to Hermes' native failure chain."""
+        """Attach ordered blend alternates to Hermes' native failure chain."""
         models = list(
             dict.fromkeys(
                 str(model) for model in (prepared.get("model_fallbacks") or []) if str(model)
@@ -703,7 +714,9 @@ class ConversationRunnerMixin:
         reuse_initial = reuse_initial_decision
         last_step_input = ""
 
-        def build_smart_route_api_kwargs(api_messages: list[Any]) -> dict[str, Any]:
+        def build_smart_route_api_kwargs(
+            api_messages: list[Any], *args: Any, **kwargs: Any
+        ) -> dict[str, Any]:
             nonlocal reuse_initial, last_step_input
             step_input = self._smart_route_step_input(api_messages)
             if reuse_initial:
@@ -724,7 +737,9 @@ class ConversationRunnerMixin:
                     if not apply_reasoning:
                         decision = {**decision, "reasoning": ""}
                     self._apply_smart_route_decision(agent, decision)
-            return original_build_api_kwargs(api_messages)
+            # Preserve the native builder contract, including tools_for_api
+            # (and an explicit empty tool list), through every routing layer.
+            return original_build_api_kwargs(api_messages, *args, **kwargs)
 
         agent._build_api_kwargs = build_smart_route_api_kwargs
         agent._xnobrain_smart_step_route = route_marker
@@ -856,6 +871,8 @@ class ConversationRunnerMixin:
             .strip()
             .lower()
         )
+        if prepared.get("_reasoning_snapshot") is not None:
+            configured_reasoning = prepared["_reasoning_snapshot"]["effective_preference"]
         if configured_reasoning == "auto" and not smart_route_name:
             try:
                 metadata = await self.llm_router.reasoning_for_model(active_smart_decision["model"])
@@ -909,12 +926,41 @@ class ConversationRunnerMixin:
                 if coordinator is not None:
                     coordinator.install(agent)
                 manager._install_model_fallbacks(agent, prepared)
+                reasoning_snapshot = prepared.get("_reasoning_snapshot")
+                if (
+                    reasoning_snapshot is not None
+                    and reasoning_snapshot.get("source") == "conversation"
+                ):
+                    from .conversation_reasoning import install_reasoning_guard
+
+                    preference = reasoning_snapshot["effective_preference"]
+
+                    def emit_reasoning(effective):
+                        active_smart_decision.update(reasoning=effective)
+                        tool_progress_callback(
+                            "reasoning.resolved",
+                            "",
+                            "",
+                            None,
+                            effective_effort=effective,
+                            model=str(agent.model),
+                        )
+
+                    install_reasoning_guard(
+                        agent,
+                        manager.llm_router,
+                        runtime_loop,
+                        preference,
+                        emit_reasoning,
+                    )
                 if smart_route_name:
                     manager._install_smart_route_step_routing(
                         agent,
                         runtime_loop,
                         runtime_loop_thread_id,
                         smart_route_name,
+                        apply_reasoning=configured_reasoning == "auto"
+                        or reasoning_snapshot is None,
                     )
                 # Hermes' API-server surface normally dispatches top-level
                 # delegations in the background and relies on GatewayRunner to
@@ -1250,8 +1296,14 @@ class ConversationRunnerMixin:
                             "at once and automatically queues the remainder. Do not split a larger "
                             "batch merely to match the concurrency limit."
                         )
+                if reasoning_snapshot is not None and configured_reasoning != "auto":
+                    from hermes_constants import parse_reasoning_effort
+
+                    agent.reasoning_config = parse_reasoning_effort(configured_reasoning)
                 route_reasoning = str(active_smart_decision.get("reasoning") or "")
-                if route_reasoning:
+                if route_reasoning and (
+                    reasoning_snapshot is None or configured_reasoning == "auto"
+                ):
                     manager._apply_smart_route_decision(
                         agent,
                         {
@@ -1498,6 +1550,9 @@ class ConversationRunnerMixin:
                 prepared,
                 run_id=run_id,
             )
+            tool_callbacks = ConversationToolCallbacks(
+                tool_progress_callback, skill_tool_start, skill_tool_complete
+            )
             while prompt:
                 history = await adapter._conversation_history_for_session(conversation_id)
                 if smart_route_name and not first_turn:
@@ -1520,9 +1575,9 @@ class ConversationRunnerMixin:
                     ephemeral_system_prompt=feature_prompt if first_turn else None,
                     session_id=conversation_id,
                     stream_delta_callback=stream_delta_callback,
-                    tool_progress_callback=tool_progress_callback,
-                    tool_start_callback=skill_tool_start,
-                    tool_complete_callback=skill_tool_complete,
+                    tool_progress_callback=tool_callbacks.progress,
+                    tool_start_callback=tool_callbacks.start,
+                    tool_complete_callback=tool_callbacks.complete,
                     agent_ref=agent_ref,
                     gateway_session_key=conversation_id,
                     route=conversation_model_route(selected_model, self.llm_router.base_url)
@@ -1572,7 +1627,7 @@ class ConversationRunnerMixin:
                 "threshold": max(0, context_threshold),
                 "auto_compaction": auto_compaction,
                 "model": actual_model,
-                "route": str(prepared.get("smart_route") or ""),
+                "route": str(prepared.get("blend_route") or prepared.get("smart_route") or ""),
                 "route_tier": str(active_smart_decision.get("tier") or ""),
                 "reasoning": str(active_smart_decision.get("reasoning") or ""),
             }

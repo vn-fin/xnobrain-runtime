@@ -397,6 +397,8 @@ class ConversationStreamMixin:
                     "tool": normalized_tool,
                     "preview": preview or "",
                 }
+                if kwargs.get("tool_call_id"):
+                    event["tool_call_id"] = str(kwargs["tool_call_id"])
                 if normalized_tool == "delegate_task" and isinstance(args, Mapping):
                     event["args"] = dict(args)
                     raw_tasks = args.get("tasks")
@@ -435,6 +437,8 @@ class ConversationStreamMixin:
                     "error": bool(kwargs.get("is_error", False))
                     or write_status in {"rejected", "failed"},
                 }
+                if kwargs.get("tool_call_id"):
+                    event["tool_call_id"] = str(kwargs["tool_call_id"])
                 if normalized_tool == "delegate_task":
                     event["output"] = safe_delegation_output(result)
                 enqueue_event(event)
@@ -457,6 +461,16 @@ class ConversationStreamMixin:
                         "tool": tool_name or "tool",
                         "duration": round(float(kwargs.get("duration") or 0), 3),
                         "error": True,
+                    }
+                )
+            elif event_type == "reasoning.resolved":
+                enqueue_event(
+                    {
+                        "event": "reasoning.resolved",
+                        "run_id": run_id,
+                        "timestamp": timestamp,
+                        "effective_effort": kwargs.get("effective_effort"),
+                        "model": kwargs.get("model"),
                     }
                 )
             elif event_type == "reasoning.delta":

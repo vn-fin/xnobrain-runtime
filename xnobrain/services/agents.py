@@ -54,12 +54,15 @@ AGENT_ACTIVITY_KANBAN_TTL_SECONDS = 10.0
 
 class AgentsServiceMixin:
     def list_profiles(self) -> list[dict[str, Any]]:
-        """Use Hermes' native profile inventory, including the default profile."""
-        from hermes_cli.profiles import list_profiles
+        """Inventory configured Runtime roots, including the default profile."""
+        from ..integrations.profile_inventory import list_profile_inventory
 
         registry = {item["name"]: item for item in self.agents.sync_profiles_registry()["profiles"]}
         result = []
-        for item in list_profiles():
+        for item in list_profile_inventory(self.agents, registry):
+            store = getattr(self.repository, "portability_task_store", None)
+            if store is not None and not store.resource_visible("PROFILE", item.name):
+                continue
             updated_at = item.path.stat().st_mtime if item.path.exists() else None
             metadata = registry.get(item.name, {})
             result.append(
@@ -78,14 +81,30 @@ class AgentsServiceMixin:
             )
         return result
 
-    @cached_method("agents")
     def list_agents(self) -> list[dict[str, Any]]:
+        self._refresh_external_agent_profiles()
+        return self._cached_agents()
+
+    @cached_method("agents")
+    def _cached_agents(self) -> list[dict[str, Any]]:
         return [self._agent_dto(item) for item in self.agents.list_agents()["agents"]]
 
     async def list_agents_async(self) -> list[dict[str, Any]]:
+        self._refresh_external_agent_profiles()
         if self._cache.contains("agents"):
             return self.list_agents()
         return await asyncio.to_thread(self.list_agents)
+
+    def _refresh_external_agent_profiles(self) -> None:
+        """Notice profiles created by the native CLI outside Runtime's API."""
+        try:
+            stamp = self.agents.profiles_root.stat().st_mtime_ns
+        except OSError:
+            stamp = None
+        previous = getattr(self, "_agent_profiles_stamp", stamp)
+        if previous != stamp:
+            self._cache.invalidate("agents")
+        self._agent_profiles_stamp = stamp
 
     def agent_activity(self) -> dict[str, Any]:
         """Report real executions, not the profile's configured enabled state."""
@@ -300,7 +319,7 @@ class AgentsServiceMixin:
             )
         return identifier[:64].rstrip("-")
 
-    def create_agent(self, body: Mapping[str, Any]) -> dict[str, Any]:
+    def create_agent(self, body: Mapping[str, Any], *, trusted_context: Any = None) -> dict[str, Any]:
         display_name = " ".join(str(body.get("display_name") or body.get("name") or "").split())
         if not display_name:
             raise ServiceError("display_name is required")
@@ -312,7 +331,26 @@ class AgentsServiceMixin:
         }
         if "description" in body:
             payload["description"] = body["description"]
-        raw, _ = self.agents.create_agent(payload)
+        if getattr(trusted_context, "subject", ""):
+            profile = self.repository.profile_path(payload["name"])
+            if profile.exists():
+                from ..services.portability import PortabilityService
+
+                marker = profile / ".community-profile-owner.json"
+                try:
+                    stored = json.loads(marker.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    stored = None
+                if stored != PortabilityService.owner_record(trusted_context):
+                    raise ServiceError("agent ownership is unavailable", status=403, code="permission_denied")
+        raw, status = self.agents.create_agent(payload)
+        if status == 201 and getattr(trusted_context, "subject", ""):
+            from ..services.portability import PortabilityService
+
+            self.repository.atomic_json(
+                self.repository.profile_path(raw["name"]) / ".community-profile-owner.json",
+                PortabilityService.owner_record(trusted_context),
+            )
         self._cache.invalidate("agents")
         return self._agent_dto(raw)
 
@@ -443,6 +481,12 @@ class AgentsServiceMixin:
         return self.config.get_config()
 
     def update_global_config(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        if body.get("reasoning_effort") == "ultra" or body.get("effort") == "ultra":
+            raise ServiceError(
+                "ultra reasoning is unavailable",
+                status=422,
+                code="unsupported_reasoning_effort",
+            )
         if "checkpoints_enabled" in body:
             raise ServiceError(
                 "File restore points must be enabled on an individual agent profile",
@@ -457,6 +501,12 @@ class AgentsServiceMixin:
         translated = dict(body)
         if "reasoning_effort" in translated:
             translated["effort"] = translated.pop("reasoning_effort")
+        if translated.get("effort") == "ultra":
+            raise ServiceError(
+                "ultra reasoning is unavailable",
+                status=422,
+                code="unsupported_reasoning_effort",
+            )
         if self._is_big_brother(agent_id):
             checkpoint_value = translated.pop("checkpoints_enabled", None)
             if translated:

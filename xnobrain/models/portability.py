@@ -21,3 +21,8 @@ class BundleUploadComplete(BaseModel):
 
 class BundleUploadApply(BaseModel):
     environment: dict[str, str] = Field(default_factory=dict)
+
+
+class BundleImportTask(BaseModel):
+    upload_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    environment: dict[str, str] = Field(default_factory=dict)

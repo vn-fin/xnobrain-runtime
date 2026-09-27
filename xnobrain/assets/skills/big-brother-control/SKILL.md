@@ -45,6 +45,56 @@ and `import` for profile administration. Check the subcommand's `--help`
 before mutation. Big Brother is the default XNOBrain profile, exposed through
 the aliases `big-brother`, `default`, and `Big Brother`; do not delete it.
 
+### Create agents where Runtime discovers them
+
+A request to create an XNOBrain agent includes making it discoverable through
+Runtime and the web UI. Select the destination from the effective Runtime
+configuration automatically; do not ask the user to supply a path already
+available in that configuration.
+
+- Use the configured `HERMES_PROFILES_ROOT` (projected from
+  `RUNTIME_HERMES_PROFILES_ROOT` or the resolved `RUNTIME_AGENT_DATA_ROOT` layout).
+  Named profiles belong under that root using the ID returned by creation.
+  Do not hardcode a deployment path or derive the destination from the terminal
+  working directory, `~/.hermes`, or the selected agent's `HERMES_HOME`.
+- Resolve the destination **before** running the create command. For example,
+  when Runtime's profiles root is `/srv/xnobrain-data/hermes/profiles`, agent
+  `math` belongs at `/srv/xnobrain-data/hermes/profiles/math`. The CLI may print
+  `/srv/xnobrain-data/hermes/root/profiles/math`; accept that location only when
+  its resolved physical path is the same destination. Never assume the extra
+  `root/profiles` directory is scanned by Runtime.
+- Prefer an available, authorized Runtime creation/scaffold operation that
+  selects this destination itself. Before using native `agent profile create`
+  or `import`, verify that the CLI's `$HERMES_ROOT_PROFILE/profiles` resolves to
+  the same directory as Runtime's profiles root. Setting an environment variable
+  alone is not proof that the installed CLI honors it. If the roots differ,
+  use the authorized Runtime operation when available; otherwise report the
+  configuration mismatch before creating anything. Do not move existing
+  profiles or rewrite shared links as an incidental creation step.
+- Use the installed profile manager/template to create a complete profile.
+  Runtime discovers real profile directories with `agent.json` or `workspace/`;
+  do not fabricate metadata or create per-profile symlinks to make an incomplete
+  profile pass discovery. Creating a shell alias does not register an agent.
+  After creation, check the actual destination and profile structure. A CLI
+  success message, `.env`, `SOUL.md`, or a populated skills folder alone does
+  not establish that Runtime can discover the agent.
+- Read back the exact created ID through Runtime inventory and detail using an
+  available scoped tool or authenticated API client. The public checks are
+  `GET /xnobrain/api/runtime/v1/agents` and
+  `GET /xnobrain/api/runtime/v1/agents/{id}/detail`. Do not invent a tool or obtain
+  credentials from profile files to perform these checks. If Runtime verification
+  is unavailable or fails, report the profile as created but not yet verified
+  in Runtime; do not claim it is visible in the UI or recreate it automatically.
+
+For managed workspaces, use the platform's configured model/router setup through
+the supported creation flow. Do not tell the user to run `<agent> setup` or enter
+separate provider API keys merely because the native CLI prints those generic
+next steps. Do not copy Big Brother's credential files into the new profile.
+
+For an Agent Maker blueprint, preserve its approved revision, server-reserved
+target and scaffold/activation workflow. A lifecycle authorization failure must
+not be bypassed with CLI creation, file copying, or aliases.
+
 ## Full XNOBrain Administration
 
 Big Brother is initialized with approvals disabled, so native tool and

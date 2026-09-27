@@ -1,9 +1,71 @@
 """Portability API route declarations."""
 
-from ..models import BundleExport, BundleUploadApply, BundleUploadComplete, BundleUploadStart
+from ..models import (
+    BundleExport,
+    BundleImportTask,
+    BundleUploadApply,
+    BundleUploadComplete,
+    BundleUploadStart,
+)
 from .definition import route
 
 ROUTES = (
+    route(
+        "POST",
+        "/community/snapshots/{agent_id}/export",
+        "community_snapshot_export",
+        special="community_snapshot",
+        tags=("Portability",),
+        include_in_schema=False,
+    ),
+    route(
+        "POST",
+        "/community/snapshots/import",
+        "community_snapshot_import",
+        special="community_snapshot",
+        tags=("Portability",),
+        include_in_schema=False,
+    ),
+    route(
+        "POST",
+        "/bundles/import-tasks",
+        "bundle_task_import",
+        BundleImportTask,
+        special="bundle_task",
+        tags=("Portability",),
+    ),
+    route(
+        "GET",
+        "/bundles/task-exports/{transfer_id}/parts/{part_number}",
+        "bundle_task_part",
+        special="bundle_part",
+        tags=("Portability",),
+    ),
+    route(
+        "DELETE",
+        "/bundles/task-exports/{transfer_id}",
+        "bundle_task_delete",
+        special="bundle_task",
+        tags=("Portability",),
+    ),
+    route(
+        "POST",
+        "/bundles/export-tasks",
+        "bundle_task_create",
+        BundleExport,
+        special="bundle_task",
+        tags=("Portability",),
+    ),
+    route(
+        "GET", "/bundles/tasks", "bundle_task_list", special="bundle_task", tags=("Portability",)
+    ),
+    route(
+        "GET",
+        "/bundles/tasks/{task_id}",
+        "bundle_task_get",
+        special="bundle_task",
+        tags=("Portability",),
+    ),
     route(
         "POST", "/bundles/export", "bundle_export", BundleExport, "bundle_export", ("Portability",)
     ),

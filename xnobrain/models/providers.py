@@ -16,7 +16,6 @@ class SmartRouteModel(BaseModel):
         "high",
         "xhigh",
         "max",
-        "ultra",
     ] = "auto"
 
 

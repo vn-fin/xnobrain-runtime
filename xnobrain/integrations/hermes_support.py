@@ -73,7 +73,7 @@ METADATA_FILE = "agent.json"
 PROFILES_REGISTRY_FILE = "profiles.yaml"
 CREDENTIAL_FILES = (".env", "auth.json")
 AGENT_CREDENTIAL_ENV_KEYS = (LLM_ROUTER_KEY_ENV,)
-TEMPLATE_FILES = ("config.yaml", "SOUL.md", "AGENTS.md", "mcp.json")
+TEMPLATE_FILES = ("config.yaml", "SOUL.md", "AGENTS.md", "HERMES.md", "mcp.json")
 TEMPLATE_DIRS = ("memories", "plugins")
 PROFILE_STATE_DIRS = (
     "skills",

@@ -62,6 +62,7 @@ done
 
 hermes_home="${RUNTIME_HERMES_HOME:-}"
 : "${hermes_home:?RUNTIME_HERMES_HOME is required. Set it in .env or the environment}"
+profiles_root="${RUNTIME_HERMES_PROFILES_ROOT:-${HERMES_PROFILES_ROOT:-$hermes_home/profiles}}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This installer is for Linux." >&2
@@ -128,8 +129,25 @@ install_apt_packages() {
   sudo debconf-set-selections <<'EOF'
 ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true
 EOF
-  sudo apt-get -o Acquire::Retries=5 update
-  sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends "${packages[@]}"
+  # Ubuntu's ARM archive endpoint intermittently drops long HTTP package
+  # transfers behind Colima NAT. Use HTTPS and retry the whole transaction;
+  # Acquire::Retries only retries individual downloads and can still leave a
+  # large install with dozens of failed archives.
+  if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+    sudo sed -i 's|http://ports.ubuntu.com/ubuntu-ports|https://ports.ubuntu.com/ubuntu-ports|g' \
+      /etc/apt/sources.list.d/ubuntu.sources
+  fi
+  local apt_args=(-o Acquire::Retries=10 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60)
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if sudo apt-get "${apt_args[@]}" update &&
+      sudo DEBIAN_FRONTEND=noninteractive apt-get "${apt_args[@]}" install -y --no-install-recommends "${packages[@]}"; then
+      return 0
+    fi
+    echo "apt package installation failed (attempt $attempt/5); retrying in 10s" >&2
+    sleep 10
+  done
+  return 1
 }
 
 install_dnf_packages() {
@@ -159,11 +177,15 @@ fi
 # partial installation.
 export PIP_RETRIES="${PIP_RETRIES:-5}"
 export PIP_TIMEOUT="${PIP_TIMEOUT:-30}"
-export npm_config_fetch_retries="${npm_config_fetch_retries:-5}"
+export npm_config_fetch_retries="${npm_config_fetch_retries:-8}"
 export npm_config_fetch_retry_mintimeout="${npm_config_fetch_retry_mintimeout:-10000}"
-export npm_config_fetch_retry_maxtimeout="${npm_config_fetch_retry_maxtimeout:-120000}"
-export npm_config_fetch_timeout="${npm_config_fetch_timeout:-120000}"
-
+export npm_config_fetch_retry_maxtimeout="${npm_config_fetch_retry_maxtimeout:-300000}"
+# Runtime VM builds may traverse Colima/NAT and npm's default request timeout
+# is too short for the browser package tree. Keep retries bounded while allowing
+# a slow but healthy registry response to finish.
+export npm_config_fetch_timeout="${npm_config_fetch_timeout:-600000}"
+export npm_config_maxsockets="${npm_config_maxsockets:-4}"
+export NODE_DEPS_TIMEOUT="${NODE_DEPS_TIMEOUT:-1800}"
 mkdir -p "$tools_dir" "$npm_prefix/bin" "$hermes_home"
 
 arch="$(uname -m)"
@@ -274,7 +296,8 @@ fi
 if ! "$project_python" -c 'import hermes_cli' >/dev/null 2>&1; then
   "$project_python" -m pip install -e "$hermes_install_dir"
 fi
-ln -sfn "$hermes_install_dir/venv/bin/hermes" "$npm_prefix/bin/agent"
+chmod 0755 "$project_dir/runtime/agent-cli.sh"
+ln -sfn "$project_dir/runtime/agent-cli.sh" "$npm_prefix/bin/agent"
 
 "$project_python" -m pip install --upgrade pip setuptools wheel
 "$project_python" -m pip install -r "$project_dir/requirements.txt"
@@ -313,8 +336,10 @@ fi
 
 # Install an independent seed for future profiles and refresh Big Brother's
 # packaged guidance. Existing named profiles remain untouched.
+HERMES_ROOT_PROFILE="$hermes_home" HERMES_PROFILES_ROOT="$profiles_root" \
+  bash "$project_dir/runtime/link-native-profiles.sh"
 XNOBRAIN_REQUIRED_SKILLS_DIR="$project_dir/runtime/required-skills" \
-  bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$hermes_home/profiles"
+  bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$profiles_root"
 
 chmod 700 "$hermes_home"
 

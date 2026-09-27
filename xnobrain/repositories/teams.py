@@ -21,6 +21,9 @@ class TeamRepositoryMixin:
     def list_teams(self) -> list[dict[str, Any]]:
         result = []
         for path in sorted(self.teams_root.glob("*.yaml")):
+            store = getattr(self, "portability_task_store", None)
+            if store is not None and not store.resource_visible("TEAM", path.stem):
+                continue
             try:
                 item = self._read_yaml(path)
                 if isinstance(item, dict):
@@ -30,6 +33,10 @@ class TeamRepositoryMixin:
         return result
 
     def get_team(self, team_id: Any) -> dict[str, Any]:
+        team_id = self._id(team_id, "team id")
+        store = getattr(self, "portability_task_store", None)
+        if store is not None and not store.resource_visible("TEAM", str(team_id)):
+            raise StoreError("team not found", status=404, code="not_found")
         path = self.teams_root / f"{self._id(team_id, 'team id')}.yaml"
         if not path.is_file():
             raise StoreError("team not found", status=404, code="not_found")
@@ -40,11 +47,19 @@ class TeamRepositoryMixin:
 
     def put_team(self, item: Mapping[str, Any]) -> dict[str, Any]:
         team = dict(item)
+        team["id"] = self._id(team.get("id"), "team id")
+        store = getattr(self, "portability_task_store", None)
+        if store is not None and not store.resource_visible("TEAM", str(team.get("id"))):
+            raise StoreError("team is reserved", status=409, code="transfer_in_use")
         path = self.teams_root / f"{self._id(team.get('id'), 'team id')}.yaml"
         self.atomic_yaml(path, team)
         return team
 
     def delete_team(self, team_id: Any) -> bool:
+        team_id = self._id(team_id, "team id")
+        store = getattr(self, "portability_task_store", None)
+        if store is not None and not store.resource_visible("TEAM", team_id):
+            raise StoreError("team not found", status=404, code="not_found")
         path = self.teams_root / f"{self._id(team_id, 'team id')}.yaml"
         with self._lock:
             if not path.is_file():

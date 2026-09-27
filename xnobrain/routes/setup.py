@@ -76,7 +76,17 @@ def route_groups() -> tuple[tuple[Route, ...], ...]:
         optional += (custom_page.ROUTES,)
     if feature_enabled(FEATURE_UI_CUSTOMIZATION):
         optional += (ui_composition.ROUTES,)
-    return optional + BASE_ROUTE_GROUPS
+    groups = optional + BASE_ROUTE_GROUPS
+    if not feature_enabled("CONVERSATION_REASONING_EFFORT"):
+        groups = tuple(
+            tuple(
+                route
+                for route in group
+                if not route.operation.startswith("conversation_reasoning_")
+            )
+            for group in groups
+        )
+    return groups
 
 
 # Compatibility snapshots for route-contract tests. setup_routes resolves flags
@@ -112,12 +122,27 @@ def _endpoint(handlers: Any, route: Route):
 
         async def endpoint(request: Request) -> Response:
             return await handlers.workspace_workbook(request)
+    elif route.special == "community_snapshot":
+
+        async def endpoint(request: Request) -> Response:
+            return await handlers.community_snapshot(request)
     elif route.special == "bundle_export":
 
         async def endpoint(request: Request, body=Body(...)) -> Response:
             return await handlers.bundle_export(request, body.model_dump(exclude_unset=True))
 
         endpoint.__annotations__["body"] = route.body
+    elif route.special == "bundle_task":
+        if route.body is not None:
+
+            async def endpoint(request: Request, body=Body(...)) -> Response:
+                return await handlers.bundle_task(request, body.model_dump(exclude_unset=True))
+
+            endpoint.__annotations__["body"] = route.body
+        else:
+
+            async def endpoint(request: Request) -> Response:
+                return await handlers.bundle_task(request, {})
     elif route.special == "bundle_upload":
 
         async def endpoint(request: Request) -> Response:
@@ -189,6 +214,7 @@ def setup_routes(app: Any, handlers: Any) -> None:
             "workspace_file",
             "workspace_preview",
             "workspace_workbook",
+            "community_snapshot",
             "bundle_export",
             "bundle_upload",
             "bundle_part",

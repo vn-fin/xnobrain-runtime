@@ -48,7 +48,11 @@ class ConversationRunRepositoryMixin:
         return item
 
     def list_conversation_runs(
-        self, agent_id: Any, conversation_id: Any, limit: int = 20
+        self,
+        agent_id: Any,
+        conversation_id: Any,
+        limit: int = 20,
+        before: tuple[float, str] | None = None,
     ) -> list[dict[str, Any]]:
         directory = self._conversation_run_dir(agent_id, conversation_id)
         if not directory.is_dir():
@@ -61,7 +65,16 @@ class ConversationRunRepositoryMixin:
                 continue
             if isinstance(item, dict):
                 result.append(item)
-        result.sort(key=lambda item: float(item.get("created_at") or 0), reverse=True)
+        if before is not None:
+            result = [
+                item
+                for item in result
+                if (float(item.get("created_at") or 0), str(item.get("id") or "")) < before
+            ]
+        result.sort(
+            key=lambda item: (float(item.get("created_at") or 0), str(item.get("id") or "")),
+            reverse=True,
+        )
         return result[: max(1, min(100, int(limit or 20)))]
 
     def find_conversation_run_by_idempotency(

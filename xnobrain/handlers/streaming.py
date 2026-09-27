@@ -60,11 +60,31 @@ class StreamingHandlers:
                             await publish("kanban.task", item)
                     await asyncio.sleep(1)
 
+            async def bundle_updates() -> None:
+                scope, actor = self.bundle_task_identity(request)
+                cursor = 0
+                while not stopped.is_set():
+                    rows = await asyncio.to_thread(
+                        self.service.portability_tasks.store.events,
+                        scope=scope,
+                        actor=actor,
+                        after=cursor,
+                    )
+                    for row in rows:
+                        cursor = row["event_id"]
+                        await publish(
+                            "bundle.task.updated", self.service.portability_tasks.project(row)
+                        )
+                    if len(rows) < 100:
+                        await asyncio.sleep(1)
+
             producers = [
                 asyncio.create_task(agent_updates()),
                 asyncio.create_task(workspace_updates()),
                 asyncio.create_task(board_updates()),
             ]
+            if hasattr(self.service, "portability_tasks"):
+                producers.append(asyncio.create_task(bundle_updates()))
             sequence = 0
             try:
                 while True:

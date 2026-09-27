@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+import socket
 import unittest
+from contextlib import suppress
+from pathlib import Path
 from unittest.mock import patch
 
 import grpc
@@ -12,6 +16,7 @@ from aiohttp import web
 from xnobrain.common.v1 import http_stream_pb2 as http_pb2
 from xnobrain.integrations.runtime_gateway import (
     RuntimeGatewayService,
+    RuntimeGatewaySupervisor,
     start_runtime_gateway,
 )
 from xnobrain.runtime.v1 import runtime_gateway_pb2 as gateway_pb2
@@ -19,6 +24,7 @@ from xnobrain.runtime.v1 import runtime_gateway_pb2_grpc as gateway_grpc
 from xnobrain.trusted_context import (
     conversation_context_signature,
     encode_conversation_context,
+    snapshot_signature,
 )
 
 TOKEN = "runtime-internal-test-token"
@@ -235,6 +241,87 @@ class RuntimeGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(relayed["x-xnobrain-verified-conversation-context"], encoded)
         self.assertEqual(relayed["x-xnobrain-conversation-context-signature"], signature)
 
+    async def test_snapshot_intent_only_relays_for_signed_exact_path(self) -> None:
+        path = "/xnobrain/api/runtime/v1/community/snapshots/source/export"
+        signature = snapshot_signature(
+            TOKEN, "POST", path, "user-1", "tenant-1", "org-1", "", "", ""
+        )
+        for candidate, expected in (
+            (signature, True),
+            ("forged", False),
+        ):
+            headers = (
+                http_pb2.Header(
+                    name="x-xnobrain-community-snapshot-signature",
+                    values=[candidate.encode()],
+                ),
+            )
+            call = self.stub.Proxy(
+                _frames(
+                    _head(path=path, headers=headers),
+                    gateway_pb2.RuntimeGatewayServiceProxyRequest(end=http_pb2.StreamEnd()),
+                ),
+                metadata=(("x-xnobrain-internal-token", TOKEN),),
+            )
+            _ = [response async for response in call]
+            relayed = {name.lower(): value for name, value in self.received["headers"]}
+            self.assertEqual(
+                relayed.get("x-xnobrain-community-snapshot-signature"),
+                signature if expected else None,
+            )
+        call = self.stub.Proxy(
+            _frames(
+                _head(path="/xnobrain/api/runtime/v1/test", headers=headers),
+                gateway_pb2.RuntimeGatewayServiceProxyRequest(end=http_pb2.StreamEnd()),
+            ),
+            metadata=(("x-xnobrain-internal-token", TOKEN),),
+        )
+        _ = [response async for response in call]
+        relayed = {name.lower(): value for name, value in self.received["headers"]}
+        self.assertNotIn("x-xnobrain-community-snapshot-signature", relayed)
+
+    async def test_snapshot_import_relay_binds_digest_size_and_operation(self) -> None:
+        path = "/xnobrain/api/runtime/v1/community/snapshots/import"
+        digest = "a" * 64
+        operation = "clone-op-1"
+        signature = snapshot_signature(
+            TOKEN, "POST", path, "user-1", "tenant-1", "org-1", digest, "4", operation
+        )
+        for supplied_signature, expected in ((signature, True), ("forged", False)):
+            headers = (
+                http_pb2.Header(
+                    name="x-xnobrain-community-snapshot-sha256", values=[digest.encode()]
+                ),
+                http_pb2.Header(name="x-xnobrain-community-snapshot-size", values=[b"4"]),
+                http_pb2.Header(
+                    name="x-xnobrain-community-snapshot-idempotency-key",
+                    values=[operation.encode()],
+                ),
+                http_pb2.Header(
+                    name="x-xnobrain-community-snapshot-signature",
+                    values=[supplied_signature.encode()],
+                ),
+            )
+            call = self.stub.Proxy(
+                _frames(
+                    _head(path=path, headers=headers),
+                    gateway_pb2.RuntimeGatewayServiceProxyRequest(end=http_pb2.StreamEnd()),
+                ),
+                metadata=(("x-xnobrain-internal-token", TOKEN),),
+            )
+            _ = [response async for response in call]
+            relayed = {name.lower(): value for name, value in self.received["headers"]}
+            self.assertEqual(
+                relayed.get("x-xnobrain-community-snapshot-sha256"), digest if expected else None
+            )
+            self.assertEqual(
+                relayed.get("x-xnobrain-community-snapshot-size"), "4" if expected else None
+            )
+            self.assertEqual(
+                relayed.get("x-xnobrain-community-snapshot-idempotency-key"),
+                operation if expected else None,
+            )
+
     async def test_rejects_invalid_internal_token(self) -> None:
         call = self.stub.Proxy(
             _frames(
@@ -288,6 +375,91 @@ class RuntimeGatewayTests(unittest.IsolatedAsyncioTestCase):
             os.environ.pop("RUNTIME_INTERNAL_SERVICE_TOKEN", None)
             with self.assertRaisesRegex(RuntimeError, "RUNTIME_INTERNAL_SERVICE_TOKEN"):
                 await start_runtime_gateway()
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+class RuntimeSystemdRestartTests(unittest.TestCase):
+    def test_units_always_restart_without_start_limit(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        units = (
+            root / "deploy/systemd/xnobrain-api.service",
+            root / "runtime/xnobrain-runtime.service",
+        )
+        for path in units:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("Restart=always", text)
+            self.assertIn("StartLimitIntervalSec=0", text)
+            self.assertNotIn("Restart=on-failure", text)
+
+
+class RuntimeGatewaySupervisorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_disabled_grpc_starts_nothing(self) -> None:
+        with patch.dict(os.environ, {"RUNTIME_GRPC_ENABLED": "false"}, clear=False):
+            supervisor = RuntimeGatewaySupervisor(check_interval=0.01)
+            self.assertIsNone(await supervisor.start())
+            await supervisor.run()
+
+    async def test_healthy_listener_is_left_alone(self) -> None:
+        port = _free_port()
+        env = {
+            "RUNTIME_GRPC_ENABLED": "true",
+            "RUNTIME_INTERNAL_SERVICE_TOKEN": TOKEN,
+            "RUNTIME_GRPC_PORT": str(port),
+            "API_SERVER_PORT": "9",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            supervisor = RuntimeGatewaySupervisor(check_interval=0.05)
+            await supervisor.start()
+            first = supervisor._server
+            task = asyncio.create_task(supervisor.run())
+            await asyncio.sleep(0.12)
+            self.assertIs(supervisor._server, first)
+            await supervisor.stop()
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+    async def test_rebinds_when_listener_stops(self) -> None:
+        port = _free_port()
+        env = {
+            "RUNTIME_GRPC_ENABLED": "true",
+            "RUNTIME_INTERNAL_SERVICE_TOKEN": TOKEN,
+            "RUNTIME_GRPC_PORT": str(port),
+            "API_SERVER_PORT": "9",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            supervisor = RuntimeGatewaySupervisor(check_interval=0.05)
+            await supervisor.start()
+            await supervisor._server.stop(grace=0)
+            task = asyncio.create_task(supervisor.run())
+            rebound = False
+            for _ in range(40):
+                try:
+                    _, writer = await asyncio.open_connection("127.0.0.1", port)
+                except OSError:
+                    await asyncio.sleep(0.05)
+                    continue
+                writer.close()
+                with suppress(Exception):
+                    await writer.wait_closed()
+                rebound = True
+                break
+            await supervisor.stop()
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+            self.assertTrue(rebound)
+
+    async def test_shutdown_does_not_resurrect_listener(self) -> None:
+        with patch.dict(os.environ, {"RUNTIME_GRPC_ENABLED": "true"}, clear=False):
+            supervisor = RuntimeGatewaySupervisor(check_interval=0.01)
+            supervisor._stopping = True
+            await asyncio.wait_for(supervisor.run(), timeout=0.2)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import time
 from typing import Any, Callable
 
 from ..query import bucket, csv, time_range
+from ...trusted_context import from_request
 
 Operation = tuple[Callable[[], Any], str, int]
 
@@ -21,7 +22,11 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
     return {
         "agents_list": (s.list_agents_async, "agents retrieved successfully", 200),
         "agents_activity": (s.agent_activity, "agent activity retrieved successfully", 200),
-        "agents_create": (lambda: s.create_agent(body), "agent created successfully", 201),
+        "agents_create": (
+            lambda: s.create_agent(body, trusted_context=from_request(request)),
+            "agent created successfully",
+            201,
+        ),
         "profiles_list": (s.list_profiles, "profiles retrieved successfully", 200),
         "agents_get": (lambda: s.get_agent(p["agent_id"]), "agent retrieved successfully", 200),
         "agents_metadata": (

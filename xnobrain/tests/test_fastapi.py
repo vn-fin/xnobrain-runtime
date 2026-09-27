@@ -1444,6 +1444,29 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(imported_id, agent_id)
         self.assertTrue((self.profiles / imported_id / "config.yaml").is_file())
 
+    async def test_bundle_upload_part_accepts_stream_without_content_length(self):
+        payload = b"streamed bundle part"
+
+        async def streamed_part():
+            yield payload[:8]
+            yield payload[8:]
+
+        async with self.client() as client:
+            started = await client.post(
+                "/xnobrain/api/runtime/v1/bundles/uploads",
+                json={"filename": "profile.zip", "size": len(payload)},
+            )
+            upload = started.json()["data"]
+            response = await client.put(
+                f"/xnobrain/api/runtime/v1/bundles/uploads/{upload['upload_id']}/parts/0",
+                content=streamed_part(),
+                headers={"Content-Type": "application/octet-stream"},
+            )
+
+        self.assertNotIn("content-length", response.request.headers)
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["data"]["size"], len(payload))
+
     async def test_chunk_merge_rejects_non_hermes_profile_before_create(self):
         manifest = {
             "format": "xnobrain-bundle",

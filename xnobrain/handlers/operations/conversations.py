@@ -20,6 +20,16 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         return identifier
 
     result = {
+        "conversation_reasoning_get": (
+            lambda: s.get_conversation_reasoning(agent(), p["conversation_id"]),
+            "reasoning retrieved",
+            200,
+        ),
+        "conversation_reasoning_update": (
+            lambda: s.update_conversation_reasoning(agent(), p["conversation_id"], body, trusted),
+            "reasoning updated",
+            200,
+        ),
         "conversations_list": (
             lambda: s.list_conversations(
                 agent(),
@@ -112,6 +122,13 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "conversation run started",
             202,
         ),
+        "conversation_runs_list": (
+            lambda: s.list_conversation_runs(
+                agent(), p["conversation_id"], int(q.get("limit") or 20), q.get("cursor") or ""
+            ),
+            "conversation run history retrieved",
+            200,
+        ),
         "conversation_runs_active": (
             lambda: s.active_conversation_run(agent(), p["conversation_id"]),
             "active conversation run retrieved",
@@ -165,6 +182,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
 
             def checked(operation=operation, name=name):
                 readonly = name in {
+                    "conversation_reasoning_get",
                     "conversations_get",
                     "messages_list",
                     "conversations_usage",

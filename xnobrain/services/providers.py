@@ -75,28 +75,16 @@ class ProvidersServiceMixin:
             for item in (await self.router.list_models())["data"]
             if item.get("provider") == provider
         ]
-        reasoning = [
-            level
-            for level in (
-                "none",
-                "minimal",
-                "low",
-                "medium",
-                "high",
-                "xhigh",
-                "max",
-                "ultra",
-            )
-            if any(level in item.get("reasoning_levels", []) for item in items)
-        ]
         return {
             "provider_id": provider,
             "default_model": str(items[0]["id"] if items else ""),
             "models": [
                 {
                     "id": item["id"],
-                    "reasoning": list(item.get("reasoning_levels", [])),
-                    "default_reasoning": default_reasoning_level(item.get("reasoning_levels", [])),
+                    "reasoning": [level for level in item.get("reasoning_levels", []) if level != "ultra"],
+                    "default_reasoning": default_reasoning_level(
+                        level for level in item.get("reasoning_levels", []) if level != "ultra"
+                    ),
                     "assignments": list(item.get("assignments", [])),
                 }
                 for item in items

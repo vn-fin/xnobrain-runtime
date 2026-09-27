@@ -16,15 +16,28 @@ grouped by feature:
 JSON responses use `{success,data,message,status_code}`. SSE sends structured
 Hermes lifecycle objects and terminates with `data: [DONE]`.
 
-Conversation runs accept an optional request-scoped `attachment` on
-`POST /xnobrain/api/runtime/v1/sessions/{id}/runs`. The current sketch
-contract is `{kind:"diagram", filename:"sketch.xml", mime_type:"application/xml",
-content}` with a `flowchart` XML root of boxes and arrows. Runtime validates
-size and XML, then merges the XML into the model prompt. The UI must not put
-the XML in `input`. Text-only mixed-version requests omit `attachment`.
+Conversation runs accept an optional request-scoped `attachment` or
+`attachments` list on `POST /xnobrain/api/runtime/v1/sessions/{id}/runs`.
+Each sketch is `{kind:"diagram", filename, mime_type:"application/xml",
+content}` with XML root `mindmap`. Legacy unversioned XML contains one rooted
+hierarchy (`parent`, `order`, optional `collapsed="true"`). Version 2 may also
+contain up to 80 directed references as
+`<edge id="…" source="…" target="…" />`; an edge may also carry eight comma-separated `points` offsets for four draggable corners, each bounded to ±1000; hierarchy connectors remain implicit.
+References also accept optional `sourceSide` and `targetSide`, each one of
+`top`, `right`, `bottom`, `left`, selecting the midpoint port on that topic.
+Omitted sides retain legacy right-source/left-target behavior. UI and Runtime
+must be updated together before sending these optional attributes to an older
+strict validator. Display routes avoid measured topic bounds; automatic detours
+are not serialized, while the selected ports and manual bend offsets are.
+A `flowchart` root is malformed. Filenames are `mindmap.xml` or `sketch.xml`, with `-2` and later
+for extra files; `flowchart.xml` still matches the filename pattern but its
+content must be a mind map. At most eight diagrams per run.
+Runtime validates size and XML, then merges each XML into the model prompt in order. Mind maps
+are prefixed with `User mind map (hierarchy with optional directed references):`. The UI must not put the XML in `input`.
+Text-only mixed-version requests omit `attachment` and `attachments`.
 `FT_ENABLE_COMPOSER_SKETCH` defaults on. Disabled runtimes return `404`
-`feature_disabled`. Malformed XML is `422`; oversized graphs are `413`.
-The attachment is never forwarded as an unknown Hermes field.
+`feature_disabled`. Malformed XML is `422`; unsupported explicit versions are `422` `attachment_unsupported`; oversized graphs are `413`.
+Attachments are never forwarded as unknown Hermes fields.
 
 
 The namespace and current version are defined once in
@@ -44,6 +57,15 @@ Agent execution activity is available as a compatibility snapshot at
 `activity` event initially and whenever an agent changes between `idle` and
 `running`. The runtime caches the database-backed Kanban portion for ten
 seconds so status monitoring does not continuously scan every board.
+
+Conversation SSE `tool.started` and `tool.completed` events carry
+`tool_call_id` from the embedded executor. Clients correlate concurrent calls
+and persisted tool results by this ID, including multiple calls to the same
+tool. Each start/completion is projected once from the structured executor
+callbacks; existing preview, duration, error, and write-approval behavior is
+preserved. Older streams without IDs are supported only when a running tool
+can be matched unambiguously. History reconstruction uses persisted
+`tool_call_id` and tool result error fields.
 
 Agent budgets use `weekly_usd` at
 `GET|PUT /xnobrain/api/runtime/v1/analytics/agents/{agent_id}/budget`. The
@@ -77,6 +99,15 @@ catalog: the second supported level is preferred, the only level is used when
 there is one, and models without reasoning metadata return `auto`. Agent and
 Smart Route reasoning may be stored as `auto`; concrete model execution
 resolves it through this metadata instead of a hard-coded effort.
+The Agent Settings reasoning-effort selector persists the profile default through
+`PATCH /agents/{agent_id}/config` using `reasoning_effort`. Supported configuration
+values are `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and
+`ultra`; the UI offers the selected model's advertised levels plus `auto`.
+An explicit `none` remains disabled; it must not be converted to `medium`.
+The legacy `reasoning: false` switch disables reasoning, while `reasoning: true`
+re-enables a disabled setting at `medium`. Effort is an inference setting, not a
+reasoning-text visibility toggle. This profile setting is not a per-session
+override and does not change an already-running agent instance.
 Smart Route blends resolve at model-inference boundaries rather than only once
 for an entire agent run. The initial user turn is classified once and reused;
 later model continuations after tool results, goal-continuation prompts, and
@@ -87,6 +118,38 @@ classification is temporarily unavailable, the active model continues instead
 of failing the run. Supported reasoning values come from provider model
 metadata and may include `none`, `minimal`, `xhigh`, `max`, and `ultra` in
 addition to `low`, `medium`, and `high`.
+
+## Private Community full-profile snapshot transport
+
+`POST /xnobrain/api/runtime/v1/community/snapshots/{agent_id}/export` has an empty
+request and streams `application/zip`; `X-Snapshot-SHA256` is the lowercase
+SHA-256 of the exact ZIP, `X-Snapshot-Size` its byte count, and
+`X-Snapshot-Inventory` a content-free JSON summary (categories, counts, sizes,
+conversation count, excluded paths). Export requires a named profile with a
+durable `.community-profile-owner.json` principal/tenant/organization binding
+matching the verified caller; existing unbound profiles and Big Brother fail
+closed. It requires `config.yaml`, a consistent `state.db`, `HERMES.md`, and
+`workspace/AGENTS.md`. Manifest `snapshot_kind=community-full-profile-v1`
+contains an exact checked `file_inventory`, `excluded_paths`, and category
+counts; the outer ZIP SHA-256 cannot be embedded in its own bytes. Credentials
+and local authorization files are excluded, but conversation content—including
+secrets inside chat—is copied unchanged after explicit Control confirmation.
+
+`POST /xnobrain/api/runtime/v1/community/snapshots/import` streams the exact ZIP
+with `Content-Type: application/zip` and private signed headers
+`X-XnoBrain-Community-Snapshot-SHA256`, `-Size`, and `-Idempotency-Key`.
+The signature binds the verified principal, exact method/path, archive digest,
+decimal size, and operation ID; imported bytes must match both claims. Runtime
+validates the ZIP and staged SQLite, detaches publisher session identity, resets
+approvals, cron, MCP grants and Router settings, then atomically creates a
+distinct receiving profile bound to the verified caller. The response is HTTP
+201 with `data.agent_id_mappings`, `data.sha256`, and `data.size` (bytes). The
+same verified recipient, operation ID, and archive replay the existing profile;
+different bytes or a conflicting marker return an error without overwriting
+data. Both routes require a verified Control principal and exact private snapshot
+HMAC assertion translated through the node gateway. The public Control Runtime
+wildcard must deny these paths; these routes are not browser APIs and cannot be
+used to bypass publisher consent, S3 validation or listing policy.
 
 ## Safe marketplace package export
 
@@ -103,7 +166,11 @@ material.
 The export allowlist contains required `SOUL.md` and `workspace/AGENTS.md`,
 enabled skill `SKILL.md` files, and UTF-8 regular files in each skill's
 `references/`, `scripts/`, and `assets/` directories with approved extensions.
-Only display name, description, model slot, and reasoning effort are copied
+Exact category-level `DESCRIPTION.md` packaging metadata below `skills/` is
+validated and omitted; it is never included in the package or digest. Other
+visible files outside a discovered skill package fail with HTTP 422 and code
+`marketplace_export_unsupported_skill_file`. Only display name, description,
+model slot, and reasoning effort are copied
 from profile configuration/metadata. Tool and MCP names are declarations; MCP
 URLs, commands, headers, environment and other connection details are not
 exported. Runtime grants no requested permission as a side effect of export.
@@ -298,13 +365,15 @@ Consumers must use returned `local_profile_id`, not derive it from installation 
 ## Calendar schedule preview (Time Control foundation)
 
 `POST /xnobrain/api/runtime/v1/cron/schedule-preview` accepts a five-field `schedule`,
-IANA `timezone`, optional offset-aware `after`, and `count` (1–20, default 5).
+optional IANA `timezone`, optional offset-aware `after`, and `count` (1–20, default 5).
+When omitted, the workspace scheduler's effective local IANA timezone is used.
 Returns UTC/local occurrences and `dst_policy=skip_gap_earlier_fold`. It performs
 no job creation or timezone mutation. `executor_parity_verified=false` explicitly
 means local scheduler integration is still pending; preview is not execution proof.
 
 Cron blueprint instantiation (`POST /xnobrain/api/runtime/v1/cron/blueprints/instantiate`)
-accepts optional `timezone` (available IANA identifier, default `Etc/UTC`). Calendar
+accepts optional `timezone` (available IANA identifier). When omitted, the
+workspace scheduler's effective local IANA timezone is used. Calendar
 blueprints persist the versioned per-job timezone/DST binding before native first-run
 computation, matching direct cron creation. Interval/absolute schedules retain native
 semantics. Ambiguous names such as CST reject before blueprint filling. The workspace
@@ -313,6 +382,7 @@ or organization default and explicit preview/confirmation UI remain separate wor
 Direct cron creation rejects simultaneous `interval_minutes` and `schedule` with
 HTTP 422 instead of silently preferring the interval. Calendar expression input is
 bounded to 256 characters. Existing interval-only and schedule-only shapes remain.
+The optional `timezone` is resolved by the workspace scheduler when omitted.
 
 Explicit-zone calendar evaluation rejects random (`R`) and hashed (`H`) cron fields:
 preview and execution must use deterministic calendar expressions. Ordinary named
@@ -412,7 +482,8 @@ not imply public sharing, organization apps or executable custom components.
 
 `POST .../custom-page/schedules/preview` is a read-only preview of an active named
 `action_id` and the owner's existing Personal `conversation_id`. It requires
-`expected_revision`, a five-field `schedule`, explicit IANA `timezone`,
+`expected_revision`, a five-field `schedule`, and an optional IANA `timezone`;
+when omitted, the workspace scheduler's effective local IANA timezone is used.
 `payer_kind: "personal"`, `timeout_seconds` (10–300), and `max_runs` (1–100).
 The result binds the action/page digests and verified owner, returns five UTC/local
 occurrences and the existing `skip_gap_earlier_fold` policy. It also discloses a
@@ -970,3 +1041,175 @@ not `waitpid(-1)` across unrelated Teams subprocesses. Teams use standard `Popen
 with an asynchronously awaited communication thread, avoiding the observed
 uvloop child-launch SIGSEGV in the multithreaded gRPC host. Cancellation and
 timeout terminate/reap the child before publishing a terminal state.
+
+### Asynchronous profile snapshot tasks
+
+Upload clients may keep up to four indexed part PUTs in flight, using the returned
+`chunk_size` and `total_parts` (1 MiB per part for new uploads). Existing uploads
+retain their persisted part size, including the previous 512 KiB size. Download
+part sizes are unchanged. Upload bodies are capped at 1 MiB and must also match
+the admitted upload's exact part size, including its final partial part.
+Clients must use the descriptor rather than a hard-coded part size. Each slot includes
+reading, SHA-256 hashing, request/response handling, and retry backoff. An identical
+part can be replayed before completion using the same index, bytes, and
+`X-Part-SHA256`. The UI supplies a stable `Idempotency-Key` derived from upload ID,
+index, and digest to enable its existing bounded transient-error retry policy;
+this adds no server idempotency ledger. Admission and completion are not replayed.
+
+The UI uses native Web Crypto for each bounded upload part on supported secure
+origins, with the existing JavaScript SHA-256 fallback for HTTP development.
+Four 1 MiB slots bound logical input bytes to 4 MiB per upload; this is not a
+browser/process RSS guarantee. The full archive is never buffered for hashing.
+Staging's external Nginx currently rejects bodies above 1 MiB with HTTP 413;
+increasing the application part size alone would break uploads there.
+
+Upload admission, part persistence, completion/preview, and deletion execute in
+the shared thread executor. Existing bounded body reads, checksums, atomic
+write/fsync, and publication/pin locks still apply. Cancelling an HTTP request
+does not interrupt a running disk operation or release its lock prematurely.
+Busy storage returns 429; clients must retain their retry slot and respect
+backoff. Completion assembles parts by index after all distinct acknowledgments.
+
+UI upload progress counts acknowledged bytes once. At 100 percent it changes to
+archive checking until the preview returns; import starts only after explicit
+acceptance. Cancelling or replacing an attempt aborts requests and settles client
+workers before best-effort deletion of its disposable input. Cleanup errors do
+not replace the original error. Inputs whose import admission was attempted are
+owned by the durable import flow, including uncertain acceptance responses.
+
+New clients use the additive task contract under `/xnobrain/api/runtime/v1/bundles`:
+
+- `POST /export-tasks`: `{agent_ids, team_ids, include_conversations?}`; optional
+  `Idempotency-Key`. Returns the persisted task in the standard envelope with 202.
+- `POST /import-tasks`: `{upload_id, environment?}` and required `Idempotency-Key`.
+  The upload must have completed the existing chunk/preview workflow. Replays
+  return the original task (202 while active, 200 when terminal); changed request
+  options with the same scoped key return 409.
+- `GET /tasks?limit=50&cursor=...` and `GET /tasks/{task_id}` provide authoritative
+  state: `PENDING`, `PROCESSING`, `COMPLETED`, or `FAILED`, with monotonic revision,
+  timestamps, safe error, and terminal result.
+- Completed exports expose their download descriptor. Use the returned same-origin
+  `download_parts_url_template`, currently `/bundles/task-exports/{export_id}/parts/{part_number}`.
+  Part responses preserve `X-Part-SHA256` and chunk metadata. Explicit deletion is
+  `DELETE /task-exports/{export_id}`. Expired/deleted artifacts return 410; receipts
+  remain available. Legacy `/exports` endpoints are unchanged.
+- `/events/stream` emits `bundle.task.updated` after durable transitions. Task event
+  payloads include `event_id`, task ID, revision, status, and result/error. Existing
+  connection-local SSE IDs are not durable replay cursors: reconcile task reads
+  after reconnect and deduplicate by task/revision.
+
+Managed task access requires the Control-verified principal. Browser authority
+fields do not select ownership. Tasks are scoped to the verified actor within the
+workspace's persistent Runtime storage. The queue and import journal live in
+`DATA_DIR/portability.sqlite3`, separate from upstream databases. Multiple API
+replicas must route to the same exclusive workspace owner; separate active-active
+Runtime disks are unsupported. Preserve the database and staged files together
+when relocating or restoring a workspace.
+
+Import keys are retained with task receipts. A FAILED replay does not restart the
+import. `import_recovery_required` preserves pinned inputs and journal evidence;
+do not delete the database or resubmit with a fresh key to bypass it. Accepted
+work continues after browser disconnect. Cancelling a download does not cancel
+the server task or delete its artifact. Default export retention is 24 hours.
+
+Task admission uses `RUNTIME_PORTABILITY_QUEUE_LIMIT` (default 100 active tasks)
+ and `RUNTIME_PORTABILITY_MIN_FREE_BYTES` (default 268435456 bytes). Values must be
+positive integers. Queue/disk pressure returns 429 with `Retry-After: 5`; clients
+must retain their original idempotency key. These admission guards supplement,
+not replace, existing archive compressed/expanded size and file-count limits.
+
+Publication-lock contention is bounded: a contending request waits at most about
+100 ms for that lock before returning 429 `task_storage_busy`; it does not wait
+for another archive's complete publication. Retain the idempotency key on retry.
+Successful chunk reads renew a persistent 120-second download grace period.
+Explicit artifact deletion returns 409 while a reader lease is active, and expiry
+cleanup defers until that grace period ends.
+
+
+The first task schema initialization is atomic with its persistent fingerprint
+secret and version. Startup rejects a database version newer than this Runtime.
+Schema failure cannot leave an accepted queue row, partial new schema, or a
+rotated idempotency secret.
+
+A pre-publication import failure is reported as `import_failed`; the same key
+still returns that FAILED receipt. Its upload pin is released and private staging
+and environment input are eligible for cleanup. A different-key retry is a new
+explicit operation, never an automatic replay. Once a PREPARED publication intent
+exists, failure is `import_recovery_required`: input and journal stay pinned and
+uncommitted targets stay hidden pending reconciliation. Cleanup errors are logged
+without storage paths and do not stop queue execution.
+
+The UI uses the immutable completed upload ID as its import Idempotency-Key, scoped
+by the server's verified actor/workspace. Retrying that upload after a view remount
+uses the same identity without persisting environment values in browser storage.
+Changed options under that identity produce a conflict rather than a second task.
+A separately uploaded archive is a distinct operation, not a retry of that upload.
+
+Import ownership markers are local recovery metadata and excluded from subsequent
+portable archives. Team get/update/delete and live-profile resolution reject
+uncommitted journal targets; these checks are not a substitute for filesystem
+permissions or exclusive workspace ownership.
+
+### Conversation run outcome history
+
+`GET /xnobrain/api/runtime/v1/sessions/{conversation_id}/runs?agent={agent_id}&limit=20&cursor=...`
+returns the normal envelope with `data.runs` and nullable `data.next_cursor`.
+Limits must be 1–100. Records are ordered newest-first by `(created_at, id)`;
+cursors are scoped to agent and conversation and do not grant authorization.
+Only public run identity, lifecycle timestamps/status, mode, timeout, revision,
+sanitary error text, and nullable `user_message_id` are returned; prompts,
+internal routing/ownership objects, tool output, and credentials are excluded.
+Current records without authoritative message correlation return null; consumers
+must display a run-level notice rather than guess a message association.
+A full final page may return a cursor followed by an empty final page.
+Legacy `event: error` frames become durable failed runs; late duplicate terminal
+events cannot overwrite the established terminal outcome. History is read-only.
+
+### Installed skill file browsing
+
+`GET /agents-workspaces/{agent_id}?scope=skills&path=<relative>` lists files
+beneath the selected profile's `skills/`. `GET /agents-workspaces/{agent_id}/file?scope=skills&path=<relative>`
+serves a skill file for preview/download. These paths share the existing
+`/xnobrain/api/runtime/v1` namespace and authenticated Control routing.
+Skill scope is read-only; mutation endpoints retain workspace-only semantics.
+Absolute paths, traversal and symlink paths are rejected. No profile-root,
+config, credential, memory or session browsing is exposed by this scope.
+The browser presents virtual `workspace` and `skills` roots; virtual prefixes
+are removed by its API adapter, not treated as disk paths.
+
+## Conversation reasoning effort
+
+`GET /sessions/{conversation_id}/reasoning?agent={agent_id}` reads a profile-local
+conversation preference. `PATCH` accepts `reasoning_effort` (null to inherit, or
+`auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) and
+`expected_revision` (nonnegative integer). The response includes
+`reasoning_revision`, `effective_preference`, `source`, and `capability_status`.
+The hidden `/conversations` alias supports the same resource. Existing session
+ownership checks apply, including a recheck after model metadata lookup.
+
+Conflicting revisions return 409; unsupported explicit levels return 422;
+required metadata outages return 503. Changing this preference does not write
+agent configuration or alter an active run. Run admission snapshots the setting;
+idempotent replay retains the original snapshot. Explicit overrides are checked
+at model request boundaries. `reasoning.resolved` SSE events and run records
+expose effective effort and model without reasoning content.
+
+`FT_ENABLE_CONVERSATION_REASONING_EFFORT` defaults true. Disabled deployments
+omit the endpoints and ignore retained conversation preferences for new runs.
+The composer hides its selector if the backend capability is absent. Agent
+Settings remains the profile-wide default; text visibility is separate.
+
+
+Conversation effort is persisted in a session-local `.reasoning.json` sidecar,
+not in prompt/context text or the shared agent configuration. On the next run,
+the admitted preference is parsed into the embedded agent's `reasoning_config`.
+For an explicit conversation preference, Runtime supplies a per-agent router
+provider profile to Hermes' Chat Completions transport **before** serialization.
+Hermes retains ownership of model normalization and request construction; the
+profile maps normalized configuration to nested `reasoning: {effort, summary: "auto"}`
+for routed Codex (`cx`) models, and `reasoning_effort` for other supported routes. Runtime never overwrites the serialized effort. Conflicting generic
+request overrides are removed before serialization. Other transport types are
+unchanged, and no provider profile is registered globally.
+Auto uses the resolved model default, or omits the field when no reasoning
+default is available. Changes do not modify admitted runs or other conversations.
+This behavior does not assert child-agent enforcement.

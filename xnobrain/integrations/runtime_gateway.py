@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import logging
 import os
 import re
 from collections.abc import AsyncIterator
+from contextlib import suppress
 
 import aiohttp
 import grpc
@@ -15,6 +17,10 @@ from xnobrain.common.v1 import http_stream_pb2 as http_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2 as gateway_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2_grpc as gateway_grpc
 from xnobrain.trusted_context import (
+    SNAPSHOT_SHA_HEADER,
+    SNAPSHOT_SIZE_HEADER,
+    SNAPSHOT_OPERATION_HEADER,
+    SNAPSHOT_SIGNATURE_HEADER,
     TRUSTED_CONVERSATION_CONTEXT_HEADER,
     TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER,
     TRUSTED_IDENTITY_HEADERS,
@@ -24,6 +30,8 @@ from xnobrain.trusted_context import (
     TRUSTED_TENANT_HEADER,
     decode_verified_conversation_context,
     principal_signature,
+    snapshot_intent,
+    snapshot_signature,
 )
 
 _MAX_CHUNK_BYTES = 64 * 1024
@@ -67,7 +75,18 @@ def _request_headers(values) -> list[tuple[str, str]]:
     result: list[tuple[str, str]] = []
     for header in values:
         name = str(header.name or "").strip().lower()
-        if not name or name in _FORBIDDEN_REQUEST_HEADERS or name in TRUSTED_IDENTITY_HEADERS:
+        if (
+            not name
+            or name in _FORBIDDEN_REQUEST_HEADERS
+            or name in TRUSTED_IDENTITY_HEADERS
+            or name
+            in {
+                SNAPSHOT_SHA_HEADER,
+                SNAPSHOT_SIZE_HEADER,
+                SNAPSHOT_OPERATION_HEADER,
+                SNAPSHOT_SIGNATURE_HEADER,
+            }
+        ):
             continue
         for value in header.values:
             result.append((name, bytes(value).decode("latin-1")))
@@ -112,6 +131,65 @@ def _verified_context_headers(
     return [
         (TRUSTED_CONVERSATION_CONTEXT_HEADER, encoded_context),
         (TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER, signature),
+    ]
+
+
+def _verified_snapshot_headers(
+    values,
+    token: str,
+    method: str,
+    path: str,
+    subject: str,
+    tenant_id: str,
+    organization_id: str,
+) -> list[tuple[str, str]]:
+    intent = snapshot_intent(method, path)
+    if not intent or not token or not subject:
+        return []
+    names = (
+        SNAPSHOT_SHA_HEADER,
+        SNAPSHOT_SIZE_HEADER,
+        SNAPSHOT_OPERATION_HEADER,
+        SNAPSHOT_SIGNATURE_HEADER,
+    )
+    captured: dict[str, list[str]] = {}
+    for header in values:
+        name = str(header.name or "").strip().lower()
+        if name in names:
+            captured.setdefault(name, []).extend(
+                bytes(value).decode("latin-1") for value in header.values
+            )
+    signatures = captured.get(SNAPSHOT_SIGNATURE_HEADER, [])
+    if len(signatures) != 1 or any(len(captured.get(name, [])) > 1 for name in names):
+        return []
+    sha256 = next(iter(captured.get(SNAPSHOT_SHA_HEADER, [])), "")
+    size = next(iter(captured.get(SNAPSHOT_SIZE_HEADER, [])), "")
+    operation_id = next(iter(captured.get(SNAPSHOT_OPERATION_HEADER, [])), "")
+    if intent == "export":
+        if sha256 or size or operation_id:
+            return []
+    elif not (
+        len(sha256) == 64
+        and all(char in "0123456789abcdef" for char in sha256)
+        and size.isdecimal()
+        and str(int(size)) == size
+        and operation_id
+    ):
+        return []
+    signature = snapshot_signature(
+        token, method, path, subject, tenant_id, organization_id, sha256, size, operation_id
+    )
+    if not hmac.compare_digest(signatures[0], signature):
+        return []
+    return [
+        (name, value)
+        for name, value in (
+            (SNAPSHOT_SHA_HEADER, sha256),
+            (SNAPSHOT_SIZE_HEADER, size),
+            (SNAPSHOT_OPERATION_HEADER, operation_id),
+            (SNAPSHOT_SIGNATURE_HEADER, signature),
+        )
+        if value
     ]
 
 
@@ -210,6 +288,17 @@ class RuntimeGatewayService(
             )
         )
         relay_headers.extend(
+            _verified_snapshot_headers(
+                head.headers,
+                self._token,
+                method,
+                path,
+                subject,
+                tenant_id,
+                organization_id,
+            )
+        )
+        relay_headers.extend(
             (
                 (TRUSTED_SUBJECT_HEADER, subject),
                 (TRUSTED_TENANT_HEADER, tenant_id),
@@ -259,16 +348,17 @@ class RuntimeGatewayService(
                 )
 
 
+_TRUE = frozenset({"1", "true", "yes", "on"})
+_LOGGER = logging.getLogger(__name__)
+
+
+def _grpc_enabled() -> bool:
+    return os.getenv("RUNTIME_GRPC_ENABLED", "").strip().lower() in _TRUE
+
+
 async def start_runtime_gateway():
     """Start the optional private gRPC listener in the FastAPI process."""
-
-    enabled = os.getenv("RUNTIME_GRPC_ENABLED", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    if not enabled:
+    if not _grpc_enabled():
         return None
     token = os.getenv("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
     if not token:
@@ -295,4 +385,75 @@ async def start_runtime_gateway():
     return server
 
 
-__all__ = ["RuntimeGatewayService", "start_runtime_gateway"]
+class RuntimeGatewaySupervisor:
+    """Rebind private gRPC while FastAPI is still up; process death is systemd."""
+
+    def __init__(self, check_interval: float = 5.0, backoff_cap: float = 30.0):
+        self._check_interval = check_interval
+        self._backoff_cap = backoff_cap
+        self._backoff = check_interval
+        self._lock = asyncio.Lock()
+        self._stopping = False
+        self._server = None
+
+    async def start(self):
+        self._server = await start_runtime_gateway()
+        return self._server
+
+    async def run(self) -> None:
+        if not _grpc_enabled():
+            return
+        while not self._stopping:
+            await asyncio.sleep(self._backoff)
+            if self._stopping:
+                return
+            if await self._accepts_connections():
+                self._backoff = self._check_interval
+                continue
+            async with self._lock:
+                if self._stopping:
+                    return
+                await self._rebind()
+
+    async def stop(self) -> None:
+        self._stopping = True
+        async with self._lock:
+            server = self._server
+            self._server = None
+            if server is not None:
+                await server.stop(grace=5)
+
+    async def _accepts_connections(self) -> bool:
+        try:
+            port = int(os.getenv("RUNTIME_GRPC_PORT", "3001"))
+        except ValueError:
+            return False
+        try:
+            _, writer = await asyncio.open_connection("127.0.0.1", port)
+        except OSError:
+            return False
+        writer.close()
+        with suppress(Exception):
+            await writer.wait_closed()
+        return True
+
+    async def _rebind(self) -> None:
+        server = self._server
+        self._server = None
+        if server is not None:
+            with suppress(Exception):
+                await server.stop(grace=1)
+        try:
+            self._server = await start_runtime_gateway()
+            self._backoff = self._check_interval
+            _LOGGER.warning("Runtime gRPC listener rebound")
+        except Exception:
+            self._backoff = min(max(self._backoff, self._check_interval) * 2, self._backoff_cap)
+            _LOGGER.warning("Runtime gRPC listener rebind failed; retrying")
+
+
+__all__ = [
+    "RuntimeGatewayService",
+    "RuntimeGatewaySupervisor",
+    "start_runtime_gateway",
+]

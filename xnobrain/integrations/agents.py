@@ -77,6 +77,9 @@ class AgentOperationsMixin:
 
     def create_agent(self, body: Mapping[str, Any]) -> tuple[dict[str, Any], int]:
         name = self._agent_name(body.get("name") or self._new_agent_name())
+        store = getattr(self, "portability_task_store", None)
+        if store is not None and not store.resource_visible("PROFILE", name):
+            raise AgentAPIError("Agent is reserved", code="agent_exists", status=409)
         existed = self._existing_profile_dir(name) is not None
         if existed and not bool(body.get("idempotent", False)):
             raise AgentAPIError(f"Agent already exists: {name}", code="agent_exists", status=409)
@@ -546,7 +549,7 @@ class AgentOperationsMixin:
             )
             if "reasoning" in body and not self._coerce_bool(body["reasoning"]):
                 effort = "none"
-            elif effort == "none":
+            elif "reasoning" in body and effort == "none":
                 effort = "medium"
             if effort not in {
                 "auto",

@@ -32,7 +32,6 @@ class BlendService:
         "high",
         "xhigh",
         "max",
-        "ultra",
     )
 
     def __init__(self, router: Any):
