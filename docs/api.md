@@ -1045,12 +1045,23 @@ timeout terminate/reap the child before publishing a terminal state.
 ### Asynchronous profile snapshot tasks
 
 Upload clients may keep up to four indexed part PUTs in flight, using the returned
-`chunk_size` and `total_parts` (currently 512 KiB per part). Each slot includes
+`chunk_size` and `total_parts` (1 MiB per part for new uploads). Existing uploads
+retain their persisted part size, including the previous 512 KiB size. Download
+part sizes are unchanged. Upload bodies are capped at 1 MiB and must also match
+the admitted upload's exact part size, including its final partial part.
+Clients must use the descriptor rather than a hard-coded part size. Each slot includes
 reading, SHA-256 hashing, request/response handling, and retry backoff. An identical
 part can be replayed before completion using the same index, bytes, and
 `X-Part-SHA256`. The UI supplies a stable `Idempotency-Key` derived from upload ID,
 index, and digest to enable its existing bounded transient-error retry policy;
 this adds no server idempotency ledger. Admission and completion are not replayed.
+
+The UI uses native Web Crypto for each bounded upload part on supported secure
+origins, with the existing JavaScript SHA-256 fallback for HTTP development.
+Four 1 MiB slots bound logical input bytes to 4 MiB per upload; this is not a
+browser/process RSS guarantee. The full archive is never buffered for hashing.
+Staging's external Nginx currently rejects bodies above 1 MiB with HTTP 413;
+increasing the application part size alone would break uploads there.
 
 Upload admission, part persistence, completion/preview, and deletion execute in
 the shared thread executor. Existing bounded body reads, checksums, atomic

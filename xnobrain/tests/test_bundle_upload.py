@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request
 from xnobrain.handlers.api import APIHandlers
 from xnobrain.handlers.operations.portability import operations
 from xnobrain.repositories.files import FileRepository
-from xnobrain.services.portability import CHUNK_SIZE, PortabilityService
+from xnobrain.services.portability import CHUNK_SIZE, UPLOAD_CHUNK_SIZE, PortabilityService
 
 
 class BundleUploadTests(unittest.IsolatedAsyncioTestCase):
@@ -79,17 +79,62 @@ class BundleUploadTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_out_of_order_replay_and_exact_assembly(self):
-        payload = b"a" * CHUNK_SIZE + b"b" * CHUNK_SIZE + b"end"
+        payload = b"a" * UPLOAD_CHUNK_SIZE + b"b" * UPLOAD_CHUNK_SIZE + b"end"
         upload = await self.admit(payload)
         for index in (2, 0, 2, 1):
-            part = payload[index * CHUNK_SIZE : (index + 1) * CHUNK_SIZE]
+            part = payload[index * UPLOAD_CHUNK_SIZE : (index + 1) * UPLOAD_CHUNK_SIZE]
             self.assertEqual((await self.put(upload, index, part)).status_code, 201)
         with patch.object(self.service, "dry_run_file", return_value={"verified": True}):
             response = await self.client.post(f"/uploads/{upload}/complete", json={})
         self.assertEqual(response.status_code, 200)
         self.assertEqual((self.service.upload_root / upload / "bundle.zip").read_bytes(), payload)
         self.assertEqual(response.json()["data"]["sha256"], hashlib.sha256(payload).hexdigest())
-        self.assertEqual((await self.put(upload, 0, payload[:CHUNK_SIZE])).status_code, 409)
+        self.assertEqual((await self.put(upload, 0, payload[:UPLOAD_CHUNK_SIZE])).status_code, 409)
+
+    async def test_new_descriptor_and_legacy_upload_survive_service_restart(self):
+        response = await self.client.post("/uploads", json={"size": 1024**3})
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["data"]["chunk_size"], 1024**2)
+        self.assertEqual(response.json()["data"]["total_parts"], 1024)
+
+        # Persist an upload admitted by the previous 512 KiB server version.
+        payload = b"a" * CHUNK_SIZE + b"tail"
+        upload = await self.admit(payload)
+        directory = self.service.upload_root / upload
+        metadata = self.service._read_metadata(directory)
+        metadata.update(chunk_size=CHUNK_SIZE, total_parts=2)
+        self.service.repository.atomic_json(directory / "metadata.json", metadata)
+        self.assertEqual((await self.put(upload, 0, payload[:CHUNK_SIZE])).status_code, 201)
+        restarted = PortabilityService(self.service.repository, self.service.root_profile)
+        await asyncio.to_thread(restarted.put_upload_part, upload, 1, b"tail")
+        with patch.object(restarted, "dry_run_file", return_value={"verified": True}):
+            completed = await asyncio.to_thread(restarted.complete_upload, upload, {})
+        self.assertEqual(completed["sha256"], hashlib.sha256(payload).hexdigest())
+        self.assertEqual((directory / "bundle.zip").read_bytes(), payload)
+
+    async def test_part_limit_with_and_without_content_length(self):
+        payload = b"x" * UPLOAD_CHUNK_SIZE
+        upload = await self.admit(payload)
+
+        async def streamed(oversized):
+            yield payload
+            if oversized:
+                yield b"!"
+
+        path = f"/uploads/{upload}/parts/0"
+        for body in (payload + b"!", streamed(True)):
+            response = await self.client.put(path, content=body)
+            self.assertEqual(response.status_code, 400)
+            self.assertFalse(
+                (self.service.upload_root / upload / "parts" / "00000000.part").exists()
+            )
+        response = await self.client.put(
+            path,
+            content=streamed(False),
+            headers={"X-Part-SHA256": hashlib.sha256(payload).hexdigest()},
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["data"]["size"], len(payload))
 
     async def test_bad_checksum_size_index_and_missing_parts_are_rejected(self):
         upload = await self.admit(b"abc")

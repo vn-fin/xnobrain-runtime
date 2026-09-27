@@ -19,6 +19,7 @@ import tempfile
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 from zipfile import ZipFile
 
 import httpx
@@ -28,7 +29,7 @@ from xnobrain.handlers.api import APIHandlers
 from xnobrain.handlers.operations.portability import operations
 from xnobrain.repositories.base import StoreError
 from xnobrain.repositories.files import FileRepository
-from xnobrain.services.portability import PortabilityService
+from xnobrain.services.portability import CHUNK_SIZE, UPLOAD_CHUNK_SIZE, PortabilityService
 from xnobrain.services.portability_tasks import PortabilityTasks
 
 
@@ -98,6 +99,9 @@ async def run_once(root, archive, expected, slots):
             )
             response.raise_for_status()
             descriptor = response.json()["data"]
+            metrics.update(
+                chunk_size=descriptor["chunk_size"], total_parts=descriptor["total_parts"]
+            )
             admitted = time.perf_counter()
             upload = descriptor["upload_id"]
             indices = iter(range(descriptor["total_parts"]))
@@ -220,10 +224,18 @@ async def main(args):
             }
         print(json.dumps({"fixture": metadata}), flush=True)
         results = []
+        modes = (
+            [(4, CHUNK_SIZE), (4, UPLOAD_CHUNK_SIZE)]
+            if args.compare_part_sizes
+            else [(1, UPLOAD_CHUNK_SIZE), (4, UPLOAD_CHUNK_SIZE)]
+        )
         for pair in range(args.pairs):
-            for slots in [1, 4] if pair % 2 == 0 else [4, 1]:
+            for slots, part_size in modes if pair % 2 == 0 else reversed(modes):
                 with tempfile.TemporaryDirectory(dir=root, prefix="run-") as run_dir:
-                    result = await run_once(Path(run_dir), archive, expected, slots)
+                    # Reproduce legacy admission descriptors without touching real
+                    # workspace data or changing the production handler's bound.
+                    with patch("xnobrain.services.portability.UPLOAD_CHUNK_SIZE", part_size):
+                        result = await run_once(Path(run_dir), archive, expected, slots)
                     results.append({"pair": pair, **result})
                     args.output.write_text(
                         json.dumps(
@@ -233,8 +245,12 @@ async def main(args):
                     )
                     print(json.dumps(results[-1]), flush=True)
         medians = {
-            str(slots): {
-                key: statistics.median(row[key] for row in results if row["slots"] == slots)
+            f"slots={slots},part={part_size}": {
+                key: statistics.median(
+                    row[key]
+                    for row in results
+                    if row["slots"] == slots and row["chunk_size"] == part_size
+                )
                 for key in (
                     "admission_s",
                     "upload_s",
@@ -244,7 +260,7 @@ async def main(args):
                     "upload_mib_s",
                 )
             }
-            for slots in (1, 4)
+            for slots, part_size in modes
         }
         report = {
             "complete": True,
@@ -263,6 +279,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--size-mib", type=int, default=1024)
     parser.add_argument("--pairs", type=int, default=3)
+    parser.add_argument("--compare-part-sizes", action="store_true")
     parser.add_argument(
         "--output", type=Path, default=Path("/tmp/bundle-upload-runtime-benchmark.json")
     )
