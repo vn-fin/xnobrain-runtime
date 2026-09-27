@@ -262,7 +262,9 @@ class PortabilityHandlers:
                     and expected_hash != __import__("hashlib").sha256(payload).hexdigest()
                 ):
                     raise ValueError("upload part checksum is invalid")
-                result = self.service.put_bundle_upload_part(transfer_id, part_number, payload)
+                result = await asyncio.to_thread(
+                    self.service.put_bundle_upload_part, transfer_id, part_number, payload
+                )
                 return self.success(result, "bundle part uploaded", 201)
             if operation == "bundle_task_part":
                 scope, actor = self.bundle_task_identity(request)
