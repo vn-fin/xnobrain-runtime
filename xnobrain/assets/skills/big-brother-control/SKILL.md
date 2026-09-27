@@ -57,6 +57,12 @@ available in that configuration.
   Named profiles belong under that root using the ID returned by creation.
   Do not hardcode a deployment path or derive the destination from the terminal
   working directory, `~/.hermes`, or the selected agent's `HERMES_HOME`.
+- Resolve the destination **before** running the create command. For example,
+  when Runtime's profiles root is `/srv/xnobrain-data/hermes/profiles`, agent
+  `math` belongs at `/srv/xnobrain-data/hermes/profiles/math`. The CLI may print
+  `/srv/xnobrain-data/hermes/root/profiles/math`; accept that location only when
+  its resolved physical path is the same destination. Never assume the extra
+  `root/profiles` directory is scanned by Runtime.
 - Prefer an available, authorized Runtime creation/scaffold operation that
   selects this destination itself. Before using native `agent profile create`
   or `import`, verify that the CLI's `$HERMES_ROOT_PROFILE/profiles` resolves to
@@ -69,6 +75,9 @@ available in that configuration.
   Runtime discovers real profile directories with `agent.json` or `workspace/`;
   do not fabricate metadata or create per-profile symlinks to make an incomplete
   profile pass discovery. Creating a shell alias does not register an agent.
+  After creation, check the actual destination and profile structure. A CLI
+  success message, `.env`, `SOUL.md`, or a populated skills folder alone does
+  not establish that Runtime can discover the agent.
 - Read back the exact created ID through Runtime inventory and detail using an
   available scoped tool or authenticated API client. The public checks are
   `GET /xnobrain/api/runtime/v1/agents` and
@@ -76,6 +85,11 @@ available in that configuration.
   credentials from profile files to perform these checks. If Runtime verification
   is unavailable or fails, report the profile as created but not yet verified
   in Runtime; do not claim it is visible in the UI or recreate it automatically.
+
+For managed workspaces, use the platform's configured model/router setup through
+the supported creation flow. Do not tell the user to run `<agent> setup` or enter
+separate provider API keys merely because the native CLI prints those generic
+next steps. Do not copy Big Brother's credential files into the new profile.
 
 For an Agent Maker blueprint, preserve its approved revision, server-reserved
 target and scaffold/activation workflow. A lifecycle authorization failure must
