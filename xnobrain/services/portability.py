@@ -118,9 +118,10 @@ from ..repositories import FileRepository, StoreError
 
 BUNDLE_FORMAT = "xnobrain-bundle"
 BUNDLE_VERSION = 1
-# Keep transfer parts below the common/default 1 MiB reverse-proxy body limit.
-# The archive itself remains file-backed and may be up to MAX_COMPRESSED.
+# Downloads retain their existing size. Raw upload bodies fit the staging
+# ingress's verified 1 MiB limit; the archive itself remains file-backed.
 CHUNK_SIZE = 512 * 1024
+UPLOAD_CHUNK_SIZE = 1024 * 1024
 MAX_COMPRESSED = 2 * 1024 * 1024 * 1024
 MAX_EXPANDED = 8 * 1024 * 1024 * 1024
 MAX_FILE_BYTES = 512 * 1024 * 1024
@@ -359,8 +360,8 @@ class PortabilityService:
             "filename": filename,
             "size": size,
             "sha256": expected_sha,
-            "chunk_size": CHUNK_SIZE,
-            "total_parts": self._part_count(size),
+            "chunk_size": UPLOAD_CHUNK_SIZE,
+            "total_parts": (size + UPLOAD_CHUNK_SIZE - 1) // UPLOAD_CHUNK_SIZE,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "complete": False,
         }
@@ -381,9 +382,10 @@ class PortabilityService:
         if metadata.get("complete"):
             raise StoreError("upload is already complete", status=409, code="upload_complete")
         number = self._part_number(part_number, metadata["total_parts"])
-        expected = CHUNK_SIZE
+        chunk_size = metadata["chunk_size"]
+        expected = chunk_size
         if number == metadata["total_parts"] - 1:
-            expected = metadata["size"] - number * CHUNK_SIZE
+            expected = metadata["size"] - number * chunk_size
         if len(payload) != expected:
             raise StoreError("upload part size is invalid", code="invalid_upload_part")
         path = directory / "parts" / f"{number:08d}.part"

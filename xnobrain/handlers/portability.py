@@ -13,7 +13,7 @@ from fastapi.responses import Response, StreamingResponse
 
 from ..repositories.base import StoreError
 from ..services import EXPECTED_ERRORS
-from ..services.portability import CHUNK_SIZE, MAX_COMPRESSED
+from ..services.portability import CHUNK_SIZE, MAX_COMPRESSED, UPLOAD_CHUNK_SIZE
 from ..trusted_context import (
     SNAPSHOT_OPERATION_HEADER,
     SNAPSHOT_SHA_HEADER,
@@ -246,11 +246,11 @@ class PortabilityHandlers:
                 content_length = request.headers.get("content-length")
                 if content_length is not None:
                     declared_length = int(content_length)
-                    if declared_length <= 0 or declared_length > CHUNK_SIZE:
+                    if declared_length <= 0 or declared_length > UPLOAD_CHUNK_SIZE:
                         raise ValueError("upload part size is invalid")
                 payload_buffer = bytearray()
                 async for chunk in request.stream():
-                    if len(payload_buffer) + len(chunk) > CHUNK_SIZE:
+                    if len(payload_buffer) + len(chunk) > UPLOAD_CHUNK_SIZE:
                         raise ValueError("upload part size is invalid")
                     payload_buffer.extend(chunk)
                 if not payload_buffer:
