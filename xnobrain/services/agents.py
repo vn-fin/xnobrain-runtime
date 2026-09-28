@@ -319,7 +319,9 @@ class AgentsServiceMixin:
             )
         return identifier[:64].rstrip("-")
 
-    def create_agent(self, body: Mapping[str, Any], *, trusted_context: Any = None) -> dict[str, Any]:
+    def create_agent(
+        self, body: Mapping[str, Any], *, trusted_context: Any = None
+    ) -> dict[str, Any]:
         display_name = " ".join(str(body.get("display_name") or body.get("name") or "").split())
         if not display_name:
             raise ServiceError("display_name is required")
@@ -342,7 +344,9 @@ class AgentsServiceMixin:
                 except (OSError, ValueError):
                     stored = None
                 if stored != PortabilityService.owner_record(trusted_context):
-                    raise ServiceError("agent ownership is unavailable", status=403, code="permission_denied")
+                    raise ServiceError(
+                        "agent ownership is unavailable", status=403, code="permission_denied"
+                    )
         raw, status = self.agents.create_agent(payload)
         if status == 201 and getattr(trusted_context, "subject", ""):
             from ..services.portability import PortabilityService
@@ -870,6 +874,7 @@ class AgentsServiceMixin:
             "title": display_name,
             "description": str(metadata.get("description") or ""),
             "status": str(metadata.get("status") or "active"),
+            "workspace_path": str(item.get("workspace_path") or ""),
             "config": public_config,
             "created_at": metadata.get("created_at"),
             "updated_at": metadata.get("updated_at"),
