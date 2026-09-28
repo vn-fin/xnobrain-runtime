@@ -59,6 +59,34 @@ class ConversationRunnerImportTests(unittest.TestCase):
 
 
 class ProviderRuntimeRequestGuardTests(unittest.TestCase):
+    def test_codex_image_wire_shape_and_tool_delivery_preserve_canonical_history(self):
+        agent = SimpleNamespace(model="cx/gpt-6-sol")
+        agent._build_api_kwargs = lambda messages: {"model": agent.model, "messages": messages}
+        image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,fixture"}}
+        messages = [
+            {"role": "user", "content": [image]},
+            {"role": "assistant", "tool_calls": [{"id": "call-1"}, {"id": "call-2"}]},
+            {"role": "tool", "tool_call_id": "call-1", "content": [image]},
+            {
+                "role": "tool",
+                "tool_call_id": "call-2",
+                "content": [{"type": "text", "text": "done"}],
+            },
+        ]
+        canonical = json.dumps(messages)
+        AgentManager._install_provider_runtime_request_guard(agent)
+        wire = agent._build_api_kwargs(messages)["messages"]
+        self.assertEqual(wire[0]["content"][0]["image_url"], image["image_url"]["url"])
+        self.assertEqual(wire[2]["tool_call_id"], "call-1")
+        self.assertIsInstance(wire[2]["content"], str)
+        self.assertEqual(wire[3]["tool_call_id"], "call-2")
+        self.assertEqual(wire[4]["role"], "user")
+        self.assertEqual(wire[4]["content"][1]["image_url"], image["image_url"]["url"])
+        self.assertEqual(json.dumps(messages), canonical)
+        self.assertEqual(agent._build_api_kwargs(messages)["messages"], wire)
+        agent.model = "cc/claude-synthetic"
+        self.assertEqual(agent._build_api_kwargs(messages)["messages"], messages)
+
     def test_removes_custom_provider_hints_without_changing_router_model(self):
         agent = SimpleNamespace()
         agent._build_api_kwargs = lambda messages, tools_for_api=None: {
@@ -1543,6 +1571,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     "mcp__news__search",
                     "latest headlines",
                     {"query": "latest headlines"},
+                    tool_call_id="call-search",
                 )
                 tool_progress_callback(
                     "reasoning.available",
@@ -1564,6 +1593,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     duration=0.125,
                     is_error=False,
                     result="private tool output",
+                    tool_call_id="call-search",
                 )
                 tool_progress_callback(
                     "tool.started",
@@ -1728,6 +1758,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(b'"delta":"Review the search results."', payload)
             self.assertNotIn(b'"event":"reasoning.available"', payload)
             self.assertIn(b'"event":"tool.completed"', payload)
+            self.assertEqual(payload.count(b'"tool_call_id":"call-search"'), 2)
             self.assertIn(b'"duration":0.125', payload)
             self.assertNotIn(b"private tool output", payload)
             self.assertNotIn(b"private-args", payload)
@@ -1784,6 +1815,9 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             db.append_message(conversation_id, "user", "Remember this.")
             db.append_message(conversation_id, "assistant", "I will remember.")
             db.close()
+            from PIL import Image
+
+            Image.new("RGB", (40, 40), "white").save(manager._workspace_dir("news") / "scan.png")
             observed: dict[str, Any] = {}
             reasoning_events: list[tuple[Any, ...]] = []
             delegation_events: list[tuple[Any, ...]] = []
@@ -1885,6 +1919,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                 "news",
                 {
                     "message": "What did I ask you to remember?",
+                    "image_paths": ["scan.png"],
                     "conversation_id": conversation_id,
                 },
                 require_conversation=True,
@@ -1940,6 +1975,11 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     agent_ref=[None],
                 )
 
+            self.assertEqual(observed["user_message"][0]["type"], "text")
+            self.assertTrue(
+                observed["user_message"][1]["image_url"]["url"].startswith("data:image/png;base64,")
+            )
+            self.assertTrue(prepared["image_paths"][0].startswith(".chat-images/"))
             delegated = observed.get("delegated")
             queued_delegated = json.loads(observed["queued_delegated"])
 

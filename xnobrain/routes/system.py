@@ -1,8 +1,10 @@
 """System API route declarations."""
 
+from ..models.system import BuildSHA
 from .definition import route
 
 ROUTES = (
+    route("GET", "/sha", "build_sha", tags=("System",), response_data=BuildSHA),
     route("GET", "/health", "health", tags=("System",)),
     route("GET", "/health/provider-runtime", "provider_runtime_health", tags=("System",)),
     route("GET", "/ping", "health", tags=("System",)),

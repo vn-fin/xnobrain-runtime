@@ -77,6 +77,13 @@ def route_groups() -> tuple[tuple[Route, ...], ...]:
     if feature_enabled(FEATURE_UI_CUSTOMIZATION):
         optional += (ui_composition.ROUTES,)
     groups = optional + BASE_ROUTE_GROUPS
+    if not feature_enabled("PROFILE_EXAMPLES"):
+        groups = tuple(
+            # Completed-upload validation is read-only and remains available to
+            # drain candidates already accepted by Control before disabling.
+            tuple(route for route in group if route.operation != "bundle_example_capabilities")
+            for group in groups
+        )
     if not feature_enabled("CONVERSATION_REASONING_EFFORT"):
         groups = tuple(
             tuple(

@@ -62,6 +62,7 @@ done
 
 hermes_home="${RUNTIME_HERMES_HOME:-}"
 : "${hermes_home:?RUNTIME_HERMES_HOME is required. Set it in .env or the environment}"
+profiles_root="${RUNTIME_HERMES_PROFILES_ROOT:-${HERMES_PROFILES_ROOT:-$hermes_home/profiles}}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This installer is for Linux." >&2
@@ -184,7 +185,7 @@ export npm_config_fetch_retry_maxtimeout="${npm_config_fetch_retry_maxtimeout:-3
 # a slow but healthy registry response to finish.
 export npm_config_fetch_timeout="${npm_config_fetch_timeout:-600000}"
 export npm_config_maxsockets="${npm_config_maxsockets:-4}"
-export NODE_DEPS_TIMEOUT="${NODE_DEPS_TIMEOUT:-1800}"
+export NODE_DEPS_TIMEOUT="${NODE_DEPS_TIMEOUT:-5400}"
 mkdir -p "$tools_dir" "$npm_prefix/bin" "$hermes_home"
 
 arch="$(uname -m)"
@@ -295,8 +296,6 @@ fi
 if ! "$project_python" -c 'import hermes_cli' >/dev/null 2>&1; then
   "$project_python" -m pip install -e "$hermes_install_dir"
 fi
-ln -sfn "$hermes_install_dir/venv/bin/hermes" "$npm_prefix/bin/agent"
-
 "$project_python" -m pip install --upgrade pip setuptools wheel
 "$project_python" -m pip install -r "$project_dir/requirements.txt"
 "$project_python" -m pip install 'edge-tts==7.2.7'
@@ -332,10 +331,17 @@ if [[ "$skip_browser" == false ]]; then
   "$npm_prefix/bin/agent-browser" install --with-deps
 fi
 
+# npm's global install can replace the agent command. Install our wrapper last
+# so native profile commands use the same profiles root as Runtime.
+chmod 0755 "$project_dir/runtime/agent-cli.sh"
+ln -sfn "$project_dir/runtime/agent-cli.sh" "$npm_prefix/bin/agent"
+
 # Install an independent seed for future profiles and refresh Big Brother's
 # packaged guidance. Existing named profiles remain untouched.
+HERMES_ROOT_PROFILE="$hermes_home" HERMES_PROFILES_ROOT="$profiles_root" \
+  bash "$project_dir/runtime/link-native-profiles.sh"
 XNOBRAIN_REQUIRED_SKILLS_DIR="$project_dir/runtime/required-skills" \
-  bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$hermes_home/profiles"
+  bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$profiles_root"
 
 chmod 700 "$hermes_home"
 

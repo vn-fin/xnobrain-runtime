@@ -15,6 +15,17 @@ from xnobrain.services.conversation_reasoning import validate
 
 
 class PreferenceTests(unittest.TestCase):
+    def test_ultra_is_unavailable_for_new_profile_settings(self):
+        from xnobrain.services.agents import AgentsServiceMixin
+
+        service = AgentsServiceMixin()
+        for write in (
+            lambda: service.update_global_config({"effort": "ultra"}),
+            lambda: service.update_agent_config("agent", {"reasoning_effort": "ultra"}),
+        ):
+            with self.assertRaises(ServiceError) as error:
+                write()
+            self.assertEqual(error.exception.code, "unsupported_reasoning_effort")
     def test_revision_reload_isolation_clear_and_delete(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -42,6 +53,7 @@ class PreferenceTests(unittest.TestCase):
         for body in (
             {"expected_revision": 0},
             {"reasoning_effort": "invalid", "expected_revision": 0},
+            {"reasoning_effort": "ultra", "expected_revision": 0},
             {"reasoning_effort": None, "expected_revision": -1},
             {"reasoning_effort": "high", "expected_revision": 0, "tenant": "other"},
         ):
@@ -61,10 +73,22 @@ class PreferenceTests(unittest.TestCase):
 
 
 class MetadataTests(unittest.IsolatedAsyncioTestCase):
+    async def test_router_catalog_filters_unavailable_ultra(self):
+        from xnobrain.integrations.provider_models import ProviderModelsMixin
+
+        levels = ProviderModelsMixin._model_reasoning_levels(
+            {"supported_reasoning_levels": [{"effort": "high"}, {"effort": "ultra"}]}
+        )
+        self.assertEqual(levels, ["high"])
+
     async def test_support_and_outage(self):
         router = AsyncMock()
         router.reasoning_for_model.return_value = {"reasoning": ["none", "high"]}
         self.assertEqual(await validate(router, "model", "none"), "available")
+        with self.assertRaises(ServiceError) as error:
+            await validate(router, "model", "ultra")
+        self.assertEqual(error.exception.code, "unsupported_reasoning_effort")
+        router.reasoning_for_model.return_value = {"reasoning": ["high", "ultra"]}
         with self.assertRaises(ServiceError) as error:
             await validate(router, "model", "ultra")
         self.assertEqual(error.exception.code, "unsupported_reasoning_effort")

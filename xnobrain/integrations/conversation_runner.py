@@ -10,6 +10,7 @@ from contextlib import nullcontext
 
 from pydantic import ValidationError
 
+from xnobrain.integrations.conversation_tools import ConversationToolCallbacks
 from xnobrain.models.conversations import ChatRequest
 from xnobrain.runtime_limits import max_parallel_agents, session_timeout_seconds
 
@@ -58,8 +59,10 @@ class ConversationRunnerMixin:
             "When appropriate, use the skill management tools to create or improve a focused skill."
         ),
         "agent_maker": (
-            "Use the agent-maker workflow: interview for missing requirements, then propose a complete reviewable blueprint. "
-            "Do not create, scaffold, activate, or approve a profile without explicit human approval."
+            "Use the agent-maker workflow for the requested specialist: interview for missing requirements, "
+            "then use agent_maker_inspect, agent_maker_prepare and agent_maker_build. "
+            "Blueprint approval and activation after successful certification are automatic; "
+            "do not ask the user to click approval buttons. Stop and report certification failures."
         ),
         "optimize_skills": (
             "Use skill-optimizer for the selected agent. Review measured usage and clearly label missing or estimated evidence. "
@@ -88,6 +91,12 @@ class ConversationRunnerMixin:
         from .accounting_context import accounting_binding, accounting_enabled, inference_accounting
 
         prepared = self._prepare_chat_command(raw_name, body, require_conversation=False)
+        if prepared.get("image_paths"):
+            raise AgentAPIError(
+                "Use a conversation run to send image attachments",
+                status=422,
+                code="chat_images_unsupported",
+            )
         name = prepared["name"]
         binding = accounting_binding(name) if accounting_enabled() else None
         scope = (
@@ -185,7 +194,12 @@ class ConversationRunnerMixin:
         profile_dir = self._require_profile(name)
         self._ensure_router_profile(profile_dir, body.get("model"))
         workspace_dir = self._ensure_agent_workspace(name, profile_dir)
-        message = self._text_value(body.get("message"), field="message", max_chars=MAX_TEXT_CHARS)
+        message = self._text_value(
+            body.get("message")
+            or ("Inspect the attached images." if body.get("image_paths") else ""),
+            field="message",
+            max_chars=MAX_TEXT_CHARS,
+        )
         conversation_id = ""
         if body.get("conversation_id"):
             conversation_id = self._session_id(body["conversation_id"])
@@ -263,6 +277,7 @@ class ConversationRunnerMixin:
         try:
             selection = ChatRequest(
                 input=message,
+                image_paths=body.get("image_paths") or None,
                 feature=feature or None,
                 capabilities=body.get("capabilities"),
             )
@@ -273,12 +288,20 @@ class ConversationRunnerMixin:
         capabilities = selection.capabilities
         if capabilities is None:
             capabilities = [feature] if feature else []
+        from ..chat_images import snapshot_images
+
+        image_paths = (
+            snapshot_images(workspace_dir or self._workspace_dir(name), selection.image_paths)
+            if selection.image_paths
+            else []
+        )
         return {
             "name": name,
             "profile_dir": profile_dir,
             "workspace_dir": workspace_dir or self._workspace_dir(name),
             "conversation_id": conversation_id,
             "message": message,
+            "image_paths": image_paths,
             "provider": provider,
             "selection_provider": selection_provider,
             "model": model,
@@ -295,6 +318,7 @@ class ConversationRunnerMixin:
             "work_context_id": str((body.get("ownership_context") or {}).get("id") or "personal"),
             "ownership_context": dict(body.get("ownership_context") or {}),
             "_custom_page_principal": body.get("_custom_page_principal"),
+            "_agent_maker_principal": body.get("_agent_maker_principal"),
             "_ui_assistance": body.get("_ui_assistance"),
             "_reasoning_snapshot": body.get("_reasoning_snapshot"),
         }
@@ -590,6 +614,11 @@ class ConversationRunnerMixin:
                         and (message.get("content") is None or message.get("content") == "")
                     )
                 ]
+                from .image_tools import router_image_messages
+
+                kwargs["messages"] = router_image_messages(
+                    kwargs["messages"], kwargs.get("model", getattr(agent, "model", ""))
+                )
             tools = kwargs.get("tools")
             if isinstance(tools, list):
                 kwargs["tools"] = [encode_tool(tool) for tool in tools]
@@ -664,6 +693,14 @@ class ConversationRunnerMixin:
 
         class ProviderRuntimeChildren(list):
             def append(self, child: Any) -> None:
+                from .image_tools import install_image_tools
+
+                if getattr(agent, "_xnobrain_image_root", None):
+                    install_image_tools(
+                        child,
+                        agent._xnobrain_image_root,
+                        getattr(agent, "_xnobrain_image_artifact_roots", ()),
+                    )
                 manager._install_provider_runtime_request_guard(child)
                 manager._install_provider_runtime_child_guards(child)
                 super().append(child)
@@ -1374,6 +1411,16 @@ class ConversationRunnerMixin:
                         terminal_tool.set_approval_callback(previous_callback)
 
                 agent.run_conversation = run_with_memory_approval
+                from .image_tools import install_image_tools
+
+                artifact_roots = [profile_dir / "cache"]
+                if name == BIG_BROTHER_AGENT_ID:
+                    # Big Brother already owns the root profile's tool artifacts.
+                    artifact_roots.append(profile_dir)
+                install_image_tools(agent, prepared["workspace_dir"], artifact_roots)
+                from .agent_maker_tools import install_tools as install_maker_tools
+
+                install_maker_tools(agent, conversation_id)
                 if feature_enabled(FEATURE_AGENT_CUSTOM_PAGE):
                     from .custom_page_tools import install_tools
 
@@ -1485,6 +1532,18 @@ class ConversationRunnerMixin:
                     prepared["_ui_assistance"],
                 )
             )
+        if prepared.get("_agent_maker_principal") and getattr(manager, "agent_maker_service", None):
+            from .agent_maker_tools import bind_run as bind_maker_run
+
+            page_scope.enter_context(
+                bind_maker_run(
+                    manager.agent_maker_service,
+                    str(prepared["name"]),
+                    conversation_id,
+                    run_id,
+                    prepared["_agent_maker_principal"],
+                )
+            )
         profile_token = _api_request_profile.set(str(prepared["name"]))
         register_gateway_notify(run_id, approval_notify_callback)
         try:
@@ -1542,12 +1601,23 @@ class ConversationRunnerMixin:
                 )
                 or None
             )
+            image_guidance = (
+                "For scanned PDFs, render pages and inspect the resulting images with vision_analyze. "
+                "Rendering a page or failing to extract text does not mean it has been visually inspected. "
+                "Track pages rendered, visually inspected, and failed/unverified separately. "
+                "Retry existing page images after an inspection failure; report unverified page numbers. "
+                "A loaded image is only inspected after you actually examine its pixels."
+            )
+            feature_prompt = "\n\n".join(filter(None, (feature_prompt, image_guidance)))
             aggregate_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
             result: dict[str, Any] = {}
             first_turn = True
             skill_tool_start, skill_tool_complete = manager._skill_usage_callbacks(
                 prepared,
                 run_id=run_id,
+            )
+            tool_callbacks = ConversationToolCallbacks(
+                tool_progress_callback, skill_tool_start, skill_tool_complete
             )
             while prompt:
                 history = await adapter._conversation_history_for_session(conversation_id)
@@ -1565,15 +1635,22 @@ class ConversationRunnerMixin:
                     if decision is not None:
                         active_smart_decision.update(decision)
                         selected_model = str(decision.get("model") or selected_model)
+                from ..chat_images import image_message
+
+                user_message = image_message(
+                    Path(prepared["workspace_dir"]),
+                    prompt,
+                    prepared.get("image_paths", []) if first_turn else [],
+                )
                 result, turn_usage = await adapter._run_agent(
-                    user_message=prompt,
+                    user_message=user_message,
                     conversation_history=history,
                     ephemeral_system_prompt=feature_prompt if first_turn else None,
                     session_id=conversation_id,
                     stream_delta_callback=stream_delta_callback,
-                    tool_progress_callback=tool_progress_callback,
-                    tool_start_callback=skill_tool_start,
-                    tool_complete_callback=skill_tool_complete,
+                    tool_progress_callback=tool_callbacks.progress,
+                    tool_start_callback=tool_callbacks.start,
+                    tool_complete_callback=tool_callbacks.complete,
                     agent_ref=agent_ref,
                     gateway_session_key=conversation_id,
                     route=conversation_model_route(selected_model, self.llm_router.base_url)

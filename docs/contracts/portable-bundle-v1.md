@@ -32,6 +32,18 @@ and caches may be extremely compressible. Verify every checksum and reject
 unlisted payloads. Unsupported major versions fail; compatible minor additions
 are ignored unless declared required.
 
+Full profile bundles allow at most **100,000 files**, including `manifest.json`,
+`checksums.json`, and team files. Community snapshots retain their **20,000-file**
+limit. Directory entries do not count. Exports enforce the same archive-directory
+checks as imports, so an export cannot succeed with a file count, path collision,
+or size that the receiving importer rejects. Count errors report the actual count
+and limit; duplicate and case-colliding paths have a separate error message.
+
+Other bounds remain: 2 GiB compressed, 8 GiB expanded, 512 MiB per file,
+32 path components, 4 MiB manifest, and 16 MiB checksum inventory. Every payload
+checksum is still verified. Large bundles require a Runtime with the 100,000-file
+limit at the destination; older Runtimes still reject bundles over 20,000 files.
+
 Apply uses staging and atomic publish. Ownership and conflicting IDs are remapped consistently, crons are paused, persistent approvals reset, providers disconnected, and custom executable content quarantined. An import report lists every transformation and warning.
 
 Imported profiles discard archive credentials and authentication files. The
@@ -63,3 +75,34 @@ clients use the part protocol so neither HTTP uploads nor downloads require a
 single multi-gigabyte request.
 
 Golden valid and malicious fixtures live with contract tests and are consumed by both repositories.
+
+## Reviewed example profiles
+
+Control may retain an immutable ZIP as a platform-wide example. The ZIP keeps
+the ordinary bundle-v1 format, including `export_id`, manifest and checksums.
+No separate exporter or dynamic generation format is introduced.
+
+Publication requires exactly one dedicated named profile, no teams, no default/
+root/Big Brother identity, and no credentials marker. Examples have no fixed
+compressed, expanded or per-file byte ceiling, and retain the 10,000-file bound.
+Upload purpose `profile-example` is persisted through completion and durable
+import tasks, including recovery. Admission reserves twice the ZIP size; archive
+validation and extraction require free disk for twice the actual expanded size,
+with a 256 MiB margin. Ordinary bundles retain their existing byte limits.
+Existing metadata bounds, traversal, symlink, integrity,
+configuration and capability checks apply; encrypted entries are rejected.
+
+Allowed root files are `config.yaml`, `agent.json`, `AGENTS.md`, `SOUL.md` and
+`SYSTEM.md`; content directories are `prompts`, `skills`, and `workspace`. Skills
+must contain their own `SKILL.md`, including skills nested in category folders
+(for example `skills/research/forecast/SKILL.md`). Validation reports their paths
+relative to `skills/`. Every skill asset must be inside a discovered skill;
+category metadata and unrelated sibling files are not included. Private paths, databases, logs, caches,
+credential files, USER/MEMORY files and ownership receipts are rejected.
+`agent.json` allows only portable name/title/description fields. Known credential
+settings must be empty, redacted or environment references such as `${API_KEY}`.
+Free-form content still requires the publisher's explicit review.
+
+Validation never creates a profile. A participant import uses the existing
+completed-upload task API, fresh profile IDs, quarantine, approval resets, job
+pausing and setup notices. Replacing or withdrawing the source changes no copy.

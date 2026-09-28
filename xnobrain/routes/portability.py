@@ -10,6 +10,13 @@ from ..models import (
 from .definition import route
 
 ROUTES = (
+    route("GET", "/bundles/example-capabilities", "bundle_example_capabilities", tags=("Portability",)),
+    route(
+        "POST",
+        "/bundles/uploads/{transfer_id}/example-validation",
+        "bundle_example_validation",
+        tags=("Portability",),
+    ),
     route(
         "POST",
         "/community/snapshots/{agent_id}/export",

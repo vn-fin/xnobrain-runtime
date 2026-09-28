@@ -23,6 +23,9 @@ mkdir -p \
 exec 9>"$lock_file"
 flock 9
 
+HERMES_ROOT_PROFILE="$hermes_home" HERMES_PROFILES_ROOT="$profiles_root" \
+  bash "$project_dir/runtime/link-native-profiles.sh"
+
 bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$profiles_root"
 
 chmod 700 "$hermes_home" "$profiles_root"
