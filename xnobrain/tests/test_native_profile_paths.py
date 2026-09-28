@@ -117,11 +117,13 @@ class NativeProfilePathsTests(unittest.TestCase):
 
     def test_native_install_and_startup_use_shared_wrapper_and_linker(self):
         installer = (ROOT / "scripts/install-linux.sh").read_text(encoding="utf-8")
-        wrapper_link = (
-            'ln -sfn "$project_dir/runtime/agent-cli.sh" "$npm_prefix/bin/agent"'
-        )
+        wrapper_link = 'ln -sfn "$project_dir/runtime/agent-cli.sh" "$npm_prefix/bin/agent"'
         self.assertIn(wrapper_link, installer)
         self.assertLess(installer.index("npm install --global"), installer.index(wrapper_link))
+        systemd = (ROOT / "scripts/install-systemd-services.sh").read_text(encoding="utf-8")
+        cli_link = systemd.split("ln -sfn", 1)[1].split("\n\n", 1)[0]
+        self.assertIn('"$install_root/runtime/agent-cli.sh"', cli_link)
+        self.assertNotIn(".tools/hermes-agent/venv/bin/hermes", cli_link)
         prepare = (ROOT / "scripts/prepare-service-data.sh").read_text(encoding="utf-8")
         self.assertLess(
             prepare.index("link-native-profiles.sh"), prepare.index("apply-profile-templates.sh")
@@ -147,3 +149,28 @@ class NativeProfilePathsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.profiles / "science" / "workspace").is_dir())
         self.assertIn("science", manager.list_agent_names())
+
+    def test_workspace_and_skills_use_each_profile_root(self):
+        from xnobrain.integrations.hermes import AgentManager
+
+        named = self.profiles / "math"
+        for profile, skill_id in ((self.root, "root-skill"), (named, "math-skill")):
+            (profile / "workspace").mkdir(parents=True)
+            skill = profile / "skills" / skill_id
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                f"---\nname: {skill_id}\ndescription: Test skill\n---\nTest instructions.\n",
+                encoding="utf-8",
+            )
+        manager = AgentManager(root_profile=self.root, profiles_root=self.profiles)
+        for agent, profile, skill_id in (
+            ("big-brother", self.root, "root-skill"),
+            ("math", named, "math-skill"),
+        ):
+            with self.subTest(agent=agent):
+                self.assertEqual(manager.workspace_dir(agent), profile / "workspace")
+                skill_names = {item["name"] for item in manager.list_skills(agent)["skills"]}
+                self.assertIn(skill_id, skill_names)
+                self.assertNotIn(
+                    "math-skill" if agent == "big-brother" else "root-skill", skill_names
+                )

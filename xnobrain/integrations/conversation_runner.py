@@ -882,9 +882,7 @@ class ConversationRunnerMixin:
 
         profile_dir = Path(prepared["profile_dir"])
         name = str(prepared["name"])
-        workspace_dir = (
-            Path(prepared["workspace_dir"]).resolve() if name != BIG_BROTHER_AGENT_ID else None
-        )
+        workspace_dir = Path(prepared["workspace_dir"]).resolve()
         conversation_id = str(prepared["conversation_id"])
         manager = self
         runtime_loop = asyncio.get_running_loop()

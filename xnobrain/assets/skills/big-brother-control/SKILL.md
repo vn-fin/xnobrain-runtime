@@ -58,9 +58,9 @@ available in that configuration.
   Do not hardcode a deployment path or derive the destination from the terminal
   working directory, `~/.hermes`, or the selected agent's `HERMES_HOME`.
 - Resolve the destination **before** running the create command. For example,
-  when Runtime's profiles root is `/srv/xnobrain-data/hermes/profiles`, agent
-  `math` belongs at `/srv/xnobrain-data/hermes/profiles/math`. The CLI may print
-  `/srv/xnobrain-data/hermes/root/profiles/math`; accept that location only when
+  when Runtime's profiles root is `/srv/xnobrain-data/profiles`, agent
+  `math` belongs at `/srv/xnobrain-data/profiles/math`. The CLI may print
+  `/srv/xnobrain-data/root/profiles/math`; accept that location only when
   its resolved physical path is the same destination. Never assume the extra
   `root/profiles` directory is scanned by Runtime.
 - Prefer an available, authorized Runtime creation/scaffold operation that

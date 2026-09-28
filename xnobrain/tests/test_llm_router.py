@@ -2065,6 +2065,12 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(event["run_id"], run_id)
 
     async def test_native_runner_approves_memory_before_the_tool_saves(self) -> None:
+        await self._assert_native_runner_workspace("news")
+
+    async def test_big_brother_runner_uses_file_api_workspace(self) -> None:
+        await self._assert_native_runner_workspace("big-brother")
+
+    async def _assert_native_runner_workspace(self, name: str) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             manager = AgentManager(
@@ -2073,9 +2079,9 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                 legacy_agents_root=root / "legacy",
             )
             manager.create_agent({"name": "news"})
-            conversation = manager.create_conversation("news", {"title": "News"})
+            conversation = manager.create_conversation(name, {"title": "Workspace"})
             prepared = manager._prepare_chat_command(
-                "news",
+                name,
                 {
                     "message": "Remember my preference",
                     "conversation_id": conversation["conversation"]["id"],
@@ -2092,6 +2098,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     task_id = str(run_kwargs["task_id"])
                     observed["session_cwd"] = terminal_tool.get_session_cwd(task_id)
                     observed["task_cwd"] = terminal_tool.resolve_task_overrides(task_id).get("cwd")
+                    (Path(observed["task_cwd"]) / "deliverable.txt").write_text("ready")
                     callback = terminal_tool._get_approval_callback()
                     observed["choice"] = callback(
                         "Use concise summaries",
@@ -2160,6 +2167,10 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(observed["session_cwd"], str(prepared["workspace_dir"]))
             self.assertEqual(observed["task_cwd"], str(prepared["workspace_dir"]))
             self.assertTrue(observed["workspace_scope_cleared"])
+            self.assertEqual(
+                manager.read_workspace_file(name, {"path": "deliverable.txt"})["content_base64"],
+                "cmVhZHk=",
+            )
             self.assertEqual(approvals[0]["subsystem"], "memory")
             self.assertEqual(result["final_response"], "Saved.")
 

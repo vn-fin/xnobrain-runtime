@@ -77,6 +77,30 @@ class ConversationPromptMixin:
             else (profile_dir.parent.name if profile_dir.name == ".profile" else profile_dir.name)
         )
         sections.append(f"Current profile uv venv: `/opt/data/python/.{profile_id}-venv`.")
+        sections.append(
+            "# Current Runtime paths\n"
+            "These paths are resolved by the running Runtime and supersede guesses in "
+            "previous conversation messages.\n"
+            f"Current profile ID: `{profile_id}`.\n"
+            f"Current profile directory: `{profile_dir.resolve()}`.\n"
+            f"Default working directory and file API workspace: `{workspace.resolve()}`.\n"
+            "Create user deliverables in this workspace and use paths relative to it "
+            "in workspace download links. A shell HOME directory is not the file API workspace.\n"
+            f"This profile's blueprint records: "
+            f"`{profile_dir.resolve() / '.xnobrain' / 'agent-blueprints'}`.\n"
+            "A blueprint is separate from a profile. Check its target_profile_id and "
+            "scaffold state before claiming a profile directory exists. A display name "
+            "does not determine the profile ID or folder name."
+        )
+        if profile_dir == self.root_profile:
+            sections.append(
+                f"Named profile discovery root: `{self.profiles_root.resolve()}`.\n"
+                "Big Brother is the current root profile shown above; do not infer its "
+                "directory by appending big-brother to the named profiles root. "
+                "The sidebar lists actual Runtime profiles, not unscaffolded blueprints. "
+                "Use authorized profile tools to inspect and manage other agents. "
+                "This default working directory does not remove that administrative scope."
+            )
         return (
             "<!-- runtime-workspace-context -->\n"
             + "\n\n".join(sections)

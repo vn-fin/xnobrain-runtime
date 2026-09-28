@@ -2,11 +2,11 @@
 
 Runtime discovers named profiles under `HERMES_PROFILES_ROOT`. The installed
 CLI derives its profiles directory from its root `HERMES_HOME` plus `/profiles`.
-For a managed VM these are typically:
+For a newly provisioned native VM these are:
 
 ```text
-Runtime: /srv/xnobrain-data/hermes/profiles
-CLI:     /srv/xnobrain-data/hermes/root/profiles
+Runtime: /srv/xnobrain-data/profiles
+CLI:     /srv/xnobrain-data/root/profiles -> /srv/xnobrain-data/profiles
 ```
 
 `scripts/prepare-service-data.sh` establishes a directory-level link before
@@ -15,6 +15,13 @@ seeding templates. The native installer installs `agent` through the same
 to the upstream executable. The wrapper anchors the CLI to the Runtime root,
 preserves named-profile selection and explicit `-p` arguments, and retains the
 existing per-invocation Router key loading.
+
+Both `install-linux.sh` and `install-systemd-services.sh` must preserve that
+wrapper. Source-based Incus image assembly installs it too, along with the
+entrypoint's profile linker. Replacing `agent` with a direct engine link skips
+the wrapper's strict checks and can create profiles outside Runtime discovery.
+Existing unmigrated VMs can still have the `hermes/root` and `hermes/profiles`
+prefixes; use their effective environment when checking a physical path.
 
 The linker serializes first-use setup and handles missing or empty CLI profile
 directories. The CLI may still print `root/profiles/math`; resolving that path

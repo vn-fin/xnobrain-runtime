@@ -3,6 +3,8 @@ set -euo pipefail
 
 install_root="/opt/xnobrain"
 data_root="/srv/xnobrain-data"
+root_profile="${RUNTIME_HERMES_HOME:-$data_root/root}"
+profiles_root="${RUNTIME_HERMES_PROFILES_ROOT:-$data_root/profiles}"
 service_user="xnobrain"
 source_archive="${XNOBRAIN_SOURCE_ARCHIVE:?XNOBRAIN_SOURCE_ARCHIVE is required}"
 source_revision="${XNOBRAIN_SOURCE_REVISION:?XNOBRAIN_SOURCE_REVISION is required}"
@@ -53,7 +55,9 @@ visudo --check --file "$sudoers_file" >/dev/null
 echo "Installing the native XNOBrain backend..."
 runuser -u "$service_user" -- env \
   HOME="$data_root/home" \
-  HERMES_HOME="$data_root/hermes/root" \
+  HERMES_HOME="$root_profile" \
+  RUNTIME_HERMES_HOME="$root_profile" \
+  RUNTIME_HERMES_PROFILES_ROOT="$profiles_root" \
   UV_PYTHON_INSTALL_DIR="$install_root/.tools/uv-python" \
   bash -c 'cd "$1" && exec bash "$1/scripts/install-linux.sh" --skip-browser' \
   xnobrain-installer "$install_root"
@@ -87,15 +91,15 @@ trap - EXIT
 
 "$install_root/scripts/install-systemd-services.sh"
 sed -i \
-  -e "s|^HERMES_HOME=.*|HERMES_HOME=$data_root/hermes/root|" \
-  -e "s|^DATA_DIR=.*|DATA_DIR=$data_root/xnobrain|" \
+  -e "s|^RUNTIME_HERMES_HOME=.*|RUNTIME_HERMES_HOME=$root_profile|" \
+  -e "s|^RUNTIME_DATA_DIR=.*|RUNTIME_DATA_DIR=$data_root/xnobrain|" \
   /etc/xnobrain/xnobrain.env
-if grep -q '^HERMES_PROFILES_ROOT=' /etc/xnobrain/xnobrain.env; then
+if grep -q '^RUNTIME_HERMES_PROFILES_ROOT=' /etc/xnobrain/xnobrain.env; then
   sed -i \
-    "s|^HERMES_PROFILES_ROOT=.*|HERMES_PROFILES_ROOT=$data_root/hermes/profiles|" \
+    "s|^RUNTIME_HERMES_PROFILES_ROOT=.*|RUNTIME_HERMES_PROFILES_ROOT=$profiles_root|" \
     /etc/xnobrain/xnobrain.env
 else
-  printf '%s\n' "HERMES_PROFILES_ROOT=$data_root/hermes/profiles" \
+  printf '%s\n' "RUNTIME_HERMES_PROFILES_ROOT=$profiles_root" \
     >>/etc/xnobrain/xnobrain.env
 fi
 systemctl restart xnobrain.target

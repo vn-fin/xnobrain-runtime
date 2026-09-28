@@ -16,6 +16,13 @@ grouped by feature:
 JSON responses use `{success,data,message,status_code}`. SSE sends structured
 Hermes lifecycle objects and terminates with `data: [DONE]`.
 
+Agent responses include `workspace_path`, the server-selected absolute workspace
+directory. Chat clients use it to qualify dropped file references for the agent;
+workspace file API requests and structured image paths remain relative. This is
+an additive response field: older clients ignore it, and newer clients retain
+relative references when connected to older runtimes. It grants no file access;
+the existing profile and path checks still apply.
+
 Conversation runs accept an optional request-scoped `attachment` or
 `attachments` list on `POST /xnobrain/api/runtime/v1/sessions/{id}/runs`.
 Each sketch is `{kind:"diagram", filename, mime_type:"application/xml",
