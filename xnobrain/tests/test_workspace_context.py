@@ -42,6 +42,8 @@ class WorkspaceContextTests(unittest.TestCase):
                     self.assertIn("## Python environments", prompt)
                     self.assertIn(f"/opt/data/python/.{name}-venv", prompt)
                     self.assertEqual("# Agent workspace" in prompt, name == "writer")
+                    self.assertIn(f"Current profile directory: `{profile.resolve()}`", prompt)
+                    self.assertIn(f"file API workspace: `{workspace.resolve()}`", prompt)
                 (workspace / "HERMES.md").write_text("Custom working rules")
                 manager._ensure_workspace_agents(profile, workspace)
                 self.assertEqual((workspace / "HERMES.md").read_text(), "Custom working rules")

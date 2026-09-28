@@ -75,6 +75,7 @@ def resolve_layout(env: Mapping[str, str]) -> AgentLayout:
             Path(env.get("HOME", str(Path.home()))) / ".hermes",
             Path("/opt/data/hermes/root"),
             Path("/srv/xnobrain-data/hermes/root"),
+            Path("/srv/xnobrain-data/root"),
         )
         if any(item.is_dir() and any(item.iterdir()) for item in candidates):
             raise ValueError("Legacy agent data found; configure its root or migrate explicitly")

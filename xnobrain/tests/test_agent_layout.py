@@ -22,6 +22,18 @@ class AgentLayoutTests(unittest.TestCase):
         self.assertFalse(configure_layout(env).canonical)
         self.assertEqual(env["HERMES_HOME"], "/opt/data/home/.hermes")
 
+    def test_native_root_and_named_profiles_are_separate(self):
+        env = {
+            "RUNTIME_HERMES_HOME": "/srv/xnobrain-data/root",
+            "RUNTIME_HERMES_PROFILES_ROOT": "/srv/xnobrain-data/profiles",
+        }
+        layout = configure_layout(env)
+        self.assertEqual(layout.root_profile, Path("/srv/xnobrain-data/root"))
+        self.assertEqual(layout.profiles_root, Path("/srv/xnobrain-data/profiles"))
+        self.assertEqual(env["HERMES_HOME"], str(layout.root_profile))
+        self.assertEqual(env["HERMES_ROOT_PROFILE"], str(layout.root_profile))
+        self.assertEqual(env["HERMES_PROFILES_ROOT"], str(layout.profiles_root))
+
     def test_conflict_invalid_and_source_paths(self):
         for value in ("relative", "/opt/data/../agent", "/workspace/data", "/opt", "/"):
             with self.subTest(value=value), self.assertRaises(ValueError):

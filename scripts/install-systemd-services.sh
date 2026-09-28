@@ -40,6 +40,8 @@ fi
 for path in \
   "$install_root/.tools/python/bin/python" \
   "$install_root/.tools/node/bin/node" \
+  "$install_root/runtime/agent-cli.sh" \
+  "$install_root/runtime/link-native-profiles.sh" \
   "$install_root/.tools/hermes-agent/venv/bin/hermes"; do
   if [[ ! -e "$path" ]]; then
     echo "Required runtime path not found: $path" >&2
@@ -47,8 +49,9 @@ for path in \
     exit 1
   fi
 done
+chmod 0755 "$install_root/runtime/agent-cli.sh"
 ln -sfn \
-  "$install_root/.tools/hermes-agent/venv/bin/hermes" \
+  "$install_root/runtime/agent-cli.sh" \
   "$install_root/.tools/npm-global/bin/agent"
 
 if ! getent passwd "$service_user" >/dev/null; then
