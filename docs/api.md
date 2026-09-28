@@ -101,8 +101,10 @@ Smart Route reasoning may be stored as `auto`; concrete model execution
 resolves it through this metadata instead of a hard-coded effort.
 The Agent Settings reasoning-effort selector persists the profile default through
 `PATCH /agents/{agent_id}/config` using `reasoning_effort`. Supported configuration
-values are `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and
-`ultra`; the UI offers the selected model's advertised levels plus `auto`.
+values are `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`;
+`ultra` is temporarily unavailable for new settings. Previously saved `ultra`
+values remain readable and require an explicit supported replacement.
+The UI offers the selected model's available levels plus `auto`.
 An explicit `none` remains disabled; it must not be converted to `medium`.
 The legacy `reasoning: false` switch disables reasoning, while `reasoning: true`
 re-enables a disabled setting at `medium`. Effort is an inference setting, not a
@@ -116,7 +118,7 @@ batches are grouped into cost-homogeneous execution waves, while explicit
 delegation provider/model overrides remain authoritative. If a later routing
 classification is temporarily unavailable, the active model continues instead
 of failing the run. Supported reasoning values come from provider model
-metadata and may include `none`, `minimal`, `xhigh`, `max`, and `ultra` in
+metadata and may include `none`, `minimal`, `xhigh`, and `max` in
 addition to `low`, `medium`, and `high`.
 
 ## Private Community full-profile snapshot transport
@@ -276,13 +278,15 @@ operation `decision` (`scaffold`, `activate`, or `cancel`):
   MCP disabled, no state database/sessions/logs, no provider credentials or custom
   base URL, and only blueprint-pinned skills/memory seeds. It never clones the
   creator profile or global skills. An occupied or drifted target fails closed.
-- `POST /{blueprint_id}/activate` remains a separate authenticated decision, but
-  currently fails closed with HTTP 409 `blueprint_certification_required` for a
-  scaffolded child. Approval and repeated activation requests cannot substitute for
-  child-path certification. The blueprint and child remain unchanged and paused;
-  cron and MCP remain disabled. Bounded child-path certification and digest-bound
-  activation remain pending. Previously recorded activation operations retain their
-  idempotent read behavior; this does not retroactively modify existing profiles.
+- `POST /{blueprint_id}/certifications` runs bounded job, refusal, tool, and context
+  cases in the same child profile. Each case gets a distinct session ID **and title**.
+  A completed failed, cancelled, or timed-out attempt may be retried with a new key;
+  the existing paused profile is reused, and prior evidence is retained in
+  `certification_history`. Replays of any retained attempt do not execute it again.
+  Revision/digest, permissions, and scaffold drift checks also apply to retries.
+- `POST /{blueprint_id}/activate` requires a valid child-path certification digest
+  bound to the exact blueprint and unchanged profile. Without it the child stays
+  paused. Cron and MCP remain disabled after activation.
 - `POST /{blueprint_id}/cancel` prevents future blueprint steps and retains any
   paused draft profile for explicit cleanup. It never deletes files implicitly; an
   active profile must use the separate profile lifecycle.
@@ -291,6 +295,23 @@ A replay with the same operation key, revision, and digest returns the persisted
 result. Reusing a completed lifecycle with different idempotency material returns
 `blueprint_idempotency_conflict`. Digest, revision, approval, target collision, and
 profile-drift conflicts fail without widening permissions or activating a profile.
+
+Authenticated interactive chat runs also expose `agent_maker_inspect`,
+`agent_maker_prepare`, and `agent_maker_build`. They call the same lifecycle services
+directly using the host-verified run identity and immutable owner/payer context.
+The model cannot supply a user, tenant, destination path, or work context. Tools
+are not installed in delegated children, certification sessions, or scoped page
+actions. Each call rechecks that the originating run is active and uncancelled.
+
+For a user-requested agent, `agent_maker_build` automatically approves the exact
+blueprint, scaffolds one paused profile, certifies it, and activates only after
+success. Approval records use `mode: "auto"` and retain the verified actor and
+digest; HTTP approvals and older records use `mode: "manual"`. Automatic
+certification defaults to USD 0.10 and accepts at most USD 1 per attempt. Failure
+returns the paused result; another attempt needs a new key. Cancelling the chat
+cancels outstanding certification and prevents activation. Opening Settings or
+launching the editable session alone starts no model execution. Explicit HTTP
+lifecycle endpoints remain available for the review UI.
 
 ## Skill lifecycle usage
 
@@ -1181,7 +1202,7 @@ are removed by its API adapter, not treated as disk paths.
 
 `GET /sessions/{conversation_id}/reasoning?agent={agent_id}` reads a profile-local
 conversation preference. `PATCH` accepts `reasoning_effort` (null to inherit, or
-`auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`) and
+`auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) and
 `expected_revision` (nonnegative integer). The response includes
 `reasoning_revision`, `effective_preference`, `source`, and `capability_status`.
 The hidden `/conversations` alias supports the same resource. Existing session
@@ -1206,10 +1227,103 @@ the admitted preference is parsed into the embedded agent's `reasoning_config`.
 For an explicit conversation preference, Runtime supplies a per-agent router
 provider profile to Hermes' Chat Completions transport **before** serialization.
 Hermes retains ownership of model normalization and request construction; the
-profile maps normalized configuration to nested `reasoning: {effort, summary: "auto"}`
-for routed Codex (`cx`) models, and `reasoning_effort` for other supported routes. Runtime never overwrites the serialized effort. Conflicting generic
+profile maps the normalized configuration to the router's `reasoning_effort`
+field. Runtime never overwrites the serialized effort. Conflicting generic
 request overrides are removed before serialization. Other transport types are
 unchanged, and no provider profile is registered globally.
 Auto uses the resolved model default, or omits the field when no reasoning
 default is available. Changes do not modify admitted runs or other conversations.
 This behavior does not assert child-agent enforcement.
+
+## Example profile capability and validation
+
+`GET /xnobrain/api/runtime/v1/bundles/example-capabilities` returns the standard
+envelope with `{"capability":"profile-example-v1"}`. Invalid/disabled
+`FT_ENABLE_PROFILE_EXAMPLES` removes this admission capability.
+
+`POST /xnobrain/api/runtime/v1/bundles/uploads/{transfer_id}/example-validation`
+accepts a completed upload and returns digest, sizes, file count, profile ID,
+skills, required environment/capabilities and `content_review_required: true`.
+It runs ZIP/config/checksum validation off the event loop, without extraction,
+execution or profile creation. It stays available for draining previously
+accepted Control validations after the flag is disabled.
+
+The existing upload start endpoint accepts optional `purpose: "profile-example"`
+to reserve conservative staging capacity before transfer. It returns 507 when
+space is insufficient. Ordinary uploads keep their existing behavior. See the
+[clean example policy](contracts/portable-bundle-v1.md#reviewed-example-profiles).
+
+### Chat image attachments
+
+`POST /xnobrain/api/runtime/v1/sessions/{conversation_id}/runs` accepts optional
+`image_paths: string[]` alongside `input` and existing diagram `attachment(s)`.
+Paths are relative to the authorized agent's workspace, without the UI's
+`workspace/` prefix. Image-only input is supported. Control forwards the JSON
+body unchanged; existing conversation ownership, payer, budget, and profile
+lease checks still apply before snapshots are written.
+
+Attach at most four distinct PNG/JPEG/WebP images, each up to 5 MiB and 40 million
+pixels. Runtime decodes and validates the actual format. Spaces and Unicode
+filenames work; absolute paths, traversal, symlinks and nonregular files fail.
+Errors include `invalid_chat_images`, `invalid_chat_image_path`,
+`chat_image_unavailable`, `chat_image_too_large`, `unsupported_chat_image`,
+`chat_image_changed`, and `chat_image_storage_unavailable`.
+
+The admitted run returns `image_paths` containing content-addressed references
+under `.chat-images/` in the same workspace. Snapshots are published atomically
+and follow workspace retention/export/deletion. Removing a composer chip does
+not delete a workspace file. Native inference receives image data parts;
+ordinary display text never contains base64. History DTOs expose text and
+`image_paths`; same-conversation retries use those immutable references.
+Missing or altered snapshots fail explicitly. The engine retains its native
+multimodal history for resume. The non-conversation CLI chat method rejects
+image attachments; it cannot silently discard them.
+
+An older Runtime rejects `image_paths` as an unknown field. The UI reports that
+an update is needed and preserves the draft; it does not retry as text only.
+The final workspace-upload chunk receipt must confirm `complete`, matching
+agent and byte size, and a safe server-returned path before a chat attachment
+becomes ready. Files-panel uploads retain their existing UI error handling;
+the composer consumes explicit per-file results, including partial batches.
+
+### Generated image inspection
+
+Runtime wraps the installed `vision_analyze` handler without modifying the
+pinned engine. It resolves local paths from the calling task's recorded cwd,
+then the session/configured cwd, with the agent workspace as the final fallback.
+Reads remain inside the agent workspace or its profile cache. Big Brother also
+permits root-profile artifacts. Child agents inherit their originating roots;
+accounted CLI workers bind their own profile roots. No process-wide `chdir` is
+used. Remote URLs retain the native resolver's SSRF checks.
+
+Capability lookup uses the active agent model and maps known Router provider
+aliases to catalog providers. Explicit vision overrides take precedence. Known
+text-only models require an explicitly configured auxiliary vision route;
+its existing scoped credentials and accounting are retained. Unknown/new
+catalog entries receive native images on the selected route, allowing the
+actual provider to accept or explicitly reject them without changing models.
+
+Image-tool completion events preserve safe errors and an `output` summary with
+coverage (`requested`, `loaded`, `analyzed`, `failed`). A native image load is
+counted as `loaded`, not proof of visual inspection. Auxiliary analysis results
+count as `analyzed`. Retries update the same source's outcome. Pixels are omitted
+from browser tool events. The agent receives instructions to report rendered,
+visually inspected and unverified PDF pages separately, and to retry existing
+page images. Renderer page counts and actual visual reasoning are not inferred
+from a successful file read.
+
+#### Pinned router image compatibility
+
+The runtime applies alias-aware vision capability checks at the embedded engine's
+API message preprocessing boundary as well as at the image tool. Unknown router
+aliases preserve native image parts; explicit non-vision routes require an
+explicitly configured auxiliary vision service.
+
+GoRouter v0.2.5 forwards Codex image URL objects without unwrapping their `url`
+field and converts tool content to text. For `cx/` and `codex/` requests, the
+runtime's private router adapter emits scalar image URLs and moves tool image
+parts into an adjacent user image message after the tool-result group. Original
+conversation history, tool call IDs, and other provider request shapes are
+preserved. This compatibility projection is internal; browser `image_paths` and
+the canonical native history format do not change. Reassess the projection when
+upgrading the pinned router's image translation.

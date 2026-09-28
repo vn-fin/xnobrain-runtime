@@ -1,5 +1,7 @@
 """Portable bundle transfer contracts."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -13,6 +15,7 @@ class BundleUploadStart(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     size: int = Field(gt=0)
     sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    purpose: Literal["profile-example"] | None = None
 
 
 class BundleUploadComplete(BaseModel):

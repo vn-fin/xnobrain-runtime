@@ -15,6 +15,16 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         str(q.get("agent") or "").strip() or (_ for _ in ()).throw(ValueError("agent is required"))
     )
     return {
+        "bundle_example_capabilities": (
+            lambda: {"capability": "profile-example-v1"},
+            "example profiles supported",
+            200,
+        ),
+        "bundle_example_validation": (
+            lambda: asyncio.to_thread(s.validate_example_bundle_upload, p["transfer_id"]),
+            "example profile validated",
+            200,
+        ),
         "bundle_export_start": (lambda: s.start_bundle_export(body), "bundle export prepared", 201),
         "bundle_export_delete": (
             lambda: s.delete_bundle_transfer("export", p["transfer_id"]),

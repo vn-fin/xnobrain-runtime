@@ -63,7 +63,7 @@ class RuntimeCertificationExecutor:
         # loads its SOUL/AGENTS/config/skills/memory, and applies the tool allowlist.
         conversation_body: dict[str, Any] = {
             "id": session_id,
-            "title": "Agent Maker certification",
+            "title": f"Agent Maker certification · {session_id}",
         }
         if work_context_id != "personal":
             conversation_body["ownership_context"] = dict(ownership_context)

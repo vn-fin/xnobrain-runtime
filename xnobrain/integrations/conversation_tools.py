@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import threading
 import time
 from typing import Any, Callable
@@ -25,6 +26,7 @@ class ConversationToolCallbacks:
         self._pending = threading.local()
         self._started: dict[str, float] = {}
         self._lock = threading.Lock()
+        self._image_outcomes: dict[str, str] = {}
 
     def progress(
         self,
@@ -59,6 +61,8 @@ class ConversationToolCallbacks:
             preview = build_tool_preview(tool_name, args or {})
         else:
             preview = pending[1]
+        if tool_name == "vision_analyze":
+            preview = "Inspect image"
         try:
             self._progress("tool.started", tool_name, preview, args, tool_call_id=call_id)
         finally:
@@ -74,7 +78,27 @@ class ConversationToolCallbacks:
             metadata = dict(pending[3]) if pending is not None else {}
             metadata.setdefault("duration", max(0, time.monotonic() - started))
             metadata.setdefault("is_error", _tool_failed(result))
-            metadata["result"] = result
+            metadata["result"] = (
+                {"summary": result.get("text_summary", "Image loaded"), "delivery": "native"}
+                if tool_name == "vision_analyze"
+                and isinstance(result, dict)
+                and result.get("_multimodal")
+                else result
+            )
+            if tool_name == "vision_analyze":
+                source = str((args or {}).get("image_url") or call_id)
+                identity = hashlib.sha256(source.encode()).hexdigest()[:16]
+                native = isinstance(result, dict) and result.get("_multimodal")
+                outcome = "failed" if metadata["is_error"] else "loaded" if native else "analyzed"
+                with self._lock:
+                    self._image_outcomes[identity] = outcome
+                    coverage = {
+                        status: list(self._image_outcomes.values()).count(status)
+                        for status in ("loaded", "analyzed", "failed")
+                    }
+                    coverage["requested"] = len(self._image_outcomes)
+                # Loaded pixels are not a claim that the model has inspected them.
+                metadata["image_coverage"] = coverage
             metadata["tool_call_id"] = call_id
             self._progress("tool.completed", tool_name, None, None, **metadata)
         finally:

@@ -3,6 +3,7 @@
 import time
 from typing import Any, Callable
 
+from ...services.system import build_sha
 from ..query import bucket, csv, time_range
 
 Operation = tuple[Callable[[], Any], str, int]
@@ -14,6 +15,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
         str(q.get("agent") or "").strip() or (_ for _ in ()).throw(ValueError("agent is required"))
     )
     return {
+        "build_sha": (lambda: build_sha().model_dump(), "build SHA retrieved", 200),
         "health": (
             lambda: {
                 "status": "ok",

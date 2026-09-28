@@ -27,6 +27,12 @@ def install_worker_agent(binding, run_id, parent_run_id=""):
             provider="custom:xnobrain",
         )
         original_init(agent, *args, **kwargs)
+        from hermes_constants import get_hermes_home
+
+        from .image_tools import install_image_tools
+
+        profile = get_hermes_home()
+        install_image_tools(agent, profile / "workspace", [profile / "cache"])
         conversation = str(agent.session_id or run_id)
         headers = {
             "X-GoRouter-Agent-Id": binding["agent_id"],

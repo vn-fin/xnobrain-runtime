@@ -315,6 +315,7 @@ class PortabilityTasks:
                         "upload_id": upload_id,
                         "archive_sha256": metadata["sha256"],
                         "environment_ref": reference,
+                        "purpose": metadata.get("purpose", ""),
                     },
                 )
             except BaseException:

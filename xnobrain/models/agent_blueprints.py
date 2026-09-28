@@ -307,6 +307,7 @@ class BlueprintApprovalBinding(BaseModel):
 
 class BlueprintApproval(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    mode: Literal["manual", "auto"] = "manual"
     approved_revision: int = Field(ge=1)
     canonical_digest: str = Field(pattern=_SHA256)
     binding: BlueprintApprovalBinding
@@ -395,6 +396,7 @@ class AgentBlueprintRecord(BaseModel):
     approval: BlueprintApproval | None
     scaffold: BlueprintLifecycleOperation | None = None
     certification: BlueprintCertification | None = None
+    certification_history: list[BlueprintCertification] = Field(default_factory=list)
     activation: BlueprintLifecycleOperation | None = None
     rollback: BlueprintRollback | None = None
     cancellation: BlueprintCancellation | None = None

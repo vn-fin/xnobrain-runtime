@@ -59,7 +59,9 @@ class APIHandlers(AgentAPIHandlers, WorkspaceHandlers, PortabilityHandlers, Stre
             if not hasattr(error, "status"):
                 error.status, error.code = 400, "invalid_request"
             response = self.failure(error)
-        if name.startswith(("custom_page_", "ui_composition_", "ui_assistance_")):
+        if name == "build_sha" or name.startswith(
+            ("custom_page_", "ui_composition_", "ui_assistance_")
+        ):
             response.headers["Cache-Control"] = "private, no-store"
         return response
 

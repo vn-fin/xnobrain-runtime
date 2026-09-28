@@ -1,5 +1,8 @@
 """Production container packaging contracts."""
 
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -41,6 +44,84 @@ class CompiledContainerTests(unittest.TestCase):
         self.assertIn('exec "$hermes_python" /opt/xnobrain-app/server.py', entrypoint)
         self.assertNotIn("app.so", entrypoint)
         self.assertNotIn("XNOBRAIN_BUILD_MODE", entrypoint)
+
+    def test_native_agent_cli_receives_current_router_key(self):
+        dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
+        entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(
+            encoding="utf-8"
+        )
+        launcher = (ROOT / "runtime" / "agent-cli.sh").read_text(encoding="utf-8")
+
+        self.assertIn("COPY runtime/agent-cli.sh /usr/local/bin/agent", dockerfile)
+        self.assertIn(
+            "export RUNTIME_LLM_API_KEY_FILE=/run/xnobrain-runtime/router-api-key",
+            entrypoint,
+        )
+        self.assertIn('chmod 0600 "$key_file"', entrypoint)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_hermes = root / "hermes"
+            fake_hermes.write_text(
+                '#!/usr/bin/env bash\n'
+                '[[ "$RUNTIME_LLM_API_KEY" == "$EXPECTED_KEY" && "$1" == "-p" ]]\n',
+                encoding="utf-8",
+            )
+            fake_hermes.chmod(0o755)
+            agent = root / "agent"
+            agent.write_text(
+                launcher.replace(
+                    "/usr/local/bin/xnobrain-link-native-profiles", "/usr/bin/true"
+                ).replace("/usr/local/lib/hermes-agent/venv/bin/hermes", str(fake_hermes)),
+                encoding="utf-8",
+            )
+            agent.chmod(0o755)
+            key_file = root / "router-api-key"
+            key_file.write_text("current-key\n", encoding="utf-8")
+
+            def run(expected_key: str, file_path: str) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [str(agent), "-p", "poem"],
+                    env={
+                        "PATH": os.environ.get("PATH", ""),
+                        "RUNTIME_LLM_API_KEY": "stale-key",
+                        "RUNTIME_LLM_API_KEY_FILE": file_path,
+                        "EXPECTED_KEY": expected_key,
+                    },
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+            self.assertEqual(run("current-key", str(key_file)).returncode, 0)
+            key_file.write_text("rotated-key\n", encoding="utf-8")
+            self.assertEqual(run("rotated-key", str(key_file)).returncode, 0)
+            self.assertEqual(run("", str(root / "missing-key")).returncode, 0)
+            self.assertEqual(run("stale-key", "").returncode, 0)
+
+    def test_cli_profiles_link_to_runtime_agents_without_moving_existing_data(self):
+        linker = ROOT / "runtime" / "link-native-profiles.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "big-brother"
+            root.mkdir()
+            profiles = Path(directory) / "agents"
+            profiles.mkdir()
+            environment = {
+                "PATH": os.environ.get("PATH", ""),
+                "HERMES_ROOT_PROFILE": str(root),
+                "HERMES_PROFILES_ROOT": str(profiles),
+            }
+
+            subprocess.run(["bash", str(linker)], env=environment, check=True)
+            self.assertEqual((root / "profiles").resolve(), profiles.resolve())
+
+            (root / "profiles").unlink()
+            nested = root / "profiles" / "poem"
+            nested.mkdir(parents=True)
+            (nested / "state.db").write_text("existing data", encoding="utf-8")
+            subprocess.run(["bash", str(linker)], env=environment, check=True)
+            self.assertEqual((nested / "state.db").read_text(encoding="utf-8"), "existing data")
+            self.assertFalse((profiles / "poem").exists())
 
     def test_runtime_uses_only_a_generic_central_router_client(self):
         entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(encoding="utf-8")

@@ -74,6 +74,10 @@ class PortabilityServiceMixin:
         return self.portability.read_export_part(transfer_id, part_number)
 
     def start_bundle_upload(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        if body.get("purpose") == "profile-example":
+            from .portability_examples import start_example_upload
+
+            return start_example_upload(self.portability, body)
         return self.portability.start_upload(body)
 
     def put_bundle_upload_part(
@@ -83,6 +87,11 @@ class PortabilityServiceMixin:
 
     def complete_bundle_upload(self, transfer_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         return self.portability.complete_upload(transfer_id, body)
+
+    def validate_example_bundle_upload(self, transfer_id: str) -> dict[str, Any]:
+        from .portability_examples import validate_example_upload
+
+        return validate_example_upload(self.portability, transfer_id)
 
     def apply_bundle_upload(self, transfer_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         result = self.portability.apply_upload(transfer_id, body)
@@ -348,10 +357,10 @@ class PortabilityService:
             payload = file.read(CHUNK_SIZE)
         return payload, metadata
 
-    def start_upload(self, body: Mapping[str, Any]) -> dict[str, Any]:
+    def start_upload(self, body: Mapping[str, Any], *, example: bool = False) -> dict[str, Any]:
         filename = Path(str(body.get("filename") or "profile.zip")).name
         size = int(body.get("size") or 0)
-        if size <= 0 or size > MAX_COMPRESSED:
+        if size <= 0 or (not example and size > MAX_COMPRESSED):
             raise StoreError("bundle size is invalid", code="invalid_bundle")
         expected_sha = str(body.get("sha256") or "").strip().lower()
         if expected_sha and not re.fullmatch(r"[0-9a-f]{64}", expected_sha):
@@ -369,6 +378,8 @@ class PortabilityService:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "complete": False,
         }
+        if example:
+            metadata["purpose"] = "profile-example"
         self.repository.atomic_json(directory / "metadata.json", metadata)
         logger.info(
             "bundle upload started upload_id=%s compressed_bytes=%d parts=%d max_files=%d",
@@ -468,7 +479,9 @@ class PortabilityService:
             raise
         try:
             stage = "preview"
-            preview = self.dry_run_file(target)
+            preview = self.dry_run_file(
+                target, example=metadata.get("purpose") == "profile-example"
+            )
             stage = "persistence"
             metadata.update({"complete": True, "sha256": digest.hexdigest(), "preview": preview})
             self.repository.atomic_json(directory / "metadata.json", metadata)
@@ -509,7 +522,11 @@ class PortabilityService:
         environment = body.get("environment") or {}
         if not isinstance(environment, Mapping):
             raise StoreError("environment must be an object", code="invalid_environment")
-        report = self.apply_file(directory / "bundle.zip", environment)
+        report = self.apply_file(
+            directory / "bundle.zip",
+            environment,
+            example=metadata.get("purpose") == "profile-example",
+        )
         shutil.rmtree(directory, ignore_errors=True)
         return report
 
@@ -525,8 +542,8 @@ class PortabilityService:
         shutil.rmtree(directory)
         return {"deleted": True, "transfer_id": directory.name}
 
-    def inspect_file(self, path: Path) -> dict[str, Any]:
-        archive, files, expanded = self._validated_archive_file(path)
+    def inspect_file(self, path: Path, *, example: bool = False) -> dict[str, Any]:
+        archive, files, expanded = self._validated_archive_file(path, example=example)
         with archive:
             manifest = json.loads(archive.read("manifest.json"))
         return {
@@ -536,8 +553,8 @@ class PortabilityService:
             "warnings": [],
         }
 
-    def dry_run_file(self, path: Path) -> dict[str, Any]:
-        inspection = self.inspect_file(path)
+    def dry_run_file(self, path: Path, *, example: bool = False) -> dict[str, Any]:
+        inspection = self.inspect_file(path, example=example)
         manifest = inspection["manifest"]
         collisions = [
             item["id"]
@@ -591,8 +608,9 @@ class PortabilityService:
         clone: bool = False,
         clone_target_id: str | None = None,
         clone_receipt: Mapping[str, str] | None = None,
+        example: bool = False,
     ) -> dict[str, Any]:
-        preview = self.dry_run_file(path)
+        preview = self.dry_run_file(path, example=example)
         manifest = preview["inspection"]["manifest"]
         allowed_environment = set(preview["missing_environment"])
         supplied = self._validate_environment(environment, allowed_environment)
@@ -997,7 +1015,7 @@ class PortabilityService:
             )
 
     def _archive_files(
-        self, archive: ZipFile, *, max_files: int | None = None
+        self, archive: ZipFile, *, max_files: int | None = None, example: bool = False
     ) -> tuple[dict[str, ZipInfo], int]:
         """Check ZIP directory bounds shared by export and import."""
         count = sum(not info.is_dir() for info in archive.infolist())
@@ -1013,7 +1031,9 @@ class PortabilityService:
             raw = info.filename
             path_value = PurePosixPath(raw)
             mode = info.external_attr >> 16
-            if stat.S_ISLNK(mode) or (mode and stat.S_IFMT(mode) not in {0, stat.S_IFREG, stat.S_IFDIR}):
+            if stat.S_ISLNK(mode) or (
+                mode and stat.S_IFMT(mode) not in {0, stat.S_IFREG, stat.S_IFDIR}
+            ):
                 raise StoreError("bundle contains unsupported file type", code="invalid_bundle")
             raw_parts = raw.split("/")
             control = any(ord(character) < 32 for character in raw)
@@ -1036,9 +1056,11 @@ class PortabilityService:
                 raise StoreError(
                     "bundle contains duplicate or case-colliding file paths", code="invalid_bundle"
                 )
-            if info.compress_size > MAX_COMPRESSED:
+            if not example and info.compress_size > MAX_COMPRESSED:
                 raise StoreError("bundle contains an oversized member", code="invalid_bundle")
-            if info.file_size > MAX_FILE_BYTES or (info.file_size and not info.compress_size):
+            if (not example and info.file_size > MAX_FILE_BYTES) or (
+                info.file_size and not info.compress_size
+            ):
                 raise StoreError("bundle contains an oversized file", code="invalid_bundle")
             expanded += info.file_size
             # Full Hermes profiles legitimately contain extremely
@@ -1046,14 +1068,12 @@ class PortabilityService:
             # output. A per-member ratio limit rejects archives produced
             # by our own exporter. Bound extraction with absolute file,
             # aggregate-byte, file-count, and path limits instead.
-            if expanded > MAX_EXPANDED:
+            if not example and expanded > MAX_EXPANDED:
                 raise StoreError("bundle expansion limits exceeded", code="invalid_bundle")
             files[raw] = info
             folded.add(key)
         if "manifest.json" not in files or "checksums.json" not in files:
-            raise StoreError(
-                "bundle manifest and checksums are required", code="invalid_bundle"
-            )
+            raise StoreError("bundle manifest and checksums are required", code="invalid_bundle")
         if (
             files["manifest.json"].file_size > 4 * 1024 * 1024
             or files["checksums.json"].file_size > 16 * 1024 * 1024
@@ -1062,16 +1082,26 @@ class PortabilityService:
         return files, expanded
 
     def _validated_archive_file(
-        self, path: Path, *, max_files: int | None = None
+        self, path: Path, *, max_files: int | None = None, example: bool = False
     ) -> tuple[ZipFile, dict[str, ZipInfo], int]:
-        if not path.is_file() or path.stat().st_size <= 0 or path.stat().st_size > MAX_COMPRESSED:
+        if (
+            not path.is_file()
+            or path.stat().st_size <= 0
+            or (not example and path.stat().st_size > MAX_COMPRESSED)
+        ):
             raise StoreError("bundle size is invalid", code="invalid_bundle")
         try:
             archive = ZipFile(path)
         except BadZipFile as error:
             raise StoreError("bundle is not a valid zip archive", code="invalid_bundle") from error
         try:
-            files, expanded = self._archive_files(archive, max_files=max_files)
+            files, expanded = self._archive_files(archive, max_files=max_files, example=example)
+            if example and shutil.disk_usage(self.repository.data_dir).free < (
+                2 * expanded + 256 * 1024 * 1024
+            ):
+                raise StoreError(
+                    "insufficient example staging space", status=507, code="insufficient_storage"
+                )
             try:
                 manifest = json.loads(archive.read("manifest.json"))
                 checksums = json.loads(archive.read("checksums.json"))
@@ -1087,7 +1117,7 @@ class PortabilityService:
                 if name == "checksums.json":
                     continue
                 expected = checksums.get(name)
-                digest, size = self._hash_member(archive, info)
+                digest, size = self._hash_member(archive, info, example=example)
                 if not expected or expected.get("size") != size or expected.get("sha256") != digest:
                     raise StoreError(f"bundle checksum mismatch: {name}", code="invalid_bundle")
             if set(checksums) != set(files) - {"checksums.json"}:
@@ -1627,13 +1657,13 @@ class PortabilityService:
             buffer = buffer[position + len(secret) :]
 
     @staticmethod
-    def _hash_member(archive: ZipFile, info: ZipInfo) -> tuple[str, int]:
+    def _hash_member(archive: ZipFile, info: ZipInfo, *, example: bool = False) -> tuple[str, int]:
         digest = hashlib.sha256()
         size = 0
         with archive.open(info) as file:
             while chunk := file.read(1024 * 1024):
                 size += len(chunk)
-                if size > info.file_size or size > MAX_FILE_BYTES:
+                if size > info.file_size or (not example and size > MAX_FILE_BYTES):
                     raise StoreError("bundle expansion limits exceeded", code="invalid_bundle")
                 digest.update(chunk)
         return digest.hexdigest(), size

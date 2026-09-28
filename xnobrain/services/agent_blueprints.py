@@ -42,16 +42,17 @@ def _digest(value: Any) -> str:
 _MAKER_REQUEST = (
     "Help me design a specialist agent. Start by interviewing me about its job, "
     "audience, inputs, outputs, boundaries, model and cost limits, tools, work "
-    "context, memory policy, and acceptance tests. Do not scaffold or activate "
-    "anything until I approve the complete blueprint."
+    "context, memory policy, and acceptance tests. Once requirements are complete, "
+    "use agent_maker_prepare and agent_maker_build to automatically accept the "
+    "blueprint, scaffold, certify, and activate if certification passes."
 )
 _MAKER_TODOS = (
     "Interview and confirm requirements",
     "Draft the complete agent blueprint",
-    "Review and approve the exact blueprint",
+    "Automatically accept the exact blueprint",
     "Scaffold a paused child profile",
     "Run child-path certification",
-    "Review activation separately",
+    "Activate after successful certification",
     "Report artifacts, evidence, and remaining work",
 )
 
@@ -415,6 +416,8 @@ class AgentBlueprintsServiceMixin:
         owner_agent_id: str,
         body: Mapping[str, Any],
         trusted_context: Any = None,
+        *,
+        record_id: str | None = None,
     ) -> dict[str, Any]:
         owner_profile = self._blueprint_owner_profile(owner_agent_id)
         work_context_id = str(body["work_context_id"])
@@ -444,7 +447,7 @@ class AgentBlueprintsServiceMixin:
             else dict(getattr(trusted_context, "ownership_context", None) or {})
         )
         record = {
-            "id": f"abp_{uuid.uuid4().hex}",
+            "id": record_id or f"abp_{uuid.uuid4().hex}",
             "revision": 1,
             "owner_agent_id": owner_agent_id,
             "work_context_id": work_context_id,
@@ -526,6 +529,8 @@ class AgentBlueprintsServiceMixin:
         blueprint_id: str,
         body: Mapping[str, Any],
         trusted_subject: str,
+        *,
+        approval_mode: str = "manual",
     ) -> dict[str, Any]:
         subject = self._trusted_subject(trusted_subject)
         owner_profile = self._blueprint_owner_profile(owner_agent_id)
@@ -569,6 +574,7 @@ class AgentBlueprintsServiceMixin:
             **current,
             "status": "approved",
             "approval": {
+                "mode": approval_mode,
                 "approved_revision": expected_revision,
                 "canonical_digest": expected_digest,
                 "binding": self._approval_binding(current),
@@ -922,13 +928,18 @@ class AgentBlueprintsServiceMixin:
             "cost_used_usd": 0.0,
         }
         existing = current.get("certification")
-        if self._same_operation(existing, body):
+        history = list(current.get("certification_history") or [])
+        replay = next(
+            (attempt for attempt in [existing, *history] if self._same_operation(attempt, body)),
+            None,
+        )
+        if replay:
             if (
-                existing.get("cases_digest") != cases_digest
-                or existing.get("budget", {}).get("timeout_seconds") != budget["timeout_seconds"]
-                or existing.get("budget", {}).get("max_turns_per_case")
+                replay.get("cases_digest") != cases_digest
+                or replay.get("budget", {}).get("timeout_seconds") != budget["timeout_seconds"]
+                or replay.get("budget", {}).get("max_turns_per_case")
                 != budget["max_turns_per_case"]
-                or float(existing.get("budget", {}).get("max_cost_usd") or 0)
+                or float(replay.get("budget", {}).get("max_cost_usd") or 0)
                 != budget["max_cost_usd"]
             ):
                 raise ServiceError(
@@ -937,13 +948,20 @@ class AgentBlueprintsServiceMixin:
                     code="blueprint_idempotency_conflict",
                 )
             return self._present(current)
-        if existing:
+        retry_failed = (
+            current.get("status") == "certification_failed"
+            and existing
+            and existing.get("status") in {"failed", "timed_out", "cancelled"}
+            and existing.get("completed_at")
+            and not existing.get("valid")
+        )
+        if existing and not retry_failed:
             raise ServiceError(
                 "certification idempotency conflict",
                 status=409,
                 code="blueprint_idempotency_conflict",
             )
-        if current.get("status") != "scaffolded":
+        if current.get("status") != "scaffolded" and not retry_failed:
             raise ServiceError(
                 "a paused scaffold is required before certification",
                 status=409,
@@ -1003,6 +1021,7 @@ class AgentBlueprintsServiceMixin:
             **current,
             "status": "certifying",
             "certification": operation,
+            "certification_history": [*history, existing] if retry_failed else history,
             "updated_at": now,
         }
         self.repository.update_agent_blueprint(

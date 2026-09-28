@@ -68,6 +68,7 @@ class ChatRequest(BaseModel):
     attachment: DiagramAttachment | None = None
     attachments: list[DiagramAttachment] | None = Field(default=None, min_length=1, max_length=8)
 
+    image_paths: list[str] | None = Field(default=None, min_length=1, max_length=4)
     model: str | None = None
     skills: list[str] | None = None
     toolsets: list[str] | None = None
@@ -92,7 +93,12 @@ class ChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_input_or_attachment(self):
-        if not self.input.strip() and self.attachment is None and not self.attachments:
+        if (
+            not self.input.strip()
+            and self.attachment is None
+            and not self.attachments
+            and not self.image_paths
+        ):
             raise ValueError("input or attachment is required")
         return self
 

@@ -146,6 +146,9 @@ RUN uv pip install --python /usr/local/lib/hermes-agent/venv/bin/python \
     && rm /opt/xnobrain/requirements.txt
 
 FROM runtime-base AS runtime
+ARG SOURCE_REVISION=unknown
+RUN mkdir -p /etc/xnobrain \
+    && printf '%s\n' "$SOURCE_REVISION" > /etc/xnobrain/sha.txt
 WORKDIR /opt/xnobrain-app
 COPY xnobrain ./xnobrain
 COPY server.py ./server.py

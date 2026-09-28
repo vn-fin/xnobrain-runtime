@@ -439,6 +439,25 @@ class ConversationStreamMixin:
                 }
                 if kwargs.get("tool_call_id"):
                     event["tool_call_id"] = str(kwargs["tool_call_id"])
+                if normalized_tool == "vision_analyze":
+                    image_result = result
+                    if isinstance(image_result, str):
+                        try:
+                            image_result = json.loads(image_result)
+                        except ValueError:
+                            image_result = {}
+                    image_result = image_result if isinstance(image_result, dict) else {}
+                    event["output"] = json.dumps(
+                        {
+                            "summary": (
+                                "Image inspection failed. Retry this page; it remains unverified."
+                                if event["error"]
+                                else "Image delivered for visual inspection."
+                            ),
+                            "code": safe_text(image_result.get("code"), 100),
+                            "coverage": kwargs.get("image_coverage") or {},
+                        }
+                    )
                 if normalized_tool == "delegate_task":
                     event["output"] = safe_delegation_output(result)
                 enqueue_event(event)

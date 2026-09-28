@@ -113,7 +113,7 @@ class ProviderCatalogTests(unittest.IsolatedAsyncioTestCase):
         catalog = await service.router.list_models()
         model = catalog["data"][0]
         result = await service.provider_model_reasoning(model["provider"], model["id"])
-        self.assertEqual(result["reasoning"], ["low", "medium", "high", "xhigh", "max", "ultra"])
+        self.assertEqual(result["reasoning"], ["low", "medium", "high", "xhigh", "max"])
         run_metadata = await service.router.reasoning_for_model(model["id"])
         self.assertEqual(run_metadata["reasoning"], result["reasoning"])
 

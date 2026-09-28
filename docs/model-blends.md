@@ -29,11 +29,9 @@ physical model as `model`.
 
 ## Known limitations
 
-- The UI keeps blends hidden by default. The source-development and local Compose
-  profiles opt in with
-  `FEATURE_ENABLE_UI_BLENDS=true` (overridable in root `.env`), exposing
-  `/settings/blends` and the chat blend picker for testing. Other hidden features
-  remain disabled; saved selections and server authorization are unchanged.
+- The UI exposes `/settings/blends` and the chat blend picker without a
+  deployment feature flag in every environment. Chat blend loading still waits
+  for workspace readiness; saved selections and server authorization are unchanged.
 - **Fusion is incomplete:** the current Runtime selects the configured judge
   model. It does not fan out to every member and synthesize their answers, despite
   the legacy editor's description. Do not treat judge-only output as fusion.

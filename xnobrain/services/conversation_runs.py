@@ -161,6 +161,7 @@ class ConversationRunService:
                         "capabilities",
                         "attachment",
                         "attachments",
+                        "image_paths",
                     }
                 }
                 | {"input": raw_input}
@@ -343,7 +344,15 @@ class ConversationRunService:
                     reasoning["effective_preference"],
                 )
                 require_current_binding()
+            from ..chat_images import snapshot_images
+
+            image_paths = (
+                snapshot_images(self.agents._workspace_dir(agent_id), selection.image_paths)
+                if selection.image_paths
+                else []
+            )
             record = {
+                "image_paths": image_paths,
                 "reasoning": reasoning,
                 "custom_page_datasets": custom_page_datasets,
                 "custom_page_revision": custom_page_revision,
@@ -409,6 +418,15 @@ class ConversationRunService:
             self._active[run_id] = entry
             self._by_conversation[key] = run_id
             payload = dict(body)
+            payload["image_paths"] = image_paths
+            payload.pop("_agent_maker_principal", None)
+            if (
+                signed
+                and not ui_assistance
+                and custom_page_datasets is None
+                and not custom_page_schedule
+            ):
+                payload["_agent_maker_principal"] = trusted_context
             payload.pop("_reasoning_snapshot", None)
             if reasoning is not None:
                 payload["_reasoning_snapshot"] = reasoning
