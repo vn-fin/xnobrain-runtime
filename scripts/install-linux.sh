@@ -296,6 +296,9 @@ fi
 if ! "$project_python" -c 'import hermes_cli' >/dev/null 2>&1; then
   "$project_python" -m pip install -e "$hermes_install_dir"
 fi
+chmod 0755 "$project_dir/runtime/agent-cli.sh"
+ln -sfn "$project_dir/runtime/agent-cli.sh" "$npm_prefix/bin/agent"
+
 "$project_python" -m pip install --upgrade pip setuptools wheel
 "$project_python" -m pip install -r "$project_dir/requirements.txt"
 "$project_python" -m pip install 'edge-tts==7.2.7'
