@@ -79,6 +79,34 @@ class ConversationToolCallbacksTests(unittest.TestCase):
         self.callbacks.complete("write", "skill_manage", {}, result)
         self.assertFalse(self.completed.call_args.args[3]["staged"])
 
+    def test_image_failure_stays_visible_and_pixels_are_not_emitted(self):
+        args = {"image_url": "run2/reference/page-1.png"}
+        self.callbacks.start("page-one", "vision_analyze", args)
+        result = {
+            "_multimodal": True,
+            "content": [
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,synthetic"}}
+            ],
+        }
+        self.callbacks.complete("page-one", "vision_analyze", args, result)
+        event = self.events.call_args.kwargs
+        self.assertNotIn("base64", str(event))
+        self.assertEqual(
+            event["image_coverage"], {"requested": 1, "loaded": 1, "analyzed": 0, "failed": 0}
+        )
+        args = {"image_url": "run2/reference/page-2.png"}
+        self.callbacks.start("page-two", "vision_analyze", args)
+        self.callbacks.complete(
+            "page-two",
+            "vision_analyze",
+            args,
+            '{"error":"Missing image","code":"chat_image_unavailable"}',
+        )
+        event = self.events.call_args.kwargs
+        self.assertTrue(event["is_error"])
+        self.assertEqual(event["image_coverage"]["failed"], 1)
+        self.assertEqual(event["image_coverage"]["loaded"], 1)
+
     def test_non_lifecycle_progress_is_forwarded(self) -> None:
         self.callbacks.progress("reasoning.delta", "_thinking", "Checking", None)
         self.events.assert_called_once_with("reasoning.delta", "_thinking", "Checking", None)

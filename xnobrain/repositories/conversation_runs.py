@@ -108,6 +108,8 @@ class ConversationRunRepositoryMixin:
                 "feature",
                 "capabilities",
                 "attachment",
+                "attachments",
+                "image_paths",
             )
             if key in body
         }

@@ -88,6 +88,26 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         self.temp.cleanup()
         self.timeout_env.stop()
 
+    async def test_image_only_admission_snapshots_before_dispatch(self):
+        from PIL import Image
+
+        workspace = Path(self.temp.name) / "workspace"
+        workspace.mkdir()
+        Image.new("RGB", (20, 20), "white").save(workspace / "scan.png")
+        self.agents._workspace_dir = lambda _agent: workspace
+        body = {"image_paths": ["scan.png"], "idempotency_key": "image-only"}
+        record = await self.service.start_run("agent-one", "session-one", body)
+        self.assertTrue(record["image_paths"][0].startswith(".chat-images/"))
+        (workspace / "scan.png").unlink()
+        await self.wait_for_revision(record["id"], 2)
+        self.assertEqual(self.agents.received["image_paths"], record["image_paths"])
+        replay = await self.service.start_run("agent-one", "session-one", body)
+        self.assertEqual(replay["id"], record["id"])
+        with self.assertRaises(ServiceError):
+            await self.service.start_run(
+                "agent-one", "session-one", {**body, "image_paths": ["other.png"]}
+            )
+
     async def test_reasoning_snapshot_survives_preference_change_and_replay(self):
         from xnobrain.services.conversation_reasoning import store
 
@@ -145,7 +165,7 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         entered = 0
         both_entered = asyncio.Event()
 
-        async def delayed_budget(_agent_id):
+        async def delayed_budget(_agent_id, **_kwargs):
             nonlocal entered
             entered += 1
             if entered == 2:
@@ -336,6 +356,47 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored["custom_page_datasets"], ["articles"])
         self.assertEqual(stored["custom_page_revision"], 1)
         self.assertEqual(stored["ownership_context"]["payer_kind"], "personal")
+        await self.wait_for_revision(first["id"], 2)
+        self.assertNotIn("_agent_maker_principal", self.agents.received)
+
+    async def test_agent_maker_identity_comes_from_verified_request_only(self):
+        from xnobrain.services.conversations import ConversationsServiceMixin
+        from xnobrain.trusted_context import TrustedRequestContext
+
+        context = ConversationsServiceMixin._personal_context()
+        trusted = TrustedRequestContext("owner", "tenant")
+        self.repository.create_conversation_context(
+            self.repository.live_profile_path("agent-one"),
+            {
+                **context,
+                "agent_id": "agent-one",
+                "conversation_id": "session-one",
+                "actor_user_id": trusted.subject,
+                "actor_tenant_id": trusted.tenant_id,
+            },
+        )
+        run = await self.service.start_run(
+            "agent-one",
+            "session-one",
+            {"input": "Create a specialist", "_agent_maker_principal": "forged"},
+            ownership_context=context,
+            trusted_context=trusted,
+        )
+        await self.wait_for_revision(run["id"], 2)
+        self.assertEqual(self.agents.received["_agent_maker_principal"], trusted)
+        self.assertNotIn("_agent_maker_principal", run)
+        await self.service.cancel_run("agent-one", "session-one", run["id"])
+        unsigned = await self.service.start_run(
+            "agent-one",
+            "session-two",
+            {"input": "Create a specialist", "_agent_maker_principal": trusted},
+        )
+        for _ in range(100):
+            if self.agents.received.get("run_id") == unsigned["id"]:
+                break
+            await asyncio.sleep(0.01)
+        self.assertEqual(self.agents.received["run_id"], unsigned["id"])
+        self.assertNotIn("_agent_maker_principal", self.agents.received)
 
     async def test_all_four_capabilities_share_one_verified_parent_and_budget(self):
         from xnobrain.services.conversations import ConversationsServiceMixin

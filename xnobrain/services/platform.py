@@ -114,6 +114,10 @@ class PlatformService(
 
         self.blends = BlendService(router)
         self.conversation_runs = ConversationRunService(repository, agents, self.analytics)
+        from .agent_maker import AgentMakerService
+
+        self.agent_maker = AgentMakerService(self)
+        self.agents.agent_maker_service = self.agent_maker
         from .team_runs import TeamRunService
 
         self.team_runs = TeamRunService(repository, agents, self, self.analytics)

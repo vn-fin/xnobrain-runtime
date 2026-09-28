@@ -117,7 +117,11 @@ class NativeProfilePathsTests(unittest.TestCase):
 
     def test_native_install_and_startup_use_shared_wrapper_and_linker(self):
         installer = (ROOT / "scripts/install-linux.sh").read_text(encoding="utf-8")
-        self.assertIn('"$project_dir/runtime/agent-cli.sh" "$npm_prefix/bin/agent"', installer)
+        wrapper_link = (
+            'ln -sfn "$project_dir/runtime/agent-cli.sh" "$npm_prefix/bin/agent"'
+        )
+        self.assertIn(wrapper_link, installer)
+        self.assertLess(installer.index("npm install --global"), installer.index(wrapper_link))
         prepare = (ROOT / "scripts/prepare-service-data.sh").read_text(encoding="utf-8")
         self.assertLess(
             prepare.index("link-native-profiles.sh"), prepare.index("apply-profile-templates.sh")

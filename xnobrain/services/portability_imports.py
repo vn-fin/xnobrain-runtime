@@ -75,7 +75,10 @@ class ImportPreparation:
                 root_profile=self.portability.root_profile,
             )
             service = PortabilityService(repository, self.portability.root_profile)
-            report = service.apply_file(upload, environment)
+            if inputs.get("purpose") == "profile-example":
+                report = service.apply_file(upload, environment, example=True)
+            else:
+                report = service.apply_file(upload, environment)
             receipt = {
                 "task_id": claim["id"],
                 "archive_sha256": inputs["archive_sha256"],

@@ -698,7 +698,9 @@ class ConversationsMixin:
             if order_by:
                 sql += f" ORDER BY {order_by} ASC"
             rows = conn.execute(sql, (session_id,)).fetchall()
-            return [self._row_dict(row) for row in rows]
+            from ..chat_images import display_message
+
+            return [display_message(self._row_dict(row)) for row in rows]
         except sqlite3.Error:
             return []
         finally:

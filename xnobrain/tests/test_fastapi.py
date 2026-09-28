@@ -98,6 +98,14 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
     def client(self):
         return AsyncClient(transport=ASGITransport(app=self.app), base_url="http://test")
 
+    async def test_build_sha_returns_artifact_identity_in_envelope(self):
+        with patch("xnobrain.services.system.read_build_sha", return_value="a" * 40):
+            async with self.client() as client:
+                response = await client.get("/xnobrain/api/runtime/v1/sha")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+        self.assertEqual(response.json()["data"], {"sha": "a" * 40})
+
     async def test_session_compaction_is_a_dedicated_action(self):
         result = {
             "conversation_id": "session-one",
@@ -694,6 +702,18 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated_row["display_name"], "Updated Cached Agent")
         self.assertEqual(deleted.status_code, 200)
         self.assertFalse(any(item["id"] == agent_id for item in after_delete.json()["data"]))
+
+    async def test_agent_created_outside_api_appears_in_list_and_activity(self):
+        async with self.client() as client:
+            before = await client.get("/xnobrain/api/runtime/v1/agents")
+            self.assertEqual(before.status_code, 200)
+            self.composition.service.agents.create_agent({"name": "poem"})
+            listed = await client.get("/xnobrain/api/runtime/v1/agents")
+            activity = await client.get("/xnobrain/api/runtime/v1/agents/activity")
+
+        self.assertEqual(listed.status_code, 200)
+        self.assertTrue(any(item["id"] == "poem" for item in listed.json()["data"]))
+        self.assertEqual(activity.json()["data"]["agents"]["poem"], "idle")
 
     async def test_agent_activity_reports_only_real_runtime_execution(self):
         created = self.composition.service.create_agent({"display_name": "Active Worker"})
