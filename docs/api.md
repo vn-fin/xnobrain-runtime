@@ -1250,7 +1250,8 @@ envelope with `{"capability":"profile-example-v1"}`. Invalid/disabled
 
 `POST /xnobrain/api/runtime/v1/bundles/uploads/{transfer_id}/example-validation`
 accepts a completed upload and returns digest, sizes, file count, profile ID,
-skills, required environment/capabilities and `content_review_required: true`.
+`conversation_count`, `message_count`, skills, required environment/capabilities
+and `content_review_required: true`.
 It runs ZIP/config/checksum validation off the event loop, without extraction,
 execution or profile creation. It stays available for draining previously
 accepted Control validations after the flag is disabled.
