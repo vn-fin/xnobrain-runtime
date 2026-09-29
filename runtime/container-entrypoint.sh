@@ -7,6 +7,7 @@ if [[ ! -x "$hermes_python" ]]; then
   echo "XNOBrain runtime Python not found: $hermes_python" >&2
   exit 1
 fi
+PYTHONPATH="/opt/xnobrain-app${PYTHONPATH:+:$PYTHONPATH}" "$hermes_python" -m xnobrain.integrations.runtime_data_volume
 if [[ -n "${RUNTIME_AGENT_DATA_ROOT:-}" ]]; then
   PYTHONPATH="/opt/xnobrain-app${PYTHONPATH:+:$PYTHONPATH}" "$hermes_python" -c \
     'import os; from xnobrain.agent_layout import resolve_layout; resolve_layout(os.environ)'
@@ -64,6 +65,13 @@ fi
 export RUNTIME_ACCOUNTING_MODE="${RUNTIME_ACCOUNTING_MODE:-legacy}"
 export RUNTIME_CONTROL_URL="${RUNTIME_CONTROL_URL:-}"
 
+if [[ -f /etc/xnobrain/rollout-preserve-data || ( "${RUNTIME_DATA_MOUNT_REQUIRED:-false}" == true && -f /opt/data/.xnobrain-volume-initialized ) ]]; then
+  test -d "$DATA_DIR"
+  test -d "$HERMES_HOME"
+  test -d "$HERMES_PROFILES_ROOT"
+  exec "$hermes_python" /opt/xnobrain-app/server.py
+fi
+
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 /usr/local/bin/xnobrain-link-native-profiles
 # Profile environments share persistent, quota-accounted data storage, not the
@@ -117,4 +125,8 @@ XNOBRAIN_REQUIRED_SKILLS_DIR=/opt/xnobrain/required-skills \
 XNOBRAIN_REQUIRED_PLUGINS_DIR=/opt/xnobrain/required-plugins \
   /usr/local/bin/xnobrain-apply-profile-templates "$HERMES_HOME" "$HERMES_PROFILES_ROOT"
 
+if [[ "${RUNTIME_DATA_MOUNT_REQUIRED:-false}" == true ]]; then
+  touch /opt/data/.xnobrain-volume-initialized
+  sync -f /opt/data
+fi
 exec "$hermes_python" /opt/xnobrain-app/server.py
