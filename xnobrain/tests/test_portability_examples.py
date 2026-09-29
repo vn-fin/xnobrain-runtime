@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,12 +60,74 @@ class ExampleTests(unittest.TestCase):
         self.service.complete_upload(upload["upload_id"], {})
         return upload["upload_id"]
 
+    def history(self, *, content="A complete example conversation.", private=False):
+        path = self.root / "history.db"
+        with sqlite3.connect(path) as connection:
+            connection.execute(
+                "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, user_id TEXT, "
+                "profile_name TEXT, title TEXT, session_key TEXT, model_config TEXT)"
+            )
+            connection.execute(
+                "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, content TEXT, "
+                "platform_message_id TEXT, "
+                "FOREIGN KEY (session_id) REFERENCES sessions(id))"
+            )
+            connection.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("chat-1", "publisher", "owner-1", "starter", "Example", "private-route", "{}"),
+            )
+            connection.execute(
+                "INSERT INTO messages VALUES (?, ?, ?, ?)",
+                (1, "chat-1", content, "publisher-message"),
+            )
+            if private:
+                connection.execute("CREATE TABLE credentials (name TEXT)")
+                connection.execute("INSERT INTO credentials VALUES ('publisher')")
+        payload = path.read_bytes()
+        path.unlink()
+        return payload
+
     def test_clean_example_validation_does_not_create_profile(self):
         result = validate_example_upload(self.service, self.upload())
         self.assertEqual(result["profile_id"], "starter")
         self.assertEqual(result["skills"], ["plan"])
         self.assertEqual(result["capability"], "profile-example-v1")
         self.assertFalse(self.repo.profile_path("starter").exists())
+
+    def test_reviewed_example_history_is_visible_after_import(self):
+        from xnobrain.services.portability_tasks import PortabilityTasks
+
+        upload = self.upload({"profiles/starter/state.db": self.history()})
+        validation = validate_example_upload(self.service, upload)
+        self.assertEqual(validation["conversation_count"], 1)
+        self.assertEqual(validation["message_count"], 1)
+        tasks = PortabilityTasks(self.service)
+        tasks.create_import(
+            {"upload_id": upload}, scope="example", actor="participant", key="history"
+        )
+        result = tasks.execute(tasks.store.claim("worker"))
+        target_id = result["agent_id_mappings"]["starter"]
+        database = self.repo.profile_path(target_id) / "state.db"
+        with sqlite3.connect(database) as connection:
+            session = connection.execute(
+                "SELECT source, user_id, profile_name, session_key, model_config "
+                "FROM sessions WHERE id = 'chat-1'"
+            ).fetchone()
+            message = connection.execute(
+                "SELECT content, platform_message_id FROM messages WHERE session_id = 'chat-1'"
+            ).fetchone()
+        self.assertEqual(session, ("imported", None, target_id, None, None))
+        self.assertEqual(message, ("A complete example conversation.", None))
+
+    def test_example_history_rejects_credentials_and_auxiliary_state(self):
+        for payload in (
+            self.history(content="Bearer " + "a" * 32),
+            self.history(private=True),
+        ):
+            with self.subTest(payload=hashlib.sha256(payload).hexdigest()[:8]):
+                upload = self.upload({"profiles/starter/state.db": payload})
+                with self.assertRaises(StoreError):
+                    validate_example_upload(self.service, upload)
 
     def test_model_token_limits_are_not_credentials(self):
         upload = self.upload({"profiles/starter/config.yaml": b"model:\n  max_tokens: 2048\n"})

@@ -172,6 +172,12 @@ class ImportPreparation:
                 target = mappings["agent_id_mappings"][source]
                 destination = profiles / target
                 shutil.copytree(stage / "profiles" / staged_id, destination)
+                if json.loads(claim["input_json"]).get("purpose") == "profile-example":
+                    history = destination / "state.db"
+                    if history.is_file():
+                        from .portability_examples import detach_example_history
+
+                        detach_example_history(history, target)
                 self.portability._reset_imported_identity(
                     destination,
                     source_id=source,

@@ -646,6 +646,10 @@ class PortabilityService:
                             shutil.copyfileobj(input_file, output_file, length=1024 * 1024)
                     if clone:
                         self._validate_shareable_database(target_stage / "state.db", detach_identity=True)
+                    elif example and (target_stage / "state.db").is_file():
+                        from .portability_examples import detach_example_history
+
+                        detach_example_history(target_stage / "state.db", target_id)
                     self._reset_imported_profile(target_stage, supplied, clone=clone)
                     self._reset_imported_identity(
                         target_stage,

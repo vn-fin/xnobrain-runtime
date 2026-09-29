@@ -8,9 +8,11 @@ import hashlib
 import json
 import re
 import shutil
+import sqlite3
+import tempfile
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 from zipfile import BadZipFile, ZipFile
 
@@ -21,6 +23,19 @@ from ..repositories.base import StoreError
 MAX_FILES = 10_000
 CAPABILITY = "profile-example-v1"
 ROOT_FILES = {"config.yaml", "agent.json", "AGENTS.md", "SOUL.md", "SYSTEM.md"}
+HISTORY_FILE = "state.db"
+HISTORY_SEARCH_TABLES = {
+    "messages_fts",
+    "messages_fts_data",
+    "messages_fts_idx",
+    "messages_fts_docsize",
+    "messages_fts_config",
+    "messages_fts_trigram",
+    "messages_fts_trigram_data",
+    "messages_fts_trigram_idx",
+    "messages_fts_trigram_docsize",
+    "messages_fts_trigram_config",
+}
 CONTENT_DIRECTORIES = {"prompts", "skills", "workspace"}
 PRIVATE_PARTS = {
     ".git",
@@ -65,6 +80,15 @@ SENSITIVE_KEY = re.compile(
     re.I,
 )
 REFERENCE = re.compile(r"\$\{[A-Z][A-Z0-9_]*\}")
+CREDENTIAL = re.compile(
+    r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
+    r"|\bBearer\s+[A-Za-z0-9._~+/-]{12,}"
+    r"|\bsk-[A-Za-z0-9_-]{20,}"
+    r"|\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}"
+    r"|\bxox[baprs]-[A-Za-z0-9-]{20,}"
+    r"|\bAKIA[0-9A-Z]{16}\b",
+    re.I,
+)
 
 
 def start_example_upload(service: Any, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -117,6 +141,82 @@ def _check_settings(value: Any) -> None:
             _check_settings(child)
 
 
+def _validate_history(service: Any, archive: ZipFile, name: str) -> dict[str, int]:
+    """Admit visible chat history without publisher authority or auxiliary state."""
+    with tempfile.TemporaryDirectory(dir=service.transfer_root) as directory:
+        database = Path(directory) / HISTORY_FILE
+        with archive.open(name) as source, database.open("wb") as target:
+            shutil.copyfileobj(source, target, length=1024 * 1024)
+        service._validate_shareable_database(database)
+        try:
+            with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+                tables = {
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    )
+                }
+                if not {"sessions", "messages"} <= tables:
+                    _reject("example history is missing conversations")
+                for table in tables - {"sessions", "messages", "schema_version"}:
+                    if table == "sqlite_sequence" or table in HISTORY_SEARCH_TABLES:
+                        continue
+                    if connection.execute(f'SELECT 1 FROM "{table}" LIMIT 1').fetchone():
+                        _reject("example history contains private runtime state")
+                counts = {}
+                for table in ("sessions", "messages"):
+                    counts[table] = int(
+                        connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+                    )
+                    for row in connection.execute(f'SELECT * FROM "{table}"'):
+                        if any(
+                            isinstance(value, str) and CREDENTIAL.search(value) for value in row
+                        ):
+                            _reject("example history contains credential-like content")
+                if connection.execute(
+                    "SELECT 1 FROM messages LEFT JOIN sessions "
+                    "ON messages.session_id = sessions.id WHERE sessions.id IS NULL LIMIT 1"
+                ).fetchone():
+                    _reject("example history contains orphaned messages")
+                return counts
+        except sqlite3.Error as error:
+            raise StoreError("invalid example history", code="invalid_example_profile") from error
+
+
+def detach_example_history(path: Path, profile_id: str) -> None:
+    """Keep chat rows visible while severing the publisher's routing identity."""
+    try:
+        with sqlite3.connect(path) as connection:
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(sessions)")}
+            reset = {
+                "source": "imported",
+                "user_id": None,
+                "profile_name": profile_id,
+                "session_key": None,
+                "chat_id": None,
+                "chat_type": None,
+                "thread_id": None,
+                "origin_json": None,
+                "model_config": None,
+                "system_prompt": None,
+                "billing_base_url": None,
+                "cwd": None,
+                "git_repo_root": None,
+            }
+            selected = [(key, value) for key, value in reset.items() if key in columns]
+            if selected:
+                assignments = ", ".join(f'"{key}" = ?' for key, _ in selected)
+                connection.execute(
+                    f"UPDATE sessions SET {assignments}",
+                    [value for _, value in selected],
+                )
+            message_columns = {row[1] for row in connection.execute("PRAGMA table_info(messages)")}
+            if "platform_message_id" in message_columns:
+                connection.execute("UPDATE messages SET platform_message_id = NULL")
+    except sqlite3.Error as error:
+        raise StoreError("invalid example history", code="invalid_example_profile") from error
+
+
 def validate_example_upload(service: Any, upload_id: str) -> dict[str, Any]:
     """Validate a completed staged ZIP while holding its publication lease."""
     with service.task_store.publication_lock():
@@ -147,6 +247,7 @@ def validate_example_upload(service: Any, upload_id: str) -> dict[str, Any]:
             if manifest.get("credentials_included"):
                 _reject("example must not include credentials")
             prefix = f"profiles/{profile_id}/"
+            history_name = f"{prefix}{HISTORY_FILE}"
             skill_roots = {
                 PurePosixPath(name.removeprefix(prefix)).parent
                 for name in files
@@ -167,19 +268,22 @@ def validate_example_upload(service: Any, upload_id: str) -> dict[str, Any]:
                     any(part in PRIVATE_PARTS for part in folded)
                     or folded[-1] in PRIVATE_FILES
                     or folded[-1].startswith(".env.")
-                    or any(
-                        folded[-1].endswith(suffix)
-                        for suffix in (
-                            ".db",
-                            ".db-wal",
-                            ".db-shm",
-                            ".sqlite",
-                            ".sqlite3",
-                            ".log",
-                            ".bak",
+                    or (
+                        relative != PurePosixPath(HISTORY_FILE)
+                        and any(
+                            folded[-1].endswith(suffix)
+                            for suffix in (
+                                ".db",
+                                ".db-wal",
+                                ".db-shm",
+                                ".sqlite",
+                                ".sqlite3",
+                                ".log",
+                                ".bak",
+                            )
                         )
                     )
-                    or (len(parts) == 1 and parts[0] not in ROOT_FILES)
+                    or (len(parts) == 1 and parts[0] not in ROOT_FILES | {HISTORY_FILE})
                     or (len(parts) > 1 and parts[0] not in CONTENT_DIRECTORIES)
                 ):
                     _reject(f"example contains a private or unsupported path: {relative}")
@@ -222,6 +326,11 @@ def validate_example_upload(service: Any, upload_id: str) -> dict[str, Any]:
                 for item in required_environment
             ):
                 _reject("invalid example environment requirements")
+            history = (
+                _validate_history(service, archive, history_name)
+                if history_name in files
+                else {"sessions": 0, "messages": 0}
+            )
         with path.open("rb") as source:
             digest = hashlib.file_digest(source, "sha256").hexdigest()
         if digest != metadata["sha256"]:
@@ -233,6 +342,8 @@ def validate_example_upload(service: Any, upload_id: str) -> dict[str, Any]:
             "expanded_size": expanded,
             "file_count": len(files),
             "profile_id": profile_id,
+            "conversation_count": history["sessions"],
+            "message_count": history["messages"],
             "skills": sorted(skills),
             "required_environment": required_environment,
             "required_capabilities": manifest.get("required_capabilities", []),
