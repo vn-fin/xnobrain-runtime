@@ -5,6 +5,7 @@ import hashlib
 import json
 from dataclasses import replace
 
+from ..integrations.llm_router_support import LLMRouterAPIError
 from ..models.agent_maker import MakerBuild, MakerInspect, MakerPrepare
 from ..models.conversations import ConversationOwnershipContext
 from ..repositories.base import StoreError
@@ -51,6 +52,26 @@ class AgentMakerService:
             )
         return record
 
+    async def _model_catalog(self):
+        try:
+            return await self.platform.router.list_models()
+        except LLMRouterAPIError as error:
+            raise ServiceError(
+                "Model catalog is unavailable. Retry inspection before selecting a model.",
+                status=503,
+                code="agent_maker_model_catalog_unavailable",
+            ) from error
+
+    async def _require_catalog_model(self, model):
+        catalog = await self._model_catalog()
+        if not any(item.get("id") == model for item in catalog.get("data", [])):
+            raise ServiceError(
+                "Model is unavailable. Use agent_maker_inspect and copy an exact "
+                "model_catalog.data ID, including its provider prefix, into model_slot.alias.",
+                status=422,
+                code="agent_maker_model_unavailable",
+            )
+
     async def execute(self, name, args, *, agent, session, run_id, trusted):
         def guard():
             return self.authority(agent, session, run_id, trusted)
@@ -60,9 +81,12 @@ class AgentMakerService:
             body = MakerInspect.model_validate(args)
             if body.blueprint_id:
                 return self._record(agent, body.blueprint_id, verified)
+            catalog = await self._model_catalog()
+            guard()
             records = self.platform.list_agent_blueprints(agent)["blueprints"]
             return {
                 "auto_accept": True,
+                "model_catalog": catalog,
                 "prepare_schema": MakerPrepare.model_json_schema(),
                 "build_schema": MakerBuild.model_json_schema(),
                 "blueprints": [
@@ -90,6 +114,8 @@ class AgentMakerService:
                     code="blueprint_context_not_verified",
                     status=403,
                 )
+            await self._require_catalog_model(body.blueprint.model_slot.alias)
+            verified = guard()
             if body.blueprint_id:
                 current = self._record(agent, body.blueprint_id, verified)
                 # A lost response to an identical edit must not increment the revision again.
@@ -134,6 +160,16 @@ class AgentMakerService:
         data = body.model_dump(mode="json", exclude={"blueprint_id"})
         current = self._record(agent, body.blueprint_id, verified)
         self.platform._check_lifecycle_request(current, data)
+        if current["status"] in {
+            "blueprint_ready",
+            "approved",
+            "scaffolding",
+            "scaffolded",
+            "certification_failed",
+            "certifying",
+        }:
+            await self._require_catalog_model(current["blueprint"]["model_slot"]["alias"])
+            guard()
         if current["status"] == "blueprint_ready":
             current = self.platform.approve_agent_blueprint(
                 agent,

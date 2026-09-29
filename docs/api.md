@@ -310,6 +310,15 @@ The model cannot supply a user, tenant, destination path, or work context. Tools
 are not installed in delegated children, certification sessions, or scoped page
 actions. Each call rechecks that the originating run is active and uncancelled.
 
+`agent_maker_inspect` without `blueprint_id` also returns `model_catalog` from the
+scoped Router model catalog. `model_slot.alias` accepts full model IDs, including
+provider prefixes and `/`, and is written unchanged into the child configuration.
+Automatic preparation and build check exact catalog membership; unavailable IDs
+return `agent_maker_model_unavailable` before lifecycle mutations. Catalog failure
+returns `agent_maker_model_catalog_unavailable`, without guessing a default or
+rewriting an approved model. Completed active builds can still be replayed without
+a catalog lookup. Draft HTTP blueprint editing remains available offline.
+
 For a user-requested agent, `agent_maker_build` automatically approves the exact
 blueprint, scaffolds one paused profile, certifies it, and activates only after
 success. Approval records use `mode: "auto"` and retain the verified actor and

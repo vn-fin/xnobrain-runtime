@@ -10,12 +10,24 @@ import yaml
 
 from xnobrain.integrations.agent_certification import RuntimeCertificationExecutor
 from xnobrain.integrations.agent_maker_tools import bind_run, install_tools
+from xnobrain.integrations.llm_router_support import LLMRouterAPIError
 from xnobrain.tests import test_agent_blueprints as fixtures
 from xnobrain.trusted_context import TrustedRequestContext
 
 
 class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
-    setUp = fixtures.AgentBlueprintTests.setUp
+    def setUp(self):
+        fixtures.AgentBlueprintTests.setUp(self)
+        self.service.router.list_models = AsyncMock(
+            return_value={
+                "default_model": "cc/claude-sonnet-5-5",
+                "data": [
+                    {"id": "cc/claude-sonnet-5-5", "provider": "claude"},
+                    {"id": "research-approved", "provider": "xnobrain"},
+                ],
+            }
+        )
+
     tearDown = fixtures.AgentBlueprintTests.tearDown
     client = fixtures.AgentBlueprintTests.client
     create = fixtures.AgentBlueprintTests.create
@@ -72,9 +84,12 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(child.tools, [])
             inspected = await self.dispatch("agent_maker_inspect", {}, session)
             self.assertTrue(inspected["data"]["auto_accept"])
+            model_id = inspected["data"]["model_catalog"]["data"][0]["id"]
+            spec = self.spec()
+            spec["model_slot"]["alias"] = model_id
             args = {
                 "intent": "Create a researcher",
-                "blueprint": self.spec(),
+                "blueprint": spec,
                 "idempotency_key": "researcher",
             }
             prepared = await self.dispatch("agent_maker_prepare", args, session)
@@ -92,6 +107,7 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 {call["profile_id"] for call in executor.calls}, {record["target_profile_id"]}
             )
+            self.service.router.list_models.side_effect = LLMRouterAPIError("offline")
             replay = await self.dispatch("agent_maker_build", self.build_request(record), session)
             self.assertEqual(replay["data"]["status"], "active")
             self.assertEqual(len(executor.calls), 4)
@@ -102,9 +118,82 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(config["cron"]["enabled"])
             self.assertFalse(config["mcp"]["enabled"])
             self.assertEqual(config["approvals"]["mode"], "manual")
+            self.assertEqual(config["model"]["default"], model_id)
+            self.assertEqual(
+                self.service.get_agent(record["target_profile_id"])["config"]["model"], model_id
+            )
             self.assertEqual(len(list(self.profiles.glob("agent-*"))), 1)
         denied = await self.dispatch("agent_maker_inspect", {}, session)
         self.assertFalse(denied["success"])
+
+    async def test_prepare_rejects_model_names_absent_from_router_catalog(self):
+        trusted, session, run = self.scope()
+        with bind_run(self.service.agent_maker, "big-brother", session, run["id"], trusted):
+            for alias in ("claude-sonnet-5-5", "cc/nonexistent", "auto"):
+                with self.subTest(alias=alias):
+                    spec = self.spec()
+                    spec["model_slot"]["alias"] = alias
+                    result = await self.dispatch(
+                        "agent_maker_prepare",
+                        {"intent": "Create", "blueprint": spec, "idempotency_key": "invalid"},
+                        session,
+                    )
+                    self.assertEqual(result["error"]["code"], "agent_maker_model_unavailable")
+        self.assertEqual(self.service.list_agent_blueprints("big-brother")["blueprints"], [])
+        self.assertEqual(len(list(self.profiles.glob("agent-*"))), 0)
+
+    async def test_catalog_failure_does_not_fallback_or_save_blueprint(self):
+        trusted, session, run = self.scope()
+        self.service.router.list_models.side_effect = LLMRouterAPIError("private upstream detail")
+        with bind_run(self.service.agent_maker, "big-brother", session, run["id"], trusted):
+            for tool, args in (
+                ("agent_maker_inspect", {}),
+                (
+                    "agent_maker_prepare",
+                    {"intent": "Create", "blueprint": self.spec(), "idempotency_key": "offline"},
+                ),
+            ):
+                result = await self.dispatch(tool, args, session)
+                self.assertEqual(result["error"]["code"], "agent_maker_model_catalog_unavailable")
+                self.assertNotIn("private upstream detail", json.dumps(result))
+        self.assertEqual(self.service.list_agent_blueprints("big-brother")["blueprints"], [])
+
+    async def test_removed_model_blocks_build_without_approving_or_scaffolding(self):
+        trusted, session, run = self.scope()
+        with bind_run(self.service.agent_maker, "big-brother", session, run["id"], trusted):
+            prepared = await self.dispatch(
+                "agent_maker_prepare",
+                {"intent": "Create", "blueprint": self.spec(), "idempotency_key": "removed"},
+                session,
+            )
+            record = prepared["data"]
+            self.service.router.list_models.return_value = {"data": []}
+            result = await self.dispatch("agent_maker_build", self.build_request(record), session)
+            self.assertEqual(result["error"]["code"], "agent_maker_model_unavailable")
+            stored = self.service.get_agent_blueprint("big-brother", record["id"])
+            self.assertEqual(stored["status"], "blueprint_ready")
+            self.assertIsNone(stored["approval"])
+            self.assertEqual(stored["canonical_digest"], record["canonical_digest"])
+            self.assertFalse((self.profiles / record["target_profile_id"]).exists())
+
+    async def test_stop_during_catalog_lookup_prevents_preparation(self):
+        trusted, session, run = self.scope()
+
+        async def stop_and_return_catalog():
+            self.service.repository.put_conversation_run(
+                {**run, "cancellation": {"requested": True}}
+            )
+            return {"data": [{"id": "research-approved"}]}
+
+        self.service.router.list_models.side_effect = stop_and_return_catalog
+        with bind_run(self.service.agent_maker, "big-brother", session, run["id"], trusted):
+            result = await self.dispatch(
+                "agent_maker_prepare",
+                {"intent": "Create", "blueprint": self.spec(), "idempotency_key": "cancel"},
+                session,
+            )
+            self.assertEqual(result["error"]["code"], "agent_maker_run_inactive")
+        self.assertEqual(self.service.list_agent_blueprints("big-brother")["blueprints"], [])
 
     async def test_missing_foreign_and_cancelled_authority_cannot_create(self):
         trusted, session, run = self.scope()
