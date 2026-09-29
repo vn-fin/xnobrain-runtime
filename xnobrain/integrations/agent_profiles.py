@@ -227,20 +227,17 @@ class AgentProfilesMixin:
         normalize_llm_router_config(config)
         self._write_yaml_atomic(profile_dir / "config.yaml", config)
 
-    def _ensure_agent_workspace(self, name: str, profile_dir: Path) -> Path | None:
-        """Prepare the private workspace used by an ordinary agent session.
+    def _ensure_agent_workspace(self, name: str, profile_dir: Path) -> Path:
+        """Use the file API's workspace as every session's default directory.
 
-        Big Brother intentionally uses the unrestricted root Hermes profile and
-        must not inherit the per-agent workspace policy.
+        Big Brother retains its administrative scope and saved configuration;
+        its per-turn CWD is selected by the runner, like other profiles.
         """
-        if name == BIG_BROTHER_AGENT_ID:
-            self._ensure_workspace_agents(profile_dir, profile_dir / "workspace")
-            return None
         workspace_dir = self._workspace_dir_for_profile(name, profile_dir)
         workspace_dir.mkdir(parents=True, exist_ok=True)
         config = self._read_config(profile_dir)
         configured_cwd = str(self._get_nested(config, ("terminal", "cwd"), "") or "")
-        if configured_cwd != str(workspace_dir):
+        if name != BIG_BROTHER_AGENT_ID and configured_cwd != str(workspace_dir):
             self._write_workspace_cwd(profile_dir, workspace_dir)
         self._ensure_workspace_agents(profile_dir, workspace_dir)
         return workspace_dir.resolve()

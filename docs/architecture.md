@@ -172,7 +172,19 @@ Upstream context discovery selects HERMES before AGENTS, rather than merging.
 The Runtime conversation prompt adapter injects workspace `AGENTS.md` plus the
 internal HERMES overlay for new/cached and resumed prompts, including Big
 Brother, without changing the upstream loader. Working rules are authored only
-in HERMES. Big Brother remains free of the named-agent CWD lock.
+in HERMES. Big Brother starts each turn in the same resolved workspace used by
+the file API, while retaining its administrative scope. The per-turn terminal
+override does not rewrite its saved terminal configuration. New, cached and
+resumed prompts include the actual profile, workspace and blueprint paths;
+display names and earlier assistant messages are not path authority.
+
+Native VMs use `/srv/xnobrain-data/root` for Big Brother and
+`/srv/xnobrain-data/profiles/<agent-id>` for named profiles. Each profile owns
+its `workspace/` and `skills/`. Agent data can also use the layout selected by
+`RUNTIME_AGENT_DATA_ROOT`: `<root>/big-brother` for the root profile and
+`<root>/<agent-id>` for named profiles. Each profile's deliverables remain in
+its `workspace/`. Existing legacy roots remain authoritative until an explicit
+offline cutover; see [agent-data-layout.md](agent-data-layout.md).
 
 Profile Python environments use `/opt/data/python/.<profile-id>-venv`, including
 `.big-brother-venv`. The container entrypoint provisions the shared root as 0700

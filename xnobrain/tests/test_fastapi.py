@@ -610,7 +610,25 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stale.status_code, 409, stale.text)
         self.assertEqual(stale.json()["error"]["code"], "skills_sync_stale")
 
-    async def test_profile_registry_uses_generated_ids_and_display_names(self):
+    async def test_agent_responses_include_workspace_path_for_chat_references(self):
+        async with self.client() as client:
+            created = await client.post(
+                "/xnobrain/api/runtime/v1/agents",
+                json={"display_name": "File References"},
+            )
+            self.assertEqual(created.status_code, 201, created.text)
+            profile = created.json()["data"]
+            expected = str(self.profiles / profile["id"] / "workspace")
+            self.assertEqual(profile["workspace_path"], expected)
+            detail = await client.get(f"/xnobrain/api/runtime/v1/agents/{profile['id']}/detail")
+            self.assertEqual(detail.status_code, 200, detail.text)
+            self.assertEqual(detail.json()["data"]["workspace_path"], expected)
+            listed = await client.get("/xnobrain/api/runtime/v1/agents")
+            paths = {item["id"]: item["workspace_path"] for item in listed.json()["data"]}
+            self.assertEqual(paths[profile["id"]], expected)
+            self.assertEqual(paths[BIG_BROTHER_AGENT_ID], str(self.root / "workspace"))
+
+    async def test_profile_registry_uses_slug_ids_and_display_names(self):
         async with self.client() as client:
             created = await client.post(
                 "/xnobrain/api/runtime/v1/agents",
@@ -621,14 +639,16 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(created.status_code, 201, created.text)
         profile = created.json()["data"]
-        self.assertRegex(profile["id"], r"^[a-z][a-z0-9]{5}$")
+        self.assertEqual(profile["id"], "research-lead")
         self.assertNotEqual(profile["id"], "Research Lead")
         self.assertEqual(profile["name"], "Research Lead")
         self.assertEqual(profile["display_name"], "Research Lead")
         self.assertNotIn("provider", profile["config"])
         self.assertNotIn("profile_path", profile["metadata"])
         self.assertNotIn("workspace_path", profile["metadata"])
-        self.assertNotIn(str(self.profiles), created.text)
+        self.assertEqual(
+            profile["workspace_path"], str(self.profiles / profile["id"] / "workspace")
+        )
         self.assertEqual(
             profile["metadata"],
             {
