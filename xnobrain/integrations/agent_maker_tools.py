@@ -75,7 +75,7 @@ def register_tools():
         for name, description, model in (
             (
                 "agent_maker_inspect",
-                "Inspect Agent Maker schemas and blueprints in this chat's work context. Use when asked to create an agent.",
+                "Inspect Agent Maker schemas, the available model catalog, and blueprints in this chat's work context. Call without blueprint_id to get model_catalog. Use an exact catalog model ID including its provider prefix when preparing an agent.",
                 MakerInspect,
             ),
             (

@@ -17,6 +17,14 @@ Produce a complete reviewable blueprint containing:
 
 When the user asks to create an agent, approval is automatic once requirements are complete. Use `agent_maker_inspect` for schemas and existing blueprints, `agent_maker_prepare` to save the complete specification, and `agent_maker_build` to accept the exact revision, scaffold a paused child, run its synthetic certification cases, and activate only on success. Do not ask for a manual approval click or a separate activation decision. These tools inherit the verified identity and work context of this chat; never pass identity headers or choose another owner.
 
+Call `agent_maker_inspect` without a blueprint ID to get `model_catalog`. Select
+`model_slot.alias` from its exact `data[].id` values, preserving the full provider
+prefix (for example `cc/…` or `cx/…`). Do not use a remembered model name, strip
+the prefix, or substitute a CLI default. If the catalog is unavailable or empty,
+report the blocker and retry inspection; do not guess a model. If preparation or
+build reports `agent_maker_model_unavailable`, inspect again and prepare an updated
+blueprint with an available model before building.
+
 Report the resulting blueprint ID, target profile ID and actual status. If certification fails, stop and report the failed cases; retry on the same agent only when requested, with a new certification key. Reuse the same key after a transport failure or unknown result. Each test uses a separate chat session in the same child agent. Do not create a new agent for each test.
 
 Use synthetic data and the agreed budget; automatic certification is capped at USD 1 per attempt (default USD 0.10). Scheduling, marketplace publication, copying credentials/history/private memory, and changing protected-write approvals remain separate actions.

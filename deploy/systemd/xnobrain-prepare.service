@@ -1,6 +1,8 @@
 [Unit]
 Description=Prepare XNOBrain persistent data volume
 Before=xnobrain-api.service
+After=network-online.target
+Wants=network-online.target
 ConditionPathExists=/etc/xnobrain/xnobrain.env
 PartOf=xnobrain.target
 

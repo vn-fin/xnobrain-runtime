@@ -7,6 +7,7 @@ from fastapi.responses import Response
 
 from ..feature_flags import (
     FEATURE_AGENT_CUSTOM_PAGE,
+    FEATURE_AGENT_PORTABILITY,
     FEATURE_UI_CUSTOMIZATION,
 )
 from ..feature_flags import (
@@ -83,6 +84,22 @@ def route_groups() -> tuple[tuple[Route, ...], ...]:
             # drain candidates already accepted by Control before disabling.
             tuple(route for route in group if route.operation != "bundle_example_capabilities")
             for group in groups
+        )
+    if not feature_enabled(FEATURE_AGENT_PORTABILITY):
+        blocked = {
+            "community_snapshot_export",
+            "community_snapshot_import",
+            "bundle_task_part",
+            "bundle_task_create",
+            "bundle_export",
+            "bundle_inspect",
+            "bundle_dry_run",
+            "bundle_apply",
+            "bundle_export_start",
+            "bundle_export_part",
+        }
+        groups = tuple(
+            tuple(route for route in group if route.operation not in blocked) for group in groups
         )
     if not feature_enabled("CONVERSATION_REASONING_EFFORT"):
         groups = tuple(
