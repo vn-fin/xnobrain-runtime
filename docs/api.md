@@ -1256,6 +1256,10 @@ This behavior does not assert child-agent enforcement.
 `GET /xnobrain/api/runtime/v1/bundles/example-capabilities` returns the standard
 envelope with `{"capability":"profile-example-v1"}`. Invalid/disabled
 `FT_ENABLE_PROFILE_EXAMPLES` removes this admission capability.
+`FT_ENABLE_AGENT_PORTABILITY=false` removes public bundle export/download,
+ordinary import, and Community snapshot transfer routes. Example upload and
+Control-managed example import tasks remain available; an ordinary upload may
+not be applied while portability is disabled.
 
 `POST /xnobrain/api/runtime/v1/bundles/uploads/{transfer_id}/example-validation`
 accepts a completed upload and returns digest, sizes, file count, profile ID,

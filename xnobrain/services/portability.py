@@ -78,7 +78,15 @@ class PortabilityServiceMixin:
             from .portability_examples import start_example_upload
 
             return start_example_upload(self.portability, body)
+        self._require_agent_portability()
         return self.portability.start_upload(body)
+
+    @staticmethod
+    def _require_agent_portability() -> None:
+        from ..feature_flags import FEATURE_AGENT_PORTABILITY, enabled
+
+        if not enabled(FEATURE_AGENT_PORTABILITY):
+            raise StoreError("agent portability is disabled", status=404, code="not_found")
 
     def put_bundle_upload_part(
         self, transfer_id: str, part_number: str, payload: bytes
@@ -94,6 +102,7 @@ class PortabilityServiceMixin:
         return validate_example_upload(self.portability, transfer_id)
 
     def apply_bundle_upload(self, transfer_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        self._require_agent_portability()
         result = self.portability.apply_upload(transfer_id, body)
         self.agents.sync_profiles_registry()
         self._cache.invalidate("agents")
