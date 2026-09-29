@@ -97,8 +97,14 @@ Allowed root files are `config.yaml`, `agent.json`, `AGENTS.md`, `SOUL.md` and
 must contain their own `SKILL.md`, including skills nested in category folders
 (for example `skills/research/forecast/SKILL.md`). Validation reports their paths
 relative to `skills/`. Every skill asset must be inside a discovered skill;
-category metadata and unrelated sibling files are not included. Private paths, databases, logs, caches,
-credential files, USER/MEMORY files and ownership receipts are rejected.
+category metadata and unrelated sibling files are not included. Private paths,
+databases other than the profile-root `state.db`, logs, caches, credential files,
+USER/MEMORY files and ownership receipts are rejected. A profile-root `state.db`
+may carry conversation sessions and messages. Validation checks its integrity,
+rejects nonempty auxiliary runtime tables, orphaned messages, and recognizable
+credential patterns in the history. Validation reports the conversation and
+message counts. On import, publisher routing and owner fields are cleared while
+the conversation content remains visible under the participant's new profile ID.
 `agent.json` allows only portable name/title/description fields. Known credential
 settings must be empty, redacted or environment references such as `${API_KEY}`.
 Free-form content still requires the publisher's explicit review.
