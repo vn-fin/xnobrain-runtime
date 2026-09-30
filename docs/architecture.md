@@ -25,6 +25,35 @@ skills, tools, provider, webhook, and gateway APIs. XNOBrain adds stable UI
 compatibility APIs for agent lifecycle, per-profile files, snapshots, teams,
 portable bundles, and streaming runs.
 
+## Workspace resource allocation
+
+Managed workspace defaults are 4 vCPU, 6 GiB RAM and a 30 GiB root disk;
+Control owns those allocations. The Docker development Runtime shares the CPU
+and RAM limits; Incus enforces the root disk quota for managed workspaces.
+Pool capacity policy belongs to Control and the node gateways. Runtime does not
+block new workers or background processes at 60% of an individual workspace's
+RAM allocation.
+
+## Managed VM relocation admission
+
+Control owns rebalance selection, leases, journals and route activation. The
+node gateway submits the targeted Incus live move and calls Runtime's private
+`workspace_rebalance_runtime_v1` prepare/status/resume contract. Runtime shares
+the workspace maintenance gate with updates and persists a separate operation
+and fence receipt under `runtime-updates/rebalance-fence.json`.
+
+Admission and activity registration are serialized with an OS lock. Activity
+leases cover request completion, executors, scheduled work and inherited CLI
+processes. Work admitted before the gate can finish its descendants; unrelated
+new work receives typed maintenance status. Rebalance never cancels work to
+meet a drain deadline. Passive cron views defer delivery and legacy pin writes
+while gated; delivery from an admitted executor lineage can still finish.
+Resume checks the installed build, storage identity and
+router dependency before releasing admission. Duplicate commands and process
+restart preserve the same fence; disabling new admission permits recovery.
+See [API contracts](api.md) and the root
+[rebalance reference](../../docs/features/control-managed-vm-rebalance.md).
+
 ## Profiles and persistence
 
 The default profile is `HERMES_ROOT_PROFILE`. Named profiles live at

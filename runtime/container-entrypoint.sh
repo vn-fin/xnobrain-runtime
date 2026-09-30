@@ -7,7 +7,8 @@ if [[ ! -x "$hermes_python" ]]; then
   echo "XNOBrain runtime Python not found: $hermes_python" >&2
   exit 1
 fi
-PYTHONPATH="/opt/xnobrain-app${PYTHONPATH:+:$PYTHONPATH}" "$hermes_python" -m xnobrain.integrations.runtime_data_volume
+# Check storage without importing application adapters from integrations/__init__.
+"$hermes_python" /opt/xnobrain-app/xnobrain/integrations/runtime_data_volume.py
 if [[ -n "${RUNTIME_AGENT_DATA_ROOT:-}" ]]; then
   PYTHONPATH="/opt/xnobrain-app${PYTHONPATH:+:$PYTHONPATH}" "$hermes_python" -c \
     'import os; from xnobrain.agent_layout import resolve_layout; resolve_layout(os.environ)'

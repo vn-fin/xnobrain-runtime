@@ -41,6 +41,7 @@ from .organization_artifacts import OrganizationArtifactsServiceMixin
 from .organization_connector import OrganizationConnector
 from .portability import PortabilityService, PortabilityServiceMixin
 from .providers import ProvidersServiceMixin
+from .runtime_rebalances import RuntimeRebalanceService
 from .runtime_updates import RuntimeUpdateService
 from .sandboxes import SandboxesServiceMixin
 from .skill_doctor import SkillDoctorService
@@ -132,9 +133,15 @@ class PlatformService(
         self.cron.custom_page_schedules = self.custom_page.schedules
         self.agents.custom_page_service = self.custom_page
         self.runtime_updates = RuntimeUpdateService(self)
+        self.runtime_rebalances = RuntimeRebalanceService(self)
         self.time_control = TimeControlService(self)
         self.cron.default_timezone = self.time_control.default_timezone
         self.conversation_runs.runtime_updates = self.runtime_updates
+        from ..integrations.run_admission import managed
+        from .run_admission import RunAdmissionService
+
+        self.run_admission = RunAdmissionService(self) if managed() else None
+        self.conversation_runs.capacity = self.run_admission
         self.cron.dispatch_allowed = lambda: not self.runtime_updates.dispatch_paused
         self._cache = MemoryCache()
         self._agent_activity_kanban_ids: set[str] = set()

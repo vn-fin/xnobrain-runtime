@@ -60,6 +60,29 @@ class KanbanWorkerSpawner:
         return reaped
 
     def __call__(self, task, workspace, *, board=None):
+        from ..repositories.runtime_update_gate import WorkspaceActivity
+        from .kanban_admission import take
+        from .run_admission import admitted_root, managed
+
+        gate = take(task.id) if managed() else None
+        if managed() and gate is None:
+            raise RuntimeError("worker has no capacity admission")
+        if gate is not None:
+            try:
+                with admitted_root({**gate.admission, "_lock_fd": gate.descriptor, "_local_id": gate.id}):
+                    with WorkspaceActivity(self.agents.skill_usage_repository.data_dir) as activity:
+                        pid = self._spawn(task, workspace, board=board, activity=activity)
+                gate.started()
+                gate.close()  # The worker inherits and retains the dispatch fence.
+                return pid
+            except BaseException:
+                gate.abort()
+                raise
+
+        with WorkspaceActivity(self.agents.skill_usage_repository.data_dir) as activity:
+            return self._spawn(task, workspace, board=board, activity=activity)
+
+    def _spawn(self, task, workspace, *, board=None, activity):
         kb = _module()
         agent_id = self.agents._agent_name(task.assignee)
         # dispatch_once runs in a thread; wait on the host's existing async
@@ -75,6 +98,17 @@ class KanbanWorkerSpawner:
         profile = self.agents.profile_path(agent_id)
         self.agents._ensure_router_profile(profile)
         env = self.agents._command_env(profile, "xnobrain")
+        from .rebalance_cli import ACTIVITY_FD
+
+        env[ACTIVITY_FD] = str(activity.descriptor)
+        from .run_admission import current_admission
+
+        admission = current_admission()
+        descriptors = [activity.descriptor]
+        if admission and admission.get("_lock_fd") is not None:
+            descriptors.append(admission["_lock_fd"])
+            env["XNOBRAIN_ADMISSION_FD"] = str(admission["_lock_fd"])
+            env["XNOBRAIN_ADMISSION_LOCAL_ID"] = admission["_local_id"]
         env.update(
             HERMES_KANBAN_TASK=task.id,
             HERMES_KANBAN_WORKSPACE=workspace,
@@ -110,7 +144,12 @@ class KanbanWorkerSpawner:
             )
             command = [sys.executable, "-m", "xnobrain.integrations.worker_cli"]
         else:
-            command = kb._resolve_hermes_argv()
+            from .run_admission import managed
+
+            command = (
+                [sys.executable, "-m", "xnobrain.integrations.worker_cli"]
+                if managed() else kb._resolve_hermes_argv()
+            )
         command += ["--cli", "--accept-hooks"]
         if task.model_override:
             command += ["--model", task.model_override]
@@ -137,6 +176,7 @@ class KanbanWorkerSpawner:
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+                pass_fds=tuple(descriptors),
             )
         with self._workers_lock:
             self._workers[worker.pid] = worker

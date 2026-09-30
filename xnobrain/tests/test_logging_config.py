@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import jlogger as jlog
+from opentelemetry import trace
 
 from xnobrain.logging_config import SERVICE_NAME, JLoggerHandler, configure_logging
 
@@ -45,6 +46,35 @@ class LoggingConfigTests(unittest.TestCase):
         self.assertEqual(rendered["development_environment"], "local")
         self.assertEqual(rendered["http_method"], "GET")
         self.assertEqual(rendered["error"], "")
+
+    def test_lifecycle_metadata_uses_active_span_without_secrets(self):
+        span = trace.NonRecordingSpan(
+            trace.SpanContext(
+                trace_id=int("0123456789abcdef0123456789abcdef", 16),
+                span_id=int("0123456789abcdef", 16),
+                is_remote=False,
+            )
+        )
+        record = logging.makeLogRecord(
+            {
+                "name": "xnobrain.rebalance",
+                "levelno": logging.WARNING,
+                "msg": "Rebalance failed",
+                "operation_id": "reb_test",
+                "error": "router_probe_failed",
+                "error_type": "ConnectionError",
+                "lease_token": "SECRET",
+                "payload": "PRIVATE",
+            }
+        )
+        with trace.use_span(span):
+            JLoggerHandler().emit(record)
+        rendered = json.loads(self.output.getvalue())
+        self.assertEqual(rendered["trace_id"], "0123456789abcdef0123456789abcdef")
+        self.assertEqual(rendered["span_id"], "0123456789abcdef")
+        self.assertEqual(rendered["operation_id"], "reb_test")
+        self.assertNotIn("SECRET", self.output.getvalue())
+        self.assertNotIn("PRIVATE", self.output.getvalue())
 
     def test_handler_does_not_copy_arbitrary_record_fields(self):
         handler = JLoggerHandler()

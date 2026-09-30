@@ -223,6 +223,7 @@ class UICompositionService:
             "base_revision": row["request"]["base_revision"],
             "run_id": row["run_id"],
             "status": "cancelled" if row["cancelled"] else run["status"] if run else "preparing",
+            "capacity": run.get("capacity") if run and run["status"] == "queued" else None,
             "layout": row["result"]
             if run and run["status"] == "completed" and not row["cancelled"]
             else None,

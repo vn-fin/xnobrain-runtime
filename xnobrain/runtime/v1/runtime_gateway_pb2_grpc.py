@@ -22,6 +22,16 @@ class NodeGatewayServiceStub(object):
                 request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceProxyRequest.SerializeToString,
                 response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceProxyResponse.FromString,
                 _registered_method=True)
+        self.GetRebalanceFacts = channel.unary_unary(
+                '/xnobrain.runtime.v1.NodeGatewayService/GetRebalanceFacts',
+                request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceGetRebalanceFactsRequest.SerializeToString,
+                response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceGetRebalanceFactsResponse.FromString,
+                _registered_method=True)
+        self.RebalanceStep = channel.unary_unary(
+                '/xnobrain.runtime.v1.NodeGatewayService/RebalanceStep',
+                request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceRebalanceStepRequest.SerializeToString,
+                response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceRebalanceStepResponse.FromString,
+                _registered_method=True)
 
 
 class NodeGatewayServiceServicer(object):
@@ -36,6 +46,18 @@ class NodeGatewayServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetRebalanceFacts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RebalanceStep(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_NodeGatewayServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -43,6 +65,16 @@ def add_NodeGatewayServiceServicer_to_server(servicer, server):
                     servicer.Proxy,
                     request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceProxyRequest.FromString,
                     response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceProxyResponse.SerializeToString,
+            ),
+            'GetRebalanceFacts': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetRebalanceFacts,
+                    request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceGetRebalanceFactsRequest.FromString,
+                    response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceGetRebalanceFactsResponse.SerializeToString,
+            ),
+            'RebalanceStep': grpc.unary_unary_rpc_method_handler(
+                    servicer.RebalanceStep,
+                    request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceRebalanceStepRequest.FromString,
+                    response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceRebalanceStepResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -85,6 +117,60 @@ class NodeGatewayService(object):
             metadata,
             _registered_method=True)
 
+    @staticmethod
+    def GetRebalanceFacts(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/xnobrain.runtime.v1.NodeGatewayService/GetRebalanceFacts',
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceGetRebalanceFactsRequest.SerializeToString,
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceGetRebalanceFactsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RebalanceStep(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/xnobrain.runtime.v1.NodeGatewayService/RebalanceStep',
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceRebalanceStepRequest.SerializeToString,
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.NodeGatewayServiceRebalanceStepResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
 
 class RuntimeGatewayServiceStub(object):
     """RuntimeGateway is hosted by the Runtime/Hermes process on a private listener.
@@ -103,6 +189,21 @@ class RuntimeGatewayServiceStub(object):
                 request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceProxyRequest.SerializeToString,
                 response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceProxyResponse.FromString,
                 _registered_method=True)
+        self.PrepareRebalance = channel.unary_unary(
+                '/xnobrain.runtime.v1.RuntimeGatewayService/PrepareRebalance',
+                request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareRebalanceRequest.SerializeToString,
+                response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareRebalanceResponse.FromString,
+                _registered_method=True)
+        self.GetRebalanceStatus = channel.unary_unary(
+                '/xnobrain.runtime.v1.RuntimeGatewayService/GetRebalanceStatus',
+                request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetRebalanceStatusRequest.SerializeToString,
+                response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetRebalanceStatusResponse.FromString,
+                _registered_method=True)
+        self.ResumeRebalance = channel.unary_unary(
+                '/xnobrain.runtime.v1.RuntimeGatewayService/ResumeRebalance',
+                request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceRequest.SerializeToString,
+                response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceResponse.FromString,
+                _registered_method=True)
 
 
 class RuntimeGatewayServiceServicer(object):
@@ -117,6 +218,24 @@ class RuntimeGatewayServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def PrepareRebalance(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetRebalanceStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ResumeRebalance(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_RuntimeGatewayServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -124,6 +243,21 @@ def add_RuntimeGatewayServiceServicer_to_server(servicer, server):
                     servicer.Proxy,
                     request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceProxyRequest.FromString,
                     response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceProxyResponse.SerializeToString,
+            ),
+            'PrepareRebalance': grpc.unary_unary_rpc_method_handler(
+                    servicer.PrepareRebalance,
+                    request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareRebalanceRequest.FromString,
+                    response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareRebalanceResponse.SerializeToString,
+            ),
+            'GetRebalanceStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetRebalanceStatus,
+                    request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetRebalanceStatusRequest.FromString,
+                    response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetRebalanceStatusResponse.SerializeToString,
+            ),
+            'ResumeRebalance': grpc.unary_unary_rpc_method_handler(
+                    servicer.ResumeRebalance,
+                    request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceRequest.FromString,
+                    response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -156,6 +290,87 @@ class RuntimeGatewayService(object):
             '/xnobrain.runtime.v1.RuntimeGatewayService/Proxy',
             xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceProxyRequest.SerializeToString,
             xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceProxyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PrepareRebalance(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/xnobrain.runtime.v1.RuntimeGatewayService/PrepareRebalance',
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareRebalanceRequest.SerializeToString,
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareRebalanceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetRebalanceStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/xnobrain.runtime.v1.RuntimeGatewayService/GetRebalanceStatus',
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetRebalanceStatusRequest.SerializeToString,
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetRebalanceStatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ResumeRebalance(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/xnobrain.runtime.v1.RuntimeGatewayService/ResumeRebalance',
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceRequest.SerializeToString,
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceResponse.FromString,
             options,
             channel_credentials,
             insecure,

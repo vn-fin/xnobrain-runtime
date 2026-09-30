@@ -110,12 +110,15 @@ class AgentAPIService:
             "input": prompt,
             "run_mode": "interactive",
         }
-        run = await self.platform.start_conversation_run(
-            agent_id,
-            conversation_id,
-            run_body,
-            trusted_context,
-        )
+        from ..integrations.run_admission import immediate_submission
+
+        with immediate_submission():
+            run = await self.platform.start_conversation_run(
+                agent_id,
+                conversation_id,
+                run_body,
+                trusted_context,
+            )
         return conversation_id, run
 
     async def completion(

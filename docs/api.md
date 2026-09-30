@@ -16,6 +16,14 @@ grouped by feature:
 JSON responses use `{success,data,message,status_code}`. SSE sends structured
 Hermes lifecycle objects and terminates with `data: [DONE]`.
 
+During a Control-managed VM rebalance, new mutations return that envelope with
+HTTP/status_code 503, `data.code=workspace_rebalance_maintenance`,
+`Retry-After: 5`, `Cache-Control: no-store` and
+`X-XNOBrain-Maintenance: vm-rebalance`. Passive reads/streams stay observable;
+admitted task lineages finish under the graceful activity gate. Clients must not
+automatically replay rejected work. Private prepare/status/resume management
+RPCs remain available for fenced recovery, including after feature disable.
+
 Agent responses include `workspace_path`, the server-selected absolute workspace
 directory. Chat clients use it to qualify dropped file references for the agent;
 workspace file API requests and structured image paths remain relative. This is
@@ -1348,3 +1356,37 @@ conversation history, tool call IDs, and other provider request shapes are
 preserved. This compatibility projection is internal; browser `image_paths` and
 the canonical native history format do not change. Reassess the projection when
 upgrading the pinned router's image translation.
+## Managed agent capacity waiting
+
+Managed root submissions retain the existing conversation-run routes and
+`status: queued` while waiting. Their optional `capacity` object contains
+`state: waiting|admitted`, `reason_code`, `queued_at` and `retry_after_ms`.
+`run.capacity_waiting` and `run.capacity_admitted` transitions are replayable on
+the existing run SSE. Unchanged polling does not append duplicate transitions.
+Normal queued chat also returns owner-scoped `queued_input` for reload recovery;
+private execution context, principals and app-assistance prompts stay internal.
+The existing stop route cancels a queued run without launching an executor.
+
+Cron/Kanban and UI-assistance responses expose optional capacity projections.
+Native schedules keep their existing recurrence and misfire ownership. Waiting
+does not acquire workspace activity or execution leases, consume inference, or
+start the execution timeout. Admission revalidates input/context, budget, current
+agent and maintenance before dispatch. Attached children inherit their root's
+admission; independent roots obtain their own. Managed CLI gates each root turn.
+
+Completion APIs have no durable waiting contract: when immediate admission is
+unavailable they return HTTP 503 with `Retry-After: 5` before streaming headers,
+and persist cancellation so the rejected request cannot execute later. Queue
+capacity rejection is HTTP 429 (`capacity_queue_full`) before acceptance.
+
+`FT_ENABLE_AGENT_POOL_MEMORY_ADMISSION` defaults true. Disabled/invalid values
+pause registration and claim while preserving reads, cancellation and receipts.
+Managed mode requires `RUNTIME_WORKSPACE_ID`, `RUNTIME_CONTROL_URL` and
+`RUNTIME_INTERNAL_SERVICE_TOKEN`; missing Control evidence fails closed. Ordinary
+unmanaged/static Docker development is not subject to the Incus pool policy.
+The private callback protocol is `agent_pool_memory_admission_v1`.
+
+Private queue intents and dispatch journals live in `agent-run-admission.sqlite`
+(0600). Restart restores waiting input. Ambiguous started work is reconciled but
+never blindly replayed. Terminal local native receipts retain replay tombstones;
+deleting/replacing schedules/tasks releases their unused waiting admissions.

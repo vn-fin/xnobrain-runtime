@@ -2,6 +2,7 @@
 
 import subprocess
 
+from ..repositories.runtime_update_gate import _lineage, workspace_activity
 from .hermes_support import (
     AGENT_CREDENTIAL_ENV_KEYS,
     LLM_ROUTER_KEY_ENV,
@@ -13,6 +14,7 @@ from .hermes_support import (
     asyncio,
     os,
 )
+from .rebalance_cli import ACTIVITY_FD, data_root
 
 
 class HermesCommandsMixin:
@@ -34,6 +36,13 @@ class HermesCommandsMixin:
             input_bytes=input_bytes,
         )
 
+    @workspace_activity(
+        lambda self: (
+            self.skill_usage_repository.data_dir
+            if getattr(self, "skill_usage_repository", None)
+            else data_root()
+        )
+    )
     async def _run_hermes_command(
         self,
         hermes_home: Path,
@@ -45,6 +54,16 @@ class HermesCommandsMixin:
         input_bytes: bytes | None = None,
     ) -> dict[str, Any]:
         env = self._command_env(hermes_home, engine)
+        activity = _lineage.get()
+        env[ACTIVITY_FD] = str(activity.descriptor)
+        from .run_admission import current_admission
+
+        admission = current_admission()
+        descriptors = [activity.descriptor]
+        if admission and admission.get("_lock_fd") is not None:
+            descriptors.append(admission["_lock_fd"])
+            env["XNOBRAIN_ADMISSION_FD"] = str(admission["_lock_fd"])
+            env["XNOBRAIN_ADMISSION_LOCAL_ID"] = admission["_local_id"]
         # Standard Popen avoids uvloop's fork/exec crash in a multithreaded
         # Runtime hosting gRPC and native dispatchers. Only waiting uses a thread.
         proc = subprocess.Popen(
@@ -54,6 +73,7 @@ class HermesCommandsMixin:
             stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            pass_fds=tuple(descriptors),
         )
         communication = asyncio.create_task(asyncio.to_thread(proc.communicate, input_bytes))
         try:

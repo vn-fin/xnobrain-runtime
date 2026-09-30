@@ -119,13 +119,24 @@ class LocalRuntimeManager:
                 hierarchy, controllers, relative = line.split(":", 2)
                 relative_path = relative.lstrip("/")
                 if hierarchy == "0" and not controllers:
-                    root = Path("/sys/fs/cgroup") / relative_path
-                    candidates.append((root / "memory.current", root / "memory.max"))
+                    base = Path("/sys/fs/cgroup")
+                    root = base / relative_path
+                    for directory in (root, *root.parents):
+                        if directory.is_relative_to(base):
+                            candidates.append(
+                                (directory / "memory.current", directory / "memory.max")
+                            )
                 elif "memory" in controllers.split(","):
-                    root = Path("/sys/fs/cgroup/memory") / relative_path
-                    candidates.append(
-                        (root / "memory.usage_in_bytes", root / "memory.limit_in_bytes")
-                    )
+                    base = Path("/sys/fs/cgroup/memory")
+                    root = base / relative_path
+                    for directory in (root, *root.parents):
+                        if directory.is_relative_to(base):
+                            candidates.append(
+                                (
+                                    directory / "memory.usage_in_bytes",
+                                    directory / "memory.limit_in_bytes",
+                                )
+                            )
         except (OSError, ValueError):
             pass
         candidates.extend(
@@ -138,6 +149,7 @@ class LocalRuntimeManager:
             ]
         )
         seen: set[tuple[Path, Path]] = set()
+        allocation: tuple[int, int] | None = None
         for current_path, limit_path in candidates:
             if (current_path, limit_path) in seen:
                 continue
@@ -146,16 +158,24 @@ class LocalRuntimeManager:
                 used = max(0, int(current_path.read_text(encoding="utf-8").strip()))
                 raw_limit = limit_path.read_text(encoding="utf-8").strip()
                 if raw_limit == "max":
-                    return host_used, host_total
+                    continue
                 limit = int(raw_limit)
                 # Cgroup v1 represents an unlimited hierarchy with a very large
                 # sentinel value rather than the v2 "max" token.
                 if limit <= 0 or limit > host_total * 16:
-                    return host_used, host_total
-                return min(used, limit), limit
+                    continue
+                reading = (min(used, limit), limit)
+                # A finite child may still inherit a smaller parent quota.
+                # At equal quotas, use the aggregate usage of the parent.
+                if (
+                    allocation is None
+                    or limit < allocation[1]
+                    or (limit == allocation[1] and reading[0] > allocation[0])
+                ):
+                    allocation = reading
             except (OSError, ValueError):
                 continue
-        return host_used, host_total
+        return allocation if allocation is not None else (host_used, host_total)
 
     @staticmethod
     def _host_memory_usage() -> tuple[int, int]:
