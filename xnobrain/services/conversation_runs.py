@@ -105,6 +105,7 @@ class ConversationRunService:
         trusted_context: Any = None,
         custom_page_datasets: list[str] | None = None,
         custom_page_revision: int | None = None,
+        custom_page_action: dict | None = None,
         dispatch_guard=None,
         custom_page_schedule: str | None = None,
         ui_assistance: dict | None = None,
@@ -301,7 +302,12 @@ class ConversationRunService:
             )
         from ..repositories.custom_page_locks import ConversationLease, ExecutionLease
 
-        lease = ExecutionLease(self.repository.data_dir, str(agent_id))
+        capacity = getattr(self, "capacity", None)
+        from ..integrations.run_admission import current_admission
+
+        if custom_page_schedule is not None and current_admission() is not None:
+            capacity = None
+        lease = None if capacity else ExecutionLease(self.repository.data_dir, str(agent_id))
         registered = False
         conversation_lease = None
         try:
@@ -356,6 +362,7 @@ class ConversationRunService:
                 "reasoning": reasoning,
                 "custom_page_datasets": custom_page_datasets,
                 "custom_page_revision": custom_page_revision,
+                "custom_page_action": custom_page_action,
                 "custom_page_schedule": custom_page_schedule,
                 "ui_assistance": ui_assistance,
                 "id": run_id,
@@ -407,16 +414,6 @@ class ConversationRunService:
                     "capabilities": list(capabilities),
                 },
             }
-            self.repository.put_conversation_run(record)
-            entry = _ActiveConversationRun(
-                run_id,
-                str(agent_id),
-                str(conversation_id),
-                lifecycle_lease=lease,
-                conversation_lease=conversation_lease,
-            )
-            self._active[run_id] = entry
-            self._by_conversation[key] = run_id
             payload = dict(body)
             payload["image_paths"] = image_paths
             payload.pop("_agent_maker_principal", None)
@@ -450,8 +447,31 @@ class ConversationRunService:
                 and not ui_assistance
             ):
                 payload["_custom_page_principal"] = trusted_context
+            if capacity is not None:
+                from ..integrations.run_admission import requires_immediate
+
+                if not ui_assistance and custom_page_datasets is None:
+                    record["queued_input"] = str(body.get("input") or body.get("message") or "")
+                # Release the submission lock before the coordinator acquires its
+                # dispatch fence. The persisted queued record now owns the slot.
+                queued = capacity.enqueue(record, payload, trusted_context, dispatch_guard)
+                if requires_immediate():
+                    conversation_lease.close()
+                    conversation_lease = None
+                    return await capacity.admit_immediate(queued)
+                return queued
+            self.repository.put_conversation_run(record)
+            entry = _ActiveConversationRun(
+                run_id,
+                str(agent_id),
+                str(conversation_id),
+                lifecycle_lease=lease,
+                conversation_lease=conversation_lease,
+            )
+            self._active[run_id] = entry
+            self._by_conversation[key] = run_id
             task = asyncio.create_task(
-                self._drive(record, payload), name=f"conversation-run-{run_id}"
+                lease.activity.run(self._drive, record, payload), name=f"conversation-run-{run_id}"
             )
             entry.task = task
             task.add_done_callback(lambda _task, rid=run_id: self._deregister(rid))
@@ -459,7 +479,8 @@ class ConversationRunService:
             return dict(record)
         finally:
             if not registered:
-                lease.close()
+                if lease is not None:
+                    lease.close()
                 if conversation_lease is not None:
                     conversation_lease.close()
 
@@ -500,6 +521,7 @@ class ConversationRunService:
             "started_at",
             "ended_at",
             "revision",
+            "capacity",
         )
         runs = []
         for record in records:
@@ -529,6 +551,9 @@ class ConversationRunService:
         if record.get("status") in TERMINAL_STATUSES:
             raise ServiceError("run has already finished", status=409, code="run_already_finished")
         entry = self._active.get(run_id)
+        capacity = getattr(self, "capacity", None)
+        if entry is None and capacity is not None and capacity.store.is_waiting(run_id):
+            return await capacity.cancel(record)
         if entry is None or entry.agent_id != agent_id or entry.conversation_id != conversation_id:
             from ..repositories.custom_page_locks import execution_active
 
@@ -807,7 +832,11 @@ class ConversationRunService:
         return "background" if BACKGROUND_HINT.search(message) else "interactive"
 
     async def _drive(self, initial: Mapping[str, Any], body: Mapping[str, Any]) -> None:
-        record = dict(initial)
+        record = self.repository.get_conversation_run(
+            initial["agent_id"], initial["conversation_id"], initial["id"]
+        )
+        if record.get("status") in TERMINAL_STATUSES:
+            return
         run_id = str(record["id"])
         try:
             async with AsyncExitStack() as scope:
@@ -854,6 +883,8 @@ class ConversationRunService:
             record["agent_id"], record["conversation_id"], record["id"]
         )
         record = {**dict(record), **latest}
+        if record.get("status") in TERMINAL_STATUSES:
+            return dict(record)
         payload = (
             dict(event.get("data") or {})
             if isinstance(event.get("data"), Mapping)
@@ -883,7 +914,14 @@ class ConversationRunService:
         ):
             return dict(record)
         next_record = dict(record)
-        if isinstance(payload, dict) and event_name == "run.started":
+        if isinstance(payload, dict) and event_name in {
+            "run.capacity_waiting",
+            "run.capacity_admitted",
+        }:
+            if record.get("status") in TERMINAL_STATUSES:
+                return dict(record)
+            next_record["capacity"] = dict(payload["capacity"])
+        elif isinstance(payload, dict) and event_name == "run.started":
             started = float(payload.get("timestamp") or now)
             next_record.update(
                 {
@@ -1045,6 +1083,9 @@ class ConversationRunService:
         current = dict(record)
         if current.get("status") in TERMINAL_STATUSES or str(current.get("id")) in self._active:
             return current
+        capacity = getattr(self, "capacity", None)
+        if capacity is not None and capacity.store.is_waiting(str(current["id"])):
+            return current
         from ..repositories.custom_page_locks import execution_active
 
         # Absence from this process is not evidence that another Runtime process
@@ -1059,7 +1100,7 @@ class ConversationRunService:
             with WorkspaceActivity(self.repository.data_dir):
                 return self._mark_terminal(current, "failed", "run interrupted by runtime restart")
         except StoreError as error:
-            if error.code == "runtime_update_maintenance":
+            if error.code in {"runtime_update_maintenance", "workspace_rebalance_maintenance"}:
                 return current
             raise
 

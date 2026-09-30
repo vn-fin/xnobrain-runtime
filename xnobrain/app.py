@@ -32,6 +32,9 @@ class XNOBrainApplication:
         self.handlers = APIHandlers(self.service)
 
     def register(self, app) -> None:
+        from .integrations.rebalance_admission import WorkspaceAdmissionMiddleware
+
+        app.add_middleware(WorkspaceAdmissionMiddleware, root=self.repository.data_dir)
         setup_routes(app, self.handlers)
         upstream_lifespan = app.router.lifespan_context
 
@@ -40,9 +43,13 @@ class XNOBrainApplication:
             async with upstream_lifespan(application):
                 await self.service.ensure_default_agent()
                 await self.service.organization_connector.start()
+                if self.service.run_admission is not None:
+                    await self.service.run_admission.start()
                 from .integrations.runtime_gateway import RuntimeGatewaySupervisor
 
-                grpc_supervisor = RuntimeGatewaySupervisor()
+                grpc_supervisor = RuntimeGatewaySupervisor(
+                    rebalances=self.service.runtime_rebalances
+                )
                 await grpc_supervisor.start()
                 grpc_supervisor_task = asyncio.create_task(
                     grpc_supervisor.run(), name="xnobrain-grpc-supervisor"
@@ -63,6 +70,7 @@ class XNOBrainApplication:
                             dispatch_allowed=lambda: (
                                 not self.service.runtime_updates.dispatch_paused
                             ),
+                            activity_root=self.repository.data_dir,
                         ),
                         name="xnobrain-kanban-dispatcher",
                     )
@@ -103,6 +111,8 @@ class XNOBrainApplication:
                 try:
                     yield
                 finally:
+                    if self.service.run_admission is not None:
+                        await self.service.run_admission.close()
                     await self.service.portability_tasks.worker.shutdown()
                     await self.service.organization_connector.stop()
                     await grpc_supervisor.stop()

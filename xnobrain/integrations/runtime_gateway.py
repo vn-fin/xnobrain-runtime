@@ -17,10 +17,10 @@ from xnobrain.common.v1 import http_stream_pb2 as http_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2 as gateway_pb2
 from xnobrain.runtime.v1 import runtime_gateway_pb2_grpc as gateway_grpc
 from xnobrain.trusted_context import (
-    SNAPSHOT_SHA_HEADER,
-    SNAPSHOT_SIZE_HEADER,
     SNAPSHOT_OPERATION_HEADER,
+    SNAPSHOT_SHA_HEADER,
     SNAPSHOT_SIGNATURE_HEADER,
+    SNAPSHOT_SIZE_HEADER,
     TRUSTED_CONVERSATION_CONTEXT_HEADER,
     TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER,
     TRUSTED_IDENTITY_HEADERS,
@@ -215,9 +215,40 @@ class RuntimeGatewayService(
     development boundary.
     """
 
-    def __init__(self, token: str, http_port: int):
+    def __init__(self, token: str, http_port: int, rebalances=None):
         self._token = token
         self._http_port = http_port
+        self._rebalances = rebalances
+
+    async def _rebalance(self, request, context, action):
+        supplied = _metadata_value(context, "x-xnobrain-internal-token")
+        if not self._token or not supplied or not hmac.compare_digest(supplied, self._token):
+            await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid service identity")
+        if self._rebalances is None:
+            await context.abort(grpc.StatusCode.UNIMPLEMENTED, "workspace maintenance unavailable")
+        try:
+            value = await self._rebalances.command(request.identity, action)
+        except Exception:
+            # Exceptions can contain private storage paths; expose a fixed code.
+            await context.abort(
+                grpc.StatusCode.FAILED_PRECONDITION, "workspace maintenance unavailable"
+            )
+        return gateway_pb2.RebalanceRuntimeStatus(**value)
+
+    async def PrepareRebalance(self, request, context):  # noqa: N802
+        return gateway_pb2.RuntimeGatewayServicePrepareRebalanceResponse(
+            status=await self._rebalance(request, context, "prepare")
+        )
+
+    async def GetRebalanceStatus(self, request, context):  # noqa: N802
+        return gateway_pb2.RuntimeGatewayServiceGetRebalanceStatusResponse(
+            status=await self._rebalance(request, context, "status")
+        )
+
+    async def ResumeRebalance(self, request, context):  # noqa: N802
+        return gateway_pb2.RuntimeGatewayServiceResumeRebalanceResponse(
+            status=await self._rebalance(request, context, "resume")
+        )
 
     async def Proxy(self, request_iterator, context):  # noqa: N802
         try:
@@ -356,7 +387,7 @@ def _grpc_enabled() -> bool:
     return os.getenv("RUNTIME_GRPC_ENABLED", "").strip().lower() in _TRUE
 
 
-async def start_runtime_gateway():
+async def start_runtime_gateway(rebalances=None):
     """Start the optional private gRPC listener in the FastAPI process."""
     if not _grpc_enabled():
         return None
@@ -376,7 +407,7 @@ async def start_runtime_gateway():
             ("grpc.max_send_message_length", 128 * 1024),
         )
     )
-    relay = RuntimeGatewayService(token, http_port)
+    relay = RuntimeGatewayService(token, http_port, rebalances)
     gateway_grpc.add_RuntimeGatewayServiceServicer_to_server(relay, server)
     gateway_grpc.add_NodeGatewayServiceServicer_to_server(relay, server)
     if server.add_insecure_port(f"0.0.0.0:{grpc_port}") == 0:
@@ -388,7 +419,8 @@ async def start_runtime_gateway():
 class RuntimeGatewaySupervisor:
     """Rebind private gRPC while FastAPI is still up; process death is systemd."""
 
-    def __init__(self, check_interval: float = 5.0, backoff_cap: float = 30.0):
+    def __init__(self, check_interval: float = 5.0, backoff_cap: float = 30.0, *, rebalances=None):
+        self._rebalances = rebalances
         self._check_interval = check_interval
         self._backoff_cap = backoff_cap
         self._backoff = check_interval
@@ -397,7 +429,11 @@ class RuntimeGatewaySupervisor:
         self._server = None
 
     async def start(self):
-        self._server = await start_runtime_gateway()
+        self._server = (
+            await start_runtime_gateway(self._rebalances)
+            if self._rebalances is not None
+            else await start_runtime_gateway()
+        )
         return self._server
 
     async def run(self) -> None:
@@ -444,7 +480,11 @@ class RuntimeGatewaySupervisor:
             with suppress(Exception):
                 await server.stop(grace=1)
         try:
-            self._server = await start_runtime_gateway()
+            self._server = (
+                await start_runtime_gateway(self._rebalances)
+                if self._rebalances is not None
+                else await start_runtime_gateway()
+            )
             self._backoff = self._check_interval
             _LOGGER.warning("Runtime gRPC listener rebound")
         except Exception:

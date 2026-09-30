@@ -46,6 +46,54 @@ class RuntimeMemoryMetricTests(unittest.TestCase):
         with patch.object(Path, "read_text", autospec=True, side_effect=self._reader(files)):
             self.assertEqual(LocalRuntimeManager._memory_usage(), (5_120_000, 8_192_000))
 
+    def test_v2_unlimited_leaf_uses_allocated_parent_memory(self) -> None:
+        files = {
+            "/proc/meminfo": "MemTotal: 16000000 kB\nMemAvailable: 12000000 kB\n",
+            "/proc/self/cgroup": "0::/workspace/service\n",
+            "/sys/fs/cgroup/workspace/service/memory.current": "1048576\n",
+            "/sys/fs/cgroup/workspace/service/memory.max": "max\n",
+            "/sys/fs/cgroup/workspace/memory.current": "4294967296\n",
+            "/sys/fs/cgroup/workspace/memory.max": "6442450944\n",
+        }
+        with patch.object(Path, "read_text", autospec=True, side_effect=self._reader(files)):
+            self.assertEqual(LocalRuntimeManager._memory_usage(), (4 << 30, 6 << 30))
+
+    def test_v1_unlimited_leaf_uses_allocated_parent_memory(self) -> None:
+        files = {
+            "/proc/meminfo": "MemTotal: 16000000 kB\nMemAvailable: 12000000 kB\n",
+            "/proc/self/cgroup": "5:memory:/workspace/service\n",
+            "/sys/fs/cgroup/memory/workspace/service/memory.usage_in_bytes": "1048576\n",
+            "/sys/fs/cgroup/memory/workspace/service/memory.limit_in_bytes": str(1 << 63),
+            "/sys/fs/cgroup/memory/workspace/memory.usage_in_bytes": "4294967296\n",
+            "/sys/fs/cgroup/memory/workspace/memory.limit_in_bytes": "6442450944\n",
+        }
+        with patch.object(Path, "read_text", autospec=True, side_effect=self._reader(files)):
+            self.assertEqual(LocalRuntimeManager._memory_usage(), (4 << 30, 6 << 30))
+
+    def test_smaller_parent_quota_overrides_finite_child_limit(self) -> None:
+        files = {
+            "/proc/meminfo": "MemTotal: 16000000 kB\nMemAvailable: 12000000 kB\n",
+            "/proc/self/cgroup": "0::/workspace/service\n",
+            "/sys/fs/cgroup/workspace/service/memory.current": "1048576\n",
+            "/sys/fs/cgroup/workspace/service/memory.max": str(8 << 30),
+            "/sys/fs/cgroup/workspace/memory.current": str(4 << 30),
+            "/sys/fs/cgroup/workspace/memory.max": str(6 << 30),
+        }
+        with patch.object(Path, "read_text", autospec=True, side_effect=self._reader(files)):
+            self.assertEqual(LocalRuntimeManager._memory_usage(), (4 << 30, 6 << 30))
+
+    def test_equal_parent_quota_uses_all_workspace_services(self) -> None:
+        files = {
+            "/proc/meminfo": "MemTotal: 16000000 kB\nMemAvailable: 12000000 kB\n",
+            "/proc/self/cgroup": "0::/workspace/service\n",
+            "/sys/fs/cgroup/workspace/service/memory.current": "1048576\n",
+            "/sys/fs/cgroup/workspace/service/memory.max": str(6 << 30),
+            "/sys/fs/cgroup/workspace/memory.current": str(4 << 30),
+            "/sys/fs/cgroup/workspace/memory.max": str(6 << 30),
+        }
+        with patch.object(Path, "read_text", autospec=True, side_effect=self._reader(files)):
+            self.assertEqual(LocalRuntimeManager._memory_usage(), (4 << 30, 6 << 30))
+
     def test_missing_cgroup_files_fall_back_to_proc_meminfo(self) -> None:
         files = {
             "/proc/meminfo": "MemTotal: 16000 kB\nMemAvailable: 6000 kB\n",

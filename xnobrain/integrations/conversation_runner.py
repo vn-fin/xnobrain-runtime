@@ -88,6 +88,9 @@ class ConversationRunnerMixin:
             return {name for name, count in self._active_agent_counts.items() if count > 0}
 
     async def chat(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
+        from .run_admission import require_admitted
+
+        require_admitted()
         from .accounting_context import accounting_binding, accounting_enabled, inference_accounting
 
         prepared = self._prepare_chat_command(raw_name, body, require_conversation=False)
@@ -171,6 +174,9 @@ class ConversationRunnerMixin:
         }
 
     def chat_stream(self, raw_name: Any, body: Mapping[str, Any]):
+        from .run_admission import require_admitted
+
+        require_admitted()
         payload = dict(body)
         if "message" not in payload and "input" in payload:
             payload["message"] = payload.pop("input")

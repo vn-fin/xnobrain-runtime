@@ -7,10 +7,20 @@ import os
 from typing import Any
 
 import jlogger as jlog
+from opentelemetry import trace
 
 SERVICE_NAME = "xnobrain-runtime-services"
 DEVELOPMENT_ENVIRONMENT = "development"
 _SAFE_RECORD_FIELDS = (
+    "event",
+    "action",
+    "operation_id",
+    "workspace_id",
+    "run_id",
+    "fence",
+    "phase",
+    "error_type",
+    "reason_code",
     "duration_ms",
     "http_method",
     "http_route",
@@ -47,6 +57,10 @@ class JLoggerHandler(logging.Handler):
                 for field in _SAFE_RECORD_FIELDS
                 if hasattr(record, field)
             }
+            span = trace.get_current_span().get_span_context()
+            if span.is_valid:
+                safe_fields.setdefault("trace_id", format(span.trace_id, "032x"))
+                safe_fields.setdefault("span_id", format(span.span_id, "016x"))
             # Every Runtime record has the same nullable error field. Keep it
             # categorical: third-party exception messages can contain network
             # addresses or provider details and must not be copied as fields.

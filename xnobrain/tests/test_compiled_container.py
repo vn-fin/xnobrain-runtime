@@ -1,7 +1,9 @@
 """Production container packaging contracts."""
 
 import os
+import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,9 +49,7 @@ class CompiledContainerTests(unittest.TestCase):
 
     def test_native_agent_cli_receives_current_router_key(self):
         dockerfile = (ROOT / "Dockerfile.backend").read_text(encoding="utf-8")
-        entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(
-            encoding="utf-8"
-        )
+        entrypoint = (ROOT / "runtime" / "container-entrypoint.sh").read_text(encoding="utf-8")
         launcher = (ROOT / "runtime" / "agent-cli.sh").read_text(encoding="utf-8")
 
         self.assertIn("COPY runtime/agent-cli.sh /usr/local/bin/agent", dockerfile)
@@ -63,11 +63,19 @@ class CompiledContainerTests(unittest.TestCase):
             root = Path(directory)
             fake_hermes = root / "hermes"
             fake_hermes.write_text(
-                '#!/usr/bin/env bash\n'
-                '[[ "$RUNTIME_LLM_API_KEY" == "$EXPECTED_KEY" && "$1" == "-p" ]]\n',
+                "#!/usr/bin/env python\n"
+                "import os, sys\n"
+                "raise SystemExit(0 if os.environ['RUNTIME_LLM_API_KEY'] == "
+                "os.environ['EXPECTED_KEY'] and sys.argv[1] == '-p' else 1)\n",
                 encoding="utf-8",
             )
             fake_hermes.chmod(0o755)
+            python = root / "python"
+            python.write_text(
+                f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8"
+            )
+            python.chmod(0o755)
+            (root / "activity").mkdir()
             agent = root / "agent"
             agent.write_text(
                 launcher.replace(
@@ -84,6 +92,10 @@ class CompiledContainerTests(unittest.TestCase):
                     [str(agent), "-p", "poem"],
                     env={
                         "PATH": os.environ.get("PATH", ""),
+                        "PYTHONPATH": os.pathsep.join(
+                            filter(None, (str(ROOT), os.getenv("PYTHONPATH")))
+                        ),
+                        "DATA_DIR": str(root / "activity"),
                         "RUNTIME_LLM_API_KEY": "stale-key",
                         "RUNTIME_LLM_API_KEY_FILE": file_path,
                         "EXPECTED_KEY": expected_key,

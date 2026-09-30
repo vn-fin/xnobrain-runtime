@@ -15,7 +15,9 @@ if [[ ! -x "$python_bin" ]]; then
 fi
 
 # Check storage before mkdir, templates, ownership changes or profile access.
-PYTHONPATH="$project_dir${PYTHONPATH:+:$PYTHONPATH}" "$python_bin" -m xnobrain.integrations.runtime_data_volume
+# Running as a module imports integrations/__init__.py and the application
+# before storage is checked. This boot guard needs only the standard library.
+"$python_bin" "$project_dir/xnobrain/integrations/runtime_data_volume.py"
 
 # Do not reseed an initialized persistent volume on ordinary service restarts.
 if [[ "${RUNTIME_DATA_MOUNT_REQUIRED:-false}" == true && -f "${RUNTIME_DATA_VOLUME_PATH}/.xnobrain-volume-initialized" ]]; then

@@ -16,6 +16,8 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from ..repositories.custom_page_locks import release
+from ..repositories.runtime_update_gate import WorkspaceActivity, workspace_activity
 from .base import ServiceError, iso
 from .constants import DEFAULT_TEAM_COORDINATOR_PROMPT
 from .errors import EXPECTED_ERRORS
@@ -33,6 +35,8 @@ class _ActiveRun:
     team_id: str
     task: asyncio.Task | None = None
     changed: asyncio.Event = field(default_factory=asyncio.Event)
+    activity: WorkspaceActivity | None = None
+    executor_fence: int | None = None
 
 
 class TeamRunService:
@@ -48,6 +52,7 @@ class TeamRunService:
 
     # ---- public API -----------------------------------------------------
 
+    @workspace_activity(lambda self: self.repository.data_dir)
     async def start_run(self, team_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         self.platform.runtime_updates.require_dispatch()
         team = self.platform.get_team(team_id)
@@ -57,14 +62,27 @@ class TeamRunService:
         self._guard_capacity(str(team["id"]))
         await self._require_execution_budgets(team, workflow)
         record = self._new_record(team, body, workflow, mode="async")
+        capacity = getattr(self.platform, "run_admission", None)
+        if capacity is not None:
+            return capacity.enqueue_team(record, team, workflow)
         self.repository.put_team_run(record)
         entry = self._register(record, task=None)
-        task = asyncio.ensure_future(self._drive(record, team, workflow))
+        task = asyncio.ensure_future(entry.activity.run(self._drive, record, team, workflow))
         entry.task = task
         task.add_done_callback(lambda _t, run_id=record["id"]: self._deregister(run_id))
         return record
 
     async def run_sync(self, team_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        if getattr(self.platform, "run_admission", None) is not None:
+            record = await self.start_run(team_id, body)
+            while record["status"] not in TERMINAL_STATUSES:
+                await asyncio.sleep(1)
+                record = self.get_run(team_id, record["id"])
+            return record
+        return await self._run_sync(team_id, body)
+
+    @workspace_activity(lambda self: self.repository.data_dir)
+    async def _run_sync(self, team_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         self.platform.runtime_updates.require_dispatch()
         team = self.platform.get_team(team_id)
         if not team.get("enabled", True):
@@ -101,6 +119,9 @@ class TeamRunService:
         record = self._heal_if_stale(self.repository.get_team_run(team_id, run_id))
         if record["status"] in TERMINAL_STATUSES:
             raise ServiceError("run has already finished", status=409, code="run_already_finished")
+        capacity = getattr(self.platform, "run_admission", None)
+        if capacity is not None and capacity.store.is_waiting(record["id"]):
+            await self._finalize(record, "cancelled", error="cancelled")
         return record
 
     def delete_run(self, team_id: str, run_id: str) -> dict[str, Any]:
@@ -164,12 +185,17 @@ class TeamRunService:
 
     def _register(self, record: Mapping[str, Any], task: asyncio.Task | None) -> _ActiveRun:
         entry = _ActiveRun(run_id=str(record["id"]), team_id=str(record["team_id"]), task=task)
+        entry.activity = WorkspaceActivity(self.repository.data_dir)
         self._active[entry.run_id] = entry
         self._by_team[entry.team_id] = entry.run_id
         return entry
 
     def _deregister(self, run_id: str) -> None:
         entry = self._active.pop(run_id, None)
+        if entry and entry.activity:
+            entry.activity.close()
+        if entry and entry.executor_fence is not None:
+            release(entry.executor_fence)
         if entry and self._by_team.get(entry.team_id) == run_id:
             self._by_team.pop(entry.team_id, None)
 
@@ -269,6 +295,11 @@ class TeamRunService:
     # ---- persistence + staleness ---------------------------------------
 
     async def _persist(self, record: dict[str, Any]) -> None:
+        if getattr(self.platform, "run_admission", None) is not None:
+            latest = self.repository.get_team_run(record["team_id"], record["id"])
+            if latest["status"] in TERMINAL_STATUSES and record["status"] not in TERMINAL_STATUSES:
+                record.update(latest)
+                return
         record["revision"] = int(record.get("revision", 0)) + 1
         record["updated_at"] = iso()
         self.repository.put_team_run(record)
@@ -278,6 +309,11 @@ class TeamRunService:
             entry.changed.clear()
 
     def _heal_if_stale(self, record: dict[str, Any]) -> dict[str, Any]:
+        capacity = getattr(self.platform, "run_admission", None)
+        if capacity is not None and (
+            capacity.store.is_waiting(record["id"]) or capacity.store.team_active(record["id"])
+        ):
+            return record
         # Runs created before terminal agents exposed their own sessions do not
         # contain these fields. Normalize them at the API boundary so callers
         # can distinguish "no session" from a missing/legacy contract.
@@ -321,9 +357,14 @@ class TeamRunService:
         self, record: dict[str, Any], team: Mapping[str, Any], workflow: list[Mapping[str, Any]]
     ) -> None:
         try:
+            latest = self.repository.get_team_run(record["team_id"], record["id"])
+            if latest["status"] in TERMINAL_STATUSES:
+                return
             record["status"] = "running"
             record["started_at"] = iso()
             await self._persist(record)
+            if record["status"] != "running":
+                return
             summary = await self._execute_workflow(record, team, workflow)
             record["orchestrator_summary"] = self._cap(summary)
             await self._finalize(record, "completed")

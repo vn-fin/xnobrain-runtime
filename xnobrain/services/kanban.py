@@ -528,6 +528,10 @@ class KanbanService:
             "board_slug": board,
             "revision": str(getattr(task, "updated_at", None) or getattr(task, "created_at", "")),
         }
+        from ..integrations.native_admission import waiting_projection
+
+        key = f"kanban:{board}:{task.id}:{task.current_run_id}:{task.status}"
+        result["capacity"] = waiting_projection(self.repository.data_dir, key)
         if include_detail:
             events = kb_adapter.task_events(conn, task.id)
             activity = kb_adapter.safe_worker_activity(task.id, board=board)
@@ -1213,6 +1217,15 @@ class KanbanService:
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             if str(task.status) != "running":
+                from ..integrations.native_admission import cancel_waiting, waiting_projection
+
+                key = f"kanban:{normalized}:{task.id}:{task.current_run_id}:{task.status}"
+                if waiting_projection(self.repository.data_dir, key):
+                    if cancel_waiting(self.repository.data_dir, key) and kb.complete_task(
+                        conn, task_id, summary="Task cancelled before execution", fire_lifecycle_hook=False
+                    ):
+                        task = kb.get_task(conn, task_id)
+                        return self._task_dto(conn, task, board=normalized, include_detail=True)
                 raise ServiceError(
                     "only a running task can be cancelled",
                     status=409,

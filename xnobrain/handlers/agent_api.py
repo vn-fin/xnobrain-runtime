@@ -28,14 +28,15 @@ class AgentAPIHandlers:
             )
         try:
             if body.get("stream") is True:
+                stream = self.service.agent_api.stream(agent_id, body, trusted)
+                # Admission/validation must finish before committing SSE headers.
+                first = await anext(stream, None)
 
                 async def events():
                     try:
-                        async for chunk in self.service.agent_api.stream(
-                            agent_id,
-                            body,
-                            trusted,
-                        ):
+                        if first is not None:
+                            yield first
+                        async for chunk in stream:
                             yield chunk
                     except EXPECTED_ERRORS as error:
                         yield self._agent_api_stream_error(
@@ -84,5 +85,8 @@ class AgentAPIHandlers:
         return JSONResponse(
             {"error": {"message": message, "type": error_type, "code": code}},
             status_code=status,
-            headers={"Cache-Control": "private, no-store"},
+            headers={
+                "Cache-Control": "private, no-store",
+                **({"Retry-After": "5"} if status == 503 else {}),
+            },
         )

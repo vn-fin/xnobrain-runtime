@@ -11,13 +11,17 @@ import shutil
 from typing import Any, Mapping
 
 from ..integrations.runtime_build_identity import incus_installed_identity
-
 from ..integrations.runtime_update_storage import (
     RuntimeUpdateStorage,
     RuntimeUpdateStorageError,
 )
 from ..repositories.base import StoreError
-from ..repositories.runtime_update_gate import activity_present, checkpoint_gate, update_operation
+from ..repositories.runtime_update_gate import (
+    activity_present,
+    checkpoint_gate,
+    require_admission,
+    update_operation,
+)
 from ..repositories.runtime_updates import RuntimeUpdateRepository
 from .base import ServiceError, iso
 
@@ -53,20 +57,13 @@ class RuntimeUpdateService:
 
     def require_dispatch(self) -> None:
         self.platform.repository.storage_mount.check()
-        if self.dispatch_paused:
-            raise ServiceError(
-                "Runtime is draining for an approved update",
-                status=503,
-                code="runtime_update_maintenance",
-            )
+        try:
+            require_admission(self.platform.repository.data_dir)
+        except StoreError as error:
+            raise ServiceError(str(error), status=error.status, code=error.code) from error
 
     def register_organization_command(self, command_id: str) -> None:
-        if self.dispatch_paused:
-            raise ServiceError(
-                "Runtime is draining for an approved update",
-                status=503,
-                code="runtime_update_maintenance",
-            )
+        self.require_dispatch()
         self._active_organization_commands.add(command_id)
 
     async def release_organization_command(self, command_id: str) -> None:
@@ -419,7 +416,10 @@ class RuntimeUpdateService:
             previous = self.repository.operation(str(request["operation_id"]))
             completed = previous.get("steps", {}).get("resume")
             if completed and not self.repository.maintenance():
-                if previous.get("generation") != request["generation"] or previous.get("target") != request["target"]:
+                if (
+                    previous.get("generation") != request["generation"]
+                    or previous.get("target") != request["target"]
+                ):
                     self._conflict("Runtime resume identity does not match")
                 return completed
             self._validate_request(request, require_maintenance=True)

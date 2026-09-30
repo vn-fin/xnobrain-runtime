@@ -9,7 +9,9 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+from ..repositories.base import StoreError
 from ..repositories.portability_tasks import PortabilityTaskStore
+from ..repositories.runtime_update_gate import workspace_activity
 
 logger = logging.getLogger(__name__)
 
@@ -62,21 +64,14 @@ class PortabilityWorker:
     async def _run(self) -> None:
         while not self._stop.is_set():
             try:
-                now = asyncio.get_running_loop().time()
-                if self.maintenance is not None and now >= self._next_maintenance:
-                    # A failed cleanup must neither starve claims nor become a
-                    # tight retry loop. Queue execution is independent of maintenance.
-                    self._next_maintenance = now + 60
-                    try:
-                        await asyncio.to_thread(self.maintenance)
-                    except Exception:
-                        logger.warning("Portability maintenance failed")
-                claim = await asyncio.to_thread(
-                    self.store.claim, self.owner, lease_seconds=self.lease_seconds
-                )
-                if claim is not None:
-                    await self._execute_claim(claim)
+                if await self._iteration():
                     continue
+            except StoreError as error:
+                if error.code not in {
+                    "runtime_update_maintenance",
+                    "workspace_rebalance_maintenance",
+                }:
+                    logger.warning("Portability admission unavailable")
             except Exception:
                 # Do not include exception text: archive/storage errors can contain
                 # private paths or supplied content. Recovery is owned by the lease.
@@ -85,6 +80,22 @@ class PortabilityWorker:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.poll_seconds)
             except TimeoutError:
                 pass
+
+    @workspace_activity(lambda self: self.store.path.parent)
+    async def _iteration(self) -> bool:
+        now = asyncio.get_running_loop().time()
+        if self.maintenance is not None and now >= self._next_maintenance:
+            self._next_maintenance = now + 60
+            try:
+                await asyncio.to_thread(self.maintenance)
+            except Exception:
+                logger.warning("Portability maintenance failed")
+        claim = await asyncio.to_thread(
+            self.store.claim, self.owner, lease_seconds=self.lease_seconds
+        )
+        if claim is not None:
+            await self._execute_claim(claim)
+        return claim is not None
 
     async def _execute_claim(self, claim: dict[str, Any]) -> None:
         completed = asyncio.Event()
