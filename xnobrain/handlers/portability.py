@@ -11,6 +11,8 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import Response, StreamingResponse
 
+from ..feature_flags import FEATURE_AGENT_PORTABILITY
+from ..feature_flags import enabled as feature_enabled
 from ..repositories.base import StoreError
 from ..services import EXPECTED_ERRORS
 from ..services.portability import CHUNK_SIZE, MAX_COMPRESSED, UPLOAD_CHUNK_SIZE
@@ -148,6 +150,20 @@ class PortabilityHandlers:
             operation = request.scope["route"].name
             status = 200
             if operation in {"bundle_task_create", "bundle_task_import"}:
+                if operation == "bundle_task_import" and not feature_enabled(
+                    FEATURE_AGENT_PORTABILITY
+                ):
+                    upload_id = self.service.portability.repository._id(
+                        body.get("upload_id"), "upload id"
+                    )
+                    directory = self.service.portability._transfer_dir(
+                        self.service.portability.upload_root, upload_id
+                    )
+                    metadata = self.service.portability._read_metadata(directory)
+                    if metadata.get("purpose") != "profile-example":
+                        raise StoreError(
+                            "agent portability is disabled", status=404, code="not_found"
+                        )
                 result, _ = await asyncio.to_thread(
                     tasks.create_import
                     if operation == "bundle_task_import"

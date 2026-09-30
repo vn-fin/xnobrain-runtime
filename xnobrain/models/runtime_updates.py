@@ -77,6 +77,39 @@ class RuntimeUpdateRecovery(RuntimeUpdateRequest):
         return self
 
 
+class IncusRuntimeTarget(BaseModel):
+    """Image identity for deployment-policy updates; not an OCI digest."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["incus_image"]
+    fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    build_descriptor_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    version: str = Field(min_length=1, max_length=64)
+    source_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    data_schema: int = Field(ge=1)
+
+
+class RuntimeRolloutRequest(RuntimeUpdateRequest):
+    target: IncusRuntimeTarget
+
+
+class RuntimeRolloutPreflight(RuntimeUpdatePreflight):
+    target: IncusRuntimeTarget
+
+
+class RuntimeRolloutDrain(RuntimeUpdateDrain):
+    target: IncusRuntimeTarget
+
+
+class RuntimeRolloutReadiness(RuntimeUpdateReadiness):
+    target: IncusRuntimeTarget
+
+
+class RuntimeRolloutPostVerify(RuntimeUpdatePostVerify):
+    target: IncusRuntimeTarget
+
+
 class ReleaseSelector(BaseModel):
     """Narrow Big Brother selector; arbitrary remotes and commits are impossible."""
 

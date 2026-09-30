@@ -11,7 +11,15 @@ _SAFE_COMPONENT = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
 
 class BlueprintModelSlot(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    alias: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
+    alias: str = Field(
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$",
+        description=(
+            "Exact model ID from agent_maker_inspect model_catalog.data, including "
+            "its provider prefix. Do not invent a model name or remove the prefix."
+        ),
+    )
     reasoning_effort: Literal["none", "low", "medium", "high"] = "medium"
 
 

@@ -20,6 +20,12 @@ from ..integrations import (
     CronDeliveryAdapterError,
 )
 from ..repositories import FileRepository
+from ..repositories.base import StoreError
+from ..repositories.runtime_update_gate import (
+    WorkspaceActivity,
+    require_admission,
+    workspace_activity,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -610,10 +616,7 @@ class CronService:
                     "xnobrain_time_revision": None,
                     "xnobrain_time_revision_digest": None,
                 }
-            updated = (
-                self._native(profile, "update_job", str(job["id"]), time_updates)
-                or updated
-            )
+            updated = self._native(profile, "update_job", str(job["id"]), time_updates) or updated
         self._clear_pin_alerts(profile, str(job["id"]))
         return self._dto(profile, updated)
 
@@ -690,6 +693,25 @@ class CronService:
             return self._active_executions
 
     def fire_due(self, profile: str, job_id: str) -> bool:
+        require_admission(self.repository.data_dir)
+        from ..integrations.run_admission import managed
+
+        if not managed():
+            return self._fire_due(profile, job_id)
+        if not self.dispatch_allowed():
+            return False
+        jobs = self._native(profile, "list_jobs", True)
+        job = next((job for job in jobs if str(job["id"]) == job_id), None)
+        if not job or not job.get("enabled", True) or job.get("state") == "paused":
+            return False
+        from ..integrations.native_admission import native_root
+
+        key = f"cron:{profile}:{job_id}:{job.get('next_run_at', '')}"
+        with native_root(self.repository.data_dir, key, "cron") as admitted:
+            return self._fire_due(profile, job_id) if admitted else False
+
+    @workspace_activity(lambda self: self.repository.data_dir)
+    def _fire_due(self, profile: str, job_id: str) -> bool:
         """Claim and execute one due job using its profile-scoped Hermes home."""
         if not self.dispatch_allowed():
             return False
@@ -753,6 +775,27 @@ class CronService:
         return {"runs": self._run_dtos(profile, job, bounded), "limit": bounded}
 
     def reconcile_deliveries(
+        self,
+        profile_jobs: list[tuple[str, list[dict[str, Any]]]] | None = None,
+    ) -> None:
+        # Passive cron views remain available during maintenance. Delivery can
+        # write files and native history, so admit it separately before any
+        # side effect; existing executor lineages retain their activity lease.
+        activity = self._admit_passive_mutation()
+        if activity is None:
+            return
+        with activity:
+            self._reconcile_deliveries(profile_jobs)
+
+    def _admit_passive_mutation(self) -> WorkspaceActivity | None:
+        try:
+            return WorkspaceActivity(self.repository.data_dir)
+        except StoreError as error:
+            if error.code in {"workspace_rebalance_maintenance", "runtime_update_maintenance"}:
+                return None
+            raise
+
+    def _reconcile_deliveries(
         self,
         profile_jobs: list[tuple[str, list[dict[str, Any]]]] | None = None,
     ) -> None:
@@ -893,9 +936,7 @@ class CronService:
                 jobs = self._native(profile, "list_jobs", True)
             except Exception:
                 continue
-            rows.append(
-                (profile, [self._normalize_legacy_pin(profile, job) for job in jobs])
-            )
+            rows.append((profile, [self._normalize_legacy_pin(profile, job) for job in jobs]))
         return rows
 
     def _normalize_legacy_pin(self, profile: str, job: dict[str, Any]) -> dict[str, Any]:
@@ -908,14 +949,18 @@ class CronService:
             return job
         connector = job.get(_PINNED_CONNECTOR_KEY) or job.get("provider")
         updates = {**pin, **_pin_label_updates(connector, pin["model"])}
-        try:
-            self._snapshot_store(profile)
-            updated = self._native(profile, "update_job", str(job["id"]), updates)
-        except Exception:
-            LOGGER.debug("Could not persist normalized cron pin for job %s", job.get("id"))
+        activity = self._admit_passive_mutation()
+        if activity is None:
             return job
-        self._clear_pin_alerts(profile, str(job["id"]))
-        return updated or {**job, **updates}
+        with activity:
+            try:
+                self._snapshot_store(profile)
+                updated = self._native(profile, "update_job", str(job["id"]), updates)
+            except Exception:
+                LOGGER.debug("Could not persist normalized cron pin for job %s", job.get("id"))
+                return job
+            self._clear_pin_alerts(profile, str(job["id"]))
+            return updated or {**job, **updates}
 
     def _clear_pin_alerts(self, profile: str, job_id: str) -> None:
         for function in ("clear_drift_alerted", "clear_preflight_alerted"):
@@ -1120,6 +1165,11 @@ class CronService:
 
         result["next_run_at"] = _iso(job.get("next_run_at"))
         result["enabled"] = bool(job.get("enabled", True))
+        from ..integrations.native_admission import waiting_projection
+        from ..integrations.rebalance_cli import data_root
+
+        key = f"cron:{profile}:{job['id']}:{job.get('next_run_at', '')}"
+        result["capacity"] = waiting_projection(data_root(), key) if result["enabled"] else None
         result["delivery_targets"] = [
             dict(item) for item in job.get("xnobrain_delivery_targets") or []
         ]

@@ -460,6 +460,7 @@ class CustomPageService:
             trusted,
             custom_page_datasets=action["datasets"],
             custom_page_revision=page["active"],
+            custom_page_action={"id": action_id, "body": body},
             dispatch_guard=guard,
             custom_page_schedule=schedule_id,
         )

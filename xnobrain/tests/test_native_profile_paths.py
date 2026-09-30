@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -39,8 +40,15 @@ class NativeProfilePathsTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.hermes.chmod(0o755)
+        python = self.hermes.parent / "python"
+        python.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8")
+        python.chmod(0o755)
+        activity = self.base / "activity"
+        activity.mkdir()
         self.environment = {
             "PATH": os.environ["PATH"],
+            "PYTHONPATH": os.pathsep.join(filter(None, (str(ROOT), os.getenv("PYTHONPATH")))),
+            "DATA_DIR": str(activity),
             "HOME": str(self.base / "home"),
             "RUNTIME_HERMES_HOME": str(self.root),
             "RUNTIME_HERMES_PROFILES_ROOT": str(self.profiles),

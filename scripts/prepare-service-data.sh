@@ -14,6 +14,28 @@ if [[ ! -x "$python_bin" ]]; then
   exit 1
 fi
 
+# Check storage before mkdir, templates, ownership changes or profile access.
+# Running as a module imports integrations/__init__.py and the application
+# before storage is checked. This boot guard needs only the standard library.
+"$python_bin" "$project_dir/xnobrain/integrations/runtime_data_volume.py"
+
+# Do not reseed an initialized persistent volume on ordinary service restarts.
+if [[ "${RUNTIME_DATA_MOUNT_REQUIRED:-false}" == true && -f "${RUNTIME_DATA_VOLUME_PATH}/.xnobrain-volume-initialized" ]]; then
+  test -d "$hermes_home"
+  test -d "$profiles_root"
+  test -d "${RUNTIME_DATA_DIR}"
+  exit 0
+fi
+
+# A deployment candidate already contains verified, preserved user data. Keep
+# template/profile preparation from changing it before Runtime post-verification.
+if [[ -f /etc/xnobrain/rollout-preserve-data ]]; then
+  test -d "$hermes_home"
+  test -d "$profiles_root"
+  test -d "${RUNTIME_DATA_DIR:-/srv/xnobrain-data/xnobrain}"
+  exit 0
+fi
+
 mkdir -p \
   "$hermes_home" \
   "$profiles_root" \
@@ -37,4 +59,9 @@ if [[ "${EUID}" -eq 0 && -n "${RUNTIME_SERVICE_USER:-}" ]]; then
     "$hermes_home" \
     "$profiles_root" \
     "${RUNTIME_DATA_DIR:-/srv/xnobrain-data/xnobrain}"
+fi
+
+if [[ "${RUNTIME_DATA_MOUNT_REQUIRED:-false}" == true ]]; then
+  touch "${RUNTIME_DATA_VOLUME_PATH}/.xnobrain-volume-initialized"
+  sync -f "${RUNTIME_DATA_VOLUME_PATH}"
 fi

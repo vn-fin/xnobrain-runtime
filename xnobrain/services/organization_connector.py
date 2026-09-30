@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from ..repositories.organization_connector import OrganizationConnectorRepository
+from ..repositories.runtime_update_gate import workspace_activity
 from ..trusted_context import TrustedRequestContext
 
 TERMINAL = {"completed", "failed", "timed_out", "cancelled"}
@@ -452,6 +453,7 @@ class OrganizationConnector:
         )
         self.store.record(cid, digest, "completed")
 
+    @workspace_activity(lambda self: self.platform.repository.data_dir)
     async def tick(self, client):
         state = self.store.state()
         if not state:

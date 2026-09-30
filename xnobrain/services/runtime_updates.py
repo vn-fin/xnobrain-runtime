@@ -10,12 +10,18 @@ import os
 import shutil
 from typing import Any, Mapping
 
+from ..integrations.runtime_build_identity import incus_installed_identity
 from ..integrations.runtime_update_storage import (
     RuntimeUpdateStorage,
     RuntimeUpdateStorageError,
 )
 from ..repositories.base import StoreError
-from ..repositories.runtime_update_gate import activity_present, checkpoint_gate, update_operation
+from ..repositories.runtime_update_gate import (
+    activity_present,
+    checkpoint_gate,
+    require_admission,
+    update_operation,
+)
 from ..repositories.runtime_updates import RuntimeUpdateRepository
 from .base import ServiceError, iso
 
@@ -51,20 +57,13 @@ class RuntimeUpdateService:
 
     def require_dispatch(self) -> None:
         self.platform.repository.storage_mount.check()
-        if self.dispatch_paused:
-            raise ServiceError(
-                "Runtime is draining for an approved update",
-                status=503,
-                code="runtime_update_maintenance",
-            )
+        try:
+            require_admission(self.platform.repository.data_dir)
+        except StoreError as error:
+            raise ServiceError(str(error), status=error.status, code=error.code) from error
 
     def register_organization_command(self, command_id: str) -> None:
-        if self.dispatch_paused:
-            raise ServiceError(
-                "Runtime is draining for an approved update",
-                status=503,
-                code="runtime_update_maintenance",
-            )
+        self.require_dispatch()
         self._active_organization_commands.add(command_id)
 
     async def release_organization_command(self, command_id: str) -> None:
@@ -292,7 +291,11 @@ class RuntimeUpdateService:
                 "generation": request["generation"],
                 "ready": all(probes.values()),
                 "probes": probes,
-                "installed": self._installed_identity(),
+                "installed": (
+                    incus_installed_identity()
+                    if target.get("kind") == "incus_image"
+                    else self._installed_identity()
+                ),
                 "profile_count": len(self.platform.repository._profile_dirs()),
                 "checked_at": iso(),
             }
@@ -321,14 +324,18 @@ class RuntimeUpdateService:
                 except RuntimeUpdateStorageError as error:
                     self._storage_error(error)
                 preserved = current["digest"] == checkpoint["manifest"]["digest"]
-                installed = self._installed_identity()
                 target = self._effective_target(request)
-                identity_matches = (
-                    installed["version"] == target["version"]
-                    and installed["source_commit"] == target["source_commit"]
-                    and installed["runtime_digest"] == target["runtime_digest"]
-                    and installed["data_schema"] >= target["data_schema"]
-                )
+                if target.get("kind") == "incus_image":
+                    installed = incus_installed_identity()
+                    identity_matches = installed == target
+                else:
+                    installed = self._installed_identity()
+                    identity_matches = (
+                        installed["version"] == target["version"]
+                        and installed["source_commit"] == target["source_commit"]
+                        and installed["runtime_digest"] == target["runtime_digest"]
+                        and installed["data_schema"] >= target["data_schema"]
+                    )
                 result = {
                     "operation_id": request["operation_id"],
                     "generation": request["generation"],
@@ -405,6 +412,16 @@ class RuntimeUpdateService:
     ) -> dict[str, Any]:
         self._authorize(update_token)
         async with self._lock, _UpdateCommand(self.platform.repository.data_dir):
+            # A response can be lost after the durable resume completed.
+            previous = self.repository.operation(str(request["operation_id"]))
+            completed = previous.get("steps", {}).get("resume")
+            if completed and not self.repository.maintenance():
+                if (
+                    previous.get("generation") != request["generation"]
+                    or previous.get("target") != request["target"]
+                ):
+                    self._conflict("Runtime resume identity does not match")
+                return completed
             self._validate_request(request, require_maintenance=True)
             operation = self.repository.operation(str(request["operation_id"]))
             verified = operation.get("steps", {}).get("post_verify", {}).get("verified") is True
@@ -414,9 +431,6 @@ class RuntimeUpdateService:
                     status=409,
                     code="runtime_update_not_verified",
                 )
-            await self._durable_io(self.repository.clear_maintenance)
-            self._maintenance = {}
-            self.platform.organization_connector.resume_dispatch()
             result = {
                 "operation_id": request["operation_id"],
                 "generation": request["generation"],
@@ -424,7 +438,13 @@ class RuntimeUpdateService:
                 "dispatch_paused": False,
                 "resumed_at": iso(),
             }
+            # Persist the authorized outcome first. If clearing maintenance or
+            # returning the response is interrupted, the same fenced request
+            # can finish safely without dispatching work twice.
             self._record(request, "resume", result)
+            await self._durable_io(self.repository.clear_maintenance)
+            self._maintenance = {}
+            self.platform.organization_connector.resume_dispatch()
             return result
 
     @staticmethod

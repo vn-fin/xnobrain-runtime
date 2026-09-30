@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -58,9 +61,7 @@ class RouterPinOverrideTests(TestCase):
     def test_codex_slug_is_legacy_and_router_pin_is_not(self):
         with _router_patches():
             self.assertTrue(
-                _legacy_pin_needs_normalize(
-                    {"provider": "codex", "model": "cx/gpt-5.6-luna"}
-                )
+                _legacy_pin_needs_normalize({"provider": "codex", "model": "cx/gpt-5.6-luna"})
             )
             self.assertFalse(
                 _legacy_pin_needs_normalize(
@@ -74,9 +75,7 @@ class RouterPinOverrideTests(TestCase):
             )
         with _router_patches(LLM_ROUTER_BASE_URL=""):
             self.assertFalse(
-                _legacy_pin_needs_normalize(
-                    {"provider": "codex", "model": "cx/gpt-5.6-luna"}
-                )
+                _legacy_pin_needs_normalize({"provider": "codex", "model": "cx/gpt-5.6-luna"})
             )
 
     def test_display_label_uses_connector_name(self):
@@ -86,7 +85,10 @@ class RouterPinOverrideTests(TestCase):
 
 class CronPinServiceTests(TestCase):
     def setUp(self):
-        self.service = CronService(repository=None, agents=_Agents())
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        repository = SimpleNamespace(data_dir=Path(temporary.name))
+        self.service = CronService(repository=repository, agents=_Agents())
         self.service._snapshot_store = lambda profile: None
         self.created = {
             "id": "job-1",
@@ -204,9 +206,7 @@ class CronPinServiceTests(TestCase):
             raise AssertionError(function)
 
         with patch.object(self.service, "_native", side_effect=native):
-            result = self.service.update_job(
-                "job-1", {"interval_minutes": 15}, "agent-1"
-            )
+            result = self.service.update_job("job-1", {"interval_minutes": 15}, "agent-1")
 
         schedule_update = next(
             item

@@ -16,6 +16,11 @@ from xnobrain.integrations.worker_cli import install_worker_agent
 
 
 class WorkerAccountingTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.activity_repository = SimpleNamespace(data_dir=Path(directory.name))
+
     async def test_native_worker_and_child_headers_keep_same_user_and_agent(self):
         class NativeAgent:
             def __init__(self, **kwargs):
@@ -48,7 +53,9 @@ class WorkerAccountingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(current_accounting())
 
     async def test_spawn_budget_failure_never_starts_process(self):
-        agents = SimpleNamespace(_agent_name=lambda name: "big-brother")
+        agents = SimpleNamespace(
+            _agent_name=lambda name: "big-brother", skill_usage_repository=self.activity_repository
+        )
         analytics = SimpleNamespace(require_execution_budget=AsyncMock(side_effect=RuntimeError()))
         spawner = KanbanWorkerSpawner(agents, analytics, asyncio.get_running_loop())
         with patch("xnobrain.integrations.kanban_workers.subprocess.Popen") as spawn:
@@ -63,6 +70,7 @@ class WorkerAccountingTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             profile = Path(directory)
             agents = SimpleNamespace(
+                skill_usage_repository=self.activity_repository,
                 _agent_name=lambda name: "big-brother",
                 profile_path=lambda name: profile,
                 _ensure_router_profile=Mock(),

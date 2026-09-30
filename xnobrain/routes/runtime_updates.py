@@ -1,6 +1,11 @@
 """Private typed Runtime update lifecycle endpoints."""
 
 from ..models import (
+    RuntimeRolloutDrain,
+    RuntimeRolloutPostVerify,
+    RuntimeRolloutPreflight,
+    RuntimeRolloutReadiness,
+    RuntimeRolloutRequest,
     RuntimeUpdateCheckpoint,
     RuntimeUpdateDrain,
     RuntimeUpdatePostVerify,
@@ -61,4 +66,24 @@ ROUTES = (
         RuntimeUpdateRequest,
         tags=("Runtime updates",),
     ),
+)
+
+# The same maintenance service owns both adapters. The original OCI contract
+# remains strict; only these explicitly versioned routes accept Incus targets.
+ROUTES += tuple(
+    route(
+        "POST",
+        "/system/update/v2/" + action,
+        operation,
+        model,
+        tags=("Runtime updates",),
+    )
+    for action, operation, model in (
+        ("preflight", "runtime_update_preflight", RuntimeRolloutPreflight),
+        ("drain", "runtime_update_drain", RuntimeRolloutDrain),
+        ("checkpoint", "runtime_update_checkpoint", RuntimeRolloutRequest),
+        ("readiness", "runtime_update_readiness", RuntimeRolloutReadiness),
+        ("post-verify", "runtime_update_post_verify", RuntimeRolloutPostVerify),
+        ("resume", "runtime_update_resume", RuntimeRolloutRequest),
+    )
 )

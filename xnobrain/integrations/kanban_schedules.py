@@ -277,7 +277,12 @@ def release_due_schedules(conn: Any, *, board: str, now: int | None = None) -> l
 
 
 async def dispatcher_loop(
-    *, interval_seconds: float = 15.0, on_tick=None, dispatch_allowed=None, spawn_fn=None
+    *,
+    interval_seconds: float = 15.0,
+    on_tick=None,
+    dispatch_allowed=None,
+    spawn_fn=None,
+    activity_root=None,
 ) -> None:
     """Run Hermes' supported dispatcher tick inside the host FastAPI process.
 
@@ -292,18 +297,33 @@ async def dispatcher_loop(
                 continue
 
             def tick():
-                kb = _module()
-                for board in kb.list_boards(include_archived=False):
-                    slug = str(board.get("slug") or "default")
-                    with connection(slug) as conn:
-                        release_due_schedules(conn, board=slug)
-                        kb.dispatch_once(conn, board=slug, spawn_fn=spawn_fn)
+                from contextlib import nullcontext
 
-            await asyncio.to_thread(tick)
-            if on_tick is not None:
-                result = on_tick()
-                if inspect.isawaitable(result):
-                    await result
+                from ..repositories.runtime_update_gate import WorkspaceActivity
+
+                with WorkspaceActivity(activity_root) if activity_root else nullcontext():
+                    kb = _module()
+                    for board in kb.list_boards(include_archived=False):
+                        slug = str(board.get("slug") or "default")
+                        with connection(slug) as conn:
+                            release_due_schedules(conn, board=slug)
+                            from .kanban_admission import dispatch_scope
+
+                            with dispatch_scope(kb, activity_root, slug):
+                                kb.dispatch_once(conn, board=slug, spawn_fn=spawn_fn)
+
+            from contextlib import nullcontext
+
+            from ..repositories.runtime_update_gate import WorkspaceActivity
+
+            # The thread also owns its lease: cancellation of this coroutine
+            # must not report idle while dispatch_once is still executing.
+            with WorkspaceActivity(activity_root) if activity_root else nullcontext():
+                await asyncio.to_thread(tick)
+                if on_tick is not None:
+                    result = on_tick()
+                    if inspect.isawaitable(result):
+                        await result
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # keep local manual Kanban usable if worker runtime is degraded

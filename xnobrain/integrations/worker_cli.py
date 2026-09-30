@@ -77,6 +77,10 @@ def main():
 
     from hermes_cli.main import main as native_main
 
+    from .run_admission import require_admitted
+
+    require_admitted()
+
     outcome = None
     if accounting_enabled():
         binding = accounting_binding(os.environ["RUNTIME_EXECUTION_AGENT_ID"])
@@ -98,7 +102,10 @@ def main():
 
 if __name__ == "__main__":
     try:
-        main()
+        from .rebalance_cli import cli_activity
+
+        with cli_activity():
+            main()
     except Exception as error:
         # Native/provider exceptions may contain request data. Do not echo them.
         print("Accounted worker execution failed: " + type(error).__name__, file=sys.stderr)

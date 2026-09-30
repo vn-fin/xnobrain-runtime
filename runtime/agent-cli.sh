@@ -12,6 +12,12 @@ if [[ -f "$script_dir/link-native-profiles.sh" ]]; then
   hermes="$script_dir/../.tools/hermes-agent/venv/bin/hermes"
 fi
 
+# Hold a kernel activity lease before profile linking or any native command.
+# Children inherit the same open descriptor; completion never relies on a PID.
+if [[ -z "${XNOBRAIN_ACTIVITY_FD:-}" && -z "${RUNTIME_WORKSPACE_ID:-}" ]]; then
+  exec "$(dirname "$hermes")/python" -m xnobrain.integrations.rebalance_cli bash "${BASH_SOURCE[0]}" "$@"
+fi
+
 export HERMES_ROOT_PROFILE="${RUNTIME_HERMES_ROOT_PROFILE:-${RUNTIME_HERMES_HOME:-${HERMES_ROOT_PROFILE:-${HERMES_HOME:-}}}}"
 export HERMES_PROFILES_ROOT="${RUNTIME_HERMES_PROFILES_ROOT:-${HERMES_PROFILES_ROOT:-}}"
 
@@ -29,7 +35,11 @@ for argument in "$@"; do
 done
 if [[ "$help" == true ]]; then link_args=(); fi
 if [[ -n "$HERMES_PROFILES_ROOT" || -n "${RUNTIME_HERMES_HOME:-}" ]]; then
-  bash "$linker" "${link_args[@]}"
+  if [[ -n "${RUNTIME_WORKSPACE_ID:-}" && -z "${XNOBRAIN_ACTIVITY_FD:-}" ]]; then
+    "$(dirname "$hermes")/python" -m xnobrain.integrations.rebalance_cli bash "$linker" "${link_args[@]}"
+  else
+    bash "$linker" "${link_args[@]}"
+  fi
 fi
 
 # The upstream CLI derives its root from HERMES_HOME, not PROFILES_ROOT.
@@ -64,4 +74,7 @@ elif [[ -n "$key_file" ]]; then
   export RUNTIME_LLM_API_KEY
 fi
 
+if [[ -n "${RUNTIME_WORKSPACE_ID:-}" ]]; then
+  exec "$(dirname "$hermes")/python" -m xnobrain.integrations.capacity_cli "$@"
+fi
 exec "$hermes" "$@"
