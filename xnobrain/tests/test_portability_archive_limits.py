@@ -63,6 +63,22 @@ class ArchiveLimitTests(unittest.TestCase):
             self.service.inspect_file(path)
         self.assertEqual(rejected.exception.code, "invalid_bundle")
 
+    def test_upload_failure_logs_stage_without_archive_filename(self):
+        payload = b"invalid ZIP content"
+        with self.assertLogs("xnobrain.services.portability", level="INFO") as captured:
+            metadata = self.service.start_upload(
+                {"size": len(payload), "filename": "private-profile.zip"}
+            )
+            upload_id = metadata["upload_id"]
+            self.service.put_upload_part(upload_id, 0, payload)
+            with self.assertRaises(StoreError):
+                self.service.complete_upload(upload_id, {})
+        messages = "\n".join(captured.output)
+        self.assertIn(f"upload_id={upload_id}", messages)
+        self.assertIn("stage=preview", messages)
+        self.assertIn("error_code=invalid_bundle", messages)
+        self.assertNotIn("private-profile.zip", messages)
+
     def test_import_accepts_bundle_above_previous_twenty_thousand_limit(self):
         path = self.bundle(20_001)
         archive, files, _ = self.service._validated_archive_file(path)
