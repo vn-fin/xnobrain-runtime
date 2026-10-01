@@ -193,19 +193,9 @@ class ProfilePresetTests(unittest.TestCase):
         with patch.object(preset, "MAX_EXPANDED", 1), self.assertRaises(preset.PresetError):
             preset.install(self.output, preset.sha256(self.output), self.root, self.profiles)
 
-    def test_existing_volume_guard_precedes_seed(self):
+    def test_workspace_boot_does_not_install_preset(self):
         script = (MODULE_PATH.parents[2] / "scripts/prepare-service-data.sh").read_text()
-        self.assertLess(
-            script.index(".xnobrain-volume-initialized"),
-            script.index("workspace_profile_preset.py"),
-        )
-        self.assertLess(
-            script.index("rollout-preserve-data"), script.index("workspace_profile_preset.py")
-        )
-        self.assertLess(
-            script.index("workspace_profile_preset.py"),
-            script.index('touch "${RUNTIME_DATA_VOLUME_PATH}'),
-        )
+        self.assertNotIn("workspace_profile_preset.py", script)
 
 
 class PresetDownloadPolicyTests(unittest.TestCase):
