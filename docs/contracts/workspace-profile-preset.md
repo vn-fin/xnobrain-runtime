@@ -1,5 +1,9 @@
 # Workspace profile preset v1
 
+> Historical contract: workspace creation no longer passes or installs a
+> profile preset. The preparation command remains available for manually
+> producing an archive; the first-boot workflow below is inactive.
+
 Control may pin an administrator-prepared S3 object and its SHA-256 in a new
 workspace provisioning request. A fresh, short-lived HTTPS download URL is
 generated for each attempt and passed privately as `RUNTIME_PROFILE_PRESET_URL`
