@@ -5,6 +5,16 @@ workspace provisioning request. A fresh, short-lived HTTPS download URL is
 generated for each attempt and passed privately as `RUNTIME_PROFILE_PRESET_URL`
 with `RUNTIME_PROFILE_PRESET_SHA256`. No S3 credentials enter the guest.
 
+Control may alternatively pass a pinned direct source URL, selected using
+`CONTROL_WORKSPACE_PROFILE_PRESET_SOURCE_URL` plus the same SHA256. HTTPS and
+literal RFC1918 IPv4 HTTP addresses are supported; public HTTP, localhost,
+link-local targets and embedded credentials are rejected. HTTP sources cannot
+carry query strings, bypass proxy environment variables and only follow redirects
+on the same origin. HTTPS redirects cannot downgrade to HTTP. This path needs
+no S3 and uses the same checksum, archive validation, atomic installation and
+first-boot markers. Private HTTP is suitable only for shared administrator
+presets on a trusted internal network, not private user data.
+
 `scripts/prepare-service-data.sh` installs the preset before the API starts and
 before marking the persistent volume initialized. Initialized volumes and fleet
 rollout candidates skip seeding. Existing profiles are never overwritten; a

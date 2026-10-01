@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -165,20 +166,57 @@ def sync_tree(root: Path) -> None:
             os.close(descriptor)
 
 
-class HTTPSOnly(urllib.request.HTTPRedirectHandler):
+def valid_download_url(url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        if (
+            not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.fragment
+            or any(c in url for c in "\r\n\x00")
+        ):
+            return False
+        if parsed.scheme == "https":
+            return True
+        address = ipaddress.IPv4Address(parsed.hostname)
+        return (
+            parsed.scheme == "http"
+            and not parsed.query
+            and any(
+                address in ipaddress.IPv4Network(network)
+                for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+            )
+        )
+    except ValueError:
+        return False
+
+
+class PresetRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if urllib.parse.urlsplit(newurl).scheme != "https":
-            raise PresetError("insecure preset redirect")
+        original = urllib.parse.urlsplit(req.full_url)
+        target = urllib.parse.urlsplit(newurl)
+        if (
+            not valid_download_url(newurl)
+            or (original.scheme == "https" and target.scheme != "https")
+            or (
+                original.scheme == "http"
+                and (original.scheme, original.netloc) != (target.scheme, target.netloc)
+            )
+        ):
+            raise PresetError("invalid preset redirect")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def download(url: str, destination: Path) -> None:
-    parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
-        raise PresetError("preset requires HTTPS")
+    if not valid_download_url(url):
+        raise PresetError("preset requires HTTPS or private IPv4 HTTP")
     deadline = time.monotonic() + 900
     total = 0
-    opener = urllib.request.build_opener(HTTPSOnly())
+    handlers = [PresetRedirect()]
+    if urllib.parse.urlsplit(url).scheme == "http":
+        handlers.append(urllib.request.ProxyHandler({}))
+    opener = urllib.request.build_opener(*handlers)
     try:
         with opener.open(url, timeout=30) as response, destination.open("xb") as writer:
             while block := response.read(1024 * 1024):

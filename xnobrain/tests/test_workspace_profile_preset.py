@@ -167,5 +167,41 @@ class ProfilePresetTests(unittest.TestCase):
         )
 
 
+class PresetDownloadPolicyTests(unittest.TestCase):
+    def test_private_http_and_https(self):
+        for url in (
+            "http://10.10.90.133:19093/preset.zip",
+            "http://172.16.0.1/preset.zip",
+            "http://192.168.1.2/preset.zip",
+            "https://objects.example/preset?signature=secret",
+        ):
+            self.assertTrue(preset.valid_download_url(url))
+        for url in (
+            "http://public.example/preset.zip",
+            "http://8.8.8.8/preset.zip",
+            "http://127.0.0.1/preset.zip",
+            "http://169.254.169.254/preset.zip",
+            "http://10.0.0.1/a?token=secret",
+            "file:///tmp/preset.zip",
+            "https://user:secret@example.com/preset.zip",
+            "http://10.0.0.1/a\nX=1",
+        ):
+            self.assertFalse(preset.valid_download_url(url))
+
+    def test_redirects_preserve_transport_boundary(self):
+        handler = preset.PresetRedirect()
+        for source, target in (
+            ("https://s3.example/a", "http://10.0.0.1/a"),
+            ("http://10.0.0.1/a", "http://10.0.0.2/a"),
+            ("http://10.0.0.1/a", "https://external.example/a"),
+        ):
+            request = preset.urllib.request.Request(source)
+            with self.assertRaises(preset.PresetError):
+                handler.redirect_request(request, None, 302, "Found", {}, target)
+        request = preset.urllib.request.Request("http://10.0.0.1/a")
+        redirected = handler.redirect_request(request, None, 302, "Found", {}, "http://10.0.0.1/b")
+        self.assertEqual(redirected.full_url, "http://10.0.0.1/b")
+
+
 if __name__ == "__main__":
     unittest.main()
