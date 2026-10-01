@@ -1151,6 +1151,12 @@ replicas must route to the same exclusive workspace owner; separate active-activ
 Runtime disks are unsupported. Preserve the database and staged files together
 when relocating or restoring a workspace.
 
+Task status/list reads and idempotency lookups do not reserve SQLite's writer
+lock. Worker heartbeats retry temporary SQLite busy/locked errors while the
+persisted claim remains valid; expiry or a changed owner/fence still prevents
+renewal and publication. Heartbeat contention and claim loss emit task IDs and
+attempt counts without database paths or user content.
+
 Import keys are retained with task receipts. A FAILED replay does not restart the
 import. `import_recovery_required` preserves pinned inputs and journal evidence;
 do not delete the database or resubmit with a fresh key to bypass it. Accepted

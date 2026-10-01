@@ -11,7 +11,7 @@ from unittest.mock import patch
 import jlogger as jlog
 from opentelemetry import trace
 
-from xnobrain.logging_config import SERVICE_NAME, JLoggerHandler, configure_logging
+from xnobrain.logging_config import JLoggerHandler, configure_logging
 
 
 class LoggingConfigTests(unittest.TestCase):
@@ -91,6 +91,25 @@ class LoggingConfigTests(unittest.TestCase):
 
         rendered = json.loads(self.output.getvalue())
         self.assertNotIn("authorization", rendered)
+
+    def test_portability_claim_metadata_excludes_private_fields(self):
+        record = logging.makeLogRecord(
+            {
+                "name": "xnobrain.portability",
+                "levelno": logging.WARNING,
+                "msg": "Portability heartbeat storage busy",
+                "task_id": "task-test",
+                "attempt": 2,
+                "lease_token": "SECRET",
+                "database_path": "PRIVATE",
+            }
+        )
+        JLoggerHandler().emit(record)
+        rendered = json.loads(self.output.getvalue())
+        self.assertEqual(rendered["task_id"], "task-test")
+        self.assertEqual(rendered["attempt"], 2)
+        self.assertNotIn("SECRET", self.output.getvalue())
+        self.assertNotIn("PRIVATE", self.output.getvalue())
 
     def test_third_party_otel_warning_is_json_with_safe_error_category(self):
         with patch.dict("os.environ", {"DEVELOPMENT_ENVIRONMENT": "local"}, clear=True):
