@@ -1,11 +1,14 @@
 """Worker lifecycle tests with real persistent claims and blocked archive work."""
 
 import asyncio
+import sqlite3
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from xnobrain.repositories.base import StoreError
 from xnobrain.repositories.portability_tasks import PortabilityTaskStore
 from xnobrain.services.portability_worker import PortabilityWorker
 
@@ -59,6 +62,88 @@ class PortabilityWorkerTests(unittest.IsolatedAsyncioTestCase):
         release.set()
         await asyncio.wait_for(stopping, 3)
         await self.wait_status(task, "COMPLETED")
+
+    async def test_transient_busy_heartbeat_keeps_the_same_claim(self):
+        task = self.admit()
+        release = threading.Event()
+        renewed = threading.Event()
+        original_heartbeat = self.store.heartbeat
+        calls = 0
+
+        def heartbeat(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                busy = sqlite3.OperationalError("private database path")
+                busy.sqlite_errorcode = sqlite3.SQLITE_BUSY
+                raise StoreError("Storage unavailable", code="task_store_unavailable") from busy
+            valid = original_heartbeat(*args, **kwargs)
+            if valid:
+                renewed.set()
+            return valid
+
+        def execute(claim):
+            release.wait(3)
+            return {"export_id": claim["id"]}
+
+        worker = PortabilityWorker(self.store, execute, lease_seconds=0.6, poll_seconds=0.01)
+        with patch.object(self.store, "heartbeat", side_effect=heartbeat):
+            with self.assertLogs("xnobrain.services.portability_worker", level="WARNING") as logs:
+                await worker.start()
+                try:
+                    self.assertTrue(await asyncio.to_thread(renewed.wait, 1.5))
+                    self.assertIsNone(self.store.claim("competitor"))
+                finally:
+                    release.set()
+                    await worker.shutdown()
+        row = await self.wait_status(task, "COMPLETED")
+        self.assertEqual(row["attempts"], 1)
+        self.assertNotIn("private database path", " ".join(logs.output))
+
+    async def test_busy_heartbeat_cannot_renew_after_takeover(self):
+        task = self.admit()
+        release = threading.Event()
+        entered = threading.Event()
+        original_heartbeat = self.store.heartbeat
+        replacement = None
+        calls = 0
+
+        def heartbeat(*args, **kwargs):
+            nonlocal calls, replacement
+            calls += 1
+            if calls == 1:
+                with self.store.transaction() as db:
+                    db.execute(
+                        "UPDATE portability_tasks SET lease_until=0 WHERE id=?", (task["id"],)
+                    )
+                replacement = self.store.claim("replacement")
+                busy = sqlite3.OperationalError("busy")
+                busy.sqlite_errorcode = sqlite3.SQLITE_BUSY
+                raise StoreError("Storage unavailable", code="task_store_unavailable") from busy
+            return original_heartbeat(*args, **kwargs)
+
+        def execute(_claim):
+            entered.set()
+            release.wait(3)
+            return {"stale": True}
+
+        worker = PortabilityWorker(self.store, execute, lease_seconds=0.3, poll_seconds=0.01)
+        with patch.object(self.store, "heartbeat", side_effect=heartbeat):
+            await worker.start()
+            try:
+                self.assertTrue(await asyncio.to_thread(entered.wait, 1))
+                async with asyncio.timeout(2):
+                    while calls < 2:
+                        await asyncio.sleep(0.01)
+            finally:
+                release.set()
+                await worker.shutdown()
+        row = self.store.get(task["id"], scope="workspace", actor="actor")
+        self.assertEqual(row["status"], "PROCESSING")
+        self.assertEqual(row["lease_owner"], "replacement")
+        self.assertTrue(
+            self.store.finish(task["id"], "replacement", replacement["fence"], result={})
+        )
 
     async def test_success_callback_runs_only_after_the_task_is_committed(self):
         task = self.admit("IMPORT")
