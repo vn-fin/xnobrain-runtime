@@ -15,6 +15,8 @@ _SAFE_RECORD_FIELDS = (
     "event",
     "action",
     "operation_id",
+    "task_id",
+    "attempt",
     "workspace_id",
     "run_id",
     "fence",

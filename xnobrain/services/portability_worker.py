@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import errno
 import logging
+import sqlite3
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -102,9 +103,10 @@ class PortabilityWorker:
         lost = asyncio.Event()
 
         async def renew() -> None:
+            delay = self.lease_seconds / 3
             while not completed.is_set():
                 try:
-                    await asyncio.wait_for(completed.wait(), timeout=self.lease_seconds / 3)
+                    await asyncio.wait_for(completed.wait(), timeout=delay)
                     return
                 except TimeoutError:
                     pass
@@ -116,11 +118,41 @@ class PortabilityWorker:
                         claim["fence"],
                         lease_seconds=self.lease_seconds,
                     )
-                except Exception:
+                except Exception as cause:
+                    storage_error = cause.__cause__
+                    if (
+                        isinstance(cause, StoreError)
+                        and cause.code == "task_store_unavailable"
+                        and isinstance(storage_error, sqlite3.Error)
+                        and getattr(storage_error, "sqlite_errorcode", 0) & 0xFF
+                        in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+                    ):
+                        # A busy database does not prove ownership was lost.
+                        # Retry promptly; heartbeat's persisted lease/fence check
+                        # still rejects expiry or takeover before renewal.
+                        logger.warning(
+                            "Portability heartbeat storage busy",
+                            extra={"task_id": claim["id"], "attempt": claim["attempts"]},
+                        )
+                        delay = min(1.0, self.lease_seconds / 10)
+                        continue
+                    logger.warning(
+                        "Portability heartbeat failed",
+                        extra={
+                            "task_id": claim["id"],
+                            "attempt": claim["attempts"],
+                            "error_type": type(cause).__name__,
+                        },
+                    )
                     valid = False
                 if not valid:
+                    logger.warning(
+                        "Portability task claim lost",
+                        extra={"task_id": claim["id"], "attempt": claim["attempts"]},
+                    )
                     lost.set()
                     return
+                delay = self.lease_seconds / 3
 
         heartbeat = asyncio.create_task(renew(), name="xnobrain-portability-heartbeat")
         try:

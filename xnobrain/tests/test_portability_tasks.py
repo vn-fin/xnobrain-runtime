@@ -3,7 +3,9 @@
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 from xnobrain.repositories.base import StoreError
 from xnobrain.repositories.portability_tasks import PortabilityTaskStore
@@ -94,6 +96,39 @@ class PortabilityTaskStoreTests(unittest.TestCase):
         with self.assertRaises(StoreError) as caught:
             self.store.get(task["id"], scope="workspace", actor="other")
         self.assertEqual(caught.exception.status, 404)
+
+    def test_status_reads_do_not_compete_for_the_writer_lock(self):
+        task, _ = self.admit()
+        # A separate connection holds a reserved write lock, as a heartbeat
+        # would. Status polling must still read the last committed task.
+        with self.store.transaction():
+            row = self.store.get(task["id"], scope="workspace", actor="actor")
+            page = self.store.list_tasks(scope="workspace", actor="actor")
+            replay = self.store.replay(
+                scope="workspace",
+                actor="actor",
+                kind="IMPORT",
+                key="request-1",
+                fingerprint=task["fingerprint"],
+            )
+        self.assertEqual(row["id"], task["id"])
+        self.assertEqual(page["items"][0]["id"], task["id"])
+        self.assertEqual(replay["id"], task["id"])
+
+    def test_heartbeat_checks_expiry_after_acquiring_writer_lock(self):
+        transaction = self.store.transaction
+        with patch("xnobrain.repositories.portability_tasks.time.time", return_value=100) as clock:
+            task, _ = self.admit()
+            claim = self.store.claim("worker", lease_seconds=10)
+
+            @contextmanager
+            def delayed_transaction():
+                with transaction() as db:
+                    clock.return_value = 111
+                    yield db
+
+            with patch.object(self.store, "transaction", delayed_transaction):
+                self.assertFalse(self.store.heartbeat(task["id"], "worker", claim["fence"]))
 
     def test_replay_is_allowed_when_queue_full(self):
         self.store.capacity = 1
