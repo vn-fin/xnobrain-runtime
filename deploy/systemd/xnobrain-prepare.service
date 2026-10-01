@@ -8,6 +8,7 @@ PartOf=xnobrain.target
 
 [Service]
 Type=oneshot
+TimeoutStartSec=30min
 User=root
 Group=root
 EnvironmentFile=/etc/xnobrain/xnobrain.env
