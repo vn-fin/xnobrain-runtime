@@ -23,12 +23,6 @@ download, validate, or install a configured preset fails preparation rather than
 publishing an incomplete workspace as ready. This does not run or cancel existing
 portability import jobs.
 
-On first boot, the installer creates a missing root `config.yaml` from the
-packaged `root/profile-template/config.yaml` before extracting profiles. The
-file is published atomically with private permissions; an existing workspace
-configuration always wins. A missing template fails preparation before profile
-extraction. This allows preset installation before the API has ever started.
-
 The prepared ZIP has `preset.json` (`format: xnobrain-profile-preset`, `version: 1`,
 `profiles: [id, ...]`) and `profiles/<id>/...`. It is an administrator-distributed
 template, not a general upload or full account backup. Prepare it once with:

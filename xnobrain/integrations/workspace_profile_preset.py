@@ -228,35 +228,6 @@ def download(url: str, destination: Path) -> None:
         raise PresetError("preset download unavailable") from None
 
 
-def ensure_root_config(root: Path) -> None:
-    """Initialize first-boot defaults without replacing workspace configuration."""
-    config = root / "config.yaml"
-    if root.is_symlink() or not root.is_dir() or config.is_symlink():
-        raise PresetError("invalid root configuration path")
-    if config.is_file():
-        return
-    template_dir = root / "profile-template"
-    template = template_dir / "config.yaml"
-    if template_dir.is_symlink() or template.is_symlink() or not template.is_file():
-        raise PresetError("workspace configuration template unavailable")
-    # Publish a complete file atomically. A concurrently created config wins.
-    with tempfile.NamedTemporaryFile(prefix=".preset-config-", dir=root) as temporary:
-        with template.open("rb") as source:
-            shutil.copyfileobj(source, temporary)
-        temporary.flush()
-        os.fsync(temporary.fileno())
-        try:
-            os.link(temporary.name, config)
-        except FileExistsError:
-            if config.is_symlink() or not config.is_file():
-                raise PresetError("invalid root configuration path") from None
-        descriptor = os.open(root, os.O_RDONLY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-
-
 def install(archive_pathname: Path, expected: str, root: Path, profiles: Path) -> None:
     if (
         not DIGEST.fullmatch(expected)
@@ -295,7 +266,6 @@ def install(archive_pathname: Path, expected: str, root: Path, profiles: Path) -
                 or not allowed_file(parts[2:])
             ):
                 raise PresetError("unexpected preset payload")
-        ensure_root_config(root)
         with tempfile.TemporaryDirectory(prefix=".preset-stage-", dir=profiles) as temporary:
             stage = Path(temporary)
             for name in ids:

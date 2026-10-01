@@ -73,47 +73,6 @@ class ProfilePresetTests(unittest.TestCase):
             preset.install(self.output, "0" * 64, self.root, self.profiles)
         self.assertEqual(list(self.profiles.iterdir()), [])
 
-    def test_fresh_boot_initializes_config_from_packaged_template(self):
-        (self.root / "config.yaml").unlink()
-        template = self.root / "profile-template"
-        template.mkdir()
-        defaults = "model:\n  default: auto\napproval_mode: ask\n"
-        (template / "config.yaml").write_text(defaults)
-        preset.install(self.output, self.build(), self.root, self.profiles)
-        self.assertEqual((self.root / "config.yaml").read_text(), defaults)
-        self.assertEqual((self.profiles / "cfa-review/config.yaml").read_text(), defaults)
-        self.assertEqual(stat.S_IMODE((self.root / "config.yaml").stat().st_mode), 0o600)
-        self.assertTrue((self.profiles / preset.MARKER).is_file())
-        self.assertFalse(list(self.root.glob(".preset-config-*")))
-
-    def test_existing_config_wins_over_packaged_template(self):
-        template = self.root / "profile-template"
-        template.mkdir()
-        (template / "config.yaml").write_text("packaged defaults")
-        (self.root / "config.yaml").write_text("workspace custom configuration")
-        preset.install(self.output, self.build(), self.root, self.profiles)
-        for config in (self.root / "config.yaml", self.profiles / "cfa-review/config.yaml"):
-            self.assertEqual(config.read_text(), "workspace custom configuration")
-
-    def test_missing_template_fails_before_profile_extraction(self):
-        (self.root / "config.yaml").unlink()
-        digest = self.build()
-        with self.assertRaisesRegex(preset.PresetError, "template unavailable"):
-            preset.install(self.output, digest, self.root, self.profiles)
-        self.assertFalse((self.root / "config.yaml").exists())
-        self.assertEqual(list(self.profiles.iterdir()), [])
-
-    def test_root_config_symlink_is_rejected(self):
-        (self.root / "config.yaml").unlink()
-        outside = self.base / "outside.yaml"
-        outside.write_text("outside configuration")
-        (self.root / "config.yaml").symlink_to(outside)
-        digest = self.build()
-        with self.assertRaises(preset.PresetError):
-            preset.install(self.output, digest, self.root, self.profiles)
-        self.assertEqual(list(self.profiles.iterdir()), [])
-        self.assertEqual(outside.read_text(), "outside configuration")
-
     def test_script_permissions_and_interrupted_install(self):
         with zipfile.ZipFile(self.source, "a") as archive:
             entry = zipfile.ZipInfo("profiles/cfa-review/skills/research/run.sh")
