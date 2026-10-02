@@ -1,5 +1,11 @@
 # HTTP API
 
+`PATCH /xnobrain/api/runtime/v1/agents-configs/{agent_id}` persists settings
+and returns the effective configuration in the existing API envelope. Response
+assembly does not load agent skills, memory, or soul. Chat model selectors can
+consume this response directly without a subsequent agent-detail GET; sends
+must wait for a pending configuration save to succeed.
+
 FastAPI generates the authoritative interactive contract at
 `/xnobrain/api/runtime/swagger_docs` and JSON schema at `/xnobrain/api/runtime/openapi.json`.
 Hermes CLI native routes remain available under `/api`; XNOBrain's
