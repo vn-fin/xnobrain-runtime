@@ -864,6 +864,21 @@ class LLMRouterConfigTests(unittest.TestCase):
 
 
 class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
+    def test_config_only_update_skips_agent_details_and_persists_selection(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(root_profile=root / "root", profiles_root=root / "profiles")
+            created, _ = manager.create_agent({"display_name": "Config only"})
+            name = created["name"]
+            with patch.object(manager, "describe_agent", side_effect=AssertionError("Full read")):
+                updated = manager.update_config(
+                    name, {"provider": "openai", "model": "auto"}, config_only=True
+                )
+                restored = manager.get_agent_config(name)
+            self.assertEqual(updated, {"config": restored})
+            self.assertEqual(restored["provider"], "openai")
+            self.assertEqual(restored["model"], "auto")
+
     def test_agent_config_preserves_provider_auto_scope(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -485,7 +485,16 @@ class AgentOperationsMixin:
             shutil.rmtree(profile_dir)
         return {"object": "xnobrain.agent_delete", "agent": name, "deleted": True}
 
-    def update_config(self, raw_name: Any, body: Mapping[str, Any]) -> dict[str, Any]:
+    def get_agent_config(self, raw_name: Any) -> dict[str, Any]:
+        """Read effective settings without loading skills, memory, or soul."""
+        profile_dir = self._require_profile(self._agent_name(raw_name))
+        return self._effective_config(
+            self._read_config(profile_dir), self._read_metadata(profile_dir)
+        )
+
+    def update_config(
+        self, raw_name: Any, body: Mapping[str, Any], *, config_only: bool = False
+    ) -> dict[str, Any]:
         name = self._agent_name(raw_name)
         profile_dir = self._require_profile(name)
         config_path = profile_dir / "config.yaml"
@@ -625,4 +634,6 @@ class AgentOperationsMixin:
             self._write_text(profile_dir / "SOUL.md", body["soul"])
 
         self._write_yaml_atomic(config_path, config)
+        if config_only:
+            return {"config": self._effective_config(config, self._read_metadata(profile_dir))}
         return self.describe_agent(name)

@@ -519,13 +519,13 @@ class AgentsServiceMixin:
                 self.config.update_config(
                     {"config": {"checkpoints": {"enabled": bool(checkpoint_value)}}}
                 )
-            result = self.agents.describe_agent(agent_id)["config"]
+            result = self.agents.get_agent_config(agent_id)
         else:
             profile = self.repository.profile_path(agent_id)
             path = profile / "config.yaml"
             if path.is_file():
                 self.repository.snapshot(agent_id, "config", "config", path.read_bytes())
-            result = self.agents.update_config(agent_id, translated)["config"]
+            result = self.agents.update_config(agent_id, translated, config_only=True)["config"]
         self._cache.invalidate("agents")
         return result
 
