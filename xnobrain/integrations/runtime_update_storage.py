@@ -180,14 +180,23 @@ class RuntimeUpdateStorage:
                 digest.update(chunk)
         return digest.hexdigest()
 
-    @staticmethod
-    def _walk_files(root: Path) -> Iterable[Path]:
+    def _walk_files(self, root: Path) -> Iterable[Path]:
         for current, directories, files in os.walk(root, followlinks=False):
             current_path = Path(current)
             safe_directories = []
             for name in sorted(directories):
                 path = current_path / name
                 if path.is_symlink():
+                    # Hermes links its root profile to the separately inspected
+                    # profiles directory. Do not traverse or hash that alias twice.
+                    if (
+                        path == self.root_profile / "profiles"
+                        and self.profiles_root != self.root_profile
+                        and self.profiles_root.is_relative_to(self.data_anchor)
+                        and path.resolve() == self.profiles_root
+                        and self.profiles_root.is_dir()
+                    ):
+                        continue
                     raise RuntimeUpdateStorageError(
                         "durable data contains an unsafe symbolic link",
                         code="runtime_update_unsafe_data",
