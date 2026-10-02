@@ -1244,6 +1244,10 @@ conversation preference. `PATCH` accepts `reasoning_effort` (null to inherit, or
 The hidden `/conversations` alias supports the same resource. Existing session
 ownership checks apply, including a recheck after model metadata lookup.
 
+Reasoning reads use the lightweight effective agent configuration without loading
+agent skills, memory, or soul. GET reads this configuration once and reuses it for
+the inherited preference and model capability check.
+
 Conflicting revisions return 409; unsupported explicit levels return 422;
 required metadata outages return 503. Changing this preference does not write
 agent configuration or alter an active run. Run admission snapshots the setting;
