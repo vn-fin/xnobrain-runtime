@@ -1406,3 +1406,22 @@ Private queue intents and dispatch journals live in `agent-run-admission.sqlite`
 (0600). Restart restores waiting input. Ambiguous started work is reconciled but
 never blindly replayed. Terminal local native receipts retain replay tombstones;
 deleting/replacing schedules/tasks releases their unused waiting admissions.
+
+### Reasoning and model catalog timing diagnostics
+
+Runtime emits INFO events with `event=reasoning_timing`. Join nested events by
+`diagnostic_id`; existing trace/span IDs are retained when available.
+`duration_ms` measures wall time, including time waiting to resume on the event
+loop. It does not by itself prove that Router processing caused a delay.
+
+Phases include `session.reasoning_total`, `session.require`, `session.config`,
+`session.snapshot`, `provider.reasoning_total`, `catalog.total`,
+`catalog.reasoning`, `catalog.cache_hit`, `catalog.cache_miss`,
+`router.models.credentials`, `router.models.headers`, `router.models.body`,
+and `router.models.total`. Header timing includes connection establishment and
+waiting for response headers; body timing includes download and JSON decoding.
+Totals include nested phases and must not be summed with them. Failures and
+cancellation carry only an exception class in `error`.
+These events contain no credentials, model payloads, chat content, or user IDs.
+The model reasoning endpoint still fetches the catalog each time; session
+reasoning retains its existing 30-second catalog cache.

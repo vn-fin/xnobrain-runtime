@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from xnobrain.diagnostic_timing import timed
+
 from ..integrations import LLMRouterAPIError
 from ..integrations.provider_models import default_reasoning_level
 from .base import ServiceError
@@ -81,7 +83,9 @@ class ProvidersServiceMixin:
             "models": [
                 {
                     "id": item["id"],
-                    "reasoning": [level for level in item.get("reasoning_levels", []) if level != "ultra"],
+                    "reasoning": [
+                        level for level in item.get("reasoning_levels", []) if level != "ultra"
+                    ],
                     "default_reasoning": default_reasoning_level(
                         level for level in item.get("reasoning_levels", []) if level != "ultra"
                     ),
@@ -91,6 +95,7 @@ class ProvidersServiceMixin:
             ],
         }
 
+    @timed("provider.reasoning_total")
     async def provider_model_reasoning(self, provider: str, model: str) -> dict[str, Any]:
         catalog = await self.provider_models(provider)
         current = next(

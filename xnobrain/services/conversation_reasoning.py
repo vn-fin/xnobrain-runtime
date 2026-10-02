@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from xnobrain.diagnostic_timing import timed, timing
+
 from ..feature_flags import enabled
 from ..repositories.conversation_reasoning import ConversationReasoningRepository
 from .base import ServiceError
@@ -59,10 +61,14 @@ class ConversationReasoningServiceMixin:
             raise ServiceError("not found", status=404, code="not_found")
         self.agents.get_conversation(agent_id, conversation_id)
 
+    @timed("session.reasoning_total")
     async def get_conversation_reasoning(self, agent_id, conversation_id):
-        self._require_reasoning(agent_id, conversation_id)
-        config = self.agents.get_agent_config(agent_id)
-        value = snapshot(self, agent_id, conversation_id, config=config)
+        with timing("session.require"):
+            self._require_reasoning(agent_id, conversation_id)
+        with timing("session.config"):
+            config = self.agents.get_agent_config(agent_id)
+        with timing("session.snapshot"):
+            value = snapshot(self, agent_id, conversation_id, config=config)
         try:
             status = await validate(
                 self.router, config.get("model", "auto"), value["effective_preference"]
