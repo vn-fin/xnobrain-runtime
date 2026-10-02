@@ -61,6 +61,7 @@ class LoggingConfigTests(unittest.TestCase):
                 "levelno": logging.WARNING,
                 "msg": "Rebalance failed",
                 "operation_id": "reb_test",
+                "diagnostic_id": "timing_test",
                 "error": "router_probe_failed",
                 "error_type": "ConnectionError",
                 "lease_token": "SECRET",
@@ -73,6 +74,7 @@ class LoggingConfigTests(unittest.TestCase):
         self.assertEqual(rendered["trace_id"], "0123456789abcdef0123456789abcdef")
         self.assertEqual(rendered["span_id"], "0123456789abcdef")
         self.assertEqual(rendered["operation_id"], "reb_test")
+        self.assertEqual(rendered["diagnostic_id"], "timing_test")
         self.assertNotIn("SECRET", self.output.getvalue())
         self.assertNotIn("PRIVATE", self.output.getvalue())
 

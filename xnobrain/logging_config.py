@@ -24,6 +24,7 @@ _SAFE_RECORD_FIELDS = (
     "error_type",
     "reason_code",
     "duration_ms",
+    "diagnostic_id",
     "http_method",
     "http_route",
     "http_status_code",
