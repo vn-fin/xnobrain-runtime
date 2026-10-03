@@ -105,15 +105,13 @@ class PortabilityTaskStore:
             )
 
     @contextmanager
-    def transaction(self, *, read_only=False):
+    def transaction(self):
         db = sqlite3.connect(self.path, timeout=2, isolation_level=None)
         db.row_factory = sqlite3.Row
         try:
             db.execute("PRAGMA foreign_keys=ON")
             db.execute("PRAGMA synchronous=FULL")
-            if read_only:
-                db.execute("PRAGMA query_only=ON")
-            db.execute("BEGIN" if read_only else "BEGIN IMMEDIATE")
+            db.execute("BEGIN IMMEDIATE")
             yield db
             db.commit()
         except sqlite3.Error as error:
@@ -215,14 +213,14 @@ class PortabilityTaskStore:
 
     def replay(self, *, scope, actor, kind, key, fingerprint):
         self.validate_key(key, required=kind == "IMPORT")
-        with self.transaction(read_only=True) as db:
+        with self.transaction() as db:
             row = self._replay(
                 db, scope, actor, kind, self.digest(key) if key is not None else None, fingerprint
             )
             return dict(row) if row is not None else None
 
     def get(self, task_id: str, *, scope: str, actor: str) -> dict[str, Any]:
-        with self.transaction(read_only=True) as db:
+        with self.transaction() as db:
             row = db.execute(
                 "SELECT * FROM portability_tasks WHERE id=? AND scope=? AND actor=?",
                 (task_id, scope, actor),
@@ -271,10 +269,8 @@ class PortabilityTaskStore:
             )
 
     def heartbeat(self, task_id: str, owner: str, fence: int, *, lease_seconds=30) -> bool:
+        now = time.time()
         with self.transaction() as db:
-            # Lock acquisition may have waited past the lease deadline. Never
-            # renew an expired claim using the time from before that wait.
-            now = time.time()
             return (
                 db.execute(
                     """UPDATE portability_tasks SET lease_until=? WHERE id=?
@@ -325,7 +321,7 @@ class PortabilityTaskStore:
         """Stable descending creation pagination, scoped before cursor lookup."""
         if not 1 <= limit <= 100:
             raise StoreError("Invalid page size", code="invalid_task_cursor")
-        with self.transaction(read_only=True) as db:
+        with self.transaction() as db:
             cursor = None
             if before:
                 cursor = db.execute(

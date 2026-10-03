@@ -1,9 +1,5 @@
 """Transport helpers for the centralized OpenAI-compatible LLM router client."""
 
-from contextlib import nullcontext
-
-from xnobrain.diagnostic_timing import timing
-
 from .llm_router_support import (
     _SAFE_ID_RE,
     LLM_ROUTER_PROVIDER_KEY,
@@ -52,40 +48,20 @@ class LLMRouterTransportMixin:
         if not path.startswith(("/models", "/chat/completions")):
             raise LLMRouterAPIError("invalid provider runtime path", status=400)
         timeout = aiohttp.ClientTimeout(total=30)
-        with timing("router.models.total") if path.startswith("/models") else nullcontext():
-            return await self._request_transport(method, path, body, timeout)
-
-    async def _request_transport(self, method, path, body, timeout):
         try:
             async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
                 for attempt in range(2):
-                    with (
-                        timing("router.models.credentials")
-                        if path.startswith("/models")
-                        else nullcontext()
-                    ):
-                        headers = self._request_headers()
-                    with (
-                        timing("router.models.headers")
-                        if path.startswith("/models")
-                        else nullcontext()
-                    ):
-                        response = await session.request(
-                            method,
-                            self.base_url + path,
-                            json=dict(body) if body is not None else None,
-                            headers=headers,
-                        )
-                    async with response:
-                        with (
-                            timing("router.models.body")
-                            if path.startswith("/models")
-                            else nullcontext()
-                        ):
-                            try:
-                                payload = await response.json(content_type=None)
-                            except Exception:
-                                payload = {"error": (await response.text()).strip()}
+                    headers = self._request_headers()
+                    async with session.request(
+                        method,
+                        self.base_url + path,
+                        json=dict(body) if body is not None else None,
+                        headers=headers,
+                    ) as response:
+                        try:
+                            payload = await response.json(content_type=None)
+                        except Exception:
+                            payload = {"error": (await response.text()).strip()}
                         if response.status < 200 or response.status >= 300:
                             message = (
                                 self._error_message(payload)
