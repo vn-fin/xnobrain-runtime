@@ -551,6 +551,9 @@ class ConversationRunnerMixin:
         resolves the public model prefix itself and forwards request JSON, so
         neither field belongs in the upstream body.
         """
+        from .router_error_policy import install_router_error_policy
+
+        install_router_error_policy()
         if getattr(agent, "_xnobrain_router_tool_codec", False):
             return
         original_build_api_kwargs = getattr(agent, "_build_api_kwargs", None)
