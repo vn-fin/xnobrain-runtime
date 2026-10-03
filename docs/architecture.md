@@ -56,6 +56,11 @@ See [API contracts](api.md) and the root
 
 ## Profiles and persistence
 
+Runtime update manifests skip the canonical root-profile `profiles` symlink
+only when it points to the configured profiles directory inside the durable
+data root. The target directory is inspected separately; other symlinks remain
+invalid for update manifests.
+
 The default profile is `HERMES_ROOT_PROFILE`. Named profiles live at
 `DATA_DIR/profiles/<agent-id>` and are discovered through the Hermes CLI
 profile inventory. Hermes uses its own profile-local `state.db` for native session
