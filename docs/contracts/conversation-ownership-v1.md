@@ -54,3 +54,12 @@ grant fields are rejected before budget/provider dispatch: differing values retu
 `409 conversation_context_conflict`; even matching duplicates return
 `400 conversation_context_not_accepted`. Typed public `ChatRequest` forbids these
 extra fields with `422`.
+
+The centralized router's `503` response with structured error code
+`no_credentials` terminates the current run as failed. The Runtime does not
+retry, compress the conversation, rotate its workload key, or switch payer for
+that explicit unavailable-account result. It preserves HTTP `503` and reports
+that a provider account must be reconnected or another model selected. This
+does not classify every `503` as an authentication failure: ordinary temporary
+service errors retain the embedded engine's bounded retry policy. The policy
+uses the engine's error-classification hook for XNOBrain router requests only.
