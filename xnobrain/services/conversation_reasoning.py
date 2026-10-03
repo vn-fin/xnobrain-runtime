@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from xnobrain.diagnostic_timing import timed, timing
-
 from ..feature_flags import enabled
 from ..repositories.conversation_reasoning import ConversationReasoningRepository
 from .base import ServiceError
@@ -17,12 +15,11 @@ def store(service, agent_id, conversation_id):
     )
 
 
-def snapshot(service, agent_id, conversation_id, *, config=None):
+def snapshot(service, agent_id, conversation_id):
     repository = store(service, agent_id, conversation_id)
     with repository.locked():
         preference = repository.read()
-        if config is None:
-            config = service.agents.get_agent_config(agent_id)
+        config = service.agents.describe_agent(agent_id)["config"]
         inherited = str(config.get("effort") or config.get("reasoning_effort") or "medium")
         return {
             **preference,
@@ -61,14 +58,10 @@ class ConversationReasoningServiceMixin:
             raise ServiceError("not found", status=404, code="not_found")
         self.agents.get_conversation(agent_id, conversation_id)
 
-    @timed("session.reasoning_total")
     async def get_conversation_reasoning(self, agent_id, conversation_id):
-        with timing("session.require"):
-            self._require_reasoning(agent_id, conversation_id)
-        with timing("session.config"):
-            config = self.agents.get_agent_config(agent_id)
-        with timing("session.snapshot"):
-            value = snapshot(self, agent_id, conversation_id, config=config)
+        self._require_reasoning(agent_id, conversation_id)
+        value = snapshot(self, agent_id, conversation_id)
+        config = self.agents.describe_agent(agent_id)["config"]
         try:
             status = await validate(
                 self.router, config.get("model", "auto"), value["effective_preference"]
@@ -84,7 +77,7 @@ class ConversationReasoningServiceMixin:
 
         self._require_reasoning(agent_id, conversation_id)
         update = ConversationReasoningUpdate.model_validate(body)
-        config = self.agents.get_agent_config(agent_id)
+        config = self.agents.describe_agent(agent_id)["config"]
         await validate(self.router, config.get("model", "auto"), update.reasoning_effort)
         from ..repositories.conversation_creation import ConversationCreationRepository
 

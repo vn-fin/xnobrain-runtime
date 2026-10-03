@@ -2,8 +2,6 @@
 
 import time
 
-from xnobrain.diagnostic_timing import timed, timing
-
 from .llm_router_support import (
     LLM_ROUTER_DEFAULT_MODEL,
     LLM_ROUTER_PROVIDER_KEY,
@@ -33,7 +31,6 @@ def default_reasoning_level(levels: Any) -> str:
 
 
 class ProviderModelsMixin:
-    @timed("catalog.total")
     async def list_models(self, *, ensure_auto: bool = True) -> dict[str, Any]:
         # The workload credential scopes this catalog inside the central
         # router. Runtime never calls router management endpoints and does not
@@ -98,22 +95,19 @@ class ProviderModelsMixin:
             "data": models,
         }
 
-    @timed("catalog.reasoning")
     async def reasoning_for_model(self, model: str) -> dict[str, Any]:
         """Return live reasoning metadata for one public model ID."""
 
         now = time.monotonic()
         cached = getattr(self, "_model_reasoning_catalog_cache", None)
         if cached and now - cached[0] < 30:
-            with timing("catalog.cache_hit"):
-                catalog = cached[1]
+            catalog = cached[1]
         else:
-            with timing("catalog.cache_miss"):
-                catalog = {
-                    str(item.get("id") or ""): list(item.get("reasoning_levels") or [])
-                    for item in (await self.list_models(ensure_auto=False))["data"]
-                }
-                self._model_reasoning_catalog_cache = (now, catalog)
+            catalog = {
+                str(item.get("id") or ""): list(item.get("reasoning_levels") or [])
+                for item in (await self.list_models(ensure_auto=False))["data"]
+            }
+            self._model_reasoning_catalog_cache = (now, catalog)
         levels = list(catalog.get(str(model or ""), []))
         result = {
             "reasoning": levels,
