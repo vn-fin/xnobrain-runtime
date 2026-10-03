@@ -82,6 +82,17 @@ preserved. Older streams without IDs are supported only when a running tool
 can be matched unambiguously. History reconstruction uses persisted
 `tool_call_id` and tool result error fields.
 
+Antigravity (`ag/`) runs may emit `provider.retrying` as soon as the embedded
+engine receives a retryable provider error, before its retry backoff. The event
+contains `run_id`, `timestamp`, and an optional integer `status_code` (400–599).
+It never includes provider error bodies, prompts, or credentials. It is
+nonterminal and replayable: the run remains active and can still be stopped.
+Clients show a notice within that run, clearing it on resumed answer/reasoning
+or tool activity and on a terminal event. Retry policy and limits are unchanged;
+terminal authentication failures retain the existing `run.failed` behavior.
+Older clients may ignore this additive event. This notification cannot precede
+the provider/router returning an error to Runtime.
+
 Agent budgets use `weekly_usd` at
 `GET|PUT /xnobrain/api/runtime/v1/analytics/agents/{agent_id}/budget`. The
 minimum configured limit is USD 1; clearing the value restores the USD 20

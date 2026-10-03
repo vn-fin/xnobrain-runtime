@@ -1046,6 +1046,12 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             agent_ref,
         ):
             agent_ref[0] = agent
+            tool_progress_callback(
+                "provider.retrying",
+                status_code=502,
+                error={"message": "Bearer private"},
+                request={"messages": ["private prompt"]},
+            )
             started.set()
             await interrupted.wait()
             return (
@@ -1073,6 +1079,12 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             first = await anext(stream)
             self.assertIn(b'"event":"run.started"', first)
             await asyncio.wait_for(started.wait(), timeout=1)
+
+            retry = await asyncio.wait_for(anext(stream), timeout=1)
+            self.assertIn(b'"event":"provider.retrying"', retry)
+            self.assertIn(b'"status_code":502', retry)
+            self.assertIn(run_id.encode(), retry)
+            self.assertNotIn(b"private", retry)
 
             stopped = await manager.stop_run(run_id)
             payload = b"".join([event async for event in stream])

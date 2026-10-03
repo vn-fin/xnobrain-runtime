@@ -273,6 +273,19 @@ class ConversationStreamMixin:
                 except (AttributeError, RuntimeError, TypeError, ValueError):
                     return {}
 
+            if event_type == "provider.retrying":
+                from .provider_retry_events import retry_event_fields
+
+                enqueue_event(
+                    {
+                        "event": "provider.retrying",
+                        "run_id": run_id,
+                        "timestamp": timestamp,
+                        **retry_event_fields(**kwargs),
+                    }
+                )
+                return
+
             if event_type == "execution.budget":
                 enqueue_event(
                     {
