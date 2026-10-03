@@ -27,9 +27,6 @@ class FakeAgents:
     def describe_agent(self, agent_id):
         return {"config": {"effort": "medium"}}
 
-    def get_agent_config(self, agent_id):
-        return {"effort": "medium"}
-
     def get_conversation(self, agent_id: str, conversation_id: str) -> dict:
         return {"conversation": {"id": conversation_id, "agent_id": agent_id}, "messages": []}
 

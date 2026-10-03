@@ -3,7 +3,7 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 from pydantic import ValidationError
 
@@ -11,11 +11,7 @@ from xnobrain.models.conversations import ConversationReasoningUpdate
 from xnobrain.repositories import FileRepository, StoreError
 from xnobrain.repositories.conversation_reasoning import ConversationReasoningRepository
 from xnobrain.services.base import ServiceError
-from xnobrain.services.conversation_reasoning import (
-    ConversationReasoningServiceMixin,
-    snapshot,
-    validate,
-)
+from xnobrain.services.conversation_reasoning import validate
 
 
 class PreferenceTests(unittest.TestCase):
@@ -30,7 +26,6 @@ class PreferenceTests(unittest.TestCase):
             with self.assertRaises(ServiceError) as error:
                 write()
             self.assertEqual(error.exception.code, "unsupported_reasoning_effort")
-
     def test_revision_reload_isolation_clear_and_delete(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -75,80 +70,6 @@ class PreferenceTests(unittest.TestCase):
             store.path.symlink_to(root / "elsewhere")
             with self.assertRaises(StoreError):
                 store.update("high", 0)
-
-
-class LightweightReasoningTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        directory = TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        root = Path(directory.name)
-        self.profile = root / "profiles" / "agent"
-        self.profile.mkdir(parents=True)
-        self.service = ConversationReasoningServiceMixin()
-        self.service.repository = FileRepository(root / "data", root / "profiles")
-        self.service.agents = Mock(
-            spec=["get_conversation", "get_agent_config", "describe_agent"]
-        )
-        self.service.agents.get_agent_config.return_value = {
-            "model": "test-model",
-            "reasoning_effort": "medium",
-        }
-        self.service.agents.describe_agent.side_effect = AssertionError(
-            "Reasoning must not load full agent details, skills, or memory"
-        )
-        self.service.router = AsyncMock()
-        self.service.router.reasoning_for_model.return_value = {
-            "reasoning": ["medium", "high"]
-        }
-        self.service.authorize_conversation = Mock()
-        enabled = patch("xnobrain.services.conversation_reasoning.enabled", return_value=True)
-        enabled.start()
-        self.addCleanup(enabled.stop)
-
-    async def test_get_reads_effective_config_once_without_agent_details(self):
-        value = await self.service.get_conversation_reasoning("agent", "one")
-        self.assertEqual(value["effective_preference"], "medium")
-        self.assertEqual(value["source"], "agent")
-        self.assertEqual(value["capability_status"], "available")
-        self.service.agents.get_agent_config.assert_called_once_with("agent")
-        self.service.agents.get_conversation.assert_called_once_with("agent", "one")
-        self.service.agents.describe_agent.assert_not_called()
-        self.service.router.reasoning_for_model.assert_awaited_once_with("test-model")
-
-    async def test_get_preserves_conversation_override_and_metadata_outage(self):
-        repository = ConversationReasoningRepository(
-            self.service.repository, self.profile, "one"
-        )
-        repository.update("high", 0)
-        self.service.router.reasoning_for_model.side_effect = RuntimeError("unavailable")
-        value = await self.service.get_conversation_reasoning("agent", "one")
-        self.assertEqual(value["effective_preference"], "high")
-        self.assertEqual(value["source"], "conversation")
-        self.assertEqual(value["reasoning_revision"], 1)
-        self.assertEqual(value["capability_status"], "unavailable")
-        self.service.agents.get_agent_config.assert_called_once_with("agent")
-        self.service.agents.describe_agent.assert_not_called()
-
-    async def test_update_persists_without_agent_details(self):
-        value = await self.service.update_conversation_reasoning(
-            "agent", "one", {"reasoning_effort": "high", "expected_revision": 0}
-        )
-        self.assertEqual(value["effective_preference"], "high")
-        self.assertEqual(value["reasoning_revision"], 1)
-        self.service.authorize_conversation.assert_called_once_with(
-            "agent", "one", None, active=True
-        )
-        self.service.agents.describe_agent.assert_not_called()
-        repository = ConversationReasoningRepository(
-            self.service.repository, self.profile, "one"
-        )
-        self.assertEqual(repository.read()["reasoning_effort"], "high")
-
-    async def test_admission_snapshot_uses_lightweight_config(self):
-        value = snapshot(self.service, "agent", "one")
-        self.assertEqual(value["effective_preference"], "medium")
-        self.service.agents.get_agent_config.assert_called_once_with("agent")
-        self.service.agents.describe_agent.assert_not_called()
 
 
 class MetadataTests(unittest.IsolatedAsyncioTestCase):
@@ -243,7 +164,7 @@ class PersistedHermesRequestTests(unittest.IsolatedAsyncioTestCase):
             service = SimpleNamespace(
                 repository=files,
                 agents=SimpleNamespace(
-                    get_agent_config=lambda _: {"reasoning_effort": "medium"}
+                    describe_agent=lambda _: {"config": {"reasoning_effort": "medium"}}
                 ),
             )
             router = AsyncMock()

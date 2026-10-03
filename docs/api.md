@@ -1,11 +1,5 @@
 # HTTP API
 
-`PATCH /xnobrain/api/runtime/v1/agents-configs/{agent_id}` persists settings
-and returns the effective configuration in the existing API envelope. Response
-assembly does not load agent skills, memory, or soul. Chat model selectors can
-consume this response directly without a subsequent agent-detail GET; sends
-must wait for a pending configuration save to succeed.
-
 FastAPI generates the authoritative interactive contract at
 `/xnobrain/api/runtime/swagger_docs` and JSON schema at `/xnobrain/api/runtime/openapi.json`.
 Hermes CLI native routes remain available under `/api`; XNOBrain's
@@ -1157,12 +1151,6 @@ replicas must route to the same exclusive workspace owner; separate active-activ
 Runtime disks are unsupported. Preserve the database and staged files together
 when relocating or restoring a workspace.
 
-Task status/list reads and idempotency lookups do not reserve SQLite's writer
-lock. Worker heartbeats retry temporary SQLite busy/locked errors while the
-persisted claim remains valid; expiry or a changed owner/fence still prevents
-renewal and publication. Heartbeat contention and claim loss emit task IDs and
-attempt counts without database paths or user content.
-
 Import keys are retained with task receipts. A FAILED replay does not restart the
 import. `import_recovery_required` preserves pinned inputs and journal evidence;
 do not delete the database or resubmit with a fresh key to bypass it. Accepted
@@ -1243,10 +1231,6 @@ conversation preference. `PATCH` accepts `reasoning_effort` (null to inherit, or
 `reasoning_revision`, `effective_preference`, `source`, and `capability_status`.
 The hidden `/conversations` alias supports the same resource. Existing session
 ownership checks apply, including a recheck after model metadata lookup.
-
-Reasoning reads use the lightweight effective agent configuration without loading
-agent skills, memory, or soul. GET reads this configuration once and reuses it for
-the inherited preference and model capability check.
 
 Conflicting revisions return 409; unsupported explicit levels return 422;
 required metadata outages return 503. Changing this preference does not write

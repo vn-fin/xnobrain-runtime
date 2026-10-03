@@ -15,12 +15,11 @@ def store(service, agent_id, conversation_id):
     )
 
 
-def snapshot(service, agent_id, conversation_id, *, config=None):
+def snapshot(service, agent_id, conversation_id):
     repository = store(service, agent_id, conversation_id)
     with repository.locked():
         preference = repository.read()
-        if config is None:
-            config = service.agents.get_agent_config(agent_id)
+        config = service.agents.describe_agent(agent_id)["config"]
         inherited = str(config.get("effort") or config.get("reasoning_effort") or "medium")
         return {
             **preference,
@@ -61,8 +60,8 @@ class ConversationReasoningServiceMixin:
 
     async def get_conversation_reasoning(self, agent_id, conversation_id):
         self._require_reasoning(agent_id, conversation_id)
-        config = self.agents.get_agent_config(agent_id)
-        value = snapshot(self, agent_id, conversation_id, config=config)
+        value = snapshot(self, agent_id, conversation_id)
+        config = self.agents.describe_agent(agent_id)["config"]
         try:
             status = await validate(
                 self.router, config.get("model", "auto"), value["effective_preference"]
@@ -78,7 +77,7 @@ class ConversationReasoningServiceMixin:
 
         self._require_reasoning(agent_id, conversation_id)
         update = ConversationReasoningUpdate.model_validate(body)
-        config = self.agents.get_agent_config(agent_id)
+        config = self.agents.describe_agent(agent_id)["config"]
         await validate(self.router, config.get("model", "auto"), update.reasoning_effort)
         from ..repositories.conversation_creation import ConversationCreationRepository
 
