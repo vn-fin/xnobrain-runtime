@@ -99,6 +99,7 @@ class AgentOperationsMixin:
                 self._copy_root_skills(profile_dir, overwrite=True)
                 self._clear_seeded_disabled_skills(profile_dir)
             if not existed:
+                self._seed_bundled_skills(profile_dir)
                 # Restore points are always an explicit per-profile choice and
                 # must never be inherited from the root/Big Brother profile.
                 seeded_config = self._read_config(profile_dir)
