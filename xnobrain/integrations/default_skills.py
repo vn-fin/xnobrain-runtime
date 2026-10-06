@@ -39,9 +39,12 @@ class DefaultSkillsMixin:
     def _seed_bundled_skills(profile_dir: Path) -> None:
         """Seed a new profile through Hermes without changing process globals."""
         install_dir = str(os.environ.get("HERMES_INSTALL_DIR") or "").strip()
-        if not install_dir:
-            return
-        installation = Path(install_dir).resolve()
+        if install_dir:
+            installation = Path(install_dir).resolve()
+        else:
+            installation = Path(__file__).resolve().parents[2] / ".tools" / "hermes-agent"
+            if not (installation / "tools" / "skills_sync.py").is_file():
+                return
         env = os.environ.copy()
         env["HERMES_HOME"] = str(profile_dir.resolve())
         try:

@@ -76,6 +76,20 @@ class AgentDefaultSkillsTests(unittest.TestCase):
             skill.read_text(),
         )
 
+    def test_native_installation_is_found_without_environment_override(self):
+        runtime = self.root / "native-runtime"
+        (runtime / ".tools").mkdir(parents=True)
+        (runtime / ".tools" / "hermes-agent").symlink_to(self.root / "engine")
+        module = runtime / "xnobrain" / "integrations" / "default_skills.py"
+        with (
+            patch.dict(os.environ, {"HERMES_INSTALL_DIR": ""}),
+            patch("xnobrain.integrations.default_skills.__file__", str(module)),
+        ):
+            self.manager.create_agent({"name": "native"})
+        self.assertTrue(
+            (self.root / "profiles" / "native" / "skills" / "pdf" / "SKILL.md").is_file()
+        )
+
     def test_idempotent_create_does_not_reseed_or_reset_choices(self):
         self.manager.create_agent({"name": "existing"})
         profile = self.root / "profiles" / "existing"
