@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import os
+import subprocess
+import sys
 import time
 from pathlib import Path
+
+from .hermes_support import AgentAPIError
 
 # Keep the default prompt index focused on broadly useful document, research,
 # planning, and engineering workflows. Browser automation, computer use,
@@ -31,6 +35,37 @@ DEFAULT_ENABLED_BUNDLED_SKILLS = frozenset(
 
 
 class DefaultSkillsMixin:
+    @staticmethod
+    def _seed_bundled_skills(profile_dir: Path) -> None:
+        """Seed a new profile through Hermes without changing process globals."""
+        install_dir = str(os.environ.get("HERMES_INSTALL_DIR") or "").strip()
+        if not install_dir:
+            return
+        installation = Path(install_dir).resolve()
+        env = os.environ.copy()
+        env["HERMES_HOME"] = str(profile_dir.resolve())
+        try:
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "from tools.skills_sync import sync_skills; sync_skills(quiet=True)",
+                ],
+                cwd=installation,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise AgentAPIError(
+                "Default skills could not be initialized",
+                code="default_skills_initialization_failed",
+                status=500,
+            ) from exc
+
     def _apply_default_skills_policy(self, profile_dir: Path) -> bool:
         """Disable niche bundled skills once without overriding later choices."""
         manifest = profile_dir / "skills" / ".bundled_manifest"
