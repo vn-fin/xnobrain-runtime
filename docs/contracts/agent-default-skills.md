@@ -3,8 +3,10 @@
 When a new agent profile is created, Runtime copies enabled common-profile
 skills and then invokes the installed engine's bundled-skill synchronizer in
 an isolated child process with `HERMES_HOME` pointing to the new profile.
-`HERMES_INSTALL_DIR` identifies that installation. Source-only environments
-without an installation retain the common-profile behavior.
+`HERMES_INSTALL_DIR` identifies that installation. Native installations also
+resolve `.tools/hermes-agent` beneath the Runtime source root when the environment
+override is absent. Source-only environments without an installation retain the
+common-profile behavior.
 
 The bundled catalog is installed in the profile's `skills/` directory, making
 it visible to both the agent and the existing Skills API. Catalog installation
