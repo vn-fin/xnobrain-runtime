@@ -42,20 +42,6 @@ class ConversationFailureTests(unittest.TestCase):
         self.assertEqual(after["status"], "failed")
         self.assertEqual(after["revision"], failed["revision"])
 
-    def test_provider_retry_notice_is_nonterminal_and_can_be_cancelled(self):
-        retry = self.service._append(
-            self.record,
-            {"data": {"event": "provider.retrying", "run_id": "run_one", "status_code": 502}},
-        )
-        self.assertEqual(retry["status"], "running")
-        self.assertEqual(retry["revision"], 1)
-        self.assertNotIn("error", retry)
-        cancelled = self.service._append(retry, {"data": {"event": "run.cancelled"}})
-        self.assertEqual(cancelled["status"], "cancelled")
-        late = self.service._append(cancelled, {"data": {"event": "provider.retrying"}})
-        self.assertEqual(late["status"], "cancelled")
-        self.assertEqual(late["revision"], cancelled["revision"])
-
     def test_history_projection_and_scoped_pagination(self):
         self.repo.put_conversation_run(
             {

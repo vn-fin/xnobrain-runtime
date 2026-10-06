@@ -1377,8 +1377,6 @@ class ConversationRunnerMixin:
                     from tools import terminal_tool
                     from tools.approval import _await_gateway_decision
 
-                    from .provider_retry_events import observe_provider_retries
-
                     previous_callback = terminal_tool._get_approval_callback()
 
                     def approve_memory(
@@ -1412,11 +1410,7 @@ class ConversationRunnerMixin:
                             {"cwd": str(workspace_dir)},
                         )
                     try:
-                        with observe_provider_retries(
-                            str(getattr(agent, "session_id", "") or ""),
-                            tool_progress_callback,
-                        ):
-                            return run_conversation(*run_args, **run_kwargs)
+                        return run_conversation(*run_args, **run_kwargs)
                     finally:
                         if workspace_dir is not None:
                             terminal_tool.clear_task_env_overrides(task_id)
