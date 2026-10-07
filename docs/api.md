@@ -66,6 +66,23 @@ Runtime statistics are available as a snapshot at
 `/xnobrain/api/runtime/v1/sandboxes/detail` and as one-second SSE updates at
 `/xnobrain/api/runtime/v1/sandboxes/detail/stream`.
 
+Memory statistics include the optional additive field
+`metrics.memory_occupied_bytes`: RAM occupied **including cache**. Without a
+finite cgroup quota, it is `MemTotal - MemFree` from the same `/proc/meminfo`
+sample; with a finite cgroup quota, it is the selected cgroup's aggregate usage
+(bounded by its limit), which already includes cache. It is omitted when the
+required free-memory counter is unavailable. The UI uses this value for its
+existing Memory tile/bar/percentage and falls back to `memory_bytes` for older
+runtimes. Labels and layout remain unchanged.
+
+`memory_bytes` retains its existing semantics for other consumers: system
+`MemTotal - MemAvailable`, or aggregate cgroup usage. `memory_available_bytes`
+also retains its meaning: system `MemAvailable` (which includes estimated
+reclaimable memory), or unused cgroup quota. Available memory is not the
+complement of cache-inclusive occupied memory. These figures describe the
+workspace, not host QEMU RSS/PSS. This change does not alter RAM allocation,
+admission thresholds, or cache lifecycle.
+
 Agent execution activity is available as a compatibility snapshot at
 `/xnobrain/api/runtime/v1/agents/activity`. UI clients should use the
 `/xnobrain/api/runtime/v1/agents/activity/stream` SSE endpoint, which emits an
