@@ -113,6 +113,66 @@ class RuntimeMemoryMetricTests(unittest.TestCase):
         with patch.object(Path, "read_text", autospec=True, side_effect=self._reader(files)):
             self.assertEqual(LocalRuntimeManager._memory_usage(), (645_120, 1_024_000))
 
+    def test_detail_reports_cache_inclusive_usage_without_changing_available(self) -> None:
+        files = {
+            "/proc/meminfo": (
+                "MemTotal: 6291456 kB\nMemFree: 1572864 kB\n"
+                "MemAvailable: 5767168 kB\nCached: 4194304 kB\n"
+            ),
+        }
+        with patch.object(Path, "read_text", autospec=True, side_effect=self._reader(files)):
+            metrics = LocalRuntimeManager().detail()["metrics"]
+        self.assertEqual(metrics["memory_occupied_bytes"], 4_831_838_208)
+        self.assertEqual(metrics["memory_bytes"], 536_870_912)
+        self.assertEqual(metrics["memory_available_bytes"], 5_905_580_032)
+        self.assertEqual(metrics["memory_limit_bytes"], 6 << 30)
+
+    def test_cgroup_occupied_uses_selected_parent_not_host_cache(self) -> None:
+        for hierarchy, base, current, maximum in (
+            ("0::", "/sys/fs/cgroup", "memory.current", "memory.max"),
+            (
+                "5:memory:",
+                "/sys/fs/cgroup/memory",
+                "memory.usage_in_bytes",
+                "memory.limit_in_bytes",
+            ),
+        ):
+            with self.subTest(hierarchy=hierarchy):
+                files = {
+                    "/proc/meminfo": "MemTotal: 16000000 kB\nMemFree: 1000 kB\nMemAvailable: 12000000 kB\n",
+                    "/proc/self/cgroup": f"{hierarchy}/workspace/service\n",
+                    f"{base}/workspace/service/{current}": str(1 << 30),
+                    f"{base}/workspace/service/{maximum}": str(8 << 30),
+                    f"{base}/workspace/{current}": str(4 << 30),
+                    f"{base}/workspace/{maximum}": str(6 << 30),
+                }
+                with patch.object(
+                    Path, "read_text", autospec=True, side_effect=self._reader(files)
+                ):
+                    metrics = LocalRuntimeManager._memory_metrics()
+                self.assertEqual(metrics["memory_occupied_bytes"], 4 << 30)
+                self.assertEqual(metrics["memory_available_bytes"], 2 << 30)
+                self.assertEqual(metrics["memory_limit_bytes"], 6 << 30)
+
+    def test_occupied_is_omitted_if_free_memory_is_unavailable(self) -> None:
+        files = {"/proc/meminfo": "MemTotal: 8000 kB\nMemAvailable: 3000 kB\n"}
+        with patch.object(Path, "read_text", autospec=True, side_effect=self._reader(files)):
+            metrics = LocalRuntimeManager._memory_metrics()
+        self.assertNotIn("memory_occupied_bytes", metrics)
+        self.assertEqual(metrics["memory_bytes"], 5_120_000)
+
+    def test_free_memory_sample_is_bounded_by_total(self) -> None:
+        for free, occupied in ((-1, 8_192_000), (9000, 0)):
+            with self.subTest(free=free):
+                files = {
+                    "/proc/meminfo": f"MemTotal: 8000 kB\nMemFree: {free} kB\nMemAvailable: 3000 kB\n"
+                }
+                with patch.object(
+                    Path, "read_text", autospec=True, side_effect=self._reader(files)
+                ):
+                    metrics = LocalRuntimeManager._memory_metrics()
+                self.assertEqual(metrics["memory_occupied_bytes"], occupied)
+
 
 if __name__ == "__main__":
     unittest.main()
