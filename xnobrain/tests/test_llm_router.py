@@ -864,6 +864,50 @@ class LLMRouterConfigTests(unittest.TestCase):
 
 
 class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_provider_retry_is_streamed_before_terminal_failure(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            continue_run = asyncio.Event()
+
+            async def run_session(_prepared, *, tool_progress_callback, **_kwargs):
+                tool_progress_callback(
+                    "provider.retrying",
+                    status_code=502,
+                    retry_attempt=1,
+                    max_retries=5,
+                    error_message="private text",
+                )
+                await continue_run.wait()
+                return {"failed": True, "error": "Final failure"}, {}
+
+            prepared = {
+                "name": "agent",
+                "profile_dir": root / "profile",
+                "conversation_id": "session",
+                "model": "ag/gemini-test",
+                "timeout_seconds": 30,
+            }
+            with (
+                patch.object(manager, "_run_session_agent", side_effect=run_session),
+                patch.object(manager, "_conversation_has_default_title", return_value=False),
+            ):
+                stream = manager._chat_stream_events(prepared)
+                started = await anext(stream)
+                self.assertIn(b'"event":"run.started"', started)
+                notice = await asyncio.wait_for(anext(stream), timeout=2)
+                self.assertIn(b'"event":"provider.retrying"', notice)
+                self.assertIn(b'"retry_attempt":1', notice)
+                self.assertIn(b'"max_retries":5', notice)
+                self.assertNotIn(b"private text", notice)
+                continue_run.set()
+                rest = b"".join([event async for event in stream])
+                self.assertIn(b'"event":"run.failed"', rest)
+
     def test_agent_config_preserves_provider_auto_scope(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -82,6 +82,14 @@ preserved. Older streams without IDs are supported only when a running tool
 can be matched unambiguously. History reconstruction uses persisted
 `tool_call_id` and tool result error fields.
 
+Conversation SSE emits `provider.retrying` as soon as a retryable model request
+fails, before its retry backoff. It carries `run_id`, `timestamp`, optional
+`status_code`, `retry_attempt` (1–5), and `max_retries` (5); it never carries raw
+provider errors or request content. The run stays active and can be stopped.
+Each model request allows the initial attempt plus at most five retries;
+transport recovery cannot restart this budget. Non-retryable failures stop
+immediately. Existing terminal events report exhaustion, completion or cancellation.
+
 Agent budgets use `weekly_usd` at
 `GET|PUT /xnobrain/api/runtime/v1/analytics/agents/{agent_id}/budget`. The
 minimum configured limit is USD 1; clearing the value restores the USD 20
