@@ -148,9 +148,9 @@ class AgentsServiceMixin:
             "display_name": BIG_BROTHER_DISPLAY_NAME,
             "title": BIG_BROTHER_DISPLAY_NAME,
             "description": BIG_BROTHER_DESCRIPTION,
-            "updated_at": time.time(),
         }
         if next_metadata != metadata:
+            next_metadata["updated_at"] = time.time()
             self.repository.atomic_json(metadata_path, next_metadata)
 
         self.agents.migrate_legacy_big_brother_profile()

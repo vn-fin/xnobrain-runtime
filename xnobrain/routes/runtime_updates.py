@@ -84,6 +84,8 @@ ROUTES += tuple(
         ("checkpoint", "runtime_update_checkpoint", RuntimeRolloutRequest),
         ("readiness", "runtime_update_readiness", RuntimeRolloutReadiness),
         ("post-verify", "runtime_update_post_verify", RuntimeRolloutPostVerify),
+        ("restore-ready", "runtime_update_restore_ready", RuntimeRolloutPostVerify),
         ("resume", "runtime_update_resume", RuntimeRolloutRequest),
+        ("abort-unchanged", "runtime_update_abort_unchanged", RuntimeRolloutRequest),
     )
 )

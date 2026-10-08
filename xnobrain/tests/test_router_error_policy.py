@@ -13,10 +13,73 @@ from unittest.mock import Mock, patch
 import httpx
 from openai import InternalServerError, OpenAI
 
-from xnobrain.integrations.router_error_policy import install_router_error_policy
+from xnobrain.integrations.router_error_policy import (
+    install_provider_retry_progress,
+    install_router_error_policy,
+)
 
 
 class RouterErrorPolicyTests(unittest.TestCase):
+    def test_retry_notice_precedes_each_retry_and_stops_after_five(self):
+        from run_agent import AIAgent
+
+        from xnobrain.integrations.conversation_runner import ConversationRunnerMixin
+
+        with TemporaryDirectory() as home, patch.dict(os.environ, {"HERMES_HOME": home}):
+            agent = AIAgent(
+                base_url="https://example.test/v1",
+                api_key="synthetic",
+                provider="custom:xnobrain",
+                model="ag/gemini-test",
+                enabled_toolsets=[],
+                quiet_mode=True,
+                skip_context_files=True,
+                skip_memory=True,
+                skip_background_review=True,
+                stream_delta_callback=lambda _delta: None,
+            )
+            ConversationRunnerMixin._install_provider_runtime_request_guard(agent)
+            events = []
+            progress = lambda event, **data: events.append((event, data))
+            install_provider_retry_progress(agent, progress)
+            install_provider_retry_progress(agent, progress)
+            calls = []
+
+            def respond(request):
+                self.assertEqual(len(events), len(calls))
+                calls.append(request)
+                return httpx.Response(502, json={"error": {"message": "private provider text"}})
+
+            def request_client(**_kwargs):
+                return OpenAI(
+                    base_url="https://example.test/v1",
+                    api_key="synthetic",
+                    max_retries=0,
+                    http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+                )
+
+            with (
+                patch("agent.conversation_loop.jittered_backoff", return_value=0),
+                redirect_stdout(io.StringIO()),
+                redirect_stderr(io.StringIO()),
+            ):
+                agent._create_request_openai_client = request_client
+                result = agent.run_conversation("synthetic test")
+
+            self.assertEqual(len(calls), 6, (result, events))
+            self.assertTrue(result["failed"])
+            self.assertEqual(
+                events,
+                [
+                    (
+                        "provider.retrying",
+                        {"status_code": 502, "retry_attempt": attempt, "max_retries": 5},
+                    )
+                    for attempt in range(1, 6)
+                ],
+            )
+            self.assertNotIn("private provider text", str(events))
+
     def test_chat_run_returns_failed_after_one_request_to_an_unusable_route(self):
         from run_agent import AIAgent
 
@@ -49,6 +112,8 @@ class RouterErrorPolicyTests(unittest.TestCase):
                     stream_delta_callback=lambda _delta: None,
                 )
                 ConversationRunnerMixin._install_provider_runtime_request_guard(agent)
+                progress = Mock()
+                install_provider_retry_progress(agent, progress)
                 calls = []
 
                 def respond(request, *, status=status, code=code, message=message, calls=calls):
@@ -74,6 +139,7 @@ class RouterErrorPolicyTests(unittest.TestCase):
                 self.assertEqual(len(calls), 1)
                 self.assertTrue(result["failed"])
                 self.assertIn(message, result["error"])
+                progress.assert_not_called()
 
     def test_engine_stops_unusable_route_but_preserves_status_and_transient_retries(self):
         from agent.error_classifier import classify_api_error

@@ -134,6 +134,20 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             focus="API decisions",
         )
 
+    async def test_default_agent_noop_restart_preserves_checkpoint_files(self):
+        await self.composition.service.ensure_default_agent()
+        paths = [self.root / "agent.json", self.root / "profiles.yaml"]
+        before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths}
+        with patch("xnobrain.services.agents.time.time", return_value=2000000000):
+            await self.composition.service.ensure_default_agent()
+        self.assertEqual(
+            {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths}, before
+        )
+        self.composition.service.agents.update_profile_registry(
+            BIG_BROTHER_AGENT_ID, description="Changed by the user"
+        )
+        self.assertNotEqual((self.root / "profiles.yaml").read_bytes(), before[paths[1]][0])
+
     async def test_big_brother_bootstrap_aliases_root_profile_and_is_idempotent(self):
         enabled = self.root / "skills" / "enabled-default" / "SKILL.md"
         disabled = self.root / "skills" / "disabled-default" / "SKILL.md"

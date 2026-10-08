@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -90,24 +90,48 @@ class IncusRuntimeTarget(BaseModel):
     data_schema: int = Field(ge=1)
 
 
+class RuntimeSourceTarget(BaseModel):
+    """Source identity for source_in_place_v1; the base image is unchanged."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["runtime_source_v1"]
+    source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    git_tree: str = Field(pattern=r"^[0-9a-f]{40}$")
+    manifest_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    package_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    data_schema: int = Field(ge=1)
+
+
+RolloutTarget = Annotated[IncusRuntimeTarget | RuntimeSourceTarget, Field(discriminator="kind")]
+
+
 class RuntimeRolloutRequest(RuntimeUpdateRequest):
-    target: IncusRuntimeTarget
+    target: RolloutTarget
 
 
 class RuntimeRolloutPreflight(RuntimeUpdatePreflight):
-    target: IncusRuntimeTarget
+    target: RolloutTarget
 
 
 class RuntimeRolloutDrain(RuntimeUpdateDrain):
-    target: IncusRuntimeTarget
+    target: RolloutTarget
+    # source_in_place_v1 never cancels work: a busy deadline defers the update.
+    strategy: Literal["image_replacement_v1", "source_in_place_v1"] | None = None
+
+    @model_validator(mode="after")
+    def source_drain_never_cancels(self) -> "RuntimeRolloutDrain":
+        if self.strategy == "source_in_place_v1" and self.cancel_active_at_deadline:
+            raise ValueError("source_in_place_v1 drain cannot cancel active work")
+        return self
 
 
 class RuntimeRolloutReadiness(RuntimeUpdateReadiness):
-    target: IncusRuntimeTarget
+    target: RolloutTarget
 
 
 class RuntimeRolloutPostVerify(RuntimeUpdatePostVerify):
-    target: IncusRuntimeTarget
+    target: RolloutTarget
 
 
 class ReleaseSelector(BaseModel):
