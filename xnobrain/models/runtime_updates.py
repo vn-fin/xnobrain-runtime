@@ -100,6 +100,14 @@ class RuntimeRolloutPreflight(RuntimeUpdatePreflight):
 
 class RuntimeRolloutDrain(RuntimeUpdateDrain):
     target: IncusRuntimeTarget
+    # source_in_place_v1 never cancels work: a busy deadline defers the update.
+    strategy: Literal["image_replacement_v1", "source_in_place_v1"] | None = None
+
+    @model_validator(mode="after")
+    def source_drain_never_cancels(self) -> "RuntimeRolloutDrain":
+        if self.strategy == "source_in_place_v1" and self.cancel_active_at_deadline:
+            raise ValueError("source_in_place_v1 drain cannot cancel active work")
+        return self
 
 
 class RuntimeRolloutReadiness(RuntimeUpdateReadiness):

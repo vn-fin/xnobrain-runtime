@@ -37,6 +37,11 @@ def operations(handler: Any, _request: Any, body: dict[str, Any]):
             "Runtime recovery state recorded",
             200,
         ),
+        "runtime_update_abort_unchanged": (
+            lambda: service.abort_unchanged(body, update_token=token),
+            "Runtime update aborted unchanged",
+            200,
+        ),
         "runtime_update_resume": (
             lambda: service.resume(body, update_token=token),
             "Runtime dispatch resumed",

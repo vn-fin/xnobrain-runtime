@@ -85,5 +85,6 @@ ROUTES += tuple(
         ("readiness", "runtime_update_readiness", RuntimeRolloutReadiness),
         ("post-verify", "runtime_update_post_verify", RuntimeRolloutPostVerify),
         ("resume", "runtime_update_resume", RuntimeRolloutRequest),
+        ("abort-unchanged", "runtime_update_abort_unchanged", RuntimeRolloutRequest),
     )
 )

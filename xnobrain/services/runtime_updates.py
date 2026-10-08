@@ -33,6 +33,10 @@ _ALLOWED_LAYOUTS = {
 }
 
 
+# Phases before any candidate/source step; later phases need recovery.
+_ABORTABLE_PHASES = frozenset({"draining", "drained"})
+
+
 class RuntimeUpdateService:
     """Quiesce and verify this process; node replacement remains gateway-owned."""
 
@@ -155,8 +159,12 @@ class RuntimeUpdateService:
                 "target": dict(request["target"]),
                 "dispatch_paused": True,
                 "phase": "draining",
+                # abort-unchanged proves no source change against this identity.
+                "installed_before": self._installed_identity(),
                 "updated_at": iso(),
             }
+            if request.get("strategy") == "source_in_place_v1":
+                self._maintenance["kind"] = "runtime_source"
             await self._durable_io(self.repository.save_maintenance, dict(self._maintenance))
             await self.platform.organization_connector.pause_dispatch()
             deadline = asyncio.get_running_loop().time() + float(
@@ -177,6 +185,14 @@ class RuntimeUpdateService:
                 cancelled = True
             counts = self._active_counts()
             if counts["total"]:
+                if not request.get("cancel_active_at_deadline"):
+                    # Nothing was cancelled; the caller defers and must release
+                    # maintenance with a verified abort-unchanged.
+                    raise ServiceError(
+                        "Runtime is busy; the update is deferred without cancelling work",
+                        status=409,
+                        code="runtime_update_deferred_busy",
+                    )
                 raise ServiceError(
                     "Runtime still has active work after the drain deadline",
                     status=409,
@@ -442,6 +458,50 @@ class RuntimeUpdateService:
             # returning the response is interrupted, the same fenced request
             # can finish safely without dispatching work twice.
             self._record(request, "resume", result)
+            await self._durable_io(self.repository.clear_maintenance)
+            self._maintenance = {}
+            self.platform.organization_connector.resume_dispatch()
+            return result
+
+    async def abort_unchanged(
+        self, request: Mapping[str, Any], *, update_token: str | None = None
+    ) -> dict[str, Any]:
+        """Reopen dispatch after a deferred drain, only if nothing was changed."""
+        self._authorize(update_token)
+        async with self._lock, _UpdateCommand(self.platform.repository.data_dir):
+            previous = self.repository.operation(str(request["operation_id"]))
+            completed = previous.get("steps", {}).get("abort_unchanged")
+            if completed and not self.repository.maintenance():
+                if (
+                    previous.get("generation") != request["generation"]
+                    or previous.get("target") != request["target"]
+                ):
+                    self._conflict("Runtime abort identity does not match")
+                return completed
+            self._validate_request(request, require_maintenance=True)
+            maintenance = self._maintenance
+            if maintenance.get("phase") not in _ABORTABLE_PHASES:
+                raise ServiceError(
+                    "Runtime maintenance can no longer be aborted unchanged",
+                    status=409,
+                    code="runtime_update_abort_unsafe",
+                )
+            if maintenance.get("installed_before") != self._installed_identity():
+                raise ServiceError(
+                    "Runtime source changed during maintenance; recovery is required",
+                    status=409,
+                    code="runtime_update_abort_unsafe",
+                )
+            result = {
+                "operation_id": request["operation_id"],
+                "generation": request["generation"],
+                "aborted_unchanged": True,
+                "dispatch_paused": False,
+                "aborted_at": iso(),
+            }
+            # Persist the outcome before reopening dispatch so a lost reply is
+            # replayed instead of repeating the release.
+            self._record(request, "abort_unchanged", result)
             await self._durable_io(self.repository.clear_maintenance)
             self._maintenance = {}
             self.platform.organization_connector.resume_dispatch()
