@@ -36,6 +36,12 @@ RAM allocation.
 
 ## Managed VM relocation admission
 
+Idle-memory reclamation shares these activity and maintenance locks. Runtime owns
+continuous idle proof and fenced prepare/execute/status/finish receipts; a root
+socket helper performs bounded clean-cache eviction. The gateway measures host
+PSS; Control owns durable claims. See the
+[idle-memory contract](../../docs/features/workspace-idle-memory-reclaim.md).
+
 Control owns rebalance selection, leases, journals and route activation. The
 node gateway submits the targeted Incus live move and calls Runtime's private
 `workspace_rebalance_runtime_v1` prepare/status/resume contract. Runtime shares

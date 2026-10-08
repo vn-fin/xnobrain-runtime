@@ -215,10 +215,53 @@ class RuntimeGatewayService(
     development boundary.
     """
 
-    def __init__(self, token: str, http_port: int, rebalances=None):
+    def __init__(self, token: str, http_port: int, rebalances=None, memory=None):
         self._token = token
         self._http_port = http_port
         self._rebalances = rebalances
+        self._memory = memory
+
+    async def _memory_command(self, request, context, action):
+        supplied = _metadata_value(context, "x-xnobrain-internal-token")
+        if not self._token or not supplied or not hmac.compare_digest(supplied, self._token):
+            await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid service identity")
+        if self._memory is None:
+            await context.abort(grpc.StatusCode.UNIMPLEMENTED, "memory reclaim unavailable")
+        try:
+            if action == "activity":
+                value = self._memory.activity(request.workspace_id, request.policy)
+                return gateway_pb2.WorkspaceMemoryActivity(**value)
+            value = await self._memory.command(
+                request.identity, action, getattr(request, "prepare_token", "")
+            )
+            return gateway_pb2.WorkspaceMemoryReclaimStatus(**value)
+        except Exception:
+            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "memory reclaim unavailable")
+
+    async def GetWorkspaceMemoryActivity(self, request, context):  # noqa: N802
+        return gateway_pb2.RuntimeGatewayServiceGetWorkspaceMemoryActivityResponse(
+            activity=await self._memory_command(request, context, "activity")
+        )
+
+    async def PrepareWorkspaceMemoryReclaim(self, request, context):  # noqa: N802
+        return gateway_pb2.RuntimeGatewayServicePrepareWorkspaceMemoryReclaimResponse(
+            status=await self._memory_command(request, context, "prepare")
+        )
+
+    async def ExecuteWorkspaceMemoryReclaim(self, request, context):  # noqa: N802
+        return gateway_pb2.RuntimeGatewayServiceExecuteWorkspaceMemoryReclaimResponse(
+            status=await self._memory_command(request, context, "execute")
+        )
+
+    async def GetWorkspaceMemoryReclaimStatus(self, request, context):  # noqa: N802
+        return gateway_pb2.RuntimeGatewayServiceGetWorkspaceMemoryReclaimStatusResponse(
+            status=await self._memory_command(request, context, "status")
+        )
+
+    async def FinishWorkspaceMemoryReclaim(self, request, context):  # noqa: N802
+        return gateway_pb2.RuntimeGatewayServiceFinishWorkspaceMemoryReclaimResponse(
+            status=await self._memory_command(request, context, "finish")
+        )
 
     async def _rebalance(self, request, context, action):
         supplied = _metadata_value(context, "x-xnobrain-internal-token")
@@ -387,7 +430,7 @@ def _grpc_enabled() -> bool:
     return os.getenv("RUNTIME_GRPC_ENABLED", "").strip().lower() in _TRUE
 
 
-async def start_runtime_gateway(rebalances=None):
+async def start_runtime_gateway(rebalances=None, memory=None):
     """Start the optional private gRPC listener in the FastAPI process."""
     if not _grpc_enabled():
         return None
@@ -407,7 +450,7 @@ async def start_runtime_gateway(rebalances=None):
             ("grpc.max_send_message_length", 128 * 1024),
         )
     )
-    relay = RuntimeGatewayService(token, http_port, rebalances)
+    relay = RuntimeGatewayService(token, http_port, rebalances, memory)
     gateway_grpc.add_RuntimeGatewayServiceServicer_to_server(relay, server)
     gateway_grpc.add_NodeGatewayServiceServicer_to_server(relay, server)
     if server.add_insecure_port(f"0.0.0.0:{grpc_port}") == 0:
@@ -419,8 +462,16 @@ async def start_runtime_gateway(rebalances=None):
 class RuntimeGatewaySupervisor:
     """Rebind private gRPC while FastAPI is still up; process death is systemd."""
 
-    def __init__(self, check_interval: float = 5.0, backoff_cap: float = 30.0, *, rebalances=None):
+    def __init__(
+        self,
+        check_interval: float = 5.0,
+        backoff_cap: float = 30.0,
+        *,
+        rebalances=None,
+        memory=None,
+    ):
         self._rebalances = rebalances
+        self._memory = memory
         self._check_interval = check_interval
         self._backoff_cap = backoff_cap
         self._backoff = check_interval
@@ -429,12 +480,15 @@ class RuntimeGatewaySupervisor:
         self._server = None
 
     async def start(self):
-        self._server = (
-            await start_runtime_gateway(self._rebalances)
-            if self._rebalances is not None
-            else await start_runtime_gateway()
-        )
+        self._server = await self._start_gateway()
         return self._server
+
+    async def _start_gateway(self):
+        if self._memory is not None:
+            return await start_runtime_gateway(self._rebalances, self._memory)
+        if self._rebalances is not None:
+            return await start_runtime_gateway(self._rebalances)
+        return await start_runtime_gateway()
 
     async def run(self) -> None:
         if not _grpc_enabled():
@@ -480,11 +534,7 @@ class RuntimeGatewaySupervisor:
             with suppress(Exception):
                 await server.stop(grace=1)
         try:
-            self._server = (
-                await start_runtime_gateway(self._rebalances)
-                if self._rebalances is not None
-                else await start_runtime_gateway()
-            )
+            self._server = await self._start_gateway()
             self._backoff = self._check_interval
             _LOGGER.warning("Runtime gRPC listener rebound")
         except Exception:

@@ -70,6 +70,7 @@ class PortabilityWorker:
                 if error.code not in {
                     "runtime_update_maintenance",
                     "workspace_rebalance_maintenance",
+                    "workspace_memory_maintenance",
                 }:
                     logger.warning("Portability admission unavailable")
             except Exception:
@@ -81,15 +82,27 @@ class PortabilityWorker:
             except TimeoutError:
                 pass
 
-    @workspace_activity(lambda self: self.store.path.parent)
+    @workspace_activity(lambda self: self.store.path.parent, passive=True)
     async def _iteration(self) -> bool:
         now = asyncio.get_running_loop().time()
         if self.maintenance is not None and now >= self._next_maintenance:
             self._next_maintenance = now + 60
             try:
-                await asyncio.to_thread(self.maintenance)
+                await asyncio.to_thread(self._maintain)
             except Exception:
                 logger.warning("Portability maintenance failed")
+        if not await asyncio.to_thread(self.store.has_claimable):
+            return False
+        # Cancellation of the polling coroutine must not release the lease
+        # while its archive thread is still running.
+        return await asyncio.shield(self._claim_and_execute())
+
+    @workspace_activity(lambda self: self.store.path.parent, passive=True)
+    def _maintain(self):
+        self.maintenance()
+
+    @workspace_activity(lambda self: self.store.path.parent)
+    async def _claim_and_execute(self) -> bool:
         claim = await asyncio.to_thread(
             self.store.claim, self.owner, lease_seconds=self.lease_seconds
         )

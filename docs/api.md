@@ -1408,3 +1408,24 @@ Private queue intents and dispatch journals live in `agent-run-admission.sqlite`
 (0600). Restart restores waiting input. Ambiguous started work is reconciled but
 never blindly replayed. Terminal local native receipts retain replay tombstones;
 deleting/replacing schedules/tasks releases their unused waiting admissions.
+
+## Private continuous-idle memory reclaim
+
+The Runtime gateway adds five service-token-authenticated gRPC methods:
+`GetWorkspaceMemoryActivity`, `PrepareWorkspaceMemoryReclaim`,
+`ExecuteWorkspaceMemoryReclaim`, `GetWorkspaceMemoryReclaimStatus`, and
+`FinishWorkspaceMemoryReclaim`. Capability `workspace_idle_memory_reclaim_v1`
+binds workspace, guest/Runtime incarnation, activity epoch, operation, fence and
+the exact environment-owned policy. Missing authentication is `UNAUTHENTICATED`;
+unsupported older servers return `UNIMPLEMENTED`; invalid/stale eligibility or
+unresolved maintenance is `FAILED_PRECONDITION` with a redacted error.
+
+Normal policy is 600 continuous idle seconds with 60-second scans. Mutation is
+default-off. A successful execute response means accepted execution, not host
+RAM savings. Status/finish remain available for accepted operations after
+disable. A returning mutating request while the helper is unresolved receives
+HTTP 503, code `workspace_memory_maintenance`; it may retry after proven helper
+exit. Passive observation does not advance idle history.
+
+See the [workspace contract](../../docs/features/workspace-idle-memory-reclaim.md)
+for helper limits, scoped accelerated tests, evidence and rollout restrictions.

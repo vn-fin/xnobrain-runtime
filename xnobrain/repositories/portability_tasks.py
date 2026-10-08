@@ -105,13 +105,15 @@ class PortabilityTaskStore:
             )
 
     @contextmanager
-    def transaction(self):
+    def transaction(self, *, read_only=False):
         db = sqlite3.connect(self.path, timeout=2, isolation_level=None)
         db.row_factory = sqlite3.Row
         try:
             db.execute("PRAGMA foreign_keys=ON")
             db.execute("PRAGMA synchronous=FULL")
-            db.execute("BEGIN IMMEDIATE")
+            if read_only:
+                db.execute("PRAGMA query_only=ON")
+            db.execute("BEGIN" if read_only else "BEGIN IMMEDIATE")
             yield db
             db.commit()
         except sqlite3.Error as error:
@@ -228,6 +230,22 @@ class PortabilityTaskStore:
             if row is None:
                 raise StoreError("Task not found", status=404, code="task_not_found")
             return dict(row)
+
+    def has_claimable(self) -> bool:
+        """Read-only hint; claim still validates ownership inside its transaction."""
+        now = time.time()
+        with self.transaction(read_only=True) as db:
+            return (
+                db.execute(
+                    "SELECT 1 FROM portability_tasks "
+                    "WHERE ((status='PENDING' AND available_at<=?) "
+                    "OR (status='PROCESSING' AND lease_until<=?)) "
+                    "AND NOT EXISTS (SELECT 1 FROM portability_tasks "
+                    "WHERE status='PROCESSING' AND lease_until>?) LIMIT 1",
+                    (now, now, now),
+                ).fetchone()
+                is not None
+            )
 
     def claim(self, owner: str, *, lease_seconds: float = 30) -> dict[str, Any] | None:
         # A takeover must not change the fence while the previous owner is in

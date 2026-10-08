@@ -9,6 +9,7 @@ from contextlib import contextmanager, suppress
 from ..repositories.base import StoreError
 from ..repositories.custom_page_locks import acquire, release
 from ..repositories.run_admission import AdmissionRepository
+from ..repositories.runtime_update_gate import WorkspaceActivity
 from ..services.base import ServiceError
 from .run_admission import BOOT_ID, AdmissionClient, admitted_root, managed
 
@@ -61,7 +62,8 @@ class NativeAdmission:
             self.admission = row["admission"] if row else {}
             if not row:
                 # Journal before registration, including a lost HTTP response.
-                self.save("waiting")
+                with WorkspaceActivity(self.root):
+                    self.save("waiting")
             self.admission = (
                 call("observe", self.admission["id"])
                 if self.admission

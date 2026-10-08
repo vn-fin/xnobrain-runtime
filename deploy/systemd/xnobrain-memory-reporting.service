@@ -1,0 +1,25 @@
+[Unit]
+Description=XNOBrain qualified guest free-page reporting configuration
+After=xnobrain-prepare.service systemd-modules-load.service
+Before=xnobrain-api.service
+PartOf=xnobrain.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/xnobrain/xnobrain.env
+ExecStart=/usr/bin/python3 -I /usr/local/libexec/xnobrain-memory-reporting.py
+RemainAfterExit=yes
+TimeoutStartSec=5
+NoNewPrivileges=true
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateNetwork=true
+ReadWritePaths=-/sys/module/page_reporting/parameters/page_reporting_order
+TasksMax=1
+MemoryMax=64M
+
+[Install]
+WantedBy=xnobrain.target

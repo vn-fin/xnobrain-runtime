@@ -134,6 +134,9 @@ class PlatformService(
         self.agents.custom_page_service = self.custom_page
         self.runtime_updates = RuntimeUpdateService(self)
         self.runtime_rebalances = RuntimeRebalanceService(self)
+        from .workspace_memory import WorkspaceMemoryService
+
+        self.workspace_memory = WorkspaceMemoryService(self)
         self.time_control = TimeControlService(self)
         self.cron.default_timezone = self.time_control.default_timezone
         self.conversation_runs.runtime_updates = self.runtime_updates

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ..repositories.base import StoreError
+from ..repositories.runtime_update_gate import WorkspaceActivity
 from .portability import CHUNK_SIZE
 from .portability_worker import ClaimLostError, PortabilityWorker
 
@@ -340,12 +341,14 @@ class PortabilityTasks:
                 inputs = json.loads(row["input_json"])
                 if row["kind"] == "IMPORT":
                     reference = self.portability.repository._id(inputs["environment_ref"])
-                    (
-                        self.portability.repository.data_dir / "portability-inputs" / reference
-                    ).unlink(missing_ok=True)
+                    secret = self.portability.repository.data_dir / "portability-inputs" / reference
+                    if secret.exists() or secret.is_symlink():
+                        with WorkspaceActivity(self.portability.repository.data_dir):
+                            secret.unlink(missing_ok=True)
                     stage = self.portability.repository.data_dir / "portability-imports" / row["id"]
                     if stage.is_dir() and not stage.is_symlink():
-                        shutil.rmtree(stage)
+                        with WorkspaceActivity(self.portability.repository.data_dir):
+                            shutil.rmtree(stage)
                 else:
                     result = json.loads(row["result_json"])
                     if result["expires_at_epoch"] <= time.time() and not self.store.artifact_reader(
@@ -355,7 +358,8 @@ class PortabilityTasks:
                             result["export_id"]
                         )
                         if artifact.is_dir() and not artifact.is_symlink():
-                            shutil.rmtree(artifact)
+                            with WorkspaceActivity(self.portability.repository.data_dir):
+                                shutil.rmtree(artifact)
 
     @staticmethod
     def _positive_setting(name, default):

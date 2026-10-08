@@ -1,0 +1,16 @@
+[Unit]
+Description=XNOBrain fixed guest page-cache helper socket
+
+[Socket]
+ListenStream=/run/xnobrain-memory-reclaim.sock
+SocketUser=root
+SocketGroup=xnobrain
+SocketMode=0660
+Accept=no
+Backlog=1
+RemoveOnStop=true
+TriggerLimitIntervalSec=60
+TriggerLimitBurst=10
+
+[Install]
+WantedBy=sockets.target

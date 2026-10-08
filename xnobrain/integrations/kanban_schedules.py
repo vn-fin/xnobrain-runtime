@@ -185,7 +185,9 @@ def _append_schedule_event(
         )
 
 
-def release_due_schedules(conn: Any, *, board: str, now: int | None = None) -> list[str]:
+def release_due_schedules(
+    conn: Any, *, board: str, now: int | None = None, activity_root=None
+) -> list[str]:
     """Release one-shot tasks and materialize recurring task occurrences."""
     kb = _module()
     current = int(time.time()) if now is None else int(now)
@@ -197,6 +199,11 @@ def release_due_schedules(conn: Any, *, board: str, now: int | None = None) -> l
         "ORDER BY next_run_at, task_id LIMIT 100",
         (current,),
     ).fetchall()
+    if due and activity_root is not None:
+        from ..repositories.runtime_update_gate import WorkspaceActivity
+
+        with WorkspaceActivity(activity_root):
+            return release_due_schedules(conn, board=board, now=current)
     released: list[str] = []
     for row in due:
         task_id = str(row["task_id"])
@@ -301,12 +308,16 @@ async def dispatcher_loop(
 
                 from ..repositories.runtime_update_gate import WorkspaceActivity
 
-                with WorkspaceActivity(activity_root) if activity_root else nullcontext():
+                with (
+                    WorkspaceActivity(activity_root, passive=True)
+                    if activity_root
+                    else nullcontext()
+                ):
                     kb = _module()
                     for board in kb.list_boards(include_archived=False):
                         slug = str(board.get("slug") or "default")
                         with connection(slug) as conn:
-                            release_due_schedules(conn, board=slug)
+                            release_due_schedules(conn, board=slug, activity_root=activity_root)
                             from .kanban_admission import dispatch_scope
 
                             with dispatch_scope(kb, activity_root, slug):
@@ -318,7 +329,7 @@ async def dispatcher_loop(
 
             # The thread also owns its lease: cancellation of this coroutine
             # must not report idle while dispatch_once is still executing.
-            with WorkspaceActivity(activity_root) if activity_root else nullcontext():
+            with WorkspaceActivity(activity_root, passive=True) if activity_root else nullcontext():
                 await asyncio.to_thread(tick)
                 if on_tick is not None:
                     result = on_tick()

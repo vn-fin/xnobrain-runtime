@@ -204,6 +204,31 @@ class RuntimeGatewayServiceStub(object):
                 request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceRequest.SerializeToString,
                 response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceResponse.FromString,
                 _registered_method=True)
+        self.GetWorkspaceMemoryActivity = channel.unary_unary(
+                '/xnobrain.runtime.v1.RuntimeGatewayService/GetWorkspaceMemoryActivity',
+                request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryActivityRequest.SerializeToString,
+                response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryActivityResponse.FromString,
+                _registered_method=True)
+        self.PrepareWorkspaceMemoryReclaim = channel.unary_unary(
+                '/xnobrain.runtime.v1.RuntimeGatewayService/PrepareWorkspaceMemoryReclaim',
+                request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareWorkspaceMemoryReclaimRequest.SerializeToString,
+                response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareWorkspaceMemoryReclaimResponse.FromString,
+                _registered_method=True)
+        self.ExecuteWorkspaceMemoryReclaim = channel.unary_unary(
+                '/xnobrain.runtime.v1.RuntimeGatewayService/ExecuteWorkspaceMemoryReclaim',
+                request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceExecuteWorkspaceMemoryReclaimRequest.SerializeToString,
+                response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceExecuteWorkspaceMemoryReclaimResponse.FromString,
+                _registered_method=True)
+        self.GetWorkspaceMemoryReclaimStatus = channel.unary_unary(
+                '/xnobrain.runtime.v1.RuntimeGatewayService/GetWorkspaceMemoryReclaimStatus',
+                request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryReclaimStatusRequest.SerializeToString,
+                response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryReclaimStatusResponse.FromString,
+                _registered_method=True)
+        self.FinishWorkspaceMemoryReclaim = channel.unary_unary(
+                '/xnobrain.runtime.v1.RuntimeGatewayService/FinishWorkspaceMemoryReclaim',
+                request_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceFinishWorkspaceMemoryReclaimRequest.SerializeToString,
+                response_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceFinishWorkspaceMemoryReclaimResponse.FromString,
+                _registered_method=True)
 
 
 class RuntimeGatewayServiceServicer(object):
@@ -236,6 +261,36 @@ class RuntimeGatewayServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetWorkspaceMemoryActivity(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PrepareWorkspaceMemoryReclaim(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ExecuteWorkspaceMemoryReclaim(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetWorkspaceMemoryReclaimStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def FinishWorkspaceMemoryReclaim(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_RuntimeGatewayServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -258,6 +313,31 @@ def add_RuntimeGatewayServiceServicer_to_server(servicer, server):
                     servicer.ResumeRebalance,
                     request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceRequest.FromString,
                     response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceResponse.SerializeToString,
+            ),
+            'GetWorkspaceMemoryActivity': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetWorkspaceMemoryActivity,
+                    request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryActivityRequest.FromString,
+                    response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryActivityResponse.SerializeToString,
+            ),
+            'PrepareWorkspaceMemoryReclaim': grpc.unary_unary_rpc_method_handler(
+                    servicer.PrepareWorkspaceMemoryReclaim,
+                    request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareWorkspaceMemoryReclaimRequest.FromString,
+                    response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareWorkspaceMemoryReclaimResponse.SerializeToString,
+            ),
+            'ExecuteWorkspaceMemoryReclaim': grpc.unary_unary_rpc_method_handler(
+                    servicer.ExecuteWorkspaceMemoryReclaim,
+                    request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceExecuteWorkspaceMemoryReclaimRequest.FromString,
+                    response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceExecuteWorkspaceMemoryReclaimResponse.SerializeToString,
+            ),
+            'GetWorkspaceMemoryReclaimStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetWorkspaceMemoryReclaimStatus,
+                    request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryReclaimStatusRequest.FromString,
+                    response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryReclaimStatusResponse.SerializeToString,
+            ),
+            'FinishWorkspaceMemoryReclaim': grpc.unary_unary_rpc_method_handler(
+                    servicer.FinishWorkspaceMemoryReclaim,
+                    request_deserializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceFinishWorkspaceMemoryReclaimRequest.FromString,
+                    response_serializer=xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceFinishWorkspaceMemoryReclaimResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -371,6 +451,141 @@ class RuntimeGatewayService(object):
             '/xnobrain.runtime.v1.RuntimeGatewayService/ResumeRebalance',
             xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceRequest.SerializeToString,
             xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceResumeRebalanceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetWorkspaceMemoryActivity(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/xnobrain.runtime.v1.RuntimeGatewayService/GetWorkspaceMemoryActivity',
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryActivityRequest.SerializeToString,
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryActivityResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PrepareWorkspaceMemoryReclaim(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/xnobrain.runtime.v1.RuntimeGatewayService/PrepareWorkspaceMemoryReclaim',
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareWorkspaceMemoryReclaimRequest.SerializeToString,
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServicePrepareWorkspaceMemoryReclaimResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ExecuteWorkspaceMemoryReclaim(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/xnobrain.runtime.v1.RuntimeGatewayService/ExecuteWorkspaceMemoryReclaim',
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceExecuteWorkspaceMemoryReclaimRequest.SerializeToString,
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceExecuteWorkspaceMemoryReclaimResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetWorkspaceMemoryReclaimStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/xnobrain.runtime.v1.RuntimeGatewayService/GetWorkspaceMemoryReclaimStatus',
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryReclaimStatusRequest.SerializeToString,
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceGetWorkspaceMemoryReclaimStatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def FinishWorkspaceMemoryReclaim(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/xnobrain.runtime.v1.RuntimeGatewayService/FinishWorkspaceMemoryReclaim',
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceFinishWorkspaceMemoryReclaimRequest.SerializeToString,
+            xnobrain_dot_runtime_dot_v1_dot_runtime__gateway__pb2.RuntimeGatewayServiceFinishWorkspaceMemoryReclaimResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
 
+from ..repositories.runtime_update_gate import WorkspaceActivity
 from .native_admission import NativeAdmission
 from .run_admission import managed
 
@@ -20,9 +21,12 @@ def install(kb):
             @wraps(function)
             def claim(conn, task_id, *args, **kwargs):
                 scope = _dispatch.get()
-                if not managed() or scope is None:
+                if scope is None:
                     return function(conn, task_id, *args, **kwargs)
                 root, board, pending = scope
+                if not managed():
+                    with WorkspaceActivity(root):
+                        return function(conn, task_id, *args, **kwargs)
                 task = kb.get_task(conn, task_id)
                 if task is None:
                     return None
@@ -31,7 +35,8 @@ def install(kb):
                 if not gate.poll():
                     return None
                 try:
-                    claimed = function(conn, task_id, *args, **kwargs)
+                    with WorkspaceActivity(root):
+                        claimed = function(conn, task_id, *args, **kwargs)
                     if claimed is None:
                         gate.defer()
                     else:
@@ -49,7 +54,7 @@ def install(kb):
 
 @contextmanager
 def dispatch_scope(kb, root, board):
-    if not managed():
+    if root is None:
         yield
         return
     install(kb)

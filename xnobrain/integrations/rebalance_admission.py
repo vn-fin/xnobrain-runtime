@@ -1,9 +1,20 @@
 """ASGI admission covering uploads and mutations through response completion."""
 
+import re
+
 from starlette.responses import JSONResponse
 
 from ..repositories.base import StoreError
 from ..repositories.runtime_update_gate import WorkspaceActivity
+
+_TRANSFER = re.compile(
+    r"/xnobrain/api/runtime/v1/(?:"
+    r"agents-workspaces/[^/]+/(?:file|preview|workbook)|"
+    r"bundles/(?:task-exports|exports)/[^/]+/parts/[^/]+|"
+    r"marketplace/agents/[^/]+/export|"
+    r"agents/[^/]+/custom-page/export"
+    r")/?$"
+)
 
 
 class WorkspaceAdmissionMiddleware:
@@ -17,7 +28,9 @@ class WorkspaceAdmissionMiddleware:
         path = scope.get("path", "")
         # These are management/read-only observers, never new work. An idle SSE
         # observer is intentionally not an activity lease.
-        passive = scope.get("method") in {"GET", "HEAD", "OPTIONS"}
+        passive = scope.get("method") in {"GET", "HEAD", "OPTIONS"} and not (
+            scope.get("method") == "GET" and _TRANSFER.fullmatch(path)
+        )
         management = path.startswith("/xnobrain/api/runtime/v1/system/update/")
         if passive or management:
             return await self.app(scope, receive, send)
@@ -35,7 +48,11 @@ class WorkspaceAdmissionMiddleware:
                 headers={
                     "Retry-After": "5",
                     "Cache-Control": "no-store",
-                    "X-XNOBrain-Maintenance": "vm-rebalance",
+                    "X-XNOBrain-Maintenance": (
+                        "memory-reclaim"
+                        if error.code == "workspace_memory_maintenance"
+                        else "vm-rebalance"
+                    ),
                 },
             )
             return await response(scope, receive, send)

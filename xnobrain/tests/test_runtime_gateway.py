@@ -98,6 +98,24 @@ class RuntimeGatewayTests(unittest.IsolatedAsyncioTestCase):
         await self.grpc_server.stop(grace=None)
         await self.http_runner.cleanup()
 
+    async def test_memory_rpcs_require_private_token_and_installed_capability(self):
+        for method in (
+            "GetWorkspaceMemoryActivity",
+            "PrepareWorkspaceMemoryReclaim",
+            "ExecuteWorkspaceMemoryReclaim",
+            "GetWorkspaceMemoryReclaimStatus",
+            "FinishWorkspaceMemoryReclaim",
+        ):
+            call = getattr(self.stub, method)
+            request = getattr(gateway_pb2, "RuntimeGatewayService" + method + "Request")()
+            with self.subTest(method=method):
+                with self.assertRaises(grpc.aio.AioRpcError) as denied:
+                    await call(request)
+                self.assertEqual(denied.exception.code(), grpc.StatusCode.UNAUTHENTICATED)
+                with self.assertRaises(grpc.aio.AioRpcError) as missing:
+                    await call(request, metadata=(("x-xnobrain-internal-token", TOKEN),))
+                self.assertEqual(missing.exception.code(), grpc.StatusCode.UNIMPLEMENTED)
+
     async def test_accepts_node_gateway_frames_for_static_dev_runtime(self) -> None:
         call = self.node_stub.Proxy(
             _frames(

@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from collections.abc import Mapping
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -781,24 +782,30 @@ class CronService:
         # Passive cron views remain available during maintenance. Delivery can
         # write files and native history, so admit it separately before any
         # side effect; existing executor lineages retain their activity lease.
-        activity = self._admit_passive_mutation()
+        activity = self._admit_passive_mutation(passive=True)
         if activity is None:
             return
-        with activity:
-            self._reconcile_deliveries(profile_jobs)
+        with activity, ExitStack() as work:
+            self._reconcile_deliveries(profile_jobs, work)
 
-    def _admit_passive_mutation(self) -> WorkspaceActivity | None:
+    def _admit_passive_mutation(self, *, passive=False) -> WorkspaceActivity | None:
         try:
-            return WorkspaceActivity(self.repository.data_dir)
+            return WorkspaceActivity(self.repository.data_dir, passive=passive)
         except StoreError as error:
-            if error.code in {"workspace_rebalance_maintenance", "runtime_update_maintenance"}:
+            if error.code in {
+                "workspace_rebalance_maintenance",
+                "runtime_update_maintenance",
+                "workspace_memory_maintenance",
+            }:
                 return None
             raise
 
     def _reconcile_deliveries(
         self,
-        profile_jobs: list[tuple[str, list[dict[str, Any]]]] | None = None,
+        profile_jobs: list[tuple[str, list[dict[str, Any]]]] | None,
+        work: ExitStack,
     ) -> None:
+        admitted = False
         for profile, jobs in profile_jobs if profile_jobs is not None else self._jobs_by_profile():
             for job in jobs:
                 targets = [dict(item) for item in job.get("xnobrain_delivery_targets") or []]
@@ -820,6 +827,12 @@ class CronService:
                         previous = indexed.get(key)
                         if previous and previous.get("status") in {"delivered", "failed"}:
                             continue
+                        if not admitted:
+                            activity = self._admit_passive_mutation()
+                            if activity is None:
+                                return
+                            work.enter_context(activity)
+                            admitted = True
                         result = self._deliver_execution(profile, job, execution, target, output)
                         if result is None:
                             continue

@@ -80,6 +80,9 @@ if [[ ! -e /etc/xnobrain/xnobrain.env ]]; then
 fi
 
 for unit in \
+  xnobrain-memory-reclaim.socket \
+  xnobrain-memory-reclaim.service \
+  xnobrain-memory-reporting.service \
   xnobrain-prepare.service \
   xnobrain-api.service \
   xnobrain.target; do
@@ -89,8 +92,20 @@ for unit in \
 done
 chmod 0755 "$install_root/scripts/prepare-service-data.sh"
 
+# Copy out of the application-owned checkout; the privileged executable and its
+# unit files must remain root-owned across Runtime source updates.
+install -d -o root -g root -m 0755 /usr/local/libexec
+install -o root -g root -m 0755 \
+  "$install_root/runtime/memory-reclaim-helper.py" \
+  /usr/local/libexec/xnobrain-memory-reclaim.py
+install -o root -g root -m 0755 \
+  "$install_root/runtime/memory-reporting-boot.py" \
+  /usr/local/libexec/xnobrain-memory-reporting.py
+
 systemctl daemon-reload
 systemctl enable xnobrain.target
+systemctl enable xnobrain-memory-reclaim.socket
+systemctl enable xnobrain-memory-reporting.service
 if [[ "$start_services" == true ]]; then
   for variable_name in RUNTIME_HERMES_HOME RUNTIME_LLM_ROUTER_URL RUNTIME_LLM_API_KEY; do
     if ! grep -Eq "^${variable_name}=[^[:space:]].*" /etc/xnobrain/xnobrain.env; then

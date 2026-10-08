@@ -40,6 +40,7 @@ class XNOBrainApplication:
 
         @asynccontextmanager
         async def lifespan(application):
+            self.service.workspace_memory.start()
             async with upstream_lifespan(application):
                 await self.service.ensure_default_agent()
                 await self.service.organization_connector.start()
@@ -48,7 +49,8 @@ class XNOBrainApplication:
                 from .integrations.runtime_gateway import RuntimeGatewaySupervisor
 
                 grpc_supervisor = RuntimeGatewaySupervisor(
-                    rebalances=self.service.runtime_rebalances
+                    rebalances=self.service.runtime_rebalances,
+                    memory=self.service.workspace_memory,
                 )
                 await grpc_supervisor.start()
                 grpc_supervisor_task = asyncio.create_task(

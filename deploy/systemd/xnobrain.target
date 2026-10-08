@@ -1,6 +1,6 @@
 [Unit]
 Description=XNOBrain workspace runtime
-Wants=xnobrain-prepare.service xnobrain-api.service
+Wants=xnobrain-prepare.service xnobrain-api.service xnobrain-memory-reporting.service xnobrain-memory-reclaim.socket
 After=xnobrain-prepare.service xnobrain-api.service
 
 [Install]

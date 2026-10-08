@@ -20,6 +20,7 @@ from .custom_page_locks import _open, acquire, release
 
 ADMISSION = ".runtime-update-admission.lock"
 ACTIVITY = ".runtime-update-activity.lock"
+PASSIVE_ACTIVITY = ".runtime-passive-activity.lock"
 OPERATION = ".runtime-update-operation.lock"
 _lineage = ContextVar("workspace_activity", default=None)
 
@@ -39,6 +40,7 @@ def require_admission(root: Path) -> None:
         and parent is not None
         and parent.root == root
         and parent.descriptor is not None
+        and not getattr(parent, "passive", False)
     ):
         return
     if gate.get("dispatch_paused"):
@@ -47,6 +49,8 @@ def require_admission(root: Path) -> None:
             status=503,
             code="workspace_rebalance_maintenance"
             if gate.get("kind") == "vm_rebalance"
+            else "workspace_memory_maintenance"
+            if gate.get("kind") == "workspace_memory_reclaim"
             else "runtime_update_maintenance",
         )
 
@@ -61,21 +65,47 @@ def admission_gate(root: Path):
 
 
 class WorkspaceActivity:
-    def __init__(self, root: Path, *, mutation: bool = True):
+    def __init__(self, root: Path, *, mutation: bool = True, passive: bool = False):
         self.root = root
+        self.passive = passive
         self.descriptor = None
         self._token = None
         with admission_gate(root):
             if mutation:
                 require_admission(root)
-            self.descriptor = acquire(root, ACTIVITY, shared=True)
+            self.descriptor = acquire(root, PASSIVE_ACTIVITY if passive else ACTIVITY, shared=True)
+            try:
+                from .workspace_memory import record_activity
+
+                if not passive:
+                    record_activity(root, busy=True)
+            except BaseException:
+                release(self.descriptor)
+                self.descriptor = None
+                raise
 
     def close(self):
         if self.descriptor is not None:
-            release(self.descriptor)
-            self.descriptor = None
+            with admission_gate(self.root):
+                release(self.descriptor)
+                self.descriptor = None
+                from .workspace_memory import record_activity
+
+                if not getattr(self, "passive", False):
+                    record_activity(self.root, busy=activity_present(self.root, business_only=True))
 
     def __enter__(self):
+        parent = _lineage.get()
+        if (
+            getattr(self, "passive", False)
+            and parent is not None
+            and parent.root == self.root
+            and parent.descriptor is not None
+            and not getattr(parent, "passive", False)
+        ):
+            # An already-admitted executor retains permission to finish its
+            # descendants while rebalance drains, even through a passive view.
+            return self
         self._token = _lineage.set(self)
         return self
 
@@ -99,7 +129,7 @@ class WorkspaceActivity:
             return await function(*args)
 
 
-def workspace_activity(root_for):
+def workspace_activity(root_for, *, passive=False):
     """Admit before the first await/claim and retain ownership through completion."""
 
     def decorate(function):
@@ -107,14 +137,14 @@ def workspace_activity(root_for):
 
             @wraps(function)
             async def asynchronous(self, *args, **kwargs):
-                with WorkspaceActivity(root_for(self)):
+                with WorkspaceActivity(root_for(self), passive=passive):
                     return await function(self, *args, **kwargs)
 
             return asynchronous
 
         @wraps(function)
         def synchronous(self, *args, **kwargs):
-            with WorkspaceActivity(root_for(self)):
+            with WorkspaceActivity(root_for(self), passive=passive):
                 return function(self, *args, **kwargs)
 
         return synchronous
@@ -123,18 +153,23 @@ def workspace_activity(root_for):
 
 
 @contextmanager
-def checkpoint_gate(root: Path):
+def checkpoint_gate(root: Path, *, business_only=False):
     # Drain has already persisted maintenance, so new mutations cannot enter.
     descriptor = acquire(root, ACTIVITY, shared=False)
+    passive_descriptor = None
     try:
+        if not business_only:
+            passive_descriptor = acquire(root, PASSIVE_ACTIVITY, shared=False)
         yield
     finally:
+        if passive_descriptor is not None:
+            release(passive_descriptor)
         release(descriptor)
 
 
-def activity_present(root: Path) -> bool:
+def activity_present(root: Path, *, business_only=False) -> bool:
     try:
-        with checkpoint_gate(root):
+        with checkpoint_gate(root, business_only=business_only):
             return False
     except StoreError as error:
         if error.code == "custom_page_jobs_active":
@@ -156,7 +191,13 @@ def is_coordination_file(path: Path, root: Path) -> bool:
     if path.parent != root:
         return False
     name = path.name
-    return name in {ADMISSION, ACTIVITY, OPERATION, ".custom-page-storage.lock"} or bool(
+    return name in {
+        ADMISSION,
+        ACTIVITY,
+        PASSIVE_ACTIVITY,
+        OPERATION,
+        ".custom-page-storage.lock",
+    } or bool(
         re.fullmatch(
             r"\.(?:custom-page-(?:execution|conversation|schedule)|conversation-creation)-[a-f0-9]{64}\.lock",
             name,
