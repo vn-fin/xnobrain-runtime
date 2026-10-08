@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 from pydantic import ValidationError
+
 from xnobrain.integrations.rebalance_admission import WorkspaceAdmissionMiddleware
 from xnobrain.integrations.runtime_build_identity import source_installed_identity
 from xnobrain.models.runtime_updates import RuntimeRolloutDrain, RuntimeRolloutRequest
@@ -147,8 +148,7 @@ class SourceDrainTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_source_abort_after_restore_requires_identical_identity(self):
         await self.call("drain", request(deadline_seconds=0, strategy="source_in_place_v1"))
-        maintenance = self.service.repository.maintenance()
-        self.service.repository.save_maintenance({**maintenance, "phase": "checkpointed"})
+        await self.call("checkpoint", request())
         # A swapped-but-not-restored source receipt blocks reopening dispatch.
         with (
             patch(
@@ -163,6 +163,108 @@ class SourceDrainTests(unittest.IsolatedAsyncioTestCase):
         result = await self.call("abort_unchanged", request())
         self.assertTrue(result["aborted_unchanged"])
         self.assertFalse(self.connector.paused)
+
+    async def test_drain_replay_preserves_original_identity_and_checkpoint(self):
+        drained = await self.call("drain", request(strategy="source_in_place_v1"))
+        await self.call("checkpoint", request())
+        before = self.service.repository.maintenance()
+        with patch.dict(os.environ, {"XNOBRAIN_SOURCE_COMMIT": "9" * 40}):
+            self.assertEqual(
+                await self.call("drain", request(strategy="source_in_place_v1")), drained
+            )
+            self.assertEqual(self.service.repository.maintenance(), before)
+            with self.assertRaises(ServiceError):
+                await self.call("abort_unchanged", request())
+
+    async def test_aborted_operation_cannot_drain_again(self):
+        await self.call("drain", request(strategy="source_in_place_v1"))
+        await self.call("abort_unchanged", request())
+        with self.assertRaises(ServiceError) as raised:
+            await self.call("drain", request(strategy="source_in_place_v1"))
+        self.assertEqual(raised.exception.code, "runtime_update_aborted")
+        self.assertEqual(self.service.repository.maintenance(), {})
+        self.assertFalse(self.connector.paused)
+
+    async def test_drain_recovers_after_phase_saved_but_outcome_write_lost(self):
+        with patch.object(self.service, "_record", side_effect=OSError("lost outcome")):
+            with self.assertRaises(OSError):
+                await self.call("drain", request(strategy="source_in_place_v1"))
+        original = self.service.repository.maintenance()
+        self.service = RuntimeUpdateService(self.platform)
+        with patch.dict(os.environ, {"XNOBRAIN_SOURCE_COMMIT": "9" * 40}):
+            result = await self.call("drain", request(strategy="source_in_place_v1"))
+        self.assertTrue(result["drained"])
+        self.assertFalse(result["cancelled_at_deadline"])
+        self.assertEqual(self.service.repository.maintenance(), original)
+        self.shutdown.assert_not_awaited()
+
+    async def test_checkpoint_recovers_original_manifest_after_lost_outcome(self):
+        data = self.data / "sentinel.txt"
+        data.write_text("original")
+        await self.call("drain", request(strategy="source_in_place_v1"))
+        with patch.object(self.service, "_record", side_effect=OSError("lost outcome")):
+            with self.assertRaises(OSError):
+                await self.call("checkpoint", request())
+        original = self.service.repository.checkpoint(
+            self.service.repository.maintenance()["checkpoint_id"]
+        )
+        data.write_text("unexpected writer")
+        self.service = RuntimeUpdateService(self.platform)
+        replay = await self.call("checkpoint", request())
+        self.assertEqual(replay, original)
+        with self.assertRaises(ServiceError) as raised:
+            await self.call("restore_ready", request(checkpoint_id=replay["checkpoint_id"]))
+        self.assertEqual(raised.exception.code, "runtime_source_restore_unsafe")
+        self.assertTrue(self.service.dispatch_paused)
+
+    async def test_internal_source_caller_cannot_force_cancel(self):
+        with self.assertRaises(ServiceError):
+            await self.call(
+                "drain", request(strategy="source_in_place_v1", cancel_active_at_deadline=True)
+            )
+        self.shutdown.assert_not_awaited()
+        self.assertEqual(self.service.repository.maintenance(), {})
+
+    async def test_source_restore_requires_unchanged_checkpoint_data(self):
+        data = self.data / "sentinel.txt"
+        data.write_text("before")
+        await self.call("drain", request(strategy="source_in_place_v1"))
+        checkpoint = await self.call("checkpoint", request())
+        restore = request(checkpoint_id=checkpoint["checkpoint_id"])
+        proof = await self.call("restore_ready", restore)
+        self.assertTrue(proof["restore_ready"])
+        data.write_text("new data")
+        for method in ("restore_ready", "abort_unchanged"):
+            with self.assertRaises(ServiceError) as raised:
+                await self.call(method, restore)
+            self.assertEqual(raised.exception.code, "runtime_source_restore_unsafe")
+        self.assertTrue(self.service.repository.maintenance()["dispatch_paused"])
+        self.assertTrue(self.connector.paused)
+        self.assertEqual(data.read_text(), "new data")
+
+    async def test_source_restore_refuses_missing_checkpoint_or_resume_outcome(self):
+        await self.call("drain", request(strategy="source_in_place_v1"))
+        with self.assertRaises(ServiceError):
+            await self.call("restore_ready", request(checkpoint_id="missing"))
+        checkpoint = await self.call("checkpoint", request())
+        self.service._record(request(), "resume", {"resumed": True})
+        with self.assertRaises(ServiceError) as raised:
+            await self.call("restore_ready", request(checkpoint_id=checkpoint["checkpoint_id"]))
+        self.assertEqual(raised.exception.code, "runtime_source_restore_unsafe")
+
+    async def test_restore_proof_requires_service_identity_and_original_fence(self):
+        await self.call("drain", request(strategy="source_in_place_v1"))
+        checkpoint = await self.call("checkpoint", request())
+        body = request(checkpoint_id=checkpoint["checkpoint_id"])
+        before = self.service.repository.maintenance()
+        with self.assertRaises(ServiceError) as raised:
+            await self.service.restore_ready(body, update_token="wrong-token")
+        self.assertEqual(raised.exception.status, 401)
+        for foreign in ({"operation_id": "upd_foreign"}, {"generation": 5}):
+            with self.assertRaises(ServiceError):
+                await self.call("restore_ready", {**body, **foreign})
+        self.assertEqual(self.service.repository.maintenance(), before)
+        self.assertTrue(self.service.dispatch_paused)
 
     async def test_image_maintenance_cannot_abort_after_checkpoint(self):
         await self.call("drain", request(deadline_seconds=0))

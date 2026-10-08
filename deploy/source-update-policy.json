@@ -4,6 +4,10 @@
   "data_schema": 1,
   "preserved_paths": [".tools"],
   "mode_only_paths": ["runtime/agent-cli.sh"],
+  "legacy_baselines": [
+    "f7593576bb090b0fa895e3b0ce18c47bc2016f94",
+    "bda55ea576788fb430a8e62b7e0988e07153a06a"
+  ],
   "dependency_paths": [
     "Dockerfile.incus-vm-builder",
     "deploy/incus-vm-builder/",

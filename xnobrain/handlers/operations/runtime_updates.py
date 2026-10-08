@@ -42,6 +42,11 @@ def operations(handler: Any, _request: Any, body: dict[str, Any]):
             "Runtime update aborted unchanged",
             200,
         ),
+        "runtime_update_restore_ready": (
+            lambda: service.restore_ready(body, update_token=token),
+            "Runtime source restoration verified",
+            200,
+        ),
         "runtime_update_resume": (
             lambda: service.resume(body, update_token=token),
             "Runtime dispatch resumed",

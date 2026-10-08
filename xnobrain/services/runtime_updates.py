@@ -131,6 +131,7 @@ class RuntimeUpdateService:
                 "operation_id": request["operation_id"],
                 "generation": request["generation"],
                 "ready": not blockers,
+                "source_protocol": "runtime_source_safe_v1",
                 "layout": layout,
                 "data_path": observed["data_path"],
                 "separate_mount": observed["separate_mount"],
@@ -156,7 +157,50 @@ class RuntimeUpdateService:
         self._authorize(update_token)
         async with self._lock, _UpdateCommand(self.platform.repository.data_dir):
             self._validate_request(request)
-            self._maintenance = {
+            source = request.get("strategy") == "source_in_place_v1"
+            if source and request.get("cancel_active_at_deadline"):
+                self._conflict("source updates cannot cancel active work")
+            previous = self.repository.operation(str(request["operation_id"]))
+            steps = previous.get("steps") or {}
+            if steps.get("abort_unchanged"):
+                raise ServiceError(
+                    "Runtime update was already aborted unchanged",
+                    status=409,
+                    code="runtime_update_aborted",
+                )
+            if steps.get("resume"):
+                self._conflict("completed Runtime update cannot drain again")
+            # A lost response must not replace the original identity or move a
+            # checkpointed operation backwards after the installed tree changed.
+            if self._maintenance and self._maintenance.get("phase") != "draining":
+                completed = steps.get("drain")
+                if completed and self._maintenance.get("phase") in {"drained", "checkpointed"}:
+                    return completed
+                if (
+                    source
+                    and self._maintenance.get("kind") == "runtime_source"
+                    and self._maintenance.get("phase") in {"drained", "checkpointed"}
+                ):
+                    # A crash can separate the durable phase from its outcome.
+                    # Reconstruct only a non-cancelling, still-idle drain; keep
+                    # the original installed identity and checkpoint untouched.
+                    with checkpoint_gate(self.platform.repository.data_dir):
+                        counts = self._active_counts(include_leases=False)
+                        if counts["total"]:
+                            self._conflict("Runtime is no longer drained")
+                        completed = {
+                            "operation_id": request["operation_id"],
+                            "generation": request["generation"],
+                            "drained": True,
+                            "dispatch_paused": True,
+                            "cancelled_at_deadline": False,
+                            "active": counts,
+                            "completed_at": self._maintenance["updated_at"],
+                        }
+                        self._record(request, "drain", completed)
+                        return completed
+                self._conflict("Runtime update cannot repeat drain in this phase")
+            self._maintenance = self._maintenance or {
                 "operation_id": request["operation_id"],
                 "generation": request["generation"],
                 "target": dict(request["target"]),
@@ -166,7 +210,7 @@ class RuntimeUpdateService:
                 "installed_before": self._composite_identity(),
                 "updated_at": iso(),
             }
-            if request.get("strategy") == "source_in_place_v1":
+            if source:
                 self._maintenance["kind"] = "runtime_source"
             await self._durable_io(self.repository.save_maintenance, dict(self._maintenance))
             await self.platform.organization_connector.pause_dispatch()
@@ -233,6 +277,14 @@ class RuntimeUpdateService:
                 completed = (existing.get("steps") or {}).get("checkpoint")
                 if isinstance(completed, dict):
                     self._validate_checkpoint(request, completed)
+                    return completed
+                checkpoint_id = self._maintenance.get("checkpoint_id")
+                if checkpoint_id:
+                    # The checkpoint and maintenance phase precede the outcome
+                    # journal. Never replace that baseline after a lost write.
+                    completed = self.repository.checkpoint(str(checkpoint_id))
+                    self._validate_checkpoint(request, completed)
+                    self._record(request, "checkpoint", completed)
                     return completed
                 try:
 
@@ -370,6 +422,56 @@ class RuntimeUpdateService:
                     )
                 return result
 
+    async def restore_ready(
+        self, request: Mapping[str, Any], *, update_token: str | None = None
+    ) -> dict[str, Any]:
+        """Prove source restoration is safe before the gateway stops this process."""
+        self._authorize(update_token)
+        async with self._lock, _UpdateCommand(self.platform.repository.data_dir):
+            self._validate_request(request, require_maintenance=True)
+            with checkpoint_gate(self.platform.repository.data_dir):
+                await self._verify_source_restore(request)
+                result = {
+                    "operation_id": request["operation_id"],
+                    "generation": request["generation"],
+                    "checkpoint_id": request["checkpoint_id"],
+                    "restore_ready": True,
+                    "checked_at": iso(),
+                }
+                self._record(request, "restore_ready", result)
+                return result
+
+    async def _verify_source_restore(self, request: Mapping[str, Any]) -> None:
+        maintenance = self._maintenance
+        steps = self.repository.operation(str(request["operation_id"])).get("steps") or {}
+        checkpoint_id = str(maintenance.get("checkpoint_id") or "")
+        if (
+            maintenance.get("kind") != "runtime_source"
+            or maintenance.get("phase") != "checkpointed"
+            or not maintenance.get("dispatch_paused")
+            or steps.get("resume")
+            or not checkpoint_id
+            or request.get("checkpoint_id", checkpoint_id) != checkpoint_id
+            or self._active_counts(include_leases=False)["total"]
+        ):
+            self._restore_unsafe()
+        checkpoint = self.repository.checkpoint(checkpoint_id)
+        self._validate_checkpoint(request, checkpoint)
+        try:
+            current = await self._durable_io(self.storage.manifest)
+        except RuntimeUpdateStorageError as error:
+            self._storage_error(error)
+        if current["digest"] != checkpoint.get("manifest", {}).get("digest"):
+            self._restore_unsafe()
+
+    @staticmethod
+    def _restore_unsafe() -> None:
+        raise ServiceError(
+            "Runtime cannot prove source restoration preserves checkpoint data",
+            status=409,
+            code="runtime_source_restore_unsafe",
+        )
+
     async def recover(
         self, request: Mapping[str, Any], *, update_token: str | None = None
     ) -> dict[str, Any]:
@@ -496,6 +598,9 @@ class RuntimeUpdateService:
                     status=409,
                     code="runtime_update_abort_unsafe",
                 )
+            if maintenance.get("phase") == "checkpointed":
+                with checkpoint_gate(self.platform.repository.data_dir):
+                    await self._verify_source_restore(request)
             result = {
                 "operation_id": request["operation_id"],
                 "generation": request["generation"],
