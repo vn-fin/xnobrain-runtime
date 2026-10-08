@@ -10,7 +10,10 @@ import os
 import shutil
 from typing import Any, Mapping
 
-from ..integrations.runtime_build_identity import incus_installed_identity
+from ..integrations.runtime_build_identity import (
+    incus_installed_identity,
+    source_installed_identity,
+)
 from ..integrations.runtime_update_storage import (
     RuntimeUpdateStorage,
     RuntimeUpdateStorageError,
@@ -307,11 +310,7 @@ class RuntimeUpdateService:
                 "generation": request["generation"],
                 "ready": all(probes.values()),
                 "probes": probes,
-                "installed": (
-                    incus_installed_identity()
-                    if target.get("kind") == "incus_image"
-                    else self._installed_identity()
-                ),
+                "installed": self._target_identity(target),
                 "profile_count": len(self.platform.repository._profile_dirs()),
                 "checked_at": iso(),
             }
@@ -341,8 +340,8 @@ class RuntimeUpdateService:
                     self._storage_error(error)
                 preserved = current["digest"] == checkpoint["manifest"]["digest"]
                 target = self._effective_target(request)
-                if target.get("kind") == "incus_image":
-                    installed = incus_installed_identity()
+                if target.get("kind") in {"incus_image", "runtime_source_v1"}:
+                    installed = self._target_identity(target)
                     identity_matches = installed == target
                 else:
                     installed = self._installed_identity()
@@ -519,6 +518,15 @@ class RuntimeUpdateService:
                 status=401,
                 code="runtime_update_unauthorized",
             )
+
+    def _target_identity(self, target: Mapping[str, Any]) -> dict[str, Any]:
+        """Installed identity of the same kind as the requested target."""
+        kind = target.get("kind")
+        if kind == "incus_image":
+            return incus_installed_identity()
+        if kind == "runtime_source_v1":
+            return source_installed_identity()
+        return self._installed_identity()
 
     def _effective_target(self, request: Mapping[str, Any]) -> dict[str, Any]:
         recovery = self._maintenance.get("recovery_target")

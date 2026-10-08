@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import tempfile
 import unittest
@@ -13,7 +14,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 from pydantic import ValidationError
 from xnobrain.integrations.rebalance_admission import WorkspaceAdmissionMiddleware
-from xnobrain.models.runtime_updates import RuntimeRolloutDrain
+from xnobrain.integrations.runtime_build_identity import source_installed_identity
+from xnobrain.models.runtime_updates import RuntimeRolloutDrain, RuntimeRolloutRequest
 from xnobrain.repositories.base import RepositoryBase, StoreError
 from xnobrain.repositories.runtime_update_gate import (
     WorkspaceActivity,
@@ -271,6 +273,78 @@ class MaintenanceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get(self.PREFIX + "/agents")).status_code, 200)
         response = await self.client.put(self.PREFIX + "/agents/a")
         self.assertEqual(response.headers["X-XNOBrain-Maintenance"], "vm-rebalance")
+
+
+SOURCE_TARGET = {
+    "kind": "runtime_source_v1",
+    "source_revision": "1" * 40,
+    "git_tree": "2" * 40,
+    "manifest_digest": "sha256:" + "3" * 64,
+    "package_digest": "sha256:" + "4" * 64,
+    "data_schema": 1,
+}
+
+
+class SourceTargetTests(SourceDrainTests):
+    """Reuse the drain fixture; verify against the source receipt identity."""
+
+    def source(self, **values):
+        return {"operation_id": "upd_source", "generation": 4, "target": SOURCE_TARGET, **values}
+
+    async def verify_with_receipt(self, receipt):
+        await self.call("drain", self.source(deadline_seconds=0, strategy="source_in_place_v1"))
+        checkpoint = await self.call("checkpoint", self.source())
+        with patch(
+            "xnobrain.services.runtime_updates.source_installed_identity",
+            return_value=receipt,
+        ):
+            return await self.call(
+                "post_verify", self.source(checkpoint_id=checkpoint["checkpoint_id"])
+            )
+
+    async def test_post_verify_accepts_matching_source_receipt_then_resumes(self):
+        result = await self.verify_with_receipt(dict(SOURCE_TARGET))
+        self.assertTrue(result["verified"])
+        resumed = await self.call("resume", self.source())
+        self.assertTrue(resumed["resumed"])
+        self.assertFalse(self.connector.paused)
+
+    async def test_post_verify_rejects_other_source_and_keeps_maintenance(self):
+        with self.assertRaises(ServiceError):
+            await self.verify_with_receipt({**SOURCE_TARGET, "git_tree": "9" * 40})
+        with self.assertRaises(ServiceError) as raised:
+            await self.call("resume", self.source())
+        self.assertEqual(raised.exception.code, "runtime_update_not_verified")
+        self.assertTrue(self.service.repository.maintenance()["dispatch_paused"])
+
+
+class SourceReceiptTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.path = Path(self.temporary.name) / "runtime-source.json"
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def test_reads_only_a_regular_source_receipt(self):
+        self.assertEqual(source_installed_identity(self.path), {})
+        receipt = {**SOURCE_TARGET, "operation_id": "upd_1", "installed_at": "now"}
+        self.path.write_text(json.dumps(receipt), encoding="utf-8")
+        self.assertEqual(source_installed_identity(self.path), SOURCE_TARGET)
+        self.path.write_text(json.dumps({**receipt, "kind": "incus_image"}), encoding="utf-8")
+        self.assertEqual(source_installed_identity(self.path), {})
+        target = Path(self.temporary.name) / "elsewhere.json"
+        target.write_text(json.dumps(receipt), encoding="utf-8")
+        self.path.unlink()
+        self.path.symlink_to(target)
+        self.assertEqual(source_installed_identity(self.path), {})
+
+    def test_rollout_request_accepts_only_valid_source_targets(self):
+        request = RuntimeRolloutRequest(operation_id="upd_x", generation=1, target=SOURCE_TARGET)
+        self.assertEqual(request.target.kind, "runtime_source_v1")
+        for bad in ({**SOURCE_TARGET, "git_tree": "HEAD"}, {**SOURCE_TARGET, "extra": 1}):
+            with self.assertRaises(ValidationError):
+                RuntimeRolloutRequest(operation_id="upd_x", generation=1, target=bad)
 
 
 if __name__ == "__main__":
