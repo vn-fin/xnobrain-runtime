@@ -137,13 +137,39 @@ class SourceDrainTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.code, "runtime_update_abort_unsafe")
         self.assertTrue(self.service.repository.maintenance()["dispatch_paused"])
 
-    async def test_abort_refuses_after_drain_phases(self):
+    async def test_abort_refuses_after_candidate_phases(self):
         await self.call("drain", request(deadline_seconds=0, strategy="source_in_place_v1"))
         maintenance = self.service.repository.maintenance()
-        self.service.repository.save_maintenance({**maintenance, "phase": "checkpointed"})
+        self.service.repository.save_maintenance({**maintenance, "phase": "recovering"})
         with self.assertRaises(ServiceError) as raised:
             await self.call("abort_unchanged", request())
         self.assertEqual(raised.exception.code, "runtime_update_abort_unsafe")
+
+    async def test_source_abort_after_restore_requires_identical_identity(self):
+        await self.call("drain", request(deadline_seconds=0, strategy="source_in_place_v1"))
+        maintenance = self.service.repository.maintenance()
+        self.service.repository.save_maintenance({**maintenance, "phase": "checkpointed"})
+        # A swapped-but-not-restored source receipt blocks reopening dispatch.
+        with (
+            patch(
+                "xnobrain.services.runtime_updates.source_installed_identity",
+                return_value={"kind": "runtime_source_v1", "source_revision": "1" * 40},
+            ),
+            self.assertRaises(ServiceError) as raised,
+        ):
+            await self.call("abort_unchanged", request())
+        self.assertEqual(raised.exception.code, "runtime_update_abort_unsafe")
+        # After restoration the identity equals the pre-drain identity again.
+        result = await self.call("abort_unchanged", request())
+        self.assertTrue(result["aborted_unchanged"])
+        self.assertFalse(self.connector.paused)
+
+    async def test_image_maintenance_cannot_abort_after_checkpoint(self):
+        await self.call("drain", request(deadline_seconds=0))
+        maintenance = self.service.repository.maintenance()
+        self.service.repository.save_maintenance({**maintenance, "phase": "checkpointed"})
+        with self.assertRaises(ServiceError):
+            await self.call("abort_unchanged", request())
 
     async def test_abort_requires_matching_maintenance_owner(self):
         await self.call("drain", request(deadline_seconds=0, strategy="source_in_place_v1"))

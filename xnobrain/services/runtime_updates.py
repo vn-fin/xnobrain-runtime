@@ -163,7 +163,7 @@ class RuntimeUpdateService:
                 "dispatch_paused": True,
                 "phase": "draining",
                 # abort-unchanged proves no source change against this identity.
-                "installed_before": self._installed_identity(),
+                "installed_before": self._composite_identity(),
                 "updated_at": iso(),
             }
             if request.get("strategy") == "source_in_place_v1":
@@ -479,13 +479,18 @@ class RuntimeUpdateService:
                 return completed
             self._validate_request(request, require_maintenance=True)
             maintenance = self._maintenance
-            if maintenance.get("phase") not in _ABORTABLE_PHASES:
+            abortable = _ABORTABLE_PHASES
+            if maintenance.get("kind") == "runtime_source":
+                # Checkpoint never mutates source; after a restore the installed
+                # identity below must equal the pre-drain identity exactly.
+                abortable = abortable | {"checkpointed"}
+            if maintenance.get("phase") not in abortable:
                 raise ServiceError(
                     "Runtime maintenance can no longer be aborted unchanged",
                     status=409,
                     code="runtime_update_abort_unsafe",
                 )
-            if maintenance.get("installed_before") != self._installed_identity():
+            if maintenance.get("installed_before") != self._composite_identity():
                 raise ServiceError(
                     "Runtime source changed during maintenance; recovery is required",
                     status=409,
@@ -518,6 +523,14 @@ class RuntimeUpdateService:
                 status=401,
                 code="runtime_update_unauthorized",
             )
+
+    def _composite_identity(self) -> dict[str, Any]:
+        """Every identity an update could change: process, image and source."""
+        return {
+            "process": self._installed_identity(),
+            "image": incus_installed_identity(),
+            "source": source_installed_identity(),
+        }
 
     def _target_identity(self, target: Mapping[str, Any]) -> dict[str, Any]:
         """Installed identity of the same kind as the requested target."""
