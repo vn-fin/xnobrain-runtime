@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "adapter": "tree_swap_v1",
+  "data_schema": 1,
+  "preserved_paths": [".tools"],
+  "mode_only_paths": ["runtime/agent-cli.sh"],
+  "dependency_paths": [
+    "Dockerfile.incus-vm-builder",
+    "deploy/incus-vm-builder/",
+    "deploy/incus/",
+    "deploy/systemd/",
+    "pyproject.toml",
+    "requirements.txt",
+    "runtime/10-incus-eth0.network",
+    "runtime/link-native-profiles.sh",
+    "runtime/prepare-resolv-conf.sh",
+    "runtime/systemd-entrypoint.sh",
+    "runtime/xnobrain-resolv-conf.service",
+    "runtime/xnobrain-runtime.service",
+    "scripts/incus-build-native-image.sh",
+    "scripts/install-linux.sh",
+    "scripts/install-systemd-services.sh",
+    "uv.lock"
+  ]
+}
