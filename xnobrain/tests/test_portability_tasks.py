@@ -54,6 +54,15 @@ class PortabilityTaskStoreTests(unittest.TestCase):
             restarted.digest({"archive": "sha"}), self.store.digest({"archive": "sha"})
         )
 
+    def test_opening_existing_store_preserves_checkpoint_bytes(self):
+        task, _ = self.admit()
+        before = self.store.path.read_bytes()
+        reopened = PortabilityTaskStore(self.root)
+        self.assertEqual(reopened.path.read_bytes(), before)
+        row = reopened.get(task["id"], scope="workspace", actor="actor")
+        self.assertEqual(row["id"], task["id"])
+        self.assertEqual(row["status"], "PENDING")
+
     def test_changed_payload_conflicts_without_second_task(self):
         self.admit()
         with self.assertRaises(StoreError) as caught:

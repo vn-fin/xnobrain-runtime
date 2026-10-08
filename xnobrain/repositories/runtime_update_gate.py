@@ -31,11 +31,16 @@ def maintenance(root: Path) -> dict:
     return RuntimeUpdateRepository._read(root / "runtime-updates" / "maintenance.json")
 
 
+# Maintenance kinds whose drain lets already admitted work finish, including
+# legitimate descendants created inside that work's own activity lineage.
+LINEAGE_KINDS = frozenset({"vm_rebalance", "runtime_source"})
+
+
 def require_admission(root: Path) -> None:
     gate = maintenance(root)
     parent = _lineage.get()
     if (
-        gate.get("kind") == "vm_rebalance"
+        gate.get("kind") in LINEAGE_KINDS
         and parent is not None
         and parent.root == root
         and parent.descriptor is not None
