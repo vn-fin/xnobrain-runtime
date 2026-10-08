@@ -170,6 +170,24 @@ used to bypass publisher consent, S3 validation or listing policy.
 
 ## Safe marketplace package export
 
+Community delivery amendment (2026-10-08): private
+`POST /xnobrain/api/runtime/v1/skill-community/installations` accepts only an
+exact Control-signed payload, bound to verified recipient, method, path, body
+SHA-256, byte count and operation. Installs remain disabled and use atomic
+staging with recipient-bound receipts; replay preserves consumer edits.
+`GET /xnobrain/api/runtime/v1/skill-community/installations/{operation}/receipt`
+recovers metadata only. Snapshot receipt recovery uses
+`GET /xnobrain/api/runtime/v1/community/snapshots/receipts/{operation}`.
+
+Legacy `POST /xnobrain/api/runtime/v1/marketplace/install` and `/update` also
+require the private signed delivery context. The Control compatibility handler
+resolves stored package bytes; public supplied headers are not authority.
+`GET /xnobrain/api/runtime/v1/marketplace/installations/{installation}/receipt`
+checks recipient and digest and returns no package content. Control may recover
+a previously admitted receipt after unlist/revoke, but must freshly authorize
+any missing delivery. Own-local-file operations keep their existing ownership
+checks. No Runtime Skill export route is introduced by this amendment.
+
 `POST /xnobrain/api/runtime/v1/marketplace/agents/{agent_id}/export` builds a
 typed, deterministic publication package from the selected existing local agent.
 The request is `{"license":"MIT"}`; the response data contains the Control

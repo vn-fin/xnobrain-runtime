@@ -10,7 +10,16 @@ from ..models import (
 from .definition import route
 
 ROUTES = (
-    route("GET", "/bundles/example-capabilities", "bundle_example_capabilities", tags=("Portability",)),
+    route(
+        "GET",
+        "/community/snapshots/receipts/{operation_id}",
+        "community_snapshot_receipt",
+        special="community_snapshot",
+        include_in_schema=False,
+    ),
+    route(
+        "GET", "/bundles/example-capabilities", "bundle_example_capabilities", tags=("Portability",)
+    ),
     route(
         "POST",
         "/bundles/uploads/{transfer_id}/example-validation",

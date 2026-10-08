@@ -81,6 +81,24 @@ def encode_conversation_context(context: Mapping[str, Any]) -> str:
 
 
 def snapshot_intent(method: str, path: str) -> str:
+    if method == "POST" and path in {
+        "/xnobrain/api/runtime/v1/skill-community/installations",
+        "/xnobrain/api/runtime/v1/marketplace/install",
+        "/xnobrain/api/runtime/v1/marketplace/update",
+    }:
+        return "import"
+    if method == "GET" and (
+        path.startswith(SNAPSHOT_PREFIX + "receipts/")
+        or (
+            path.startswith("/xnobrain/api/runtime/v1/skill-community/installations/")
+            and path.endswith("/receipt")
+        )
+        or (
+            path.startswith("/xnobrain/api/runtime/v1/marketplace/installations/")
+            and path.endswith("/receipt")
+        )
+    ):
+        return "receipt"
     if method != "POST":
         return ""
     if path == SNAPSHOT_PREFIX + "import":

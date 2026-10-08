@@ -1,3 +1,6 @@
+from ..community_legacy import deliver
+
+
 def operations(handler, request, body):
     return {
         "marketplace_export": (
@@ -8,12 +11,12 @@ def operations(handler, request, body):
             200,
         ),
         "marketplace_install": (
-            lambda: handler.service.marketplace.install(body["package"]),
+            lambda: deliver(handler, request, body, "install"),
             "marketplace package installed",
             201,
         ),
         "marketplace_update": (
-            lambda: handler.service.marketplace.update(body["package"], body["local_profile_id"]),
+            lambda: deliver(handler, request, body, "update"),
             "marketplace package updated",
             200,
         ),

@@ -33,6 +33,7 @@ from . import (
     providers,
     runtime_updates,
     sandboxes,
+    skill_community,
     skill_doctor,
     skill_optimizations,
     system,
@@ -63,6 +64,7 @@ BASE_ROUTE_GROUPS = (
     teams.ROUTES,
     providers.ROUTES,
     analytics.ROUTES,
+    skill_community.ROUTES,
     skill_doctor.ROUTES,
     skill_optimizations.ROUTES,
     sandboxes.ROUTES,
@@ -146,6 +148,10 @@ def _endpoint(handlers: Any, route: Route):
 
         async def endpoint(request: Request) -> Response:
             return await handlers.workspace_workbook(request)
+    elif route.special == "community_skill":
+
+        async def endpoint(request: Request) -> Response:
+            return await handlers.community_skill(request)
     elif route.special == "community_snapshot":
 
         async def endpoint(request: Request) -> Response:

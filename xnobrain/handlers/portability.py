@@ -15,6 +15,7 @@ from ..feature_flags import FEATURE_AGENT_PORTABILITY
 from ..feature_flags import enabled as feature_enabled
 from ..repositories.base import StoreError
 from ..services import EXPECTED_ERRORS
+from ..services.community_receipts import snapshot_receipt
 from ..services.portability import CHUNK_SIZE, MAX_COMPRESSED, UPLOAD_CHUNK_SIZE
 from ..trusted_context import (
     SNAPSHOT_OPERATION_HEADER,
@@ -43,6 +44,22 @@ class PortabilityHandlers:
                 )
             )
         try:
+            if request.scope["route"].name == "community_snapshot_receipt":
+                if (
+                    request.path_params["operation_id"]
+                    != request.headers[SNAPSHOT_OPERATION_HEADER]
+                ):
+                    raise StoreError("Operation mismatch", status=403, code="permission_denied")
+                result = await asyncio.to_thread(
+                    snapshot_receipt,
+                    self.service.repository,
+                    from_request(request),
+                    request.headers[SNAPSHOT_OPERATION_HEADER],
+                    request.headers[SNAPSHOT_SHA_HEADER],
+                )
+                response = self.success(result)
+                response.headers["Cache-Control"] = "private, no-store"
+                return response
             if request.scope["route"].name == "community_snapshot_export":
                 agent_id = request.path_params["agent_id"]
                 with tempfile.NamedTemporaryFile(
@@ -118,7 +135,9 @@ class PortabilityHandlers:
                     archive_path,
                     operation_id=operation_id,
                     digest=digest.hexdigest(),
-                    recipient="\x00".join((context.subject, context.tenant_id, context.organization_id)),
+                    recipient="\x00".join(
+                        (context.subject, context.tenant_id, context.organization_id)
+                    ),
                 )
             finally:
                 archive_path.unlink(missing_ok=True)

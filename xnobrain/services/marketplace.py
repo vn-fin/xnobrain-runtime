@@ -681,7 +681,7 @@ class MarketplaceService:
                     )
             yield
 
-    def install(self, package: Mapping[str, Any]) -> dict[str, Any]:
+    def install(self, package: Mapping[str, Any], *, recipient=None) -> dict[str, Any]:
         installation_id = package.get("id")
         if not isinstance(installation_id, str) or not re.fullmatch(
             r"inst_[A-Za-z0-9_-]{1,64}", installation_id
@@ -691,9 +691,17 @@ class MarketplaceService:
             )
         profile_id = "market-" + installation_id.removeprefix("inst_")
         with self._profile_mutation(profile_id, installing=True):
-            return self._install(package)
+            if recipient is not None:
+                from .community_receipts import legacy_receipt
 
-    def _install(self, package: Mapping[str, Any]) -> dict[str, Any]:
+                try:
+                    return legacy_receipt(self.repository, recipient, installation_id, package.get("digest", ""))
+                except ServiceError as error:
+                    if error.status != 404:
+                        raise
+            return self._install(package, recipient=recipient)
+
+    def _install(self, package: Mapping[str, Any], *, recipient=None) -> dict[str, Any]:
         raw_definition = package.get("definition")
         if not isinstance(raw_definition, Mapping):
             raise ServiceError("marketplace package is unsafe", status=422, code="package_rejected")
@@ -813,6 +821,10 @@ class MarketplaceService:
                 (d / name).write_text(str(content), encoding="utf-8")
             # Mutable customer state starts empty and is never sourced from publisher bytes.
             (stage / "memories").mkdir()
+            if recipient is not None:
+                from .portability import PortabilityService
+
+                self.repository.atomic_json(stage / ".community-profile-owner.json", PortabilityService.owner_record(recipient))
             os.replace(stage, final)
             installed = True
         finally:

@@ -14,11 +14,18 @@ from ..services.public_text import public_error_message
 from .agent_api import AgentAPIHandlers
 from .operations import resolve as resolve_operation
 from .portability import PortabilityHandlers
+from .skill_community import SkillCommunityHandlers
 from .streaming import StreamingHandlers
 from .workspaces import WorkspaceHandlers
 
 
-class APIHandlers(AgentAPIHandlers, WorkspaceHandlers, PortabilityHandlers, StreamingHandlers):
+class APIHandlers(
+    SkillCommunityHandlers,
+    AgentAPIHandlers,
+    WorkspaceHandlers,
+    PortabilityHandlers,
+    StreamingHandlers,
+):
     """Expose the stable XNOBrain contract without duplicating Hermes APIs."""
 
     def __init__(self, service: PlatformService):
