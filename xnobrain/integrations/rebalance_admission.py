@@ -6,6 +6,16 @@ from ..repositories.base import StoreError
 from ..repositories.runtime_update_gate import WorkspaceActivity
 
 
+# Explicit stop/cancel only ends existing work. It stays available during a
+# drain so users can finish waiting work themselves; it still holds an activity
+# lease, so the drain observes it until the request completes.
+_STOP_SUFFIXES = ("/stop", "/cancel")
+
+
+def _explicit_stop(method: str, path: str) -> bool:
+    return method == "POST" and path.rstrip("/").endswith(_STOP_SUFFIXES)
+
+
 class WorkspaceAdmissionMiddleware:
     def __init__(self, app, root):
         self.app = app
@@ -22,7 +32,9 @@ class WorkspaceAdmissionMiddleware:
         if passive or management:
             return await self.app(scope, receive, send)
         try:
-            activity = WorkspaceActivity(self.root)
+            activity = WorkspaceActivity(
+                self.root, mutation=not _explicit_stop(scope.get("method", ""), path)
+            )
         except StoreError as error:
             response = JSONResponse(
                 {
@@ -35,7 +47,11 @@ class WorkspaceAdmissionMiddleware:
                 headers={
                     "Retry-After": "5",
                     "Cache-Control": "no-store",
-                    "X-XNOBrain-Maintenance": "vm-rebalance",
+                    "X-XNOBrain-Maintenance": (
+                        "vm-rebalance"
+                        if error.code == "workspace_rebalance_maintenance"
+                        else "runtime-update"
+                    ),
                 },
             )
             return await response(scope, receive, send)

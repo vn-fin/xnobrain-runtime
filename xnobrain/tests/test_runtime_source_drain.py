@@ -10,13 +10,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 from pydantic import ValidationError
+from xnobrain.integrations.rebalance_admission import WorkspaceAdmissionMiddleware
 from xnobrain.models.runtime_updates import RuntimeRolloutDrain
 from xnobrain.repositories.base import RepositoryBase, StoreError
 from xnobrain.repositories.runtime_update_gate import (
     WorkspaceActivity,
+    activity_present,
     require_admission,
 )
+from xnobrain.repositories.runtime_updates import RuntimeUpdateRepository
 from xnobrain.services.base import ServiceError
 from xnobrain.services.runtime_updates import RuntimeUpdateService
 
@@ -204,6 +208,69 @@ class SourceDrainContractTests(unittest.TestCase):
             strategy="source_in_place_v1",
         )
         self.assertFalse(drain.cancel_active_at_deadline)
+
+
+class MaintenanceMiddlewareTests(unittest.IsolatedAsyncioTestCase):
+    PREFIX = "/xnobrain/api/runtime/v1"
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        root = Path(self.temporary.name)
+        self.data = root / "data"
+        (root / "profiles").mkdir()
+        self.data.mkdir()
+        self.updates = RuntimeUpdateRepository(RepositoryBase(self.data, root / "profiles"))
+        self.observed = []
+
+        async def app(scope, receive, send):
+            # Record whether the request holds an activity lease the drain sees.
+            self.observed.append((scope["path"], activity_present(self.data)))
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"{}"})
+
+        transport = httpx.ASGITransport(app=WorkspaceAdmissionMiddleware(app, root=self.data))
+        self.client = httpx.AsyncClient(transport=transport, base_url="http://runtime")
+
+    async def asyncTearDown(self):
+        await self.client.aclose()
+        self.temporary.cleanup()
+
+    def maintain(self, kind):
+        self.updates.save_maintenance(
+            {**request(), "dispatch_paused": True, "phase": "draining", "kind": kind}
+        )
+
+    async def test_source_maintenance_refuses_new_work_with_typed_header(self):
+        self.maintain("runtime_source")
+        response = await self.client.post(self.PREFIX + "/agents/a/conversations")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["data"]["code"], "runtime_update_maintenance")
+        self.assertEqual(response.headers["X-XNOBrain-Maintenance"], "runtime-update")
+        self.assertEqual(self.observed, [])
+
+    async def test_explicit_stop_and_cancel_pass_while_holding_activity(self):
+        self.maintain("runtime_source")
+        for path in (
+            "/agents/a/conversations/c/runs/r/stop",
+            "/agents/a/conversations/c/runs/r/children/k/stop",
+            "/teams/t/runs/r/cancel",
+            "/kanban/boards/b/tasks/t/cancel",
+        ):
+            response = await self.client.post(self.PREFIX + path)
+            self.assertEqual(response.status_code, 200, path)
+        self.assertTrue(all(held for _path, held in self.observed))
+        self.assertEqual(len(self.observed), 4)
+
+    async def test_stop_suffix_does_not_admit_other_methods(self):
+        self.maintain("runtime_source")
+        response = await self.client.delete(self.PREFIX + "/teams/t/runs/r/cancel")
+        self.assertEqual(response.status_code, 503)
+
+    async def test_reads_pass_and_rebalance_keeps_its_label(self):
+        self.maintain("vm_rebalance")
+        self.assertEqual((await self.client.get(self.PREFIX + "/agents")).status_code, 200)
+        response = await self.client.put(self.PREFIX + "/agents/a")
+        self.assertEqual(response.headers["X-XNOBrain-Maintenance"], "vm-rebalance")
 
 
 if __name__ == "__main__":
