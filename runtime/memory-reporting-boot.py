@@ -8,7 +8,7 @@ from pathlib import Path
 def main():
     if os.getenv("FT_ENABLE_WORKSPACE_IDLE_MEMORY_RECLAIM", "false").lower() != "true":
         return
-    if os.geteuid() != 0 or os.uname().release != "6.8.0-146-generic":
+    if os.geteuid() != 0:
         return
     if os.sysconf("SC_PAGE_SIZE") != 4096:
         return

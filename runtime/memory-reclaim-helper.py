@@ -20,7 +20,7 @@ RECEIPT = Path("/var/lib/xnobrain-memory-reclaim/receipt.json")
 def supported():
     if os.getenv("FT_ENABLE_WORKSPACE_IDLE_MEMORY_RECLAIM", "false").lower() != "true":
         return False
-    if os.uname().release != "6.8.0-146-generic" or os.sysconf("SC_PAGE_SIZE") != 4096:
+    if os.sysconf("SC_PAGE_SIZE") != 4096:
         return False
     if (
         Path("/sys/module/page_reporting/parameters/page_reporting_order").read_text().strip()

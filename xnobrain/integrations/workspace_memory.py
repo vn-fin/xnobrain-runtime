@@ -47,9 +47,9 @@ def memory_sample() -> dict[str, int]:
 
 
 def reporting_backend() -> str:
-    """Guest half only; the gateway independently validates host versions/backing."""
+    """Guest half only: proves the virtio reporting capability, not a kernel version."""
     try:
-        if os.sysconf("SC_PAGE_SIZE") != 4096 or os.uname().release != "6.8.0-146-generic":
+        if os.sysconf("SC_PAGE_SIZE") != 4096:
             return ""
         order = Path("/sys/module/page_reporting/parameters/page_reporting_order")
         if order.read_text().strip() != "0":
