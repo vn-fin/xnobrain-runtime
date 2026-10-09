@@ -12,6 +12,12 @@ from typing import Any
 from ..repositories.base import StoreError
 from ..repositories.runtime_update_gate import is_coordination_file, validate_coordination_file
 from ..repositories.storage_mount import StorageMountGuard
+from ..repositories.workspace_memory import DIRECTORY as MEMORY_ACTIVITY_DIRECTORY
+
+# Update journals and boot-scoped memory activity state are not durable user
+# data. The activity state is recreated by the next Runtime boot, so hashing it
+# would make every image replacement fail post-verification.
+EXCLUDED_DATA_DIRECTORIES = ("runtime-updates", MEMORY_ACTIVITY_DIRECTORY)
 
 
 class RuntimeUpdateStorageError(RuntimeError):
@@ -129,7 +135,9 @@ class RuntimeUpdateStorage:
             if not root.exists():
                 continue
             for path in self._walk_files(root):
-                if self.data_dir == root and path.is_relative_to(self.data_dir / "runtime-updates"):
+                if self.data_dir == root and any(
+                    path.is_relative_to(self.data_dir / name) for name in EXCLUDED_DATA_DIRECTORIES
+                ):
                     continue
                 if is_coordination_file(path, self.data_dir):
                     try:
