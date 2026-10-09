@@ -50,8 +50,6 @@ HERMES_ROOT_PROFILE="$hermes_home" HERMES_PROFILES_ROOT="$profiles_root" \
 
 bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$profiles_root"
 
-"$python_bin" "$project_dir/xnobrain/integrations/workspace_profile_preset.py" install
-
 chmod 700 "$hermes_home" "$profiles_root"
 
 if [[ "${EUID}" -eq 0 && -n "${RUNTIME_SERVICE_USER:-}" ]]; then

@@ -99,6 +99,7 @@ class AgentOperationsMixin:
                 self._copy_root_skills(profile_dir, overwrite=True)
                 self._clear_seeded_disabled_skills(profile_dir)
             if not existed:
+                self._seed_bundled_skills(profile_dir)
                 # Restore points are always an explicit per-profile choice and
                 # must never be inherited from the root/Big Brother profile.
                 seeded_config = self._read_config(profile_dir)
@@ -366,6 +367,7 @@ class AgentOperationsMixin:
             )
             if entry is None:
                 raise AgentAPIError(f"Agent not found: {name}", code="agent_not_found", status=404)
+            previous = dict(entry)
             if display_name is not None:
                 clean_name = str(display_name).strip()
                 if not clean_name:
@@ -373,8 +375,9 @@ class AgentOperationsMixin:
                 entry["display_name"] = clean_name
             if description is not None:
                 entry["description"] = str(description).strip()
-            entry["updated_at"] = self._iso_timestamp(time.time())
-            self._write_profiles_registry(payload)
+            if entry != previous:
+                entry["updated_at"] = self._iso_timestamp(time.time())
+                self._write_profiles_registry(payload)
             return entry
 
     def _profile_registry_entry(

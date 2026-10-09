@@ -66,6 +66,23 @@ Runtime statistics are available as a snapshot at
 `/xnobrain/api/runtime/v1/sandboxes/detail` and as one-second SSE updates at
 `/xnobrain/api/runtime/v1/sandboxes/detail/stream`.
 
+Memory statistics include the optional additive field
+`metrics.memory_occupied_bytes`: RAM occupied **including cache**. Without a
+finite cgroup quota, it is `MemTotal - MemFree` from the same `/proc/meminfo`
+sample; with a finite cgroup quota, it is the selected cgroup's aggregate usage
+(bounded by its limit), which already includes cache. It is omitted when the
+required free-memory counter is unavailable. The UI uses this value for its
+existing Memory tile/bar/percentage and falls back to `memory_bytes` for older
+runtimes. Labels and layout remain unchanged.
+
+`memory_bytes` retains its existing semantics for other consumers: system
+`MemTotal - MemAvailable`, or aggregate cgroup usage. `memory_available_bytes`
+also retains its meaning: system `MemAvailable` (which includes estimated
+reclaimable memory), or unused cgroup quota. Available memory is not the
+complement of cache-inclusive occupied memory. These figures describe the
+workspace, not host QEMU RSS/PSS. This change does not alter RAM allocation,
+admission thresholds, or cache lifecycle.
+
 Agent execution activity is available as a compatibility snapshot at
 `/xnobrain/api/runtime/v1/agents/activity`. UI clients should use the
 `/xnobrain/api/runtime/v1/agents/activity/stream` SSE endpoint, which emits an
@@ -81,6 +98,14 @@ callbacks; existing preview, duration, error, and write-approval behavior is
 preserved. Older streams without IDs are supported only when a running tool
 can be matched unambiguously. History reconstruction uses persisted
 `tool_call_id` and tool result error fields.
+
+Conversation SSE emits `provider.retrying` as soon as a retryable model request
+fails, before its retry backoff. It carries `run_id`, `timestamp`, optional
+`status_code`, `retry_attempt` (1–5), and `max_retries` (5); it never carries raw
+provider errors or request content. The run stays active and can be stopped.
+Each model request allows the initial attempt plus at most five retries;
+transport recovery cannot restart this budget. Non-retryable failures stop
+immediately. Existing terminal events report exhaustion, completion or cancellation.
 
 Agent budgets use `weekly_usd` at
 `GET|PUT /xnobrain/api/runtime/v1/analytics/agents/{agent_id}/budget`. The
@@ -700,6 +725,30 @@ Checkpoint/post-verify hold activity exclusively across SQLite flushing and mani
 Storage work runs off the event loop; command/activity locks are retained until an
 already submitted worker exits even if the observer cancels. A separate kernel update
 command lock serializes different updater instances and processes.
+
+Source maintenance preflight additionally reports
+`source_protocol: runtime_source_safe_v1`. Source drain refuses forced cancellation
+at the service boundary, preserves its original identity/checkpoint on replay,
+and rejects a completed operation (`runtime_update_aborted` after abort). A busy
+retry requires a new operation ID and generation from Control.
+
+Private `POST /system/update/v2/restore-ready` accepts the existing typed rollout
+post-verification request (operation, generation, source target, checkpoint ID),
+using the same `X-XNOBrain-Update-Token` identity. It returns `restore_ready: true`
+only while the owning source maintenance fence remains closed, no resume outcome
+exists, activity is idle, and the current durable manifest equals the checkpoint.
+Failure returns `runtime_source_restore_unsafe` or the existing storage/fence
+error. The check neither restores source nor releases dispatch. `abort-unchanged`
+rechecks checkpoint data as well as the original installed identity before
+releasing a restored Runtime. An unavailable Runtime cannot prove restoration safe.
+
+The pinned `deploy/source-update-policy.json` lists exact reviewed legacy commits
+whose non-cancelling drain and pre-checkpoint abort are supported. A snapshot with
+missing source metadata can be identified only by matching its complete measured
+tree to exactly one listed ancestor. Local changes, unknown snapshots, or an
+unreviewed drain remain `needs_bootstrap`. The reviewed legacy revisions support
+forward source updates and busy abort; they do not attest to safe post-checkpoint
+restoration, so failures after mutation require operator recovery.
 
 SQLite `wal_checkpoint(TRUNCATE)` busy results now fail checkpoint rather than being
 reported as flushed. Valid empty coordination files at exact root-level allowlisted

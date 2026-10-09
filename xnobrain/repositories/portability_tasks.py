@@ -93,7 +93,10 @@ class PortabilityTaskStore:
             for statement in schema.split(";"):
                 if statement.strip():
                     db.execute(statement)
-            db.execute("PRAGMA user_version=1")
+            # Even assigning the current version changes SQLite's file header.
+            # A no-op restart must preserve the drained update checkpoint.
+            if version < 1:
+                db.execute("PRAGMA user_version=1")
             db.execute(
                 "INSERT OR IGNORE INTO portability_meta(name,value) VALUES('fingerprint_key',?)",
                 (os.urandom(32),),

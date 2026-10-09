@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from ..repositories.base import StoreError
 from ..repositories.runtime_update_gate import is_coordination_file, validate_coordination_file
@@ -180,14 +181,23 @@ class RuntimeUpdateStorage:
                 digest.update(chunk)
         return digest.hexdigest()
 
-    @staticmethod
-    def _walk_files(root: Path) -> Iterable[Path]:
+    def _walk_files(self, root: Path) -> Iterable[Path]:
         for current, directories, files in os.walk(root, followlinks=False):
             current_path = Path(current)
             safe_directories = []
             for name in sorted(directories):
                 path = current_path / name
                 if path.is_symlink():
+                    # The root profile aliases the separately inspected profiles.
+                    # Skip only this exact alias instead of hashing its target twice.
+                    if (
+                        path == self.root_profile / "profiles"
+                        and self.profiles_root != self.root_profile
+                        and self.profiles_root.is_relative_to(self.data_anchor)
+                        and path.resolve() == self.profiles_root
+                        and self.profiles_root.is_dir()
+                    ):
+                        continue
                     raise RuntimeUpdateStorageError(
                         "durable data contains an unsafe symbolic link",
                         code="runtime_update_unsafe_data",

@@ -24,7 +24,8 @@ class LocalRuntimeManager:
 
     def detail(self) -> dict[str, Any]:
         cpu_percent, cpu_usage_ns = self._cpu_usage()
-        memory_used, memory_limit = self._memory_usage()
+        memory = self._memory_metrics()
+        memory_limit = memory["memory_limit_bytes"]
         # Docker's storage quota applies to the container writable layer. Read
         # the root filesystem so the API reports that enforced limit instead
         # of the host capacity backing the persistent profile volume.
@@ -54,9 +55,7 @@ class LocalRuntimeManager:
                 "cpu_percent": cpu_percent,
                 "vcpu_time_ns": cpu_usage_ns,
                 "uptime_seconds": uptime,
-                "memory_bytes": memory_used,
-                "memory_limit_bytes": memory_limit,
-                "memory_available_bytes": max(0, memory_limit - memory_used),
+                **memory,
                 "disk_usage_bytes": disk.used,
                 "disk_total_bytes": disk.total,
                 "net_rx_bytes": network_rx,
@@ -112,7 +111,13 @@ class LocalRuntimeManager:
 
     @staticmethod
     def _memory_usage() -> tuple[int, int]:
-        host_used, host_total = LocalRuntimeManager._host_memory_usage()
+        metrics = LocalRuntimeManager._memory_metrics()
+        return metrics["memory_bytes"], metrics["memory_limit_bytes"]
+
+    @staticmethod
+    def _memory_metrics() -> dict[str, Any]:
+        host = LocalRuntimeManager._host_memory_metrics()
+        host_total = host["memory_limit_bytes"]
         candidates: list[tuple[Path, Path]] = []
         try:
             for line in Path("/proc/self/cgroup").read_text(encoding="utf-8").splitlines():
@@ -175,10 +180,23 @@ class LocalRuntimeManager:
                     allocation = reading
             except (OSError, ValueError):
                 continue
-        return allocation if allocation is not None else (host_used, host_total)
+        if allocation is None:
+            return host
+        used, limit = allocation
+        return {
+            "memory_bytes": used,
+            "memory_limit_bytes": limit,
+            "memory_available_bytes": limit - used,
+            "memory_occupied_bytes": used,
+        }
 
     @staticmethod
     def _host_memory_usage() -> tuple[int, int]:
+        metrics = LocalRuntimeManager._host_memory_metrics()
+        return metrics["memory_bytes"], metrics["memory_limit_bytes"]
+
+    @staticmethod
+    def _host_memory_metrics() -> dict[str, Any]:
         values: dict[str, int] = {}
         try:
             for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
@@ -203,7 +221,15 @@ class LocalRuntimeManager:
                 - values.get("Shmem", 0)
             )
         available = max(0, min(total, available))
-        return max(0, total - available), total
+        metrics = {
+            "memory_bytes": max(0, total - available),
+            "memory_limit_bytes": total,
+            "memory_available_bytes": available,
+        }
+        if "MemFree" in values:
+            free = max(0, min(total, values["MemFree"]))
+            metrics["memory_occupied_bytes"] = total - free
+        return metrics
 
     @staticmethod
     def _network_usage() -> tuple[int, int]:

@@ -551,6 +551,9 @@ class ConversationRunnerMixin:
         resolves the public model prefix itself and forwards request JSON, so
         neither field belongs in the upstream body.
         """
+        from .router_error_policy import install_router_error_policy
+
+        install_router_error_policy()
         if getattr(agent, "_xnobrain_router_tool_codec", False):
             return
         original_build_api_kwargs = getattr(agent, "_build_api_kwargs", None)
@@ -708,6 +711,11 @@ class ConversationRunnerMixin:
                         getattr(agent, "_xnobrain_image_artifact_roots", ()),
                     )
                 manager._install_provider_runtime_request_guard(child)
+                progress = getattr(agent, "_xnobrain_retry_progress", None)
+                if progress is not None:
+                    from .router_error_policy import install_provider_retry_progress
+
+                    install_provider_retry_progress(child, progress)
                 manager._install_provider_runtime_child_guards(child)
                 super().append(child)
 
@@ -961,6 +969,9 @@ class ConversationRunnerMixin:
                                 **accounting["headers"],
                             }
                 manager._install_provider_runtime_request_guard(agent)
+                from .router_error_policy import install_provider_retry_progress
+
+                install_provider_retry_progress(agent, tool_progress_callback)
                 manager._install_provider_runtime_child_guards(agent)
                 coordinator = prepared.get("execution_coordinator")
                 if coordinator is not None:
