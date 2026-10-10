@@ -85,15 +85,9 @@ def execute(request):
     save(value)
     if not supported():
         value.update(state="skipped", reason="backend_unavailable")
-    elif (
-        before["Dirty"] > 64 * 1024**2
-        or before["Writeback"]
-        or before["MemAvailable"] < 768 * 1024**2
-    ):
-        value.update(state="skipped", reason="guest_pressure")
-    elif before["Cached"] < 256 * 1024**2:
-        value.update(state="skipped", reason="small_cache")
     else:
+        # Writing 1 drops only clean page cache; dirty and writeback pages stay,
+        # so guest pressure and cache size are not safety conditions here.
         # No sync, slab eviction, process killing, ballooning or quota change.
         with Path("/proc/sys/vm/drop_caches").open("w") as target:
             target.write("1\n")

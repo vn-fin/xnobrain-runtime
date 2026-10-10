@@ -42,7 +42,7 @@ class MemoryHelperTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.helper.execute({"operation_id": "mem_old", "fence": 1})
 
-    def test_guest_pressure_small_cache_or_disabled_backend_skip(self):
+    def test_guest_pressure_or_small_cache_still_evicts_clean_cache(self):
         for name, value in (
             ("Dirty", 65 << 20),
             ("Writeback", 1),
@@ -54,14 +54,14 @@ class MemoryHelperTests(unittest.TestCase):
                 self.request["fence"] += 1
                 old = self.sample[name]
                 self.sample[name] = value
-                # Read the real existing receipt while intercepting only writes
-                # to the kernel target on the eligible path.
-                with (
-                    patch.object(self.helper, "sample", return_value=self.sample),
-                    patch.object(self.helper, "supported", return_value=True),
-                ):
-                    self.assertEqual(self.helper.execute(self.request)["state"], "skipped")
+                # Each case is an independent first execution.
+                self.helper.RECEIPT.unlink(missing_ok=True)
+                result, output = self.run_helper()
+                self.assertEqual(result["state"], "evicted")
+                output().write.assert_called_once_with("1\n")
                 self.sample[name] = old
+
+    def test_disabled_backend_skips(self):
         self.request["operation_id"] += "a"
         self.request["fence"] += 1
         with (

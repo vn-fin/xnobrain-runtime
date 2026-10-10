@@ -29,15 +29,13 @@ def policy_values() -> dict:
     values = {
         "idle_seconds": int(os.getenv("RUNTIME_WORKSPACE_IDLE_MEMORY_IDLE_SECONDS", "600")),
         "scan_seconds": int(os.getenv("RUNTIME_WORKSPACE_IDLE_MEMORY_SCAN_SECONDS", "60")),
-        "min_cache_bytes": int(
-            os.getenv("RUNTIME_WORKSPACE_IDLE_MEMORY_MIN_CACHE_BYTES", "268435456")
-        ),
+        "min_cache_bytes": int(os.getenv("RUNTIME_WORKSPACE_IDLE_MEMORY_MIN_CACHE_BYTES", "0")),
         "retry_seconds": int(os.getenv("RUNTIME_WORKSPACE_IDLE_MEMORY_RETRY_SECONDS", "1800")),
     }
     if (
         values["idle_seconds"] not in {30, 60, 600}
         or values["scan_seconds"] not in {5, 60}
-        or values["min_cache_bytes"] < 268435456
+        or values["min_cache_bytes"] < 0
         or values["retry_seconds"] < 1800
     ):
         raise ValueError("invalid memory policy")
@@ -173,10 +171,9 @@ class WorkspaceMemoryService:
                 for key in ("guest_boot_id", "runtime_boot_id", "activity_epoch")
             )
             or not value.get("backend")
+            # drop_caches discards only clean pages: dirty/writeback pages and
+            # free memory do not affect safety. The cache floor is optional.
             or value.get("cached_bytes", 0) < policy["min_cache_bytes"]
-            or value.get("dirty_bytes", 0) > 64 * 1024**2
-            or value.get("writeback_bytes", 0) != 0
-            or value.get("available_bytes", 0) < 768 * 1024**2
         ):
             self.conflict("memory_not_eligible")
         return value

@@ -99,6 +99,46 @@ class MemoryReclaimTests(unittest.IsolatedAsyncioTestCase):
         value = await self.service.command(self.identity, "prepare")
         return value["prepare_token"]
 
+    async def test_guest_pressure_and_small_cache_do_not_block_idle_workspace(self):
+        # drop_caches discards only clean pages, so these are not safety gates.
+        pressured = WorkspaceMemoryService(
+            self.platform,
+            helper=self.helper,
+            coverage=lambda: True,
+            tracker=WorkspaceMemoryRepository(self.root, "workspace"),
+            sample=lambda: {
+                "cached_bytes": 0,
+                "available_bytes": 0,
+                "dirty_bytes": 1024**3,
+                "writeback_bytes": 1024**2,
+                "swap_bytes": 0,
+            },
+            backend=lambda: "virtio-reporting-order0-4k-v1",
+        )
+        pressured.start()
+        pressured.activity("workspace", self.policy)
+        self.now += 30_000_000_000
+        value = pressured.activity("workspace", self.policy)
+        identity = pb.WorkspaceMemoryReclaimIdentity(
+            operation_id="mem_pressure",
+            workspace_id="workspace",
+            fence=1,
+            guest_boot_id=value["guest_boot_id"],
+            runtime_boot_id=value["runtime_boot_id"],
+            activity_epoch=value["activity_epoch"],
+            policy=self.policy,
+        )
+        prepared = await pressured.command(identity, "prepare")
+        self.assertTrue(prepared["prepare_token"])
+
+    def test_default_policy_has_no_cache_floor(self):
+        with patch.dict(os.environ, {"RUNTIME_WORKSPACE_IDLE_MEMORY_MIN_CACHE_BYTES": ""}):
+            os.environ.pop("RUNTIME_WORKSPACE_IDLE_MEMORY_MIN_CACHE_BYTES")
+            self.assertEqual(policy_values()["min_cache_bytes"], 0)
+        with patch.dict(os.environ, {"RUNTIME_WORKSPACE_IDLE_MEMORY_MIN_CACHE_BYTES": "-1"}):
+            with self.assertRaises(ValueError):
+                policy_values()
+
     async def test_intervening_short_work_invalidates_prepared_cleanup(self):
         token = await self.prepare()
         with WorkspaceActivity(self.root):
