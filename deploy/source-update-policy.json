@@ -12,7 +12,6 @@
     "Dockerfile.incus-vm-builder",
     "deploy/incus-vm-builder/",
     "deploy/incus/",
-    "deploy/systemd/",
     "pyproject.toml",
     "requirements.txt",
     "runtime/10-incus-eth0.network",
@@ -23,7 +22,12 @@
     "runtime/xnobrain-runtime.service",
     "scripts/incus-build-native-image.sh",
     "scripts/install-linux.sh",
-    "scripts/install-systemd-services.sh",
     "uv.lock"
+  ],
+  "install_paths": [
+    "deploy/systemd/",
+    "runtime/memory-reclaim-helper.py",
+    "runtime/memory-reporting-boot.py",
+    "scripts/install-systemd-services.sh"
   ]
 }
