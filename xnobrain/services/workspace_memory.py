@@ -158,6 +158,16 @@ class WorkspaceMemoryService:
             },
         )
 
+    def _release(self):
+        # Caller holds admission. Remove the fence rather than unpause it: any
+        # remaining maintenance record, paused or not, belongs to another owner
+        # for Runtime updates, which then refuse to drain this workspace.
+        try:
+            self.updates.maintenance_path.unlink()
+        except FileNotFoundError:
+            return
+        self.platform.repository._sync_dir(self.updates.maintenance_path.parent)
+
     def _eligible(self, identity, policy):
         value = self._observe()
         if (
@@ -354,5 +364,5 @@ class WorkspaceMemoryService:
                     or gate.get("generation") != receipt["fence"]
                 ):
                     self.conflict()
-                self._gate(receipt, False)
+                self._release()
             return True

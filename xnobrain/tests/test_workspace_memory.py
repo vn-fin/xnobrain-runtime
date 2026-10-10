@@ -241,6 +241,26 @@ class MemoryReclaimTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status["state"], "outcome_unknown")
         self.assertFalse(status["paused"])
 
+    async def test_completed_reclaim_leaves_no_maintenance_owner(self):
+        token = await self.prepare()
+        self.helper.receipt = lambda: {
+            "operation_id": "mem_test",
+            "fence": 1,
+            "guest_boot_id": self.identity.guest_boot_id,
+            "state": "evicted",
+            "cached_after_bytes": 1,
+        }
+        await self.service.command(self.identity, "execute", token)
+        await self.service._task
+        status = await self.service.command(self.identity, "finish")
+        self.assertEqual(status["state"], "evicted")
+        self.assertFalse(status["paused"])
+        # A leftover unpaused record makes Runtime updates report another
+        # maintenance owner and refuse to drain.
+        updates = self.platform.runtime_updates.repository
+        self.assertEqual(updates.maintenance(), {})
+        self.assertFalse(updates.maintenance_path.exists())
+
     async def test_rpc_cancellation_does_not_cancel_accepted_execution(self):
         token = await self.prepare()
         response = await self.service.command(self.identity, "execute", token)
