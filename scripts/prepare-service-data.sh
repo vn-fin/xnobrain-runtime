@@ -50,6 +50,26 @@ HERMES_ROOT_PROFILE="$hermes_home" HERMES_PROFILES_ROOT="$profiles_root" \
 
 bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$profiles_root"
 
+# A persistent data volume hides the skills the Hermes installer seeded into the
+# image. Seed the bundled skills like the container entrypoint does; the upstream
+# synchronizer is manifest-based, preserves local edits and deletions, and
+# respects .no-bundled-skills markers.
+hermes_install_dir="$project_dir/.tools/hermes-agent"
+if [[ -f "$hermes_install_dir/tools/skills_sync.py" ]]; then
+  sync_profile_skills() {
+    (cd "$hermes_install_dir" && HERMES_HOME="$1" "$python_bin" -c \
+      'from tools.skills_sync import sync_skills; sync_skills(quiet=True)') \
+      || echo "Bundled skills could not be synchronized for $1" >&2
+  }
+  sync_profile_skills "$hermes_home"
+  for profile_dir in "$profiles_root"/*; do
+    [[ -d "$profile_dir" && ! -L "$profile_dir" && "$profile_dir" != "$hermes_home" ]] || continue
+    sync_profile_skills "$profile_dir"
+  done
+  # Reapply the runtime-owned PDF helper over the freshly synchronized skills.
+  bash "$project_dir/scripts/apply-profile-templates.sh" "$hermes_home" "$profiles_root"
+fi
+
 chmod 700 "$hermes_home" "$profiles_root"
 
 if [[ "${EUID}" -eq 0 && -n "${RUNTIME_SERVICE_USER:-}" ]]; then

@@ -182,3 +182,53 @@ class NativeProfilePathsTests(unittest.TestCase):
                 self.assertNotIn(
                     "math-skill" if agent == "big-brother" else "root-skill", skill_names
                 )
+
+    def test_fresh_native_data_seeds_bundled_skills_before_reapplying_templates(self):
+        project = self.base / "native"
+        hermes = project / ".tools" / "hermes-agent"
+        (hermes / "tools").mkdir(parents=True)
+        (hermes / "tools" / "skills_sync.py").write_text("", encoding="utf-8")
+        calls = self.base / "calls.log"
+        stub = '#!/usr/bin/env bash\nprintf "%s|%s|%s\\n" "$(basename "$0")" "${HERMES_HOME:-}" "$PWD" >>"$CALLS"\n'
+        for relative in (
+            ".tools/python/bin/python",
+            "scripts/apply-profile-templates.sh",
+            "runtime/link-native-profiles.sh",
+        ):
+            path = project / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(stub, encoding="utf-8")
+            path.chmod(0o755)
+        shutil.copy2(ROOT / "scripts/prepare-service-data.sh", project / "scripts")
+        (self.profiles / "analyst").mkdir()
+        data = self.base / "data"
+        environment = {
+            "PATH": os.environ["PATH"],
+            "CALLS": str(calls),
+            "RUNTIME_HERMES_HOME": str(self.root),
+            "RUNTIME_HERMES_PROFILES_ROOT": str(self.profiles),
+            "RUNTIME_DATA_DIR": str(data / "xnobrain"),
+            "RUNTIME_HOME": str(data / "home"),
+        }
+
+        result = subprocess.run(
+            ["bash", str(project / "scripts/prepare-service-data.sh")],
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        steps = calls.read_text(encoding="utf-8").splitlines()
+        syncs = [line for line in steps if line == f"python|{self.root}|{hermes}"]
+        syncs += [line for line in steps if line == f"python|{self.profiles / 'analyst'}|{hermes}"]
+        self.assertEqual(len(syncs), 2, steps)
+        templates = [
+            index
+            for index, line in enumerate(steps)
+            if line.startswith("apply-profile-templates.sh|")
+        ]
+        self.assertEqual(len(templates), 2, steps)
+        self.assertTrue(all(templates[0] < steps.index(line) < templates[1] for line in syncs))
