@@ -5,6 +5,18 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class CommunitySkillExportReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: Literal[1]
+    agent_id: str = Field(min_length=1, max_length=128)
+    skill_path: str = Field(min_length=1, max_length=512)
+
+
+class CommunitySkillExport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reference: str = Field(min_length=1, max_length=2048)
+
+
 class CommunityFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
     path: str = Field(min_length=1, max_length=512)

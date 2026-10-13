@@ -4,6 +4,13 @@ from .definition import route
 
 ROUTES = (
     route(
+        "POST",
+        "/skill-community/exports",
+        "community_skill_export",
+        special="community_skill_export",
+        include_in_schema=False,
+    ),
+    route(
         "GET",
         "/marketplace/installations/{operation_id}/receipt",
         "community_legacy_receipt",

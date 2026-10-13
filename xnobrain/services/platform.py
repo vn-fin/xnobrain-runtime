@@ -45,6 +45,7 @@ from .runtime_rebalances import RuntimeRebalanceService
 from .runtime_updates import RuntimeUpdateService
 from .sandboxes import SandboxesServiceMixin
 from .skill_doctor import SkillDoctorService
+from .skill_exports import SkillExportService
 from .skill_optimizations import SkillOptimizationService
 from .team_runs import TeamRunService
 from .teams import TeamsServiceMixin
@@ -85,6 +86,7 @@ class PlatformService(
         self.runtime = runtime
         self.organization_connector = OrganizationConnector(self)
         self.marketplace = MarketplaceService(repository, agents)
+        self.skill_exports = SkillExportService(repository, agents)
         self.hosted = HostedRuntimeService(self)
         self.portability = PortabilityService(repository, config.root_profile)
         from .portability_tasks import PortabilityTasks

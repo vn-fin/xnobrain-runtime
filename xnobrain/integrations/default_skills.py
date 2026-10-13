@@ -7,7 +7,9 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from .hermes_support import AgentAPIError
 
@@ -32,6 +34,31 @@ DEFAULT_ENABLED_BUNDLED_SKILLS = frozenset(
         "xlsx",
     }
 )
+
+
+def bundled_skill_ids(
+    skills_root: Path, read_frontmatter: Callable[[Path], dict[str, Any]]
+) -> set[str]:
+    """Identify defaults from the installed catalog and profile seed history.
+
+    Include disabled or locally edited defaults. The catalog also covers older
+    profiles whose seed manifest is absent; custom skills in the root profile
+    are not automatically considered bundled.
+    """
+    names = DefaultSkillsMixin._bundled_skill_names(skills_root / ".bundled_manifest")
+    installation = Path(
+        os.environ.get("HERMES_INSTALL_DIR")
+        or Path(__file__).resolve().parents[2] / ".tools" / "hermes-agent"
+    )
+    catalog = Path(os.environ.get("HERMES_BUNDLED_SKILLS") or installation / "skills")
+    for skill_file in catalog.rglob("SKILL.md"):
+        if any(part.startswith(".") for part in skill_file.relative_to(catalog).parts):
+            continue
+        names.add(skill_file.parent.name)
+        name = str(read_frontmatter(skill_file).get("name") or "").strip()
+        if name:
+            names.add(name)
+    return names
 
 
 class DefaultSkillsMixin:

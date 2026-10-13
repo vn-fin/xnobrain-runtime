@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import yaml
 
+from xnobrain.integrations.config import GlobalConfigManager
 from xnobrain.integrations.hermes import AgentAPIError, AgentManager
 
 
@@ -65,6 +66,65 @@ class AgentDefaultSkillsTests(unittest.TestCase):
         self.assertNotIn("pdf", config["skills"]["disabled"])
         self.assertIn("niche-example", config["skills"]["disabled"])
         self.assertFalse((self.profile / "skills" / "pdf").exists())
+        self.assertTrue(
+            all(item["bundled"] for item in self.manager.list_skills("researcher")["skills"])
+        )
+
+    def test_publication_inventory_distinguishes_defaults_from_custom_skills(self):
+        self.manager.create_agent({"name": "publisher"})
+        profile = self.root / "profiles" / "publisher"
+        custom = profile / "skills" / "custom" / "my-report" / "SKILL.md"
+        custom.parent.mkdir(parents=True)
+        custom.write_text("---\nname: my-report\n---\nCustom report")
+        # A default remains bundled after a local edit or rename in frontmatter.
+        (profile / "skills" / "pdf" / "SKILL.md").write_text(
+            "---\nname: renamed-pdf\n---\nEdited default"
+        )
+        inventory = {
+            item["skill_id"]: item for item in self.manager.list_skills("publisher")["skills"]
+        }
+        self.assertTrue(inventory["renamed-pdf"]["bundled"])
+        self.assertTrue(inventory["niche-example"]["bundled"])
+        self.assertFalse(inventory["niche-example"]["enabled"])
+        self.assertFalse(inventory["my-report"]["bundled"])
+
+    def test_catalog_identifies_defaults_without_a_profile_manifest(self):
+        self.manager.create_agent({"name": "legacy"})
+        profile = self.root / "profiles" / "legacy"
+        (profile / "skills" / ".bundled_manifest").unlink()
+        catalog = self.root / "engine" / "skills" / "documents" / "pdf"
+        catalog.mkdir(parents=True)
+        (catalog / "SKILL.md").write_text("---\nname: pdf\n---\nBundled PDF")
+        inventory = {
+            item["skill_id"]: item for item in self.manager.list_skills("legacy")["skills"]
+        }
+        self.assertTrue(inventory["pdf"]["bundled"])
+
+    def test_bundled_catalog_override_and_frontmatter_names(self):
+        self.manager.create_agent({"name": "publisher"})
+        catalog = self.root / "catalog"
+        folder = catalog / "different-folder"
+        folder.mkdir(parents=True)
+        (folder / "SKILL.md").write_text("---\nname: pdf\n---\nBundled PDF")
+        profile = self.root / "profiles" / "publisher"
+        (profile / "skills" / ".bundled_manifest").unlink()
+        with patch.dict(os.environ, {"HERMES_BUNDLED_SKILLS": str(catalog)}):
+            inventory = {
+                item["skill_id"]: item for item in self.manager.list_skills("publisher")["skills"]
+            }
+        self.assertTrue(inventory["pdf"]["bundled"])
+
+    def test_common_profile_custom_skills_are_not_automatically_defaults(self):
+        self.manager._seed_bundled_skills(self.profile)
+        custom = self.profile / "skills" / "my-report" / "SKILL.md"
+        custom.parent.mkdir()
+        custom.write_text("---\nname: my-report\n---\nShared custom report")
+        inventory = {
+            item["skill_id"]: item
+            for item in GlobalConfigManager(root_profile=self.profile).list_skills()["skills"]
+        }
+        self.assertTrue(inventory["pdf"]["bundled"])
+        self.assertFalse(inventory["my-report"]["bundled"])
 
     def test_root_skill_with_same_name_is_preserved(self):
         skill = self.profile / "skills" / "pdf" / "SKILL.md"

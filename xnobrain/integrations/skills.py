@@ -17,6 +17,7 @@ from .config_support import (
     time,
     yaml,
 )
+from .default_skills import bundled_skill_ids
 
 
 class CommonSkillsMixin:
@@ -229,6 +230,7 @@ class CommonSkillsMixin:
     ) -> None:
         if not root.is_dir():
             return
+        bundled = bundled_skill_ids(root, self._read_skill_frontmatter)
         for skill_file in sorted(root.rglob("SKILL.md")):
             frontmatter = self._read_skill_frontmatter(skill_file)
             relative_parent = skill_file.parent.relative_to(root)
@@ -250,6 +252,7 @@ class CommonSkillsMixin:
                         )
                     ),
                     "installed": True,
+                    "bundled": skill_id in bundled or skill_file.parent.name in bundled,
                     "enabled": True,
                 }
             )

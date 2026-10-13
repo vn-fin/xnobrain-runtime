@@ -1,5 +1,6 @@
 """AgentSkills methods for the Hermes runtime adapter."""
 
+from .default_skills import bundled_skill_ids
 from .hermes_support import (
     BIG_BROTHER_SKILL_CATEGORY,
     BIG_BROTHER_SKILL_ID,
@@ -514,6 +515,7 @@ class AgentSkillsMixin:
     ) -> None:
         if not root.is_dir():
             return
+        bundled = bundled_skill_ids(root, self._read_skill_frontmatter)
         for skill_file in sorted(root.rglob("SKILL.md")):
             rel_parent = skill_file.parent.relative_to(root)
             skill_id = skill_file.parent.name
@@ -539,6 +541,7 @@ class AgentSkillsMixin:
                         or (rel_parent.parts[0] if len(rel_parent.parts) > 1 else "skills")
                     ),
                     "installed": True,
+                    "bundled": skill_id in bundled or skill_file.parent.name in bundled,
                     "enabled": skill_id not in disabled,
                 }
             )

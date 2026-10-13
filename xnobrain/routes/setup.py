@@ -148,6 +148,11 @@ def _endpoint(handlers: Any, route: Route):
 
         async def endpoint(request: Request) -> Response:
             return await handlers.workspace_workbook(request)
+    elif route.special == "community_skill_export":
+
+        async def endpoint(request: Request):
+            return await handlers.community_skill_export(request)
+
     elif route.special == "community_skill":
 
         async def endpoint(request: Request) -> Response:

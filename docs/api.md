@@ -211,7 +211,17 @@ resolves stored package bytes; public supplied headers are not authority.
 checks recipient and digest and returns no package content. Control may recover
 a previously admitted receipt after unlist/revoke, but must freshly authorize
 any missing delivery. Own-local-file operations keep their existing ownership
-checks. No Runtime Skill export route is introduced by this amendment.
+checks.
+
+Installed-skill publication adds
+`POST /xnobrain/api/runtime/v1/skill-community/exports`. Control supplies a verified
+personal principal and a versioned reference selecting one installed skill.
+Skill inventory entries expose `bundled: boolean` from the installed default catalog
+and profile seed manifest. Community's agent-skill picker only offers `bundled: false`
+entries, independently of their enabled state; ordinary skill-management lists retain all entries.
+Runtime returns bounded UTF-8 files for a private Control draft without mutating
+the agent. See [the selected-skill export contract](contracts/skill-community-export.md)
+for ownership, limits, exclusions, errors and publication consent.
 
 `POST /xnobrain/api/runtime/v1/marketplace/agents/{agent_id}/export` builds a
 typed, deterministic publication package from the selected existing local agent.
