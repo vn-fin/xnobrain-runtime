@@ -25,7 +25,7 @@ class FakeAgents:
         self.received: dict = {}
 
     def describe_agent(self, agent_id):
-        return {"config": {"effort": "medium"}}
+        return {"config": {"model": "cx/test", "effort": "medium"}}
 
     def get_conversation(self, agent_id: str, conversation_id: str) -> dict:
         return {"conversation": {"id": conversation_id, "agent_id": agent_id}, "messages": []}
@@ -124,6 +124,28 @@ class ConversationRunServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.wait_for_revision(first["id"], 2)
         self.assertEqual(
             self.agents.received["_reasoning_snapshot"]["effective_preference"], "high"
+        )
+
+    async def test_auto_admission_preserves_saved_effort_and_snapshots_auto(self):
+        from xnobrain.services.conversation_reasoning import store
+
+        preference = store(self.service, "agent-one", "session-one")
+        preference.update("high", 0)
+        self.agents.llm_router = AsyncMock()
+        self.agents.llm_router.reasoning_for_model.side_effect = RuntimeError("catalog unavailable")
+        body = {"input": "Synthetic task", "model": "auto", "idempotency_key": "auto-reasoning"}
+        first = await self.service.start_run("agent-one", "session-one", body)
+        self.assertEqual(first["reasoning"]["effective_preference"], "auto")
+        self.assertEqual(first["reasoning"]["reasoning_effort"], "high")
+        self.assertEqual(preference.read(), {"reasoning_effort": "high", "reasoning_revision": 1})
+        self.agents.llm_router.reasoning_for_model.assert_not_awaited()
+        preference.update("none", 1)
+        replay = await self.service.start_run("agent-one", "session-one", body)
+        self.assertEqual(replay["id"], first["id"])
+        self.assertEqual(replay["reasoning"], first["reasoning"])
+        await self.wait_for_revision(first["id"], 2)
+        self.assertEqual(
+            self.agents.received["_reasoning_snapshot"]["effective_preference"], "auto"
         )
 
     async def test_combined_selection_persists_with_one_budget_check_and_parent(self):

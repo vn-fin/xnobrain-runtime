@@ -921,7 +921,10 @@ class ConversationRunnerMixin:
         )
         if prepared.get("_reasoning_snapshot") is not None:
             configured_reasoning = prepared["_reasoning_snapshot"]["effective_preference"]
-        if configured_reasoning == "auto" and not smart_route_name:
+        system_auto = prepared.get("model") == LLM_ROUTER_DEFAULT_MODEL
+        if system_auto:
+            configured_reasoning = "auto"
+        if configured_reasoning == "auto" and not smart_route_name and not system_auto:
             try:
                 metadata = await self.llm_router.reasoning_for_model(active_smart_decision["model"])
             except LLMRouterAPIError:
@@ -978,13 +981,15 @@ class ConversationRunnerMixin:
                     coordinator.install(agent)
                 manager._install_model_fallbacks(agent, prepared)
                 reasoning_snapshot = prepared.get("_reasoning_snapshot")
-                if (
+                if system_auto or (
                     reasoning_snapshot is not None
                     and reasoning_snapshot.get("source") == "conversation"
                 ):
                     from .conversation_reasoning import install_reasoning_guard
 
-                    preference = reasoning_snapshot["effective_preference"]
+                    preference = (
+                        "auto" if system_auto else reasoning_snapshot["effective_preference"]
+                    )
 
                     def emit_reasoning(effective):
                         active_smart_decision.update(reasoning=effective)

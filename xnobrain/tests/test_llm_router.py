@@ -1891,6 +1891,10 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                         (),
                         {
                             "model": "cx/gpt-5.6-luna",
+                            "_build_api_kwargs": lambda self, messages, **_kwargs: {
+                                "model": self.model,
+                                "messages": messages,
+                            },
                             "tool_progress_callback": staticmethod(
                                 _kwargs.get("tool_progress_callback")
                             ),
@@ -2136,9 +2140,17 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             approvals: list[dict[str, Any]] = []
 
             class FakeAgent:
+                model = "auto"
+                reasoning_config = {"effort": "high"}
+
+                def _build_api_kwargs(self, messages, **_kwargs):
+                    observed["reasoning_config"] = self.reasoning_config
+                    return {"model": self.model, "messages": messages}
+
                 def run_conversation(self, **run_kwargs):
                     from tools import terminal_tool
 
+                    self._build_api_kwargs([])
                     task_id = str(run_kwargs["task_id"])
                     observed["session_cwd"] = terminal_tool.get_session_cwd(task_id)
                     observed["task_cwd"] = terminal_tool.resolve_task_overrides(task_id).get("cwd")
@@ -2207,6 +2219,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             self.assertEqual(observed["choice"], "once")
+            self.assertIsNone(observed["reasoning_config"])
             self.assertTrue(observed["callback_restored"])
             self.assertEqual(observed["session_cwd"], str(prepared["workspace_dir"]))
             self.assertEqual(observed["task_cwd"], str(prepared["workspace_dir"]))

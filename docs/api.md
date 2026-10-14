@@ -1336,6 +1336,15 @@ Auto uses the resolved model default, or omits the field when no reasoning
 default is available. Changes do not modify admitted runs or other conversations.
 This behavior does not assert child-agent enforcement.
 
+When the selected **model** is system `auto`, `effective_preference` is always
+`auto`, including inherited or previously saved explicit effort. The persisted
+`reasoning_effort`, revision, and preference `source` remain unchanged, so switching
+back to a concrete model restores that preference. Run admission applies this rule
+to the requested model override when present. The composer displays locked Auto
+without writing a new preference. Runtime omits reasoning effort from system-Auto
+requests, leaving the Router-selected upstream's default in effect on every retry.
+Provider-specific routes such as `cx/auto` retain their existing behavior.
+
 ## Example profile capability and validation
 
 `GET /xnobrain/api/runtime/v1/bundles/example-capabilities` returns the standard

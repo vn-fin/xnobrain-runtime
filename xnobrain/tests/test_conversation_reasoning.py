@@ -3,7 +3,8 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
 
 from pydantic import ValidationError
 
@@ -11,7 +12,12 @@ from xnobrain.models.conversations import ConversationReasoningUpdate
 from xnobrain.repositories import FileRepository, StoreError
 from xnobrain.repositories.conversation_reasoning import ConversationReasoningRepository
 from xnobrain.services.base import ServiceError
-from xnobrain.services.conversation_reasoning import validate
+from xnobrain.services.conversation_reasoning import (
+    ConversationReasoningServiceMixin,
+    snapshot,
+    store,
+    validate,
+)
 
 
 class PreferenceTests(unittest.TestCase):
@@ -26,6 +32,7 @@ class PreferenceTests(unittest.TestCase):
             with self.assertRaises(ServiceError) as error:
                 write()
             self.assertEqual(error.exception.code, "unsupported_reasoning_effort")
+
     def test_revision_reload_isolation_clear_and_delete(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -98,6 +105,69 @@ class MetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(error.exception.status, 503)
         self.assertEqual(await validate(router, "model", None), "available")
 
+    async def test_system_auto_preserves_preferences_and_restores_concrete_model_effort(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile = root / "profiles" / "agent"
+            profile.mkdir(parents=True)
+            config = {"model": "auto", "effort": "medium"}
+            service = ConversationReasoningServiceMixin()
+            service.repository = FileRepository(root / "data", root / "profiles")
+            service.agents = SimpleNamespace(
+                describe_agent=Mock(return_value={"config": config}),
+                get_conversation=Mock(),
+            )
+            service.router = AsyncMock()
+            service.router.reasoning_for_model.return_value = {"reasoning": ["medium", "high"]}
+            for effort in (None, "high", "ultra"):
+                with self.subTest(effort=effort):
+                    session = f"session-{effort}"
+                    preference = store(service, "agent", session)
+                    if effort is not None:
+                        preference.update(effort, 0)
+                    saved = preference.read()
+                    config["model"] = "auto"
+                    service.router.reset_mock()
+                    response = await service.get_conversation_reasoning("agent", session)
+                    self.assertEqual(response["effective_preference"], "auto")
+                    self.assertEqual(response["capability_status"], "available")
+                    self.assertEqual(response["reasoning_effort"], effort)
+                    self.assertEqual(response["reasoning_revision"], saved["reasoning_revision"])
+                    self.assertEqual(
+                        response["source"], "agent" if effort is None else "conversation"
+                    )
+                    service.router.reasoning_for_model.assert_not_awaited()
+
+                    for model in ("cx/test", "cx/auto"):
+                        config["model"] = model
+                        restored = await service.get_conversation_reasoning("agent", session)
+                        self.assertEqual(restored["effective_preference"], effort or "medium")
+                        self.assertEqual(
+                            restored["capability_status"],
+                            "unsupported" if effort == "ultra" else "available",
+                        )
+                    self.assertEqual(preference.read(), saved)
+
+    def test_run_model_override_controls_effective_effort_only(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "profiles" / "agent").mkdir(parents=True)
+            config = {"model": "auto", "effort": "medium"}
+            service = SimpleNamespace(
+                repository=FileRepository(root / "data", root / "profiles"),
+                agents=SimpleNamespace(describe_agent=lambda _: {"config": config}),
+            )
+            preference = store(service, "agent", "session")
+            preference.update("high", 0)
+            concrete = snapshot(service, "agent", "session", model="cx/test")
+            self.assertEqual(concrete["effective_preference"], "high")
+            config["model"] = "cx/test"
+            automatic = snapshot(service, "agent", "session", model="auto")
+            self.assertEqual(automatic["effective_preference"], "auto")
+            self.assertEqual(
+                preference.read(), {"reasoning_effort": "high", "reasoning_revision": 1}
+            )
+
     async def test_disabled_routes_absent(self):
         from xnobrain.routes.setup import route_groups
 
@@ -112,6 +182,40 @@ class MetadataTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ExecutionGuardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_system_auto_omits_saved_effort_without_virtual_metadata_lookup(self):
+        import asyncio
+
+        from agent.transports.chat_completions import ChatCompletionsTransport
+
+        from xnobrain.integrations.conversation_reasoning import install_reasoning_guard
+
+        router = AsyncMock()
+        router.reasoning_for_model.side_effect = RuntimeError("catalog unavailable")
+        agent = SimpleNamespace(model="auto", reasoning_config={"effort": "high"})
+        transport = ChatCompletionsTransport()
+        agent._get_transport = lambda: transport
+        agent._build_api_kwargs = lambda: agent._get_transport().build_kwargs(
+            model=agent.model,
+            messages=[],
+            reasoning_config=agent.reasoning_config,
+            request_overrides={
+                "reasoning_effort": "high",
+                "reasoning": {"effort": "high"},
+                "extra_body": {"reasoning_effort": "high", "reasoning": {"effort": "high"}},
+            },
+        )
+        events = []
+        install_reasoning_guard(agent, router, asyncio.get_running_loop(), "auto", events.append)
+        for _ in range(2):
+            request = await asyncio.to_thread(agent._build_api_kwargs)
+            self.assertIsNone(agent.reasoning_config)
+            self.assertNotIn("reasoning_effort", request)
+            self.assertNotIn("reasoning", request)
+            self.assertNotIn("reasoning_effort", request.get("extra_body", {}))
+            self.assertNotIn("reasoning", request.get("extra_body", {}))
+        router.reasoning_for_model.assert_not_awaited()
+        self.assertEqual(events, ["auto", "auto"])
+
     async def test_none_and_model_boundary_validation(self):
         import asyncio
         from types import SimpleNamespace
@@ -164,7 +268,9 @@ class PersistedHermesRequestTests(unittest.IsolatedAsyncioTestCase):
             service = SimpleNamespace(
                 repository=files,
                 agents=SimpleNamespace(
-                    describe_agent=lambda _: {"config": {"reasoning_effort": "medium"}}
+                    describe_agent=lambda _: {
+                        "config": {"model": "cx/gpt-6-sol", "reasoning_effort": "medium"}
+                    }
                 ),
             )
             router = AsyncMock()

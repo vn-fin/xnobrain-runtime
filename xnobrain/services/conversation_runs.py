@@ -338,7 +338,9 @@ class ConversationRunService:
             from .conversation_reasoning import FEATURE, snapshot
 
             reasoning = (
-                snapshot(self, agent_id, conversation_id) if feature_enabled(FEATURE) else None
+                snapshot(self, agent_id, conversation_id, model=body.get("model"))
+                if feature_enabled(FEATURE)
+                else None
             )
             if reasoning is not None and reasoning["source"] == "conversation":
                 from .conversation_reasoning import validate
