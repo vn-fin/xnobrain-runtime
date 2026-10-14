@@ -193,6 +193,21 @@ class AgentsServiceMixin:
                 BIG_BROTHER_SKILL_ID,
                 {"enabled": True},
             )
+        from ..feature_flags import enabled
+
+        if enabled("XNO_DATA") and not any(
+            item.get("skill_id") == "xno-data" for item in self.config.list_skills()["skills"]
+        ):
+            content = (
+                Path(__file__).resolve().parent.parent
+                / "assets"
+                / "skills"
+                / "xno-data"
+                / "SKILL.md"
+            ).read_text(encoding="utf-8")
+            await self.config.install_skill(
+                {"skill_id": "xno-data", "category": "data", "content": content, "enable": True}
+            )
         self.agents.update_profile_registry(
             BIG_BROTHER_AGENT_ID,
             display_name=BIG_BROTHER_DISPLAY_NAME,

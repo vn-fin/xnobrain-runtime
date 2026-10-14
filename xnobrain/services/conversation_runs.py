@@ -440,6 +440,10 @@ class ConversationRunService:
                 payload["_ui_assistance"] = ui_assistance
             payload["conversation_id"] = str(conversation_id)
             payload["ownership_context"] = context
+            # This field is host-owned and remains in memory, outside the run record.
+            payload.pop("_xno_data_grant", None)
+            if signed:
+                payload["_xno_data_grant"] = getattr(trusted_context, "xno_data_grant", "")
 
             if (
                 context.get("owner_kind") == "personal"
@@ -876,6 +880,11 @@ class ConversationRunService:
             entry = self._active.get(run_id)
             if entry is not None:
                 entry.changed.set()
+            from ..integrations.xno_data_tools import release_grant
+
+            await release_grant(
+                str(initial["conversation_id"]), str(initial["id"]), body.get("_xno_data_grant")
+            )
 
     def _append(self, record: Mapping[str, Any], event: Mapping[str, Any]) -> dict[str, Any]:
         now = time.time()
