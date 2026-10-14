@@ -1488,3 +1488,10 @@ exit. Passive observation does not advance idle history.
 
 See the [workspace contract](../../docs/features/workspace-idle-memory-reclaim.md)
 for helper limits, scoped accelerated tests, evidence and rollout restrictions.
+
+Managed interactive runs may receive the private `X-XNOBrain-Data-Grant`
+header from Control after authentication. It is a session/run-scoped XNO data
+capability, never the login JWT. Runtime keeps it outside model arguments and
+persistent run/queue records. The `xno_data` tool accepts `sql` and optional
+`limit` (1–1000) and calls Control's private data facade. See the coordinated
+[XNO data contract](../../docs/features/xno-data-default-skills.md).

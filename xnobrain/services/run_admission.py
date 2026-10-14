@@ -28,6 +28,7 @@ class RunAdmissionService:
         self.client = client or AdmissionClient()
         self.task = None
         self.guards = {}
+        self.xno_data_grants = {}
 
     async def start(self):
         if self.task is None:
@@ -49,10 +50,15 @@ class RunAdmissionService:
         private["principal"] = (
             asdict(trusted) if isinstance(trusted, TrustedRequestContext) else None
         )
+        grant = private.pop("_xno_data_grant", None)
+        if private["principal"]:
+            private["principal"].pop("xno_data_grant", None)
         private["_record"] = record
         if requires_immediate():
             private["_immediate_boot"] = BOOT_ID
         self.store.enqueue(record, private)
+        if grant:
+            self.xno_data_grants[record["id"]] = grant
         self.files.put_conversation_run(record)
         self.store.update(record["id"], "waiting", {})
         if guard is not None:
@@ -85,6 +91,11 @@ class RunAdmissionService:
         # Persist cancellation before attempting the remote acknowledgement.
         record = self.runs._mark_terminal(record, "cancelled", "Queued task cancelled")
         self.guards.pop(record["id"], None)
+        from ..integrations.xno_data_tools import release_grant
+
+        await release_grant(
+            record["conversation_id"], record["id"], self.xno_data_grants.pop(record["id"], None)
+        )
         return record
 
     async def _cancel_receipt(self, row):
@@ -320,6 +331,7 @@ class RunAdmissionService:
         from .conversation_runs import _ActiveConversationRun
 
         payload = dict(row["payload"])
+        payload["_xno_data_grant"] = self.xno_data_grants.get(record["id"])
         payload.pop("_record", None)
         payload.pop("_immediate_boot", None)
         principal = payload.pop("principal", None)
@@ -394,6 +406,7 @@ class RunAdmissionService:
             self.runs._active[row["id"]] = entry
             self.runs._by_conversation[(row["agent"], row["conversation"])] = row["id"]
             self.store.update(row["id"], "running", admission)
+            self.xno_data_grants.pop(record["id"], None)
 
             async def execute():
                 with admitted_root(admission):
