@@ -35,6 +35,31 @@ def _snapshot_chunks(path: Path):
         path.unlink(missing_ok=True)
 
 
+def _snapshot_inventory_header(inventory: dict[str, Any]) -> str:
+    """Bound the transport summary; the ZIP manifest keeps every excluded path."""
+    paths = inventory.get("excluded_paths", [])
+    summary = {
+        **inventory,
+        "excluded_paths": list(paths),
+        "excluded_path_count": len(paths),
+        "excluded_paths_truncated": False,
+    }
+    encoded = json.dumps(summary, separators=(",", ":"))
+    # aiohttp accepts 8190 bytes per response field; Control accepts 8192.
+    # JSON's default ASCII escaping also bounds localized filenames correctly.
+    if len(encoded) <= 8000:
+        return encoded
+    summary["excluded_paths"] = list(paths[:32])
+    summary["excluded_paths_truncated"] = True
+    while True:
+        encoded = json.dumps(summary, separators=(",", ":"))
+        if len(encoded) <= 8000:
+            return encoded
+        if not summary["excluded_paths"]:
+            raise StoreError("Snapshot inventory summary is too large", code="invalid_bundle")
+        summary["excluded_paths"].pop()
+
+
 class PortabilityHandlers:
     async def community_snapshot(self, request: Request) -> Response:
         if not snapshot_authorized(request):
@@ -83,8 +108,8 @@ class PortabilityHandlers:
                             "X-Snapshot-SHA256": metadata["sha256"],
                             "Content-Length": str(metadata["size"]),
                             "X-Snapshot-Size": str(metadata["size"]),
-                            "X-Snapshot-Inventory": json.dumps(
-                                metadata["inventory"], separators=(",", ":")
+                            "X-Snapshot-Inventory": _snapshot_inventory_header(
+                                metadata["inventory"]
                             ),
                         },
                     )
