@@ -167,7 +167,12 @@ addition to `low`, `medium`, and `high`.
 request and streams `application/zip`; `X-Snapshot-SHA256` is the lowercase
 SHA-256 of the exact ZIP, `X-Snapshot-Size` its byte count, and
 `X-Snapshot-Inventory` a content-free JSON summary (categories, counts, sizes,
-conversation count, excluded paths). Export requires a named profile with a
+conversation count, excluded paths). This header is bounded to 8000 ASCII bytes
+for the HTTP relay and Control. `excluded_path_count` counts the full exclusion
+list; `excluded_paths_truncated: true` marks a shortened preview (at most 32
+paths) when the full list exceeds the header budget. The ZIP manifest always
+retains the complete `excluded_paths`; archive bytes, digest, scanner validation
+and clone behavior are unchanged. Export requires a named profile with a
 durable `.community-profile-owner.json` principal/tenant/organization binding
 matching the verified caller; existing unbound profiles and Big Brother fail
 closed. It requires `config.yaml`, a consistent `state.db`, `HERMES.md`, and
