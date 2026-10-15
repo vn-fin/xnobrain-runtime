@@ -323,6 +323,7 @@ class ConversationRunnerMixin:
             "requested_skills": normalized_skills,
             "work_context_id": str((body.get("ownership_context") or {}).get("id") or "personal"),
             "ownership_context": dict(body.get("ownership_context") or {}),
+            "_xno_data_grant": body.get("_xno_data_grant"),
             "_custom_page_principal": body.get("_custom_page_principal"),
             "_agent_maker_principal": body.get("_agent_maker_principal"),
             "_ui_assistance": body.get("_ui_assistance"),
@@ -1441,6 +1442,9 @@ class ConversationRunnerMixin:
                 from .agent_maker_tools import install_tools as install_maker_tools
 
                 install_maker_tools(agent, conversation_id)
+                from .xno_data_tools import install_tools as install_xno_data_tools
+
+                install_xno_data_tools(agent, conversation_id)
                 if feature_enabled(FEATURE_AGENT_CUSTOM_PAGE):
                     from .custom_page_tools import install_tools
 
@@ -1524,6 +1528,11 @@ class ConversationRunnerMixin:
         from contextlib import ExitStack
 
         page_scope = ExitStack()
+        from .xno_data_tools import bind_run as bind_xno_data_run
+
+        page_scope.enter_context(
+            bind_xno_data_run(conversation_id, run_id, prepared.get("_xno_data_grant"))
+        )
         if (
             feature_enabled(FEATURE_AGENT_CUSTOM_PAGE)
             and getattr(manager, "custom_page_service", None)

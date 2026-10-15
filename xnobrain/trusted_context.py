@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 TRUSTED_SUBJECT_HEADER = "x-xnobrain-verified-subject"
@@ -43,6 +43,7 @@ class TrustedRequestContext:
     tenant_id: str = ""
     organization_id: str = ""
     ownership_context: Mapping[str, Any] | None = None
+    xno_data_grant: str = field(default="", repr=False, compare=False)
 
 
 def _principal_material(
@@ -240,4 +241,5 @@ def from_request(request: Any) -> TrustedRequestContext:
         tenant_id,
         organization_id,
         ownership_context,
+        str(headers.get("x-xnobrain-data-grant") or ""),
     )
