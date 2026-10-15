@@ -751,7 +751,11 @@ Private `POST /system/update/v2/restore-ready` accepts the existing typed rollou
 post-verification request (operation, generation, source target, checkpoint ID),
 using the same `X-XNOBrain-Update-Token` identity. It returns `restore_ready: true`
 only while the owning source maintenance fence remains closed, no resume outcome
-exists, activity is idle, and the current durable manifest equals the checkpoint.
+exists, activity is idle, and checkpoint data passes the versioned preservation
+rules in [source-update-startup.md](source-update-startup.md). New checkpoints use
+manifest v2; legacy checkpoints retain byte-exact comparison. Post-verify adds
+`data_verification` with the manifest version/digest and metadata-only change
+counts. It never returns file paths or content in that diagnostic object.
 Failure returns `runtime_source_restore_unsafe` or the existing storage/fence
 error. The check neither restores source nor releases dispatch. `abort-unchanged`
 rechecks checkpoint data as well as the original installed identity before

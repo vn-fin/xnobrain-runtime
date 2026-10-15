@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sqlite3
+import stat as file_stat
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,7 @@ from ..repositories.base import StoreError
 from ..repositories.runtime_update_gate import is_coordination_file, validate_coordination_file
 from ..repositories.storage_mount import StorageMountGuard
 from ..repositories.workspace_memory import DIRECTORY as MEMORY_ACTIVITY_DIRECTORY
+from . import runtime_update_sqlite
 
 # Update journals and boot-scoped memory activity state are not durable user
 # data. The activity state is recreated by the next Runtime boot, so hashing it
@@ -106,11 +109,13 @@ class RuntimeUpdateStorage:
         for label, root in self.durable_roots():
             if not root.exists():
                 continue
-            for path in self._walk_files(root):
+            for path in list(self._walk_files(root)):
+                if path.is_symlink() or self._excluded(path):
+                    continue
                 if path.suffix.lower() not in {".db", ".sqlite", ".sqlite3"}:
                     continue
                 try:
-                    connection = sqlite3.connect(f"file:{path}?mode=rw", uri=True, timeout=5)
+                    connection = sqlite3.connect(path.as_uri() + "?mode=rw", uri=True, timeout=5)
                     try:
                         result = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
                         if result and result[0]:
@@ -128,16 +133,52 @@ class RuntimeUpdateStorage:
                 flushed.append(f"{label}/{path.relative_to(root).as_posix()}")
         return sorted(flushed)
 
-    def manifest(self) -> dict[str, Any]:
+    def manifest(self, *, version: int = 2) -> dict[str, Any]:
+        # A disappearing SQLite sidecar can race directory enumeration. Retry
+        # the entire snapshot, never silently drop a missing durable file.
+        for attempt in range(3):
+            try:
+                return self._manifest(version=version)
+            except FileNotFoundError as error:
+                if attempt == 2:
+                    raise RuntimeUpdateStorageError(
+                        "durable data changed during inspection",
+                        code="runtime_update_manifest_unstable",
+                    ) from error
+        raise AssertionError("unreachable")
+
+    def _excluded(self, path: Path) -> bool:
+        return any(path.is_relative_to(self.data_dir / name) for name in EXCLUDED_DATA_DIRECTORIES)
+
+    def _manifest(self, *, version: int) -> dict[str, Any]:
+        if version not in {1, 2}:
+            raise RuntimeUpdateStorageError(
+                "unsupported checkpoint manifest", code="runtime_update_manifest_version"
+            )
         entries: list[dict[str, Any]] = []
         total = 0
         for label, root in self.durable_roots():
             if not root.exists():
                 continue
-            for path in self._walk_files(root):
-                if self.data_dir == root and any(
-                    path.is_relative_to(self.data_dir / name) for name in EXCLUDED_DATA_DIRECTORIES
-                ):
+            paths = list(self._walk_files(root))
+            databases = set()
+            if version == 2:
+                for path in paths:
+                    if not path.is_symlink() and not self._excluded(path) and self._sqlite(path):
+                        databases.add(path)
+            sidecars = {
+                Path(str(database) + suffix)
+                for database in databases
+                for suffix in ("-wal", "-shm")
+            }
+            for path in sidecars:
+                if path.is_symlink():
+                    raise RuntimeUpdateStorageError(
+                        "SQLite sidecars must not be symbolic links",
+                        code="runtime_update_unsafe_data",
+                    )
+            for path in paths:
+                if self._excluded(path):
                     continue
                 if is_coordination_file(path, self.data_dir):
                     try:
@@ -147,6 +188,12 @@ class RuntimeUpdateStorage:
                             "unsafe coordination file", code="runtime_update_unsafe_data"
                         ) from error
                     continue
+                # Only recognized SQLite databases account for their WAL/SHM.
+                # Orphan sidecars and symlinks remain independently verified.
+                if version == 2 and not path.is_symlink() and path in sidecars:
+                    continue
+                if version == 1 and path.is_symlink() and self._profile_alias(path):
+                    continue
                 stat = path.stat(follow_symlinks=False)
                 total += stat.st_size
                 if len(entries) >= self.max_files or total > self.max_bytes:
@@ -154,62 +201,204 @@ class RuntimeUpdateStorage:
                         "durable data exceeds the bounded update manifest limit",
                         code="runtime_update_manifest_limit",
                     )
-                entries.append(
-                    {
-                        "path": f"{label}/{path.relative_to(root).as_posix()}",
-                        "size": stat.st_size,
-                        "mode": stat.st_mode & 0o777,
-                        "uid": stat.st_uid,
-                        "gid": stat.st_gid,
-                        "sha256": self._digest(path),
-                    }
-                )
+                entry = {
+                    "path": f"{label}/{path.relative_to(root).as_posix()}",
+                    "size": stat.st_size,
+                    "mode": stat.st_mode & 0o777,
+                    "uid": stat.st_uid,
+                    "gid": stat.st_gid,
+                    "sha256": "",
+                }
+                if path.is_symlink():
+                    entry["kind"] = "symlink"
+                    entry["sha256"] = hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
+                else:
+                    entry["sha256"] = self._digest(path)
+                if path in databases:
+                    entry["kind"] = "sqlite"
+                    try:
+                        entry["sqlite"] = runtime_update_sqlite.snapshot(
+                            path,
+                            max_bytes=self.max_bytes,
+                            hermes_state=(
+                                path == self.root_profile / "state.db"
+                                or (
+                                    path.name == "state.db"
+                                    and path.parent.parent == self.profiles_root
+                                )
+                            ),
+                        )
+                    except (sqlite3.DatabaseError, ValueError) as error:
+                        raise RuntimeUpdateStorageError(
+                            "durable SQLite data could not be verified",
+                            code="runtime_update_sqlite_verify_failed",
+                        ) from error
+                entries.append(entry)
         entries.sort(key=lambda item: item["path"])
         digest = hashlib.sha256()
         for item in entries:
+            if version == 2:
+                digest.update(json.dumps(item, sort_keys=True, separators=(",", ":")).encode())
+                continue
             digest.update(
                 (
                     f"{item['path']}\0{item['size']}\0{item['mode']}\0"
                     f"{item['uid']}\0{item['gid']}\0{item['sha256']}\n"
                 ).encode()
             )
-        return {
+        result = {
             "algorithm": "sha256",
             "digest": digest.hexdigest(),
             "file_count": len(entries),
             "total_bytes": total,
             "entries": entries,
         }
+        if version == 2:
+            result["version"] = 2
+        return result
+
+    def verify(self, baseline: dict[str, Any]) -> dict[str, Any]:
+        """Verify against the immutable baseline; expose counts, never paths/content."""
+        version = baseline.get("version", 1)
+        current = self.manifest(version=version)
+        if version == 1:
+            return {
+                "preserved": current["digest"] == baseline["digest"],
+                "manifest_digest": current["digest"],
+                "manifest_version": 1,
+            }
+        before = {entry["path"]: entry for entry in baseline["entries"]}
+        after = {entry["path"]: entry for entry in current["entries"]}
+        counts = {
+            "added": len(after.keys() - before.keys()),
+            "removed": len(before.keys() - after.keys()),
+            "changed": 0,
+            "log_appends": 0,
+            "sqlite_equivalent": 0,
+        }
+        for name in before.keys() & after.keys():
+            old, new = before[name], after[name]
+            if old == new:
+                continue
+            metadata = ("mode", "uid", "gid", "kind")
+            if all(old.get(key) == new.get(key) for key in metadata):
+                if old.get("kind") == "sqlite" and runtime_update_sqlite.preserved(
+                    old["sqlite"], new["sqlite"]
+                ):
+                    counts["sqlite_equivalent"] += 1
+                    continue
+                path = self._log_path(name)
+                if (
+                    old.get("kind") is None
+                    and new.get("kind") is None
+                    and path
+                    and new["size"] >= old["size"]
+                    and self._digest(path, old["size"]) == old["sha256"]
+                ):
+                    counts["log_appends"] += 1
+                    continue
+            counts["changed"] += 1
+        return {
+            "preserved": not any(counts[key] for key in ("added", "removed", "changed")),
+            "manifest_digest": current["digest"],
+            "manifest_version": 2,
+            "changes": counts,
+        }
+
+    def _log_path(self, name: str) -> Path | None:
+        # Only Runtime's existing profile logs; user workspace *.log files are
+        # ordinary durable data. No added/deleted/rotated log is accepted.
+        for label, root in self.durable_roots():
+            prefix = label + "/"
+            if not name.startswith(prefix):
+                continue
+            path = root / name[len(prefix) :]
+            if path.name != "agent.log":
+                return None
+            if path.parent == self.root_profile / "logs" or (
+                path.parent.name == "logs" and path.parent.parent.parent == self.profiles_root
+            ):
+                return path
+        return None
 
     @staticmethod
-    def _digest(path: Path) -> str:
+    def _sqlite(path: Path) -> bool:
+        if path.suffix.lower() not in {".db", ".sqlite", ".sqlite3"}:
+            return False
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as source:
+            return source.read(16) == b"SQLite format 3\x00"
+
+    @staticmethod
+    def _digest(path: Path, limit: int | None = None) -> str:
         digest = hashlib.sha256()
-        with path.open("rb") as source:
-            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as source:
+            if not file_stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+                raise RuntimeUpdateStorageError("unsafe file", code="runtime_update_unsafe_data")
+            remaining = limit
+            while remaining is None or remaining > 0:
+                chunk = source.read(
+                    min(1024 * 1024, remaining) if remaining is not None else 1024 * 1024
+                )
+                if not chunk:
+                    break
                 digest.update(chunk)
+                if remaining is not None:
+                    remaining -= len(chunk)
         return digest.hexdigest()
 
+    def _profile_alias(self, path: Path) -> bool:
+        return path == self.root_profile / "profiles" and path.resolve() == self.profiles_root
+
+    def _validate_link(self, path: Path) -> None:
+        try:
+            target = path.resolve()
+            if self._profile_alias(path):
+                return
+            for root in (self.profiles_root, self.root_profile, self.data_dir):
+                if not path.is_relative_to(root):
+                    continue
+                scope = root
+                if root == self.profiles_root:
+                    relative = path.relative_to(root)
+                    if len(relative.parts) < 2:
+                        break
+                    scope = root / relative.parts[0]
+                if target == scope or target.is_relative_to(scope):
+                    return
+                break
+            # Managed venv interpreter links are immutable source dependencies,
+            # not additional durable roots. Record the link, never read its target.
+            if (
+                path.parent.name == "bin"
+                and path.parent.parent.name == ".venv"
+                and path.is_relative_to(self.profiles_root)
+                and path.name in {"python", "python3", "python3.11"}
+                and target.is_relative_to(Path("/opt/xnobrain/.tools/uv-python"))
+            ):
+                return
+        except (OSError, RuntimeError):
+            pass
+        raise RuntimeUpdateStorageError(
+            "durable data contains an unsafe symbolic link", code="runtime_update_unsafe_data"
+        )
+
     def _walk_files(self, root: Path) -> Iterable[Path]:
-        for current, directories, files in os.walk(root, followlinks=False):
+        def fail_walk(error):
+            raise error
+
+        for current, directories, files in os.walk(root, followlinks=False, onerror=fail_walk):
             current_path = Path(current)
             safe_directories = []
             for name in sorted(directories):
                 path = current_path / name
+                if self._excluded(path):
+                    continue
                 if path.is_symlink():
-                    # The root profile aliases the separately inspected profiles.
-                    # Skip only this exact alias instead of hashing its target twice.
-                    if (
-                        path == self.root_profile / "profiles"
-                        and self.profiles_root != self.root_profile
-                        and self.profiles_root.is_relative_to(self.data_anchor)
-                        and path.resolve() == self.profiles_root
-                        and self.profiles_root.is_dir()
-                    ):
-                        continue
-                    raise RuntimeUpdateStorageError(
-                        "durable data contains an unsafe symbolic link",
-                        code="runtime_update_unsafe_data",
-                    )
+                    self._validate_link(path)
+                    yield path
+                    continue
                 if not path.is_dir():
                     raise RuntimeUpdateStorageError(
                         "durable data contains an unsupported entry",
@@ -219,7 +408,11 @@ class RuntimeUpdateStorage:
             directories[:] = safe_directories
             for name in sorted(files):
                 path = current_path / name
-                if path.is_symlink() or not path.is_file():
+                if path.is_symlink():
+                    self._validate_link(path)
+                    yield path
+                    continue
+                if not file_stat.S_ISREG(path.lstat().st_mode):
                     raise RuntimeUpdateStorageError(
                         "durable data contains an unsafe or unsupported entry",
                         code="runtime_update_unsafe_data",

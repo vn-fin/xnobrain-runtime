@@ -181,6 +181,30 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
             await self.call("resume", request())
         self.assertEqual(cannot_resume.exception.code, "runtime_update_not_verified")
 
+    async def test_failed_verify_retries_original_checkpoint_then_resumes(self):
+        log = self.big_brother / "logs" / "agent.log"
+        log.parent.mkdir()
+        log.write_bytes(b"before restart\n")
+        await self.call("drain", request(deadline_seconds=0))
+        checkpoint = await self.call("checkpoint", request())
+        data = self.data / "durable" / "memory.txt"
+        data.write_text("changed", encoding="utf-8")
+        with self.assertRaises(ServiceError):
+            await self.call("post_verify", request(checkpoint_id=checkpoint["checkpoint_id"]))
+        self.assertTrue(self.service.dispatch_paused)
+        data.write_text("preserve me", encoding="utf-8")
+        log.write_bytes(b"before restart\nnew startup log\n")
+        verified = await self.call(
+            "post_verify", request(checkpoint_id=checkpoint["checkpoint_id"])
+        )
+        self.assertTrue(verified["verified"])
+        self.assertEqual(verified["data_verification"]["changes"]["log_appends"], 1)
+        self.assertEqual(
+            self.service.repository.checkpoint(checkpoint["checkpoint_id"]), checkpoint
+        )
+        await self.call("resume", request())
+        self.assertFalse(self.service.dispatch_paused)
+
     async def test_auth_fence_layout_and_unsafe_symlink_fail_closed(self):
         with self.assertRaises(ServiceError) as unauthorized:
             await self.service.preflight(
