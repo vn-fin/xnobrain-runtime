@@ -8,6 +8,8 @@ import importlib.util
 import json
 import os
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import closing
@@ -109,6 +111,47 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def call(self, method, body):
         return await getattr(self.service, method)(body, update_token="update-service-token")
+
+    async def test_checkpoint_handles_sqlite_removing_wal_sidecars_during_flush(self):
+        database = self.data / "state.db"
+        # Leave committed WAL state with no live writer, as after a process exit.
+        # Closing the checkpoint connection will remove both WAL and SHM files.
+        writer = """
+import os
+import sqlite3
+import sys
+
+connection = sqlite3.connect(sys.argv[1])
+connection.execute("UPDATE state SET value='committed in WAL'")
+connection.commit()
+os._exit(0)
+"""
+        subprocess.run([sys.executable, "-c", writer, str(database)], check=True, timeout=10)
+        sidecars = [Path(str(database) + suffix) for suffix in ("-wal", "-shm")]
+        self.assertTrue(all(path.is_file() for path in sidecars))
+
+        await self.call("drain", request(deadline_seconds=0))
+        checkpoint = await self.call("checkpoint", request())
+
+        self.assertIn("data/state.db", checkpoint["sqlite_checkpoints"])
+        # The final read-only manifest may recreate WAL/SHM coordination files.
+        # Their lifecycle must neither lose committed rows nor block checkpoint.
+        self.assertTrue(self.service.dispatch_paused)
+        with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as connection:
+            self.assertEqual(
+                connection.execute("SELECT value FROM state").fetchall(),
+                [("committed in WAL",)],
+            )
+        replay = await self.call("checkpoint", request())
+        self.assertEqual(replay["checkpoint_id"], checkpoint["checkpoint_id"])
+        verified = await self.call(
+            "post_verify", request(checkpoint_id=checkpoint["checkpoint_id"])
+        )
+        self.assertTrue(verified["data_preserved"])
+        self.assertTrue(self.service.dispatch_paused)
+        resumed = await self.call("resume", request())
+        self.assertTrue(resumed["resumed"])
+        self.assertFalse(self.service.dispatch_paused)
 
     async def test_full_lifecycle_persists_manifest_and_resumes_only_after_verify(self):
         with patch.object(
@@ -233,9 +276,39 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         await self.call("drain", request(deadline_seconds=0))
         (self.data / "unsafe").symlink_to("/tmp")
-        with self.assertRaises(ServiceError) as unsafe:
+        with (
+            self.assertLogs("xnobrain.services.runtime_updates", level="WARNING") as logs,
+            self.assertRaises(ServiceError) as unsafe,
+        ):
             await self.call("checkpoint", request())
         self.assertEqual(unsafe.exception.code, "runtime_update_unsafe_data")
+        self.assertEqual(unsafe.exception.status, 409)
+        record = logs.records[0]
+        self.assertEqual(record.event, "runtime_update_storage_failure")
+        self.assertEqual(record.operation_id, "upd_fixture")
+        self.assertEqual(record.fence, 3)
+        self.assertEqual(record.phase, "checkpoint")
+        self.assertEqual(record.storage_check, "symlink_scope")
+        self.assertEqual(record.storage_root, "data")
+        self.assertEqual(record.relative_path, "unsafe")
+        self.assertNotIn(str(self.data), str(record.__dict__))
+        self.assertTrue(self.service.dispatch_paused)
+        self.assertNotIn("checkpoint", self.service.repository.operation("upd_fixture")["steps"])
+
+    async def test_checkpoint_logs_invalid_lock_without_its_contents(self):
+        await self.call("drain", request(deadline_seconds=0))
+        (self.data / ".custom-page-storage.lock").write_text("PRIVATE_LOCK_CONTENT")
+        with (
+            self.assertLogs("xnobrain.services.runtime_updates", level="WARNING") as logs,
+            self.assertRaises(ServiceError) as unsafe,
+        ):
+            await self.call("checkpoint", request())
+        self.assertEqual(unsafe.exception.code, "runtime_update_unsafe_data")
+        self.assertEqual(logs.records[0].storage_check, "coordination_file")
+        self.assertEqual(logs.records[0].relative_path, ".custom-page-storage.lock")
+        self.assertNotIn("PRIVATE_LOCK_CONTENT", str(logs.records[0].__dict__))
+        self.assertNotIn("update-service-token", str(logs.records[0].__dict__))
+        self.assertTrue(self.service.dispatch_paused)
 
     async def test_stale_generation_and_target_retarget_are_rejected(self):
         await self.call("drain", request(deadline_seconds=0))

@@ -6,9 +6,11 @@ import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import os
 import shutil
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from ..integrations.runtime_build_identity import (
     incus_installed_identity,
@@ -27,6 +29,8 @@ from ..repositories.runtime_update_gate import (
 )
 from ..repositories.runtime_updates import RuntimeUpdateRepository
 from .base import ServiceError, iso
+
+_LOGGER = logging.getLogger(__name__)
 
 _ALLOWED_LAYOUTS = {
     "root_only",
@@ -224,7 +228,7 @@ class RuntimeUpdateService:
                 async with self._condition:
                     try:
                         await asyncio.wait_for(self._condition.wait(), timeout=min(0.25, remaining))
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         pass
             cancelled = False
             if self._active_counts()["total"] and request.get("cancel_active_at_deadline"):
@@ -295,7 +299,7 @@ class RuntimeUpdateService:
 
                     sqlite_paths, manifest = await self._durable_io(inspect_and_flush)
                 except RuntimeUpdateStorageError as error:
-                    self._storage_error(error)
+                    self._storage_error(error, request=request, phase="checkpoint")
                 target = dict(request["target"])
                 checkpoint_id = (
                     "ckp_"
@@ -778,7 +782,29 @@ class RuntimeUpdateService:
         raise ServiceError(message, status=409, code="runtime_update_fence_conflict")
 
     @staticmethod
-    def _storage_error(error: RuntimeUpdateStorageError) -> None:
+    def _storage_error(
+        error: RuntimeUpdateStorageError,
+        *,
+        request: Mapping[str, Any] | None = None,
+        phase: str = "",
+    ) -> None:
+        if request is not None:
+            _LOGGER.warning(
+                "Runtime update storage validation failed",
+                extra={
+                    "event": "runtime_update_storage_failure",
+                    "operation_id": request["operation_id"],
+                    "fence": request["generation"],
+                    "phase": phase,
+                    "error": error.code,
+                    "error_type": type(error).__name__,
+                    **{
+                        key: value
+                        for key, value in error.diagnostics.items()
+                        if key in {"storage_check", "storage_root", "relative_path"}
+                    },
+                },
+            )
         raise ServiceError(str(error), status=409, code=error.code) from error
 
 

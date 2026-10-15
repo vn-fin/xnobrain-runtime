@@ -24,9 +24,10 @@ EXCLUDED_DATA_DIRECTORIES = ("runtime-updates", MEMORY_ACTIVITY_DIRECTORY)
 
 
 class RuntimeUpdateStorageError(RuntimeError):
-    def __init__(self, message: str, *, code: str):
+    def __init__(self, message: str, *, code: str, diagnostics: dict[str, str] | None = None):
         super().__init__(message)
         self.code = code
+        self.diagnostics = diagnostics or {}
 
 
 class RuntimeUpdateStorage:
@@ -40,6 +41,28 @@ class RuntimeUpdateStorage:
         self.data_anchor = Path(os.getenv("RUNTIME_UPDATE_DATA_PATH", "/opt/data")).resolve()
         self.max_files = max(1, int(os.getenv("RUNTIME_UPDATE_MAX_MANIFEST_FILES", "200000")))
         self.max_bytes = max(1, int(os.getenv("RUNTIME_UPDATE_MAX_MANIFEST_BYTES", str(1 << 40))))
+
+    def _unsafe_data(self, path: Path, check: str, message: str) -> RuntimeUpdateStorageError:
+        # Identify the offending entry, never its resolved target or file content.
+        # Use lexical paths: resolving a rejected symlink would expose outside roots.
+        diagnostics = {"storage_check": check, "storage_root": "unknown"}
+        roots = (
+            ("data", self.data_dir),
+            ("profiles", self.profiles_root),
+            ("root_profile", self.root_profile),
+        )
+        for label, root in sorted(roots, key=lambda item: len(item[1].parts), reverse=True):
+            if path.is_relative_to(root):
+                relative = path.relative_to(root)
+                if ".." not in relative.parts:
+                    diagnostics["storage_root"] = label
+                    diagnostics["relative_path"] = "".join(
+                        char if char.isprintable() else "?" for char in relative.as_posix()
+                    )[:512]
+                break
+        return RuntimeUpdateStorageError(
+            message, code="runtime_update_unsafe_data", diagnostics=diagnostics
+        )
 
     def durable_roots(self) -> list[tuple[str, Path]]:
         self.storage_mount.check()
@@ -109,7 +132,11 @@ class RuntimeUpdateStorage:
         for label, root in self.durable_roots():
             if not root.exists():
                 continue
-            for path in list(self._walk_files(root)):
+            # Finish validation before SQLite can remove WAL/SHM files when its
+            # last connection closes. A lazy walk would inspect stale directory
+            # entries after our own checkpoint and reject otherwise valid data.
+            paths = list(self._walk_files(root))
+            for path in paths:
                 if path.is_symlink() or self._excluded(path):
                     continue
                 if path.suffix.lower() not in {".db", ".sqlite", ".sqlite3"}:
@@ -173,9 +200,10 @@ class RuntimeUpdateStorage:
             }
             for path in sidecars:
                 if path.is_symlink():
-                    raise RuntimeUpdateStorageError(
+                    raise self._unsafe_data(
+                        path,
+                        "sqlite_sidecar_symlink",
                         "SQLite sidecars must not be symbolic links",
-                        code="runtime_update_unsafe_data",
                     )
             for path in paths:
                 if self._excluded(path):
@@ -184,8 +212,8 @@ class RuntimeUpdateStorage:
                     try:
                         validate_coordination_file(path)
                     except (StoreError, OSError) as error:
-                        raise RuntimeUpdateStorageError(
-                            "unsafe coordination file", code="runtime_update_unsafe_data"
+                        raise self._unsafe_data(
+                            path, "coordination_file", "unsafe coordination file"
                         ) from error
                     continue
                 # Only recognized SQLite databases account for their WAL/SHM.
@@ -329,13 +357,12 @@ class RuntimeUpdateStorage:
         with os.fdopen(descriptor, "rb") as source:
             return source.read(16) == b"SQLite format 3\x00"
 
-    @staticmethod
-    def _digest(path: Path, limit: int | None = None) -> str:
+    def _digest(self, path: Path, limit: int | None = None) -> str:
         digest = hashlib.sha256()
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(descriptor, "rb") as source:
             if not file_stat.S_ISREG(os.fstat(source.fileno()).st_mode):
-                raise RuntimeUpdateStorageError("unsafe file", code="runtime_update_unsafe_data")
+                raise self._unsafe_data(path, "regular_file", "unsafe file")
             remaining = limit
             while remaining is None or remaining > 0:
                 chunk = source.read(
@@ -380,8 +407,8 @@ class RuntimeUpdateStorage:
                 return
         except (OSError, RuntimeError):
             pass
-        raise RuntimeUpdateStorageError(
-            "durable data contains an unsafe symbolic link", code="runtime_update_unsafe_data"
+        raise self._unsafe_data(
+            path, "symlink_scope", "durable data contains an unsafe symbolic link"
         )
 
     def _walk_files(self, root: Path) -> Iterable[Path]:
@@ -400,9 +427,10 @@ class RuntimeUpdateStorage:
                     yield path
                     continue
                 if not path.is_dir():
-                    raise RuntimeUpdateStorageError(
+                    raise self._unsafe_data(
+                        path,
+                        "directory_type",
                         "durable data contains an unsupported entry",
-                        code="runtime_update_unsafe_data",
                     )
                 safe_directories.append(name)
             directories[:] = safe_directories
@@ -413,8 +441,9 @@ class RuntimeUpdateStorage:
                     yield path
                     continue
                 if not file_stat.S_ISREG(path.lstat().st_mode):
-                    raise RuntimeUpdateStorageError(
+                    raise self._unsafe_data(
+                        path,
+                        "file_type",
                         "durable data contains an unsafe or unsupported entry",
-                        code="runtime_update_unsafe_data",
                     )
                 yield path
