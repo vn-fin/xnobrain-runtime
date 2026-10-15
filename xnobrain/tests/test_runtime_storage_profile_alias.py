@@ -1,4 +1,4 @@
-"""Only the canonical Hermes profiles alias is excluded from duplicate traversal."""
+"""The canonical alias is recorded without traversal across profile boundaries."""
 
 import os
 import tempfile
@@ -31,7 +31,16 @@ class ProfileAliasTests(unittest.TestCase):
                 },
             ):
                 storage = RuntimeUpdateStorage(data, profiles, root)
-                self.assertEqual(list(storage._walk_files(root)), [])
+                self.assertEqual(list(storage._walk_files(root)), [alias])
+                baseline = storage.manifest()
+                self.assertEqual(
+                    [
+                        item["kind"]
+                        for item in baseline["entries"]
+                        if item["path"] == "root_profile/profiles"
+                    ],
+                    ["symlink"],
+                )
                 self.assertEqual(list(storage._walk_files(profiles)), [target])
                 alias.unlink()
                 alias.symlink_to(data, target_is_directory=True)

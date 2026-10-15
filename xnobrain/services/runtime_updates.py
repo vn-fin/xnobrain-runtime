@@ -387,10 +387,12 @@ class RuntimeUpdateService:
                     self._conflict("approved Runtime update checkpoint was not found")
                 self._validate_checkpoint(request, checkpoint)
                 try:
-                    current = await self._durable_io(self.storage.manifest)
+                    verification = await self._durable_io(
+                        self.storage.verify, checkpoint["manifest"]
+                    )
                 except RuntimeUpdateStorageError as error:
                     self._storage_error(error)
-                preserved = current["digest"] == checkpoint["manifest"]["digest"]
+                preserved = verification["preserved"]
                 target = self._effective_target(request)
                 if target.get("kind") in {"incus_image", "runtime_source_v1"}:
                     installed = self._target_identity(target)
@@ -409,7 +411,8 @@ class RuntimeUpdateService:
                     "verified": preserved and identity_matches,
                     "data_preserved": preserved,
                     "installed_identity_matches": identity_matches,
-                    "manifest_digest": current["digest"],
+                    "manifest_digest": verification["manifest_digest"],
+                    "data_verification": verification,
                     "installed": installed,
                     "verified_at": iso(),
                 }
@@ -458,10 +461,10 @@ class RuntimeUpdateService:
         checkpoint = self.repository.checkpoint(checkpoint_id)
         self._validate_checkpoint(request, checkpoint)
         try:
-            current = await self._durable_io(self.storage.manifest)
+            verification = await self._durable_io(self.storage.verify, checkpoint["manifest"])
         except RuntimeUpdateStorageError as error:
             self._storage_error(error)
-        if current["digest"] != checkpoint.get("manifest", {}).get("digest"):
+        if not verification["preserved"]:
             self._restore_unsafe()
 
     @staticmethod
