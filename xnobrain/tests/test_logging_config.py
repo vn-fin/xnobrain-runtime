@@ -11,7 +11,7 @@ from unittest.mock import patch
 import jlogger as jlog
 from opentelemetry import trace
 
-from xnobrain.logging_config import SERVICE_NAME, JLoggerHandler, configure_logging
+from xnobrain.logging_config import JLoggerHandler, configure_logging
 
 
 class LoggingConfigTests(unittest.TestCase):
@@ -91,6 +91,47 @@ class LoggingConfigTests(unittest.TestCase):
 
         rendered = json.loads(self.output.getvalue())
         self.assertNotIn("authorization", rendered)
+
+    def test_checkpoint_diagnostics_survive_json_without_error_message_or_target(self):
+        from xnobrain.integrations.runtime_update_storage import RuntimeUpdateStorageError
+        from xnobrain.services.base import ServiceError
+        from xnobrain.services.runtime_updates import RuntimeUpdateService
+
+        error = RuntimeUpdateStorageError(
+            "PRIVATE_EXCEPTION_MESSAGE",
+            code="runtime_update_unsafe_data",
+            diagnostics={
+                "storage_check": "symlink_scope",
+                "storage_root": "profiles",
+                "relative_path": "agent/link",
+                "target": "/PRIVATE_EXTERNAL_TARGET",
+            },
+        )
+        with (
+            self.assertLogs("xnobrain.services.runtime_updates", level="WARNING") as logs,
+            self.assertRaises(ServiceError),
+        ):
+            RuntimeUpdateService._storage_error(
+                error,
+                request={
+                    "operation_id": "upd_fixture",
+                    "generation": 26,
+                    "token": "SECRET",
+                    "target": {"private": "PRIVATE_TARGET"},
+                },
+                phase="checkpoint",
+            )
+        JLoggerHandler().emit(logs.records[0])
+        rendered = json.loads(self.output.getvalue())
+        self.assertEqual(rendered["event"], "runtime_update_storage_failure")
+        self.assertEqual(rendered["error"], "runtime_update_unsafe_data")
+        self.assertEqual(rendered["operation_id"], "upd_fixture")
+        self.assertEqual(rendered["fence"], 26)
+        self.assertEqual(rendered["storage_check"], "symlink_scope")
+        self.assertEqual(rendered["storage_root"], "profiles")
+        self.assertEqual(rendered["relative_path"], "agent/link")
+        self.assertNotIn("PRIVATE", self.output.getvalue())
+        self.assertNotIn("SECRET", self.output.getvalue())
 
     def test_third_party_otel_warning_is_json_with_safe_error_category(self):
         with patch.dict("os.environ", {"DEVELOPMENT_ENVIRONMENT": "local"}, clear=True):

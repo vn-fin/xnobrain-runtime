@@ -4,6 +4,25 @@ Runtime owns durable-data evidence; Control owns the deployment, lease and retry
 Admission stays closed from drain until positive post-verification and resume.
 Checkpoint IDs, operation/generation fences and target identity remain unchanged.
 
+Checkpoint storage failures emit one `runtime_update_storage_failure` warning
+before returning the existing HTTP 409/error code. Correlate `operation_id`,
+`fence` and `phase=checkpoint` with Control. Unsafe-data diagnostics include
+`storage_check` (`symlink_scope`, `sqlite_sidecar_symlink`, `coordination_file`,
+`directory_type`, `file_type` or `regular_file`), `storage_root` and
+`relative_path`. Paths identify the rejected entry within a durable root, are
+bounded to 512 characters, and replace non-printable characters. Logs never
+include resolved symlink targets, absolute data roots, file contents, request
+bodies, tokens or exception messages. These diagnostics do not relax validation,
+release maintenance or change the checkpoint/HTTP response contract.
+
+SQLite flushing validates and materializes each durable root's file list before
+opening databases for `wal_checkpoint(TRUNCATE)`. Closing the last SQLite
+connection can remove `-wal` and `-shm` files that were present during directory
+enumeration; continuing a lazy file walk afterward would incorrectly reject the
+now-missing sidecar as unsafe data. The subsequent manifest verifies the resulting
+state normally. This does not ignore missing durable files, orphan sidecars, or
+unsafe symlinks.
+
 New checkpoints use manifest version 2. Ordinary files retain exact bytes,
 permissions and ownership. The following narrowly defined equivalences permit
 an unchanged workspace to restart without falsely reporting data loss:
