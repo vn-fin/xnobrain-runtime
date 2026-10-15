@@ -15,15 +15,21 @@ def store(service, agent_id, conversation_id):
     )
 
 
-def snapshot(service, agent_id, conversation_id):
+def snapshot(service, agent_id, conversation_id, *, model=None):
     repository = store(service, agent_id, conversation_id)
     with repository.locked():
         preference = repository.read()
         config = service.agents.describe_agent(agent_id)["config"]
         inherited = str(config.get("effort") or config.get("reasoning_effort") or "medium")
+        selected_model = model or config.get("model") or "auto"
+        # System Auto is resolved downstream. Keep the saved preference intact
+        # for concrete models, but never pin its effort onto every Auto candidate.
+        effective = (
+            "auto" if selected_model == "auto" else preference["reasoning_effort"] or inherited
+        )
         return {
             **preference,
-            "effective_preference": preference["reasoning_effort"] or inherited,
+            "effective_preference": effective,
             "source": "conversation" if preference["reasoning_effort"] is not None else "agent",
         }
 

@@ -13,6 +13,15 @@ def install_reasoning_guard(agent, router, loop, preference, emit):
     original = agent._build_api_kwargs
 
     def build(*args, **kwargs):
+        if agent.model == "auto":
+            # Router selects the actual model (including retries). Omitting
+            # effort lets each upstream use its own default; the virtual route
+            # has no concrete capability to validate here.
+            agent.reasoning_config = None
+            request = original(*args, **kwargs)
+            emit("auto")
+            return request
+
         async def resolve():
             return await router.reasoning_for_model(str(agent.model))
 
