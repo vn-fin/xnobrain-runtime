@@ -70,6 +70,21 @@ class AgentDefaultSkillsTests(unittest.TestCase):
             all(item["bundled"] for item in self.manager.list_skills("researcher")["skills"])
         )
 
+    def test_pinned_auxiliary_models_lists_only_explicit_choices(self):
+        self.manager.create_agent({"name": "auxiliary"})
+        profile = self.root / "profiles" / "auxiliary"
+        self.assertEqual(self.manager.pinned_auxiliary_models("auxiliary"), [])
+        config = yaml.safe_load((profile / "config.yaml").read_text())
+        config["auxiliary"] = {
+            "vision": {"model": "cx/gpt-5"},
+            "compression": {"model": "auto", "provider": ""},
+            "web_extract": {"base_url": "https://example.test/v1"},
+        }
+        (profile / "config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+        self.assertEqual(
+            self.manager.pinned_auxiliary_models("auxiliary"), ["vision", "web_extract"]
+        )
+
     def test_publication_inventory_distinguishes_defaults_from_custom_skills(self):
         self.manager.create_agent({"name": "publisher"})
         profile = self.root / "profiles" / "publisher"

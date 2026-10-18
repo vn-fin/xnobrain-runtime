@@ -865,7 +865,9 @@ class ConversationRunnerMixin:
             return await self._run_session_agent_scoped(prepared, **kwargs)
         ownership = prepared.get("ownership_context") or {}
         context_id = str(ownership.get("organization_id") or "personal")
-        binding = accounting_binding(str(prepared["name"]), context_id)
+        binding = accounting_binding(
+            str(prepared["name"]), context_id, str(prepared.get("conversation_id") or "")
+        )
         with inference_accounting(
             binding,
             str(prepared["conversation_id"]),

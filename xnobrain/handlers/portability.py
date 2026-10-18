@@ -85,7 +85,11 @@ class PortabilityHandlers:
                 response = self.success(result)
                 response.headers["Cache-Control"] = "private, no-store"
                 return response
-            if request.scope["route"].name == "community_snapshot_export":
+            organization = request.scope["route"].name.startswith("organization_snapshot_")
+            if request.scope["route"].name in {
+                "community_snapshot_export",
+                "organization_snapshot_export",
+            }:
                 agent_id = request.path_params["agent_id"]
                 with tempfile.NamedTemporaryFile(
                     prefix=".community-",
@@ -100,6 +104,7 @@ class PortabilityHandlers:
                         agent_id,
                         archive_path,
                         owner=from_request(request),
+                        **({"organization": True} if organization else {}),
                     )
                     response = StreamingResponse(
                         _snapshot_chunks(archive_path),
@@ -160,6 +165,12 @@ class PortabilityHandlers:
                     archive_path,
                     operation_id=operation_id,
                     digest=digest.hexdigest(),
+                    organization=organization,
+                    refresh_target=(
+                        request.path_params["agent_id"]
+                        if request.scope["route"].name == "organization_snapshot_refresh"
+                        else None
+                    ),
                     recipient="\x00".join(
                         (context.subject, context.tenant_id, context.organization_id)
                     ),

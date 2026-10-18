@@ -299,6 +299,26 @@ class AgentProfilesMixin:
             json.dump(dict(metadata), file, indent=2, sort_keys=True)
             file.write("\n")
 
+    def pinned_auxiliary_models(self, raw_name: Any) -> list[str]:
+        """Return auxiliary tasks whose model, provider or endpoint the profile pins.
+
+        Hermes runs auxiliary calls on the run's main model unless a profile pins
+        one under ``auxiliary.<task>``.
+        """
+        config = self._read_config(self._require_profile(self._agent_name(raw_name)))
+        auxiliary = config.get("auxiliary")
+        if not isinstance(auxiliary, dict):
+            return []
+        return sorted(
+            str(task)
+            for task, settings in auxiliary.items()
+            if isinstance(settings, dict)
+            and any(
+                settings.get(key) not in (None, "", "auto")
+                for key in ("model", "provider", "base_url")
+            )
+        )
+
     def _read_config(self, profile_dir: Path) -> dict[str, Any]:
         path = profile_dir / "config.yaml"
         if not path.is_file():

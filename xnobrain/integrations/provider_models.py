@@ -31,7 +31,9 @@ def default_reasoning_level(levels: Any) -> str:
 
 
 class ProviderModelsMixin:
-    async def list_models(self, *, ensure_auto: bool = True) -> dict[str, Any]:
+    async def list_models(
+        self, *, ensure_auto: bool = True, include_organization: bool = False
+    ) -> dict[str, Any]:
         # The workload credential scopes this catalog inside the central
         # router. Runtime never calls router management endpoints and does not
         # infer availability from global provider state.
@@ -44,6 +46,10 @@ class ProviderModelsMixin:
                 continue
             model_id = str(item.get("id") or "").strip()
             if not model_id or model_id in seen:
+                continue
+            # Organization models bill the organization; only a Control
+            # command that funds an organization run may use one.
+            if model_id.startswith("org/") and not include_organization:
                 continue
             # GoRouter's OpenAI envelope uses owned_by="gorouter" for every
             # route. Provider ownership is encoded in the stable public model
@@ -105,7 +111,9 @@ class ProviderModelsMixin:
         else:
             catalog = {
                 str(item.get("id") or ""): list(item.get("reasoning_levels") or [])
-                for item in (await self.list_models(ensure_auto=False))["data"]
+                for item in (await self.list_models(ensure_auto=False, include_organization=True))[
+                    "data"
+                ]
             }
             self._model_reasoning_catalog_cache = (now, catalog)
         levels = list(catalog.get(str(model or ""), []))

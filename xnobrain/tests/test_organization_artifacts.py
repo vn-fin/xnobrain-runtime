@@ -141,3 +141,28 @@ class TestArtifacts(unittest.TestCase):
         }
         with self.assertRaises(ServiceError):
             self.s.import_organization_artifact("a", body)
+
+
+class TestTransferOrigins(unittest.TestCase):
+    transfer = {"method": "PUT", "expires_at": "2999-01-01T00:00:00Z"}
+
+    def test_plain_http_requires_a_configured_local_origin(self):
+        from xnobrain.services import organization_artifacts
+
+        url = "http://app.dev.xnobrain:5173/xnobrain/storage/object"
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(ServiceError) as raised:
+                organization_artifacts._open({**self.transfer, "url": url})
+        self.assertEqual(raised.exception.code, "invalid_transfer_authorization")
+        origins = {"RUNTIME_ORGANIZATION_TRANSFER_HTTP_ORIGINS": "http://app.dev.xnobrain:5173"}
+        with (
+            patch.dict("os.environ", origins, clear=True),
+            patch.object(organization_artifacts, "urlopen", return_value="opened") as opened,
+        ):
+            self.assertEqual(organization_artifacts._open({**self.transfer, "url": url}), "opened")
+            # A configured origin never admits a look-alike host.
+            with self.assertRaises(ServiceError):
+                organization_artifacts._open(
+                    {**self.transfer, "url": "http://app.dev.xnobrain:5173.evil/x"}
+                )
+        opened.assert_called_once()

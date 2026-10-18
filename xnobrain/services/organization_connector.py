@@ -1,4 +1,10 @@
-"""Opt-in outbound-only connector for delegated organization work."""
+"""Outbound-only connector for delegated organization work.
+
+The member's browser hands this Runtime a one-time enrollment token per
+organization. Each organization then gets its own device credential and its
+own loop for inventory, heartbeat and command polling, so one organization's
+failure never stops another.
+"""
 
 from __future__ import annotations
 
@@ -6,21 +12,42 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import os
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from ..repositories.organization_connector import OrganizationConnectorRepository
+from ..integrations import organization_funding
+from ..repositories.base import StoreError
+from ..repositories.organization_connector import (
+    ORGANIZATION_ID,
+    OrganizationConnectorRepository,
+)
 from ..repositories.runtime_update_gate import workspace_activity
 from ..trusted_context import TrustedRequestContext
+from .base import ServiceError
+
+logger = logging.getLogger(__name__)
 
 TERMINAL = {"completed", "failed", "timed_out", "cancelled"}
+MAX_BACKOFF_SECONDS = 300
+
+
+class EnrollmentRejected(Exception):
+    """Control refused the enrollment token; a new token is required."""
+
+
+class DeviceRevoked(Exception):
+    """Control no longer accepts this device's refresh token."""
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class OrganizationConnector:
@@ -28,22 +55,36 @@ class OrganizationConnector:
         self.platform = platform
         self.store = OrganizationConnectorRepository(platform.repository)
         self.endpoint = os.getenv("RUNTIME_CONTROL_URL", "").rstrip("/")
-        self.organization = os.getenv("RUNTIME_ORGANIZATION_ID", "")
-        self.proof = os.getenv("RUNTIME_RUNNER_ENROLLMENT_PROOF", "")
+        self.env_organization = os.getenv("RUNTIME_ORGANIZATION_ID", "")
+        self.env_proof = os.getenv("RUNTIME_RUNNER_ENROLLMENT_PROOF", "")
         self.interval = max(2, int(os.getenv("RUNTIME_CONNECTOR_INTERVAL_SECONDS", "10")))
         self.task = None
         self.stop_event = asyncio.Event()
+        self.wake = asyncio.Event()
         self.dispatch_paused = False
         self.active_commands: dict[str, tuple[str, str, str]] = {}
+        self.links: dict[str, asyncio.Task] = {}
         self.key_path = self.store.root / "device-ed25519.key"
 
     @property
     def enabled(self):
-        return bool(self.endpoint and self.organization and self.proof)
+        return bool(self.endpoint)
 
     async def start(self):
         if self.enabled and self.task is None:
+            self.seed_env_connection()
             self.task = asyncio.create_task(self.run(), name="xnobrain-organization-connector")
+
+    def seed_env_connection(self) -> None:
+        """Unattended installs pass one Control-issued token through the env."""
+        organization, proof = self.env_organization, self.env_proof.strip()
+        if not (organization and proof) or not ORGANIZATION_ID.match(organization):
+            return
+        store = self.store.for_organization(organization)
+        if store.state():
+            return
+        token = proof if proof.startswith(f"{organization}.") else f"{organization}.{proof}"
+        store.save_state({"status": "pending", "enrollment_token": token, "updated_at": _now()})
 
     async def pause_dispatch(self) -> None:
         self.dispatch_paused = True
@@ -60,13 +101,15 @@ class OrganizationConnector:
 
     async def stop(self):
         self.stop_event.set()
-        if self.task:
-            self.task.cancel()
-        if self.task:
+        tasks = [task for task in (self.task, *self.links.values()) if task]
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
             try:
-                await self.task
+                await task
             except asyncio.CancelledError:
                 pass
+        self.links.clear()
 
     def key(self):
         if self.key_path.exists():
@@ -84,52 +127,6 @@ class OrganizationConnector:
         )
         return key
 
-    def headers(self, state):
-        return {
-            "Authorization": f"Bearer {state['access_token']}",
-            "Content-Type": "application/json",
-        }
-
-    @staticmethod
-    def require(response):
-        response.raise_for_status()
-        body = response.json()
-
-    async def enroll(self, client):
-        key = self.key()
-        pub = key.public_key().public_bytes(
-            serialization.Encoding.Raw, serialization.PublicFormat.Raw
-        )
-        response = await client.post(
-            f"{self.endpoint}/xnobrain/api/control/v1/runner/enrollment-challenges",
-            json={
-                "enrollment_token": f"{self.organization}.{self.proof}",
-                "device_public_key": base64.b64encode(pub).decode(),
-            },
-        )
-        response.raise_for_status()
-        challenge = response.json()["data"]
-        response = await client.post(
-            f"{self.endpoint}/xnobrain/api/control/v1/runner/enroll",
-            json={
-                "challenge_id": challenge["challenge_id"],
-                "signature": base64.b64encode(key.sign(challenge["challenge"].encode())).decode(),
-                "device_metadata": {"runtime_version": os.getenv("XNOBRAIN_VERSION", "dev")},
-            },
-        )
-        response.raise_for_status()
-        enrolled = response.json()["data"]
-        state = {
-            "device_id": enrolled["device_id"],
-            "access_token": enrolled["access_token"],
-            "expires_at": enrolled["expires_at"],
-            "refresh_token": enrolled["refresh_token"],
-            "heartbeat_sequence": 0,
-            "inventory_revision": 1,
-        }
-        self.store.save_state(state)
-        return state
-
     def inventory(self):
         activity = self.platform.agent_activity()["agents"]
         return [
@@ -143,6 +140,255 @@ class OrganizationConnector:
             for a in self.platform.list_agents()
         ]
 
+    @staticmethod
+    def execution_body(cmd, instruction, deadline):
+        allowed_tools = list(cmd.get("allowed_toolsets") or [])
+        allowed_skills = list(cmd.get("allowed_skills") or [])
+        limits = dict(cmd.get("limits") or {})
+        seconds = int(limits.get("max_duration_seconds") or 3600)
+        seconds = min(
+            seconds, max(30, int((deadline - datetime.now(timezone.utc)).total_seconds()))
+        )
+        return {
+            "input": instruction,
+            "run_mode": "background",
+            "timeout_seconds": seconds,
+            "toolsets": allowed_tools,
+            "skills": allowed_skills,
+            "organization_command": True,
+            "approval_mode": cmd.get("approval_mode") or "local",
+        }
+
+    def link(self, organization_id: str) -> OrganizationLink:
+        return OrganizationLink(self, self.store.for_organization(organization_id))
+
+    # Browser-facing connection management. The browser only ever supplies a
+    # Control-issued enrollment token, never its own credential.
+
+    def connections(self) -> dict[str, Any]:
+        return {"items": [self.link(org).view() for org in self.store.organizations()]}
+
+    def connect(self, body: dict[str, Any]) -> dict[str, Any]:
+        if not self.enabled:
+            raise StoreError(
+                "organization connector is not configured",
+                status=503,
+                code="organization_connector_unavailable",
+            )
+        organization = str(body.get("organization_id") or "")
+        token = str(body.get("enrollment_token") or "").strip()
+        if not ORGANIZATION_ID.match(organization) or not token.startswith(f"{organization}."):
+            raise StoreError(
+                "enrollment token does not match the organization",
+                status=400,
+                code="invalid_enrollment_token",
+            )
+        self._stop_link(organization)
+        link = self.link(organization)
+        link.store.save_state(
+            {"status": "pending", "enrollment_token": token, "updated_at": _now()}
+        )
+        self.wake.set()
+        return link.view()
+
+    def disconnect(self, organization_id: str) -> dict[str, Any]:
+        if not ORGANIZATION_ID.match(organization_id):
+            raise StoreError("invalid organization id", status=400, code="invalid_organization_id")
+        self._stop_link(organization_id)
+        self.store.for_organization(organization_id).remove()
+        return {"organization_id": organization_id, "state": "removed"}
+
+    def _stop_link(self, organization_id: str) -> None:
+        task = self.links.pop(organization_id, None)
+        if task is not None:
+            task.cancel()
+
+    def _sync_links(self, client) -> None:
+        stored = set(self.store.organizations())
+        for organization in list(self.links):
+            if organization not in stored:
+                self._stop_link(organization)
+        for organization in stored:
+            task = self.links.get(organization)
+            if task is None or task.done():
+                self.links[organization] = asyncio.create_task(
+                    self.link(organization).run(client),
+                    name=f"xnobrain-organization-connector-{organization}",
+                )
+
+    async def run(self):
+        async with httpx.AsyncClient(timeout=20, verify=True) as client:
+            while not self.stop_event.is_set():
+                self._sync_links(client)
+                self.wake.clear()
+                try:
+                    await asyncio.wait_for(self.wake.wait(), timeout=self.interval)
+                except asyncio.TimeoutError:
+                    pass
+
+
+class OrganizationLink:
+    """Connection to one organization, sharing the Runtime's device key."""
+
+    def __init__(self, connector: OrganizationConnector, store: OrganizationConnectorRepository):
+        self.connector = connector
+        self.store = store
+        self.organization = store.organization_id
+        self.delay = connector.interval
+        self.running: dict[str, asyncio.Task] = {}
+
+    @property
+    def platform(self):
+        return self.connector.platform
+
+    @property
+    def endpoint(self):
+        return self.connector.endpoint
+
+    @property
+    def dispatch_paused(self):
+        return self.connector.dispatch_paused
+
+    @property
+    def active_commands(self):
+        return self.connector.active_commands
+
+    def key(self):
+        return self.connector.key()
+
+    def execution_body(self, cmd, instruction, deadline):
+        return self.connector.execution_body(cmd, instruction, deadline)
+
+    def view(self) -> dict[str, Any]:
+        state = self.store.state()
+        return {
+            "organization_id": self.organization,
+            "state": state.get("status") or "pending",
+            "last_heartbeat_at": state.get("last_heartbeat_at"),
+            "error_code": state.get("error_code"),
+        }
+
+    def _mark(self, status: str, error_code: str | None = None, **changes) -> dict[str, Any]:
+        state = self.store.state()
+        state.update(changes)
+        state.update({"status": status, "error_code": error_code, "updated_at": _now()})
+        self.store.save_state(state)
+        return state
+
+    def failed(self, error: Exception, delay: float) -> float | None:
+        """Record a failed tick; return the next delay or None to stop."""
+        if isinstance(error, EnrollmentRejected):
+            self._mark("error", "enrollment_token_invalid", enrollment_token=None)
+            return None
+        if isinstance(error, DeviceRevoked):
+            self._mark("revoked", "device_revoked", access_token=None, refresh_token=None)
+            return None
+        if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 401:
+            # Force a refresh on the next tick; a refused refresh revokes.
+            self._mark("error", "device_unauthorized", expires_at="1970-01-01T00:00:00+00:00")
+            return self.connector.interval
+        code = (
+            "control_unreachable" if isinstance(error, httpx.TransportError) else "connector_failed"
+        )
+        self._mark("error", code)
+        return min(MAX_BACKOFF_SECONDS, max(self.connector.interval, delay * 2))
+
+    async def run_once(self, client) -> float | None:
+        """Run one tick; return the delay before the next or None to stop."""
+        try:
+            await self.tick(client)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            self.delay = self.failed(error, self.delay)
+        else:
+            self.delay = self.connector.interval
+        return self.delay
+
+    async def run(self, client):
+        try:
+            while not self.connector.stop_event.is_set():
+                delay = await self.run_once(client)
+                if delay is None:
+                    return
+                await asyncio.sleep(delay)
+        finally:
+            for task in list(self.running.values()):
+                task.cancel()
+
+    def dispatch(self, client, state, cmd) -> None:
+        """Run a command beside the loop so heartbeats continue during it."""
+        cid = str(cmd.get("command_id") or "")
+        if not cid or cid in self.running:
+            return
+        task = asyncio.create_task(
+            self.command(client, state, cmd), name=f"xnobrain-organization-command-{cid}"
+        )
+        self.running[cid] = task
+
+        def finished(done: asyncio.Task) -> None:
+            self.running.pop(cid, None)
+            if not done.cancelled() and done.exception() is not None:
+                # An unacknowledged command's lease expires and Control
+                # re-queues it; the error itself stays local.
+                logger.warning(
+                    "organization command failed",
+                    extra={
+                        "command_id": cid,
+                        "error": getattr(done.exception(), "code", "")
+                        or type(done.exception()).__name__,
+                    },
+                )
+
+        task.add_done_callback(finished)
+
+    def headers(self, state):
+        # Long commands outlive the 15-minute access token; always send the
+        # token the loop refreshed most recently.
+        token = self.store.state().get("access_token") or state["access_token"]
+        return {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+    async def enroll(self, client, token):
+        key = self.key()
+        pub = key.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        )
+        response = await client.post(
+            f"{self.endpoint}/xnobrain/api/control/v1/runner/enrollment-challenges",
+            json={"enrollment_token": token, "device_public_key": base64.b64encode(pub).decode()},
+        )
+        if 400 <= response.status_code < 500:
+            raise EnrollmentRejected
+        response.raise_for_status()
+        challenge = response.json()["data"]
+        response = await client.post(
+            f"{self.endpoint}/xnobrain/api/control/v1/runner/enroll",
+            json={
+                "challenge_id": challenge["challenge_id"],
+                "signature": base64.b64encode(key.sign(challenge["challenge"].encode())).decode(),
+                "device_metadata": {"runtime_version": os.getenv("XNOBRAIN_VERSION", "dev")},
+            },
+        )
+        if 400 <= response.status_code < 500:
+            raise EnrollmentRejected
+        response.raise_for_status()
+        enrolled = response.json()["data"]
+        state = {
+            "status": "pending",
+            "device_id": enrolled["device_id"],
+            "access_token": enrolled["access_token"],
+            "expires_at": enrolled["expires_at"],
+            "refresh_token": enrolled["refresh_token"],
+            "heartbeat_sequence": 0,
+            "inventory_revision": 0,
+            "updated_at": _now(),
+        }
+        self.store.save_state(state)
+        return state
+
     async def refresh_if_needed(self, client, state):
         expires = datetime.fromisoformat(str(state["expires_at"]).replace("Z", "+00:00"))
         if (expires - datetime.now(timezone.utc)).total_seconds() > 60:
@@ -153,6 +399,8 @@ class OrganizationConnector:
             f"{self.endpoint}/xnobrain/api/control/v1/runner/token",
             json={"refresh_token": state["refresh_token"], "nonce": nonce, "signature": signature},
         )
+        if response.status_code in {401, 403}:
+            raise DeviceRevoked
         response.raise_for_status()
         value = response.json()["data"]
         state["access_token"], state["expires_at"] = value["access_token"], value["expires_at"]
@@ -241,6 +489,8 @@ class OrganizationConnector:
                 f"{self.endpoint}/xnobrain/api/control/v1/organizations/{self.organization}/runner/commands/{cmd['command_id']}/output-uploads",
                 headers={**self.headers(state), "Idempotency-Key": key},
                 json={
+                    # Control records the agent as the executor of the upload.
+                    "agent_id": agent_id,
                     "name": source.name,
                     "size_bytes": info["size_bytes"],
                     "media_type": "application/octet-stream",
@@ -292,24 +542,6 @@ class OrganizationConnector:
             artifacts.append(response.json()["data"])
         return artifacts
 
-    def execution_body(self, cmd, instruction, deadline):
-        allowed_tools = list(cmd.get("allowed_toolsets") or [])
-        allowed_skills = list(cmd.get("allowed_skills") or [])
-        limits = dict(cmd.get("limits") or {})
-        seconds = int(limits.get("max_duration_seconds") or 3600)
-        seconds = min(
-            seconds, max(30, int((deadline - datetime.now(timezone.utc)).total_seconds()))
-        )
-        return {
-            "input": instruction,
-            "run_mode": "background",
-            "timeout_seconds": seconds,
-            "toolsets": allowed_tools,
-            "skills": allowed_skills,
-            "organization_command": True,
-            "approval_mode": cmd.get("approval_mode") or "local",
-        }
-
     async def command(self, client, state, cmd):
         if self.dispatch_paused:
             return
@@ -346,6 +578,43 @@ class OrganizationConnector:
             },
         )
         response.raise_for_status()
+        try:
+            await self.execute_acknowledged(
+                client, state, cmd, digest, agent_id, instruction, deadline
+            )
+        except Exception:
+            # Control never re-leases an acknowledged command. Report it failed
+            # so the run, and any team waiting on it, ends instead of waiting
+            # for the deadline.
+            self.refuse(cmd, digest, "runtime_execution_failed")
+            raise
+
+    async def execute_acknowledged(
+        self, client, state, cmd, digest, agent_id, instruction, deadline
+    ):
+        """Import inputs, run the agent and enqueue the command result."""
+        cid = cmd["command_id"]
+        context_id = str(cmd.get("work_context_id") or "").strip()
+        sponsor_grant_id = str(cmd.get("sponsor_grant_id") or "").strip()
+        if not context_id:
+            raise ValueError("organization command has no work context")
+        funding = dict(cmd.get("funding") or {})
+        mode = str(funding.get("mode") or "")
+        model = str(funding.get("model") or "")
+        if mode == organization_funding.ORGANIZATION:
+            payer_kind, sponsor_grant_id = "organization", ""
+            if not funding.get("workspace") and self.platform.agents.pinned_auxiliary_models(
+                agent_id
+            ):
+                self.refuse(cmd, digest, "organization_auxiliary_model_configured")
+                return
+        elif mode == organization_funding.OWNER:
+            if model and model not in (funding.get("allowed_models") or []):
+                self.refuse(cmd, digest, "stage_model_not_allowed")
+                return
+            payer_kind = "organization_sponsor" if sponsor_grant_id else "personal"
+        else:
+            raise ValueError("organization command has no funding")
         inputs = await self.import_inputs(client, state, cmd, agent_id)
         instruction = (
             instruction
@@ -357,11 +626,6 @@ class OrganizationConnector:
                 else ""
             )
         )
-        context_id = str(cmd.get("work_context_id") or "").strip()
-        sponsor_grant_id = str(cmd.get("sponsor_grant_id") or "").strip()
-        if not context_id:
-            raise ValueError("organization command has no work context")
-        payer_kind = "organization_sponsor" if sponsor_grant_id else "personal"
         conversation = self.platform.create_conversation(
             agent_id,
             {
@@ -394,12 +658,18 @@ class OrganizationConnector:
                 },
             ),
         )
+        organization_funding.register(
+            conversation["id"], mode, model, workspace=funding.get("workspace") is True
+        )
+        body = self.execution_body(cmd, instruction, deadline)
+        if model:
+            # Both funding modes honor an authorized stage pin.
+            body["model"] = model
         self.platform.runtime_updates.register_organization_command(cid)
         try:
-            run = await self.platform.start_conversation_run(
-                agent_id, conversation["id"], self.execution_body(cmd, instruction, deadline)
-            )
+            run = await self.platform.start_conversation_run(agent_id, conversation["id"], body)
         except Exception:
+            organization_funding.release(conversation["id"])
             await self.platform.runtime_updates.release_organization_command(cid)
             raise
         self.active_commands[cid] = (agent_id, conversation["id"], run["id"])
@@ -421,6 +691,7 @@ class OrganizationConnector:
         finally:
             done.set()
             renew.cancel()
+            organization_funding.release(conversation["id"])
             self.active_commands.pop(cid, None)
             await self.platform.runtime_updates.release_organization_command(cid)
             try:
@@ -428,11 +699,23 @@ class OrganizationConnector:
             except asyncio.CancelledError:
                 pass
         completed = current["status"] == "completed"
-        artifacts = await self.publish_outputs(client, state, cmd, agent_id) if completed else []
         summary = {
             "conversation_id": conversation["id"],
             "output": str(current.get("output") or "")[:4000],
         }
+        artifacts = []
+        if completed:
+            try:
+                artifacts = await self.publish_outputs(client, state, cmd, agent_id)
+            except (ServiceError, httpx.HTTPError, ValueError, KeyError) as error:
+                # The agent's answer still reaches the team; only its files
+                # stay in the member workspace.
+                code = str(getattr(error, "code", "") or "output_publish_failed")
+                summary["output_publish_error"] = code
+                logger.warning(
+                    "organization outputs not published",
+                    extra={"command_id": cid, "error": code},
+                )
         result = {
             "state": "completed" if completed else "failed",
             "occurred_at": datetime.now(timezone.utc).isoformat(),
@@ -453,14 +736,45 @@ class OrganizationConnector:
         )
         self.store.record(cid, digest, "completed")
 
+    def refuse(self, cmd, digest: str, error_code: str) -> None:
+        """Report a command as failed before it starts."""
+        cid = str(cmd["command_id"])
+        self.store.enqueue(
+            {
+                "idempotency_key": cmd["idempotency_key"],
+                "url": f"{self.endpoint}/xnobrain/api/control/v1/organizations/{self.organization}/runner/commands/{cid}/result",
+                "body": {
+                    "state": "failed",
+                    "occurred_at": datetime.now(timezone.utc).isoformat(),
+                    "safe_summary": {},
+                    "usage": {},
+                    "artifacts": [],
+                    "error_code": error_code,
+                    "result_digest": hashlib.sha256(
+                        (cid + digest + error_code).encode()
+                    ).hexdigest(),
+                },
+            }
+        )
+        self.store.record(cid, digest, "completed")
+
     @workspace_activity(lambda self: self.platform.repository.data_dir)
     async def tick(self, client):
         state = self.store.state()
-        if not state:
-            state = await self.enroll(client)
+        if state.get("status") == "revoked":
+            raise DeviceRevoked
+        if not state.get("access_token"):
+            token = state.get("enrollment_token")
+            if not token:
+                raise EnrollmentRejected
+            state = await self.enroll(client, token)
         state = await self.refresh_if_needed(client, state)
         await self.send_outbox(client, state)
-        agents = self.inventory()
+        agents = self.connector.inventory()
+        digest = hashlib.sha256(json.dumps(agents, sort_keys=True).encode()).hexdigest()
+        if digest != state.get("inventory_digest"):
+            state["inventory_revision"] = int(state.get("inventory_revision") or 0) + 1
+            state["inventory_digest"] = digest
         response = await client.put(
             f"{self.endpoint}/xnobrain/api/control/v1/organizations/{self.organization}/runner/agent-registrations",
             headers=self.headers(state),
@@ -471,7 +785,7 @@ class OrganizationConnector:
             r["registration_id"]: r["agent_public_id"]
             for r in response.json().get("data", {}).get("registrations", [])
         }
-        state["heartbeat_sequence"] += 1
+        state["heartbeat_sequence"] = int(state.get("heartbeat_sequence") or 0) + 1
         response = await client.post(
             f"{self.endpoint}/xnobrain/api/control/v1/organizations/{self.organization}/runner/heartbeat",
             headers=self.headers(state),
@@ -483,6 +797,14 @@ class OrganizationConnector:
             },
         )
         response.raise_for_status()
+        state.update(
+            {
+                "status": "connected",
+                "error_code": None,
+                "last_heartbeat_at": _now(),
+                "updated_at": _now(),
+            }
+        )
         self.store.save_state(state)
         response = await client.post(
             f"{self.endpoint}/xnobrain/api/control/v1/organizations/{self.organization}/runner/commands:poll",
@@ -491,13 +813,4 @@ class OrganizationConnector:
         )
         response.raise_for_status()
         for cmd in response.json().get("data", {}).get("commands", []):
-            await self.command(client, state, cmd)
-
-    async def run(self):
-        async with httpx.AsyncClient(timeout=20, verify=True) as client:
-            while not self.stop_event.is_set():
-                try:
-                    await self.tick(client)
-                except Exception:
-                    pass
-                await asyncio.sleep(self.interval)
+            self.dispatch(client, state, cmd)
