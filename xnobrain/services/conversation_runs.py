@@ -282,6 +282,7 @@ class ConversationRunService:
                         or context.get("payer_organization_id")
                         or "personal"
                     ),
+                    conversation_id=str(conversation_id),
                 )
             else:
                 await self.analytics.require_execution_budget(agent_id)

@@ -14,7 +14,7 @@ class ConversationOwnershipContext(BaseModel):
     owner_kind: Literal["personal", "organization"]
     organization_id: str | None = Field(default=None, min_length=1, max_length=256)
     owner_label: str | None = Field(default=None, max_length=200)
-    payer_kind: Literal["personal", "organization_sponsor"]
+    payer_kind: Literal["personal", "organization_sponsor", "organization"]
     sponsor_grant_id: str | None = Field(default=None, min_length=1, max_length=256)
     membership_revision_at_create: int | None = Field(default=None, ge=1)
     policy_revision_at_create: int | None = Field(default=None, ge=1)
@@ -32,6 +32,10 @@ class ConversationOwnershipContext(BaseModel):
             raise ValueError("organization sponsor payer requires sponsor_grant_id")
         if self.payer_kind == "personal" and self.sponsor_grant_id:
             raise ValueError("personal payer cannot include sponsor_grant_id")
+        if self.payer_kind == "organization" and (
+            self.owner_kind != "organization" or self.sponsor_grant_id
+        ):
+            raise ValueError("organization payer requires organization ownership")
         return self
 
 

@@ -28,6 +28,7 @@ from ..integrations.analytics import (
     skill_usage_profile,
 )
 from ..integrations.control_accounting import ControlAccountingClient
+from ..integrations.organization_funding import ORGANIZATION, funding_for
 from ..integrations.router_accounting import AccountingUnavailable
 from ..repositories.agent_budgets import AgentBudgetStore
 from ..repositories.skill_usage import SKILL_USAGE_INSTRUMENTATION_VERSION
@@ -384,15 +385,22 @@ class AnalyticsService:
         return await self._budget_status(agent_id, item)
 
     async def require_execution_budget(
-        self, agent_id: str, context_id: str = "personal"
+        self, agent_id: str, context_id: str = "personal", conversation_id: str = ""
     ) -> dict[str, Any]:
         """Reject a new top-level execution once weekly spend reaches its limit."""
         if accounting_enabled() and context_id != "personal":
-            raise ServiceError(
-                "Organization accounting is not activated; personal funding is not a fallback.",
-                status=503,
-                code="budget_check_unavailable",
-            )
+            funding = funding_for(conversation_id)
+            if funding is None:
+                raise ServiceError(
+                    "Organization accounting is not activated; personal funding is not a fallback.",
+                    status=503,
+                    code="budget_check_unavailable",
+                )
+            if funding["mode"] == ORGANIZATION:
+                # The Router enforces the organization model grant's weekly limit.
+                return {"status": "organization_funded", "accepting_chats": True}
+            # Owner funding spends the owner's own money under this agent's
+            # personal weekly budget.
         status = await self.get_budget(agent_id)
         if status.get("status") == "unavailable":
             raise ServiceError(

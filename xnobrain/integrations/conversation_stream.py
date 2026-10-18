@@ -93,7 +93,9 @@ class ConversationStreamMixin:
         prepared.setdefault("run_id", "run_" + uuid.uuid4().hex)
         ownership = prepared.get("ownership_context") or {}
         binding = accounting_binding(
-            str(prepared["name"]), str(ownership.get("organization_id") or "personal")
+            str(prepared["name"]),
+            str(ownership.get("organization_id") or "personal"),
+            str(prepared.get("conversation_id") or ""),
         )
         with inference_accounting(
             binding, str(prepared.get("conversation_id") or ""), prepared["run_id"]

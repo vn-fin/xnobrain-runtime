@@ -308,6 +308,55 @@ backward compatibility, but new browser code should use the unified stream.
 
 The private Runtime exposes inspect, approved publish, and verified import operations under `/xnobrain/api/runtime/v1/agents-workspaces/{agent_id}/organization-artifacts`. Transfer capabilities are supplied ephemerally by Control. Imports reject unsafe paths/protected profile areas, stage bytes, enforce size/SHA-256, and atomically rename into the selected workspace. Publish requires `approved: true` and never returns a local absolute path.
 
+### Organization connections
+
+The Runtime runs delegated organization work only for organizations it is
+connected to. The member's browser drives the connection; the Runtime never
+receives a browser credential.
+
+- `GET /xnobrain/api/runtime/v1/organization-connections` returns
+  `{items: [{organization_id, state, last_heartbeat_at, error_code}]}` where
+  `state` is `pending`, `connected`, `error`, or `revoked`.
+- `POST /xnobrain/api/runtime/v1/organization-connections`
+  `{organization_id, enrollment_token}` stores a one-time token issued by
+  Control's `POST /organizations/{organization_id}/runner/enrollment-tokens`
+  and returns `202` with the `pending` connection. The token must belong to
+  the named organization (`400 invalid_enrollment_token`); a Runtime without
+  `RUNTIME_CONTROL_URL` returns `503 organization_connector_unavailable`.
+- `DELETE /xnobrain/api/runtime/v1/organization-connections/{organization_id}`
+  stops that connection and deletes its local credential and journals.
+
+Each organization keeps its device credential, command inbox, and result
+outbox in `organization-connector/<organization_id>/` (credential file mode
+`0600`); the Ed25519 device key in `organization-connector/` is shared. Each
+connection runs its own enroll, inventory, heartbeat, and poll loop, so one
+organization's failure never stops another. A refused token becomes
+`error/enrollment_token_invalid` and a refused refresh becomes
+`revoked/device_revoked`; both wait for a new token. An unreachable Control
+keeps the credential and backs off from `RUNTIME_CONNECTOR_INTERVAL_SECONDS`
+(default 10 s) to 5 minutes. Unattended installs may set
+`RUNTIME_ORGANIZATION_ID` and `RUNTIME_RUNNER_ENROLLMENT_PROOF` to a
+Control-issued enrollment token to seed one connection at startup.
+
+Each leased command carries `funding {mode, model}`. The connector creates the
+conversation with `payer_kind` `organization` (organization funding) or
+`personal` (owner funding), registers the funding for that conversation, and
+releases it when the run ends. Organization funding forces the command's
+`org/...` model, so the Router bills the organization; owner funding keeps the
+agent's own model and its personal weekly budget. Router accounting refuses an
+organization conversation with no registered funding
+(`budget_check_unavailable`). Commands run beside the connection loop, so
+heartbeats and token refresh continue during long runs.
+
+`org/...` models bill the organization, so the personal model catalog (and
+every picker built on it) omits them; only a Control command that funds an
+organization run uses one. Hermes runs auxiliary calls (vision, compression,
+web extraction) on the run's model unless the profile pins
+`auxiliary.<task>.model`, `provider` or `base_url`; an organization-funded
+command for such an agent is reported failed with
+`organization_auxiliary_model_configured` and never starts, so the owner is
+never billed for organization work. Owner-funded commands are unaffected.
+
 ### Automatic model routing
 
 Selecting **Auto** for a provider randomizes the workload-scoped connected model
@@ -1513,3 +1562,40 @@ capability, never the login JWT. Runtime keeps it outside model arguments and
 persistent run/queue records. The `xno_data` tool accepts `sql` and optional
 `limit` (1–1000) and calls Control's private data facade. See the coordinated
 [XNO data contract](../../docs/features/xno-data-default-skills.md).
+
+## Organization workspace agent snapshots
+
+Control uses these private, service-signed endpoints beneath
+`/xnobrain/api/runtime/v1/community/snapshots`:
+
+| Endpoint | Behavior |
+| --- | --- |
+| `POST /organization/{agent_id}/export` | Exports an `organization-agent-v1` bundle from the consenting member's Runtime. |
+| `POST /organization/import` | Validates and clones the bundle into a new organization-owned profile. |
+| `POST /organization/{agent_id}/refresh` | Replaces adopted content in the existing organization profile while preserving its memory and sessions. |
+
+The existing snapshot signature binds method, full path, verified identity,
+operation ID, digest and length. A browser credential cannot authorize these
+transfers. The distinct signed paths bind the restricted snapshot mode and
+refresh target; ordinary community exports retain their existing format.
+
+Organization bundles allow `config.yaml`, `agent.json`, `HERMES.md`, `AGENTS.md`,
+`skills/`, and `workspace/`, subject to the existing secret/path sanitization.
+Memory, sessions, state databases, local credentials and provider authority are
+excluded, including excluded nested paths. Import validates manifest, inventory,
+checksums and sanitized configuration before installing a clone. Models use the
+receiving workspace's Router binding; source credentials are never installed.
+
+Import is idempotent per signed recipient/operation ID. Refresh verifies the
+organization ownership marker, stages a validated clone, and journals content
+replacement under the publication lock. Completed retries preserve edits made
+after the first refresh. An interrupted replacement rolls back from the retained
+snapshot before retrying. Destination memory, session files and state databases
+are outside the replacement set.
+
+Control provisions the organization Runtime with the organization's canonical
+Router service-user key and internally enrolls its organization-owned connector.
+Authenticated runner commands may include `funding.workspace=true` with
+`funding.mode=organization` and a direct model name. Borrowed organization-funded
+commands still require their existing `org/...` model names. Organization
+workspace data and credentials must be separate from member Runtime storage.
