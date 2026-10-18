@@ -505,7 +505,11 @@ class TeamRunService:
                     prompt += "\n\nUpstream results:\n" + "\n\n".join(upstream)
                 if coordinator_guidance:
                     prompt += "\n\nCoordinator guidance:\n" + coordinator_guidance
-                if scratchpad is not None:
+                if scratchpad is not None and getattr(self.platform, "distributed_workers", False):
+                    prompt += "\n\nTeam findings:\n" + self._cap(
+                        scratchpad.read_text(encoding="utf-8")
+                    )
+                elif scratchpad is not None:
                     prompt += (
                         f"\n\nShared team scratchpad: {scratchpad}\n"
                         "Read it before working. You may add useful intermediate findings "
@@ -614,10 +618,16 @@ class TeamRunService:
         results = [completed[str(step["id"])] for step in workflow]
         if any(item["status"] != "completed" for item in results):
             raise ServiceError("Team workflow has failed stages", status=502, code="worker_failed")
+        artifact_guidance = (
+            "\n\nWorkers ran on separate member machines. Their files are not available "
+            "in this workspace. Use the reported findings and clearly identify unverified artifacts."
+            if getattr(self.platform, "distributed_workers", False)
+            else "\n\nBefore making exact claims about shared artifacts, re-read their current "
+            "contents with the configured read tools; do not infer final state only from stage summaries."
+        )
         synthesis = (
             record["synthesis_instruction"]
-            + "\n\nBefore making exact claims about shared artifacts, re-read their current "
-            "contents with the configured read tools; do not infer final state only from stage summaries."
+            + artifact_guidance
             + "\n\n"
             + "\n\n".join(
                 f"[{item['id']}] {item['role']}: {item.get('summary') or item.get('error', 'worker_failed')}"

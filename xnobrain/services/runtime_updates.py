@@ -764,6 +764,8 @@ class RuntimeUpdateService:
 
     async def _cancel_active(self) -> None:
         await self.platform.conversation_runs.shutdown()
+        if getattr(self.platform, "organization_team_executions", None) is not None:
+            await self.platform.organization_team_executions.shutdown()
         await self.platform.team_runs.shutdown()
         self.platform.kanban.cancel_active_tasks_for_update()
         await self.platform.organization_connector.cancel_active_commands()

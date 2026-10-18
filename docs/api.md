@@ -1599,3 +1599,16 @@ Authenticated runner commands may include `funding.workspace=true` with
 `funding.mode=organization` and a direct model name. Borrowed organization-funded
 commands still require their existing `org/...` model names. Organization
 workspace data and credentials must be separate from member Runtime storage.
+
+### Private organization team executions
+
+Control signs POST/GET/DELETE `/organization-team-executions/{organization_id}/{team_id}/{run_id}`
+with HMAC-SHA256 of `METHOD + "\n" + full_path + "\n" + sha256(raw_body)`
+in `X-XNOBrain-Team-Signature` using the configured internal service token.
+The browser Runtime proxy denies these paths. POST receives an immutable team
+snapshot, run input, and execution-scoped callback capability. BigBrother is
+local; member registration IDs dispatch through Control's runner queue.
+Snapshots are stored below `DATA_DIR/organization-team-executions/{org}` and
+never appear in personal `/teams`. Capabilities remain in memory only. Repeated
+starts of the same run return its existing record; restart recovery marks
+unfinished work interrupted instead of replaying it.
