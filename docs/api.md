@@ -1612,3 +1612,15 @@ Snapshots are stored below `DATA_DIR/organization-team-executions/{org}` and
 never appear in personal `/teams`. Capabilities remain in memory only. Repeated
 starts of the same run return its existing record; restart recovery marks
 unfinished work interrupted instead of replaying it.
+
+### Team stage model selection
+
+Team create/update accepts optional `workflow[].model`, `coordinator_model`,
+and `synthesis_model`. Values are trimmed and limited to 200 characters; empty
+or omitted uses the selected agent's current model. A pin is passed to the
+existing conversation runner without fallback or changing the agent profile.
+Run step records include the requested `model`, or null for an unpinned stage.
+Organization workers forward the pin to Control; a `422 stage_model_not_allowed`
+response fails the step with that code. Member connectors apply `funding.model`
+for both funding modes and refuse owner-funded pins outside `funding.allowed_models`
+before creating a conversation.

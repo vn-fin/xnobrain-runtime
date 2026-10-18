@@ -222,6 +222,7 @@ class TeamRunService:
                 "agent_id": str(step["agent_id"]),
                 "role": str(step["role"]),
                 "task": str(step["task"]),
+                "model": step.get("model"),
                 "needs": [str(need) for need in step["needs"]],
                 "allowed_tools": [str(tool) for tool in step["allowed_tools"]],
                 "skills": [str(skill) for skill in step.get("skills") or []],
@@ -434,6 +435,8 @@ class TeamRunService:
                     "Return concise execution guidance for the worker stages."
                 ),
             }
+            if team.get("coordinator_model"):
+                coordinator_request["model"] = team["coordinator_model"]
             coordinator_skills = team.get("coordinator_skills")
             if coordinator_skills is None:
                 coordinator_skills = self._enabled_agent_skills(str(team["orchestrator_id"]))
@@ -452,6 +455,8 @@ class TeamRunService:
 
         def request_for(step: Mapping[str, Any], message: str) -> dict[str, Any]:
             request: dict[str, Any] = {"message": message}
+            if step.get("model"):
+                request["model"] = step["model"]
             if step["allowed_tools"]:
                 request["toolsets"] = list(step["allowed_tools"])
             if step.get("skills"):
@@ -636,6 +641,8 @@ class TeamRunService:
         )
         try:
             synthesis_request: dict[str, Any] = {"message": synthesis}
+            if team.get("synthesis_model"):
+                synthesis_request["model"] = team["synthesis_model"]
             synthesis_agent = str(team.get("synthesis_agent_id") or team["orchestrator_id"])
             synthesis_skills = team.get("synthesis_skills")
             if synthesis_skills is None:
