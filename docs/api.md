@@ -772,6 +772,17 @@ locks are cooperative lifecycle synchronization, not a sandbox against local she
 
 ### FT0009/FT0015 participation in Runtime update drain/checkpoint
 
+Both private `POST /system/update/checkpoint` and
+`POST /system/update/v2/checkpoint` now return a compact receipt in the existing
+response envelope: `checkpoint_id`, `operation_id`, `generation`, `created_at`,
+and a `manifest` summary (`version` when present, `algorithm`, `digest`,
+`file_count`, `total_bytes`). File entries and SQLite paths remain in the full
+durable checkpoint and operation journals. Replays project the same receipt
+without rewriting evidence. Authentication and request models are unchanged.
+Verification and restoration still read the complete local manifest by ID.
+See [checkpoint response compatibility](contracts/checkpoint-response.md) for
+the required gateway-first upgrade order.
+
 A content-free workspace admission lock and activity lock now coordinate custom-page
 SQLite/backup/lifecycle operations, staged layout-assistance records and admitted
 conversation/native-adapter executor leases with the existing forward-only updater.
