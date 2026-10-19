@@ -61,6 +61,9 @@ def install_agent_admission(agent_class=None):
 
 
 def main():
+    from .code_tools import install_code_tools
+
+    install_code_tools()
     install_agent_admission()
     from hermes_cli.main import main as native_main
 

@@ -67,6 +67,9 @@ def install_worker_agent(binding, run_id, parent_run_id=""):
 
 
 def main():
+    from .code_tools import install_code_tools
+
+    install_code_tools()
     if "--xnobrain-input-stdin" in sys.argv:
         sys.argv.remove("--xnobrain-input-stdin")
         # Keep large Teams prompts out of OS argv (E2BIG) and process listings.
