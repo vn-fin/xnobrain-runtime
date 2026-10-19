@@ -421,10 +421,34 @@ class RuntimeUpdateService:
                 }
                 self._record(request, "post_verify", result)
                 if not result["verified"]:
+                    code = (
+                        "runtime_update_data_not_preserved"
+                        if not preserved
+                        else "runtime_update_identity_mismatch"
+                    )
+                    _LOGGER.warning(
+                        "Runtime update verification failed",
+                        extra={
+                            "event": "runtime_update_verification_failure",
+                            "operation_id": request["operation_id"],
+                            "fence": request["generation"],
+                            "phase": "post_verify",
+                            "error": code,
+                            "data_preserved": preserved,
+                            "installed_identity_matches": identity_matches,
+                            **{
+                                "data_" + key: value
+                                for key, value in verification.get("changes", {}).items()
+                                if key in {"added", "removed", "changed"} and isinstance(value, int)
+                            },
+                        },
+                    )
                     raise ServiceError(
-                        "candidate Runtime post-verification failed",
+                        "Runtime data differs from the pre-update checkpoint"
+                        if not preserved
+                        else "Installed Runtime does not match the approved target",
                         status=409,
-                        code="runtime_update_post_verify_failed",
+                        code=code,
                     )
                 return result
 

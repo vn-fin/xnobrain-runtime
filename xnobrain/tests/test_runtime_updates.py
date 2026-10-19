@@ -229,9 +229,16 @@ os._exit(0)
         await self.call("drain", request(deadline_seconds=0))
         checkpoint = await self.call("checkpoint", request())
         (self.data / "durable" / "memory.txt").write_text("changed", encoding="utf-8")
-        with self.assertRaises(ServiceError) as failed:
-            await self.call("post_verify", request(checkpoint_id=checkpoint["checkpoint_id"]))
-        self.assertEqual(failed.exception.code, "runtime_update_post_verify_failed")
+        with self.assertLogs("xnobrain.services.runtime_updates", level="WARNING") as logs:
+            with self.assertRaises(ServiceError) as failed:
+                await self.call("post_verify", request(checkpoint_id=checkpoint["checkpoint_id"]))
+        self.assertEqual(failed.exception.code, "runtime_update_data_not_preserved")
+        record = logs.records[0]
+        self.assertEqual(record.event, "runtime_update_verification_failure")
+        self.assertEqual((record.data_added, record.data_removed, record.data_changed), (0, 0, 1))
+        self.assertTrue(record.installed_identity_matches)
+        self.assertNotIn("memory.txt", str(record.__dict__))
+        self.assertNotIn("preserve me", str(record.__dict__))
         recovery = await self.call(
             "recover", request(action="needs_operator", reason_code="data_mismatch")
         )
@@ -248,6 +255,20 @@ os._exit(0)
                 ),
             )
         self.assertEqual(older.exception.code, "runtime_update_recovery_target_invalid")
+
+    async def test_wrong_installed_identity_has_distinct_verification_error(self):
+        await self.call("drain", request(deadline_seconds=0))
+        checkpoint = await self.call("checkpoint", request())
+        with patch.object(
+            self.service, "_installed_identity", return_value={**TARGET, "source_commit": "c" * 40}
+        ):
+            with self.assertRaises(ServiceError) as failed:
+                await self.call("post_verify", request(checkpoint_id=checkpoint["checkpoint_id"]))
+        self.assertEqual(failed.exception.code, "runtime_update_identity_mismatch")
+        evidence = self.service.repository.operation("upd_fixture")["steps"]["post_verify"]
+        self.assertTrue(evidence["data_preserved"])
+        self.assertFalse(evidence["installed_identity_matches"])
+        self.assertTrue(self.service.dispatch_paused)
         with self.assertRaises(ServiceError) as cannot_resume:
             await self.call("resume", request())
         self.assertEqual(cannot_resume.exception.code, "runtime_update_not_verified")

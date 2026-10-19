@@ -36,6 +36,13 @@ logger = logging.getLogger(__name__)
 
 TERMINAL = {"completed", "failed", "timed_out", "cancelled"}
 MAX_BACKOFF_SECONDS = 300
+MAINTENANCE_CODES = frozenset(
+    {
+        "runtime_update_maintenance",
+        "workspace_rebalance_maintenance",
+        "workspace_memory_maintenance",
+    }
+)
 
 
 class EnrollmentRejected(Exception):
@@ -275,6 +282,7 @@ class OrganizationLink:
         self.store.save_state(state)
         return state
 
+    @workspace_activity(lambda self: self.platform.repository.data_dir)
     def failed(self, error: Exception, delay: float) -> float | None:
         """Record a failed tick; return the next delay or None to stop."""
         if isinstance(error, EnrollmentRejected):
@@ -296,12 +304,23 @@ class OrganizationLink:
     async def run_once(self, client) -> float | None:
         """Run one tick; return the delay before the next or None to stop."""
         try:
-            await self.tick(client)
-        except asyncio.CancelledError:
-            raise
-        except Exception as error:
-            self.delay = self.failed(error, self.delay)
-        else:
+            try:
+                await self.tick(client)
+            except asyncio.CancelledError:
+                raise
+            except StoreError as error:
+                if error.code in MAINTENANCE_CODES:
+                    raise
+                self.delay = self.failed(error, self.delay)
+            except Exception as error:
+                self.delay = self.failed(error, self.delay)
+            else:
+                self.delay = self.connector.interval
+        except StoreError as error:
+            # Admission may close before tick OR between a failed tick and its
+            # error write. Maintenance is a pause, never a connection failure.
+            if error.code not in MAINTENANCE_CODES:
+                raise
             self.delay = self.connector.interval
         return self.delay
 

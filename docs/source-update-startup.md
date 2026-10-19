@@ -97,6 +97,36 @@ does not reassign `PRAGMA user_version`; even assigning the same value changes
 SQLite's file header. Actual profile repairs, metadata edits and schema creation
 still persist normally.
 
+Organization connector timer ticks treat update, rebalance and memory maintenance
+as a pause. They retry after the normal connector interval without changing
+`state.json`, credentials, heartbeat sequence, error state or timestamps. Error
+recording also takes the workspace activity gate: maintenance may start between
+a failed network tick and the attempted error write. Genuine connection failures
+outside maintenance still persist their state and back off normally. Connector
+state remains part of the exact durable-data proof; it is not excluded from
+verification.
+
+Post-verification now distinguishes HTTP 409 `runtime_update_data_not_preserved`
+from `runtime_update_identity_mismatch`. Data mismatch takes precedence when both
+checks fail; the persisted receipt retains both booleans. The structured event
+`runtime_update_verification_failure` includes operation, fence, phase,
+`data_preserved`, `installed_identity_matches` and added/removed/changed counts.
+It contains no manifest entries, file contents or credentials. Control's gateway
+accepts these codes as well as older Runtime's `runtime_update_post_verify_failed`.
+Deploy the compatible gateway before using the new Runtime codes.
+
+For an existing connector-state mismatch, preserve the original checkpoint and
+operation. Installing this fix stops future writes during maintenance but cannot
+restore bytes already changed by the previous connector. The checkpoint contains
+hashes, not old state-file contents: current timestamps or identical file sizes
+cannot prove that every other field is unchanged. Compare with a trusted backup
+and restore only verified original data through the reviewed recovery procedure,
+then retry the same fenced operation. If no such evidence exists, leave the
+workspace in recovery for an explicitly reviewed recovery decision. Do not
+rewrite checkpoint hashes, exclude connector state, clear maintenance, or force a
+successful member state. A healthy new rollout must run the fixed connector
+before taking its checkpoint; updating only the candidate is insufficient.
+
 Native VM provisioning must set `RUNTIME_UPDATE_DATA_PATH=/srv/xnobrain-data`.
 The node gateway validates this data anchor before source-update drain. The
 Docker default `/opt/data` is not the native volume layout.
