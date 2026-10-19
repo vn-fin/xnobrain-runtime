@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
+from xnobrain.handlers.operations.runtime_updates import operations
 from xnobrain.models.runtime_updates import ReleaseSelector, RuntimeUpdatePreflight
 from xnobrain.repositories.base import RepositoryBase
 from xnobrain.services.base import ServiceError
@@ -111,6 +112,33 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def call(self, method, body):
         return await getattr(self.service, method)(body, update_token="update-service-token")
+
+    async def test_checkpoint_receipt_preserves_full_evidence_and_replay(self):
+        # Enough file evidence to exceed the old gateway's 256 KiB limit.
+        for index in range(1500):
+            name = f"{index:04d}-" + "x" * 160
+            (self.data / "durable" / name).write_text("fixture", encoding="utf-8")
+        await self.call("drain", request(deadline_seconds=0))
+        handler = SimpleNamespace(service=SimpleNamespace(runtime_updates=self.service))
+        http_request = SimpleNamespace(headers={"x-xnobrain-update-token": "update-service-token"})
+        invoke, _, _ = operations(handler, http_request, request())["runtime_update_checkpoint"]
+
+        receipt = await invoke()
+        checkpoint_id = receipt["checkpoint_id"]
+        persisted = self.service.repository.checkpoint(checkpoint_id)
+        self.assertGreater(len(json.dumps(persisted).encode()), 256 * 1024)
+        self.assertLess(len(json.dumps(receipt).encode()), 2048)
+        self.assertNotIn("entries", receipt["manifest"])
+        self.assertNotIn("sqlite_checkpoints", receipt)
+        self.assertIn("data/state.db", persisted["sqlite_checkpoints"])
+        self.assertEqual(receipt["manifest"]["digest"], persisted["manifest"]["digest"])
+        self.assertEqual(receipt, await invoke())
+        self.assertEqual(self.service.repository.checkpoint(checkpoint_id), persisted)
+        self.assertEqual(
+            self.service.repository.operation("upd_fixture")["steps"]["checkpoint"], persisted
+        )
+        verified = await self.call("post_verify", request(checkpoint_id=checkpoint_id))
+        self.assertTrue(verified["data_preserved"])
 
     async def test_checkpoint_handles_sqlite_removing_wal_sidecars_during_flush(self):
         database = self.data / "state.db"
@@ -410,6 +438,57 @@ class RuntimeUpdateAPITests(unittest.IsolatedAsyncioTestCase):
                             json={**body, "shell_script": "uname -a"},
                             headers={"x-xnobrain-update-token": "service-token"},
                         )
+                        # Both adapters expose the same compact receipt. The
+                        # service's persisted checkpoint remains private.
+                        checkpoint = {
+                            "checkpoint_id": "ckp_" + "c" * 64,
+                            "operation_id": "upd_fixture",
+                            "generation": 3,
+                            "created_at": "2026-10-19T00:00:00Z",
+                            "manifest": {
+                                "digest": "d" * 64,
+                                "file_count": 2000,
+                                "total_bytes": 10000,
+                                "entries": [{"path": "private-file"}] * 2000,
+                            },
+                            "sqlite_checkpoints": ["private.db"],
+                        }
+                        targets = {
+                            "": TARGET,
+                            "v2/": {
+                                "kind": "incus_image",
+                                "fingerprint": "f" * 64,
+                                "build_descriptor_digest": "sha256:" + "a" * 64,
+                                "version": "2.1.0",
+                                "source_commit": "a" * 40,
+                                "data_schema": 1,
+                            },
+                        }
+                        for prefix, target in targets.items():
+                            with patch.object(
+                                composition.service.runtime_updates,
+                                "checkpoint",
+                                new_callable=AsyncMock,
+                                return_value=checkpoint,
+                            ) as create:
+                                payload = request(target=target)
+                                response = await client.post(
+                                    f"/xnobrain/api/runtime/v1/system/update/{prefix}checkpoint",
+                                    json=payload,
+                                    headers={"x-xnobrain-update-token": "service-token"},
+                                )
+                                self.assertEqual(response.status_code, 200, response.text)
+                                self.assertTrue(response.json()["success"])
+                                receipt = response.json()["data"]
+                                self.assertEqual(
+                                    receipt["checkpoint_id"], checkpoint["checkpoint_id"]
+                                )
+                                self.assertNotIn("entries", receipt["manifest"])
+                                self.assertNotIn("sqlite_checkpoints", receipt)
+                                self.assertLess(len(response.content), 2048)
+                                create.assert_awaited_once_with(
+                                    payload, update_token="service-token"
+                                )
             self.assertEqual(denied.status_code, 401, denied.text)
             self.assertEqual(denied.json()["error"]["code"], "runtime_update_unauthorized")
             self.assertEqual(accepted.status_code, 200, accepted.text)
