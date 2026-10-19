@@ -813,7 +813,7 @@ using the same `X-XNOBrain-Update-Token` identity. It returns `restore_ready: tr
 only while the owning source maintenance fence remains closed, no resume outcome
 exists, activity is idle, and checkpoint data passes the versioned preservation
 rules in [source-update-startup.md](source-update-startup.md). New checkpoints use
-manifest v2; legacy checkpoints retain byte-exact comparison. Post-verify adds
+manifest v3; v2 and legacy v1 checkpoints keep their original comparison. Post-verify adds
 `data_verification` with the manifest version/digest and metadata-only change
 counts. It never returns file paths or content in that diagnostic object.
 Failure returns `runtime_source_restore_unsafe` or the existing storage/fence

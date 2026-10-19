@@ -269,14 +269,16 @@ os._exit(0)
             "post_verify", request(checkpoint_id=checkpoint["checkpoint_id"])
         )
         self.assertTrue(verified["verified"])
-        self.assertEqual(verified["data_verification"]["changes"]["log_appends"], 1)
+        # Runtime-owned profile logs are outside the v3 durable manifest.
+        self.assertEqual(verified["data_verification"]["manifest_version"], 3)
+        self.assertEqual(verified["data_verification"]["changes"]["log_appends"], 0)
         self.assertEqual(
             self.service.repository.checkpoint(checkpoint["checkpoint_id"]), checkpoint
         )
         await self.call("resume", request())
         self.assertFalse(self.service.dispatch_paused)
 
-    async def test_auth_fence_layout_and_unsafe_symlink_fail_closed(self):
+    async def test_auth_fence_layout_and_unsafe_sidecar_fail_closed(self):
         with self.assertRaises(ServiceError) as unauthorized:
             await self.service.preflight(
                 request(expected_layout="root_only", data_path=str(self.data))
@@ -303,7 +305,8 @@ os._exit(0)
         self.assertEqual(changed_layout.exception.code, "runtime_update_fence_conflict")
 
         await self.call("drain", request(deadline_seconds=0))
-        (self.data / "unsafe").symlink_to("/tmp")
+        (self.data / "unsafe.db").write_bytes(b"")
+        (self.data / "unsafe.db-wal").symlink_to("/tmp")
         with (
             self.assertLogs("xnobrain.services.runtime_updates", level="WARNING") as logs,
             self.assertRaises(ServiceError) as unsafe,
@@ -316,9 +319,9 @@ os._exit(0)
         self.assertEqual(record.operation_id, "upd_fixture")
         self.assertEqual(record.fence, 3)
         self.assertEqual(record.phase, "checkpoint")
-        self.assertEqual(record.storage_check, "symlink_scope")
+        self.assertEqual(record.storage_check, "sqlite_sidecar_symlink")
         self.assertEqual(record.storage_root, "data")
-        self.assertEqual(record.relative_path, "unsafe")
+        self.assertEqual(record.relative_path, "unsafe.db-wal")
         self.assertNotIn(str(self.data), str(record.__dict__))
         self.assertTrue(self.service.dispatch_paused)
         self.assertNotIn("checkpoint", self.service.repository.operation("upd_fixture")["steps"])

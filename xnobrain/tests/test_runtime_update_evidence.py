@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -99,11 +100,11 @@ class EvidenceTests(unittest.TestCase):
         connection.commit()
         self.assertFalse(self.storage.verify(before)["preserved"])
 
-    def test_log_prefix_is_preserved_but_truncation_or_rewrite_fails(self):
+    def test_v2_log_prefix_is_preserved_but_truncation_or_rewrite_fails(self):
         log = self.profiles / "agent" / "logs" / "agent.log"
         log.parent.mkdir(parents=True)
         log.write_bytes(b"old log\n")
-        before = self.storage.manifest()
+        before = self.storage.manifest(version=2)
         log.write_bytes(b"old log\nnew boot\n")
         result = self.storage.verify(before)
         self.assertTrue(result["preserved"])
@@ -112,6 +113,97 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse(self.storage.verify(before)["preserved"])
         log.write_bytes(b"old")
         self.assertFalse(self.storage.verify(before)["preserved"])
+
+    def test_v3_ignores_runtime_logs_but_not_user_logs(self):
+        log = self.profiles / "agent" / "logs" / "agent.log"
+        root_log = self.root / "logs" / "errors.log"
+        for path in (log, root_log):
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"old log\n")
+        user_log = self.profiles / "agent" / "workspace" / "logs" / "run.log"
+        user_log.parent.mkdir(parents=True)
+        user_log.write_bytes(b"user")
+        before = self.storage.manifest()
+        self.assertEqual(before["version"], 3)
+        self.assertEqual(
+            [entry["path"] for entry in before["entries"]],
+            ["profiles/agent/workspace/logs/run.log"],
+        )
+        log.write_bytes(b"rotated")
+        root_log.unlink()
+        self.assertTrue(self.storage.verify(before)["preserved"])
+        user_log.write_bytes(b"user changed")
+        self.assertFalse(self.storage.verify(before)["preserved"])
+
+    def test_v3_small_files_keep_exact_content_and_ignore_rewrites(self):
+        path = self.data / "config.yaml"
+        path.write_bytes(b"value: 1\n")
+        os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+        before = self.storage.manifest()
+        # An identical atomic rewrite changes mtime but not the durable bytes.
+        path.write_bytes(b"value: 1\n")
+        self.assertTrue(self.storage.verify(before)["preserved"])
+        path.write_bytes(b"value: 2\n")
+        os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+        self.assertFalse(self.storage.verify(before)["preserved"])
+
+    def test_v3_large_files_are_fingerprinted_without_reading_content(self):
+        path = self.data / "upload.bin"
+        path.write_bytes(b"a" * (1024 * 1024 + 1))
+        os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+        with patch.object(
+            RuntimeUpdateStorage, "_digest", side_effect=AssertionError("content read")
+        ):
+            before = self.storage.manifest()
+            (entry,) = before["entries"]
+            self.assertNotIn("sha256", entry)
+            self.assertEqual(entry["mtime_ns"], 1_000_000_000)
+            self.assertTrue(self.storage.verify(before)["preserved"])
+            os.utime(path, ns=(2_000_000_000, 2_000_000_000))
+            self.assertFalse(self.storage.verify(before)["preserved"])
+            os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+            with path.open("ab") as handle:
+                handle.write(b"b")
+            os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+            self.assertFalse(self.storage.verify(before)["preserved"])
+
+    def test_v3_sqlite_uses_logical_rows_not_file_bytes(self):
+        path, connection = self.database()
+        with patch.object(
+            RuntimeUpdateStorage, "_digest", side_effect=AssertionError("content read")
+        ):
+            before = self.storage.manifest()
+            (entry,) = before["entries"]
+            self.assertEqual(entry["kind"], "sqlite")
+            self.assertNotIn("sha256", entry)
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            connection.execute("VACUUM")
+            self.assertTrue(self.storage.verify(before)["preserved"])
+            connection.execute("UPDATE messages SET content='changed' WHERE id=1")
+            connection.commit()
+            self.assertFalse(self.storage.verify(before)["preserved"])
+
+    def test_v2_baseline_still_verifies_exact_bytes(self):
+        path = self.data / "upload.bin"
+        path.write_bytes(b"a" * (1024 * 1024 + 1))
+        os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+        before = self.storage.manifest(version=2)
+        self.assertEqual(before["version"], 2)
+        self.assertIn("sha256", before["entries"][0])
+        self.assertTrue(self.storage.verify(before)["preserved"])
+        path.write_bytes(b"b" * (1024 * 1024 + 1))
+        os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+        self.assertFalse(self.storage.verify(before)["preserved"])
+
+    def test_flush_rejects_symlinked_sqlite_sidecar_before_opening(self):
+        path, connection = self.database()
+        connection.close()
+        sidecar = Path(str(path) + "-wal")
+        sidecar.unlink(missing_ok=True)
+        sidecar.symlink_to("state.db")
+        with self.assertRaises(RuntimeUpdateStorageError) as raised:
+            self.storage.flush_sqlite()
+        self.assertEqual(raised.exception.diagnostics["storage_check"], "sqlite_sidecar_symlink")
 
     def test_new_files_orphan_wal_and_user_logs_are_not_ignored(self):
         path = self.data / "user.log"
@@ -123,7 +215,7 @@ class EvidenceTests(unittest.TestCase):
         (self.data / "orphan.db-wal").write_bytes(b"durable")
         self.assertFalse(self.storage.verify(before)["preserved"])
 
-    def test_profile_venv_links_preserved_and_retarget_rejected(self):
+    def test_profile_venv_links_preserved_and_retarget_detected(self):
         venv = self.profiles / "agent" / "workspace" / ".venv"
         (venv / "bin").mkdir(parents=True)
         (venv / "lib").mkdir()
@@ -137,20 +229,43 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse(self.storage.verify(before)["preserved"])
         python.unlink()
         python.symlink_to("/etc/shadow")
-        with self.assertRaises(RuntimeUpdateStorageError):
-            self.storage.manifest()
+        self.assertFalse(self.storage.verify(before)["preserved"])
 
-    def test_symlink_cycles_and_cross_profile_links_fail_closed(self):
+    def test_outside_and_cyclic_links_are_recorded_without_following(self):
         profile = self.profiles / "agent"
         profile.mkdir()
-        link = profile / "escape"
-        link.symlink_to("../other")
-        with self.assertRaises(RuntimeUpdateStorageError):
-            self.storage.manifest()
-        link.unlink()
-        link.symlink_to("escape")
-        with self.assertRaises(RuntimeUpdateStorageError):
-            self.storage.manifest()
+        outside = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, outside)
+        (outside / "secret.txt").write_text("PRIVATE")
+        escape = profile / "escape"
+        escape.symlink_to(outside, target_is_directory=True)
+        cycle = profile / "cycle"
+        cycle.symlink_to("cycle")
+        with patch.object(
+            RuntimeUpdateStorage, "_digest", side_effect=AssertionError("content read")
+        ):
+            before = self.storage.manifest()
+        self.assertEqual(
+            [(entry["path"], entry["kind"]) for entry in before["entries"]],
+            [("profiles/agent/cycle", "symlink"), ("profiles/agent/escape", "symlink")],
+        )
+        self.assertNotIn("PRIVATE", str(before))
+        self.assertTrue(self.storage.verify(before)["preserved"])
+        escape.unlink()
+        escape.symlink_to("../other")
+        self.assertFalse(self.storage.verify(before)["preserved"])
+
+    def test_v3_records_special_files_without_opening_them(self):
+        fifo = self.data / "pipe.db"
+        os.mkfifo(fifo)
+        self.assertEqual(self.storage.flush_sqlite(), [])
+        before = self.storage.manifest()
+        (entry,) = before["entries"]
+        self.assertEqual(entry["kind"], "special")
+        self.assertNotIn("sha256", entry)
+        self.assertTrue(self.storage.verify(before)["preserved"])
+        fifo.unlink()
+        self.assertFalse(self.storage.verify(before)["preserved"])
 
     def test_legacy_checkpoints_remain_strict_and_are_never_rebased(self):
         path = self.root / "logs" / "agent.log"

@@ -7,8 +7,8 @@ Checkpoint IDs, operation/generation fences and target identity remain unchanged
 Checkpoint storage failures emit one `runtime_update_storage_failure` warning
 before returning the existing HTTP 409/error code. Correlate `operation_id`,
 `fence` and `phase=checkpoint` with Control. Unsafe-data diagnostics include
-`storage_check` (`symlink_scope`, `sqlite_sidecar_symlink`, `coordination_file`,
-`directory_type`, `file_type` or `regular_file`), `storage_root` and
+`storage_check` (`sqlite_sidecar_symlink`, `coordination_file`, `regular_file`,
+or `file_type` for a legacy v1/v2 baseline), `storage_root` and
 `relative_path`. Paths identify the rejected entry within a durable root, are
 bounded to 512 characters, and replace non-printable characters. Logs never
 include resolved symlink targets, absolute data roots, file contents, request
@@ -21,11 +21,27 @@ connection can remove `-wal` and `-shm` files that were present during directory
 enumeration; continuing a lazy file walk afterward would incorrectly reject the
 now-missing sidecar as unsafe data. The subsequent manifest verifies the resulting
 state normally. This does not ignore missing durable files, orphan sidecars, or
-unsafe symlinks.
+symlinked SQLite sidecars.
 
-New checkpoints use manifest version 2. Ordinary files retain exact bytes,
-permissions and ownership. The following narrowly defined equivalences permit
-an unchanged workspace to restart without falsely reporting data loss:
+New checkpoints use manifest version 3, which avoids rereading every durable
+byte twice while the workspace is in maintenance:
+
+- Files up to 1 MiB retain exact bytes, permissions and ownership; an identical
+  rewrite still verifies.
+- Larger regular files are fingerprinted by size, modification time (ns),
+  permissions and ownership without reading their content. Both the persistent
+  volume reattachment and the legacy `cp --archive` copy preserve these fields.
+- SQLite databases are compared only by the logical evidence below, not by
+  their page bytes or size.
+- Runtime-owned profile logs (`<root profile>/logs/` and
+  `<profiles>/<id>/logs/`) are diagnostics and are not part of the manifest.
+  User files named `*.log` elsewhere remain durable data.
+- Checkpointing no longer runs a validation manifest before the SQLite flush.
+  The flush opens only regular, non-link databases and refuses symlinked
+  `-wal`/`-shm` sidecars before opening a database.
+
+Version 2 checkpoints (written by Runtimes before manifest v3) keep exact bytes
+for every file, with these narrowly defined equivalences:
 
 - Existing profile `logs/agent.log` may append bytes only when its complete old
   prefix still hashes identically. Deletion, rotation, truncation, other log files
@@ -42,10 +58,13 @@ an unchanged workspace to restart without falsely reporting data loss:
   from absent `fts_storage_version` to string `1`. Schema and every other row
   remain exact. Changing/removing an existing marker or another metadata row
   fails. This is not a general migration allowlist.
-- Symlinks are hashed as links without walking their targets. Links must stay
-  within their own profile/data scope, except the canonical root `profiles` alias
-  and managed `.venv/bin/python*` links into `/opt/xnobrain/.tools/uv-python`.
-  Retargeting, cross-profile/outside links and cycles fail closed.
+- Symlinks are hashed as link text without opening or walking their targets,
+  wherever they point (outside the profile, another profile, or a cycle);
+  retargeting fails verification. A user-created link therefore never blocks an
+  update. Checkpoint, flush and verification never follow a durable link.
+- Manifest v3 records FIFOs and sockets by file type without opening them;
+  adding or removing one fails verification. SQLite flushing opens only regular
+  files. A v1/v2 baseline still rejects special files.
 
 Manifest scans retry a disappearing-file race at most three times. SQLite
 verification has a 30-second query deadline and the configured manifest byte
@@ -55,8 +74,10 @@ or file/row content. `restore-ready` uses the same preservation proof.
 
 Legacy checkpoints without a version retain their original byte-exact v1
 comparison. They are never rebased or silently converted to v2: the old snapshot
-cannot reconstruct the old logical SQLite contents. Installing this verifier
-does not automatically repair already-failed v1 checkpoints. Such workspaces
+cannot reconstruct the old logical SQLite contents. Version 2 checkpoints are
+likewise never rebased to v3. A verifier older than v3 rejects a v3 baseline
+with `runtime_update_manifest_version`, so a downgrade fails closed. Installing
+this verifier does not automatically repair already-failed v1 checkpoints. Such workspaces
 require the existing reviewed recovery procedure; do not clear maintenance or
 overwrite a checkpoint to force success. A Runtime must already have the new
 checkpoint writer before its next update can benefit from v2 evidence.
@@ -87,7 +108,8 @@ systemd state and `MainPID=0` before swapping source. The original cause of the
 observed two-minute shutdown has not been reproduced by source tests.
 
 Regression checks cover WAL mutation, SQLite page-layout churn, schema/metadata
-changes, log prefix edits, symlink escapes, legacy comparison, deferred startup,
+changes, log prefix edits, link retargeting, special files, manifest v3
+fingerprints, legacy comparison, deferred startup,
 failed verification/retry and existing maintenance lifecycle tests.
 Automatic local Incus verification is documented in Control's
 `docs/runtime-source-rollout-local-verification.md`.
