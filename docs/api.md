@@ -1613,6 +1613,17 @@ never appear in personal `/teams`. Capabilities remain in memory only. Repeated
 starts of the same run return its existing record; restart recovery marks
 unfinished work interrupted instead of replaying it.
 
+On managed workspaces, organization coordinators use the workspace admission
+queue before starting BigBrother. Pending responses include `capacity.state=waiting`
+and its retry reason, using the same waiting/cancellation UI as personal teams.
+One admitted root covers coordinator and synthesis calls; member work continues
+through Control's independently authorized runner queue. Admission records carry
+the organization namespace, never the callback capability, and keep team records
+out of personal storage. Completion, cancellation, and failure release admission.
+After a Runtime restart, queued or interrupted organization work is finalized
+with `interrupted_by_restart` and its admission is reconciled without replaying
+member side effects. Local approval policy remains independent of admission.
+
 ### Team stage model selection
 
 Team create/update accepts optional `workflow[].model`, `coordinator_model`,
