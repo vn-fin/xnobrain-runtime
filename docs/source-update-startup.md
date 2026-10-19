@@ -4,6 +4,22 @@ Runtime owns durable-data evidence; Control owns the deployment, lease and retry
 Admission stays closed from drain until positive post-verification and resume.
 Checkpoint IDs, operation/generation fences and target identity remain unchanged.
 
+New coordinated source rollouts stage the target first, stop the old application,
+then invoke `python -m xnobrain.integrations.runtime_source_checkpoint` from the
+verified staged tree. Its bounded stdin request contains the existing operation,
+generation, source target and managed durable paths. It is a node-local command,
+not a public API; it runs as the workspace service user under the gateway's
+source-action lock. It requires systemd to report a terminal application state
+and zero main PID, matching paused/drained maintenance, and exclusive operation
+and workspace activity locks. It never starts the application or connectors.
+
+This captures the data after even an old connector has stopped writing. The
+helper preserves the existing journal schema and uses the target's manifest
+writer. Recovery reconciles a checkpoint saved before a lost journal write;
+retry never replaces it with a fresh snapshot. New source must pass the same
+post-verification before maintenance ends. Existing online checkpoints remain
+immutable and use their original verifier semantics.
+
 Checkpoint storage failures emit one `runtime_update_storage_failure` warning
 before returning the existing HTTP 409/error code. Correlate `operation_id`,
 `fence` and `phase=checkpoint` with Control. Unsafe-data diagnostics include
@@ -79,8 +95,9 @@ likewise never rebased to v3. A verifier older than v3 rejects a v3 baseline
 with `runtime_update_manifest_version`, so a downgrade fails closed. Installing
 this verifier does not automatically repair already-failed v1 checkpoints. Such workspaces
 require the existing reviewed recovery procedure; do not clear maintenance or
-overwrite a checkpoint to force success. A Runtime must already have the new
-checkpoint writer before its next update can benefit from v2 evidence.
+overwrite a checkpoint to force success. Online checkpoints use the currently
+installed writer; stopped-process source checkpoints use the verified staged
+target's writer before the source swap.
 
 During maintenance, managed default-profile repairs, approval defaults and
 bundled skill installation wait until verified resume/abort releases admission.
@@ -124,8 +141,10 @@ and restore only verified original data through the reviewed recovery procedure,
 then retry the same fenced operation. If no such evidence exists, leave the
 workspace in recovery for an explicitly reviewed recovery decision. Do not
 rewrite checkpoint hashes, exclude connector state, clear maintenance, or force a
-successful member state. A healthy new rollout must run the fixed connector
-before taking its checkpoint; updating only the candidate is insufficient.
+successful member state. An online checkpoint requires the fixed connector
+already running. The stopped-process protocol instead stops the old connector
+before capturing the first checkpoint; updating only the candidate after an
+online checkpoint is insufficient.
 
 Native VM provisioning must set `RUNTIME_UPDATE_DATA_PATH=/srv/xnobrain-data`.
 The node gateway validates this data anchor before source-update drain. The
