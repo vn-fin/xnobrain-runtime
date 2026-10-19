@@ -97,6 +97,15 @@ does not reassign `PRAGMA user_version`; even assigning the same value changes
 SQLite's file header. Actual profile repairs, metadata edits and schema creation
 still persist normally.
 
+Organization connector timer ticks treat update, rebalance and memory maintenance
+as a pause. They retry after the normal connector interval without changing
+`state.json`, credentials, heartbeat sequence, error state or timestamps. Error
+recording also takes the workspace activity gate: maintenance may start between
+a failed network tick and the attempted error write. Genuine connection failures
+outside maintenance still persist their state and back off normally. Connector
+state remains part of the exact durable-data proof; it is not excluded from
+verification.
+
 Native VM provisioning must set `RUNTIME_UPDATE_DATA_PATH=/srv/xnobrain-data`.
 The node gateway validates this data anchor before source-update drain. The
 Docker default `/opt/data` is not the native volume layout.
