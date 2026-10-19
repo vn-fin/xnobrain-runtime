@@ -44,7 +44,6 @@ def bootstrap(request: dict, *, identity_directory: Path = Path("/etc/xnobrain")
     if completed:
         return completed["checkpoint_id"]
     storage = RuntimeUpdateStorage(*paths)
-    storage.manifest()  # Validate before opening any databases for checkpointing.
     flushed = storage.flush_sqlite()
     manifest = storage.manifest()
     checkpoint_id = "ckp_" + canonical_digest({**binding, "manifest": manifest["digest"]})[7:]

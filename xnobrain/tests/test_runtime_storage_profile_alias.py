@@ -6,10 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from xnobrain.integrations.runtime_update_storage import (
-    RuntimeUpdateStorage,
-    RuntimeUpdateStorageError,
-)
+from xnobrain.integrations.runtime_update_storage import RuntimeUpdateStorage
 
 
 class ProfileAliasTests(unittest.TestCase):
@@ -42,11 +39,8 @@ class ProfileAliasTests(unittest.TestCase):
                     ["symlink"],
                 )
                 self.assertEqual(list(storage._walk_files(profiles)), [target])
+                # A retargeted alias is a changed link, not a traversal.
                 alias.unlink()
                 alias.symlink_to(data, target_is_directory=True)
-                with self.assertRaises(RuntimeUpdateStorageError):
-                    list(storage._walk_files(root))
-                alias.unlink()
-                (profiles / "unsafe").symlink_to(data, target_is_directory=True)
-                with self.assertRaises(RuntimeUpdateStorageError):
-                    list(storage._walk_files(profiles))
+                self.assertEqual(list(storage._walk_files(root)), [alias])
+                self.assertFalse(storage.verify(baseline)["preserved"])

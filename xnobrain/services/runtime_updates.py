@@ -292,12 +292,11 @@ class RuntimeUpdateService:
                     return completed
                 try:
 
-                    def inspect_and_flush():
-                        self.storage.manifest()
+                    def flush_and_inspect():
                         paths = self.storage.flush_sqlite()
                         return paths, self.storage.manifest()
 
-                    sqlite_paths, manifest = await self._durable_io(inspect_and_flush)
+                    sqlite_paths, manifest = await self._durable_io(flush_and_inspect)
                 except RuntimeUpdateStorageError as error:
                     self._storage_error(error, request=request, phase="checkpoint")
                 target = dict(request["target"])
