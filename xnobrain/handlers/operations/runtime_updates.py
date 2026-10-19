@@ -3,6 +3,22 @@
 from typing import Any
 
 
+async def checkpoint_receipt(service: Any, body: dict[str, Any], token: str | None):
+    """Keep preservation evidence local; expose a bounded checkpoint receipt."""
+    checkpoint = await service.checkpoint(body, update_token=token)
+    manifest = checkpoint["manifest"]
+    return {
+        key: checkpoint[key]
+        for key in ("checkpoint_id", "operation_id", "generation", "created_at")
+    } | {
+        "manifest": {
+            key: manifest[key]
+            for key in ("version", "algorithm", "digest", "file_count", "total_bytes")
+            if key in manifest
+        },
+    }
+
+
 def operations(handler: Any, _request: Any, body: dict[str, Any]):
     service = handler.service.runtime_updates
     token = _request.headers.get("x-xnobrain-update-token")
@@ -18,7 +34,7 @@ def operations(handler: Any, _request: Any, body: dict[str, Any]):
             200,
         ),
         "runtime_update_checkpoint": (
-            lambda: service.checkpoint(body, update_token=token),
+            lambda: checkpoint_receipt(service, body, token),
             "update checkpoint created",
             200,
         ),

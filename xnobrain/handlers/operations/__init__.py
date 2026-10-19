@@ -14,6 +14,8 @@ from .kanban import operations as kanban_operations
 from .marketplace import operations as marketplace_operations
 from .mcp import operations as mcp_operations
 from .organization_artifacts import operations as organization_artifacts_operations
+from .organization_connections import operations as organization_connections_operations
+from .organization_team_executions import operations as organization_team_executions_operations
 from .portability import operations as portability_operations
 from .providers import operations as providers_operations
 from .runtime_updates import operations as runtime_updates_operations
@@ -38,6 +40,8 @@ OPERATION_GROUPS = (
     conversations_operations,
     kanban_operations,
     organization_artifacts_operations,
+    organization_connections_operations,
+    organization_team_executions_operations,
     marketplace_operations,
     hosted_operations,
     mcp_operations,

@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
+from .organization_funding import funding_for
 from .router_accounting import AccountingUnavailable
 
 _CURRENT = ContextVar("xnobrain_accounting", default=None)
@@ -19,8 +20,11 @@ def accounting_enabled():
     return mode == "router"
 
 
-def accounting_binding(agent_id, context_id="personal"):
-    if context_id != "personal":
+def accounting_binding(agent_id, context_id="personal", conversation_id=""):
+    # Organization work runs on the member's own Router key only when Control
+    # funded the conversation: an organization model billed to the
+    # organization, or the owner's opt-in to pay. Anything else is refused.
+    if context_id != "personal" and funding_for(conversation_id) is None:
         raise AccountingUnavailable("Organization accounting is not activated")
     agent_id = str(agent_id or "").strip()
     if not _OPAQUE.fullmatch(agent_id):

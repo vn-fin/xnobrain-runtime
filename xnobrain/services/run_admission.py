@@ -347,7 +347,8 @@ class RunAdmissionService:
                         context.get("organization_id")
                         or context.get("payer_organization_id")
                         or "personal"
-                    )
+                    ),
+                    "conversation_id": str(record.get("conversation_id") or ""),
                 }
                 if accounting_enabled()
                 else {}

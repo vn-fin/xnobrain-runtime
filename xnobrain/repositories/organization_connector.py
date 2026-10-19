@@ -2,20 +2,57 @@
 
 from __future__ import annotations
 
+import json
+import re
+import shutil
 from pathlib import Path
 from typing import Any
 
 from .base import RepositoryBase, StoreError
 
+ORGANIZATION_ID = re.compile(r"^org_[A-Za-z0-9]{8,64}$")
+
 
 class OrganizationConnectorRepository:
-    def __init__(self, base: RepositoryBase):
+    """Connector journal for one organization.
+
+    Each organization keeps its own device credential, command inbox and result
+    outbox under ``organization-connector/<organization_id>/``. The Ed25519
+    device key at the connector root is shared by every organization.
+    """
+
+    def __init__(self, base: RepositoryBase, organization_id: str | None = None):
         self.base = base
         self.root = base.data_dir / "organization-connector"
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self.state_path = self.root / "state.json"
-        self.inbox_path = self.root / "inbox.json"
-        self.outbox_path = self.root / "outbox.json"
+        self.organization_id = organization_id
+        self.directory = self.root
+        if organization_id is not None:
+            if not ORGANIZATION_ID.match(organization_id):
+                raise StoreError(
+                    "invalid organization id", status=400, code="invalid_organization_id"
+                )
+            self.directory = self.root / organization_id
+            self.directory.mkdir(exist_ok=True, mode=0o700)
+        self.state_path = self.directory / "state.json"
+        self.inbox_path = self.directory / "inbox.json"
+        self.outbox_path = self.directory / "outbox.json"
+
+    def organizations(self) -> list[str]:
+        """Organizations that have a stored connection, in stable order."""
+        return sorted(
+            path.name
+            for path in self.root.iterdir()
+            if path.is_dir() and ORGANIZATION_ID.match(path.name) and (path / "state.json").exists()
+        )
+
+    def for_organization(self, organization_id: str) -> OrganizationConnectorRepository:
+        return OrganizationConnectorRepository(self.base, organization_id)
+
+    def remove(self) -> None:
+        if self.organization_id is None:
+            raise StoreError("connection has no organization", status=400)
+        shutil.rmtree(self.directory, ignore_errors=True)
 
     def _read(self, path: Path, default: Any):
         if not path.exists():
@@ -23,7 +60,7 @@ class OrganizationConnectorRepository:
         value = (
             self.base._read_json(path)
             if hasattr(self.base, "_read_json")
-            else __import__("json").loads(path.read_text())
+            else json.loads(path.read_text())
         )
         return value
 
@@ -31,8 +68,9 @@ class OrganizationConnectorRepository:
         return dict(self._read(self.state_path, {}))
 
     def save_state(self, value: dict[str, Any]) -> None:
-        self.base.atomic_json(self.state_path, value)
-        self.state_path.chmod(0o600)
+        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        payload = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+        self.base.atomic_write(self.state_path, payload.encode(), mode=0o600)
 
     def seen(self, command_id: str) -> bool:
         return command_id in self._read(self.inbox_path, {})

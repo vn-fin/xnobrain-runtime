@@ -157,6 +157,7 @@ class XNOBrainApplication:
                             await self.service.conversation_runs.shutdown()
                     with suppress(Exception):
                         async with shutdown_stage("team_runs"):
+                            await self.service.organization_team_executions.shutdown()
                             await self.service.team_runs.shutdown()
                     with suppress(Exception):
                         async with shutdown_stage("accounting"):

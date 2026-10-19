@@ -1,11 +1,14 @@
 """Team definition and team-run contracts."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
+
+StageModel = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
 
 
 class TeamWorkflowStep(BaseModel):
+    model: StageModel | None = None
     id: str = Field(min_length=1, max_length=128)
     task: str = Field(min_length=1, max_length=20_000)
     agent_id: str | None = None
@@ -25,6 +28,7 @@ TeamRunStatus = Literal["pending", "running", "completed", "failed", "cancelled"
 
 
 class TeamRunStepRecord(BaseModel):
+    model: StageModel | None = None
     id: str = Field(min_length=1, max_length=128)
     agent_id: str
     role: str
@@ -67,6 +71,8 @@ class TeamMember(BaseModel):
 
 
 class TeamCreate(BaseModel):
+    coordinator_model: StageModel | None = None
+    synthesis_model: StageModel | None = None
     name: str
     description: str | None = Field(default=None, max_length=2000)
     orchestrator_id: str

@@ -124,6 +124,9 @@ class PlatformService(
         from .team_runs import TeamRunService
 
         self.team_runs = TeamRunService(repository, agents, self, self.analytics)
+        from .organization_team_executions import OrganizationTeamExecutions
+
+        self.organization_team_executions = OrganizationTeamExecutions(self)
         from .ui_composition import UICompositionService
 
         self.ui_composition = UICompositionService(self)

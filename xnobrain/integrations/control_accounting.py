@@ -51,7 +51,7 @@ class ControlAccountingClient:
             raise AccountingUnavailable("Authoritative budget check unavailable") from error
 
     async def conversation(self, agent_id, conversation_id, context_id="personal"):
-        binding = accounting_binding(agent_id, context_id)
+        binding = accounting_binding(agent_id, context_id, str(conversation_id or ""))
         endpoint = os.environ.get("RUNTIME_CONTROL_URL", "").rstrip("/")
         if not endpoint:
             raise AccountingUnavailable("Control accounting endpoint unavailable")

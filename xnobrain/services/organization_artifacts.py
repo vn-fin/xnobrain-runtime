@@ -42,13 +42,21 @@ def _expiry(value: str) -> datetime:
         )
 
 
+def _http_transfer_origins() -> tuple[str, ...]:
+    """Plain-HTTP storage origins of a local development stack (unset in deployments)."""
+    configured = os.getenv("RUNTIME_ORGANIZATION_TRANSFER_HTTP_ORIGINS", "")
+    origins = (item.strip().rstrip("/") for item in configured.split(","))
+    return tuple(f"{origin}/" for origin in origins if origin.startswith("http://"))
+
+
 def _open(transfer: Mapping[str, Any], *, data=None):
     if _expiry(str(transfer.get("expires_at") or "")) <= datetime.now(timezone.utc):
         raise ServiceError(
             "transfer authorization expired", status=410, code="transfer_authorization_expired"
         )
     url = str(transfer.get("url") or "")
-    if not url.startswith(("https://", "http://localhost:", "http://127.0.0.1:")):
+    allowed = ("https://", "http://localhost:", "http://127.0.0.1:", *_http_transfer_origins())
+    if not url.startswith(allowed):
         raise ServiceError(
             "transfer authorization is invalid", status=400, code="invalid_transfer_authorization"
         )

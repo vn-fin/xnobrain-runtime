@@ -52,6 +52,16 @@ from .workspace_upload import WorkspaceUploadError
 
 class TeamsServiceMixin:
     @staticmethod
+    def _team_stage_model(value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or len(value.strip()) > 200:
+            raise ServiceError(
+                "stage model must be at most 200 characters", code="validation_failed"
+            )
+        return value.strip() or None
+
+    @staticmethod
     def _team_with_description(team: Mapping[str, Any]) -> dict[str, Any]:
         result = dict(team)
         if not str(result.get("description") or "").strip():
@@ -228,6 +238,7 @@ class TeamsServiceMixin:
                 {
                     "id": step_id,
                     "task": step_task,
+                    "model": self._team_stage_model(raw.get("model")),
                     "agent_id": requested_agent,
                     "role": requested_role or str(assignment["role"]),
                     "allowed_tools": allowed,
@@ -329,6 +340,8 @@ class TeamsServiceMixin:
                 or f"A coordinated team of {len(members) + 1} agents for multi-stage work."
             ),
             "orchestrator_id": orchestrator,
+            "coordinator_model": self._team_stage_model(body.get("coordinator_model")),
+            "synthesis_model": self._team_stage_model(body.get("synthesis_model")),
             "coordinator_prompt": (
                 str(body.get("coordinator_prompt") or "").strip() or DEFAULT_TEAM_COORDINATOR_PROMPT
             ),

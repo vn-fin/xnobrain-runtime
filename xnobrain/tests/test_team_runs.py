@@ -29,6 +29,7 @@ from xnobrain.repositories.files import TEAM_RUN_RETENTION
 from xnobrain.services.base import ServiceError
 
 _STEP_SCHEMA_KEYS = {
+    "model",
     "id",
     "agent_id",
     "role",
