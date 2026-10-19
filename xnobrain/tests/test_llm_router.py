@@ -1014,6 +1014,29 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["id"] for item in models["data"]], ["openai/gpt-5"])
         self.assertEqual(manager.requests, [("GET", "/models?kind=llm", None)])
 
+    async def test_personal_catalog_hides_organization_models(self) -> None:
+        catalog = {
+            ("GET", "/models?kind=llm"): {
+                "data": [
+                    {"id": "cx/gpt-5", "owned_by": "codex"},
+                    {
+                        "id": "org/org-abc/cx-gpt-5",
+                        "owned_by": "gorouter",
+                        "reasoning_levels": ["low", "high"],
+                    },
+                ],
+            },
+        }
+        manager = FakeLLMRouterClient(catalog)
+
+        models = await manager.list_models()
+
+        # Organization models are billed to the organization and are used only
+        # when an organization run is funded with one.
+        self.assertEqual([item["id"] for item in models["data"]], ["cx/gpt-5"])
+        reasoning = await FakeLLMRouterClient(catalog).reasoning_for_model("org/org-abc/cx-gpt-5")
+        self.assertEqual(reasoning["reasoning"], ["low", "high"])
+
     async def test_transport_rejects_router_management_paths(self) -> None:
         manager = LLMRouterClient(base_url="https://router.invalid")
 

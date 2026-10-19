@@ -164,6 +164,7 @@ REDACTED = b"[REDACTED]"
 SHAREABLE_REQUIRED = frozenset({"config.yaml", "state.db", "HERMES.md", "workspace/AGENTS.md"})
 SHAREABLE_ROOT_AUTHORITY = frozenset({"profile.json", "permissions.json", "approvals.json"})
 
+
 class PortabilityService:
     """Export, validate, preview, and atomically install local profiles."""
 
@@ -204,7 +205,9 @@ class PortabilityService:
             "organization_id": str(getattr(context, "organization_id", "") or ""),
         }
 
-    def export_shareable(self, agent_id: str, target: Path, *, owner: Any) -> dict[str, Any]:
+    def export_shareable(
+        self, agent_id: str, target: Path, *, owner: Any, organization: bool = False
+    ) -> dict[str, Any]:
         """Export only a profile with a durable matching verified owner."""
         self.repository._id(agent_id, "agent id")
         if agent_id == BIG_BROTHER_AGENT_ID:
@@ -215,24 +218,44 @@ class PortabilityService:
         except (OSError, ValueError):
             stored = None
         expected = self.owner_record(owner)
+        if organization and isinstance(stored, dict):
+            # Control authorizes an organization pull through the delegation
+            # grant and the owner's consent. The caller's identity organization
+            # claim is not part of that grant, so only the owner must match.
+            stored = {**stored, "organization_id": expected["organization_id"]}
         if not expected["subject"] or stored != expected:
             raise StoreError("snapshot owner is unavailable", status=403, code="permission_denied")
         try:
-            return self._export_to_path({"agent_ids": [agent_id]}, target, shareable=True)
+            return self._export_to_path(
+                {"agent_ids": [agent_id]}, target, shareable=True, organization=organization
+            )
         except Exception:
             target.unlink(missing_ok=True)
             raise
 
     def apply_shareable_file(
-        self, path: Path, *, operation_id: str, digest: str, recipient: str
+        self,
+        path: Path,
+        *,
+        operation_id: str,
+        digest: str,
+        recipient: str,
+        organization: bool = False,
+        refresh_target: str | None = None,
     ) -> dict[str, Any]:
         """Install a content snapshot only with this Runtime's Router binding."""
         from ..integrations.llm_router_support import LLM_ROUTER_API_BASE_URL
 
         if not LLM_ROUTER_API_BASE_URL:
             raise StoreError("receiving Router URL is unavailable", code="router_unavailable")
-        if len(recipient) > 512 or len(recipient.split("\x00")) != 3 or not recipient.split("\x00", 1)[0]:
-            raise StoreError("verified clone recipient required", status=403, code="permission_denied")
+        if (
+            len(recipient) > 512
+            or len(recipient.split("\x00")) != 3
+            or not recipient.split("\x00", 1)[0]
+        ):
+            raise StoreError(
+                "verified clone recipient required", status=403, code="permission_denied"
+            )
         if not re.fullmatch(r"[0-9a-f]{64}", digest) or self._hash_file(path) != digest:
             raise StoreError("snapshot digest mismatch", code="invalid_bundle_checksum")
         archive, files, _ = self._validated_archive_file(path, max_files=MAX_SHAREABLE_FILES)
@@ -240,7 +263,8 @@ class PortabilityService:
             manifest = json.loads(archive.read("manifest.json"))
             agents = manifest.get("agents")
             if (
-                manifest.get("snapshot_kind") != "community-full-profile-v1"
+                manifest.get("snapshot_kind")
+                != ("organization-agent-v1" if organization else "community-full-profile-v1")
                 or not isinstance(agents, list)
                 or len(agents) != 1
                 or not isinstance(agents[0], Mapping)
@@ -257,14 +281,18 @@ class PortabilityService:
                 if name not in {"manifest.json", "checksums.json"} and (
                     not name.startswith(prefix)
                     or self._shareable_excluded(Path(name[len(prefix) :]))
+                    or (organization and self._organization_excluded(Path(name[len(prefix) :])))
                 ):
                     raise StoreError("snapshot contains local authority", code="invalid_bundle")
             expected = {name: files[name] for name in files if name.startswith(prefix)}
-            if not SHAREABLE_REQUIRED <= {name[len(prefix):] for name in expected}:
+            required = SHAREABLE_REQUIRED - {"state.db"} if organization else SHAREABLE_REQUIRED
+            if not required <= {name[len(prefix) :] for name in expected}:
                 raise StoreError("snapshot is missing required profile data", code="invalid_bundle")
             checksums = json.loads(archive.read("checksums.json"))
             if manifest["file_inventory"] != {name: checksums[name] for name in expected}:
-                raise StoreError("snapshot inventory does not match checksums", code="invalid_bundle")
+                raise StoreError(
+                    "snapshot inventory does not match checksums", code="invalid_bundle"
+                )
             excluded_paths = manifest["excluded_paths"]
             if len(excluded_paths) != len(set(excluded_paths)):
                 raise StoreError("snapshot exclusions are invalid", code="invalid_bundle")
@@ -292,9 +320,19 @@ class PortabilityService:
                 key in model for key in ("base_url", "assignment_id", "api_key")
             ):
                 raise StoreError("snapshot contains router authority", code="invalid_bundle")
+        if refresh_target:
+            if not organization:
+                raise StoreError("refresh requires organization bundle", code="invalid_bundle")
+            from .portability_organization import refresh_organization_profile
+
+            return refresh_organization_profile(
+                self, path, refresh_target, agent_id, operation_id, digest, recipient
+            )
         self.repository._id(operation_id, "clone operation id")
         # Deterministic target and a marker staged before rename close the
-        target_id = f"clone-{hashlib.sha256((recipient + chr(0) + operation_id).encode()).hexdigest()[:32]}"
+        target_id = (
+            f"clone-{hashlib.sha256((recipient + chr(0) + operation_id).encode()).hexdigest()[:32]}"
+        )
         lock_path = self.repository.data_dir / ".community-clone.lock"
         descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
@@ -653,8 +691,10 @@ class PortabilityService:
                             destination.open("xb") as output_file,
                         ):
                             shutil.copyfileobj(input_file, output_file, length=1024 * 1024)
-                    if clone:
-                        self._validate_shareable_database(target_stage / "state.db", detach_identity=True)
+                    if clone and (target_stage / "state.db").exists():
+                        self._validate_shareable_database(
+                            target_stage / "state.db", detach_identity=True
+                        )
                     elif example and (target_stage / "state.db").is_file():
                         from .portability_examples import detach_example_history
 
@@ -669,7 +709,11 @@ class PortabilityService:
                         subject, tenant, organization = clone_receipt["recipient"].split("\x00", 2)
                         self.repository.atomic_json(
                             target_stage / ".community-profile-owner.json",
-                            {"subject": subject, "tenant_id": tenant, "organization_id": organization},
+                            {
+                                "subject": subject,
+                                "tenant_id": tenant,
+                                "organization_id": organization,
+                            },
                         )
                     if clone_receipt is not None:
                         self.repository.atomic_json(
@@ -737,7 +781,12 @@ class PortabilityService:
             shutil.rmtree(stage, ignore_errors=True)
 
     def _export_to_path(
-        self, body: Mapping[str, Any], target: Path, *, shareable: bool = False
+        self,
+        body: Mapping[str, Any],
+        target: Path,
+        *,
+        shareable: bool = False,
+        organization: bool = False,
     ) -> dict[str, Any]:
         requested_team_ids = list(
             dict.fromkeys(
@@ -778,7 +827,7 @@ class PortabilityService:
         entries: list[tuple[str, Path]] = []
         required_environment: set[str] = set()
         secrets = self._known_secret_values()
-        if shareable:
+        if shareable and not organization:
             secrets = set()
         excluded_paths: list[str] = []
         snapshot_conversations = 0
@@ -804,17 +853,26 @@ class PortabilityService:
             secrets.update(self._credential_values(profile))
             if shareable and not config_path.is_file():
                 raise StoreError("agent config is required", code="invalid_agent_profile")
-            if shareable and not all((profile / required).is_file() for required in SHAREABLE_REQUIRED):
-                raise StoreError("required agent guidance or history is missing", code="invalid_agent_profile")
+            required_files = (
+                SHAREABLE_REQUIRED - {"state.db"} if organization else SHAREABLE_REQUIRED
+            )
+            if shareable and not all((profile / required).is_file() for required in required_files):
+                raise StoreError(
+                    "required agent guidance or history is missing", code="invalid_agent_profile"
+                )
             managed_subtrees = self._managed_subtrees(profile)
             for item in profile.rglob("*"):
                 relative = item.relative_to(profile)
-                if not self._portable(
-                    relative,
-                    include_conversations,
-                    root_profile=agent_id == BIG_BROTHER_AGENT_ID,
-                    managed_subtrees=managed_subtrees,
-                ) or (shareable and self._shareable_excluded(relative)):
+                if (
+                    not self._portable(
+                        relative,
+                        include_conversations,
+                        root_profile=agent_id == BIG_BROTHER_AGENT_ID,
+                        managed_subtrees=managed_subtrees,
+                    )
+                    or (shareable and self._shareable_excluded(relative))
+                    or (organization and self._organization_excluded(relative))
+                ):
                     if shareable and item.is_file():
                         excluded_paths.append(f"profiles/{agent_id}/{relative.as_posix()}")
                     continue
@@ -826,9 +884,13 @@ class PortabilityService:
                     continue
                 if not item.is_file() or (shareable and item.stat().st_nlink != 1):
                     if shareable:
-                        raise StoreError("agent contains unsupported profile content", code="invalid_bundle")
+                        raise StoreError(
+                            "agent contains unsupported profile content", code="invalid_bundle"
+                        )
                     continue
-                if relative.name in {"state.db-wal", "state.db-shm"} and relative.parent == Path("."):
+                if relative.name in {"state.db-wal", "state.db-shm"} and relative.parent == Path(
+                    "."
+                ):
                     if shareable:
                         excluded_paths.append(f"profiles/{agent_id}/{relative.as_posix()}")
                     continue
@@ -836,8 +898,10 @@ class PortabilityService:
             if shareable and (len(entries) + len(excluded_paths) > MAX_SHAREABLE_FILES - 2):
                 raise StoreError("too many profile files", code="invalid_bundle")
             self._validate_file_count(len(entries) + 2)
-            if shareable and not any(
-                name == f"profiles/{agent_id}/state.db" for name, _ in entries
+            if (
+                shareable
+                and not organization
+                and not any(name == f"profiles/{agent_id}/state.db" for name, _ in entries)
             ):
                 raise StoreError("agent history database is required", code="invalid_bundle")
 
@@ -877,7 +941,9 @@ class PortabilityService:
             "credentials_included": False,
         }
         if shareable:
-            manifest["snapshot_kind"] = "community-full-profile-v1"
+            manifest["snapshot_kind"] = (
+                "organization-agent-v1" if organization else "community-full-profile-v1"
+            )
         target.parent.mkdir(parents=True, exist_ok=True)
         expanded_written = 0
         checksums: dict[str, dict[str, Any]] = {}
@@ -917,17 +983,20 @@ class PortabilityService:
                             model.pop("api_key", None)
                         payload = yaml.safe_dump(config, sort_keys=False).encode()
                     checksums[name] = self._write_zip_payload(
-                        archive, name, payload, set() if shareable else secrets
+                        archive, name, payload, set() if shareable and not organization else secrets
                     )
                 elif shareable and source.name == "agent.json" and source.parent == profile:
                     try:
                         metadata = json.loads(source.read_text(encoding="utf-8"))
                     except (OSError, ValueError) as error:
-                        raise StoreError("agent metadata is invalid", code="invalid_bundle") from error
+                        raise StoreError(
+                            "agent metadata is invalid", code="invalid_bundle"
+                        ) from error
                     if not isinstance(metadata, dict):
                         raise StoreError("agent metadata is invalid", code="invalid_bundle")
                     metadata = {
-                        key: value for key, value in metadata.items()
+                        key: value
+                        for key, value in metadata.items()
                         if key in {"name", "profile_name", "display_name", "title", "description"}
                     }
                     checksums[name] = self._write_zip_payload(
@@ -945,12 +1014,14 @@ class PortabilityService:
                         checksums[name] = self._write_zip_file(archive, name, snapshot, set())
                 else:
                     checksums[name] = self._write_zip_file(
-                        archive, name, source, set() if shareable else secrets
+                        archive, name, source, set() if shareable and not organization else secrets
                     )
                 if shareable:
                     expanded_written += checksums[name]["size"]
                     if len(checksums) > MAX_SHAREABLE_FILES - 2 or expanded_written > MAX_EXPANDED:
-                        raise StoreError("snapshot expansion limits exceeded", code="invalid_bundle")
+                        raise StoreError(
+                            "snapshot expansion limits exceeded", code="invalid_bundle"
+                        )
             for name, payload in sorted(team_payloads):
                 checksums[name] = self._write_zip_payload(archive, name, payload, secrets)
             if shareable:
@@ -966,9 +1037,7 @@ class PortabilityService:
             archive.writestr("checksums.json", json.dumps(checksums, indent=2) + "\n")
             # Reuse import's directory checks without decompressing or hashing
             # the payload again. Never publish a bundle exceeding import limits.
-            self._archive_files(
-                archive, max_files=MAX_SHAREABLE_FILES if shareable else MAX_FILES
-            )
+            self._archive_files(archive, max_files=MAX_SHAREABLE_FILES if shareable else MAX_FILES)
         size = target.stat().st_size
         if size > MAX_COMPRESSED:
             target.unlink(missing_ok=True)
@@ -1173,14 +1242,50 @@ class PortabilityService:
         return True
 
     @staticmethod
+    def _organization_excluded(relative: Path) -> bool:
+        # An allowlist avoids accidentally transferring new engine state stores.
+        if relative.parts[0] not in {
+            "config.yaml",
+            "agent.json",
+            "HERMES.md",
+            "AGENTS.md",
+            "skills",
+            "workspace",
+        }:
+            return True
+        return any(
+            part.lower()
+            in {
+                "memories",
+                "memory",
+                "sessions",
+                "conversations",
+                "state.db",
+                "memory.md",
+                "user.md",
+            }
+            for part in relative.parts
+        )
+
+    @staticmethod
     def _shareable_excluded(relative: Path) -> bool:
         parts = tuple(part.casefold() for part in relative.parts)
         return bool(
             parts
             and (
-                parts[0] in {
-                    "conversation-runs", ".xnobrain", "transfers", "imports", "exports",
-                    "backups", "snapshots", "logs", "profiles", ".git", ".cache",
+                parts[0]
+                in {
+                    "conversation-runs",
+                    ".xnobrain",
+                    "transfers",
+                    "imports",
+                    "exports",
+                    "backups",
+                    "snapshots",
+                    "logs",
+                    "profiles",
+                    ".git",
+                    ".cache",
                 }
                 or (len(parts) == 1 and parts[0] in SHAREABLE_ROOT_AUTHORITY)
                 or parts[-1] in SECRET_FILES
@@ -1196,7 +1301,14 @@ class PortabilityService:
 
     @staticmethod
     def _shareable_category_counts(checksums: Mapping[str, Any]) -> dict[str, int]:
-        counts = {"history": 0, "guidance": 0, "skills": 0, "memory": 0, "workspace": 0, "profile": 0}
+        counts = {
+            "history": 0,
+            "guidance": 0,
+            "skills": 0,
+            "memory": 0,
+            "workspace": 0,
+            "profile": 0,
+        }
         for name in checksums:
             relative = name.split("/", 2)[-1]
             if relative == "state.db":
@@ -1229,15 +1341,18 @@ class PortabilityService:
             with sqlite3.connect(
                 path.resolve().as_uri() + ("?mode=rw" if detach_identity else "?mode=ro"), uri=True
             ) as db:
-                if db.execute("PRAGMA integrity_check").fetchone() != ("ok",) or db.execute(
-                    "PRAGMA foreign_key_check"
-                ).fetchone() is not None:
+                if (
+                    db.execute("PRAGMA integrity_check").fetchone() != ("ok",)
+                    or db.execute("PRAGMA foreign_key_check").fetchone() is not None
+                ):
                     raise StoreError("snapshot history is invalid", code="invalid_bundle")
                 tables = db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
                 for (table,) in tables:
                     if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", table):
                         raise StoreError("unsupported history schema", code="history_unshareable")
-                    columns = {row[1].casefold() for row in db.execute(f'PRAGMA table_info("{table}")')}
+                    columns = {
+                        row[1].casefold() for row in db.execute(f'PRAGMA table_info("{table}")')
+                    }
                     if columns & {
                         "owner_id",
                         "workspace_id",
@@ -1246,7 +1361,9 @@ class PortabilityService:
                         "principal_id",
                         "api_key",
                     }:
-                        raise StoreError("history contains publisher authority", code="history_unshareable")
+                        raise StoreError(
+                            "history contains publisher authority", code="history_unshareable"
+                        )
                     if detach_identity and table == "sessions":
                         if "user_id" in columns:
                             db.execute("UPDATE sessions SET user_id = NULL")
@@ -1580,9 +1697,13 @@ class PortabilityService:
                         snapshot.execute("PRAGMA integrity_check").fetchone() != ("ok",)
                         or snapshot.execute("PRAGMA foreign_key_check").fetchone() is not None
                     ):
-                        raise StoreError("agent database snapshot is invalid", code="invalid_bundle")
+                        raise StoreError(
+                            "agent database snapshot is invalid", code="invalid_bundle"
+                        )
         except sqlite3.Error as error:
-            raise StoreError("agent database snapshot is unavailable", code="invalid_bundle") from error
+            raise StoreError(
+                "agent database snapshot is unavailable", code="invalid_bundle"
+            ) from error
 
     @staticmethod
     def _reject_database_secrets(snapshot: Path, secrets: set[bytes]) -> None:

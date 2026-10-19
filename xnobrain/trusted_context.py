@@ -102,6 +102,15 @@ def snapshot_intent(method: str, path: str) -> str:
         return "receipt"
     if method != "POST":
         return ""
+    organization_prefix = SNAPSHOT_PREFIX + "organization/"
+    if path.startswith(organization_prefix):
+        action = path[len(organization_prefix) :]
+        if action == "import":
+            return "import"
+        parts = action.split("/")
+        if len(parts) == 2 and parts[0] and parts[1] in {"export", "refresh"}:
+            return "export" if parts[1] == "export" else "import"
+        return ""
     if path == SNAPSHOT_PREFIX + "import":
         return "import"
     if path.startswith(SNAPSHOT_PREFIX) and path.endswith("/export"):
