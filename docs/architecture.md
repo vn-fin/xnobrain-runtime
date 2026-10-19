@@ -105,6 +105,12 @@ FastAPI process. Streaming emits structured `run.started`, `message.delta`,
 terminal run events, and supports process interruption. Hermes' approval core
 remains the resolver for pending approvals.
 
+The conversation prompt adapter replaces the engine's default identity with
+"Bạn là XNOBrain Agent, một trợ lý AI thông minh của XNOBrain." and XNOBrain's
+general assistance guidance. It applies the same replacement to built prompts,
+cached prompt prefixes, and stored system prompts when sessions resume. Custom
+profile personas and unrelated technical references remain unchanged.
+
 Managed LLM inference calls the centralized router directly with a Control-issued
 API key. Runtime does not host the router, retain provider credentials, or
 read router usage storage. Profile files, tools, memory, and other local agent behavior

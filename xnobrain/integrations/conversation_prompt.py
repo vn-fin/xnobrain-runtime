@@ -6,6 +6,12 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+XNOBRAIN_AGENT_IDENTITY = """Bạn là XNOBrain Agent, một trợ lý AI thông minh của XNOBrain.
+Bạn hỗ trợ người dùng trả lời câu hỏi, viết và chỉnh sửa mã, phân tích thông tin,
+sáng tạo nội dung và thực hiện công việc bằng các công cụ được cung cấp.
+Hãy giao tiếp rõ ràng, hữu ích và thẳng thắn; thừa nhận khi không chắc chắn.
+Ưu tiên hiệu quả, tập trung vào yêu cầu và trả lời ngắn gọn trừ khi cần thêm chi tiết."""
+
 MARKDOWN_RESPONSE_GUIDANCE = """# Response format
 Write every user-facing final response as valid GitHub-Flavored Markdown.
 Use headings, lists, tables, links, and fenced code blocks when they improve
@@ -24,6 +30,14 @@ instead of editing profile state directly."""
 
 class ConversationPromptMixin:
     @staticmethod
+    def _upstream_agent_identity() -> str:
+        try:
+            from agent.prompt_builder import DEFAULT_AGENT_IDENTITY
+        except (ImportError, AttributeError):
+            return ""
+        return str(DEFAULT_AGENT_IDENTITY or "").strip()
+
+    @staticmethod
     def _upstream_runtime_help_guidance() -> str:
         try:
             from agent.prompt_builder import HERMES_AGENT_HELP_GUIDANCE
@@ -39,6 +53,9 @@ class ConversationPromptMixin:
         workspace_dir: Path | None = None,
     ) -> str:
         rendered = str(prompt or "")
+        identity = self._upstream_agent_identity()
+        if identity and identity in rendered:
+            rendered = rendered.replace(identity, XNOBRAIN_AGENT_IDENTITY)
         upstream = self._upstream_runtime_help_guidance()
         if upstream and upstream in rendered:
             rendered = rendered.replace(upstream, "")
@@ -143,7 +160,7 @@ class ConversationPromptMixin:
         profile_dir: Path,
         workspace_dir: Path | None = None,
     ) -> None:
-        """Apply product-neutral identity and Markdown response policy."""
+        """Apply XNOBrain identity and Markdown response policy."""
         context = self._workspace_context(profile_dir, workspace_dir)
         if profile_dir == self.root_profile:
             workspace_dir = None
@@ -166,7 +183,7 @@ class ConversationPromptMixin:
             )
 
         # This value must remain a byte-for-byte prefix of the full prompt.
-        # Remove upstream identity text, but keep trailing response guidance out.
+        # Replace upstream identity, but keep trailing response guidance out.
         cached_static = getattr(agent, "_cached_system_prompt_static", None)
         if isinstance(cached_static, str) and cached_static:
             agent._cached_system_prompt_static = self._format_runtime_prompt(
@@ -180,7 +197,7 @@ class ConversationPromptMixin:
         session_id: str,
         workspace_dir: Path | None = None,
     ) -> None:
-        """Migrate a resumed session to product-neutral Markdown guidance."""
+        """Migrate a resumed session to XNOBrain identity and Markdown guidance."""
         db_path = profile_dir / "state.db"
         if not db_path.is_file():
             return

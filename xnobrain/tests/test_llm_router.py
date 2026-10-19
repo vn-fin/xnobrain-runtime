@@ -20,6 +20,7 @@ from xnobrain.integrations.config import GlobalConfigManager
 from xnobrain.integrations.conversation_prompt import (
     AGENT_WORKSPACE_GUIDANCE,
     MARKDOWN_RESPONSE_GUIDANCE,
+    XNOBRAIN_AGENT_IDENTITY,
 )
 from xnobrain.integrations.conversation_stream import (
     _commit_resolved_write_result,
@@ -634,13 +635,30 @@ class LLMRouterConfigTests(unittest.TestCase):
             profile = manager._profile_dir("news")
             upstream = manager._upstream_runtime_help_guidance()
             self.assertIn("Hermes Agent", upstream)
+            identity = manager._upstream_agent_identity()
+            self.assertIn("Nous Research", identity)
+            static_prompt = f"{identity}\n\n{upstream}"
 
             fake_agent = SimpleNamespace(
-                _build_system_prompt=lambda _message=None: f"Identity\n\n{upstream}\n\nTools",
-                _cached_system_prompt=f"Identity\n\n{upstream}\n\nCached",
-                _cached_system_prompt_static=f"Identity\n\n{upstream}",
+                _build_system_prompt=lambda _message=None: f"{static_prompt}\n\nTools",
+                _cached_system_prompt=f"{static_prompt}\n\nCached",
+                _cached_system_prompt_static=static_prompt,
             )
             manager._apply_runtime_help_guidance_override(fake_agent, profile)
+            for prompt in (
+                fake_agent._build_system_prompt(None),
+                fake_agent._cached_system_prompt,
+                fake_agent._cached_system_prompt_static,
+            ):
+                self.assertIn(XNOBRAIN_AGENT_IDENTITY, prompt)
+                self.assertNotIn("Nous Research", prompt)
+                self.assertEqual(
+                    manager._format_runtime_prompt(prompt).count(XNOBRAIN_AGENT_IDENTITY), 1
+                )
+            self.assertIn("Tools", fake_agent._build_system_prompt(None))
+            self.assertTrue(
+                fake_agent._cached_system_prompt.startswith(fake_agent._cached_system_prompt_static)
+            )
             self.assertNotIn("Hermes Agent", fake_agent._build_system_prompt(None))
             self.assertNotIn("Hermes Agent", fake_agent._cached_system_prompt)
             self.assertNotIn("Hermes Agent", fake_agent._cached_system_prompt_static)
@@ -653,7 +671,7 @@ class LLMRouterConfigTests(unittest.TestCase):
             with sqlite3.connect(profile / "state.db") as connection:
                 connection.execute(
                     "UPDATE sessions SET system_prompt = ? WHERE id = ?",
-                    (f"Identity\n\n{upstream}\n\nStored", session_id),
+                    (f"{static_prompt}\n\nStored", session_id),
                 )
             manager._override_stored_runtime_help_guidance(profile, session_id)
             with sqlite3.connect(profile / "state.db") as connection:
@@ -662,7 +680,18 @@ class LLMRouterConfigTests(unittest.TestCase):
                     (session_id,),
                 ).fetchone()[0]
             self.assertNotIn("Hermes Agent", stored)
+            self.assertNotIn("Nous Research", stored)
+            self.assertIn(XNOBRAIN_AGENT_IDENTITY, stored)
+            self.assertIn("Stored", stored)
             self.assertIn(MARKDOWN_RESPONSE_GUIDANCE, stored)
+
+    def test_runtime_identity_preserves_custom_persona_and_technical_references(self) -> None:
+        manager = AgentManager.__new__(AgentManager)
+        custom_prompt = "You are a research assistant. Explain Hermes Agent by Nous Research."
+        rendered = manager._format_runtime_prompt(custom_prompt)
+        self.assertIn(custom_prompt, rendered)
+        self.assertNotIn(XNOBRAIN_AGENT_IDENTITY, rendered)
+        self.assertEqual(manager._format_runtime_prompt(rendered), rendered)
 
     def test_ordinary_agent_session_is_pinned_to_its_profile_workspace(self) -> None:
         with TemporaryDirectory() as temp_dir:
