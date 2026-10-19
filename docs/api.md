@@ -813,7 +813,7 @@ using the same `X-XNOBrain-Update-Token` identity. It returns `restore_ready: tr
 only while the owning source maintenance fence remains closed, no resume outcome
 exists, activity is idle, and checkpoint data passes the versioned preservation
 rules in [source-update-startup.md](source-update-startup.md). New checkpoints use
-manifest v2; legacy checkpoints retain byte-exact comparison. Post-verify adds
+manifest v3; v2 and legacy v1 checkpoints keep their original comparison. Post-verify adds
 `data_verification` with the manifest version/digest and metadata-only change
 counts. It never returns file paths or content in that diagnostic object.
 Failure returns `runtime_source_restore_unsafe` or the existing storage/fence
@@ -1623,6 +1623,17 @@ Snapshots are stored below `DATA_DIR/organization-team-executions/{org}` and
 never appear in personal `/teams`. Capabilities remain in memory only. Repeated
 starts of the same run return its existing record; restart recovery marks
 unfinished work interrupted instead of replaying it.
+
+On managed workspaces, organization coordinators use the workspace admission
+queue before starting BigBrother. Pending responses include `capacity.state=waiting`
+and its retry reason, using the same waiting/cancellation UI as personal teams.
+One admitted root covers coordinator and synthesis calls; member work continues
+through Control's independently authorized runner queue. Admission records carry
+the organization namespace, never the callback capability, and keep team records
+out of personal storage. Completion, cancellation, and failure release admission.
+After a Runtime restart, queued or interrupted organization work is finalized
+with `interrupted_by_restart` and its admission is reconciled without replaying
+member side effects. Local approval policy remains independent of admission.
 
 ### Team stage model selection
 

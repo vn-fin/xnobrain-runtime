@@ -11,8 +11,10 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from xnobrain.integrations import organization_funding
+from xnobrain.integrations.runtime_update_storage import RuntimeUpdateStorage
 from xnobrain.repositories.base import RepositoryBase, StoreError
 from xnobrain.repositories.organization_connector import OrganizationConnectorRepository
+from xnobrain.repositories.runtime_updates import RuntimeUpdateRepository
 from xnobrain.services.base import ServiceError
 from xnobrain.services.organization_connector import OrganizationConnector
 
@@ -362,6 +364,73 @@ class MultiOrganizationConnectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(link.store.state()["access_token"], f"access-{ORG_A}")
         self.assertEqual(delay, self.connector.interval * 2)
         self.assertEqual(link.failed(httpx.ConnectError("down"), 200), 300)
+
+    async def test_maintenance_preserves_both_connector_files_and_resumes(self):
+        self.control.tokens.add(self.token_b)
+        for org, token in ((ORG_A, self.token_a), (ORG_B, self.token_b)):
+            self.connector.connect({"organization_id": org, "enrollment_token": token})
+            await self.connector.link(org).run_once(self.client)
+        updates = RuntimeUpdateRepository(self.platform.repository)
+        root = Path(self.tmp.name) / "root"
+        root.mkdir()
+        storage = RuntimeUpdateStorage(
+            self.platform.repository.data_dir, self.platform.repository.profiles_root, root
+        )
+        for kind in ("runtime_source", "vm_rebalance", "workspace_memory_reclaim"):
+            with self.subTest(kind=kind):
+                updates.save_maintenance(
+                    {
+                        "dispatch_paused": True,
+                        "operation_id": "upd_test",
+                        "generation": 1,
+                        "target": {},
+                        "kind": kind,
+                    }
+                )
+                baseline = storage.manifest()
+                originals = {
+                    org: self.connector.link(org).store.state_path.read_bytes()
+                    for org in (ORG_A, ORG_B)
+                }
+                calls = len(self.control.calls)
+                # Fresh link objects read persisted state as after a restart;
+                # repeated ticks must preserve the immutable checkpoint.
+                for _ in range(2):
+                    for org in (ORG_A, ORG_B):
+                        delay = await self.connector.link(org).run_once(self.client)
+                        self.assertEqual(delay, self.connector.interval)
+                        self.assertEqual(
+                            self.connector.link(org).store.state_path.read_bytes(), originals[org]
+                        )
+                self.assertEqual(len(self.control.calls), calls)
+                self.assertTrue(storage.verify(baseline)["preserved"])
+                updates.clear_maintenance()
+                await self.connector.link(ORG_A).run_once(self.client)
+                self.assertGreater(len(self.control.calls), calls)
+                self.assertEqual(self.states()[ORG_A], ("connected", None))
+
+    async def test_maintenance_between_tick_failure_and_error_write(self):
+        self.connector.connect({"organization_id": ORG_A, "enrollment_token": self.token_a})
+        link = self.connector.link(ORG_A)
+        await link.run_once(self.client)
+        original = link.store.state_path.read_bytes()
+        updates = RuntimeUpdateRepository(self.platform.repository)
+
+        async def failed_tick(_client):
+            updates.save_maintenance(
+                {
+                    "dispatch_paused": True,
+                    "operation_id": "upd_test",
+                    "generation": 1,
+                    "target": {},
+                    "kind": "runtime_source",
+                }
+            )
+            raise httpx.ConnectError("connection ended as maintenance began")
+
+        with patch.object(link, "tick", side_effect=failed_tick):
+            self.assertEqual(await link.run_once(self.client), self.connector.interval)
+        self.assertEqual(link.store.state_path.read_bytes(), original)
 
     def test_connect_rejects_foreign_tokens_and_unconfigured_runtime(self):
         with self.assertRaises(StoreError) as raised:

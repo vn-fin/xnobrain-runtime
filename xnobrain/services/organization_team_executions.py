@@ -14,14 +14,36 @@ from .team_runs import MAX_ACTIVE_TEAM_RUNS, TeamRunService
 from .teams import TeamsServiceMixin
 
 
+class _ExecutionAdmission:
+    """Use the workspace queue while keeping organization records isolated."""
+
+    def __init__(self, capacity, repository, organization_id):
+        self.capacity = capacity
+        self.store = capacity.store
+        self.repository = repository
+        self.organization_id = organization_id
+
+    def enqueue_team(self, record, team, workflow):
+        return self.capacity.enqueue_team(
+            record,
+            team,
+            workflow,
+            repository=self.repository,
+            organization_id=self.organization_id,
+        )
+
+
 class _ExecutionPlatform(TeamsServiceMixin):
     distributed_workers = True
-    run_admission = None
 
-    def __init__(self, platform, repository):
+    def __init__(self, platform, repository, organization_id):
         self.repository = repository
         self.runtime_updates = platform.runtime_updates
         self.agents = platform.agents
+        capacity = getattr(platform, "run_admission", None)
+        self.run_admission = (
+            _ExecutionAdmission(capacity, repository, organization_id) if capacity else None
+        )
 
     def _enabled_team_skills(self, agent_id):
         if agent_id == BIG_BROTHER_AGENT_ID:
@@ -98,7 +120,9 @@ class OrganizationTeamExecutions:
         engine = self.executions.get(key)
         if engine is None:
             engine = TeamRunService(
-                repo, self.platform.agents, _ExecutionPlatform(self.platform, repo)
+                repo,
+                self.platform.agents,
+                _ExecutionPlatform(self.platform, repo, params["organization_id"]),
             )
         if request.method == "DELETE":
             return await engine.cancel_run(team_id, run_id)
@@ -115,7 +139,9 @@ class OrganizationTeamExecutions:
                 raise
         else:
             engine = TeamRunService(
-                repo, self.platform.agents, _ExecutionPlatform(self.platform, repo)
+                repo,
+                self.platform.agents,
+                _ExecutionPlatform(self.platform, repo, organization_id),
             )
             return engine._heal_if_stale(previous)
         active = sum(bool(engine._active) for engine in self.executions.values())
@@ -138,7 +164,11 @@ class OrganizationTeamExecutions:
             {member["agent_id"] for member in team["members"] if member.get("enabled", True)},
         )
         engine = _ExecutionRun(
-            repo, agents, _ExecutionPlatform(self.platform, repo), run_id, self.platform.analytics
+            repo,
+            agents,
+            _ExecutionPlatform(self.platform, repo, organization_id),
+            run_id,
+            self.platform.analytics,
         )
         self.executions[key] = engine
         try:
@@ -166,6 +196,51 @@ class OrganizationTeamExecutions:
         if entry is not None and entry.task is not None:
             entry.task.add_done_callback(lambda _task: self.executions.pop(key, None))
         return record
+
+    async def reconcile_admission(self, row):
+        organization_id = row["payload"]["organization_id"]
+        key = (organization_id, row["conversation"], row["id"])
+        engine = self.executions.get(key)
+        if engine is None:
+            # The callback capability lives only in memory. After a restart,
+            # release the durable admission without replaying remote side effects
+            # or persisting credentials. Control reconciles the terminal record
+            # through the existing signed GET endpoint.
+            repo = OrganizationTeamExecutionRepository(self.platform.repository, organization_id)
+            engine = TeamRunService(
+                repo,
+                self.platform.agents,
+                _ExecutionPlatform(self.platform, repo, organization_id),
+            )
+            try:
+                record = repo.get_team_run(row["conversation"], row["id"])
+            except StoreError as error:
+                if error.status != 404:
+                    raise
+                record = row["payload"]["_record"]
+                repo.put_team_run(record)
+            if record["status"] in {"pending", "running"}:
+                # Another process may still own the executor fence.
+                if self.platform.run_admission.store.team_active(row["id"]):
+                    return
+                await engine._finalize(record, "failed", error="interrupted_by_restart")
+        try:
+            await self.platform.run_admission._tick_team(row, teams=engine)
+        except asyncio.CancelledError:
+            if asyncio.current_task().cancelling():
+                raise
+            # A revoked callback cancels this run, not the workspace queue loop.
+            # Persist locally without invoking the revoked callback again.
+            record = engine.repository.get_team_run(row["conversation"], row["id"])
+            record["status"] = "cancelled"
+            record["error"] = "organization_execution_revoked"
+            record["ended_at"] = iso()
+            record["completed_at"] = None
+            engine._cancel_open_steps(record)
+            await TeamRunService._persist(engine, record)
+            await self.platform.run_admission._tick_team(row, teams=engine)
+        if not self.platform.run_admission.store.contains(row["id"]):
+            self.executions.pop(key, None)
 
     async def shutdown(self):
         await asyncio.gather(*(engine.shutdown() for engine in self.executions.values()))

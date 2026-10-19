@@ -133,6 +133,31 @@ class LoggingConfigTests(unittest.TestCase):
         self.assertNotIn("PRIVATE", self.output.getvalue())
         self.assertNotIn("SECRET", self.output.getvalue())
 
+    def test_verification_counts_survive_json_without_manifest_or_credentials(self):
+        record = logging.makeLogRecord(
+            {
+                "name": "xnobrain.services.runtime_updates",
+                "levelno": logging.WARNING,
+                "msg": "Runtime update verification failed",
+                "event": "runtime_update_verification_failure",
+                "error": "runtime_update_data_not_preserved",
+                "data_preserved": False,
+                "installed_identity_matches": True,
+                "data_added": 0,
+                "data_removed": 0,
+                "data_changed": 2,
+                "manifest": {"path": "PRIVATE_FILE"},
+                "access_token": "SECRET",
+            }
+        )
+        JLoggerHandler().emit(record)
+        rendered = json.loads(self.output.getvalue())
+        self.assertEqual(rendered["data_changed"], 2)
+        self.assertFalse(rendered["data_preserved"])
+        self.assertTrue(rendered["installed_identity_matches"])
+        self.assertNotIn("PRIVATE", self.output.getvalue())
+        self.assertNotIn("SECRET", self.output.getvalue())
+
     def test_third_party_otel_warning_is_json_with_safe_error_category(self):
         with patch.dict("os.environ", {"DEVELOPMENT_ENVIRONMENT": "local"}, clear=True):
             configure_logging()

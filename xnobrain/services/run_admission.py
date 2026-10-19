@@ -205,7 +205,10 @@ class RunAdmissionService:
 
     async def _tick(self, row):
         if row["payload"].get("_kind") == "team":
-            await self._tick_team(row)
+            if row["payload"].get("organization_id"):
+                await self.platform.organization_team_executions.reconcile_admission(row)
+            else:
+                await self._tick_team(row)
             return
         admission = row["admission"]
         try:
@@ -427,7 +430,7 @@ class RunAdmissionService:
                     lease.close()
                 conversation.close()
 
-    def enqueue_team(self, record, team, workflow):
+    def enqueue_team(self, record, team, workflow, *, repository=None, organization_id=None):
         capacity = {
             "state": "waiting",
             "reason_code": "capacity_recovering",
@@ -435,26 +438,30 @@ class RunAdmissionService:
             "retry_after_ms": 5000,
         }
         record = {**record, "capacity": capacity}
+        payload = {"_kind": "team", "_record": record, "team": team, "workflow": workflow}
+        if organization_id is not None:
+            payload["organization_id"] = organization_id
         self.store.enqueue(
             {
                 "id": record["id"],
                 "agent_id": record["orchestrator_id"],
                 "conversation_id": record["team_id"],
             },
-            {"_kind": "team", "_record": record, "team": team, "workflow": workflow},
+            payload,
         )
-        self.files.put_team_run(record)
+        (repository or self.files).put_team_run(record)
         self.store.update(record["id"], "waiting", {})
         return record
 
-    async def _tick_team(self, row):
-        teams = self.platform.team_runs
+    async def _tick_team(self, row, *, teams=None):
+        teams = teams or self.platform.team_runs
+        files = teams.repository
         admission = row["admission"]
         try:
-            record = self.files.get_team_run(row["conversation"], row["id"])
+            record = files.get_team_run(row["conversation"], row["id"])
         except StoreError:
             if row["state"] == "prepared":
-                self.files.put_team_run(row["payload"]["_record"])
+                files.put_team_run(row["payload"]["_record"])
                 return
             await self._cancel_receipt(row)
             self.store.remove(row["id"])
@@ -499,7 +506,7 @@ class RunAdmissionService:
                     await teams._persist(record)
                 return
             self.platform.runtime_updates.require_dispatch()
-            team = self.platform.get_team(record["team_id"])
+            team = teams.platform.get_team(record["team_id"])
             if not team.get("enabled", True) or team != row["payload"]["team"]:
                 await teams._finalize(record, "cancelled", error="team_changed_while_waiting")
                 return
@@ -515,7 +522,7 @@ class RunAdmissionService:
                     self.store.update(row["id"], "waiting", admission)
                     return
                 self.store.update(row["id"], "starting", admission)
-                record = self.files.get_team_run(row["conversation"], row["id"])
+                record = files.get_team_run(row["conversation"], row["id"])
                 if record["status"] != "pending":
                     await self.client.receipt(admission, "cancelled")
                     return
