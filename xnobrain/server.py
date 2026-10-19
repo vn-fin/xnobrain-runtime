@@ -20,6 +20,9 @@ def create_app():
     from .agent_layout import configure_layout
 
     configure_layout()
+    from .integrations.code_tools import install_code_tools
+
+    install_code_tools()
     from hermes_cli.web_server import app
 
     from .app import XNOBrainApplication

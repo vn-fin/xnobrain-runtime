@@ -17,6 +17,12 @@ Write every user-facing final response as valid GitHub-Flavored Markdown.
 Use headings, lists, tables, links, and fenced code blocks when they improve
 clarity. Do not wrap the entire response in a code fence and do not use raw HTML."""
 
+CODE_TOOL_GUIDANCE = """# Python tool access
+When writing execute_code scripts, import tools from xnobrain_tools, for example:
+from xnobrain_tools import terminal
+Use this module name for new scripts, including when continuing older conversations.
+Only import tools listed in the current execute_code tool description."""
+
 AGENT_WORKSPACE_GUIDANCE = """# Agent workspace
 Your default and only project workspace is `{workspace}`.
 Create and modify user-requested files only inside this directory. Prefer paths
@@ -24,7 +30,7 @@ relative to it, and do not change the working directory to another location.
 The sole Python-environment exception is the current profile's exact uv venv
 specified by the working overlay; user deliverables must still stay here.
 This grants no arbitrary /opt writes or access to other profiles' environments.
-Use dedicated Hermes tools for agent configuration, skills, memory, and schedules
+Use dedicated XNOBrain tools for agent configuration, skills, memory, and schedules
 instead of editing profile state directly."""
 
 
@@ -66,6 +72,8 @@ class ConversationPromptMixin:
                 if rendered
                 else MARKDOWN_RESPONSE_GUIDANCE
             )
+        if include_response_guidance and CODE_TOOL_GUIDANCE not in rendered:
+            rendered = f"{rendered}\n\n{CODE_TOOL_GUIDANCE}"
         if workspace_dir is not None:
             guidance = AGENT_WORKSPACE_GUIDANCE.format(workspace=str(workspace_dir))
             if guidance not in rendered:

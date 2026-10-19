@@ -552,8 +552,10 @@ class ConversationRunnerMixin:
         resolves the public model prefix itself and forwards request JSON, so
         neither field belongs in the upstream body.
         """
+        from .code_tools import code_tool_schema, install_code_tools
         from .router_error_policy import install_router_error_policy
 
+        install_code_tools()
         install_router_error_policy()
         if getattr(agent, "_xnobrain_router_tool_codec", False):
             return
@@ -580,6 +582,8 @@ class ConversationRunnerMixin:
             runtime_name = str(target.get("name") or "").strip()
             if not runtime_name:
                 return encoded
+            if runtime_name == "execute_code":
+                target.update(code_tool_schema(target))
             target["name"] = wire_name(runtime_name)
             description = str(target.get("description") or "").strip()
             identity = f'Runtime tool "{runtime_name}".'
