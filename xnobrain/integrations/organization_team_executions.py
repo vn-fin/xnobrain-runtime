@@ -8,6 +8,9 @@ import httpx
 
 from ..services.base import ServiceError
 
+# Conflicts meaning the execution itself is gone or superseded.
+_REVOKING_CONFLICTS = {"revision_conflict", "revoked"}
+
 
 class OrganizationTeamExecutionClient:
     def __init__(self, endpoint, organization_id, run_id, capability):
@@ -32,26 +35,28 @@ class OrganizationTeamExecutionClient:
                         envelope = {}
                     if isinstance(envelope, dict) and isinstance(envelope.get("message"), str):
                         message = envelope["message"]
+                code = (
+                    message
+                    if len(message) <= 100
+                    and re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*", message)
+                    else ""
+                )
+                # A specific Control conflict (for example an offline source
+                # agent) is a step failure the team shows; only a forbidden or
+                # superseded execution revokes the whole run.
+                if response.status_code == 409 and code and code not in _REVOKING_CONFLICTS:
+                    raise ServiceError(code, status=409, code=code)
                 if response.status_code in {403, 409}:
-                    if (
-                        response.status_code == 409
-                        and message == "organization_funding_unavailable"
-                    ):
-                        raise ServiceError(message, status=409, code=message)
                     raise ServiceError(
                         "organization execution revoked",
                         status=403,
                         code="organization_execution_revoked",
                     )
                 if response.status_code == 422:
-                    code = (
-                        message
-                        if len(message) <= 100
-                        and re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*", message)
-                        else "organization_execution_invalid"
-                    )
                     raise ServiceError(
-                        message or "organization execution invalid", status=422, code=code
+                        message or "organization execution invalid",
+                        status=422,
+                        code=code or "organization_execution_invalid",
                     )
                 response.raise_for_status()
                 return response.json()["data"]
