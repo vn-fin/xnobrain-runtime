@@ -18,6 +18,7 @@ from ..repositories.base import RepositoryBase
 from ..repositories.runtime_update_gate import checkpoint_gate, update_operation
 from ..repositories.runtime_updates import RuntimeUpdateRepository
 from ..services.base import iso
+from .runtime_data_volume import verify_volume
 from .runtime_update_storage import RuntimeUpdateStorage
 
 
@@ -44,6 +45,10 @@ def checkpoint(request: dict, *, data_anchor: Path = Path("/srv/xnobrain-data"))
     anchor = Path(request["data_path"])
     if anchor != data_anchor or anchor.resolve() != anchor:
         raise ValueError("unsupported data anchor")
+    # A managed Incus filesystem volume may be virtiofs. Verify the exact
+    # writable mount and its existing Control-owned marker, not the custom-page
+    # local-filesystem policy. Recovery must never initialize/adopt a volume.
+    verify_volume(anchor, os.environ.get("RUNTIME_DATA_VOLUME_ID", ""))
     paths = [Path(request[key]) for key in ("data_dir", "profiles_root", "root_profile")]
     if any(
         path.resolve() != path or not path.is_relative_to(anchor) or not path.is_dir()

@@ -150,6 +150,15 @@ Native VM provisioning must set `RUNTIME_UPDATE_DATA_PATH=/srv/xnobrain-data`.
 The node gateway validates this data anchor before source-update drain. The
 Docker default `/opt/data` is not the native volume layout.
 
+The offline checkpoint helper independently verifies the exact writable managed
+mount and existing `RUNTIME_DATA_VOLUME_ID` marker before repository construction.
+Incus `virtiofs` mounts are valid. The gateway clears the unrelated
+`RUNTIME_CUSTOM_PAGE_STORAGE_MOUNT` for this process instead of applying the
+custom-page local-filesystem allowlist to a managed volume. Missing mounts,
+read-only mounts, missing/mismatched markers and absent volume IDs fail closed.
+Recovery never initializes/adopts a volume, including when provisioning flags
+are inherited. This check does not start the server or connectors.
+
 Shutdown stages emit fixed stage names and elapsed time, including a warning
 after ten seconds. This diagnoses the observed systemd stop timeout without
 abandoning a still-running durable write. Gateway additionally requires a terminal

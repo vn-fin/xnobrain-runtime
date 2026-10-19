@@ -2,12 +2,14 @@
 
 import copy
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from xnobrain.integrations.runtime_data_volume import MARKER
 from xnobrain.integrations.runtime_source_checkpoint import checkpoint, require_stopped
 from xnobrain.integrations.runtime_update_storage import RuntimeUpdateStorage
 from xnobrain.repositories.base import RepositoryBase
@@ -19,6 +21,28 @@ class SourceCheckpointTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.anchor = Path(self.temp.name).resolve()
+        self.volume_id = "d223fcce-3588-4a30-b1a3-cd80e938bd68"
+        self.marker = self.anchor / MARKER
+        self.marker.write_text(json.dumps({"schema_version": 1, "volume_id": self.volume_id}))
+        environment = patch.dict(
+            os.environ,
+            {"RUNTIME_DATA_VOLUME_ID": self.volume_id, "RUNTIME_CUSTOM_PAGE_STORAGE_MOUNT": ""},
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
+        # Exercise the actual managed mount/marker verifier with an Incus
+        # filesystem-volume mount table, rather than mocking the guard away.
+        self.mountinfo = f"42 1 0:33 / {self.anchor} rw,relatime - virtiofs incus_data rw\n"
+        read_text = Path.read_text
+
+        def read(path, *args, **kwargs):
+            if path == Path("/proc/self/mountinfo"):
+                return self.mountinfo
+            return read_text(path, *args, **kwargs)
+
+        mounts = patch.object(Path, "read_text", read)
+        mounts.start()
+        self.addCleanup(mounts.stop)
         self.paths = [self.anchor / name for name in ("data", "profiles", "root")]
         for path in self.paths:
             path.mkdir()
@@ -39,7 +63,11 @@ class SourceCheckpointTest(unittest.TestCase):
         self.request = {
             **self.binding,
             "data_path": str(self.anchor),
-            **dict(zip(("data_dir", "profiles_root", "root_profile"), map(str, self.paths))),
+            **dict(
+                zip(
+                    ("data_dir", "profiles_root", "root_profile"), map(str, self.paths), strict=True
+                )
+            ),
         }
         self.journal.save_maintenance({**self.binding, "dispatch_paused": True, "phase": "drained"})
         self.journal.save_operation({**self.binding, "steps": {"drain": {"drained": True}}})
@@ -51,6 +79,40 @@ class SourceCheckpointTest(unittest.TestCase):
 
     def run_checkpoint(self, request=None):
         return checkpoint(request or self.request, data_anchor=self.anchor)
+
+    def test_managed_volume_failure_precedes_repository_writes(self):
+        for failure in ("missing marker", "wrong marker", "missing mount", "read only", "no id"):
+            with self.subTest(failure=failure):
+                self.marker.write_text(
+                    json.dumps({"schema_version": 1, "volume_id": self.volume_id})
+                )
+                mountinfo = self.mountinfo
+                if failure == "missing marker":
+                    self.marker.unlink()
+                elif failure == "wrong marker":
+                    self.marker.write_text('{"schema_version":1,"volume_id":"wrong"}')
+                elif failure == "missing mount":
+                    self.mountinfo = ""
+                elif failure == "read only":
+                    self.mountinfo = self.mountinfo.replace("rw,relatime", "ro,relatime")
+                with (
+                    patch.dict(
+                        os.environ,
+                        {
+                            "RUNTIME_DATA_VOLUME_ID": "" if failure == "no id" else self.volume_id,
+                            # Even stale provisioning flags cannot initialize recovery data.
+                            "RUNTIME_DATA_VOLUME_INITIALIZE": "true",
+                        },
+                    ),
+                    patch("xnobrain.integrations.runtime_source_checkpoint.RepositoryBase") as base,
+                ):
+                    with self.assertRaises((ValueError, OSError)):
+                        self.run_checkpoint()
+                    base.assert_not_called()
+                self.mountinfo = mountinfo
+                if failure == "missing marker":
+                    self.assertFalse(self.marker.exists())
+        self.assertEqual(list(self.journal.checkpoints.glob("*.json")), [])
 
     def test_baseline_is_taken_after_old_connector_stops_and_never_refreshed(self):
         self.state.write_text('{"status":"error"}')
