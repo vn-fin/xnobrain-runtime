@@ -28,7 +28,11 @@ from ..integrations.analytics import (
     skill_usage_profile,
 )
 from ..integrations.control_accounting import ControlAccountingClient
-from ..integrations.organization_funding import ORGANIZATION, funding_for
+from ..integrations.organization_funding import (
+    ORGANIZATION,
+    funding_for,
+    owns_organization_context,
+)
 from ..integrations.router_accounting import AccountingUnavailable
 from ..repositories.agent_budgets import AgentBudgetStore
 from ..repositories.skill_usage import SKILL_USAGE_INSTRUMENTATION_VERSION
@@ -388,7 +392,11 @@ class AnalyticsService:
         self, agent_id: str, context_id: str = "personal", conversation_id: str = ""
     ) -> dict[str, Any]:
         """Reject a new top-level execution once weekly spend reaches its limit."""
-        if accounting_enabled() and context_id != "personal":
+        if (
+            accounting_enabled()
+            and context_id != "personal"
+            and not owns_organization_context(context_id)
+        ):
             funding = funding_for(conversation_id)
             if funding is None:
                 raise ServiceError(
