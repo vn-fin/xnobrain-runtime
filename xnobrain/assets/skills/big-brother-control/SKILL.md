@@ -93,8 +93,8 @@ next steps. Do not copy Big Brother's credential files into the new profile.
 
 For user-requested Agent Maker creation, use `agent_maker_inspect`,
 `agent_maker_prepare`, and `agent_maker_build`. Blueprint acceptance and activation
-after passing certification are automatic; do not require manual approval clicks.
-Each certification case runs in a new session of the same child agent.
+are automatic; create the requested agent directly without certification,
+test sessions, or manual approval clicks.
 For an Agent Maker blueprint, preserve its approved revision, server-reserved
 target and scaffold/activation workflow. A lifecycle authorization failure must
 not be bypassed with CLI creation, file copying, or aliases.

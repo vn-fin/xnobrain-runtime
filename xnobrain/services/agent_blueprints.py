@@ -42,17 +42,16 @@ def _digest(value: Any) -> str:
 _MAKER_REQUEST = (
     "Help me design a specialist agent. Start by interviewing me about its job, "
     "audience, inputs, outputs, boundaries, model and cost limits, tools, work "
-    "context, memory policy, and acceptance tests. Once requirements are complete, "
+    "context, and memory policy. Once requirements are complete, "
     "use agent_maker_prepare and agent_maker_build to automatically accept the "
-    "blueprint, scaffold, certify, and activate if certification passes."
+    "blueprint, scaffold, and activate the agent directly without certification."
 )
 _MAKER_TODOS = (
     "Interview and confirm requirements",
     "Draft the complete agent blueprint",
     "Automatically accept the exact blueprint",
     "Scaffold a paused child profile",
-    "Run child-path certification",
-    "Activate after successful certification",
+    "Activate the requested agent",
     "Report artifacts, evidence, and remaining work",
 )
 
@@ -1235,7 +1234,7 @@ class AgentBlueprintsServiceMixin:
                 code="blueprint_idempotency_conflict",
             )
         expected_revision, expected_digest = self._check_lifecycle_request(current, body)
-        if current.get("status") not in {"scaffolded", "ready_to_activate"}:
+        if current.get("status") not in {"scaffolded", "certification_failed", "ready_to_activate"}:
             raise ServiceError(
                 "a paused scaffold is required before activation",
                 status=409,
@@ -1243,10 +1242,9 @@ class AgentBlueprintsServiceMixin:
             )
         certification = current.get("certification") or {}
         requested_certification = body.get("certification_digest")
-        if (
+        if requested_certification and (
             current.get("status") != "ready_to_activate"
             or not certification.get("valid")
-            or not requested_certification
             or requested_certification != certification.get("certification_digest")
             or certification.get("blueprint_digest") != expected_digest
         ):
@@ -1276,22 +1274,32 @@ class AgentBlueprintsServiceMixin:
         )
         if (
             evidence["drift"]
-            or evidence["profile_digest"] != certification.get("profile_digest")
-            or evidence["config_digest"] != certification.get("config_digest")
+            or (
+                requested_certification
+                and (
+                    evidence["profile_digest"] != certification.get("profile_digest")
+                    or evidence["config_digest"] != certification.get("config_digest")
+                )
+            )
             or cron_enabled
             or mcp_enabled
         ):
-            self._invalidate_certification(
-                owner_profile,
-                blueprint_id,
-                stored,
-                current,
-                "profile_drift_before_activation",
-            )
+            if certification:
+                self._invalidate_certification(
+                    owner_profile,
+                    blueprint_id,
+                    stored,
+                    current,
+                    "profile_drift_before_activation",
+                )
             raise ServiceError(
-                "certified profile changed before activation",
+                "scaffolded profile changed before activation",
                 status=409,
-                code="blueprint_certification_drift",
+                code=(
+                    "blueprint_certification_drift"
+                    if requested_certification
+                    else "blueprint_profile_drift"
+                ),
             )
         metadata_path = profile / "agent.json"
         config = activation_config
@@ -1409,7 +1417,7 @@ class AgentBlueprintsServiceMixin:
                 status=409,
                 code="blueprint_not_active",
             )
-        if body["certification_digest"] != certification.get("certification_digest"):
+        if body.get("certification_digest") != activation.get("certification_digest"):
             raise ServiceError(
                 "rollback certification digest mismatch",
                 status=409,
@@ -1437,7 +1445,7 @@ class AgentBlueprintsServiceMixin:
             "actor": subject,
             "started_at": started_at,
             "completed_at": None,
-            "certification_digest": body["certification_digest"],
+            "certification_digest": body.get("certification_digest"),
             "checkpoint_id": activation["checkpoint_id"],
             "expected_active_profile_digest": observed,
             "restored_profile_digest": checkpoint["profile_digest"],
@@ -1466,13 +1474,17 @@ class AgentBlueprintsServiceMixin:
                 code="blueprint_rollback_failed",
             )
         completed_at = iso()
-        certification = {
-            **certification,
-            "status": "invalidated",
-            "valid": False,
-            "invalidated_at": completed_at,
-            "invalidation_reason": "activation_rolled_back",
-        }
+        certification = (
+            {
+                **certification,
+                "status": "invalidated",
+                "valid": False,
+                "invalidated_at": completed_at,
+                "invalidation_reason": "activation_rolled_back",
+            }
+            if certification
+            else None
+        )
         completed = {
             **in_progress,
             "status": "scaffolded",

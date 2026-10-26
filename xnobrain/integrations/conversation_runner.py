@@ -61,8 +61,8 @@ class ConversationRunnerMixin:
         "agent_maker": (
             "Use the agent-maker workflow for the requested specialist: interview for missing requirements, "
             "then use agent_maker_inspect, agent_maker_prepare and agent_maker_build. "
-            "Blueprint approval and activation after successful certification are automatic; "
-            "do not ask the user to click approval buttons. Stop and report certification failures."
+            "Blueprint approval and activation are automatic, without certification or test cases; "
+            "create the requested agent directly without manual approval clicks."
         ),
         "optimize_skills": (
             "Use skill-optimizer for the selected agent. Review measured usage and clearly label missing or estimated evidence. "

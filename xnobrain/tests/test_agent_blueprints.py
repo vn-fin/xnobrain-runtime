@@ -492,7 +492,7 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(denied.json()["data"]["cancellation"]["decision"], "deny")
         self.assertEqual(denied.json()["data"]["cancellation"]["actor"], "user:reviewer")
 
-    async def test_safe_scaffold_exactly_once_and_uncertified_activation_denied(self):
+    async def test_safe_scaffold_and_direct_activation_exactly_once(self):
         (self.root / ".env").write_text("SECRET=parent\n", encoding="utf-8")
         (self.root / "auth.json").write_text('{"token":"parent"}\n', encoding="utf-8")
         (self.root / "state.db").write_bytes(b"private-history")
@@ -596,21 +596,46 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
                 json=activate_body,
                 headers=self.trusted_headers(),
             )
-        self.assertEqual(activated.status_code, 409, activated.text)
-        self.assertEqual(activated.json()["error"]["code"], "blueprint_certification_required")
-        self.assertEqual(duplicate_activation.status_code, 409)
+        self.assertEqual(activated.status_code, 200, activated.text)
+        self.assertEqual(activated.json()["data"]["status"], "active")
+        self.assertIsNone(activated.json()["data"]["certification"])
+        self.assertEqual(duplicate_activation.status_code, 200)
+        self.assertEqual(duplicate_activation.json()["data"], activated.json()["data"])
         async with self.client() as client:
             persisted = await client.get(
                 f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}?agent=big-brother",
             )
-        self.assertEqual(persisted.json()["data"], scaffold_record)
+        self.assertEqual(persisted.json()["data"], activated.json()["data"])
         metadata = json.loads((profile / "agent.json").read_text(encoding="utf-8"))
         config = yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))
-        self.assertEqual(metadata["status"], "draft")
-        self.assertTrue(metadata["paused"])
-        self.assertTrue(config["xnobrain"]["paused"])
+        self.assertEqual(metadata["status"], "active")
+        self.assertFalse(metadata["paused"])
+        self.assertFalse(config["xnobrain"]["paused"])
         self.assertFalse(config["cron"]["enabled"])
         self.assertFalse(config["mcp"]["enabled"])
+
+        active = activated.json()["data"]
+        async with self.client() as client:
+            rolled_back = await client.post(
+                f"/xnobrain/api/runtime/v1/agent-blueprints/{created['id']}"
+                "/rollback?agent=big-brother",
+                json={
+                    "expected_revision": active["revision"],
+                    "canonical_digest": active["canonical_digest"],
+                    "expected_active_profile_digest": active["activation"]["active_profile_digest"],
+                    "idempotency_key": "rollback-without-certification",
+                    "decision": "rollback",
+                    "reason": "Return to draft",
+                },
+                headers=self.trusted_headers(),
+            )
+        self.assertEqual(rolled_back.status_code, 200, rolled_back.text)
+        restored = rolled_back.json()["data"]
+        self.assertEqual(restored["status"], "scaffolded")
+        self.assertIsNone(restored["certification"])
+        self.assertIsNone(restored["rollback"]["certification_digest"])
+        config = yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))
+        self.assertTrue(config["xnobrain"]["paused"])
 
     async def test_scaffold_revision_digest_and_target_conflicts(self):
         created = (await self.create(blueprint=self.spec())).json()["data"]
@@ -733,7 +758,7 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resumed.json()["data"], first.json()["data"])
         launch = first.json()["data"]
         self.assertEqual(launch["kind"], "agent_maker")
-        self.assertEqual(len(launch["todos"]), 7)
+        self.assertEqual(len(launch["todos"]), 6)
         self.assertTrue(all(todo["status"] == "pending" for todo in launch["todos"]))
         self.assertEqual(
             self.service.agents.get_conversation("big-brother", launch["session_id"])["messages"],
@@ -787,10 +812,10 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
             "decision": "activate",
         }
         async with self.client() as client:
-            missing_digest = await client.post(
+            wrong_digest = await client.post(
                 f"/xnobrain/api/runtime/v1/agent-blueprints/{record['id']}"
                 "/activate?agent=big-brother",
-                json={**activate_body, "certification_digest": None},
+                json={**activate_body, "certification_digest": "sha256:" + "0" * 64},
                 headers=self.trusted_headers(),
             )
             activated = await client.post(
@@ -799,7 +824,7 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
                 json=activate_body,
                 headers=self.trusted_headers("user:activator"),
             )
-        self.assertEqual(missing_digest.status_code, 409, missing_digest.text)
+        self.assertEqual(wrong_digest.status_code, 409, wrong_digest.text)
         self.assertEqual(activated.status_code, 200, activated.text)
         active = activated.json()["data"]
         self.assertEqual(active["status"], "active")

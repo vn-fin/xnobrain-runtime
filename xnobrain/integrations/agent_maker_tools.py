@@ -80,12 +80,12 @@ def register_tools():
             ),
             (
                 "agent_maker_prepare",
-                "Save a complete specialist blueprint for a user-requested agent. Identity and destination are supplied by the platform. Returns the exact revision and digest for agent_maker_build. Does not execute the child.",
+                "Save a complete specialist blueprint for a user-requested agent. To edit, provide blueprint_id; expected_revision is optional, so no revision inspection is needed before an update. Identity and destination are supplied by the platform. Returns the exact revision and digest for agent_maker_build. Does not execute the child.",
                 MakerPrepare,
             ),
             (
                 "agent_maker_build",
-                "Create the user-requested agent: automatically accept the exact blueprint, scaffold, certify with synthetic job/refusal/tool/context cases, then activate only if all pass. No manual approval click is needed. Reuse the same key for a network retry; use a new key only when the user requests another failed certification attempt. Stop and report failed cases. Never use CLI profile creation as a substitute.",
+                "Create and activate the user-requested agent directly: automatically accept the blueprint, scaffold the profile, and activate it without certification or test cases. Provide blueprint_id and idempotency_key; revision and digest are optional preconditions. No manual approval click is needed. Reuse the same key for a network retry. Never use CLI profile creation as a substitute.",
                 MakerBuild,
             ),
         ):

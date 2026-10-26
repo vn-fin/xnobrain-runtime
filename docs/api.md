@@ -406,9 +406,14 @@ operation `decision` (`scaffold`, `activate`, or `cancel`):
   the existing paused profile is reused, and prior evidence is retained in
   `certification_history`. Replays of any retained attempt do not execute it again.
   Revision/digest, permissions, and scaffold drift checks also apply to retries.
-- `POST /{blueprint_id}/activate` requires a valid child-path certification digest
-  bound to the exact blueprint and unchanged profile. Without it the child stays
-  paused. Cron and MCP remain disabled after activation.
+- `POST /{blueprint_id}/activate` activates a scaffold directly without certification.
+  Existing `certification_failed` and `ready_to_activate` records can also activate.
+  If a caller explicitly supplies `certification_digest`, it must match valid
+  evidence for the exact blueprint and profile. Scaffold integrity checks still
+  apply, and cron and MCP remain disabled after activation.
+- `POST /{blueprint_id}/rollback` restores the activation checkpoint. Its
+  `certification_digest` is optional for direct activations and must match the
+  activation's binding when one was supplied. No certification record is fabricated.
 - `POST /{blueprint_id}/cancel` prevents future blueprint steps and retains any
   paused draft profile for explicit cleanup. It never deletes files implicitly; an
   active profile must use the separate profile lifecycle.
@@ -425,6 +430,14 @@ The model cannot supply a user, tenant, destination path, or work context. Tools
 are not installed in delegated children, certification sessions, or scoped page
 actions. Each call rechecks that the originating run is active and uncancelled.
 
+`agent_maker_prepare` edits an existing blueprint when `blueprint_id` is supplied.
+`expected_revision` is optional: omitting it (or passing `null`) updates the current
+stored revision atomically, without requiring a preliminary inspection call.
+Supplying a revision retains the existing conflict check. Identical retries return
+the saved record without incrementing its revision again. The complete `intent`,
+`blueprint`, and `idempotency_key` remain required. Context checks, editable lifecycle
+states, model validation, and the HTTP PATCH revision contract still apply.
+
 `agent_maker_inspect` without `blueprint_id` also returns `model_catalog` from the
 scoped Router model catalog. `model_slot.alias` accepts full model IDs, including
 provider prefixes and `/`, and is written unchanged into the child configuration.
@@ -434,15 +447,23 @@ returns `agent_maker_model_catalog_unavailable`, without guessing a default or
 rewriting an approved model. Completed active builds can still be replayed without
 a catalog lookup. Draft HTTP blueprint editing remains available offline.
 
-For a user-requested agent, `agent_maker_build` automatically approves the exact
-blueprint, scaffolds one paused profile, certifies it, and activates only after
-success. Approval records use `mode: "auto"` and retain the verified actor and
-digest; HTTP approvals and older records use `mode: "manual"`. Automatic
-certification defaults to USD 0.10 and accepts at most USD 1 per attempt. Failure
-returns the paused result; another attempt needs a new key. Cancelling the chat
-cancels outstanding certification and prevents activation. Opening Settings or
-launching the editable session alone starts no model execution. Explicit HTTP
-lifecycle endpoints remain available for the review UI.
+For a user-requested agent, `agent_maker_build` automatically approves the blueprint,
+scaffolds one profile, and activates it directly. Only `blueprint_id` and
+`idempotency_key` are required; omitted revision/digest preconditions resolve to the
+current stored blueprint. Explicit preconditions still reject stale requests.
+The tool creates no certification sessions and makes no certification model calls.
+`acceptance` is optional in a blueprint and defaults to an empty list.
+
+Legacy build requests using `decision: "certify"`, `cases`, `max_cost_usd`,
+`timeout_seconds`, or `max_turns_per_case` remain accepted, but those certification
+options are ignored. New tool schemas omit them and default to `decision: "build"`.
+Existing failed certifications do not block direct activation; their evidence is
+retained and is never represented as passed. Approval records still use
+`mode: "auto"` and retain the verified actor and digest; HTTP approvals and older records
+use `mode: "manual"`. Stop and context revocation still prevent subsequent mutation.
+Opening Settings or launching the editable session alone starts no model execution.
+Explicit HTTP certification remains available for callers who request evaluation,
+but is not part of the creation workflow.
 
 ## Skill lifecycle usage
 

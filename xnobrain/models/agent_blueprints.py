@@ -133,7 +133,7 @@ class AgentBlueprintSpec(BaseModel):
     tools: BlueprintTools
     automation: BlueprintAutomation = Field(default_factory=BlueprintAutomation)
     budget: BlueprintBudget = Field(default_factory=BlueprintBudget)
-    acceptance: list[str] = Field(min_length=1, max_length=64)
+    acceptance: list[str] = Field(default_factory=list, max_length=64)
 
     @field_validator("skills")
     @classmethod
@@ -291,7 +291,7 @@ class AgentBlueprintRollbackCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     canonical_digest: str = Field(pattern=_SHA256)
-    certification_digest: str = Field(pattern=_SHA256)
+    certification_digest: str | None = Field(default=None, pattern=_SHA256)
     expected_active_profile_digest: str = Field(pattern=_SHA256)
     idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
     decision: Literal["rollback"]
@@ -368,7 +368,7 @@ class BlueprintCertification(BlueprintLifecycleOperation):
 
 
 class BlueprintRollback(BlueprintLifecycleOperation):
-    certification_digest: str = Field(pattern=_SHA256)
+    certification_digest: str | None = Field(default=None, pattern=_SHA256)
     checkpoint_id: str = Field(pattern=_SAFE_REFERENCE)
     expected_active_profile_digest: str = Field(pattern=_SHA256)
     restored_profile_digest: str = Field(pattern=_SHA256)
