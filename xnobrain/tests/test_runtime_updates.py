@@ -26,6 +26,8 @@ from xnobrain.handlers.operations.runtime_updates import operations
 from xnobrain.models.runtime_updates import ReleaseSelector, RuntimeUpdatePreflight
 from xnobrain.repositories.base import RepositoryBase
 from xnobrain.services.base import ServiceError
+from xnobrain.services.portability import PortabilityService
+from xnobrain.services.runtime_update_startup import finish_startup
 from xnobrain.services.runtime_updates import RuntimeUpdateService
 
 TARGET = {
@@ -112,6 +114,49 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def call(self, method, body):
         return await getattr(self.service, method)(body, update_token="update-service-token")
+
+    async def test_restart_preserves_expired_transfers_until_verified_resume(self):
+        portability = PortabilityService(self.platform.repository, self.big_brother)
+        expired = []
+        for root in (portability.upload_root, portability.export_root):
+            directory = root / "expired"
+            directory.mkdir()
+            (directory / "bundle.zip").write_bytes(b"archive fixture")
+            (directory / "metadata.json").write_text("{}")
+            os.utime(directory, (1, 1))
+            expired.append(directory)
+        fresh = portability.upload_root / "fresh"
+        fresh.mkdir()
+        (fresh / "bundle.zip").write_bytes(b"fresh archive")
+        await self.call("drain", request(deadline_seconds=0))
+        checkpoint = await self.call("checkpoint", request())
+
+        # Reconstruct the same service as Runtime does after process replacement.
+        self.platform.portability = PortabilityService(self.platform.repository, self.big_brother)
+        self.platform.runtime_updates = RuntimeUpdateService(self.platform)
+        self.platform.config.ensure_write_approval_defaults = Mock()
+        self.platform._ensure_existing_write_approval_defaults = Mock()
+        self.platform.ensure_default_agent = AsyncMock()
+        startup = asyncio.create_task(finish_startup(self.platform, deferred=True))
+        try:
+            await asyncio.sleep(0)
+            self.assertFalse(startup.done())
+            for directory in expired:
+                self.assertTrue((directory / "bundle.zip").is_file())
+                self.assertTrue((directory / "metadata.json").is_file())
+            self.service = self.platform.runtime_updates
+            verified = await self.call(
+                "post_verify", request(checkpoint_id=checkpoint["checkpoint_id"])
+            )
+            self.assertTrue(verified["verified"])
+            self.assertEqual(verified["data_verification"]["changes"]["removed"], 0)
+            await self.call("resume", request())
+            await asyncio.wait_for(startup, timeout=2)
+            self.assertTrue(all(not directory.exists() for directory in expired))
+            self.assertTrue((fresh / "bundle.zip").is_file())
+        finally:
+            startup.cancel()
+            await asyncio.gather(startup, return_exceptions=True)
 
     async def test_checkpoint_receipt_preserves_full_evidence_and_replay(self):
         # Enough file evidence to exceed the old gateway's 256 KiB limit.

@@ -1891,7 +1891,21 @@ class PortabilityService:
             path.unlink(missing_ok=True)
 
     def _cleanup_transfers(self) -> None:
-        with self.task_store.publication_lock():
+        from ..repositories.runtime_update_gate import WorkspaceActivity
+
+        try:
+            activity = WorkspaceActivity(self.repository.data_dir)
+        except StoreError as error:
+            if error.code not in {
+                "runtime_update_maintenance",
+                "workspace_rebalance_maintenance",
+                "workspace_memory_maintenance",
+            }:
+                raise
+            # Startup during an update must preserve the checkpoint's transfer
+            # files. finish_startup retries cleanup after verified release.
+            return
+        with activity, self.task_store.publication_lock():
             self._cleanup_unpinned_transfers()
 
     def _cleanup_unpinned_transfers(self) -> None:

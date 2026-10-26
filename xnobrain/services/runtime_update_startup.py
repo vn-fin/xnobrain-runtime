@@ -29,6 +29,7 @@ async def finish_startup(platform, *, deferred: bool = False) -> None:
             continue
         with activity:
             if deferred:
+                platform.portability._cleanup_transfers()
                 platform.config.ensure_write_approval_defaults()
                 platform._ensure_existing_write_approval_defaults()
             await platform.ensure_default_agent()

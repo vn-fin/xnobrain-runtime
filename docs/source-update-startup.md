@@ -101,6 +101,10 @@ target's writer before the source swap.
 
 During maintenance, managed default-profile repairs, approval defaults and
 bundled skill installation wait until verified resume/abort releases admission.
+Expired portability uploads and exports also remain intact during maintenance:
+constructor cleanup uses workspace admission and activity fencing, then deferred
+startup retries it after verified release. Transfer expiry and import pins still
+apply after release; transfer files remain part of the integrity manifest.
 Repairs acquire the workspace activity gate so the next checkpoint cannot race
 them. Deferred startup errors log an exception type without private content.
 The deferred startup task is cancelled on shutdown; it never changes checkpoint

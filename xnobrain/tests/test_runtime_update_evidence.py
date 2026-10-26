@@ -351,6 +351,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         platform = SimpleNamespace(
             repository=SimpleNamespace(data_dir=Path(temporary.name)),
             runtime_updates=SimpleNamespace(dispatch_paused=True),
+            portability=SimpleNamespace(_cleanup_transfers=Mock()),
             config=SimpleNamespace(ensure_write_approval_defaults=Mock()),
             _ensure_existing_write_approval_defaults=Mock(),
             ensure_default_agent=AsyncMock(),
@@ -359,10 +360,12 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.01)
         platform.ensure_default_agent.assert_not_awaited()
         platform.config.ensure_write_approval_defaults.assert_not_called()
+        platform.portability._cleanup_transfers.assert_not_called()
         platform.runtime_updates.dispatch_paused = False
         await asyncio.wait_for(task, timeout=1)
         platform.ensure_default_agent.assert_awaited_once()
         platform.config.ensure_write_approval_defaults.assert_called_once()
+        platform.portability._cleanup_transfers.assert_called_once()
         platform.runtime_updates.dispatch_paused = True
         task = asyncio.create_task(finish_startup(platform, deferred=True))
         await asyncio.sleep(0)
