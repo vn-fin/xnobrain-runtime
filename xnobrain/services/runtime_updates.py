@@ -29,6 +29,7 @@ from ..repositories.runtime_update_gate import (
 )
 from ..repositories.runtime_updates import RuntimeUpdateRepository
 from .base import ServiceError, iso
+from .runtime_update_recovery import accepted_paths
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -391,7 +392,9 @@ class RuntimeUpdateService:
                 self._validate_checkpoint(request, checkpoint)
                 try:
                     verification = await self._durable_io(
-                        self.storage.verify, checkpoint["manifest"]
+                        self.storage.verify,
+                        checkpoint["manifest"],
+                        accepted_paths(self.repository, checkpoint),
                     )
                 except RuntimeUpdateStorageError as error:
                     self._storage_error(error)
@@ -416,6 +419,11 @@ class RuntimeUpdateService:
                     "installed_identity_matches": identity_matches,
                     "manifest_digest": verification["manifest_digest"],
                     "data_verification": verification,
+                    **(
+                        {"data_loss_accepted": True}
+                        if verification.get("accepted_removed", 0)
+                        else {}
+                    ),
                     "installed": installed,
                     "verified_at": iso(),
                 }

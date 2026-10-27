@@ -200,3 +200,75 @@ HEAD and one dry-run assertion depends on local environment configuration.
 These failures were not changed or hidden. No remote deployment or VM acceptance
 test was performed for this source change, and the real shutdown timeout remains
 unreproduced.
+
+## Operator acceptance of legacy expired upload loss
+
+Older Runtime startup could expire temporary transfers while maintenance was
+active. For an already failed checkpoint, restoring the exact missing files
+from a trusted backup remains preferable. When no copy exists, an operator can
+explicitly accept the loss of expired, unused upload bundles. This is acceptance
+of lost temporary data, **not restoration**. Legacy manifests contain hashes,
+not deleted metadata; expiry and lack of use are operator attestations, not
+facts inferred from a checksum.
+
+The node-local command `python -m xnobrain.integrations.runtime_transfer_recovery`
+has no HTTP route. Pause automatic rollout actions, stop `xnobrain-api.service`,
+and run it with the Runtime Python environment as the OS account owning its data
+directory. Preserve a protected copy of the existing journal/checkpoint first.
+Both this helper and the Runtime verifier handling the subsequent post-verify
+must contain this implementation. A helper receipt alone cannot change the
+behavior of an older installed verifier. Never falsify an installed source
+identity to make recovery pass.
+
+Prepare a JSON array containing **every exact missing manifest path**, for
+example the two paths below for each affected upload ID:
+
+```json
+[
+  "data/transfers/uploads/1c5a78cdd660402ea4dd3cc6fde754a4/bundle.zip",
+  "data/transfers/uploads/1c5a78cdd660402ea4dd3cc6fde754a4/metadata.json"
+]
+```
+
+Use the existing operation journal's `generation` (maintenance fence, not the
+Control deployment generation), `steps.checkpoint.checkpoint_id` and
+`steps.checkpoint.manifest.digest`. Supply the actual existing durable roots
+from this workspace's service configuration; the example placeholders below
+must be replaced before execution:
+
+```sh
+python -m xnobrain.integrations.runtime_transfer_recovery \
+  --data-dir /actual/data/directory \
+  --profiles-root /actual/profiles/directory \
+  --root-profile /actual/big-brother/directory \
+  --operation-id upd_EXISTING \
+  --generation EXISTING_FENCE \
+  --checkpoint-id ckp_EXISTING \
+  --manifest-digest EXISTING_MANIFEST_DIGEST \
+  --paths-file /protected/missing-transfers.json \
+  --reason 'INCIDENT reference: reviewed these expired unused uploads' \
+  --attest-expired-unused
+```
+
+The command acquires the existing operation/activity locks, requires the active
+paused operation and immutable checkpoint to match, and refuses missing,
+symlinked, or unreadable portability pin databases. It opens that database
+read-only without migrations. Only complete `bundle.zip`/`metadata.json` pairs
+under 32-character lowercase hexadecimal upload IDs are eligible; pinned
+uploads, symlink entries, unsupported v1 manifests, duplicate paths, partial
+lists, unrelated additions/deletions/modifications, or changed fences fail
+closed. All verification retains the original manifest version's semantics.
+
+Acceptance is stored in `steps.expired_transfer_acceptance` with the checkpoint,
+manifest digest, target, fence, exact paths, OS UID, timestamp and audit reason.
+Repeating the identical approval is idempotent; it cannot widen or replace an
+existing acceptance. It does not delete files, rewrite the checkpoint, change
+Control rollout state, resume dispatch, or mark post-verification successful.
+
+Restart the service and use the existing Control operator retry for the same
+operation. Post-verify still checks installed identity and all other durable
+data. Its existing `data_preserved`/`verified` gates reflect passing the explicit
+verification policy; actual loss remains visible as `data_loss_accepted=true`,
+`data_verification.accepted_removed`, and the unchanged `changes.removed` count.
+A restored file must still match its original entry. Any additional loss fails.
+Normal resume remains mandatory; source restoration verification stays strict.

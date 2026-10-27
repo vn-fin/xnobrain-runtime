@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import stat as file_stat
 from collections.abc import Iterable
@@ -331,9 +332,16 @@ class RuntimeUpdateStorage:
             result["version"] = version
         return result
 
-    def verify(self, baseline: dict[str, Any]) -> dict[str, Any]:
-        """Verify against the immutable baseline; expose counts, never paths/content."""
+    def verify(
+        self, baseline: dict[str, Any], accepted_missing: tuple[str, ...] = ()
+    ) -> dict[str, Any]:
+        """Verify the baseline under explicit acceptance; retain actual loss counts.
+
+        ``preserved`` means the verification policy passes, including an operator
+        exception when present. ``accepted_removed`` records that exception.
+        """
         version = baseline.get("version", 1)
+        accepted = self.validate_transfer_acceptance(baseline, accepted_missing)
         current = self.manifest(version=version)
         if version == 1:
             return {
@@ -350,6 +358,7 @@ class RuntimeUpdateStorage:
             "log_appends": 0,
             "sqlite_equivalent": 0,
         }
+        accepted_removed = len((before.keys() - after.keys()) & accepted)
         for name in before.keys() & after.keys():
             old, new = before[name], after[name]
             if old == new:
@@ -373,11 +382,39 @@ class RuntimeUpdateStorage:
                     continue
             counts["changed"] += 1
         return {
-            "preserved": not any(counts[key] for key in ("added", "removed", "changed")),
+            "preserved": (
+                counts["added"] == counts["changed"] == 0 and counts["removed"] == accepted_removed
+            ),
             "manifest_digest": current["digest"],
             "manifest_version": version,
             "changes": counts,
+            **({"accepted_removed": accepted_removed} if accepted else {}),
         }
+
+    @staticmethod
+    def validate_transfer_acceptance(baseline, paths) -> set[str]:
+        """Only complete, exact pairs of temporary upload files can be accepted."""
+        accepted = set(paths)
+        if not paths:
+            return accepted
+        entries = {entry["path"]: entry for entry in baseline["entries"]}
+        valid = baseline.get("version", 1) in {2, 3} and len(accepted) == len(paths)
+        for name in accepted:
+            match = re.fullmatch(
+                r"data/transfers/uploads/([0-9a-f]{32})/(bundle\.zip|metadata\.json)", name
+            )
+            entry = entries.get(name, {})
+            valid = valid and bool(match) and bool(entry) and entry.get("kind") is None
+            if match:
+                prefix = f"data/transfers/uploads/{match[1]}/"
+                valid = valid and all(
+                    prefix + filename in accepted for filename in ("bundle.zip", "metadata.json")
+                )
+        if not valid:
+            raise RuntimeUpdateStorageError(
+                "Invalid expired transfer acceptance", code="runtime_update_acceptance_invalid"
+            )
+        return accepted
 
     def _log_path(self, name: str) -> Path | None:
         # Only Runtime's existing profile logs; user workspace *.log files are
