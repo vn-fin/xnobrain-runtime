@@ -1,6 +1,5 @@
 """Automatic Agent Maker lifecycle scoped to a verified, active chat run."""
 
-import asyncio
 import hashlib
 import json
 from dataclasses import replace
@@ -86,6 +85,7 @@ class AgentMakerService:
             records = self.platform.list_agent_blueprints(agent)["blueprints"]
             return {
                 "auto_accept": True,
+                "certification_required": False,
                 "model_catalog": catalog,
                 "prepare_schema": MakerPrepare.model_json_schema(),
                 "build_schema": MakerBuild.model_json_schema(),
@@ -117,17 +117,28 @@ class AgentMakerService:
             await self._require_catalog_model(body.blueprint.model_slot.alias)
             verified = guard()
             if body.blueprint_id:
-                current = self._record(agent, body.blueprint_id, verified)
-                # A lost response to an identical edit must not increment the revision again.
-                if current["revision"] == body.expected_revision + 1 and all(
-                    current[key] == data[key] for key in ("intent", "blueprint")
-                ):
-                    return current
-                return self.platform.patch_agent_blueprint(
-                    agent,
-                    body.blueprint_id,
-                    {key: data[key] for key in ("intent", "blueprint", "expected_revision")},
-                )
+                with self.repository._lock:
+                    current = self._record(agent, body.blueprint_id, verified)
+                    # Replays must not advance an already saved edit again.
+                    if (
+                        body.expected_revision is None
+                        or current["revision"] == body.expected_revision + 1
+                    ) and all(current[key] == data[key] for key in ("intent", "blueprint")):
+                        return current
+                    expected_revision = (
+                        current["revision"]
+                        if body.expected_revision is None
+                        else body.expected_revision
+                    )
+                    return self.platform.patch_agent_blueprint(
+                        agent,
+                        body.blueprint_id,
+                        {
+                            "intent": body.intent,
+                            "blueprint": data["blueprint"],
+                            "expected_revision": expected_revision,
+                        },
+                    )
             material = [agent, session, trusted.subject, trusted.tenant_id, body.idempotency_key]
             identifier = "abp_" + hashlib.sha256(json.dumps(material).encode()).hexdigest()[:32]
             with self.repository._lock:
@@ -159,6 +170,10 @@ class AgentMakerService:
         body = MakerBuild.model_validate(args)
         data = body.model_dump(mode="json", exclude={"blueprint_id"})
         current = self._record(agent, body.blueprint_id, verified)
+        if body.expected_revision is None:
+            data["expected_revision"] = current["revision"]
+        if body.canonical_digest is None:
+            data["canonical_digest"] = current["canonical_digest"]
         self.platform._check_lifecycle_request(current, data)
         if current["status"] in {
             "blueprint_ready",
@@ -182,9 +197,9 @@ class AgentMakerService:
                 approval_mode="auto",
             )
         scaffold_request = {
-            "expected_revision": body.expected_revision,
-            "canonical_digest": body.canonical_digest,
-            "idempotency_key": f"auto-scaffold:{current['id']}:{body.expected_revision}",
+            "expected_revision": data["expected_revision"],
+            "canonical_digest": data["canonical_digest"],
+            "idempotency_key": f"auto-scaffold:{current['id']}:{data['expected_revision']}",
             "decision": "scaffold",
         }
         guard()
@@ -192,30 +207,15 @@ class AgentMakerService:
             current = self.platform.scaffold_agent_blueprint(
                 agent, current["id"], scaffold_request, verified.subject
             )
-        if current["status"] in {"scaffolded", "certification_failed", "certifying"}:
-            # Recheck revocation/Stop while child certification is awaiting inference.
-            task = asyncio.create_task(
-                self.platform.certify_agent_blueprint(agent, current["id"], data, verified)
-            )
-            try:
-                while not task.done():
-                    await asyncio.wait({task}, timeout=0.25)
-                    guard()
-                current = await task
-            finally:
-                if not task.done():
-                    task.cancel()
-                    await asyncio.gather(task, return_exceptions=True)
         guard()
-        if current["status"] == "ready_to_activate":
+        if current["status"] in {"scaffolded", "certification_failed", "ready_to_activate"}:
             current = self.platform.activate_agent_blueprint(
                 agent,
                 current["id"],
                 {
                     **scaffold_request,
                     "decision": "activate",
-                    "idempotency_key": f"auto-activate:{current['id']}:{body.expected_revision}",
-                    "certification_digest": current["certification"]["certification_digest"],
+                    "idempotency_key": f"auto-activate:{current['id']}:{data['expected_revision']}",
                 },
                 verified.subject,
             )

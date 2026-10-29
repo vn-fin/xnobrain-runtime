@@ -119,9 +119,9 @@ class HermesCommandsMixin:
             env[LLM_ROUTER_KEY_ENV] = accounting["binding"]["user_key"]
             env["RUNTIME_LLM_API_KEY_FILE"] = ""
             env["RUNTIME_EXECUTION_AGENT_ID"] = accounting["binding"]["agent_id"]
-            env["RUNTIME_EXECUTION_RUN_ID"] = accounting["headers"].get("X-GoRouter-Run-Id", "")
+            env["RUNTIME_EXECUTION_RUN_ID"] = accounting["headers"].get("X-XNORouter-Run-Id", "")
             env["RUNTIME_EXECUTION_PARENT_RUN_ID"] = accounting["headers"].get(
-                "X-GoRouter-Parent-Run-Id", ""
+                "X-XNORouter-Parent-Run-Id", ""
             )
         # Subprocess cwd is a profile workspace, not the application source root.
         env["PYTHONPATH"] = os.pathsep.join(

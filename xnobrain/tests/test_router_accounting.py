@@ -1,4 +1,4 @@
-"""Strict consumer gates for gorouter-user-usage-v1 fixtures."""
+"""Strict consumer gates for xnorouter-user-usage-v1 fixtures."""
 
 import copy
 import unittest
@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from xnobrain.integrations.router_accounting import AccountingUnavailable, weekly_budget_decision
 
 FIXTURE = {
-    "capability_version": "gorouter-user-usage-v1",
+    "capability_version": "xnorouter-user-usage-v1",
     "application": "xnobrain",
     "environment": "test",
     "workspace_id": "workspace_test",

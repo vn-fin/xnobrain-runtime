@@ -694,7 +694,7 @@ class CronService:
             return self._active_executions
 
     def fire_due(self, profile: str, job_id: str) -> bool:
-        require_admission(self.repository.data_dir)
+        require_admission(self.repository.data_dir, allow_lineage=False)
         from ..integrations.run_admission import managed
 
         if not managed():
@@ -711,14 +711,17 @@ class CronService:
         with native_root(self.repository.data_dir, key, "cron") as admitted:
             return self._fire_due(profile, job_id) if admitted else False
 
-    @workspace_activity(lambda self: self.repository.data_dir)
+    @workspace_activity(lambda self: self.repository.data_dir, independent=True)
     def _fire_due(self, profile: str, job_id: str) -> bool:
         """Claim and execute one due job using its profile-scoped Hermes home."""
         if not self.dispatch_allowed():
             return False
         from cron import jobs as cron_jobs
         from cron.scheduler_provider import resolve_cron_scheduler
-        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+        from hermes_constants import (
+            reset_hermes_home_override,
+            set_hermes_home_override,
+        )
 
         from ..integrations.cron_timezone import install_timezone_computation
 
@@ -1009,7 +1012,10 @@ class CronService:
     def _native_module(self, profile: str, module: str, function: str, *args, **kwargs):
         from importlib import import_module
 
-        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+        from hermes_constants import (
+            reset_hermes_home_override,
+            set_hermes_home_override,
+        )
 
         home = self._profile_home(profile)
         token = set_hermes_home_override(str(home))

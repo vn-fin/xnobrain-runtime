@@ -18,8 +18,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..integrations import AgentAPIError
 from ..integrations import kanban as kb_adapter
+from ..integrations import kanban_delegation as delegated_tasks
 from ..integrations.kanban import KanbanUnavailable
 from ..repositories import StoreError
+from ..task_skills import task_skill_ids
 from .base import ServiceError
 from .constants import DEFAULT_TEAM_COORDINATOR_PROMPT
 
@@ -156,19 +158,19 @@ class KanbanService:
         except (AgentAPIError, StoreError):
             return []
         return sorted(
-            {
-                str(item.get("skill_id") or "").strip()
-                for item in skills
-                if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
-            }
+            task_skill_ids(
+                {
+                    str(item.get("skill_id") or "").strip()
+                    for item in skills
+                    if item.get("enabled", True) and str(item.get("skill_id") or "").strip()
+                }
+            )
         )
 
     def _validate_agent_skills(self, agent_id: Any, requested: Any) -> list[str] | None:
         if requested is None:
             return None
-        selected = list(
-            dict.fromkeys(str(item or "").strip() for item in requested if str(item or "").strip())
-        )
+        selected = task_skill_ids(requested)
         if not selected:
             return []
         assignee = str(agent_id or "").strip()
@@ -380,7 +382,15 @@ class KanbanService:
     @staticmethod
     def _public_board(item: Mapping[str, Any]) -> dict[str, Any]:
         """Return board metadata without exposing Hermes' local DB path."""
-        return {key: value for key, value in item.items() if key != "db_path"}
+        result = {key: value for key, value in item.items() if key != "db_path"}
+        metadata = {key: result.get(key, "") for key in ("slug", "name", "description", "color")}
+        result["revision"] = (
+            "sha256:"
+            + hashlib.sha256(
+                json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+        )
+        return result
 
     @staticmethod
     def _safe_event_payload(payload: Any) -> Any:
@@ -476,7 +486,7 @@ class KanbanService:
             "priority": INT_TO_PRIORITY.get(int(getattr(task, "priority", 0) or 0), "medium"),
             "assignee": getattr(task, "assignee", None),
             "assignees": [task.assignee] if getattr(task, "assignee", None) else [],
-            "skills": list(getattr(task, "skills", None) or []),
+            "skills": task_skill_ids(getattr(task, "skills", None)),
             "parents": parent_rows,
             "children": children,
             "tags": [],
@@ -560,6 +570,39 @@ class KanbanService:
             result["worker_activity"] = None
             result["conversation"] = None
         result["team"] = None
+        delegation = delegated_tasks.binding(conn, str(task.id))
+        if delegation is not None:
+            result["team_id"] = delegation["team_id"]
+            result["delegated_execution"] = {
+                "id": delegation["execution_id"],
+                "state": delegation["status"],
+                "error": delegation["error"],
+                "cancel_requested": bool(delegation["cancel_requested"]),
+            }
+            if not delegation["creation_complete"]:
+                result["allowed_kanban_statuses"] = []
+                result["state_detail"] = {
+                    "kind": "pending",
+                    "label": "Preparing task",
+                    "reason": delegation["error"],
+                }
+            elif raw_status == "ready":
+                result["allowed_kanban_statuses"] = []
+                result["state_detail"] = {
+                    "kind": "cancelling"
+                    if delegation["cancel_requested"]
+                    else "execution_unavailable"
+                    if delegation["error"]
+                    else delegation["status"],
+                    "label": "Team execution",
+                    "reason": delegation["error"],
+                }
+            elif raw_status == "done":
+                result["state_detail"] = {
+                    "kind": delegation["status"],
+                    "label": delegation["status"].title(),
+                    "reason": None,
+                }
         if team_metadata is not None:
             team = self._team_projection(conn, team_metadata, cancelled=team_cancelled)
             if raw_status == "archived":
@@ -864,7 +907,18 @@ class KanbanService:
         team_id = str(body.get("team_id") or "").strip()
         if team_id and body.get("assignee"):
             raise ServiceError("choose either an agent or a team", code="invalid_request")
-        if team_id and status == "scheduled":
+        external_team = None
+        if team_id and self.repository is not None:
+            try:
+                saved_team = self.repository.get_team(team_id)
+            except StoreError as exc:
+                raise ServiceError(str(exc), status=exc.status) from exc
+            if any(
+                member.get("external_agent") and member.get("enabled", True)
+                for member in saved_team.get("members", [])
+            ):
+                external_team = saved_team
+        if team_id and status == "scheduled" and external_team is None:
             raise ServiceError(
                 "Scheduled tasks must use one agent",
                 code="invalid_schedule",
@@ -884,6 +938,16 @@ class KanbanService:
             raise ServiceError(str(exc), code="invalid_workspace") from exc
         with kb_adapter.connection(normalized) as conn:
             if team_id:
+                if external_team is not None:
+                    return self._create_delegated_team_task(
+                        conn,
+                        normalized,
+                        team_id,
+                        external_team,
+                        body,
+                        created_by=created_by,
+                        schedule_values=schedule_values,
+                    )
                 return self._create_team_task(
                     conn,
                     normalized,
@@ -956,6 +1020,99 @@ class KanbanService:
                 )
                 task = kb.get_task(conn, task_id)
             return self._task_dto(conn, task, board=normalized)
+
+    def _create_delegated_team_task(
+        self,
+        conn,
+        board,
+        team_id,
+        team,
+        body,
+        *,
+        created_by,
+        schedule_values,
+    ):
+        from ..feature_flags import FEATURE_PERSONAL_ORG_WORKSPACE_EXPERIENCE, enabled
+        from .personal_resource_definitions import team_definition
+
+        if not enabled(FEATURE_PERSONAL_ORG_WORKSPACE_EXPERIENCE):
+            raise ServiceError("Delegated team tasks are unavailable", status=503)
+        snapshot = team_definition(team_id, team)
+        kb = self._ready()
+        source_key = body.get("idempotency_key")
+        binding_key = (
+            "delegated-" + hashlib.sha256(str(source_key).encode()).hexdigest()
+            if source_key
+            else None
+        )
+        # Persist the non-dispatchable task and its creation intent together.
+        # Native helpers with post-commit effects run after this transaction.
+        delegated_tasks.ensure_schema(conn)
+        try:
+            with kb.write_txn(conn):
+                task_id = kb_adapter.create_task(
+                    conn,
+                    title=str(body["title"]).strip(),
+                    body=str(body["description"]).strip(),
+                    assignee=None,
+                    created_by=created_by,
+                    priority=PRIORITY_TO_INT.get(str(body.get("priority") or "medium"), 1),
+                    parents=body.get("parents") or (),
+                    triage=True,
+                    idempotency_key=binding_key,
+                    board=board,
+                )
+                delegated_tasks.bind(
+                    conn,
+                    task_id,
+                    team_id,
+                    snapshot["source_revision"],
+                    creation_intent={
+                        "status": body.get("status", "todo"),
+                        "schedule": schedule_values,
+                        "created_by": created_by,
+                    },
+                )
+        except ValueError as exc:
+            raise ServiceError(str(exc), status=409) from exc
+        self._finish_delegated_task_creation(conn, task_id)
+        return self._task_dto(conn, kb.get_task(conn, task_id), board=board)
+
+    def resume_delegated_task_creation(self, board: str, task_id: str) -> None:
+        with kb_adapter.connection(board) as conn:
+            self._finish_delegated_task_creation(conn, task_id)
+
+    def _finish_delegated_task_creation(self, conn, task_id):
+        current = delegated_tasks.binding(conn, task_id)
+        if current is None or current["creation_complete"]:
+            return
+        intent = json.loads(current["creation_intent"])
+        kb = self._ready()
+        task = kb.get_task(conn, task_id)
+        if intent["status"] != "backlog":
+            if str(task.status) == "triage":
+                kb.specify_triage_task(conn, task_id, author=intent["created_by"])
+            if str(kb.get_task(conn, task_id).status) == "ready":
+                kb_adapter.park_task_in_todo(conn, task_id)
+        schedule_values = intent["schedule"]
+        if schedule_values is not None:
+            if str(kb.get_task(conn, task_id).status) != "scheduled" and not kb.schedule_task(
+                conn, task_id, reason="Scheduled from XNOBrain"
+            ):
+                raise ServiceError("task could not be scheduled", status=409)
+            recurrence, scheduled_at, interval_seconds, timezone_name = schedule_values
+            if kb_adapter.task_schedule(conn, task_id) is None:
+                # This timestamp was validated before the intent was committed.
+                kb_adapter.put_task_schedule(
+                    conn,
+                    task_id,
+                    recurrence=recurrence,
+                    next_run_at=scheduled_at,
+                    interval_seconds=interval_seconds,
+                    timezone_name=timezone_name,
+                    allow_elapsed=True,
+                )
+        delegated_tasks.finish_creation(conn, task_id)
 
     def _create_team_task(
         self,
@@ -1077,7 +1234,7 @@ class KanbanService:
                 parents=[root_id],
                 workspace_kind=workspace_kind,
                 workspace_path=workspace_path,
-                skills=list(coordinator_skills or []) or None,
+                skills=task_skill_ids(coordinator_skills) or None,
                 initial_status="running",
                 board=board,
             )
@@ -1124,7 +1281,7 @@ class KanbanService:
                 parents=[task_ids[item] for item in needs] or [root_parent_id],
                 workspace_kind=workspace_kind,
                 workspace_path=workspace_path,
-                skills=list(step_skills or []) or None,
+                skills=task_skill_ids(step_skills) or None,
                 initial_status="running",
                 board=board,
             )
@@ -1161,7 +1318,7 @@ class KanbanService:
             parents=[task_ids[item] for item in leaf_ids],
             workspace_kind=workspace_kind,
             workspace_path=workspace_path,
-            skills=list(synthesis_skills or []) or None,
+            skills=task_skill_ids(synthesis_skills) or None,
             initial_status="running",
             board=board,
         )
@@ -1188,6 +1345,8 @@ class KanbanService:
         normalized = self._board(board)
         kb = self._ready()
         with kb_adapter.connection(normalized) as conn:
+            if delegated_tasks.binding(conn, task_id) is not None:
+                return self.cancel_task(normalized, task_id)
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
@@ -1216,13 +1375,24 @@ class KanbanService:
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
+            delegation = delegated_tasks.binding(conn, task_id)
+            if delegation is not None:
+                if not delegation["creation_complete"]:
+                    raise ServiceError("Task creation is still being completed", status=409)
+                if str(task.status) != "ready":
+                    raise ServiceError("only a running task can be cancelled", status=409)
+                delegated_tasks.request_cancel(conn, task_id)
+                return self._task_dto(conn, task, board=normalized, include_detail=True)
             if str(task.status) != "running":
                 from ..integrations.native_admission import cancel_waiting, waiting_projection
 
                 key = f"kanban:{normalized}:{task.id}:{task.current_run_id}:{task.status}"
                 if waiting_projection(self.repository.data_dir, key):
                     if cancel_waiting(self.repository.data_dir, key) and kb.complete_task(
-                        conn, task_id, summary="Task cancelled before execution", fire_lifecycle_hook=False
+                        conn,
+                        task_id,
+                        summary="Task cancelled before execution",
+                        fire_lifecycle_hook=False,
                     ):
                         task = kb.get_task(conn, task_id)
                         return self._task_dto(conn, task, board=normalized, include_detail=True)
@@ -1265,6 +1435,13 @@ class KanbanService:
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
+            delegation = delegated_tasks.binding(conn, task_id)
+            if delegation is not None and (
+                not delegation["creation_complete"]
+                or delegation["admission_key"]
+                or str(task.status) == "ready"
+            ):
+                raise ServiceError("Team task configuration is currently locked", status=409)
             try:
                 selected_skills = self._validate_agent_skills(
                     getattr(task, "assignee", None), body.get("skills")
@@ -1323,6 +1500,8 @@ class KanbanService:
         normalized = self._board(board)
         kb = self._ready()
         with kb_adapter.connection(normalized) as conn:
+            if delegated_tasks.binding(conn, task_id) is not None:
+                raise ServiceError("A team task cannot be reassigned to a local agent", status=409)
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
@@ -1375,6 +1554,13 @@ class KanbanService:
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
             raw = str(task.status)
+            delegation = delegated_tasks.binding(conn, task_id)
+            if delegation is not None and (
+                not delegation["creation_complete"]
+                or delegated_tasks.in_flight(delegation)
+                or raw == "ready"
+            ):
+                raise ServiceError("Cancel the team execution before moving this task", status=409)
             team_metadata, team_cancelled = self._team_metadata(
                 kb_adapter.task_comments(conn, task_id)
             )
@@ -1564,6 +1750,15 @@ class KanbanService:
             task = kb.get_task(conn, task_id)
             if task is None:
                 raise ServiceError("task not found", status=404, code="task_not_found")
+            delegation = delegated_tasks.binding(conn, task_id)
+            if delegation is not None and (
+                not delegation["creation_complete"]
+                or delegated_tasks.in_flight(delegation)
+                or str(task.status) == "ready"
+            ):
+                raise ServiceError(
+                    "Cancel the team execution before archiving this task", status=409
+                )
             if unarchive:
                 raise ServiceError(
                     "Archived tasks cannot be restored",
@@ -1666,12 +1861,37 @@ class KanbanService:
             ) from exc
 
     def patch_board(self, slug: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        from ..repositories.custom_page_locks import acquire, release
+
+        if self.repository is None:
+            if body.get("revision"):
+                raise ServiceError("board metadata storage unavailable", status=503)
+            return self._patch_board_metadata(slug, body)
+        lock = acquire(
+            self.repository.data_dir, ".kanban-board-metadata.lock", shared=False, timeout=5
+        )
+        try:
+            if body.get("revision") and body["revision"] != self.get_board(slug)["revision"]:
+                raise ServiceError("board metadata changed", status=409, code="revision_conflict")
+            return self._patch_board_metadata(slug, body)
+        finally:
+            release(lock)
+
+    def _patch_board_metadata(self, slug: str, body: Mapping[str, Any]) -> dict[str, Any]:
         normalized = self._board(slug)
         fields = {
             key: body[key]
             for key in ("name", "description", "color")
             if key in body and body[key] is not None
         }
+        for key, maximum in (("name", 200), ("description", 4000), ("color", 32)):
+            if key in fields:
+                if not isinstance(fields[key], str) or len(fields[key]) > maximum:
+                    raise ServiceError("invalid board metadata")
+                if key == "name":
+                    fields[key] = fields[key].strip()
+                    if not fields[key]:
+                        raise ServiceError("board name is required")
         try:
             return self._public_board(kb_adapter.write_board_metadata(normalized, **fields))
         except (ValueError, KanbanUnavailable) as exc:
@@ -1703,7 +1923,16 @@ class KanbanService:
                 "the default board cannot be deleted", status=409, code="invalid_request"
             )
         try:
-            return kb_adapter.remove_board(normalized, archive=True)
+            with kb_adapter.connection(normalized, exclusive=True) as conn:
+                if delegated_tasks.board_has_unresolved_work(conn):
+                    raise ServiceError(
+                        "Cancel or finish delegated tasks before deleting this board",
+                        status=409,
+                        code="board_execution_active",
+                    )
+                return kb_adapter.remove_board(normalized, archive=True)
+        except ServiceError:
+            raise
         except (ValueError, KanbanUnavailable) as exc:
             raise ServiceError(
                 str(exc),

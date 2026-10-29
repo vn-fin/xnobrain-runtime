@@ -38,19 +38,29 @@ def _module():
 
 
 @contextmanager
-def connection(board: str = "default") -> Iterator[Any]:
+def connection(board: str = "default", *, exclusive: bool = False) -> Iterator[Any]:
+    from ..repositories.custom_page_locks import acquire, release
+
     kb = _module()
+    normalized = board_slug(board)
+    # Keep the lock inode outside the directory that board archival renames.
+    root = Path(kb.kanban_db_path(board="default")).parent
+    root.mkdir(parents=True, exist_ok=True)
+    lock = acquire(root, f".board-{normalized}.lock", shared=not exclusive, timeout=5)
     try:
-        with kb.connect_closing(board=board) as conn:
-            yield conn
-    except AttributeError:
-        # Older pinned Hermes revisions exposed connect() but not the safer
-        # connect_closing().  Keep the fallback narrow and close explicitly.
-        conn = kb.connect(board=board)
-        try:
-            yield conn
-        finally:
-            conn.close()
+        if normalized != "default" and not kb.board_exists(normalized):
+            raise ValueError("board no longer exists")
+        if hasattr(kb, "connect_closing"):
+            with kb.connect_closing(board=normalized) as conn:
+                yield conn
+        else:
+            conn = kb.connect(board=normalized)
+            try:
+                yield conn
+            finally:
+                conn.close()
+    finally:
+        release(lock)
 
 
 def board_slug(value: str | None) -> str:

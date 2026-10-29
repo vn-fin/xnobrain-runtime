@@ -19,10 +19,21 @@ token and the centralized router introspects it.
 
 Control provisions `RUNTIME_GRPC_ENABLED=true`, private port `3001`, and a
 per-workspace `RUNTIME_INTERNAL_SERVICE_TOKEN`. `RUNTIME_LLM_API_KEY` is a
-user/workspace-scoped GoRouter credential, not `MASTER_KEY`. The Runtime may
+user/workspace-scoped XNORouter credential, not `MASTER_KEY`. The Runtime may
 start without it so Control can repair interrupted provisioning, but inference
 remains unavailable until Control injects the scoped key. The node gateway derives that
 same credential and never sends it to the browser or logs.
+
+Control also provisions `RUNTIME_WORKSPACE_ID`, `RUNTIME_WORKSPACE_OWNER_KIND`,
+and `RUNTIME_WORKSPACE_ORGANIZATION_ID` from persisted workspace ownership.
+When an organization conversation matches the owning organization, Runtime uses
+that workspace's scoped Router key and ordinary agent budget checks, including
+the organization's connected AI providers. It requires no delegated member
+funding registration. An organization context on a member workspace still
+requires Control-issued funding. Connector enrollment and browser context
+selection alone never establish workspace ownership. Existing organization
+workspaces must receive these ownership settings when applying this update;
+missing settings preserve the funding requirement.
 
 The runtime defaults to 4 CPUs and 4 GB RAM and requests a 100 GB writable
 root disk. Increase `XNOBRAIN_RUNTIME_CPUS`,

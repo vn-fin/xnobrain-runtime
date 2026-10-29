@@ -106,6 +106,8 @@ class PlatformService(
         from .kanban import KanbanService
 
         self.kanban = KanbanService(agents, repository)
+        self.portability.agent_manager = agents
+        self.portability.active_kanban_agents = self.kanban.active_agent_ids
         self.cron.kanban = self.kanban
         from .analytics import AnalyticsService
 
@@ -127,6 +129,15 @@ class PlatformService(
         from .organization_team_executions import OrganizationTeamExecutions
 
         self.organization_team_executions = OrganizationTeamExecutions(self)
+        from .personal_resource_definitions import PersonalResourceDefinitions
+
+        self.personal_resource_definitions = PersonalResourceDefinitions(self)
+        from .personal_delegated_executions import PersonalDelegatedExecutions
+
+        self.personal_delegated_executions = PersonalDelegatedExecutions(self)
+        from .kanban_delegated_tasks import KanbanDelegatedTasks
+
+        self.kanban_delegated_tasks = KanbanDelegatedTasks(self)
         from .ui_composition import UICompositionService
 
         self.ui_composition = UICompositionService(self)

@@ -26,6 +26,9 @@ from xnobrain.handlers.operations.runtime_updates import operations
 from xnobrain.models.runtime_updates import ReleaseSelector, RuntimeUpdatePreflight
 from xnobrain.repositories.base import RepositoryBase
 from xnobrain.services.base import ServiceError
+from xnobrain.services.portability import PortabilityService
+from xnobrain.services.runtime_update_recovery import accept_expired_transfers
+from xnobrain.services.runtime_update_startup import finish_startup
 from xnobrain.services.runtime_updates import RuntimeUpdateService
 
 TARGET = {
@@ -112,6 +115,269 @@ class RuntimeUpdateLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def call(self, method, body):
         return await getattr(self.service, method)(body, update_token="update-service-token")
+
+    async def prepare_transfer_loss(self):
+        PortabilityService(self.platform.repository, self.big_brother)
+        folder = self.data / "transfers" / "uploads" / ("a" * 32)
+        folder.mkdir(parents=True)
+        paths = []
+        for name in ("bundle.zip", "metadata.json"):
+            path = folder / name
+            path.write_text("expired transfer fixture")
+            paths.append("data/" + str(path.relative_to(self.data)))
+        await self.call("drain", request(timeout_seconds=1, force=False))
+        checkpoint = await self.call("checkpoint", request())
+        for name in ("bundle.zip", "metadata.json"):
+            (folder / name).unlink()
+        with self.assertRaises(ServiceError):
+            await self.call("post_verify", request(checkpoint_id=checkpoint["checkpoint_id"]))
+        return checkpoint, paths
+
+    def accept_transfer_loss(self, checkpoint, paths, **changes):
+        values = {
+            "operation_id": checkpoint["operation_id"],
+            "generation": checkpoint["generation"],
+            "checkpoint_id": checkpoint["checkpoint_id"],
+            "manifest_digest": checkpoint["manifest"]["digest"],
+            "paths": paths,
+            "reason": "Incident review: expired, unused temporary uploads",
+            "attest_expired_unused": True,
+            **changes,
+        }
+        return accept_expired_transfers(self.service.repository, self.service.storage, **values)
+
+    async def test_transfer_acceptance_survives_restart_and_preserves_baseline(self):
+        checkpoint, paths = await self.prepare_transfer_loss()
+        original = self.service.repository.checkpoint(checkpoint["checkpoint_id"])
+        receipt = self.accept_transfer_loss(checkpoint, paths)
+        self.assertEqual(receipt, self.accept_transfer_loss(checkpoint, paths))
+        self.assertTrue(self.service.dispatch_paused)
+        self.service = RuntimeUpdateService(self.platform)
+        result = await self.call("post_verify", request(checkpoint_id=checkpoint["checkpoint_id"]))
+        self.assertTrue(result["verified"])
+        self.assertEqual(result["data_verification"]["changes"]["removed"], 2)
+        self.assertEqual(result["data_verification"]["accepted_removed"], 2)
+        self.assertEqual(original, self.service.repository.checkpoint(checkpoint["checkpoint_id"]))
+        await self.call("resume", request())
+        self.assertFalse(self.service.dispatch_paused)
+
+    async def test_transfer_acceptance_requires_exact_fence_digest_and_attestation(self):
+        checkpoint, paths = await self.prepare_transfer_loss()
+        for changes in (
+            {"generation": 4},
+            {"operation_id": "upd_other"},
+            {"manifest_digest": "wrong"},
+            {"checkpoint_id": "ckp_other"},
+            {"attest_expired_unused": False},
+            {"reason": ""},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.accept_transfer_loss(checkpoint, paths, **changes)
+
+    async def test_transfer_acceptance_rejects_noncanonical_or_partial_paths(self):
+        checkpoint, paths = await self.prepare_transfer_loss()
+        for invalid in (
+            paths[:1],
+            paths + paths[:1],
+            [],
+            ["data/durable/memory.txt"],
+            [path.replace("uploads/", "uploads/../uploads/") for path in paths],
+        ):
+            with self.subTest(paths=invalid), self.assertRaises((ValueError, RuntimeError)):
+                self.accept_transfer_loss(checkpoint, invalid)
+
+    async def test_transfer_acceptance_rejects_unrelated_data_changes(self):
+        checkpoint, paths = await self.prepare_transfer_loss()
+        memory = self.data / "durable" / "memory.txt"
+        memory.write_text("changed")
+        with self.assertRaises(ValueError):
+            self.accept_transfer_loss(checkpoint, paths)
+        memory.unlink()
+        with self.assertRaises(ValueError):
+            self.accept_transfer_loss(checkpoint, paths)
+
+    async def test_transfer_acceptance_rejects_new_files(self):
+        checkpoint, paths = await self.prepare_transfer_loss()
+        (self.data / "durable" / "unexpected.txt").write_text("new")
+        with self.assertRaises(ValueError):
+            self.accept_transfer_loss(checkpoint, paths)
+
+    async def test_transfer_acceptance_rejects_pinned_upload(self):
+        checkpoint, paths = await self.prepare_transfer_loss()
+        # Pin inspection precedes manifest verification and never deletes pins.
+        with closing(sqlite3.connect(self.data / "portability.sqlite3")) as db, db:
+            db.execute("INSERT INTO portability_pins VALUES (?, ?)", ("a" * 32, "task"))
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            self.accept_transfer_loss(checkpoint, paths)
+
+    async def test_transfer_acceptance_cannot_hide_later_loss_or_identity_mismatch(self):
+        checkpoint, paths = await self.prepare_transfer_loss()
+        self.accept_transfer_loss(checkpoint, paths)
+        with self.assertRaises(ValueError):
+            self.accept_transfer_loss(checkpoint, paths, reason="Replace the original audit reason")
+        with patch.dict(os.environ, {"XNOBRAIN_SOURCE_COMMIT": "c" * 40}):
+            with self.assertRaises(ServiceError) as caught:
+                await self.call("post_verify", request(checkpoint_id=checkpoint["checkpoint_id"]))
+            self.assertEqual(caught.exception.code, "runtime_update_identity_mismatch")
+        (self.data / "durable" / "memory.txt").unlink()
+        with self.assertRaises(ServiceError) as caught:
+            await self.call("post_verify", request(checkpoint_id=checkpoint["checkpoint_id"]))
+        self.assertEqual(caught.exception.code, "runtime_update_data_not_preserved")
+
+    async def test_transfer_acceptance_rejects_unavailable_pins_database(self):
+        checkpoint, paths = await self.prepare_transfer_loss()
+        (self.data / "portability.sqlite3").unlink()
+        with self.assertRaises(ValueError):
+            self.accept_transfer_loss(checkpoint, paths)
+
+    async def test_transfer_acceptance_rejects_tampered_receipt(self):
+        checkpoint, paths = await self.prepare_transfer_loss()
+        self.accept_transfer_loss(checkpoint, paths)
+        operation = self.service.repository.operation(checkpoint["operation_id"])
+        operation["steps"]["expired_transfer_acceptance"]["manifest_digest"] = "wrong"
+        self.service.repository.save_operation(operation)
+        with self.assertRaises(ServiceError) as caught:
+            await self.call("post_verify", request(checkpoint_id=checkpoint["checkpoint_id"]))
+        self.assertEqual(caught.exception.code, "runtime_update_acceptance_invalid")
+
+    async def test_transfer_acceptance_reappearing_file_still_requires_exact_content(self):
+        checkpoint, paths = await self.prepare_transfer_loss()
+        self.accept_transfer_loss(checkpoint, paths)
+        bundle = self.data / paths[0].removeprefix("data/")
+        bundle.write_text("different upload contents")
+        with self.assertRaises(ServiceError):
+            await self.call("post_verify", request(checkpoint_id=checkpoint["checkpoint_id"]))
+
+    async def test_transfer_acceptance_rejects_legacy_manifest_and_symlink_entries(self):
+        checkpoint, paths = await self.prepare_transfer_loss()
+        manifest = checkpoint["manifest"]
+        with self.assertRaises(RuntimeError):
+            self.service.storage.verify({**manifest, "version": 1}, tuple(paths))
+        entries = [dict(entry) for entry in manifest["entries"]]
+        for entry in entries:
+            if entry["path"] == paths[0]:
+                entry["kind"] = "symlink"
+        with self.assertRaises(RuntimeError):
+            self.service.storage.verify({**manifest, "entries": entries}, tuple(paths))
+
+    async def test_transfer_recovery_cli_records_receipt_without_resuming(self):
+        from xnobrain.integrations import runtime_transfer_recovery as cli
+
+        checkpoint, paths = await self.prepare_transfer_loss()
+        paths_file = Path(self.temporary.name) / "missing-transfers.json"
+        paths_file.write_text(json.dumps(paths))
+        args = self.recovery_cli_args()
+        for flag, value in (
+            ("--paths-file", str(paths_file)),
+            ("--checkpoint-id", checkpoint["checkpoint_id"]),
+            ("--manifest-digest", checkpoint["manifest"]["digest"]),
+        ):
+            args[args.index(flag) + 1] = value
+        with (
+            patch.object(sys, "argv", args),
+            patch.object(cli, "require_stopped"),
+            patch("sys.stdout"),
+        ):
+            cli.main()
+        self.assertTrue(self.service.dispatch_paused)
+        operation = self.service.repository.operation("upd_fixture")
+        self.assertEqual(operation["steps"]["expired_transfer_acceptance"]["paths"], sorted(paths))
+        result = await self.call("post_verify", request(checkpoint_id=checkpoint["checkpoint_id"]))
+        self.assertTrue(result["data_loss_accepted"])
+
+    def recovery_cli_args(self):
+        return [
+            "runtime_transfer_recovery",
+            "--data-dir",
+            str(self.data),
+            "--profiles-root",
+            str(self.profiles),
+            "--root-profile",
+            str(self.big_brother),
+            "--paths-file",
+            str(self.data / "missing.json"),
+            "--operation-id",
+            "upd_fixture",
+            "--generation",
+            "3",
+            "--checkpoint-id",
+            "ckp_fixture",
+            "--manifest-digest",
+            "digest",
+            "--reason",
+            "Incident review of expired uploads",
+            "--attest-expired-unused",
+        ]
+
+    def test_transfer_recovery_cli_requires_stopped_service(self):
+        from xnobrain.integrations import runtime_transfer_recovery as cli
+
+        with (
+            patch.object(sys, "argv", self.recovery_cli_args()),
+            patch.object(cli, "require_stopped", side_effect=ValueError("service running")),
+            patch.object(cli, "RepositoryBase") as repository,
+            self.assertRaisesRegex(ValueError, "service running"),
+        ):
+            cli.main()
+        repository.assert_not_called()
+
+    def test_transfer_recovery_cli_requires_runtime_os_owner(self):
+        from xnobrain.integrations import runtime_transfer_recovery as cli
+
+        with (
+            patch.object(sys, "argv", self.recovery_cli_args()),
+            patch.object(cli, "require_stopped"),
+            patch.object(cli.os, "geteuid", return_value=self.data.stat().st_uid + 1),
+            patch.object(cli, "RepositoryBase") as repository,
+            patch("sys.stderr"),
+            self.assertRaises(SystemExit) as caught,
+        ):
+            cli.main()
+        self.assertEqual(caught.exception.code, 2)
+        repository.assert_not_called()
+
+    async def test_restart_preserves_expired_transfers_until_verified_resume(self):
+        portability = PortabilityService(self.platform.repository, self.big_brother)
+        expired = []
+        for root in (portability.upload_root, portability.export_root):
+            directory = root / "expired"
+            directory.mkdir()
+            (directory / "bundle.zip").write_bytes(b"archive fixture")
+            (directory / "metadata.json").write_text("{}")
+            os.utime(directory, (1, 1))
+            expired.append(directory)
+        fresh = portability.upload_root / "fresh"
+        fresh.mkdir()
+        (fresh / "bundle.zip").write_bytes(b"fresh archive")
+        await self.call("drain", request(deadline_seconds=0))
+        checkpoint = await self.call("checkpoint", request())
+
+        # Reconstruct the same service as Runtime does after process replacement.
+        self.platform.portability = PortabilityService(self.platform.repository, self.big_brother)
+        self.platform.runtime_updates = RuntimeUpdateService(self.platform)
+        self.platform.config.ensure_write_approval_defaults = Mock()
+        self.platform._ensure_existing_write_approval_defaults = Mock()
+        self.platform.ensure_default_agent = AsyncMock()
+        startup = asyncio.create_task(finish_startup(self.platform, deferred=True))
+        try:
+            await asyncio.sleep(0)
+            self.assertFalse(startup.done())
+            for directory in expired:
+                self.assertTrue((directory / "bundle.zip").is_file())
+                self.assertTrue((directory / "metadata.json").is_file())
+            self.service = self.platform.runtime_updates
+            verified = await self.call(
+                "post_verify", request(checkpoint_id=checkpoint["checkpoint_id"])
+            )
+            self.assertTrue(verified["verified"])
+            self.assertEqual(verified["data_verification"]["changes"]["removed"], 0)
+            await self.call("resume", request())
+            await asyncio.wait_for(startup, timeout=2)
+            self.assertTrue(all(not directory.exists() for directory in expired))
+            self.assertTrue((fresh / "bundle.zip").is_file())
+        finally:
+            startup.cancel()
+            await asyncio.gather(startup, return_exceptions=True)
 
     async def test_checkpoint_receipt_preserves_full_evidence_and_replay(self):
         # Enough file evidence to exceed the old gateway's 256 KiB limit.

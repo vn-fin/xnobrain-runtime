@@ -94,6 +94,30 @@ class _ExecutionRun(TeamRunService):
 
 
 class OrganizationTeamExecutions:
+    def _repository(self, organization_id):
+        return OrganizationTeamExecutionRepository(self.platform.repository, organization_id)
+
+    def _execution_platform(self, repo, organization_id):
+        return _ExecutionPlatform(self.platform, repo, organization_id)
+
+    def _prepare_team(self, team):
+        if team["orchestrator_id"] != BIG_BROTHER_AGENT_ID:
+            raise ServiceError("invalid organization coordinator", status=400)
+        team["synthesis_agent_id"] = BIG_BROTHER_AGENT_ID
+
+    def _client(self, endpoint, organization_id, run_id, capability):
+        return OrganizationTeamExecutionClient(endpoint, organization_id, run_id, capability)
+
+    def _agents(self, client, team):
+        return _ExecutionAgents(
+            self.platform.agents,
+            client,
+            {member["agent_id"] for member in team["members"] if member.get("enabled", True)},
+        )
+
+    def _engine(self, repo, agents, platform, run_id):
+        return _ExecutionRun(repo, agents, platform, run_id, self.platform.analytics)
+
     def __init__(self, platform):
         self.platform = platform
         self.executions = {}
@@ -108,9 +132,7 @@ class OrganizationTeamExecutions:
         if not secret or not hmac.compare_digest(expected, supplied):
             raise ServiceError("private execution authorization required", status=403)
         params = request.path_params
-        repo = OrganizationTeamExecutionRepository(
-            self.platform.repository, params["organization_id"]
-        )
+        repo = self._repository(params["organization_id"])
         team_id = repo._id(params["team_id"])
         run_id = repo._id(params["run_id"])
         key = (params["organization_id"], team_id, run_id)
@@ -122,7 +144,7 @@ class OrganizationTeamExecutions:
             engine = TeamRunService(
                 repo,
                 self.platform.agents,
-                _ExecutionPlatform(self.platform, repo, params["organization_id"]),
+                self._execution_platform(repo, params["organization_id"]),
             )
         if request.method == "DELETE":
             return await engine.cancel_run(team_id, run_id)
@@ -141,35 +163,21 @@ class OrganizationTeamExecutions:
             engine = TeamRunService(
                 repo,
                 self.platform.agents,
-                _ExecutionPlatform(self.platform, repo, organization_id),
+                self._execution_platform(repo, organization_id),
             )
             return engine._heal_if_stale(previous)
         active = sum(bool(engine._active) for engine in self.executions.values())
         if active + len(self.platform.team_runs._active) >= MAX_ACTIVE_TEAM_RUNS:
             raise ServiceError("too many active team runs", status=409)
         team = {**body["team"], "id": team_id}
-        if team["orchestrator_id"] != BIG_BROTHER_AGENT_ID:
-            raise ServiceError("invalid organization coordinator", status=400)
-        team["synthesis_agent_id"] = BIG_BROTHER_AGENT_ID
+        self._prepare_team(team)
         repo.put_team(team)
         endpoint = os.getenv("RUNTIME_CONTROL_URL", "")
         if not endpoint:
             raise ServiceError("Control is unavailable", status=503)
-        client = OrganizationTeamExecutionClient(
-            endpoint, organization_id, run_id, body["capability"]
-        )
-        agents = _ExecutionAgents(
-            self.platform.agents,
-            client,
-            {member["agent_id"] for member in team["members"] if member.get("enabled", True)},
-        )
-        engine = _ExecutionRun(
-            repo,
-            agents,
-            _ExecutionPlatform(self.platform, repo, organization_id),
-            run_id,
-            self.platform.analytics,
-        )
+        client = self._client(endpoint, organization_id, run_id, body["capability"])
+        agents = self._agents(client, team)
+        engine = self._engine(repo, agents, self._execution_platform(repo, organization_id), run_id)
         self.executions[key] = engine
         try:
             record = await engine.start_run(team_id, body["input"])
@@ -183,7 +191,7 @@ class OrganizationTeamExecutions:
                 "mode": "async",
                 "task": body["input"].get("task", ""),
                 "steps": [],
-                "orchestrator_id": BIG_BROTHER_AGENT_ID,
+                "orchestrator_id": team["orchestrator_id"],
                 "orchestrator_summary": "",
                 "created_at": iso(),
                 "updated_at": iso(),
@@ -206,11 +214,11 @@ class OrganizationTeamExecutions:
             # release the durable admission without replaying remote side effects
             # or persisting credentials. Control reconciles the terminal record
             # through the existing signed GET endpoint.
-            repo = OrganizationTeamExecutionRepository(self.platform.repository, organization_id)
+            repo = self._repository(organization_id)
             engine = TeamRunService(
                 repo,
                 self.platform.agents,
-                _ExecutionPlatform(self.platform, repo, organization_id),
+                self._execution_platform(repo, organization_id),
             )
             try:
                 record = repo.get_team_run(row["conversation"], row["id"])

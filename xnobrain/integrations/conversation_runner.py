@@ -61,8 +61,8 @@ class ConversationRunnerMixin:
         "agent_maker": (
             "Use the agent-maker workflow for the requested specialist: interview for missing requirements, "
             "then use agent_maker_inspect, agent_maker_prepare and agent_maker_build. "
-            "Blueprint approval and activation after successful certification are automatic; "
-            "do not ask the user to click approval buttons. Stop and report certification failures."
+            "Blueprint approval and activation are automatic, without certification or test cases; "
+            "create the requested agent directly without manual approval clicks."
         ),
         "optimize_skills": (
             "Use skill-optimizer for the selected agent. Review measured usage and clearly label missing or estimated evidence. "
@@ -331,9 +331,9 @@ class ConversationRunnerMixin:
         }
 
     async def _resolve_prepared_model_route(self, prepared: dict[str, Any]) -> None:
-        """Leave the virtual Auto route for GoRouter to resolve and retry.
+        """Leave the virtual Auto route for XNORouter to resolve and retry.
 
-        GoRouter v0.0.19 owns allowlist-aware random selection, route health and
+        XNORouter v0.0.19 owns allowlist-aware random selection, route health and
         quota filtering, retryable failover, and selected-upstream attribution.
         Resolving Auto in Runtime would duplicate that policy and bypass the
         router's ``AUTO_MAX_TRIES`` bound.
@@ -548,7 +548,7 @@ class ConversationRunnerMixin:
 
         Hermes identifies the centralized endpoint as a named custom provider.
         The OpenAI SDK accepts client-side fields such as ``timeout`` while its
-        custom-provider path can also attach ``custom_llm_provider``. GoRouter
+        custom-provider path can also attach ``custom_llm_provider``. XNORouter
         resolves the public model prefix itself and forwards request JSON, so
         neither field belongs in the upstream body.
         """
@@ -1516,9 +1516,9 @@ class ConversationRunnerMixin:
                     with (
                         inference_accounting(
                             accounting["binding"],
-                            headers.get("X-GoRouter-Conversation-Id", ""),
-                            headers.get("X-GoRouter-Run-Id", ""),
-                            headers.get("X-GoRouter-Parent-Run-Id", ""),
+                            headers.get("X-XNORouter-Conversation-Id", ""),
+                            headers.get("X-XNORouter-Run-Id", ""),
+                            headers.get("X-XNORouter-Parent-Run-Id", ""),
                         ),
                         conversation_profile_scope(profile_dir),
                     ):

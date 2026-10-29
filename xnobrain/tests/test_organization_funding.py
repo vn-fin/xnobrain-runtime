@@ -44,6 +44,56 @@ class OrganizationFundingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(binding["user_key"], "member-key")
         self.assertEqual(binding["context_id"], ORG)
 
+    def test_owned_workspace_uses_its_key_without_a_delegation(self):
+        environment = {
+            "RUNTIME_WORKSPACE_ID": "workspace-org",
+            "RUNTIME_WORKSPACE_OWNER_KIND": "organization",
+            "RUNTIME_WORKSPACE_ORGANIZATION_ID": ORG,
+            "RUNTIME_LLM_API_KEY": "organization-key",
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            binding = accounting_binding("agent", ORG, "direct-chat")
+            self.assertEqual(binding["user_key"], "organization-key")
+            with self.assertRaises(AccountingUnavailable):
+                accounting_binding("agent", "org_other", "direct-chat")
+            for field in (
+                "RUNTIME_WORKSPACE_ID",
+                "RUNTIME_WORKSPACE_OWNER_KIND",
+                "RUNTIME_WORKSPACE_ORGANIZATION_ID",
+            ):
+                with self.subTest(missing=field), patch.dict(os.environ, {field: ""}):
+                    with self.assertRaises(AccountingUnavailable):
+                        accounting_binding("agent", ORG, "direct-chat")
+            with patch.dict(os.environ, {"RUNTIME_WORKSPACE_OWNER_KIND": "user"}):
+                with self.assertRaises(AccountingUnavailable):
+                    accounting_binding("agent", ORG, "direct-chat")
+
+    async def test_owned_workspace_keeps_authoritative_agent_budget(self):
+        service = AnalyticsService(SimpleNamespace(), None, SimpleNamespace())
+        service.get_budget = AsyncMock(return_value={"status": "ok", "accepting_chats": True})
+        environment = {
+            "RUNTIME_ACCOUNTING_MODE": "router",
+            "RUNTIME_WORKSPACE_ID": "workspace-org",
+            "RUNTIME_WORKSPACE_OWNER_KIND": "organization",
+            "RUNTIME_WORKSPACE_ORGANIZATION_ID": ORG,
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            status = await service.require_execution_budget("agent", ORG, "direct-chat")
+            self.assertTrue(status["accepting_chats"])
+            service.get_budget.assert_awaited_once_with("agent")
+            for decision, code in (
+                ({"status": "exceeded", "accepting_chats": False}, "weekly_budget_exceeded"),
+                ({"status": "unavailable", "accepting_chats": False}, "budget_check_unavailable"),
+            ):
+                service.get_budget.return_value = decision
+                with self.assertRaises(ServiceError) as raised:
+                    await service.require_execution_budget("agent", ORG, "direct-chat")
+                self.assertEqual(raised.exception.code, code)
+            service.get_budget.reset_mock()
+            with self.assertRaises(ServiceError):
+                await service.require_execution_budget("agent", "org_other", "direct-chat")
+            service.get_budget.assert_not_awaited()
+
     async def test_budget_follows_funding_mode(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

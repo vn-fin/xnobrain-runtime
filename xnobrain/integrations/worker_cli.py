@@ -35,12 +35,12 @@ def install_worker_agent(binding, run_id, parent_run_id=""):
         install_image_tools(agent, profile / "workspace", [profile / "cache"])
         conversation = str(agent.session_id or run_id)
         headers = {
-            "X-GoRouter-Agent-Id": binding["agent_id"],
-            "X-GoRouter-Conversation-Id": conversation,
-            "X-GoRouter-Run-Id": run_id,
+            "X-XNORouter-Agent-Id": binding["agent_id"],
+            "X-XNORouter-Conversation-Id": conversation,
+            "X-XNORouter-Run-Id": run_id,
         }
         if parent_run_id:
-            headers["X-GoRouter-Parent-Run-Id"] = parent_run_id
+            headers["X-XNORouter-Parent-Run-Id"] = parent_run_id
         for client in (getattr(agent, "client", None), getattr(agent, "async_client", None)):
             if client is not None and hasattr(client, "_custom_headers"):
                 client._custom_headers = {**(client._custom_headers or {}), **headers}
@@ -103,7 +103,8 @@ def main():
         raise RuntimeError("worker exited without completing inference")
 
 
-if __name__ == "__main__":
+def run():
+    # Importable entry point: compiled packages cannot be started with `python -m`.
     try:
         from .rebalance_cli import cli_activity
 
@@ -113,3 +114,7 @@ if __name__ == "__main__":
         # Native/provider exceptions may contain request data. Do not echo them.
         print("Accounted worker execution failed: " + type(error).__name__, file=sys.stderr)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    run()

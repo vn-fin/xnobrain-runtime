@@ -8,6 +8,7 @@ the Runtime never pays for organization work it was not told how to fund.
 
 from __future__ import annotations
 
+import os
 import threading
 from typing import Any
 
@@ -16,6 +17,22 @@ OWNER = "owner"
 
 _FUNDING: dict[str, dict[str, str]] = {}
 _LOCK = threading.Lock()
+
+
+def owns_organization_context(context_id: str) -> bool:
+    """Match only the workspace ownership provisioned by Control.
+
+    Connector enrollment also exists on member workspaces, so neither that
+    enrollment nor a conversation's organization alone establishes ownership.
+    Missing ownership configuration preserves the delegated funding checks.
+    """
+    organization_id = os.environ.get("RUNTIME_WORKSPACE_ORGANIZATION_ID", "").strip()
+    return bool(
+        os.environ.get("RUNTIME_WORKSPACE_ID", "").strip()
+        and os.environ.get("RUNTIME_WORKSPACE_OWNER_KIND", "").strip() == ORGANIZATION
+        and organization_id
+        and organization_id == context_id
+    )
 
 
 def register(conversation_id: str, mode: str, model: str = "", *, workspace: bool = False) -> None:

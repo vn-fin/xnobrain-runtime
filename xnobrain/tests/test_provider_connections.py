@@ -69,10 +69,10 @@ class ProviderCatalogTests(unittest.IsolatedAsyncioTestCase):
             next(item for item in providers if item["id"] == "openai-like")["requires_base_url"]
         )
 
-    async def test_catalog_maps_gorouter_owned_models_by_public_prefix(self):
+    async def test_catalog_maps_xnorouter_owned_models_by_public_prefix(self):
         class Router(LLMRouterClient):
             async def _request(self, *_args, **_kwargs):
-                return {"data": [{"id": "ocz/gpt-5.6-luna", "owned_by": "gorouter"}]}
+                return {"data": [{"id": "ocz/gpt-5.6-luna", "owned_by": "xnorouter"}]}
 
         catalog = await Router().list_models()
 
@@ -83,8 +83,8 @@ class ProviderCatalogTests(unittest.IsolatedAsyncioTestCase):
             async def _request(self, *_args, **_kwargs):
                 return {
                     "data": [
-                        {"id": "cc/auto", "owned_by": "gorouter", "reasoning_levels": ["low"]},
-                        {"id": "cc/claude", "owned_by": "gorouter"},
+                        {"id": "cc/auto", "owned_by": "xnorouter", "reasoning_levels": ["low"]},
+                        {"id": "cc/claude", "owned_by": "xnorouter"},
                     ]
                 }
 
@@ -99,7 +99,7 @@ class ProviderCatalogTests(unittest.IsolatedAsyncioTestCase):
                     "data": [
                         {
                             "id": "cx/gpt-6-sol",
-                            "owned_by": "gorouter",
+                            "owned_by": "xnorouter",
                             "supported_reasoning_levels": [
                                 {"effort": level, "description": "Provider effort"}
                                 for level in ["low", "medium", "high", "xhigh", "max", "ultra"]

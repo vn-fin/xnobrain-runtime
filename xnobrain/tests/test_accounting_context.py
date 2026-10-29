@@ -15,15 +15,15 @@ class AccountingContextTests(unittest.IsolatedAsyncioTestCase):
             with inference_accounting({"user_key": key, "agent_id": "agent"}, conversation, run):
                 await asyncio.sleep(0)
                 self.assertEqual(workspace_router_key(), key)
-                self.assertEqual(current_accounting()["headers"]["X-GoRouter-Agent-Id"], "agent")
+                self.assertEqual(current_accounting()["headers"]["X-XNORouter-Agent-Id"], "agent")
                 parent = current_accounting()
                 with inference_accounting(parent["binding"], conversation, run + "_child", run):
                     await asyncio.sleep(0)
                     self.assertEqual(
-                        current_accounting()["headers"]["X-GoRouter-Parent-Run-Id"], run
+                        current_accounting()["headers"]["X-XNORouter-Parent-Run-Id"], run
                     )
-                    self.assertNotIn("X-GoRouter-Request-Id", current_accounting()["headers"])
-                self.assertEqual(current_accounting()["headers"]["X-GoRouter-Run-Id"], run)
+                    self.assertNotIn("X-XNORouter-Request-Id", current_accounting()["headers"])
+                self.assertEqual(current_accounting()["headers"]["X-XNORouter-Run-Id"], run)
             self.assertIsNone(current_accounting())
 
         with patch.dict("os.environ", {"RUNTIME_LLM_API_KEY": "not-used"}):
@@ -49,5 +49,5 @@ class AccountingContextTests(unittest.IsolatedAsyncioTestCase):
             {"user_key": "synthetic", "agent_id": "agent"}, "conversation", "run"
         ):
             kwargs = agent._build_api_kwargs([])
-        self.assertEqual(kwargs["extra_headers"]["X-GoRouter-Run-Id"], "run")
-        self.assertNotIn("X-GoRouter-Request-Id", kwargs["extra_headers"])
+        self.assertEqual(kwargs["extra_headers"]["X-XNORouter-Run-Id"], "run")
+        self.assertNotIn("X-XNORouter-Request-Id", kwargs["extra_headers"])

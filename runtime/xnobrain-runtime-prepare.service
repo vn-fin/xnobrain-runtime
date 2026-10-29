@@ -1,0 +1,10 @@
+[Unit]
+Description=Validate managed Runtime storage and prepare its environment
+Before=xnobrain-runtime.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/python3 -I -S -B /usr/local/libexec/xnobrain-prepare-container.py
+UMask=0077

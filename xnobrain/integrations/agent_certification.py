@@ -110,7 +110,7 @@ class RuntimeCertificationExecutor:
             response=str(result.get("final_response") or ""),
             observed_tools=tuple(observed),
             usage=normalized_usage,
-            # GoRouter is authoritative for paid accounting. A concrete cost is
+            # XNORouter is authoritative for paid accounting. A concrete cost is
             # optional here; the service still enforces the caller's aggregate cap.
             cost_usd=max(0.0, float(usage.get("cost_usd") or 0.0)),
             terminal_status=status,

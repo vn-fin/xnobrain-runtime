@@ -19,24 +19,33 @@ from ..repositories.runtime_update_gate import checkpoint_gate, update_operation
 from ..repositories.runtime_updates import RuntimeUpdateRepository
 from ..services.base import iso
 from .runtime_data_volume import verify_volume
-from .runtime_update_storage import RuntimeUpdateStorage
+from .runtime_update_storage import RuntimeUpdateStorage, RuntimeUpdateStorageError
 
 
-def require_stopped() -> None:
+def require_stopped(unit: str = "xnobrain-api.service") -> None:
+    if unit not in {"xnobrain-api.service", "xnobrain-runtime.service"}:
+        raise ValueError("unsupported Runtime service")
     result = subprocess.run(
-        ["systemctl", "show", "--property=ActiveState,MainPID", "xnobrain-api.service"],
+        ["/usr/bin/systemctl", "show", "--property=ActiveState,MainPID,ControlPID", unit],
         capture_output=True,
         text=True,
         check=True,
         timeout=10,
     )
     values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
-    if values.get("MainPID") != "0" or values.get("ActiveState") not in {"inactive", "failed"}:
+    if (
+        values.get("MainPID") != "0"
+        or values.get("ControlPID") != "0"
+        or values.get("ActiveState") not in {"inactive", "failed"}
+    ):
         raise ValueError("Runtime must be stopped before checkpoint")
 
 
-def checkpoint(request: dict, *, data_anchor: Path = Path("/srv/xnobrain-data")) -> str:
-    require_stopped()
+def _context(request: dict, data_anchor: Path):
+    unit = (
+        "xnobrain-runtime.service" if data_anchor == Path("/opt/data") else "xnobrain-api.service"
+    )
+    require_stopped(unit)
     binding = RuntimeRolloutRequest.model_validate(
         {key: request[key] for key in ("operation_id", "generation", "target")}
     ).model_dump()
@@ -56,7 +65,11 @@ def checkpoint(request: dict, *, data_anchor: Path = Path("/srv/xnobrain-data"))
     ):
         raise ValueError("unsafe durable data paths")
     base = RepositoryBase(paths[0], paths[1], root_profile=paths[2])
-    journal = RuntimeUpdateRepository(base)
+    return paths, binding, RuntimeUpdateRepository(base)
+
+
+def checkpoint(request: dict, *, data_anchor: Path = Path("/srv/xnobrain-data")) -> str:
+    paths, binding, journal = _context(request, data_anchor)
     with update_operation(paths[0]), checkpoint_gate(paths[0]):
         maintenance = journal.maintenance()
         if not maintenance.get("dispatch_paused") or any(
@@ -130,6 +143,50 @@ def checkpoint(request: dict, *, data_anchor: Path = Path("/srv/xnobrain-data"))
         return checkpoint_id
 
 
+def restore_ready(request: dict, *, data_anchor: Path = Path("/srv/xnobrain-data")) -> dict:
+    """Prove unchanged data while stopped, without refreshing the checkpoint."""
+    paths, binding, journal = _context(request, data_anchor)
+    with update_operation(paths[0]), checkpoint_gate(paths[0]):
+        maintenance = journal.maintenance()
+        operation = journal.operation(binding["operation_id"])
+        checkpoint_id = request.get("checkpoint_id")
+        steps = dict(operation.get("steps") or {})
+        if (
+            maintenance.get("kind") != "runtime_source"
+            or maintenance.get("phase") != "checkpointed"
+            or not maintenance.get("dispatch_paused")
+            or not checkpoint_id
+            or maintenance.get("checkpoint_id") != checkpoint_id
+            or any(maintenance.get(key) != value for key, value in binding.items())
+            or any(operation.get(key) != value for key, value in binding.items())
+            or steps.get("resume")
+            or steps.get("abort_unchanged")
+        ):
+            raise ValueError("source restore ownership mismatch")
+        existing = journal.checkpoint(checkpoint_id)
+        if (
+            not existing
+            or existing.get("checkpoint_id") != checkpoint_id
+            or any(existing.get(key) != value for key, value in binding.items())
+            or steps.get("checkpoint") != existing
+        ):
+            raise ValueError("source restore checkpoint mismatch")
+        # Do not flush SQLite or regenerate evidence: failure is not permission
+        # to accept target-startup mutations as a new baseline.
+        verification = RuntimeUpdateStorage(*paths).verify(existing["manifest"])
+        if not verification["preserved"]:
+            raise ValueError("source restore data changed")
+        result = {
+            **binding,
+            "checkpoint_id": checkpoint_id,
+            "restore_ready": True,
+            "checked_at": iso(),
+        }
+        steps["restore_ready"] = result
+        journal.save_operation({**operation, "steps": steps, "updated_at": iso()})
+        return result
+
+
 def main() -> None:
     try:
         body = sys.stdin.buffer.read(16385)
@@ -137,8 +194,24 @@ def main() -> None:
             raise ValueError("checkpoint request too large")
         request = json.loads(body)
         os.environ["RUNTIME_UPDATE_DATA_PATH"] = request["data_path"]
-        print(checkpoint(request))
-    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        data_anchor = Path(request["data_path"])
+        if data_anchor not in {Path("/opt/data"), Path("/srv/xnobrain-data")}:
+            raise ValueError("unsupported managed data anchor")
+        action = request.get("action", "checkpoint")
+        if action == "checkpoint":
+            print(checkpoint(request, data_anchor=data_anchor))
+        elif action == "restore-ready":
+            print(json.dumps(restore_ready(request, data_anchor=data_anchor)))
+        else:
+            raise ValueError("unsupported offline action")
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        subprocess.SubprocessError,
+        RuntimeUpdateStorageError,
+    ):
         raise SystemExit("Runtime offline checkpoint unavailable") from None
 
 

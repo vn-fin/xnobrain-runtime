@@ -52,17 +52,10 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
         return trusted, session, run
 
     @staticmethod
-    def build_request(record, key="certify-auto"):
+    def build_request(record, key="build-auto"):
         return {
             "blueprint_id": record["id"],
-            "expected_revision": record["revision"],
-            "canonical_digest": record["canonical_digest"],
             "idempotency_key": key,
-            "cases": fixtures.AgentBlueprintTests.certification_cases(),
-            "max_cost_usd": 0.1,
-            "timeout_seconds": 30,
-            "max_turns_per_case": 4,
-            "decision": "certify",
         }
 
     async def dispatch(self, tool, args, session):
@@ -71,7 +64,7 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
         raw = await asyncio.to_thread(registry.dispatch, tool, args, session_id=session)
         return json.loads(raw)
 
-    async def test_native_tools_create_one_active_agent_without_manual_approval(self):
+    async def test_native_tools_create_one_active_agent_without_certification(self):
         trusted, session, run = self.scope()
         executor = fixtures.FakeCertificationExecutor()
         self.service.agent_certification_executor = executor
@@ -84,9 +77,11 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(child.tools, [])
             inspected = await self.dispatch("agent_maker_inspect", {}, session)
             self.assertTrue(inspected["data"]["auto_accept"])
+            self.assertFalse(inspected["data"]["certification_required"])
             model_id = inspected["data"]["model_catalog"]["data"][0]["id"]
             spec = self.spec()
             spec["model_slot"]["alias"] = model_id
+            spec.pop("acceptance")
             args = {
                 "intent": "Create a researcher",
                 "blueprint": spec,
@@ -103,14 +98,20 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(active["status"], "active")
             self.assertEqual(active["approval"]["mode"], "auto")
             self.assertEqual(active["approval"]["approved_by"], trusted.subject)
-            self.assertEqual(len(executor.calls), 4)
+            self.assertEqual(executor.calls, [])
+            self.assertIsNone(active["certification"])
+            self.assertIsNone(active["activation"]["certification_digest"])
+            self.assertEqual(active["blueprint"]["acceptance"], [])
             self.assertEqual(
-                {call["profile_id"] for call in executor.calls}, {record["target_profile_id"]}
+                self.service.agents.list_conversations(record["target_profile_id"])[
+                    "conversations"
+                ],
+                [],
             )
             self.service.router.list_models.side_effect = LLMRouterAPIError("offline")
             replay = await self.dispatch("agent_maker_build", self.build_request(record), session)
             self.assertEqual(replay["data"]["status"], "active")
-            self.assertEqual(len(executor.calls), 4)
+            self.assertEqual(executor.calls, [])
             config = yaml.safe_load(
                 (self.profiles / record["target_profile_id"] / "config.yaml").read_text()
             )
@@ -141,6 +142,112 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(result["error"]["code"], "agent_maker_model_unavailable")
         self.assertEqual(self.service.list_agent_blueprints("big-brother")["blueprints"], [])
         self.assertEqual(len(list(self.profiles.glob("agent-*"))), 0)
+
+    async def test_prepare_edits_without_revision_and_replays_without_another_write(self):
+        trusted, session, run = self.scope()
+        with bind_run(self.service.agent_maker, "big-brother", session, run["id"], trusted):
+            args = {"intent": "Create", "blueprint": self.spec(), "idempotency_key": "edit"}
+            prepared = await self.dispatch("agent_maker_prepare", args, session)
+            original = prepared["data"]
+            edit = {**args, "blueprint_id": original["id"], "intent": "Updated researcher"}
+            saved = await self.dispatch("agent_maker_prepare", edit, session)
+            self.assertTrue(saved["success"], saved)
+            self.assertEqual(saved["data"]["revision"], original["revision"] + 1)
+            replay = await self.dispatch("agent_maker_prepare", edit, session)
+            self.assertEqual(replay["data"], saved["data"])
+            stale = await self.dispatch(
+                "agent_maker_prepare",
+                {**edit, "intent": "Stale edit", "expected_revision": original["revision"]},
+                session,
+            )
+            self.assertEqual(stale["error"]["code"], "blueprint_revision_conflict")
+            stored = self.service.get_agent_blueprint("big-brother", original["id"])
+            self.assertEqual(stored, saved["data"])
+
+    async def test_legacy_build_options_do_not_run_certification(self):
+        record = await self.approved_scaffold()
+        trusted, session, run = self.scope()
+        executor = fixtures.FakeCertificationExecutor()
+        self.service.agent_certification_executor = executor
+        with bind_run(self.service.agent_maker, "big-brother", session, run["id"], trusted):
+            result = await self.dispatch(
+                "agent_maker_build",
+                {
+                    **self.build_request(record),
+                    "expected_revision": record["revision"],
+                    "canonical_digest": record["canonical_digest"],
+                    "decision": "certify",
+                    "cases": [],
+                    "max_cost_usd": 0,
+                    "timeout_seconds": 0,
+                    "max_turns_per_case": 0,
+                },
+                session,
+            )
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["data"]["status"], "active")
+        self.assertIsNone(result["data"]["certification"])
+        self.assertEqual(executor.calls, [])
+
+    async def test_failed_certification_can_build_without_retrying_and_rollback(self):
+        record = await self.approved_scaffold()
+        trusted, session, run = self.scope()
+        executor = fixtures.FakeCertificationExecutor(
+            [
+                fixtures.CertificationExecution(
+                    response="Unable to finish", observed_tools=(), usage={}, cost_usd=0
+                )
+            ]
+        )
+        self.service.agent_certification_executor = executor
+        failed = await self.service.certify_agent_blueprint(
+            "big-brother",
+            record["id"],
+            {
+                "expected_revision": record["revision"],
+                "canonical_digest": record["canonical_digest"],
+                "idempotency_key": "old-failed-attempt",
+                "decision": "certify",
+                "cases": self.certification_cases(),
+                "max_cost_usd": 0.1,
+                "timeout_seconds": 30,
+                "max_turns_per_case": 4,
+            },
+            trusted,
+        )
+        self.assertEqual(failed["status"], "certification_failed")
+        calls = len(executor.calls)
+        with bind_run(self.service.agent_maker, "big-brother", session, run["id"], trusted):
+            built = await self.dispatch("agent_maker_build", self.build_request(record), session)
+        self.assertTrue(built["success"], built)
+        active = built["data"]
+        self.assertEqual(active["status"], "active")
+        self.assertEqual(active["certification"], failed["certification"])
+        self.assertEqual(len(executor.calls), calls)
+        self.assertEqual(len(list(self.profiles.glob("agent-*"))), 1)
+        rolled = self.service.rollback_agent_blueprint(
+            "big-brother",
+            active["id"],
+            {
+                "expected_revision": active["revision"],
+                "canonical_digest": active["canonical_digest"],
+                "expected_active_profile_digest": active["activation"]["active_profile_digest"],
+                "idempotency_key": "rollback-direct-build",
+                "decision": "rollback",
+                "reason": "User requested rollback",
+            },
+            trusted.subject,
+        )
+        self.assertEqual(rolled["status"], "scaffolded")
+        self.assertIsNone(rolled["activation"])
+
+    def test_build_schema_does_not_require_or_advertise_certification(self):
+        from xnobrain.models.agent_maker import MakerBuild
+
+        schema = MakerBuild.model_json_schema()
+        self.assertEqual(set(schema["required"]), {"blueprint_id", "idempotency_key"})
+        self.assertNotIn("cases", schema["properties"])
+        self.assertNotIn("max_cost_usd", schema["properties"])
 
     async def test_catalog_failure_does_not_fallback_or_save_blueprint(self):
         trusted, session, run = self.scope()
@@ -235,15 +342,17 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
                 pass
         self.assertEqual(caught.exception.code, "conversation_owner_forbidden")
 
-    async def test_stopping_chat_during_certification_never_activates(self):
+    async def test_stopping_chat_after_scaffolding_never_activates(self):
         trusted, session, run = self.scope()
-        started = asyncio.Event()
+        scaffold = self.service.scaffold_agent_blueprint
 
-        async def stalled(**kwargs):
-            started.set()
-            await asyncio.Event().wait()
+        def scaffold_and_stop(*args, **kwargs):
+            result = scaffold(*args, **kwargs)
+            self.service.repository.put_conversation_run(
+                {**run, "cancellation": {"requested": True}}
+            )
+            return result
 
-        self.service.agent_certification_executor = SimpleNamespace(execute=stalled)
         with bind_run(self.service.agent_maker, "big-brother", session, run["id"], trusted):
             prepared = await self.dispatch(
                 "agent_maker_prepare",
@@ -255,18 +364,16 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
                 session,
             )
             record = prepared["data"]
-            build = asyncio.create_task(
-                self.dispatch("agent_maker_build", self.build_request(record), session)
-            )
-            await asyncio.wait_for(started.wait(), 3)
-            self.service.repository.put_conversation_run(
-                {**run, "cancellation": {"requested": True}}
-            )
-            result = await asyncio.wait_for(build, 3)
+            with patch.object(
+                self.service, "scaffold_agent_blueprint", side_effect=scaffold_and_stop
+            ):
+                result = await self.dispatch(
+                    "agent_maker_build", self.build_request(record), session
+                )
             self.assertEqual(result["error"]["code"], "agent_maker_run_inactive")
             stored = self.service.get_agent_blueprint("big-brother", record["id"])
-            self.assertEqual(stored["status"], "certification_failed")
-            self.assertEqual(stored["certification"]["status"], "cancelled")
+            self.assertEqual(stored["status"], "scaffolded")
+            self.assertIsNone(stored["certification"])
             self.assertIsNone(stored["activation"])
 
     async def test_personal_chat_cannot_accept_a_foreign_context_blueprint(self):
@@ -318,8 +425,16 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
             response = "I refuse: unauthorized" if "REFUSE" in prepared["message"] else "COMPLETE"
             return {"final_response": response}, {"total_tokens": 5}
 
-        body = self.build_request(record)
-        body.pop("blueprint_id")
+        body = {
+            "expected_revision": record["revision"],
+            "canonical_digest": record["canonical_digest"],
+            "idempotency_key": "certify-explicitly",
+            "cases": self.certification_cases(),
+            "max_cost_usd": 0.1,
+            "timeout_seconds": 30,
+            "max_turns_per_case": 4,
+            "decision": "certify",
+        }
         with (
             patch.object(
                 self.service.agents,

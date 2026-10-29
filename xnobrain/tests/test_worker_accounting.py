@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from xnobrain.integrations.accounting_context import current_accounting, inference_accounting
 from xnobrain.integrations.hermes_commands import HermesCommandsMixin
-from xnobrain.integrations.kanban_workers import KanbanWorkerSpawner
+from xnobrain.integrations.kanban_workers import WORKER_CLI_ARGV, KanbanWorkerSpawner
 from xnobrain.integrations.worker_cli import install_worker_agent
 
 
@@ -41,12 +41,12 @@ class WorkerAccountingTests(unittest.IsolatedAsyncioTestCase):
             child = NativeAgent(session_id="child")
             for instance in (agent, child):
                 request = await asyncio.to_thread(instance._build_api_kwargs, [])
-                self.assertEqual(request["extra_headers"]["X-GoRouter-Agent-Id"], "worker")
-                self.assertEqual(request["extra_headers"]["X-GoRouter-Parent-Run-Id"], "team")
+                self.assertEqual(request["extra_headers"]["X-XNORouter-Agent-Id"], "worker")
+                self.assertEqual(request["extra_headers"]["X-XNORouter-Parent-Run-Id"], "team")
                 self.assertEqual(
-                    request["extra_headers"]["X-GoRouter-Conversation-Id"], instance.session_id
+                    request["extra_headers"]["X-XNORouter-Conversation-Id"], instance.session_id
                 )
-                self.assertNotIn("X-GoRouter-Request-Id", request["extra_headers"])
+                self.assertNotIn("X-XNORouter-Request-Id", request["extra_headers"])
                 self.assertEqual(instance.kwargs["api_key"], "synthetic")
             with self.assertRaises(RuntimeError):
                 agent.run_conversation(failed=True)
@@ -88,7 +88,7 @@ class WorkerAccountingTests(unittest.IsolatedAsyncioTestCase):
                 goal_max_turns=2,
                 max_runtime_seconds=30,
                 model_override="provider/model",
-                skills=["verify"],
+                skills=["big-brother-control", "verify"],
             )
             kb = SimpleNamespace(
                 kanban_db_path=lambda **kw: profile / "kanban.db",
@@ -121,8 +121,10 @@ class WorkerAccountingTests(unittest.IsolatedAsyncioTestCase):
             argv = spawn.call_args.args[0]
             env = spawn.call_args.kwargs["env"]
             self.assertNotIn("synthetic", str(argv))
-            self.assertIn("xnobrain.integrations.worker_cli", argv)
+            self.assertEqual(argv[1:3], list(WORKER_CLI_ARGV))
             self.assertIn("-Q", argv)
+            self.assertNotIn("big-brother-control", argv)
+            self.assertIn("verify", argv)
             self.assertEqual(env["HERMES_KANBAN_CLAIM_LOCK"], "claim")
             self.assertEqual(env["HERMES_PROFILE"], "default")
             self.assertEqual(env["RUNTIME_EXECUTION_AGENT_ID"], "big-brother")
@@ -188,8 +190,8 @@ class WorkerAccountingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call.kwargs["input_bytes"], prepared["message"].encode())
         self.assertEqual(len(contexts), 2)
         self.assertEqual(contexts[0], contexts[1])
-        self.assertEqual(contexts[0]["headers"]["X-GoRouter-Agent-Id"], "a")
-        self.assertEqual(contexts[0]["headers"]["X-GoRouter-Parent-Run-Id"], "team")
+        self.assertEqual(contexts[0]["headers"]["X-XNORouter-Agent-Id"], "a")
+        self.assertEqual(contexts[0]["headers"]["X-XNORouter-Parent-Run-Id"], "team")
         self.assertIsNone(current_accounting())
 
     async def test_root_alias_dispatches_without_legacy_named_directory(self):

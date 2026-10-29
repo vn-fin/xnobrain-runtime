@@ -82,6 +82,22 @@ def encode_conversation_context(context: Mapping[str, Any]) -> str:
 
 
 def snapshot_intent(method: str, path: str) -> str:
+    organization_prefix = SNAPSHOT_PREFIX + "organization/"
+    if path.startswith(organization_prefix):
+        parts = path[len(organization_prefix) :].split("/")
+        if method == "GET" and len(parts) == 3 and parts[0] and parts[1] == "receipts" and parts[2]:
+            return "receipt"
+        if method == "POST" and len(parts) == 2 and parts[0] and parts[1] == "inspect":
+            return "export"
+        if (
+            method == "POST"
+            and len(parts) == 3
+            and parts[0]
+            and parts[1] == "refresh-checked"
+            and len(parts[2]) == 64
+            and all(c in "0123456789abcdef" for c in parts[2])
+        ):
+            return "import"
     if method == "POST" and path in {
         "/xnobrain/api/runtime/v1/skill-community/installations",
         "/xnobrain/api/runtime/v1/marketplace/install",

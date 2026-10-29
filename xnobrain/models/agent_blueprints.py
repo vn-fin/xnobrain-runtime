@@ -118,9 +118,13 @@ class BlueprintBudget(BaseModel):
 
 
 class AgentBlueprintSpec(BaseModel):
-    """A complete specialist definition without arbitrary config passthrough."""
-
-    model_config = ConfigDict(extra="forbid")
+    # Explicit so the LLM-facing tool schema survives docstring stripping.
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "description": "A complete specialist definition without arbitrary config passthrough."
+        },
+    )
     schema_version: Literal[1] = 1
     name: str = Field(min_length=1, max_length=200)
     purpose: str = Field(min_length=1, max_length=4_000)
@@ -133,7 +137,7 @@ class AgentBlueprintSpec(BaseModel):
     tools: BlueprintTools
     automation: BlueprintAutomation = Field(default_factory=BlueprintAutomation)
     budget: BlueprintBudget = Field(default_factory=BlueprintBudget)
-    acceptance: list[str] = Field(min_length=1, max_length=64)
+    acceptance: list[str] = Field(default_factory=list, max_length=64)
 
     @field_validator("skills")
     @classmethod
@@ -223,9 +227,13 @@ class AgentBlueprintLifecycleRequest(BaseModel):
 
 
 class BlueprintCertificationCase(BaseModel):
-    """A deterministic rubric executed by the child, never by the maker."""
-
-    model_config = ConfigDict(extra="forbid")
+    # Explicit so the LLM-facing tool schema survives docstring stripping.
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "description": "A deterministic rubric executed by the child, never by the maker."
+        },
+    )
     id: str = Field(min_length=1, max_length=128, pattern=_SAFE_COMPONENT)
     kind: Literal["job", "refusal", "tool", "context"]
     prompt: str = Field(min_length=1, max_length=20_000)
@@ -291,7 +299,7 @@ class AgentBlueprintRollbackCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     canonical_digest: str = Field(pattern=_SHA256)
-    certification_digest: str = Field(pattern=_SHA256)
+    certification_digest: str | None = Field(default=None, pattern=_SHA256)
     expected_active_profile_digest: str = Field(pattern=_SHA256)
     idempotency_key: str = Field(min_length=1, max_length=256, pattern=_SAFE_REFERENCE)
     decision: Literal["rollback"]
@@ -368,7 +376,7 @@ class BlueprintCertification(BlueprintLifecycleOperation):
 
 
 class BlueprintRollback(BlueprintLifecycleOperation):
-    certification_digest: str = Field(pattern=_SHA256)
+    certification_digest: str | None = Field(default=None, pattern=_SHA256)
     checkpoint_id: str = Field(pattern=_SAFE_REFERENCE)
     expected_active_profile_digest: str = Field(pattern=_SHA256)
     restored_profile_digest: str = Field(pattern=_SHA256)

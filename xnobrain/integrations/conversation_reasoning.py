@@ -74,7 +74,7 @@ def install_router_reasoning_transport(agent):
             )
             if not effort:
                 return {}, {}
-            # GoRouter's Codex adapter reads the Responses-style object. Use
+            # XNORouter's Codex adapter reads the Responses-style object. Use
             # extra_body so the OpenAI chat SDK merges it into the JSON body
             # without receiving an unsupported top-level Python argument.
             if "cx" in str(context.get("model") or "").split("/")[:-1]:

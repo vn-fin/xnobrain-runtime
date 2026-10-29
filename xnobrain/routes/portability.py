@@ -12,6 +12,27 @@ from .definition import route
 ROUTES = (
     route(
         "POST",
+        "/community/snapshots/organization/{agent_id}/inspect",
+        "organization_snapshot_inspect",
+        special="community_snapshot",
+        include_in_schema=False,
+    ),
+    route(
+        "POST",
+        "/community/snapshots/organization/{agent_id}/refresh-checked/{fingerprint}",
+        "organization_snapshot_refresh_checked",
+        special="community_snapshot",
+        include_in_schema=False,
+    ),
+    route(
+        "GET",
+        "/community/snapshots/organization/{agent_id}/receipts/{operation_id}",
+        "organization_snapshot_receipt",
+        special="community_snapshot",
+        include_in_schema=False,
+    ),
+    route(
+        "POST",
         "/community/snapshots/organization/{agent_id}/export",
         "organization_snapshot_export",
         special="community_snapshot",

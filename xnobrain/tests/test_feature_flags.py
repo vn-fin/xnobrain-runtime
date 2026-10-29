@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from xnobrain.feature_flags import (
     FEATURE_AGENT_CUSTOM_PAGE,
     FEATURE_AGENT_PORTABILITY,
+    FEATURE_ORGANIZATION_TEAM_AGENTS,
     FEATURE_UI_CUSTOMIZATION,
     enabled,
 )
@@ -25,6 +26,12 @@ class HandlerStub:
 
 
 class FeatureFlagTests(unittest.TestCase):
+    def test_team_agents_flag_defaults_on_and_fails_closed(self):
+        for value, want in ((None, True), ("true", True), ("false", False), ("invalid", False)):
+            environment = {} if value is None else {"FT_ENABLE_ORGANIZATION_TEAM_AGENTS": value}
+            with self.subTest(value=value), patch.dict(os.environ, environment, clear=True):
+                self.assertEqual(enabled(FEATURE_ORGANIZATION_TEAM_AGENTS), want)
+
     def test_flags_default_off_and_parse_explicit_true(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertFalse(enabled(FEATURE_AGENT_CUSTOM_PAGE))

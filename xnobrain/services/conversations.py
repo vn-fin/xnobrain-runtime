@@ -86,6 +86,8 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
             )
             if context.get("revocation_version") is None:
                 context.pop("revocation_version", None)
+            if context.get("payer_organization_id") is None:
+                context.pop("payer_organization_id", None)
         except Exception as exc:
             raise ServiceError(
                 "conversation ownership context is invalid",
@@ -144,7 +146,8 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
         return {
             field: context.get(field)
             for field in ConversationOwnershipContext.model_fields
-            if field not in {"owner_label", "revocation_version"} or context.get(field) is not None
+            if field not in {"owner_label", "revocation_version", "payer_organization_id"}
+            or context.get(field) is not None
         }
 
     def _bind_conversation_context(
@@ -400,7 +403,7 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
         weekly_budget = None
         if managed_accounting:
             cost = None
-            cost_source = "gorouter"
+            cost_source = "xnorouter"
             cost_status = "unavailable"
             try:
                 accounted, weekly_budget = await asyncio.gather(

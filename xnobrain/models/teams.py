@@ -4,6 +4,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints
 
+from .personal_resource_definitions import ExternalAgentReference
+
 StageModel = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
 
 
@@ -65,6 +67,7 @@ class TeamRunRecord(BaseModel):
 
 class TeamMember(BaseModel):
     agent_id: str
+    external_agent: ExternalAgentReference | None = None
     role: str
     allowed_tools: list[str] = Field(default_factory=list)
     enabled: bool = True

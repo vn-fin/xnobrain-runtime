@@ -9,8 +9,15 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from xnobrain.integrations.kanban_admission import dispatch_scope, take
-from xnobrain.integrations.native_admission import NativeAdmission, cancel_waiting, reconcile_native
+from xnobrain.integrations.native_admission import (
+    NativeAdmission,
+    cancel_waiting,
+    reconcile_native,
+)
+from xnobrain.repositories.base import RepositoryBase
 from xnobrain.repositories.custom_page_locks import acquire, release
+from xnobrain.repositories.runtime_update_gate import WorkspaceActivity
+from xnobrain.repositories.runtime_updates import RuntimeUpdateRepository
 from xnobrain.services.base import ServiceError
 
 
@@ -42,6 +49,32 @@ class NativeAdmissionTests(unittest.TestCase):
         gate.finish()
         self.assertFalse(NativeAdmission(self.root, "cron:occurrence", "cron").poll())
         self.assertEqual([call.args[0] for call in self.call.call_args_list].count("claim"), 1)
+
+    def test_existing_native_intent_cannot_claim_during_retained_source_drain(self):
+        gate = NativeAdmission(self.root, "cron:occurrence", "cron")
+        self.assertFalse(gate.poll())
+        self.response["state"] = "offered"
+        updates = RuntimeUpdateRepository(RepositoryBase(self.root, self.root / "profiles"))
+        with WorkspaceActivity(self.root):
+            updates.save_maintenance(
+                {
+                    "operation_id": "upd_wait",
+                    "generation": 1,
+                    "target": {},
+                    "dispatch_paused": True,
+                    "kind": "runtime_source",
+                }
+            )
+            self.call.reset_mock()
+            self.assertFalse(gate.poll())
+            self.call.assert_not_called()
+            self.assertEqual(gate.store.native_get(gate.id)["state"], "waiting")
+            # An already executing root can still spawn a necessary descendant.
+            with WorkspaceActivity(self.root):
+                pass
+        updates.clear_maintenance()
+        self.assertTrue(gate.poll())
+        gate.finish()
 
     def test_lost_registration_response_is_durable_and_cancelled_by_run_identity(self):
         gate = NativeAdmission(self.root, "cron:lost-response", "cron")
@@ -131,6 +164,9 @@ class NativeAdmissionTests(unittest.TestCase):
 
     @patch("xnobrain.integrations.kanban_admission.managed", return_value=True)
     def test_kanban_pressure_does_not_claim_or_count_failure(self, _managed):
+        self.enterContext(
+            patch("xnobrain.integrations.kanban_delegation.binding", return_value=None)
+        )
         task = SimpleNamespace(current_run_id=None, status="ready")
         original = Mock(return_value=task)
         kb = SimpleNamespace(

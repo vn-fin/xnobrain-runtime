@@ -51,7 +51,7 @@ class ProviderModelsMixin:
             # command that funds an organization run may use one.
             if model_id.startswith("org/") and not include_organization:
                 continue
-            # GoRouter's OpenAI envelope uses owned_by="gorouter" for every
+            # XNORouter's OpenAI envelope uses owned_by="xnorouter" for every
             # route. Provider ownership is encoded in the stable public model
             # prefix (for example ocz/, cx/, or anthropic/), so prefer it and
             # use owned_by only for legacy unprefixed model IDs.

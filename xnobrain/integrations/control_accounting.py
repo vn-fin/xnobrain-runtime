@@ -29,7 +29,7 @@ class ControlAccountingClient:
                 endpoint + "/xnobrain/api/control/internal/v1/accounting/weekly",
                 headers={
                     "Authorization": "Bearer " + binding["user_key"],
-                    "X-GoRouter-Agent-Id": binding["agent_id"],
+                    "X-XNORouter-Agent-Id": binding["agent_id"],
                 },
             )
             if response.status_code != 200:
@@ -64,7 +64,7 @@ class ControlAccountingClient:
                 + quote(str(conversation_id), safe=""),
                 headers={
                     "Authorization": "Bearer " + binding["user_key"],
-                    "X-GoRouter-Agent-Id": binding["agent_id"],
+                    "X-XNORouter-Agent-Id": binding["agent_id"],
                 },
             )
             if response.status_code != 200:
@@ -90,7 +90,7 @@ class ControlAccountingClient:
                 endpoint + "/xnobrain/api/control/internal/v1/accounting/agents/weekly",
                 headers={
                     "Authorization": "Bearer " + binding["user_key"],
-                    "X-GoRouter-Agent-Id": ",".join(agent_ids),
+                    "X-XNORouter-Agent-Id": ",".join(agent_ids),
                 },
             )
             body = response.json()

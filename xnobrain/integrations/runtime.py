@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import shutil
 import socket
 import threading
 import time
-from datetime import datetime, timezone
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,10 +28,10 @@ class LocalRuntimeManager:
         cpu_percent, cpu_usage_ns = self._cpu_usage()
         memory = self._memory_metrics()
         memory_limit = memory["memory_limit_bytes"]
-        # Docker's storage quota applies to the container writable layer. Read
-        # the root filesystem so the API reports that enforced limit instead
-        # of the host capacity backing the persistent profile volume.
-        disk = shutil.disk_usage(Path("/"))
+        instance_type = self._instance_type()
+        volumes = self._storage_volumes(instance_type)
+        root = volumes[0]
+        disk_available = all(volume["available"] for volume in volumes)
         network_rx, network_tx = self._network_usage()
         hostname = socket.gethostname()
         uptime = max(0, int(time.time() - self.started_at))
@@ -39,16 +41,21 @@ class LocalRuntimeManager:
             "info": {
                 "id": hostname,
                 "status": "running",
-                "type": "container",
+                "type": instance_type,
                 "image": os.getenv("XNOBRAIN_RUNTIME_IMAGE", "xnobrain-runtime"),
-                "created_at": datetime.fromtimestamp(self.started_at, timezone.utc)
+                "created_at": datetime.fromtimestamp(self.started_at, UTC)
                 .isoformat()
                 .replace("+00:00", "Z"),
-                "gateway": {"healthy": True, "port": int(os.getenv("API_SERVER_PORT", "3000"))},
+                "gateway": {
+                    "healthy": True,
+                    "port": int(os.getenv("API_SERVER_PORT", "3000")),
+                },
                 "resources": {
                     "cpus": str(cpus),
                     "memory": self._format_bytes(memory_limit),
-                    "root_size": self._format_bytes(disk.total),
+                    "root_size": self._format_bytes(root["total_bytes"])
+                    if root["available"]
+                    else "",
                 },
             },
             "metrics": {
@@ -56,8 +63,10 @@ class LocalRuntimeManager:
                 "vcpu_time_ns": cpu_usage_ns,
                 "uptime_seconds": uptime,
                 **memory,
-                "disk_usage_bytes": disk.used,
-                "disk_total_bytes": disk.total,
+                "disk_usage_bytes": sum(v["used_bytes"] for v in volumes) if disk_available else 0,
+                "disk_total_bytes": sum(v["total_bytes"] for v in volumes) if disk_available else 0,
+                "disk_metrics_available": disk_available,
+                "storage_volumes": volumes,
                 "net_rx_bytes": network_rx,
                 "net_tx_bytes": network_tx,
             },
@@ -75,8 +84,162 @@ class LocalRuntimeManager:
                 "status_code": 200,
                 "endpoint": "/xnobrain/api/runtime/v1/health",
             },
-            "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "updated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
+
+    @staticmethod
+    def _instance_type() -> str:
+        explicit = os.getenv("RUNTIME_INSTANCE_TYPE", "").strip().lower()
+        if explicit in {"container", "virtual-machine", "vm"}:
+            return "virtual-machine" if explicit == "vm" else explicit
+        if any(
+            Path(p).exists()
+            for p in ("/run/systemd/container", "/.dockerenv", "/run/.containerenv")
+        ):
+            return "container"
+        return "virtual-machine"
+
+    @staticmethod
+    def _mounts() -> list[dict[str, str]]:
+        mounts = []
+        try:
+            for line in Path("/proc/self/mountinfo").read_text().splitlines():
+                before, after = line.split(" - ", 1)
+                fields, filesystem = before.split(), after.split()
+                mounts.append(
+                    {
+                        "path": re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), fields[4]),
+                        "device": fields[2],
+                        "root": fields[3],
+                        "type": filesystem[0],
+                        "options": filesystem[2],
+                    }
+                )
+        except (OSError, ValueError, IndexError):
+            return []
+        return mounts
+
+    @staticmethod
+    def _filesystem_uuid(path: Path) -> str:
+        # Linux BTRFS_IOC_FS_INFO, a read-only unprivileged ioctl. fsid is the
+        # 16-byte field after max_id and num_devices in the 1024-byte UAPI struct.
+        import fcntl
+
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            buffer = bytearray(1024)
+            fcntl.ioctl(descriptor, 0x8400941F, buffer)
+            return str(uuid.UUID(bytes=bytes(buffer[16:32])))
+        finally:
+            os.close(descriptor)
+
+    @classmethod
+    def _volume_metrics(
+        cls, name: str, path: Path, mount: dict[str, str] | None, instance_type: str
+    ) -> dict[str, Any]:
+        volume = {
+            "name": name,
+            "available": False,
+            "used_bytes": None,
+            "total_bytes": None,
+            "source": "unavailable",
+        }
+        try:
+            if instance_type == "container" and mount and mount["type"] == "btrfs":
+                options = dict(
+                    option.split("=", 1) for option in mount["options"].split(",") if "=" in option
+                )
+                subvolume = int(options["subvolid"])
+                if subvolume <= 0:
+                    return volume
+                qgroup = (
+                    Path("/sys/fs/btrfs")
+                    / cls._filesystem_uuid(path)
+                    / "qgroups"
+                    / f"0_{subvolume}"
+                )
+                flags = int((qgroup / "limit_flags").read_text().strip(), 0)
+                # Match the usage counter to the enforced limit. Incus volume
+                # usage reports exclusive bytes even with a referenced quota.
+                if flags & 3 == 1 and not flags & 16:
+                    counter, maximum = "referenced", "max_referenced"
+                elif flags & 3 == 2 and not flags & 32:
+                    counter, maximum = "exclusive", "max_exclusive"
+                else:
+                    return volume
+                used = int((qgroup / counter).read_text())
+                total = int((qgroup / maximum).read_text())
+                source = f"btrfs_qgroup_{counter}"
+            elif instance_type == "container" and (
+                not mount or mount["type"] in {"overlay", "aufs"}
+            ):
+                # Shared writable layers do not expose a reliable quota through
+                # statvfs. Unknown is preferable to reporting the host pool.
+                return volume
+            else:
+                usage = shutil.disk_usage(path)
+                used, total, source = usage.used, usage.total, "filesystem"
+            if used < 0 or total <= 0:
+                return volume
+            volume.update(available=True, used_bytes=used, total_bytes=total, source=source)
+        except (OSError, ValueError, KeyError, ImportError):
+            pass
+        return volume
+
+    @classmethod
+    def storage_capacity(cls, path: Path, *, require_quota: bool = False) -> dict[str, Any]:
+        """Usable headroom, bounded by both the enforced quota and filesystem."""
+        unavailable = {"available": False, "free_bytes": None, "source": "unavailable"}
+        try:
+            usage = shutil.disk_usage(path)
+            if not require_quota:
+                return {"available": True, "free_bytes": usage.free, "source": "filesystem"}
+            path = path.resolve()
+            mount = next(
+                (
+                    mount
+                    for mount in sorted(
+                        cls._mounts(), key=lambda item: len(item["path"]), reverse=True
+                    )
+                    if path.is_relative_to(Path(mount["path"]))
+                ),
+                None,
+            )
+            volume = cls._volume_metrics("data", path, mount, "container")
+            if not volume["available"] or not volume["source"].startswith("btrfs_qgroup_"):
+                return unavailable
+            return {
+                "available": True,
+                "free_bytes": max(0, min(usage.free, volume["total_bytes"] - volume["used_bytes"])),
+                "source": volume["source"],
+            }
+        except (OSError, ValueError):
+            return unavailable
+
+    def _storage_volumes(self, instance_type: str) -> list[dict[str, Any]]:
+        mounts = self._mounts()
+        root_mount = next((m for m in mounts if m["path"] == "/"), None)
+        volumes = [self._volume_metrics("root", Path("/"), root_mount, instance_type)]
+        # Keep VM filesystem reporting compatible. Containers additionally
+        # report a separately mounted data volume; never double-count root.
+        if instance_type == "container":
+            data_path = self.data_dir.resolve()
+            data_mount = next(
+                (
+                    m
+                    for m in sorted(mounts, key=lambda m: len(m["path"]), reverse=True)
+                    if data_path.is_relative_to(Path(m["path"]))
+                ),
+                None,
+            )
+            if (
+                data_mount
+                and root_mount
+                and (data_mount["device"], data_mount["root"])
+                != (root_mount["device"], root_mount["root"])
+            ):
+                volumes.append(self._volume_metrics("data", data_path, data_mount, instance_type))
+        return volumes
 
     def _cpu_usage(self) -> tuple[float, int]:
         usage_ns = 0
@@ -146,7 +309,10 @@ class LocalRuntimeManager:
             pass
         candidates.extend(
             [
-                (Path("/sys/fs/cgroup/memory.current"), Path("/sys/fs/cgroup/memory.max")),
+                (
+                    Path("/sys/fs/cgroup/memory.current"),
+                    Path("/sys/fs/cgroup/memory.max"),
+                ),
                 (
                     Path("/sys/fs/cgroup/memory/memory.usage_in_bytes"),
                     Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),

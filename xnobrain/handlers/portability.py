@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import Response, StreamingResponse
 
-from ..feature_flags import FEATURE_AGENT_PORTABILITY
+from ..feature_flags import FEATURE_AGENT_PORTABILITY, FEATURE_ORGANIZATION_TEAM_AGENTS
 from ..feature_flags import enabled as feature_enabled
 from ..repositories.base import StoreError
 from ..services import EXPECTED_ERRORS
@@ -69,6 +69,41 @@ class PortabilityHandlers:
                 )
             )
         try:
+            action = request.scope["route"].name
+            if action in {
+                "organization_snapshot_inspect",
+                "organization_snapshot_refresh_checked",
+            } and not feature_enabled(FEATURE_ORGANIZATION_TEAM_AGENTS):
+                raise StoreError("Team agent updates are disabled", status=404, code="not_found")
+            if action in {"organization_snapshot_inspect", "organization_snapshot_receipt"}:
+                from ..services.portability_organization import (
+                    inspect_organization_profile,
+                    organization_refresh_receipt,
+                )
+
+                context = from_request(request)
+                recipient = "\x00".join(
+                    (context.subject, context.tenant_id, context.organization_id)
+                )
+                arguments = [self.service.portability, request.path_params["agent_id"], recipient]
+                callback = inspect_organization_profile
+                if action == "organization_snapshot_receipt":
+                    if (
+                        request.path_params["operation_id"]
+                        != request.headers[SNAPSHOT_OPERATION_HEADER]
+                    ):
+                        raise StoreError("Operation mismatch", status=403, code="permission_denied")
+                    callback = organization_refresh_receipt
+                    arguments.extend(
+                        [
+                            request.headers[SNAPSHOT_OPERATION_HEADER],
+                            request.headers[SNAPSHOT_SHA_HEADER],
+                        ]
+                    )
+                result = await asyncio.to_thread(callback, *arguments)
+                response = self.success(result)
+                response.headers["Cache-Control"] = "private, no-store"
+                return response
             if request.scope["route"].name == "community_snapshot_receipt":
                 if (
                     request.path_params["operation_id"]
@@ -168,9 +203,14 @@ class PortabilityHandlers:
                     organization=organization,
                     refresh_target=(
                         request.path_params["agent_id"]
-                        if request.scope["route"].name == "organization_snapshot_refresh"
+                        if request.scope["route"].name
+                        in {
+                            "organization_snapshot_refresh",
+                            "organization_snapshot_refresh_checked",
+                        }
                         else None
                     ),
+                    expected_fingerprint=request.path_params.get("fingerprint"),
                     recipient="\x00".join(
                         (context.subject, context.tenant_id, context.organization_id)
                     ),

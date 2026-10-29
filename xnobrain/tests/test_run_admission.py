@@ -7,6 +7,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from xnobrain.integrations.run_admission import AdmissionClient, immediate_submission
 from xnobrain.repositories.custom_page_locks import execution_active, release
+from xnobrain.repositories.runtime_update_gate import (
+    WorkspaceActivity,
+    require_admission,
+)
+from xnobrain.repositories.runtime_updates import RuntimeUpdateRepository
 from xnobrain.services.base import ServiceError
 from xnobrain.services.conversation_runs import ConversationRunService
 from xnobrain.services.run_admission import RunAdmissionService
@@ -76,6 +81,70 @@ class CapacityQueueTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await fixtures.ConversationRunServiceTests.asyncTearDown(self)
 
+    async def test_next_queued_root_cannot_inherit_finishing_task_lineage(self):
+        record = await self.service.start_run("agent-one", "session-one", {"input": "hello"})
+        self.client.register.return_value = {**self.offer, "state": "offered"}
+        self.platform.runtime_updates.require_dispatch = lambda: require_admission(
+            self.repository.data_dir
+        )
+        updates = RuntimeUpdateRepository(self.repository)
+        with WorkspaceActivity(self.repository.data_dir):
+            updates.save_maintenance(
+                {
+                    "operation_id": "upd_wait",
+                    "generation": 1,
+                    "target": {},
+                    "dispatch_paused": True,
+                    "kind": "runtime_source",
+                }
+            )
+            # Even if this callback was created by an admitted executor, its
+            # next queue item is a new logical task and must remain waiting.
+            await self.capacity._tick(self.capacity.store.pending()[0])
+            self.client.claim.assert_not_awaited()
+            self.assertFalse(self.agents.received)
+            with WorkspaceActivity(self.repository.data_dir):
+                pass
+        self.assertEqual(self.capacity.store.pending()[0]["state"], "waiting")
+        self.assertEqual(
+            self.repository.get_conversation_run("agent-one", "session-one", record["id"])[
+                "status"
+            ],
+            "queued",
+        )
+        updates.clear_maintenance()
+        self.client.observe.return_value = {**self.offer, "state": "offered"}
+        await self.capacity._tick(self.capacity.store.pending()[0])
+        self.client.claim.assert_awaited_once()
+
+    async def test_drain_during_capacity_claim_allows_admitted_task_handoff(self):
+        await self.service.start_run("agent-one", "session-one", {"input": "hello"})
+        self.client.register.return_value = {**self.offer, "state": "offered"}
+        self.platform.runtime_updates.require_dispatch = lambda: require_admission(
+            self.repository.data_dir
+        )
+        updates = RuntimeUpdateRepository(self.repository)
+
+        async def claim(_offer):
+            self.assertTrue(execution_active(self.repository.data_dir, "agent-one"))
+            updates.save_maintenance(
+                {
+                    "operation_id": "upd_wait",
+                    "generation": 1,
+                    "target": {},
+                    "dispatch_paused": True,
+                    "kind": "runtime_source",
+                }
+            )
+            return {**self.offer, "state": "starting", "nonce": "nonce", "runtime_boot": "boot"}
+
+        self.client.claim.side_effect = claim
+        await self.capacity._tick(self.capacity.store.pending()[0])
+        self.assertEqual(self.capacity.store.pending()[0]["state"], "running")
+        await asyncio.sleep(0.01)
+        self.assertTrue(self.agents.received)
+        updates.clear_maintenance()
+
     async def test_wait_is_durable_without_activity_and_dispatches_once(self):
         record = await self.service.start_run(
             "agent-one", "session-one", {"input": "hello", "idempotency_key": "once"}
@@ -132,6 +201,38 @@ class CapacityQueueTests(unittest.IsolatedAsyncioTestCase):
         await self.capacity._tick(self.capacity.store.pending()[0])
         self.assertEqual(self.capacity.store.pending(), [])
         self.client.claim.assert_not_awaited()
+
+    async def test_immediate_rejection_logs_waiting_reason(self):
+        with (
+            self.assertLogs("xnobrain.services.run_admission", "WARNING") as logs,
+            immediate_submission(),
+            self.assertRaises(ServiceError) as caught,
+        ):
+            await self.service.start_run("agent-one", "session-one", {"input": "hello"})
+        self.assertEqual(caught.exception.code, "capacity_service_unavailable")
+        entry = logs.records[-1]
+        self.assertEqual(entry.event, "run_admission_immediate_rejected")
+        self.assertEqual(entry.error, self.pressure_reason)
+        self.assertEqual(entry.agent_id, "agent-one")
+
+    async def test_immediate_rejection_logs_hidden_dispatch_error(self):
+        def blocked():
+            raise ServiceError("paused", status=409, code="runtime_update_active")
+
+        self.platform.runtime_updates = SimpleNamespace(require_dispatch=blocked)
+        self.client.register.return_value = {**self.offer, "state": "offered", "nonce": "n"}
+        with (
+            self.assertLogs("xnobrain.services.run_admission", "WARNING") as logs,
+            immediate_submission(),
+            self.assertRaises(ServiceError) as caught,
+        ):
+            await self.service.start_run("agent-one", "session-one", {"input": "hello"})
+        self.assertEqual(caught.exception.code, "capacity_service_unavailable")
+        entry = logs.records[-1]
+        self.assertEqual(entry.error, "runtime_update_active")
+        self.assertEqual(entry.http_status_code, 409)
+        self.assertEqual(entry.error_type, "ServiceError")
+        self.assertNotIn("hello", entry.getMessage())
 
     async def test_lost_claim_response_recovers_without_execution(self):
         record = await self.service.start_run("agent-one", "session-one", {"input": "hello"})

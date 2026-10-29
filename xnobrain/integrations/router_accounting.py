@@ -1,10 +1,10 @@
-"""Strict consumer for the GoRouter user-weekly usage contract."""
+"""Strict consumer for the XNORouter user-weekly usage contract."""
 
 import math
 from datetime import datetime, timezone
 from typing import Any
 
-CAPABILITY = "gorouter-user-usage-v1"
+CAPABILITY = "xnorouter-user-usage-v1"
 
 
 class AccountingUnavailable(RuntimeError):
@@ -57,7 +57,7 @@ def weekly_budget_decision(
         raise AccountingUnavailable("Authoritative budget check unavailable") from error
     percent = cost / weekly_usd * 100
     return {
-        "source": "gorouter",
+        "source": "xnorouter",
         "capability_version": CAPABILITY,
         "cost_basis": "accounted",
         "enforcement": "soft_admission",

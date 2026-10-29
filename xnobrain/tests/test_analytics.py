@@ -599,7 +599,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 usage["cost"],
                 {
-                    "source": "gorouter",
+                    "source": "xnorouter",
                     "status": "accounted",
                     "total_usd": 0.42,
                 },
@@ -635,7 +635,7 @@ class AnalyticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(
             response.json()["data"]["cost"],
-            {"source": "gorouter", "status": "unknown", "total_usd": 0.0},
+            {"source": "xnorouter", "status": "unknown", "total_usd": 0.0},
         )
 
     async def test_managed_usage_does_not_load_message_content(self):

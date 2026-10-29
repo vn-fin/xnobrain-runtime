@@ -13,8 +13,14 @@ from opentelemetry import trace
 
 from ..integrations.run_admission import BOOT_ID, AdmissionClient, admitted_root
 from ..repositories.base import StoreError
-from ..repositories.custom_page_locks import ConversationLease, ExecutionLease, acquire, release
+from ..repositories.custom_page_locks import (
+    ConversationLease,
+    ExecutionLease,
+    acquire,
+    release,
+)
 from ..repositories.run_admission import AdmissionRepository
+from ..repositories.runtime_update_gate import independent_dispatch
 from ..trusted_context import TrustedRequestContext
 from .base import ServiceError
 
@@ -110,6 +116,7 @@ class RunAdmissionService:
         await self.client.receipt(admission, "cancelled")
 
     async def admit_immediate(self, record):
+        cause = {"error": "dispatch_not_started", "error_type": "", "http_status_code": None}
         try:
             admission = await self.client.register(record["id"], immediate=True)
             self.store.update(record["id"], "waiting", admission)
@@ -120,8 +127,26 @@ class RunAdmissionService:
                     return self.files.get_conversation_run(
                         record["agent_id"], record["conversation_id"], record["id"]
                     )
-        except (ServiceError, StoreError):
-            pass
+            else:
+                cause["error"] = admission.get("reason_code") or "capacity_" + str(
+                    admission.get("state") or "unknown"
+                )
+        except (ServiceError, StoreError) as error:
+            cause = {
+                "error": error.code,
+                "error_type": type(error).__name__,
+                "http_status_code": error.status,
+            }
+        # The public response stays generic; the log keeps the real cause.
+        logging.getLogger(__name__).warning(
+            "Immediate run admission rejected",
+            extra={
+                "event": "run_admission_immediate_rejected",
+                "agent_id": record["agent_id"],
+                "run_id": record["id"],
+                **cause,
+            },
+        )
         # This API has no durable wait contract. Persist cancellation before the
         # HTTP rejection; the coordinator only has a cleanup obligation left.
         await self.cancel(record)
@@ -203,9 +228,12 @@ class RunAdmissionService:
                 )
         return True
 
+    @independent_dispatch
     async def _tick(self, row):
         if row["payload"].get("_kind") == "team":
-            if row["payload"].get("organization_id"):
+            if row["payload"].get("personal_execution"):
+                await self.platform.personal_delegated_executions.reconcile_admission(row)
+            elif row["payload"].get("organization_id"):
                 await self.platform.organization_team_executions.reconcile_admission(row)
             else:
                 await self._tick_team(row)
@@ -368,69 +396,90 @@ class RunAdmissionService:
                 return
             self._validate(record, payload, trusted)
             lease = ExecutionLease(self.files.data_dir, record["agent_id"])
-            # Persist the offer before the network mutation so a lost response is recoverable.
-            self.store.update(row["id"], "claiming", {**offer, "runtime_boot": BOOT_ID})
-            admission = await self.client.claim(offer)
-            if admission["state"] != "starting":
-                self.store.update(row["id"], "waiting", admission)
-                self.waiting(record, admission.get("reason_code"))
-                return
-            self.store.update(row["id"], "starting", admission)
-            latest = self.files.get_conversation_run(row["agent"], row["conversation"], row["id"])
-            if latest["status"] != "queued":
-                await self.client.receipt(admission, "cancelled")
-                return
-            self._validate(record, payload, trusted)
-            if (
-                trusted is not None
-                and (record.get("ownership_context") or {}).get("owner_kind") == "personal"
-            ):
-                payload["_custom_page_principal"] = trusted
-                if not record.get("ui_assistance") and record.get("custom_page_datasets") is None:
-                    payload["_agent_maker_principal"] = trusted
-            capacity = {**(record.get("capacity") or {}), "state": "admitted", "reason_code": ""}
-            record = self.runs._append(
-                record,
-                {
-                    "event": "message",
-                    "data": {
-                        "event": "run.capacity_admitted",
-                        "run_id": row["id"],
-                        "capacity": capacity,
+            # The lease admitted this logical task before a drain can close
+            # admission. Its claim response and executor handoff must retain it.
+            with lease.activity.lineage():
+                # Persist the offer before the network mutation so a lost response is recoverable.
+                self.store.update(row["id"], "claiming", {**offer, "runtime_boot": BOOT_ID})
+                admission = await self.client.claim(offer)
+                if admission["state"] != "starting":
+                    self.store.update(row["id"], "waiting", admission)
+                    self.waiting(record, admission.get("reason_code"))
+                    return
+                self.store.update(row["id"], "starting", admission)
+                latest = self.files.get_conversation_run(
+                    row["agent"], row["conversation"], row["id"]
+                )
+                if latest["status"] != "queued":
+                    await self.client.receipt(admission, "cancelled")
+                    return
+                self._validate(record, payload, trusted)
+                if (
+                    trusted is not None
+                    and (record.get("ownership_context") or {}).get("owner_kind") == "personal"
+                ):
+                    payload["_custom_page_principal"] = trusted
+                    if (
+                        not record.get("ui_assistance")
+                        and record.get("custom_page_datasets") is None
+                    ):
+                        payload["_agent_maker_principal"] = trusted
+                capacity = {
+                    **(record.get("capacity") or {}),
+                    "state": "admitted",
+                    "reason_code": "",
+                }
+                record = self.runs._append(
+                    record,
+                    {
+                        "event": "message",
+                        "data": {
+                            "event": "run.capacity_admitted",
+                            "run_id": row["id"],
+                            "capacity": capacity,
+                        },
                     },
-                },
-            )
-            entry = _ActiveConversationRun(
-                row["id"],
-                row["agent"],
-                row["conversation"],
-                lifecycle_lease=lease,
-                conversation_lease=conversation,
-            )
-            self.runs._active[row["id"]] = entry
-            self.runs._by_conversation[(row["agent"], row["conversation"])] = row["id"]
-            self.store.update(row["id"], "running", admission)
-            self.xno_data_grants.pop(record["id"], None)
+                )
+                entry = _ActiveConversationRun(
+                    row["id"],
+                    row["agent"],
+                    row["conversation"],
+                    lifecycle_lease=lease,
+                    conversation_lease=conversation,
+                )
+                self.runs._active[row["id"]] = entry
+                self.runs._by_conversation[(row["agent"], row["conversation"])] = row["id"]
+                self.store.update(row["id"], "running", admission)
+                self.xno_data_grants.pop(record["id"], None)
 
-            async def execute():
-                with admitted_root(admission):
-                    # Keep an acknowledgement obligation in the journal if Control is down.
-                    try:
-                        await self.client.receipt(admission, "running")
-                    except ServiceError:
-                        pass
-                    await lease.activity.run(self.runs._drive, record, payload)
+                async def execute():
+                    with admitted_root(admission):
+                        # Keep an acknowledgement obligation in the journal if Control is down.
+                        try:
+                            await self.client.receipt(admission, "running")
+                        except ServiceError:
+                            pass
+                        await lease.activity.run(self.runs._drive, record, payload)
 
-            entry.task = asyncio.create_task(execute(), name="conversation-run-" + row["id"])
-            entry.task.add_done_callback(lambda _task: self.runs._deregister(row["id"]))
-            registered = True
+                entry.task = asyncio.create_task(execute(), name="conversation-run-" + row["id"])
+                entry.task.add_done_callback(lambda _task: self.runs._deregister(row["id"]))
+                registered = True
         finally:
             if not registered:
                 if lease is not None:
                     lease.close()
                 conversation.close()
 
-    def enqueue_team(self, record, team, workflow, *, repository=None, organization_id=None):
+    def enqueue_team(
+        self,
+        record,
+        team,
+        workflow,
+        *,
+        repository=None,
+        organization_id=None,
+        personal_execution=False,
+    ):
         capacity = {
             "state": "waiting",
             "reason_code": "capacity_recovering",
@@ -441,6 +490,8 @@ class RunAdmissionService:
         payload = {"_kind": "team", "_record": record, "team": team, "workflow": workflow}
         if organization_id is not None:
             payload["organization_id"] = organization_id
+        if personal_execution:
+            payload["personal_execution"] = True
         self.store.enqueue(
             {
                 "id": record["id"],
@@ -453,6 +504,7 @@ class RunAdmissionService:
         self.store.update(record["id"], "waiting", {})
         return record
 
+    @independent_dispatch
     async def _tick_team(self, row, *, teams=None):
         teams = teams or self.platform.team_runs
         files = teams.repository

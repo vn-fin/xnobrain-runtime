@@ -11,11 +11,13 @@ if [[ -f "$script_dir/link-native-profiles.sh" ]]; then
   linker="$script_dir/link-native-profiles.sh"
   hermes="$script_dir/../.tools/hermes-agent/venv/bin/hermes"
 fi
+# Import entry points instead of `python -m` so compiled packages also work.
+rebalance_cli='from xnobrain.integrations.rebalance_cli import run; run()'
 
 # Hold a kernel activity lease before profile linking or any native command.
 # Children inherit the same open descriptor; completion never relies on a PID.
 if [[ -z "${XNOBRAIN_ACTIVITY_FD:-}" && -z "${RUNTIME_WORKSPACE_ID:-}" ]]; then
-  exec "$(dirname "$hermes")/python" -m xnobrain.integrations.rebalance_cli bash "${BASH_SOURCE[0]}" "$@"
+  exec "$(dirname "$hermes")/python" -c "$rebalance_cli" bash "${BASH_SOURCE[0]}" "$@"
 fi
 
 export HERMES_ROOT_PROFILE="${RUNTIME_HERMES_ROOT_PROFILE:-${RUNTIME_HERMES_HOME:-${HERMES_ROOT_PROFILE:-${HERMES_HOME:-}}}}"
@@ -36,7 +38,7 @@ done
 if [[ "$help" == true ]]; then link_args=(); fi
 if [[ -n "$HERMES_PROFILES_ROOT" || -n "${RUNTIME_HERMES_HOME:-}" ]]; then
   if [[ -n "${RUNTIME_WORKSPACE_ID:-}" && -z "${XNOBRAIN_ACTIVITY_FD:-}" ]]; then
-    "$(dirname "$hermes")/python" -m xnobrain.integrations.rebalance_cli bash "$linker" "${link_args[@]}"
+    "$(dirname "$hermes")/python" -c "$rebalance_cli" bash "$linker" "${link_args[@]}"
   else
     bash "$linker" "${link_args[@]}"
   fi
@@ -75,6 +77,6 @@ elif [[ -n "$key_file" ]]; then
 fi
 
 if [[ -n "${RUNTIME_WORKSPACE_ID:-}" ]]; then
-  exec "$(dirname "$hermes")/python" -m xnobrain.integrations.capacity_cli "$@"
+  exec "$(dirname "$hermes")/python" -c 'from xnobrain.integrations.capacity_cli import main; main()' "$@"
 fi
 exec "$hermes" "$@"
