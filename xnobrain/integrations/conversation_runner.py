@@ -1516,9 +1516,9 @@ class ConversationRunnerMixin:
                     with (
                         inference_accounting(
                             accounting["binding"],
-                            headers.get("X-XNORouter-Conversation-Id", ""),
-                            headers.get("X-XNORouter-Run-Id", ""),
-                            headers.get("X-XNORouter-Parent-Run-Id", ""),
+                            headers.get("X-GoRouter-Conversation-Id", ""),
+                            headers.get("X-GoRouter-Run-Id", ""),
+                            headers.get("X-GoRouter-Parent-Run-Id", ""),
                         ),
                         conversation_profile_scope(profile_dir),
                     ):

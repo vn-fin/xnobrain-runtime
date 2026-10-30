@@ -48,7 +48,7 @@ class ControlAccountingTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(
                     kwargs["headers"],
-                    {"Authorization": "Bearer synthetic-user-key", "X-XNORouter-Agent-Id": "local"},
+                    {"Authorization": "Bearer synthetic-user-key", "X-GoRouter-Agent-Id": "local"},
                 )
             fixture["agent_ids"] = ["foreign"]
             with (
@@ -85,7 +85,7 @@ class ControlAccountingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(args[0].endswith("/conversations/ses%2Fencoded"))
         self.assertEqual(
             kwargs["headers"],
-            {"Authorization": "Bearer synthetic-user-key", "X-XNORouter-Agent-Id": "local"},
+            {"Authorization": "Bearer synthetic-user-key", "X-GoRouter-Agent-Id": "local"},
         )
 
     async def test_unconfigured_control_does_not_fall_back_to_local_spend(self):
@@ -135,7 +135,7 @@ class ControlAccountingTests(unittest.IsolatedAsyncioTestCase):
                     {"a": {"weekly_usd": 5}, "b": {"weekly_usd": 2}}
                 )
                 self.assertEqual(get.await_count, 1)
-                self.assertEqual(get.call_args.kwargs["headers"]["X-XNORouter-Agent-Id"], "a,b")
+                self.assertEqual(get.call_args.kwargs["headers"]["X-GoRouter-Agent-Id"], "a,b")
                 self.assertTrue(result["a"]["accepting_chats"])
                 self.assertFalse(result["b"]["accepting_chats"])
                 rows.pop()

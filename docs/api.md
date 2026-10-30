@@ -1259,7 +1259,7 @@ returns both conversation totals and `weekly_budget` in the existing session
 usage response. These two read queries run concurrently; the browser makes one
 usage call and no duplicate pre-send budget call. Control uses `GET /admin/usage/summary?breakdown=none` rather than activity/timeline.
 Runtime performs the authoritative weekly admission check immediately before new
-top-level work, uses `xnorouter-user-usage-v1`, and fails closed when
+top-level work, uses `gorouter-user-usage-v1`, and fails closed when
 unavailable. Stored-only reports do not prove durable acceptance or complete
 in-flight coverage.
 

@@ -35,12 +35,12 @@ def install_worker_agent(binding, run_id, parent_run_id=""):
         install_image_tools(agent, profile / "workspace", [profile / "cache"])
         conversation = str(agent.session_id or run_id)
         headers = {
-            "X-XNORouter-Agent-Id": binding["agent_id"],
-            "X-XNORouter-Conversation-Id": conversation,
-            "X-XNORouter-Run-Id": run_id,
+            "X-GoRouter-Agent-Id": binding["agent_id"],
+            "X-GoRouter-Conversation-Id": conversation,
+            "X-GoRouter-Run-Id": run_id,
         }
         if parent_run_id:
-            headers["X-XNORouter-Parent-Run-Id"] = parent_run_id
+            headers["X-GoRouter-Parent-Run-Id"] = parent_run_id
         for client in (getattr(agent, "client", None), getattr(agent, "async_client", None)):
             if client is not None and hasattr(client, "_custom_headers"):
                 client._custom_headers = {**(client._custom_headers or {}), **headers}

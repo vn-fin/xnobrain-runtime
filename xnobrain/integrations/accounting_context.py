@@ -50,7 +50,7 @@ def accounting_binding(agent_id, context_id="personal", conversation_id=""):
         "context_id": context_id,
         "agent_id": agent_id,
         "user_key": token,
-        "capability_version": "xnorouter-user-usage-v1",
+        "capability_version": "gorouter-user-usage-v1",
     }
 
 
@@ -60,7 +60,7 @@ def current_accounting():
 
 @contextmanager
 def inference_accounting(binding, conversation_id="", run_id="", parent_run_id=""):
-    headers = {"X-XNORouter-Agent-Id": binding["agent_id"]}
+    headers = {"X-GoRouter-Agent-Id": binding["agent_id"]}
     for name, value in [
         ("Conversation", conversation_id),
         ("Run", run_id),
@@ -69,7 +69,7 @@ def inference_accounting(binding, conversation_id="", run_id="", parent_run_id="
         if value:
             if not _OPAQUE.fullmatch(value):
                 raise AccountingUnavailable("Invalid accounting correlation")
-            headers[f"X-XNORouter-{name}-Id"] = value
+            headers[f"X-GoRouter-{name}-Id"] = value
     # Router generates a fresh logical request ID per call. A conversation/run
     # ID is never reused as a request/idempotency key across model turns.
     token = _CURRENT.set({"binding": dict(binding), "headers": headers})

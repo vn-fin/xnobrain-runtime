@@ -4,7 +4,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any
 
-CAPABILITY = "xnorouter-user-usage-v1"
+CAPABILITY = "gorouter-user-usage-v1"
 
 
 class AccountingUnavailable(RuntimeError):
