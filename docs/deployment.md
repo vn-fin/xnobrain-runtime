@@ -32,8 +32,8 @@ the organization's connected AI providers. It requires no delegated member
 funding registration. An organization context on a member workspace still
 requires Control-issued funding. Connector enrollment and browser context
 selection alone never establish workspace ownership. Existing organization
-workspaces must receive these ownership settings when applying this update;
-missing settings preserve the funding requirement.
+workspaces receive these ownership settings before Runtime starts during a
+managed source rollout; missing settings preserve the funding requirement.
 
 The runtime defaults to 4 CPUs and 4 GB RAM and requests a 100 GB writable
 root disk. Increase `XNOBRAIN_RUNTIME_CPUS`,
