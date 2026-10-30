@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import shutil
+import stat
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import mock_open, patch
 
 _SPEC = importlib.util.spec_from_file_location(
     "runtime_storage_metrics", Path(__file__).parents[1] / "integrations" / "runtime.py"
@@ -60,6 +63,77 @@ class RuntimeStorageMetricsTests(unittest.TestCase):
         self.assertEqual((root["used_bytes"], root["total_bytes"]), (7903092736, 8 << 30))
         self.assertEqual((data["used_bytes"], data["total_bytes"]), (6889472, 2 << 30))
         self.assertEqual(root["source"], "btrfs_qgroup_referenced")
+
+    def test_private_btrfs_usage_excludes_shared_image_blocks(self):
+        root, data = self.volumes()
+        self.assertEqual(root["private_used_bytes"], 50000000)
+        self.assertEqual(root["shared_bytes"], 7903092736 - 50000000)
+        self.assertTrue(root["private_metrics_available"])
+        self.assertEqual(data["used_bytes"], 6889472)
+
+    def test_missing_exclusive_counter_does_not_break_capacity(self):
+        del self.files["/sys/fs/btrfs/test-filesystem/qgroups/0_292/exclusive"]
+        self.assertTrue(self.volumes()[1]["available"])
+        self.assertEqual(self.capacity()["free_bytes"], (2 << 30) - 6889472)
+
+    def test_host_sample_includes_filesystem_overhead_not_just_files(self):
+        volumes = [{"name": "root"}, {"name": "data"}]
+        with patch.object(
+            Manager,
+            "_private_storage_sample",
+            return_value={
+                "root": {"private_used_bytes": 464257024, "shared_bytes": 8116764672},
+                "data": {"private_used_bytes": 665845760, "shared_bytes": 0},
+            },
+        ):
+            Manager._attach_private_storage(volumes)
+        self.assertEqual(sum(v["private_used_bytes"] for v in volumes), 1130102784)
+        self.assertEqual(volumes[1]["shared_bytes"], 0)
+
+    def test_missing_invalid_or_partial_host_samples_are_unknown(self):
+        for sample in (
+            {},
+            {"root": {"private_used_bytes": -1, "shared_bytes": 2}},
+            {"root": {"private_used_bytes": True, "shared_bytes": 2}},
+        ):
+            with (
+                self.subTest(sample=sample),
+                patch.object(Manager, "_private_storage_sample", return_value=sample),
+            ):
+                volumes = [{"name": "root", "used_bytes": 7 << 30}]
+                Manager._attach_private_storage(volumes)
+                self.assertFalse(volumes[0]["private_metrics_available"])
+                self.assertIsNone(volumes[0]["private_used_bytes"])
+
+    def test_sample_rejects_stale_foreign_malformed_or_untrusted_data(self):
+        base = {
+            "version": 1,
+            "workspace_id": "w",
+            "sampled_at": 1000,
+            "source": "lvm_thin_exclusive",
+            "volumes": {"root": {"private_used_bytes": 0}},
+        }
+        metadata = SimpleNamespace(st_mode=stat.S_IFREG | 0o644, st_uid=0, st_size=200)
+        for changes, now, uid, mode, accepted in (
+            ({}, 1050, 0, 0o644, True),
+            ({}, 1181, 0, 0o644, False),
+            ({}, 990, 0, 0o644, False),
+            ({"workspace_id": "other"}, 1050, 0, 0o644, False),
+            ({}, 1050, 1000, 0o644, False),
+            ({}, 1050, 0, 0o666, False),
+            ({"source": "filesystem"}, 1050, 0, 0o644, False),
+            ({"sampled_at": "bad"}, 1050, 0, 0o644, False),
+        ):
+            metadata.st_uid, metadata.st_mode = uid, stat.S_IFREG | mode
+            with (
+                self.subTest(changes=changes, now=now, uid=uid, mode=mode),
+                patch.dict(os.environ, {"RUNTIME_WORKSPACE_ID": "w"}),
+                patch.object(_MODULE.os, "open", return_value=123),
+                patch.object(_MODULE.os, "fdopen", mock_open(read_data=json.dumps(base | changes))),
+                patch.object(_MODULE.os, "fstat", return_value=metadata),
+                patch.object(_MODULE.time, "time", return_value=now),
+            ):
+                self.assertEqual(bool(Manager._private_storage_sample()), accepted)
 
     def test_data_directory_inside_mount_uses_that_volume(self):
         self.assertEqual(len(self.volumes(data_dir="/opt/data/profiles")), 2)

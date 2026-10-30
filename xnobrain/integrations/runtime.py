@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import re
 import shutil
 import socket
+import stat
 import threading
 import time
 import uuid
@@ -30,6 +32,8 @@ class LocalRuntimeManager:
         memory_limit = memory["memory_limit_bytes"]
         instance_type = self._instance_type()
         volumes = self._storage_volumes(instance_type)
+        if instance_type == "container":
+            self._attach_private_storage(volumes)
         root = volumes[0]
         disk_available = all(volume["available"] for volume in volumes)
         network_rx, network_tx = self._network_usage()
@@ -67,6 +71,14 @@ class LocalRuntimeManager:
                 "disk_total_bytes": sum(v["total_bytes"] for v in volumes) if disk_available else 0,
                 "disk_metrics_available": disk_available,
                 "storage_volumes": volumes,
+                "private_disk_metrics_available": all(
+                    v.get("private_metrics_available", False) for v in volumes
+                ),
+                "private_disk_usage_bytes": (
+                    sum(v["private_used_bytes"] for v in volumes)
+                    if all(v.get("private_metrics_available", False) for v in volumes)
+                    else None
+                ),
                 "net_rx_bytes": network_rx,
                 "net_tx_bytes": network_tx,
             },
@@ -86,6 +98,62 @@ class LocalRuntimeManager:
             },
             "updated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
+
+    @staticmethod
+    def _private_storage_sample() -> dict[str, Any]:
+        """Accept only a fresh, root-owned host sample for this workspace."""
+        workspace = os.getenv("RUNTIME_WORKSPACE_ID", "")
+        if not workspace:
+            return {}
+        try:
+            descriptor = os.open(
+                "/run/xnobrain-private-storage.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+            )
+            with os.fdopen(descriptor) as stream:
+                metadata = os.fstat(stream.fileno())
+                if (
+                    not stat.S_ISREG(metadata.st_mode)
+                    or metadata.st_uid != 0
+                    or metadata.st_mode & 0o022
+                    or metadata.st_size > 65536
+                ):
+                    return {}
+                sample = json.loads(stream.read(65537))
+            if not isinstance(sample, dict):
+                return {}
+            sampled = sample.get("sampled_at")
+            if (
+                sample.get("version") != 1
+                or sample.get("workspace_id") != workspace
+                or sample.get("source") != "lvm_thin_exclusive"
+                or type(sampled) not in (int, float)
+                or not -5 <= time.time() - sampled <= 180
+                or not isinstance(sample.get("volumes"), dict)
+            ):
+                return {}
+            return sample["volumes"]
+        except (OSError, ValueError, TypeError):
+            return {}
+
+    @classmethod
+    def _attach_private_storage(cls, volumes: list[dict[str, Any]]) -> None:
+        sample = cls._private_storage_sample()
+        for volume in volumes:
+            measured = sample.get(volume["name"], {})
+            if not isinstance(measured, dict):
+                measured = {}
+            private, shared = measured.get("private_used_bytes"), measured.get("shared_bytes")
+            if type(private) is int and private >= 0 and type(shared) is int and shared >= 0:
+                volume.update(
+                    private_metrics_available=True,
+                    private_used_bytes=private,
+                    shared_bytes=shared,
+                    private_source="lvm_thin_exclusive",
+                )
+            else:
+                volume.setdefault("private_metrics_available", False)
+                volume.setdefault("private_used_bytes", None)
+                volume.setdefault("shared_bytes", None)
 
     @staticmethod
     def _instance_type() -> str:
@@ -170,6 +238,19 @@ class LocalRuntimeManager:
                 used = int((qgroup / counter).read_text())
                 total = int((qgroup / maximum).read_text())
                 source = f"btrfs_qgroup_{counter}"
+                try:
+                    private = int((qgroup / "exclusive").read_text())
+                    referenced = int((qgroup / "referenced").read_text())
+                    if 0 <= private <= referenced:
+                        volume.update(
+                            private_metrics_available=True,
+                            private_used_bytes=private,
+                            shared_bytes=referenced - private,
+                            private_source="btrfs_qgroup_exclusive",
+                        )
+                except (OSError, ValueError):
+                    # Private accounting must not change quota/preflight behavior.
+                    pass
             elif instance_type == "container" and (
                 not mount or mount["type"] in {"overlay", "aufs"}
             ):

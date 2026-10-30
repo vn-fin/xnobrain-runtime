@@ -1736,3 +1736,19 @@ Runtime proxy. See the [versioned private/public contract](../../xnobrain-contro
 for source revisions, capability negotiation, idempotency and cancellation.
 Native Task Board routes remain unchanged; saved external teams add the
 [`team_id` and `delegated_execution` projection](personal-delegated-task-lifecycle.md).
+
+### Private container storage metrics
+
+`/xnobrain/api/runtime/v1/sandboxes/detail` adds per-volume
+`private_metrics_available`, `private_used_bytes`, `shared_bytes`, and
+`private_source` (Btrfs qgroup exclusive or LVM thin exclusive). Container UI
+counts only private bytes, including exclusive filesystem overhead. Unknown
+or stale measurements are null/unavailable. `private_disk_usage_bytes` is
+only populated when all reported volumes have private measurements;
+`private_disk_metrics_available` indicates completeness. Existing filesystem
+`used_bytes`, `total_bytes`, aggregate disk fields and update preflight checks
+retain their previous meaning. VM presentation is unchanged.
+
+LVM needs the root host collector documented in
+`deploy/storage-accounting/README.md` in the coordination repository root. Runtime
+never accesses host block devices or estimates private bytes from image size.
