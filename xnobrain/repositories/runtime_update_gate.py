@@ -37,11 +37,12 @@ def maintenance(root: Path) -> dict:
 LINEAGE_KINDS = frozenset({"vm_rebalance", "runtime_source"})
 
 
-def require_admission(root: Path) -> None:
+def require_admission(root: Path, *, allow_lineage: bool = True) -> None:
     gate = maintenance(root)
     parent = _lineage.get()
     if (
-        gate.get("kind") in LINEAGE_KINDS
+        allow_lineage
+        and gate.get("kind") in LINEAGE_KINDS
         and parent is not None
         and parent.root == root
         and parent.descriptor is not None
@@ -70,14 +71,21 @@ def admission_gate(root: Path):
 
 
 class WorkspaceActivity:
-    def __init__(self, root: Path, *, mutation: bool = True, passive: bool = False):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        mutation: bool = True,
+        passive: bool = False,
+        independent: bool = False,
+    ):
         self.root = root
         self.passive = passive
         self.descriptor = None
         self._token = None
         with admission_gate(root):
             if mutation:
-                require_admission(root)
+                require_admission(root, allow_lineage=not independent)
             self.descriptor = acquire(root, PASSIVE_ACTIVITY if passive else ACTIVITY, shared=True)
             try:
                 from .workspace_memory import record_activity
@@ -134,7 +142,7 @@ class WorkspaceActivity:
             return await function(*args)
 
 
-def workspace_activity(root_for, *, passive=False):
+def workspace_activity(root_for, *, passive=False, independent=False):
     """Admit before the first await/claim and retain ownership through completion."""
 
     def decorate(function):
@@ -142,19 +150,44 @@ def workspace_activity(root_for, *, passive=False):
 
             @wraps(function)
             async def asynchronous(self, *args, **kwargs):
-                with WorkspaceActivity(root_for(self), passive=passive):
+                with WorkspaceActivity(root_for(self), passive=passive, independent=independent):
                     return await function(self, *args, **kwargs)
 
             return asynchronous
 
         @wraps(function)
         def synchronous(self, *args, **kwargs):
-            with WorkspaceActivity(root_for(self), passive=passive):
+            with WorkspaceActivity(root_for(self), passive=passive, independent=independent):
                 return function(self, *args, **kwargs)
 
         return synchronous
 
     return decorate
+
+
+def independent_dispatch(function):
+    """A scheduler tick cannot reuse the task lineage that created its coroutine."""
+    if iscoroutinefunction(function):
+
+        @wraps(function)
+        async def asynchronous(*args, **kwargs):
+            token = _lineage.set(None)
+            try:
+                return await function(*args, **kwargs)
+            finally:
+                _lineage.reset(token)
+
+        return asynchronous
+
+    @wraps(function)
+    def synchronous(*args, **kwargs):
+        token = _lineage.set(None)
+        try:
+            return function(*args, **kwargs)
+        finally:
+            _lineage.reset(token)
+
+    return synchronous
 
 
 @contextmanager

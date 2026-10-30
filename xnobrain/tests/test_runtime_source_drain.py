@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +24,7 @@ from xnobrain.repositories.runtime_update_gate import (
     WorkspaceActivity,
     activity_present,
     require_admission,
+    workspace_activity,
 )
 from xnobrain.repositories.runtime_updates import RuntimeUpdateRepository
 from xnobrain.services.base import ServiceError
@@ -127,6 +130,114 @@ class SourceDrainTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(running.done())
         # A lost reply is replayed without releasing anything twice.
         self.assertEqual(await self.call("abort_unchanged", request()), result)
+
+    async def test_retained_busy_fence_retries_same_operation_after_current_task(self):
+        started, finish = asyncio.Event(), asyncio.Event()
+        completed = []
+
+        class Scheduler:
+            @workspace_activity(lambda _self: self.data, independent=True)
+            async def next_task(_self):
+                completed.append("unrelated")
+
+        async def current_task():
+            with WorkspaceActivity(self.data):
+                started.set()
+                await finish.wait()
+                # Necessary descendants can complete the admitted logical task.
+                with WorkspaceActivity(self.data):
+                    completed.append("descendant")
+                with self.assertRaises(StoreError):
+                    await Scheduler().next_task()
+                completed.append("current")
+
+        task = asyncio.create_task(current_task())
+        self.addCleanup(task.cancel)
+        await started.wait()
+        self.platform.conversation_runs._active = {"run": SimpleNamespace(task=task)}
+        body = request(deadline_seconds=0, strategy="source_in_place_v1")
+        for _ in range(2):
+            with self.assertRaises(ServiceError) as busy:
+                await asyncio.wait_for(self.call("drain", body), timeout=1)
+            self.assertEqual(busy.exception.code, "runtime_update_deferred_busy")
+            self.assertTrue(self.service.dispatch_paused)
+            self.assertFalse(task.done())
+        # A fresh Runtime service and another OS process observe the same fence.
+        self.service = RuntimeUpdateService(self.platform)
+        self.assertTrue(self.service.dispatch_paused)
+        code = """
+import sys
+from pathlib import Path
+from xnobrain.repositories.base import StoreError
+from xnobrain.repositories.runtime_update_gate import WorkspaceActivity
+try:
+    WorkspaceActivity(Path(sys.argv[1]))
+except StoreError as error:
+    assert error.code == 'runtime_update_maintenance'
+else:
+    raise AssertionError('restart admitted new work')
+"""
+        result = await asyncio.to_thread(
+            subprocess.run,
+            [sys.executable, "-c", code, str(self.data)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        finish.set()
+        await asyncio.wait_for(task, timeout=1)
+        self.assertEqual(completed, ["descendant", "current"])
+        drained = await self.call("drain", body)
+        self.assertTrue(drained["drained"])
+        self.assertEqual(drained["active"]["total"], 0)
+        self.assertTrue(self.service.dispatch_paused)
+        self.shutdown.assert_not_awaited()
+        self.assertFalse(self.connector.cancelled)
+        await self.call("abort_unchanged", request())
+        with WorkspaceActivity(self.data):
+            pass
+
+    async def test_container_preflight_rejects_unknown_or_insufficient_data_quota(self):
+        from xnobrain.integrations.runtime import LocalRuntimeManager
+
+        layout = {
+            "data_path": str(self.data),
+            "separate_mount": True,
+            "mount_point": str(self.data),
+            "filesystem": "btrfs",
+        }
+        body = request(
+            expected_layout="incus_custom_volume",
+            data_path=str(self.data),
+            required_free_bytes=4 << 30,
+        )
+        for capacity, code in (
+            (
+                {"available": True, "free_bytes": 2 << 30, "source": "btrfs_qgroup_referenced"},
+                "runtime_update_insufficient_capacity",
+            ),
+            (
+                {"available": False, "free_bytes": None, "source": "unavailable"},
+                "runtime_update_capacity_unavailable",
+            ),
+        ):
+            with (
+                self.subTest(code=code),
+                patch.object(self.service.storage, "layout", return_value=layout),
+                patch.object(LocalRuntimeManager, "_instance_type", return_value="container"),
+                patch.object(
+                    LocalRuntimeManager, "storage_capacity", return_value=capacity
+                ) as measured,
+                self.assertRaises(ServiceError) as blocked,
+            ):
+                await self.call("preflight", body)
+            self.assertEqual(blocked.exception.code, code)
+            measured.assert_called_once_with(self.data, require_quota=True)
+            stored = self.service.repository.operation(body["operation_id"])["steps"]["preflight"]
+            self.assertFalse(stored["ready"])
+            self.assertEqual(stored["free_bytes"], capacity["free_bytes"])
+            self.assertFalse(self.service.dispatch_paused)
 
     async def test_abort_refuses_when_source_changed_during_maintenance(self):
         await self.call("drain", request(deadline_seconds=0, strategy="source_in_place_v1"))

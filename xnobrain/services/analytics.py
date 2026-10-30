@@ -341,7 +341,7 @@ class AnalyticsService:
                 "configured": preference["configured"],
                 "revision": preference["revision"],
                 "default_weekly_usd": DEFAULT_WEEKLY_BUDGET_USD,
-                "source": "gorouter",
+                "source": "xnorouter",
                 "currency": "USD",
                 "cost_basis": "accounted",
                 "enforcement": "soft_admission",
@@ -667,7 +667,7 @@ class AnalyticsService:
                 "enforcement": "soft_admission",
                 "cost_basis": "accounted",
                 "currency": "USD",
-                "source": "gorouter",
+                "source": "xnorouter",
                 "accounting_status": "unavailable",
             }
             try:

@@ -9,7 +9,7 @@ from contextlib import contextmanager, suppress
 from ..repositories.base import StoreError
 from ..repositories.custom_page_locks import acquire, release
 from ..repositories.run_admission import AdmissionRepository
-from ..repositories.runtime_update_gate import WorkspaceActivity
+from ..repositories.runtime_update_gate import WorkspaceActivity, require_admission
 from ..services.base import ServiceError
 from .run_admission import BOOT_ID, AdmissionClient, admitted_root, managed
 
@@ -55,6 +55,9 @@ class NativeAdmission:
     def poll(self):
         admitted = False
         try:
+            # Waiting intents predate maintenance too. Polling one must never
+            # claim the next root under another executor's inherited lineage.
+            require_admission(self.root, allow_lineage=False)
             self.descriptor = acquire(self.root, ".capacity-" + self.id + ".lock", shared=False)
             row = self.store.native_get(self.id)
             if row and row["state"] not in {"waiting", "claiming"}:
@@ -155,7 +158,7 @@ def native_root(root, key, kind):
         from ..repositories.runtime_update_gate import WorkspaceActivity
 
         try:
-            activity = WorkspaceActivity(root)
+            activity = WorkspaceActivity(root, independent=True)
         except StoreError:
             gate.defer()
             yield False

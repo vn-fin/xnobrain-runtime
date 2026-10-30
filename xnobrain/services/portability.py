@@ -242,6 +242,7 @@ class PortabilityService:
         recipient: str,
         organization: bool = False,
         refresh_target: str | None = None,
+        expected_fingerprint: str | None = None,
     ) -> dict[str, Any]:
         """Install a content snapshot only with this Runtime's Router binding."""
         from ..integrations.llm_router_support import LLM_ROUTER_API_BASE_URL
@@ -326,7 +327,14 @@ class PortabilityService:
             from .portability_organization import refresh_organization_profile
 
             return refresh_organization_profile(
-                self, path, refresh_target, agent_id, operation_id, digest, recipient
+                self,
+                path,
+                refresh_target,
+                agent_id,
+                operation_id,
+                digest,
+                recipient,
+                expected_fingerprint,
             )
         self.repository._id(operation_id, "clone operation id")
         # Deterministic target and a marker staged before rename close the
@@ -720,6 +728,10 @@ class PortabilityService:
                             target_stage / ".community-clone-receipt.json", dict(clone_receipt)
                         )
                     final = self.repository.profile_path(target_id)
+                    if clone_receipt is not None and organization:
+                        from .portability_organization import save_content_baseline
+
+                        save_content_baseline(self.repository, target_stage)
                     final.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
                     os.replace(target_stage, final)
                     installed.append(final)

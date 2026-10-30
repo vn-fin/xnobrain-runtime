@@ -7,8 +7,12 @@ import sys
 import threading
 from pathlib import Path
 
+from ..task_skills import task_skill_ids
 from .accounting_context import accounting_binding, accounting_enabled
 from .kanban_support import _module
+
+# Import the entry point instead of `python -m` so compiled packages also work.
+WORKER_CLI_ARGV = ("-c", "from xnobrain.integrations.worker_cli import run; run()")
 
 
 class KanbanWorkerSpawner:
@@ -69,8 +73,12 @@ class KanbanWorkerSpawner:
             raise RuntimeError("worker has no capacity admission")
         if gate is not None:
             try:
-                with admitted_root({**gate.admission, "_lock_fd": gate.descriptor, "_local_id": gate.id}):
-                    with WorkspaceActivity(self.agents.skill_usage_repository.data_dir) as activity:
+                with admitted_root(
+                    {**gate.admission, "_lock_fd": gate.descriptor, "_local_id": gate.id}
+                ):
+                    with WorkspaceActivity(
+                        self.agents.skill_usage_repository.data_dir, independent=True
+                    ) as activity:
                         pid = self._spawn(task, workspace, board=board, activity=activity)
                 gate.started()
                 gate.close()  # The worker inherits and retains the dispatch fence.
@@ -79,7 +87,9 @@ class KanbanWorkerSpawner:
                 gate.abort()
                 raise
 
-        with WorkspaceActivity(self.agents.skill_usage_repository.data_dir) as activity:
+        with WorkspaceActivity(
+            self.agents.skill_usage_repository.data_dir, independent=True
+        ) as activity:
             return self._spawn(task, workspace, board=board, activity=activity)
 
     def _spawn(self, task, workspace, *, board=None, activity):
@@ -142,18 +152,15 @@ class KanbanWorkerSpawner:
             env["RUNTIME_EXECUTION_RUN_ID"] = (
                 f"kanban/{board or 'default'}/{task.id}/{task.current_run_id}"
             )
-            command = [sys.executable, "-m", "xnobrain.integrations.worker_cli"]
+            command = [sys.executable, *WORKER_CLI_ARGV]
         else:
             from .run_admission import managed
 
-            command = (
-                [sys.executable, "-m", "xnobrain.integrations.worker_cli"]
-                if managed() else kb._resolve_hermes_argv()
-            )
+            command = [sys.executable, *WORKER_CLI_ARGV] if managed() else kb._resolve_hermes_argv()
         command += ["--cli", "--accept-hooks"]
         if task.model_override:
             command += ["--model", task.model_override]
-        for skill in task.skills or []:
+        for skill in task_skill_ids(task.skills):
             command += ["--skills", skill]
         tools = kb._resolve_worker_cli_toolsets(str(profile))
         if tools:

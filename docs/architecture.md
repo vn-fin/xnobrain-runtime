@@ -129,8 +129,8 @@ Compose collector or a loopback endpoint.
 
 ### Router protocol and failed inference
 
-The Runtime uses GoRouter's `/v1/chat/completions` contract for prefixed models.
-In GoRouter v0.1.0, `cx/` is translated to the Codex Responses backend and
+The Runtime uses XNORouter's `/v1/chat/completions` contract for prefixed models.
+In XNORouter v0.1.0, `cx/` is translated to the Codex Responses backend and
 `cc/` to Anthropic Messages. The public `/v1/responses` handler also delegates
 to the same chat routing pipeline; switching the public endpoint does not
 bypass credential health, quota, or provider request validation.
@@ -144,9 +144,9 @@ principal's eligible provider connections; a generic upstream 400 alone does
 not identify the rejected field. Do not infer either cause from a successful
 request using a different provider or principal.
 
-### GoRouter v0.1.0 streaming and telemetry
+### XNORouter v0.1.0 streaming and telemetry
 
-GoRouter v0.1.0 must run with `OTEL_ENABLED=false` when it serves streaming
+XNORouter v0.1.0 must run with `OTEL_ENABLED=false` when it serves streaming
 inference. Its Fiber handler registers a lazy response stream after starting
 the provider request with the handler context. With OTEL middleware enabled,
 that context ends when the handler returns, which can terminate the upstream
@@ -251,3 +251,19 @@ cache, runtime-interpreter relocation, or office-tools changes are needed.
 These are model instructions, not command enforcement or an OS sandbox. The
 named-agent exception permits only its own environment, never arbitrary `/opt`
 writes or external deliverables. Full-disk errors must be reported, not bypassed.
+
+## Personal delegated compositions
+
+Personal Teams and Task Boards may reference explicitly granted organization
+agents. Control owns grant validation, owner routing, funding and the durable
+execution receipt; Runtime owns the saved definition and native task lifecycle.
+The existing team coordinator/runner engine executes the composition. No remote
+agent alias becomes a local profile, and organization browsing grants no direct
+chat or workspace access. See the [task recovery contract](personal-delegated-task-lifecycle.md)
+and [Control execution contract](../../xnobrain-control/docs/personal-delegated-execution.md).
+
+Task skill selection excludes `big-brother-control`, the direct-chat platform
+coordination skill. The task picker, task API and native team task expansion
+apply the same exclusion; worker launch also removes it from older stored task
+skill lists. Other unknown or disabled skills still fail normal validation.
+This does not change the agent's installed skills or direct-chat configuration.

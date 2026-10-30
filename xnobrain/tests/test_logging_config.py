@@ -2,33 +2,30 @@
 
 from __future__ import annotations
 
+import datetime
 import io
 import json
 import logging
 import unittest
 from unittest.mock import patch
 
-import jlogger as jlog
 from opentelemetry import trace
 
-from xnobrain.logging_config import JLoggerHandler, configure_logging
+from xnobrain.logging_config import configure_logging, structured_handler
 
 
 class LoggingConfigTests(unittest.TestCase):
     def setUp(self):
         self.output = io.StringIO()
-        jlog.set_output(self.output)
 
     def tearDown(self):
-        import sys
+        logging.basicConfig(force=True)
 
-        jlog.set_output(sys.stderr)
-
-    def test_configures_jlogger_json_with_service_context(self):
+    def test_configures_json_with_service_context(self):
         with patch.dict(
             "os.environ", {"DEVELOPMENT_ENVIRONMENT": "local", "SERVICE_NAME": "runtime-test"}
         ):
-            configure_logging()
+            configure_logging(self.output)
             logging.getLogger("xnobrain.http").info(
                 "HTTP request completed",
                 extra={
@@ -68,7 +65,7 @@ class LoggingConfigTests(unittest.TestCase):
             }
         )
         with trace.use_span(span):
-            JLoggerHandler().emit(record)
+            structured_handler(self.output).emit(record)
         rendered = json.loads(self.output.getvalue())
         self.assertEqual(rendered["trace_id"], "0123456789abcdef0123456789abcdef")
         self.assertEqual(rendered["span_id"], "0123456789abcdef")
@@ -77,7 +74,7 @@ class LoggingConfigTests(unittest.TestCase):
         self.assertNotIn("PRIVATE", self.output.getvalue())
 
     def test_handler_does_not_copy_arbitrary_record_fields(self):
-        handler = JLoggerHandler()
+        handler = structured_handler(self.output)
         record = logging.makeLogRecord(
             {
                 "name": "xnobrain.test",
@@ -121,7 +118,7 @@ class LoggingConfigTests(unittest.TestCase):
                 },
                 phase="checkpoint",
             )
-        JLoggerHandler().emit(logs.records[0])
+        structured_handler(self.output).emit(logs.records[0])
         rendered = json.loads(self.output.getvalue())
         self.assertEqual(rendered["event"], "runtime_update_storage_failure")
         self.assertEqual(rendered["error"], "runtime_update_unsafe_data")
@@ -150,7 +147,7 @@ class LoggingConfigTests(unittest.TestCase):
                 "access_token": "SECRET",
             }
         )
-        JLoggerHandler().emit(record)
+        structured_handler(self.output).emit(record)
         rendered = json.loads(self.output.getvalue())
         self.assertEqual(rendered["data_changed"], 2)
         self.assertFalse(rendered["data_preserved"])
@@ -158,9 +155,43 @@ class LoggingConfigTests(unittest.TestCase):
         self.assertNotIn("PRIVATE", self.output.getvalue())
         self.assertNotIn("SECRET", self.output.getvalue())
 
+    def test_line_layout_matches_previous_log_contract(self):
+        record = logging.makeLogRecord(
+            {
+                "name": "xnobrain.test",
+                "levelno": logging.INFO,
+                "msg": "Xin chào %s",
+                "args": ("runtime",),
+                "operation_id": "op_1",
+            }
+        )
+        structured_handler(self.output).emit(record)
+
+        lines = self.output.getvalue().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn("Xin chào runtime", lines[0])
+        rendered = json.loads(lines[0])
+        self.assertEqual(
+            list(rendered),
+            [
+                "time",
+                "logger",
+                "level",
+                "message",
+                "development_environment",
+                "service_name",
+                "component",
+                "operation_id",
+                "error",
+            ],
+        )
+        self.assertEqual(rendered["logger"], "xnobrain.test")
+        self.assertIsNone(rendered["error"])
+        datetime.datetime.fromisoformat(rendered["time"])
+
     def test_third_party_otel_warning_is_json_with_safe_error_category(self):
         with patch.dict("os.environ", {"DEVELOPMENT_ENVIRONMENT": "local"}, clear=True):
-            configure_logging()
+            configure_logging(self.output)
             logging.getLogger("opentelemetry.exporter.otlp.proto.grpc.exporter").warning(
                 "Transient exporter failure with dependency details"
             )

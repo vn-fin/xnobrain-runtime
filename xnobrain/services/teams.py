@@ -67,6 +67,9 @@ class TeamsServiceMixin:
         if not str(result.get("description") or "").strip():
             count = len(result.get("members") or []) + 1
             result["description"] = f"A coordinated team of {count} agents for multi-stage work."
+        from .personal_resource_definitions import team_definition
+
+        result["source_revision"] = team_definition(str(result["id"]), result)["source_revision"]
         return result
 
     def list_teams(self) -> list[dict[str, Any]]:
@@ -101,6 +104,14 @@ class TeamsServiceMixin:
         before on invalid workflows.
         """
         task = str(body.get("task") or "").strip()
+        if any(m.get("external_agent") for m in team.get("members", [])) and not getattr(
+            self, "distributed_workers", False
+        ):
+            raise ServiceError(
+                "delegated team requires Control admission",
+                status=409,
+                code="managed_execution_required",
+            )
         raw_workflow = body.get("workflow") or team.get("workflow") or []
         if not task and not raw_workflow:
             raise ServiceError("task or workflow is required")
@@ -184,6 +195,7 @@ class TeamsServiceMixin:
                 "workflow must contain between 1 and 64 steps", code="invalid_workflow"
             )
         workers = [str(item["agent_id"]) for item in members]
+        external_ids = {str(item["agent_id"]) for item in members if item.get("external_agent")}
         workflow: list[dict[str, Any]] = []
         for index, raw in enumerate(raw_workflow):
             if not isinstance(raw, Mapping):
@@ -243,7 +255,11 @@ class TeamsServiceMixin:
                     "role": requested_role or str(assignment["role"]),
                     "allowed_tools": allowed,
                     "skills": (
-                        self._enabled_team_skills(requested_agent)
+                        (
+                            []
+                            if requested_agent in external_ids
+                            else self._enabled_team_skills(requested_agent)
+                        )
                         if raw.get("skills") is None
                         else self._team_step_skills(raw.get("skills"))
                     ),
@@ -281,7 +297,12 @@ class TeamsServiceMixin:
             remaining.difference_update(ready)
 
     def _put_team(
-        self, team_id: str, body: Mapping[str, Any], *, created_at: str
+        self,
+        team_id: str,
+        body: Mapping[str, Any],
+        *,
+        created_at: str,
+        allow_external: bool = False,
     ) -> dict[str, Any]:
         name = str(body.get("name") or "").strip()
         orchestrator = str(body.get("orchestrator_id") or "").strip()
@@ -297,7 +318,21 @@ class TeamsServiceMixin:
             role = str(raw.get("role") or "").strip()
             if not agent_id or not role or agent_id in seen:
                 raise ServiceError("team members require unique agent_id and role")
-            self.agents.describe_agent(agent_id, include_memory=False)
+            external = raw.get("external_agent")
+            if external:
+                if not allow_external:
+                    raise ServiceError(
+                        "external references require Control validation",
+                        status=403,
+                        code="managed_definition_required",
+                    )
+                if agent_id in {orchestrator, synthesis_agent}:
+                    raise ServiceError("external alias shadows local coordinator")
+                from ..models.personal_resource_definitions import ExternalAgentReference
+
+                external = ExternalAgentReference.model_validate(external).model_dump()
+            else:
+                self.agents.describe_agent(agent_id, include_memory=False)
             seen.add(agent_id)
             raw_tools = raw.get("allowed_tools")
             tools = sorted(set(raw_tools if raw_tools is not None else []))
@@ -311,6 +346,8 @@ class TeamsServiceMixin:
                     "enabled": bool(raw.get("enabled", True)),
                 }
             )
+            if external:
+                members[-1]["external_agent"] = external
         configured = {
             str(item["agent_id"]): {
                 "agent_id": str(item["agent_id"]),
@@ -372,7 +409,7 @@ class TeamsServiceMixin:
             "created_at": created_at,
             "updated_at": iso(),
         }
-        return self.repository.put_team(team)
+        return self._team_with_description(self.repository.put_team(team))
 
     @staticmethod
     def _team_step_skills(value: Any) -> list[str]:

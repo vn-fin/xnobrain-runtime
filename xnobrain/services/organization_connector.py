@@ -140,7 +140,9 @@ class OrganizationConnector:
             {
                 "agent_public_id": a["id"],
                 "display_name": a.get("display_name") or a.get("name") or a["id"],
-                "capabilities": [],
+                # Control refuses personal worker dispatch to older runtimes
+                # that would interpret the command as organization-owned work.
+                "capabilities": ["personal_execution_v1"],
                 "availability": "busy" if activity.get(a["id"]) == "running" else "available",
                 "revision": 1,
             }
@@ -561,6 +563,7 @@ class OrganizationLink:
             artifacts.append(response.json()["data"])
         return artifacts
 
+    @workspace_activity(lambda self: self.platform.repository.data_dir, independent=True)
     async def command(self, client, state, cmd):
         if self.dispatch_paused:
             return
@@ -634,47 +637,45 @@ class OrganizationLink:
             payer_kind = "organization_sponsor" if sponsor_grant_id else "personal"
         else:
             raise ValueError("organization command has no funding")
-        inputs = await self.import_inputs(client, state, cmd, agent_id)
-        instruction = (
-            instruction
-            + f"\n\nWrite organization deliverables only under organization-runs/{cmd['run_id']}/outputs/. Files there will be published after completion."
-            + (
-                "\n\nApproved organization inputs:\n"
-                + "\n".join("- " + row["path"] for row in inputs)
-                if inputs
-                else ""
+        personal = cmd.get("work_owner_kind") == "personal"
+        owner_kind = "personal" if personal else "organization"
+        ownership = {
+            "schema_version": 1,
+            "id": context_id,
+            "owner_kind": owner_kind,
+            "organization_id": None if personal else self.organization,
+            "payer_kind": payer_kind,
+            "sponsor_grant_id": sponsor_grant_id or None,
+            "membership_revision_at_create": cmd.get("membership_revision"),
+            "policy_revision_at_create": cmd.get("policy_revision"),
+            "state": "active",
+        }
+        if personal and payer_kind == "organization":
+            if cmd.get("work_payer_organization_id") != self.organization:
+                raise ValueError("personal command has no bound organization payer")
+            ownership["payer_organization_id"] = self.organization
+        if not personal:
+            inputs = await self.import_inputs(client, state, cmd, agent_id)
+            instruction += (
+                f"\n\nWrite organization deliverables only under organization-runs/{cmd['run_id']}/outputs/. "
+                "Files there will be published after completion."
+                + (
+                    "\n\nApproved organization inputs:\n"
+                    + "\n".join("- " + row["path"] for row in inputs)
+                    if inputs
+                    else ""
+                )
             )
-        )
         conversation = self.platform.create_conversation(
             agent_id,
             {
-                "title": f"Organization run {str(cmd['run_id'])[-8:]}",
-                "ownership_context": {
-                    "schema_version": 1,
-                    "id": context_id,
-                    "owner_kind": "organization",
-                    "organization_id": self.organization,
-                    "payer_kind": payer_kind,
-                    "sponsor_grant_id": sponsor_grant_id or None,
-                    "membership_revision_at_create": cmd.get("membership_revision"),
-                    "policy_revision_at_create": cmd.get("policy_revision"),
-                    "state": "active",
-                },
+                "title": f"{'Personal delegated' if personal else 'Organization'} run {str(cmd['run_id'])[-8:]}",
+                "ownership_context": ownership,
             },
             TrustedRequestContext(
                 subject=str(cmd.get("subject_user_id") or "organization-runner"),
-                organization_id=self.organization,
-                ownership_context={
-                    "schema_version": 1,
-                    "id": context_id,
-                    "owner_kind": "organization",
-                    "organization_id": self.organization,
-                    "payer_kind": payer_kind,
-                    "sponsor_grant_id": sponsor_grant_id or None,
-                    "membership_revision_at_create": cmd.get("membership_revision"),
-                    "policy_revision_at_create": cmd.get("policy_revision"),
-                    "state": "active",
-                },
+                organization_id="" if personal else self.organization,
+                ownership_context=ownership,
             ),
         )
         organization_funding.register(
@@ -722,8 +723,10 @@ class OrganizationLink:
             "conversation_id": conversation["id"],
             "output": str(current.get("output") or "")[:4000],
         }
+        if personal:
+            summary.pop("conversation_id", None)
         artifacts = []
-        if completed:
+        if completed and not personal:
             try:
                 artifacts = await self.publish_outputs(client, state, cmd, agent_id)
             except (ServiceError, httpx.HTTPError, ValueError, KeyError) as error:

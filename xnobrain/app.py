@@ -34,8 +34,10 @@ class XNOBrainApplication:
         self.handlers = APIHandlers(self.service)
 
     def register(self, app) -> None:
+        from .integrations.cron_maintenance import install_ticker_maintenance
         from .integrations.rebalance_admission import WorkspaceAdmissionMiddleware
 
+        install_ticker_maintenance(self.repository.data_dir)
         app.add_middleware(WorkspaceAdmissionMiddleware, root=self.repository.data_dir)
         setup_routes(app, self.handlers)
         upstream_lifespan = app.router.lifespan_context
@@ -75,6 +77,7 @@ class XNOBrainApplication:
                     grpc_supervisor.run(), name="xnobrain-grpc-supervisor"
                 )
                 dispatcher = None
+                await self.service.kanban_delegated_tasks.start()
                 try:
                     from .integrations.kanban import dispatcher_loop
                     from .integrations.kanban_workers import KanbanWorkerSpawner
@@ -86,7 +89,7 @@ class XNOBrainApplication:
                                 self.service.analytics,
                                 asyncio.get_running_loop(),
                             ),
-                            on_tick=self.service.cron.reconcile_deliveries,
+                            on_tick=self.service.kanban_delegated_tasks.tick,
                             dispatch_allowed=lambda: (
                                 not self.service.runtime_updates.dispatch_paused
                             ),
@@ -135,6 +138,12 @@ class XNOBrainApplication:
                         startup_task.cancel()
                         with suppress(asyncio.CancelledError, Exception):
                             await startup_task
+                    if dispatcher is not None:
+                        dispatcher.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await dispatcher
+                    async with shutdown_stage("personal_task_reconciliation"):
+                        await self.service.kanban_delegated_tasks.close()
                     if self.service.run_admission is not None:
                         async with shutdown_stage("run_admission"):
                             await self.service.run_admission.close()
@@ -158,13 +167,10 @@ class XNOBrainApplication:
                     with suppress(Exception):
                         async with shutdown_stage("team_runs"):
                             await self.service.organization_team_executions.shutdown()
+                            await self.service.personal_delegated_executions.shutdown()
                             await self.service.team_runs.shutdown()
                     with suppress(Exception):
                         async with shutdown_stage("accounting"):
                             await self.service.analytics.accounting.close()
-                    if dispatcher is not None:
-                        dispatcher.cancel()
-                        with suppress(asyncio.CancelledError):
-                            await dispatcher
 
         app.router.lifespan_context = lifespan

@@ -18,7 +18,7 @@ _BINDINGS = {}
 
 
 def router_image_messages(messages, model):
-    """Adapt Codex image parts to the pinned GoRouter v0.2.5 wire contract.
+    """Adapt Codex image parts to the pinned XNORouter v0.2.5 wire contract.
 
     Its translator forwards image_url without unwrapping {url: ...}, and
     flattens tool results to text. Keep canonical history intact and project

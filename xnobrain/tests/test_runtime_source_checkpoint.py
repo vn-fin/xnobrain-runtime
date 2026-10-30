@@ -3,6 +3,9 @@
 import copy
 import json
 import os
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,7 +13,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from xnobrain.integrations.runtime_data_volume import MARKER
-from xnobrain.integrations.runtime_source_checkpoint import checkpoint, require_stopped
+from xnobrain.integrations.runtime_source_checkpoint import (
+    checkpoint,
+    require_stopped,
+    restore_ready,
+)
 from xnobrain.integrations.runtime_update_storage import RuntimeUpdateStorage
 from xnobrain.repositories.base import RepositoryBase
 from xnobrain.repositories.runtime_updates import RuntimeUpdateRepository
@@ -69,7 +76,9 @@ class SourceCheckpointTest(unittest.TestCase):
                 )
             ),
         }
-        self.journal.save_maintenance({**self.binding, "dispatch_paused": True, "phase": "drained"})
+        self.journal.save_maintenance(
+            {**self.binding, "dispatch_paused": True, "phase": "drained", "kind": "runtime_source"}
+        )
         self.journal.save_operation({**self.binding, "steps": {"drain": {"drained": True}}})
         self.state = self.paths[0] / "connector.json"
         self.state.write_text('{"status":"ready"}')
@@ -171,6 +180,53 @@ class SourceCheckpointTest(unittest.TestCase):
             self.run_checkpoint()
         self.assertEqual(list(self.journal.checkpoints.glob("*.json")), [])
 
+    def test_stopped_target_restore_proves_original_data_without_new_checkpoint(self):
+        identity = self.run_checkpoint()
+        original = self.journal.checkpoint(identity)
+        request = {**self.request, "checkpoint_id": identity}
+        with patch.object(
+            RuntimeUpdateStorage, "flush_sqlite", side_effect=AssertionError("flush")
+        ):
+            result = restore_ready(request, data_anchor=self.anchor)
+        self.assertTrue(result["restore_ready"])
+        self.assertEqual(result["checkpoint_id"], identity)
+        self.assertEqual(self.journal.checkpoint(identity), original)
+        self.assertTrue(self.journal.maintenance()["dispatch_paused"])
+        self.assertEqual(self.journal.operation("upd_offline")["steps"]["restore_ready"], result)
+        self.state.write_text("target changed durable data")
+        with self.assertRaisesRegex(ValueError, "data changed"):
+            restore_ready(request, data_anchor=self.anchor)
+        self.assertEqual(self.journal.checkpoint(identity), original)
+
+    def test_restore_rejects_stale_owner_resume_and_missing_evidence(self):
+        identity = self.run_checkpoint()
+        request = {**self.request, "checkpoint_id": identity}
+        operation = self.journal.operation("upd_offline")
+        maintenance = self.journal.maintenance()
+        for case in ("generation", "checkpoint", "resumed", "abort", "phase", "kind", "unpaused"):
+            with self.subTest(case=case):
+                self.journal.save_operation(copy.deepcopy(operation))
+                self.journal.save_maintenance(copy.deepcopy(maintenance))
+                attempt = copy.deepcopy(request)
+                if case == "generation":
+                    attempt["generation"] += 1
+                elif case == "checkpoint":
+                    attempt["checkpoint_id"] = "ckp_" + "f" * 64
+                elif case in {"resumed", "abort"}:
+                    altered = copy.deepcopy(operation)
+                    altered["steps"]["resume" if case == "resumed" else "abort_unchanged"] = {
+                        "done": True
+                    }
+                    self.journal.save_operation(altered)
+                else:
+                    altered = copy.deepcopy(maintenance)
+                    altered[
+                        {"phase": "phase", "kind": "kind", "unpaused": "dispatch_paused"}[case]
+                    ] = {"phase": "draining", "kind": "other", "unpaused": False}[case]
+                    self.journal.save_maintenance(altered)
+                with self.assertRaises(ValueError):
+                    restore_ready(attempt, data_anchor=self.anchor)
+
 
 class StoppedProcessTest(unittest.TestCase):
     def test_requires_terminal_unit_and_no_main_pid(self):
@@ -185,7 +241,9 @@ class StoppedProcessTest(unittest.TestCase):
                 self.subTest(state=state, pid=pid),
                 patch(
                     "xnobrain.integrations.runtime_source_checkpoint.subprocess.run",
-                    return_value=SimpleNamespace(stdout=f"ActiveState={state}\nMainPID={pid}\n"),
+                    return_value=SimpleNamespace(
+                        stdout=f"ActiveState={state}\nMainPID={pid}\nControlPID=0\n"
+                    ),
                 ),
             ):
                 if accepted:
@@ -193,3 +251,51 @@ class StoppedProcessTest(unittest.TestCase):
                 else:
                     with self.assertRaises(ValueError):
                         require_stopped()
+
+    def test_container_service_and_control_process_are_checked(self):
+        for control in ("0", "12", None):
+            output = "ActiveState=inactive\nMainPID=0\n"
+            if control is not None:
+                output += f"ControlPID={control}\n"
+            with patch(
+                "xnobrain.integrations.runtime_source_checkpoint.subprocess.run",
+                return_value=SimpleNamespace(stdout=output),
+            ) as command:
+                if control == "0":
+                    require_stopped("xnobrain-runtime.service")
+                else:
+                    with self.assertRaises(ValueError):
+                        require_stopped("xnobrain-runtime.service")
+                self.assertEqual(command.call_args.args[0][-1], "xnobrain-runtime.service")
+
+
+class OfflineLauncherTest(unittest.TestCase):
+    def test_isolated_launcher_avoids_application_initializers_and_user_pythonpath(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "scripts").mkdir()
+            launcher = Path(__file__).resolve().parents[2] / "scripts" / "runtime-source-offline.py"
+            shutil.copyfile(launcher, root / "scripts" / launcher.name)
+            (root / "xnobrain").mkdir()
+            (root / "xnobrain" / "__init__.py").write_text("")
+            for name in ("integrations", "models", "repositories", "services"):
+                directory = root / "xnobrain" / name
+                directory.mkdir()
+                (directory / "__init__.py").write_text("raise RuntimeError('composition loaded')")
+            (root / "xnobrain" / "integrations" / "runtime_source_checkpoint.py").write_text(
+                "import xnobrain.models, xnobrain.services, xnobrain.repositories\n"
+                "print('offline-only')\n"
+            )
+            poison = root / "poison"
+            poison.mkdir()
+            (poison / "sitecustomize.py").write_text("raise RuntimeError('user code loaded')")
+            result = subprocess.run(
+                [sys.executable, "-I", "-B", str(root / "scripts" / launcher.name)],
+                env={**os.environ, "PYTHONPATH": str(poison), "PYTHONHOME": ""},
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True,
+            )
+            self.assertEqual(result.stdout, "offline-only\n")
+            self.assertEqual(result.stderr, "")

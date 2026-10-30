@@ -5,9 +5,9 @@ from .teams import TeamRepositoryMixin
 
 
 class OrganizationTeamExecutionRepository(TeamRepositoryMixin, RepositoryBase):
-    def __init__(self, repository, organization_id):
+    def __init__(self, repository, organization_id, *, namespace="organization-team-executions"):
         organization_id = self._id(organization_id, "organization id")
-        root = repository.data_dir / "organization-team-executions" / organization_id
+        root = repository.data_dir / self._id(namespace) / organization_id
         # Reuse the real workspace mount guard and lock. The execution directory
         # is a namespace within that mount, not a separately mounted workspace.
         self.storage_mount = repository.storage_mount

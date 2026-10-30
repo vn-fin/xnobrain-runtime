@@ -8,10 +8,11 @@ import hmac
 import json
 import logging
 import os
-import shutil
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
+from ..integrations.runtime import LocalRuntimeManager
 from ..integrations.runtime_build_identity import (
     incus_installed_identity,
     source_installed_identity,
@@ -127,10 +128,19 @@ class RuntimeUpdateService:
                 and not observed["separate_mount"]
             ):
                 self._conflict("approved separate-volume layout no longer matches Runtime storage")
-            free_bytes = shutil.disk_usage(observed["data_path"]).free
+            capacity = LocalRuntimeManager.storage_capacity(
+                Path(observed["data_path"]),
+                require_quota=(
+                    layout == "incus_custom_volume"
+                    and LocalRuntimeManager._instance_type() == "container"
+                ),
+            )
+            free_bytes = capacity["free_bytes"]
             required = int(request.get("required_free_bytes") or 0)
             blockers = []
-            if free_bytes < required:
+            if not capacity["available"]:
+                blockers.append("data_capacity_unavailable")
+            elif free_bytes < required:
                 blockers.append("insufficient_data_capacity")
             result = {
                 "operation_id": request["operation_id"],
@@ -142,6 +152,7 @@ class RuntimeUpdateService:
                 "separate_mount": observed["separate_mount"],
                 "filesystem": observed["filesystem"],
                 "free_bytes": free_bytes,
+                "capacity_source": capacity["source"],
                 "required_free_bytes": required,
                 "blockers": blockers,
                 "durable_roots": [label for label, _ in self.storage.durable_roots()],
@@ -152,7 +163,11 @@ class RuntimeUpdateService:
                 raise ServiceError(
                     "Runtime update preflight failed",
                     status=409,
-                    code="runtime_update_insufficient_capacity",
+                    code=(
+                        "runtime_update_capacity_unavailable"
+                        if not capacity["available"]
+                        else "runtime_update_insufficient_capacity"
+                    ),
                 )
             return result
 
@@ -238,8 +253,9 @@ class RuntimeUpdateService:
             counts = self._active_counts()
             if counts["total"]:
                 if not request.get("cancel_active_at_deadline"):
-                    # Nothing was cancelled; the caller defers and must release
-                    # maintenance with a verified abort-unchanged.
+                    # Retain the durable fence while the caller visits other
+                    # workspaces. Retry this operation after current work ends;
+                    # only an explicit verified abort reopens unchanged code.
                     raise ServiceError(
                         "Runtime is busy; the update is deferred without cancelling work",
                         status=409,
@@ -797,6 +813,8 @@ class RuntimeUpdateService:
         await self.platform.conversation_runs.shutdown()
         if getattr(self.platform, "organization_team_executions", None) is not None:
             await self.platform.organization_team_executions.shutdown()
+        if getattr(self.platform, "personal_delegated_executions", None) is not None:
+            await self.platform.personal_delegated_executions.shutdown()
         await self.platform.team_runs.shutdown()
         self.platform.kanban.cancel_active_tasks_for_update()
         await self.platform.organization_connector.cancel_active_commands()

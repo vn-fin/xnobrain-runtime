@@ -62,10 +62,11 @@ def put_task_schedule(
     next_run_at: int,
     interval_seconds: int | None,
     timezone_name: str,
+    allow_elapsed: bool = False,
 ) -> dict[str, Any]:
     if recurrence not in {"once", "interval"}:
         raise ValueError("schedule recurrence is invalid")
-    if int(next_run_at) <= int(time.time()):
+    if not allow_elapsed and int(next_run_at) <= int(time.time()):
         raise ValueError("scheduled time must be in the future")
     if recurrence == "interval" and (interval_seconds is None or int(interval_seconds) < 60):
         raise ValueError("repeat interval must be at least one minute")
@@ -202,11 +203,16 @@ def release_due_schedules(
     if due and activity_root is not None:
         from ..repositories.runtime_update_gate import WorkspaceActivity
 
-        with WorkspaceActivity(activity_root):
+        with WorkspaceActivity(activity_root, independent=True):
             return release_due_schedules(conn, board=board, now=current)
     released: list[str] = []
     for row in due:
         task_id = str(row["task_id"])
+        from .kanban_delegation import binding, copy_binding
+
+        delegation = binding(conn, task_id)
+        if delegation is not None and not delegation["creation_complete"]:
+            continue
         scheduled_for = int(row["next_run_at"])
         task = kb.get_task(conn, task_id)
         if task is None or str(task.status) == "archived":
@@ -243,6 +249,7 @@ def release_due_schedules(
         interval = int(row["interval_seconds"] or 0)
         if interval < 60 or str(task.status) != "scheduled":
             continue
+        delegated = delegation is not None
         occurrence_id = create_task(
             conn,
             title=str(task.title),
@@ -259,8 +266,13 @@ def release_due_schedules(
             provider_override=getattr(task, "provider_override", None),
             goal_mode=bool(getattr(task, "goal_mode", False)),
             initial_status="running",
+            triage=delegated,
             board=board,
         )
+        copy_binding(conn, task_id, occurrence_id)
+        if delegated and str(kb.get_task(conn, occurrence_id).status) == "triage":
+            kb.specify_triage_task(conn, occurrence_id, author="xnobrain-schedule")
+            kb.promote_task(conn, occurrence_id, actor="xnobrain-schedule")
         next_run = scheduled_for + interval
         while next_run <= current:
             next_run += interval

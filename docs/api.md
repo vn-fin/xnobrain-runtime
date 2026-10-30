@@ -66,6 +66,30 @@ Runtime statistics are available as a snapshot at
 `/xnobrain/api/runtime/v1/sandboxes/detail` and as one-second SSE updates at
 `/xnobrain/api/runtime/v1/sandboxes/detail/stream`.
 
+Storage statistics include additive `metrics.storage_volumes` entries for
+`root` and, for containers with a separate data mount, `data`. Each entry has
+`name`, `available`, `used_bytes`, `total_bytes`, and a diagnostic `source`.
+The Btrfs container implementation reads the mounted subvolume's qgroup
+counter and its matching enforced quota: referenced bytes for a referenced
+limit, or exclusive bytes for an exclusive limit. It never substitutes the
+shared pool's `statvfs` capacity for an unavailable Btrfs quota. Unsupported
+quota modes, inaccessible counters and shared overlay layers report
+`available: false` with null byte values.
+
+`metrics.disk_metrics_available` is true only when every reported volume is
+available. Legacy `disk_usage_bytes` and `disk_total_bytes` are their sums when
+available, otherwise zero; consumers must honor the availability flag. Root
+and data limits remain independent and cannot borrow each other's free space.
+VMs retain the existing root-filesystem disk measurements and single disk card.
+`info.resources.root_size` describes only the root volume.
+
+`info.type` distinguishes `container` and `virtual-machine`. Runtime detects
+container markers by default; an operator may set `RUNTIME_INSTANCE_TYPE` to
+`container`, `virtual-machine` or the alias `vm`. This describes the running
+environment and does not provision or convert an instance. The UI labels its
+settings tab and environment type accordingly while retaining the `/settings/vm`
+route. The same metrics provider feeds detail snapshots and workspace SSE.
+
 Memory statistics include the optional additive field
 `metrics.memory_occupied_bytes`: RAM occupied **including cache**. Without a
 finite cgroup quota, it is `MemTotal - MemFree` from the same `/proc/meminfo`
@@ -810,8 +834,15 @@ conversation/native-adapter executor leases with the existing forward-only updat
 New mutations read the persisted maintenance fence under admission serialization;
 updater instances no longer rely on their startup copy of `dispatch_paused`.
 Already admitted activity remains visible until its actual transaction/thread exits.
-New nested mutations during draining are denied; read-only access remains possible
-outside the checkpoint/post-verification exclusive window.
+Source-update draining permits descendants of an already admitted logical task
+until that task finishes. Fresh conversation, queue, team, cron, Kanban and native
+dispatch cannot inherit that permission. Read-only access remains possible outside
+the checkpoint/post-verification exclusive window.
+
+Native cron ticker status writes (heartbeat, last-success and error markers) also
+respect durable maintenance, including ticker startup and skipped ticks. They
+resume after verified release; cron definitions and history remain covered by
+the unchanged checkpoint preservation rules.
 
 `drain.active.workspace_activity` is an additive **0/1 busy indicator**, not an exact
 worker count. Its value participates in `active.total`. Foreign processes or cancelled
@@ -823,10 +854,22 @@ already submitted worker exits even if the observer cancels. A separate kernel u
 command lock serializes different updater instances and processes.
 
 Source maintenance preflight additionally reports
-`source_protocol: runtime_source_safe_v1`. Source drain refuses forced cancellation
-at the service boundary, preserves its original identity/checkpoint on replay,
-and rejects a completed operation (`runtime_update_aborted` after abort). A busy
-retry requires a new operation ID and generation from Control.
+`source_protocol: runtime_source_safe_v1` and `capacity_source`. Incus container
+data capacity is bounded by its enforced Btrfs qgroup and filesystem headroom;
+unknown quota returns `runtime_update_capacity_unavailable`, never host-pool
+capacity. A known shortfall returns `runtime_update_insufficient_capacity`.
+VM and non-managed layout capacity retains filesystem semantics.
+
+Source drain refuses forced cancellation at the service boundary, preserves its
+original identity/checkpoint on replay, and rejects a completed operation
+(`runtime_update_aborted` after abort). With `deadline_seconds: 0`, busy work
+returns `runtime_update_deferred_busy` immediately while keeping the durable
+admission fence closed. The updater can visit another container and retry the
+**same operation ID, generation and target** later. Current work and its necessary
+descendants finish; another queued or scheduled root cannot start. This fence
+survives Runtime restart and remains closed until verified resume or an explicit
+verified `abort-unchanged`. Only retrying an explicitly aborted operation requires
+a new operation ID and generation.
 
 Private `POST /system/update/v2/restore-ready` accepts the existing typed rollout
 post-verification request (operation, generation, source target, checkpoint ID),
@@ -1210,7 +1253,7 @@ OpenAI clients can ignore unknown fields.
 ## Managed session usage
 
 In managed Router-accounting mode, session usage reads request, four-component
-token, and cost totals from GoRouter v0.2.2 through Control's private
+token, and cost totals from XNORouter v0.2.2 through Control's private
 canonical-user-key facade. Runtime reuses its Control HTTP connection pool and
 returns both conversation totals and `weekly_budget` in the existing session
 usage response. These two read queries run concurrently; the browser makes one
@@ -1524,7 +1567,7 @@ API message preprocessing boundary as well as at the image tool. Unknown router
 aliases preserve native image parts; explicit non-vision routes require an
 explicitly configured auxiliary vision service.
 
-GoRouter v0.2.5 forwards Codex image URL objects without unwrapping their `url`
+XNORouter v0.2.5 forwards Codex image URL objects without unwrapping their `url`
 field and converts tool content to text. For `cx/` and `codex/` requests, the
 runtime's private router adapter emits scalar image URLs and moves tool image
 parts into an adjacent user image message after the tool-result group. Original
@@ -1605,6 +1648,9 @@ Control uses these private, service-signed endpoints beneath
 | `POST /organization/{agent_id}/export` | Exports an `organization-agent-v1` bundle from the consenting member's Runtime. |
 | `POST /organization/import` | Validates and clones the bundle into a new organization-owned profile. |
 | `POST /organization/{agent_id}/refresh` | Replaces adopted content in the existing organization profile while preserving its memory and sessions. |
+| `POST /organization/{agent_id}/inspect` | Returns replaceable-content fingerprint, `baseline_known` and `locally_modified`; returns no target file contents. |
+| `POST /organization/{agent_id}/refresh-checked/{fingerprint}` | Applies the pinned snapshot only if the current target fingerprint matches the preview. |
+| `GET /organization/{agent_id}/receipts/{operation_id}` | Reads the signed recipient/operation/digest's persisted receipt, including `missing`, `applying` or `completed`. |
 
 The existing snapshot signature binds method, full path, verified identity,
 operation ID, digest and length. A browser credential cannot authorize these
@@ -1624,6 +1670,18 @@ replacement under the publication lock. Completed retries preserve edits made
 after the first refresh. An interrupted replacement rolls back from the retained
 snapshot before retrying. Destination memory, session files and state databases
 are outside the replacement set.
+
+Inspect and checked refresh require `FT_ENABLE_ORGANIZATION_TEAM_AGENTS`.
+Receipt reads remain available when it is disabled so Control can reconcile
+already dispatched work. New organization imports/refreshes record a private
+`.organization-content-baseline.json`; older copies report an unknown baseline.
+Fingerprints cover only replaceable content and reject symlinks. Checked refresh
+returns `target_changed` (409) when the preview is stale. Refresh rejects an
+active interactive/known Kanban execution with `agent_busy` (409), holds the
+interactive admission registry lock during publication, and cleans staged copies
+even when admission fails. Interrupted rollback uses the same activity guard.
+These private endpoints never accept browser credentials in place of the
+service signature; Control resolves and authorizes the target from its job.
 
 Control provisions the organization Runtime with the organization's canonical
 Router service-user key and internally enrolls its organization-owned connector.
@@ -1667,3 +1725,14 @@ Organization workers forward the pin to Control; a `422 stage_model_not_allowed`
 response fails the step with that code. Member connectors apply `funding.model`
 for both funding modes and refuse owner-funded pins outside `funding.allowed_models`
 before creating a conversation.
+
+### Personal delegated definitions and execution
+
+Version-1 private `personal-resource-definitions/{kind}/{id}` and
+`personal-agent-teams/{id}` operations accept only Control's signed owner-bound
+relay. Personal execution routes reuse the existing team run DTO while keeping
+the initiating owner and exact external grants. They are denied by the public
+Runtime proxy. See the [versioned private/public contract](../../xnobrain-control/docs/personal-delegated-execution.md)
+for source revisions, capability negotiation, idempotency and cancellation.
+Native Task Board routes remain unchanged; saved external teams add the
+[`team_id` and `delegated_execution` projection](personal-delegated-task-lifecycle.md).

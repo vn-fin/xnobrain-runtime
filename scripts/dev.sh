@@ -13,13 +13,13 @@ for candidate in \
   "$HOME/.local/lib/hermes-agent/venv/bin/python" \
   "$(command -v python3 2>/dev/null || true)"; do
   if [[ -x "$candidate" ]] \
-      && "$candidate" -c 'import hermes_cli, jlogger' >/dev/null 2>&1; then
+      && "$candidate" -c 'import hermes_cli, opentelemetry.instrumentation.fastapi' >/dev/null 2>&1; then
     python_bin="$candidate"
     break
   fi
 done
 
-if ! "$python_bin" -c 'import hermes_cli, jlogger' >/dev/null 2>&1; then
+if ! "$python_bin" -c 'import hermes_cli, opentelemetry.instrumentation.fastapi' >/dev/null 2>&1; then
   echo "The project Python environment is incomplete (Hermes or XNOBrain dependencies are missing)." >&2
   if [[ "$(uname -s)" == "Darwin" ]]; then
     echo "Repair the macOS project venv with:" >&2

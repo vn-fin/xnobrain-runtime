@@ -1001,3 +1001,21 @@ class AgentBlueprintTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(StoreError) as caught:
             repository.get_agent_blueprint(self.root, "abp_safe")
         self.assertEqual(caught.exception.code, "unsafe_blueprint_store")
+
+
+class AgentBlueprintSchemaTests(unittest.TestCase):
+    def test_tool_schema_descriptions_do_not_depend_on_docstrings(self):
+        from xnobrain.models.agent_blueprints import AgentBlueprintCertificationCreate
+        from xnobrain.models.agent_maker import MakerPrepare
+
+        expected = {
+            (MakerPrepare, "AgentBlueprintSpec"): (
+                "A complete specialist definition without arbitrary config passthrough."
+            ),
+            (AgentBlueprintCertificationCreate, "BlueprintCertificationCase"): (
+                "A deterministic rubric executed by the child, never by the maker."
+            ),
+        }
+        for (tool_model, definition), description in expected.items():
+            schema = tool_model.model_json_schema()
+            self.assertEqual(schema["$defs"][definition]["description"], description)

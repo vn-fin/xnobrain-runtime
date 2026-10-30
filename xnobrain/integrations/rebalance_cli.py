@@ -51,9 +51,14 @@ def main():
     os.execvpe(sys.argv[1], sys.argv[1:], os.environ)
 
 
-if __name__ == "__main__":
+def run():
+    # Importable entry point: compiled packages cannot be started with `python -m`.
     try:
         main()
     except StoreError:
         print("Workspace is undergoing maintenance; retry when ready.", file=sys.stderr)
         raise SystemExit(75) from None
+
+
+if __name__ == "__main__":
+    run()

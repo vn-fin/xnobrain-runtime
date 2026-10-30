@@ -20,12 +20,18 @@ def install(kb):
         def wrap(function):
             @wraps(function)
             def claim(conn, task_id, *args, **kwargs):
+                from .kanban_delegation import binding
+
+                # External teams are dispatched by Control, never by a local
+                # Hermes profile, including after restart or a feature rollback.
+                if binding(conn, task_id) is not None:
+                    return None
                 scope = _dispatch.get()
                 if scope is None:
                     return function(conn, task_id, *args, **kwargs)
                 root, board, pending = scope
                 if not managed():
-                    with WorkspaceActivity(root):
+                    with WorkspaceActivity(root, independent=True):
                         return function(conn, task_id, *args, **kwargs)
                 task = kb.get_task(conn, task_id)
                 if task is None:
@@ -35,7 +41,7 @@ def install(kb):
                 if not gate.poll():
                     return None
                 try:
-                    with WorkspaceActivity(root):
+                    with WorkspaceActivity(root, independent=True):
                         claimed = function(conn, task_id, *args, **kwargs)
                     if claimed is None:
                         gate.defer()

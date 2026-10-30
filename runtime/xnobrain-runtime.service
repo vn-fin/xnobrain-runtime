@@ -1,15 +1,31 @@
 [Unit]
 Description=XNOBrain workspace runtime
+Requires=xnobrain-runtime-prepare.service
 Wants=network-online.target
-After=network-online.target
+After=network-online.target xnobrain-runtime-prepare.service
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/xnobrain-systemd-entrypoint
+User=xnobrain
+Group=xnobrain
+WorkingDirectory=/opt/xnobrain
+EnvironmentFile=/run/xnobrain-runtime-config/environment
+RuntimeDirectory=xnobrain-runtime
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/setpriv --no-new-privs -- /usr/local/bin/xnobrain-systemd-entrypoint
 Restart=always
 RestartSec=5s
 TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/data /run/xnobrain-runtime
+RestrictSUIDSGID=yes
 
 [Install]
 WantedBy=multi-user.target

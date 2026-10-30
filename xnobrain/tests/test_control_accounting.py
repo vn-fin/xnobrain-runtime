@@ -19,7 +19,7 @@ class ControlAccountingTests(unittest.IsolatedAsyncioTestCase):
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         start -= timedelta(days=(start.weekday() + 1) % 7)
         fixture = json.loads(
-            (Path(__file__).parent / "fixtures/gorouter_workload_weekly_v1.json").read_text()
+            (Path(__file__).parent / "fixtures/xnorouter_workload_weekly_v1.json").read_text()
         )
         fixture.update(
             period_start=start.isoformat(),

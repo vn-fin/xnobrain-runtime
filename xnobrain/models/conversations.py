@@ -15,6 +15,7 @@ class ConversationOwnershipContext(BaseModel):
     organization_id: str | None = Field(default=None, min_length=1, max_length=256)
     owner_label: str | None = Field(default=None, max_length=200)
     payer_kind: Literal["personal", "organization_sponsor", "organization"]
+    payer_organization_id: str | None = Field(default=None, min_length=1, max_length=256)
     sponsor_grant_id: str | None = Field(default=None, min_length=1, max_length=256)
     membership_revision_at_create: int | None = Field(default=None, ge=1)
     policy_revision_at_create: int | None = Field(default=None, ge=1)
@@ -24,8 +25,12 @@ class ConversationOwnershipContext(BaseModel):
     @model_validator(mode="after")
     def validate_owner_and_payer(self):
         if self.owner_kind == "personal":
-            if self.organization_id or self.payer_kind != "personal" or self.sponsor_grant_id:
-                raise ValueError("personal ownership requires personal payer and no organization")
+            if self.organization_id or self.sponsor_grant_id:
+                raise ValueError("personal ownership cannot acquire organization ownership")
+            if self.payer_kind == "organization" and not self.payer_organization_id:
+                raise ValueError("delegated organization funding requires its payer organization")
+            if self.payer_kind not in {"personal", "organization"}:
+                raise ValueError("personal ownership requires an authorized payer")
         elif not self.organization_id:
             raise ValueError("organization ownership requires organization_id")
         if self.payer_kind == "organization_sponsor" and not self.sponsor_grant_id:
@@ -33,9 +38,12 @@ class ConversationOwnershipContext(BaseModel):
         if self.payer_kind == "personal" and self.sponsor_grant_id:
             raise ValueError("personal payer cannot include sponsor_grant_id")
         if self.payer_kind == "organization" and (
-            self.owner_kind != "organization" or self.sponsor_grant_id
+            (self.owner_kind != "organization" and not self.payer_organization_id)
+            or self.sponsor_grant_id
         ):
             raise ValueError("organization payer requires organization ownership")
+        if self.payer_organization_id and self.payer_kind != "organization":
+            raise ValueError("payer organization requires organization funding")
         return self
 
 

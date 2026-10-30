@@ -118,9 +118,13 @@ class BlueprintBudget(BaseModel):
 
 
 class AgentBlueprintSpec(BaseModel):
-    """A complete specialist definition without arbitrary config passthrough."""
-
-    model_config = ConfigDict(extra="forbid")
+    # Explicit so the LLM-facing tool schema survives docstring stripping.
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "description": "A complete specialist definition without arbitrary config passthrough."
+        },
+    )
     schema_version: Literal[1] = 1
     name: str = Field(min_length=1, max_length=200)
     purpose: str = Field(min_length=1, max_length=4_000)
@@ -223,9 +227,13 @@ class AgentBlueprintLifecycleRequest(BaseModel):
 
 
 class BlueprintCertificationCase(BaseModel):
-    """A deterministic rubric executed by the child, never by the maker."""
-
-    model_config = ConfigDict(extra="forbid")
+    # Explicit so the LLM-facing tool schema survives docstring stripping.
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "description": "A deterministic rubric executed by the child, never by the maker."
+        },
+    )
     id: str = Field(min_length=1, max_length=128, pattern=_SAFE_COMPONENT)
     kind: Literal["job", "refusal", "tool", "context"]
     prompt: str = Field(min_length=1, max_length=20_000)

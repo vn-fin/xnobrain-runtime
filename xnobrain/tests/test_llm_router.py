@@ -987,7 +987,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent._fallback_model["model"], "openai/small")
         self.assertEqual(agent._fallback_index, 0)
 
-    async def test_prepared_auto_is_left_for_gorouter_v017_to_resolve(self) -> None:
+    async def test_prepared_auto_is_left_for_xnorouter_v017_to_resolve(self) -> None:
         manager = object.__new__(AgentManager)
 
         class Router:
@@ -995,7 +995,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                 self.checked = True
 
             async def model_route_candidates(self, *_args, **_kwargs):
-                raise AssertionError("Runtime must not duplicate GoRouter auto routing")
+                raise AssertionError("Runtime must not duplicate XNORouter auto routing")
 
         manager.llm_router = Router()
         prepared = {
@@ -1050,7 +1050,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     {"id": "cx/gpt-5", "owned_by": "codex"},
                     {
                         "id": "org/org-abc/cx-gpt-5",
-                        "owned_by": "gorouter",
+                        "owned_by": "xnorouter",
                         "reasoning_levels": ["low", "high"],
                     },
                 ],

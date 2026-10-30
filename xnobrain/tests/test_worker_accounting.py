@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from xnobrain.integrations.accounting_context import current_accounting, inference_accounting
 from xnobrain.integrations.hermes_commands import HermesCommandsMixin
-from xnobrain.integrations.kanban_workers import KanbanWorkerSpawner
+from xnobrain.integrations.kanban_workers import WORKER_CLI_ARGV, KanbanWorkerSpawner
 from xnobrain.integrations.worker_cli import install_worker_agent
 
 
@@ -88,7 +88,7 @@ class WorkerAccountingTests(unittest.IsolatedAsyncioTestCase):
                 goal_max_turns=2,
                 max_runtime_seconds=30,
                 model_override="provider/model",
-                skills=["verify"],
+                skills=["big-brother-control", "verify"],
             )
             kb = SimpleNamespace(
                 kanban_db_path=lambda **kw: profile / "kanban.db",
@@ -121,8 +121,10 @@ class WorkerAccountingTests(unittest.IsolatedAsyncioTestCase):
             argv = spawn.call_args.args[0]
             env = spawn.call_args.kwargs["env"]
             self.assertNotIn("synthetic", str(argv))
-            self.assertIn("xnobrain.integrations.worker_cli", argv)
+            self.assertEqual(argv[1:3], list(WORKER_CLI_ARGV))
             self.assertIn("-Q", argv)
+            self.assertNotIn("big-brother-control", argv)
+            self.assertIn("verify", argv)
             self.assertEqual(env["HERMES_KANBAN_CLAIM_LOCK"], "claim")
             self.assertEqual(env["HERMES_PROFILE"], "default")
             self.assertEqual(env["RUNTIME_EXECUTION_AGENT_ID"], "big-brother")

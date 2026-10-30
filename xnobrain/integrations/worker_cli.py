@@ -103,7 +103,8 @@ def main():
         raise RuntimeError("worker exited without completing inference")
 
 
-if __name__ == "__main__":
+def run():
+    # Importable entry point: compiled packages cannot be started with `python -m`.
     try:
         from .rebalance_cli import cli_activity
 
@@ -113,3 +114,7 @@ if __name__ == "__main__":
         # Native/provider exceptions may contain request data. Do not echo them.
         print("Accounted worker execution failed: " + type(error).__name__, file=sys.stderr)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    run()

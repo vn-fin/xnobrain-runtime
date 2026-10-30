@@ -5,6 +5,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from threading import RLock
+from types import SimpleNamespace
 from unittest.mock import patch
 from zipfile import ZipFile
 
@@ -16,6 +18,112 @@ from xnobrain.trusted_context import TrustedRequestContext
 
 
 class OrganizationWorkspaceSnapshotTests(unittest.TestCase):
+    def test_checked_refresh_detects_destination_changes_and_recovers_receipt(self):
+        from xnobrain.services.portability_organization import (
+            inspect_organization_profile,
+            organization_refresh_receipt,
+        )
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch(
+                "xnobrain.integrations.llm_router_support.LLM_ROUTER_API_BASE_URL",
+                "http://router/v1",
+            ),
+        ):
+            root = Path(directory)
+            repository = FileRepository(root / "data", root / "profiles")
+            source = repository.profile_path("source")
+            source.mkdir(parents=True)
+            shareable_profile(repository, source)
+            (source / "config.yaml").write_text("model: {}\n")
+            service = PortabilityService(repository, root / "hermes")
+            archive = root / "copy.zip"
+            recipient = "manager\x00organization-test\x00org_test"
+            service.export_shareable("source", archive, owner=PUBLISHER, organization=True)
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            result = service.apply_shareable_file(
+                archive,
+                operation_id="initial",
+                digest=digest,
+                recipient=recipient,
+                organization=True,
+            )
+            target_id = result["agent_id_mappings"]["source"]
+            target = repository.profile_path(target_id)
+            inspection = inspect_organization_profile(service, target_id, recipient)
+            self.assertTrue(inspection["baseline_known"])
+            self.assertFalse(inspection["locally_modified"])
+            (target / "state.db").write_bytes(b"company history")
+            self.assertEqual(
+                inspect_organization_profile(service, target_id, recipient)["fingerprint"],
+                inspection["fingerprint"],
+            )
+            service.agent_manager = SimpleNamespace(
+                _registry_lock=RLock(), active_agent_ids=lambda: {target_id}
+            )
+            service.active_kanban_agents = set
+            profiles_before = set((root / "profiles").iterdir())
+            with self.assertRaises(StoreError) as busy:
+                service.apply_shareable_file(
+                    archive,
+                    operation_id="busy",
+                    digest=digest,
+                    recipient=recipient,
+                    organization=True,
+                    refresh_target=target_id,
+                    expected_fingerprint=inspection["fingerprint"],
+                )
+            self.assertEqual(busy.exception.code, "agent_busy")
+            self.assertEqual(set((root / "profiles").iterdir()), profiles_before)
+            service.agent_manager.active_agent_ids = set
+            (target / "HERMES.md").write_text("local change")
+            self.assertTrue(
+                inspect_organization_profile(service, target_id, recipient)["locally_modified"]
+            )
+            with self.assertRaises(StoreError) as caught:
+                service.apply_shareable_file(
+                    archive,
+                    operation_id="conflict",
+                    digest=digest,
+                    recipient=recipient,
+                    organization=True,
+                    refresh_target=target_id,
+                    expected_fingerprint=inspection["fingerprint"],
+                )
+            self.assertEqual(caught.exception.code, "target_changed")
+            self.assertEqual((target / "HERMES.md").read_text(), "local change")
+            fingerprint = inspect_organization_profile(service, target_id, recipient)["fingerprint"]
+            service.apply_shareable_file(
+                archive,
+                operation_id="checked",
+                digest=digest,
+                recipient=recipient,
+                organization=True,
+                refresh_target=target_id,
+                expected_fingerprint=fingerprint,
+            )
+            self.assertEqual((target / "state.db").read_bytes(), b"company history")
+            self.assertFalse(
+                inspect_organization_profile(service, target_id, recipient)["locally_modified"]
+            )
+            receipt = organization_refresh_receipt(service, target_id, recipient, "checked", digest)
+            self.assertEqual(receipt["state"], "completed")
+            self.assertEqual(receipt["agent_id_mappings"], {"source": target_id})
+            (target / "HERMES.md").write_text("edit after successful delivery")
+            service.apply_shareable_file(
+                archive,
+                operation_id="checked",
+                digest=digest,
+                recipient=recipient,
+                organization=True,
+                refresh_target=target_id,
+                expected_fingerprint=fingerprint,
+            )
+            self.assertEqual((target / "HERMES.md").read_text(), "edit after successful delivery")
+            with self.assertRaises(StoreError):
+                inspect_organization_profile(service, target_id, "manager\x00other\x00org_other")
+
     def test_copy_and_refresh_keep_only_organization_history(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -105,6 +213,13 @@ class OrganizationWorkspaceSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot_intent("POST", prefix + "import"), "import")
         self.assertEqual(snapshot_intent("POST", prefix + "target/refresh"), "import")
         self.assertEqual(snapshot_intent("POST", prefix + "other/target/refresh"), "")
+        self.assertEqual(snapshot_intent("POST", prefix + "target/inspect"), "export")
+        self.assertEqual(
+            snapshot_intent("POST", prefix + "target/refresh-checked/" + "a" * 64), "import"
+        )
+        self.assertEqual(snapshot_intent("POST", prefix + "target/refresh-checked/bad"), "")
+        self.assertEqual(snapshot_intent("GET", prefix + "target/receipts/job"), "receipt")
+        self.assertEqual(snapshot_intent("POST", prefix + "target/receipts/job"), "")
 
     def test_export_redacts_known_runtime_credentials_in_workspace_files(self):
         with tempfile.TemporaryDirectory() as directory:

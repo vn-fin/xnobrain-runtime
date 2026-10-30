@@ -331,9 +331,9 @@ class ConversationRunnerMixin:
         }
 
     async def _resolve_prepared_model_route(self, prepared: dict[str, Any]) -> None:
-        """Leave the virtual Auto route for GoRouter to resolve and retry.
+        """Leave the virtual Auto route for XNORouter to resolve and retry.
 
-        GoRouter v0.0.19 owns allowlist-aware random selection, route health and
+        XNORouter v0.0.19 owns allowlist-aware random selection, route health and
         quota filtering, retryable failover, and selected-upstream attribution.
         Resolving Auto in Runtime would duplicate that policy and bypass the
         router's ``AUTO_MAX_TRIES`` bound.
@@ -548,7 +548,7 @@ class ConversationRunnerMixin:
 
         Hermes identifies the centralized endpoint as a named custom provider.
         The OpenAI SDK accepts client-side fields such as ``timeout`` while its
-        custom-provider path can also attach ``custom_llm_provider``. GoRouter
+        custom-provider path can also attach ``custom_llm_provider``. XNORouter
         resolves the public model prefix itself and forwards request JSON, so
         neither field belongs in the upstream body.
         """

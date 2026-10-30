@@ -470,6 +470,55 @@ class HermesKanbanAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(backlog.status_code, 409, backlog.text)
             self.assertEqual(backlog.json()["error"]["code"], "invalid_transition")
 
+    async def test_big_brother_chat_skill_is_removed_from_task_defaults_and_updates(self):
+        await self.composition.service.ensure_default_agent()
+        async with AsyncClient(
+            transport=ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            inventory = await client.get("/xnobrain/api/runtime/v1/agents-skills/big-brother")
+            self.assertEqual(inventory.status_code, 200, inventory.text)
+            self.assertTrue(
+                any(
+                    skill["skill_id"] == "big-brother-control" for skill in inventory.json()["data"]
+                )
+            )
+            base = "/xnobrain/api/runtime/v1/kanban/boards/default/tasks"
+            created = await client.post(
+                base,
+                json={
+                    "title": "Big Brother task",
+                    "description": "Execute an ordinary task without platform coordination.",
+                    "status": "backlog",
+                    "assignee": "big-brother",
+                    "skills": ["big-brother-control"],
+                },
+            )
+            self.assertEqual(created.status_code, 201, created.text)
+            task = created.json()["data"]
+            self.assertEqual(task["skills"], [])
+            updated = await client.patch(
+                f"{base}/{task['id']}",
+                json={
+                    "skills": ["big-brother-control"],
+                },
+            )
+            self.assertEqual(updated.status_code, 200, updated.text)
+            self.assertEqual(updated.json()["data"]["skills"], [])
+            rejected = await client.post(
+                base,
+                json={
+                    "title": "Invalid skill",
+                    "description": "Keep the normal skill guard.",
+                    "status": "backlog",
+                    "assignee": "big-brother",
+                    "skills": ["big-brother-control", "nonexistent-skill"],
+                },
+            )
+            self.assertEqual(rejected.status_code, 409, rejected.text)
+            self.assertEqual(rejected.json()["error"]["code"], "skill_not_enabled")
+            inventory_after = await client.get("/xnobrain/api/runtime/v1/agents-skills/big-brother")
+            self.assertEqual(inventory_after.json(), inventory.json())
+
     async def test_disabled_assignee_skill_is_rejected_server_side(self):
         async with AsyncClient(
             transport=ASGITransport(app=self.app), base_url="http://test"
