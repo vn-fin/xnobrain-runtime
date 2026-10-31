@@ -200,6 +200,33 @@ class RuntimeStorageMetricsTests(unittest.TestCase):
         self.files["/proc/self/mountinfo"] = "1 0 0:1 / / rw - ext4 /dev/sda rw\n"
         self.assertFalse(self.capacity()["available"])
 
+    def test_preflight_accepts_dedicated_block_filesystem(self):
+        for filesystem in ("ext4", "xfs"):
+            with self.subTest(filesystem=filesystem):
+                self.files["/proc/self/mountinfo"] = (
+                    "1 0 253:1 / / rw - ext4 /dev/dm-1 rw\n"
+                    f"2 1 253:9 / /opt/data rw - {filesystem} /dev/dm-9 rw\n"
+                )
+                self.assertEqual(
+                    self.capacity(1234),
+                    {"available": True, "free_bytes": 1234, "source": "dedicated_filesystem"},
+                )
+                self.assertEqual(self.capacity(0)["free_bytes"], 0)
+
+    def test_preflight_rejects_unbounded_or_ambiguous_block_mount(self):
+        for mount in (
+            "2 1 253:1 / /opt/data rw - ext4 /dev/dm-1 rw",
+            "2 1 253:9 /shared/user /opt/data rw - ext4 /dev/dm-9 rw",
+            "2 1 0:9 / /opt/data rw - tmpfs tmpfs rw",
+            "2 1 0:9 / /opt/data rw - ext4 /dev/dm-9 rw",
+            "2 1 253:9 / /opt/data rw - overlay overlay rw",
+        ):
+            with self.subTest(mount=mount):
+                self.files["/proc/self/mountinfo"] = (
+                    "1 0 253:1 / / rw - ext4 /dev/dm-1 rw\n" + mount + "\n"
+                )
+                self.assertFalse(self.capacity()["available"])
+
     def test_vm_preserves_filesystem_metrics_even_on_btrfs(self):
         disk = shutil._ntuple_diskusage(30 << 30, 9 << 30, 21 << 30)
         with (

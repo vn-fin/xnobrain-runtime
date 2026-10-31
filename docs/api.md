@@ -855,7 +855,11 @@ command lock serializes different updater instances and processes.
 
 Source maintenance preflight additionally reports
 `source_protocol: runtime_source_safe_v1` and `capacity_source`. Incus container
-data capacity is bounded by its enforced Btrfs qgroup and filesystem headroom;
+data capacity is bounded by its enforced Btrfs qgroup and filesystem headroom.
+A whole ext4/XFS data filesystem mounted from a distinct block device reports
+`capacity_source: dedicated_filesystem`; directory binds, root-backed mounts,
+and overlay layers are not accepted as dedicated capacity. Control additionally
+verifies the Incus volume binding and quota before source preflight. An
 unknown quota returns `runtime_update_capacity_unavailable`, never host-pool
 capacity. A known shortfall returns `runtime_update_insufficient_capacity`.
 VM and non-managed layout capacity retains filesystem semantics.

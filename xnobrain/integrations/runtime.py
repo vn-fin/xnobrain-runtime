@@ -276,16 +276,34 @@ class LocalRuntimeManager:
             if not require_quota:
                 return {"available": True, "free_bytes": usage.free, "source": "filesystem"}
             path = path.resolve()
+            mounts = cls._mounts()
             mount = next(
                 (
                     mount
-                    for mount in sorted(
-                        cls._mounts(), key=lambda item: len(item["path"]), reverse=True
-                    )
+                    for mount in sorted(mounts, key=lambda item: len(item["path"]), reverse=True)
                     if path.is_relative_to(Path(mount["path"]))
                 ),
                 None,
             )
+            root_mount = next((item for item in mounts if item["path"] == "/"), None)
+            # LVM custom volumes expose a whole, separate block filesystem.
+            # A bind of a directory (or the container root) is not such a bound.
+            if (
+                mount
+                and root_mount
+                and mount["type"] in {"ext4", "xfs"}
+                and mount["root"] == "/"
+                and mount["path"] != "/"
+                and mount["device"] != root_mount["device"]
+                and re.fullmatch(r"[1-9][0-9]*:[0-9]+", mount["device"])
+                and usage.total > 0
+                and 0 <= usage.free <= usage.total
+            ):
+                return {
+                    "available": True,
+                    "free_bytes": usage.free,
+                    "source": "dedicated_filesystem",
+                }
             volume = cls._volume_metrics("data", path, mount, "container")
             if not volume["available"] or not volume["source"].startswith("btrfs_qgroup_"):
                 return unavailable
