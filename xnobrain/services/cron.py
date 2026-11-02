@@ -56,6 +56,7 @@ def _iso(value: Any) -> str:
 _PINNED_CONNECTOR_KEY = "xnobrain_pinned_connector"
 _PINNED_LABEL_KEY = "xnobrain_pinned_label"
 _CONNECTOR_DISPLAY_NAMES = {
+    "blend": "Model Blend",
     "amazon-q": "Amazon Q",
     "anthropic": "Anthropic",
     "antigravity": "Antigravity",
@@ -745,11 +746,13 @@ class CronService:
                 self._active_executions += 1
             try:
                 from ..integrations.conversation_credentials import cron_profile_scope
+                from ..integrations.cron_blends import blend_execution_scope
 
                 with (
                     cron_jobs.use_cron_store(home),
                     execution_scope(self.custom_page_schedules, profile),
                     cron_profile_scope(home),
+                    blend_execution_scope(getattr(self.agents, "llm_router", None)),
                 ):
                     provider = resolve_cron_scheduler()
                     fired = bool(provider.fire_due(job_id, adapters=None, loop=None))

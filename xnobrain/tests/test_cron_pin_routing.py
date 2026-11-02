@@ -137,6 +137,43 @@ class CronPinServiceTests(TestCase):
         self.assertEqual(dto["pinned_label"], "Codex · cx/gpt-5.6-luna")
         self.assertTrue(dto["pinned"])
 
+    def test_create_and_update_blend_pin_keep_virtual_name_and_display_hint(self):
+        job = dict(self.created)
+
+        def native(profile, function, *args, **kwargs):
+            if function == "create_job":
+                job.update({**kwargs, "schedule": self.created["schedule"]})
+                return dict(job)
+            if function == "list_jobs":
+                return [job]
+            if function == "update_job":
+                job.update(args[1])
+                return dict(job)
+            if function in {"clear_drift_alerted", "clear_preflight_alerted"}:
+                return True
+            raise AssertionError(function)
+
+        with _router_patches(), patch.object(self.service, "_native", side_effect=native):
+            created = self.service.create_job(
+                {
+                    "agent_id": "agent-1",
+                    "name": "Daily",
+                    "prompt": "Report",
+                    "interval_minutes": 60,
+                    "provider": "blend",
+                    "model": "daily",
+                }
+            )
+            self.assertEqual(created["pinned_model"], "daily")
+            updated = self.service.update_job(
+                "job-1", {"provider": "blend", "model": "backup"}, "agent-1"
+            )
+        self.assertEqual(updated["pinned_model"], "backup")
+        self.assertEqual(updated["pinned_connector"], "blend")
+        self.assertEqual(updated["pinned_label"], "Model Blend · backup")
+        self.assertEqual(job["provider"], ROUTER_PROVIDER)
+        self.assertNotIn("api_key", job)
+
     def test_update_job_pin_and_unpin(self):
         job = {
             "id": "job-1",

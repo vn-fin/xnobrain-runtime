@@ -27,6 +27,25 @@ schema are unchanged by the execution fixes described here.
 Conversation context retains the virtual blend name as `route` and the actual
 physical model as `model`.
 
+## Scheduled execution
+
+Cron's create/edit model picker includes saved Model Blends on both the Cron page
+and the agent inspector. A pin stores the blend name, plus the `blend` display
+hint; provider credentials are never stored on the job. Unpinned jobs can inherit
+the agent's blend through native model resolution.
+
+Every fire resolves the current definition in Runtime. Priority uses the native
+inference fallback chain; round-robin advances the same persistent counter as
+chat; Smart Route uses the same per-step classifier and preserves explicit
+reasoning settings. `auto` and ordinary model IDs keep their existing behavior.
+A deleted explicitly pinned blend fails the run with
+`cron_model_blend_unavailable`; select another model or restore the blend.
+
+The adapter leaves native recurrence, claims, history, delivery, teardown and
+maintenance admission intact. Resolution is scoped to the cron worker and never
+rewrites the saved job or the agent configuration. Fusion has the same judge-only
+limitation described below.
+
 ## Known limitations
 
 - The UI exposes `/settings/blends` and the chat blend picker without a
@@ -49,6 +68,7 @@ pinned Hermes source on `PYTHONPATH`:
 python -m unittest \
   xnobrain.tests.test_blends \
   xnobrain.tests.test_blend_execution \
+  xnobrain.tests.test_cron_blends \
   xnobrain.tests.test_llm_router
 ruff check xnobrain/integrations/blends.py \
   xnobrain/integrations/conversation_runner.py \
