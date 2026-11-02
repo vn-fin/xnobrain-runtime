@@ -78,6 +78,41 @@ class BundleUploadTests(unittest.IsolatedAsyncioTestCase):
             headers={"X-Part-SHA256": digest or hashlib.sha256(payload).hexdigest()},
         )
 
+    async def test_timing_separates_delayed_receive_and_persist(self):
+        payload = b"test"
+        upload = await self.admit(payload)
+
+        async def delayed_body():
+            await asyncio.sleep(0.04)
+            yield payload
+
+        # The handler's platform holds the original bound method, so delay the repository write.
+        original_write = self.service.task_store.write_upload_part
+
+        def slow_write(*args, **kwargs):
+            import time
+
+            time.sleep(0.04)
+            return original_write(*args, **kwargs)
+
+        with patch.object(self.service.task_store, "write_upload_part", side_effect=slow_write):
+            with self.assertLogs("xnobrain.upload_timing", level="INFO") as logs:
+                response = await self.client.put(
+                    f"/uploads/{upload}/parts/0",
+                    content=delayed_body(),
+                    headers={
+                        "traceparent": "00-57c654efb4b514dd64d9290039ed6812-afef774624ff90b7-01"
+                    },
+                )
+        self.assertEqual(response.status_code, 201)
+        stages = {record.stage: record for record in logs.records}
+        self.assertGreaterEqual(stages["runtime_body"].duration_ms, 35)
+        self.assertGreaterEqual(stages["runtime_persist"].duration_ms, 35)
+        self.assertIn("runtime_thread_queue", stages)
+        for record in logs.records:
+            self.assertEqual(record.upload_id, upload)
+            self.assertEqual(record.trace_id, "57c654efb4b514dd64d9290039ed6812")
+
     async def test_out_of_order_replay_and_exact_assembly(self):
         payload = b"a" * UPLOAD_CHUNK_SIZE + b"b" * UPLOAD_CHUNK_SIZE + b"end"
         upload = await self.admit(payload)

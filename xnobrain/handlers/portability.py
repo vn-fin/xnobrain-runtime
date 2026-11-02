@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ from ..trusted_context import (
     from_request,
     snapshot_authorized,
 )
+from ..upload_timing import UploadTiming
 
 
 def _snapshot_chunks(path: Path):
@@ -349,11 +351,15 @@ class PortabilityHandlers:
             return self.failure(error)
 
     async def bundle_part(self, request: Request) -> Response:
+        timing = None
+        stage = "runtime_body"
+        started = time.monotonic()
         try:
             transfer_id = request.path_params["transfer_id"]
             part_number = request.path_params["part_number"]
             operation = request.scope["route"].name
             if operation == "bundle_upload_part":
+                timing = UploadTiming(transfer_id, part_number, request.headers)
                 content_length = request.headers.get("content-length")
                 if content_length is not None:
                     declared_length = int(content_length)
@@ -367,15 +373,32 @@ class PortabilityHandlers:
                 if not payload_buffer:
                     raise ValueError("upload part size is invalid")
                 payload = bytes(payload_buffer)
+                timing.record(stage, started)
+                stage, started = "runtime_checksum", time.monotonic()
                 expected_hash = str(request.headers.get("x-part-sha256") or "").lower()
                 if (
                     expected_hash
                     and expected_hash != __import__("hashlib").sha256(payload).hexdigest()
                 ):
                     raise ValueError("upload part checksum is invalid")
-                result = await asyncio.to_thread(
-                    self.service.put_bundle_upload_part, transfer_id, part_number, payload
-                )
+                timing.record(stage, started)
+                stage, started = "runtime_persist", time.monotonic()
+
+                def persist():
+                    # to_thread inherits context, but queue latency is measured explicitly.
+                    timing.record("runtime_thread_queue", started)
+                    persist_started = time.monotonic()
+                    failed = True
+                    try:
+                        result = self.service.put_bundle_upload_part(
+                            transfer_id, part_number, payload
+                        )
+                        failed = False
+                        return result
+                    finally:
+                        timing.record("runtime_persist", persist_started, failed=failed)
+
+                result = await asyncio.to_thread(persist)
                 return self.success(result, "bundle part uploaded", 201)
             if operation == "bundle_task_part":
                 scope, actor = self.bundle_task_identity(request)
@@ -400,7 +423,11 @@ class PortabilityHandlers:
                 },
             )
         except EXPECTED_ERRORS as error:
+            if timing is not None and stage != "runtime_persist":
+                timing.record(stage, started, failed=True)
             return self.failure(error)
         except (ValueError, KeyError, TypeError) as error:
+            if timing is not None and stage != "runtime_persist":
+                timing.record(stage, started, failed=True)
             error.status, error.code = 400, "invalid_bundle_part"
             return self.failure(error)

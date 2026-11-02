@@ -7,6 +7,7 @@ import hmac
 import logging
 import os
 import re
+import time
 from collections.abc import AsyncIterator
 from contextlib import suppress
 
@@ -33,6 +34,7 @@ from xnobrain.trusted_context import (
     snapshot_intent,
     snapshot_signature,
 )
+from xnobrain.upload_timing import UploadTiming, relay_trace_headers
 
 _MAX_CHUNK_BYTES = 64 * 1024
 _METHOD_RE = re.compile(r"^[A-Z][A-Z0-9_-]{0,31}$")
@@ -49,6 +51,9 @@ _FORBIDDEN_REQUEST_HEADERS = {
     "transfer-encoding",
     "upgrade",
     "content-length",
+    "traceparent",
+    "tracestate",
+    "baggage",
 }
 _FORBIDDEN_RESPONSE_HEADERS = {
     "connection",
@@ -319,11 +324,30 @@ class RuntimeGatewayService(
         if not str(head.principal.user_id or "").strip():
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "verified principal is required")
 
+        trace_headers = relay_trace_headers(
+            {name: _metadata_value(context, name) for name in ("traceparent", "tracestate")}
+        )
+        upload_match = (
+            re.fullmatch(
+                r"/xnobrain/api/runtime/v1/bundles/uploads/([a-f0-9]{32})/parts/([0-9]{1,10})", path
+            )
+            if method == "PUT"
+            else None
+        )
+        timing = UploadTiming(
+            upload_match[1] if upload_match else "",
+            upload_match[2] if upload_match else "",
+            trace_headers,
+        )
+        relay_started = time.monotonic()
+
         async def request_body() -> AsyncIterator[bytes]:
+            body_started = time.monotonic()
             sequence = 0
             async for frame in request_iterator:
                 kind = frame.WhichOneof("frame")
                 if kind == "end":
+                    timing.record("runtime_relay_body", body_started)
                     return
                 if kind != "body_chunk":
                     await context.abort(
@@ -345,6 +369,7 @@ class RuntimeGatewayService(
             target += "?" + raw_query
         timeout = aiohttp.ClientTimeout(total=None, connect=10, sock_connect=10)
         relay_headers = _request_headers(head.headers)
+        relay_headers.extend(trace_headers.items())
         if path == "/xnobrain/api/runtime/v1/system/time-control" or path.startswith(
             "/xnobrain/api/runtime/v1/system/time-control/"
         ):
@@ -401,6 +426,9 @@ class RuntimeGatewayService(
                     data=request_body(),
                     allow_redirects=False,
                 ) as response:
+                    timing.record(
+                        "runtime_loopback_head", relay_started, failed=response.status >= 400
+                    )
                     yield gateway_pb2.RuntimeGatewayServiceProxyResponse(
                         head=http_pb2.HttpResponseHead(
                             status_code=response.status,
@@ -417,6 +445,7 @@ class RuntimeGatewayService(
             except asyncio.CancelledError:
                 raise
             except (aiohttp.ClientError, TimeoutError):
+                timing.record("runtime_loopback_head", relay_started, failed=True)
                 await context.abort(
                     grpc.StatusCode.UNAVAILABLE, "Runtime HTTP service is unavailable"
                 )

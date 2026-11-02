@@ -139,6 +139,30 @@ class RuntimeGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(responses[0].head.status_code, 206)
         self.assertEqual(self.received["path_qs"], "/xnobrain/api/runtime/v1/health")
 
+    async def test_private_trace_overrides_browser_trace_without_exporter(self):
+        trusted = "00-57c654efb4b514dd64d9290039ed6812-afef774624ff90b7-01"
+        for supplied in (trusted, "invalid"):
+            with self.subTest(supplied=supplied):
+                call = self.stub.Proxy(
+                    _frames(
+                        _head(
+                            headers=(
+                                http_pb2.Header(name="traceparent", values=[b"forged"]),
+                                http_pb2.Header(name="baggage", values=[b"secret"]),
+                            )
+                        ),
+                        gateway_pb2.RuntimeGatewayServiceProxyRequest(end=http_pb2.StreamEnd()),
+                    ),
+                    metadata=(("x-xnobrain-internal-token", TOKEN), ("traceparent", supplied)),
+                )
+                responses = [response async for response in call]
+                self.assertEqual(responses[0].head.status_code, 206)
+                headers = {key.lower(): value for key, value in self.received["headers"]}
+                self.assertEqual(
+                    headers.get("traceparent"), trusted if supplied == trusted else None
+                )
+                self.assertNotIn("baggage", headers)
+
     async def test_streams_body_and_strips_browser_credentials(self) -> None:
         request_headers = (
             http_pb2.Header(name="authorization", values=[b"Bearer browser-token"]),

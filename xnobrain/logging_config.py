@@ -15,6 +15,10 @@ SERVICE_NAME = "xnobrain-runtime-services"
 DEVELOPMENT_ENVIRONMENT = "development"
 _SAFE_RECORD_FIELDS = (
     "event",
+    "stage",
+    "upload_id",
+    "part_number",
+    "failed",
     "action",
     "operation_id",
     "workspace_id",
