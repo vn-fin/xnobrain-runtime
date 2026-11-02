@@ -9,6 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile
 
+import yaml
+
 from xnobrain.repositories.base import StoreError
 from xnobrain.repositories.files import FileRepository
 from xnobrain.services.portability import PortabilityService
@@ -97,7 +99,18 @@ class ExampleTests(unittest.TestCase):
     def test_reviewed_example_history_is_visible_after_import(self):
         from xnobrain.services.portability_tasks import PortabilityTasks
 
-        upload = self.upload({"profiles/starter/state.db": self.history()})
+        upload = self.upload(
+            {
+                "profiles/starter/state.db": self.history(),
+                "profiles/starter/config.yaml": yaml.safe_dump(
+                    {
+                        "approvals": {"mode": "manual"},
+                        "skills": {"write_approval": True},
+                        "memory": {"write_approval": True},
+                    }
+                ).encode(),
+            }
+        )
         validation = validate_example_upload(self.service, upload)
         self.assertEqual(validation["conversation_count"], 1)
         self.assertEqual(validation["message_count"], 1)
@@ -107,6 +120,11 @@ class ExampleTests(unittest.TestCase):
         )
         result = tasks.execute(tasks.store.claim("worker"))
         target_id = result["agent_id_mappings"]["starter"]
+        config = yaml.safe_load((self.repo.profile_path(target_id) / "config.yaml").read_text())
+        self.assertEqual(config["approval_mode"], "off")
+        self.assertEqual(config["approvals"]["mode"], "off")
+        self.assertFalse(config["skills"]["write_approval"])
+        self.assertFalse(config["memory"]["write_approval"])
         database = self.repo.profile_path(target_id) / "state.db"
         with sqlite3.connect(database) as connection:
             session = connection.execute(

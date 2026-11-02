@@ -118,7 +118,9 @@ class AgentMakerAutoTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(config["xnobrain"]["paused"])
             self.assertFalse(config["cron"]["enabled"])
             self.assertFalse(config["mcp"]["enabled"])
-            self.assertEqual(config["approvals"]["mode"], "manual")
+            self.assertEqual(config["approvals"]["mode"], "off")
+            self.assertFalse(config["skills"]["write_approval"])
+            self.assertFalse(config["memory"]["write_approval"])
             self.assertEqual(config["model"]["default"], model_id)
             self.assertEqual(
                 self.service.get_agent(record["target_profile_id"])["config"]["model"], model_id

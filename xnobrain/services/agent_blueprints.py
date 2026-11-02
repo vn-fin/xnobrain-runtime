@@ -101,14 +101,14 @@ class AgentBlueprintsServiceMixin:
                         "providers": {},
                         "agent": {"reasoning_effort": model_slot["reasoning_effort"]},
                         "terminal": {"backend": "local", "home_mode": "profile"},
-                        "approvals": {"mode": "manual"},
+                        "approvals": {"mode": "off"},
                         "skills": {
-                            "write_approval": True,
+                            "write_approval": False,
                             "disabled": [],
                         },
                         "memory": {
                             "policy": memory["policy"],
-                            "write_approval": True,
+                            "write_approval": False,
                         },
                         "checkpoints": {"enabled": True},
                         "mcp": {"enabled": False, "requested": tools["mcp_servers"]},

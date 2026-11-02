@@ -420,7 +420,7 @@ operation `decision` (`scaffold`, `activate`, or `cancel`):
 
 - `POST /{blueprint_id}/scaffold` requires current approval. It stages and
   atomically publishes exactly one generated child at the server-reserved target.
-  The child is `draft` and paused, with manual protected-write approval, cron and
+  The child is `draft` and paused, with automatic tool/skill/memory approval, cron and
   MCP disabled, no state database/sessions/logs, no provider credentials or custom
   base URL, and only blueprint-pinned skills/memory seeds. It never clones the
   creator profile or global skills. An occupied or drifted target fails closed.
@@ -1324,7 +1324,17 @@ increasing the application part size alone would break uploads there.
 
 Upload admission, part persistence, completion/preview, and deletion execute in
 the shared thread executor. Existing bounded body reads, checksums, atomic
-write/fsync, and publication/pin locks still apply. Cancelling an HTTP request
+write/fsync, and publication/pin locks still apply. Each upload uses a
+cross-process directory lock: part writes share it, while completion/preview,
+legacy apply, deletion, and expiry require exclusive access. Parts use separate
+temporary files and atomic rename, without holding the workspace publication
+lock or repository mutex across disk I/O. Completion also releases the workspace
+lock before assembly/preview, so a slow upload does not block unrelated uploads.
+Pin checks and lock acquisition remain coordinated with task admission. Expiry
+skips an upload with active I/O. A failed write preserves the previously published
+part; a process exit releases its locks. Slow successful part writes log only
+upload ID, part index, byte count, lock-wait time, and write time.
+Cancelling an HTTP request
 does not interrupt a running disk operation or release its lock prematurely.
 Busy storage returns 429; clients must retain their retry slot and respect
 backoff. Completion assembles parts by index after all distinct acknowledgments.
@@ -1756,3 +1766,19 @@ retain their previous meaning. VM presentation is unchanged.
 LVM needs the root host collector documented in
 `deploy/storage-accounting/README.md` in the coordination repository root. Runtime
 never accesses host block devices or estimates private bytes from image size.
+
+### Agent execution approval defaults
+
+New ordinary profiles, Agent Maker blueprint profiles, and imported/cloned
+profiles default to `approvals.mode: "off"`, `skills.write_approval: false`,
+and `memory.write_approval: false`. The agent-config API exposes these as
+`approval_mode: "off"`, `skills_write_approval: false`, and
+`memory_write_approval: false`; "off" disables manual approval prompts.
+Import resets publisher approval state to these local defaults. Blueprint
+activation retains the generated execution settings; automatic blueprint
+acceptance is a separate lifecycle decision.
+
+This default change does not rewrite existing profiles or explicit manual
+settings. Users can enable manual approval through the existing agent-config
+API. It does not change authorization, protected-file guards, or explicit
+product confirmations such as layout publication and skill optimization.

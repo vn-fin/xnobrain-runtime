@@ -147,7 +147,7 @@ class BundleUploadTests(unittest.IsolatedAsyncioTestCase):
     async def test_slow_write_releases_event_loop_and_keeps_lock_after_cancellation(self):
         upload = await self.admit(b"abc")
         entered, release, finished = threading.Event(), threading.Event(), threading.Event()
-        original = self.service.repository.atomic_write
+        original = self.service.task_store.write_upload_part
 
         def blocked(*args, **kwargs):
             entered.set()
@@ -158,7 +158,7 @@ class BundleUploadTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 finished.set()
 
-        with patch.object(self.service.repository, "atomic_write", side_effect=blocked):
+        with patch.object(self.service.task_store, "write_upload_part", side_effect=blocked):
             task = asyncio.create_task(self.put(upload, 0, b"abc"))
             try:
                 self.assertTrue(await asyncio.to_thread(entered.wait, 2))

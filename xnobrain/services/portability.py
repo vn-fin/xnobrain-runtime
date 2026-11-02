@@ -9,6 +9,7 @@ import logging
 import os
 import time
 import uuid
+from contextlib import ExitStack, contextmanager, nullcontext
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Mapping
@@ -445,11 +446,35 @@ class PortabilityService:
         )
         return metadata
 
+    @contextmanager
+    def _upload_access(self, transfer_id: Any, *, shared: bool = False, allow_pinned: bool = False):
+        with ExitStack() as locks:
+            with self.task_store.publication_lock():
+                directory = self._transfer_dir(self.upload_root, transfer_id)
+                if not allow_pinned and self.task_store.pinned(directory.name):
+                    raise StoreError("Upload is in use", status=409, code="transfer_in_use")
+                locks.enter_context(self.task_store.upload_lock(directory, shared=shared))
+            # Incomplete uploads cannot be pinned. Completed uploads are immutable;
+            # complete_upload returns their receipt and PUT rejects them.
+            yield directory
+
     def put_upload_part(self, transfer_id: Any, part_number: Any, payload: bytes) -> dict[str, Any]:
-        with self.task_store.publication_lock():
-            if self.task_store.pinned(str(transfer_id)):
-                raise StoreError("Upload is in use", status=409, code="transfer_in_use")
-            return self._put_upload_part_unpinned(transfer_id, part_number, payload)
+        started = time.monotonic()
+        with self._upload_access(transfer_id, shared=True):
+            acquired = time.monotonic()
+            result = self._put_upload_part_unpinned(transfer_id, part_number, payload)
+        elapsed = time.monotonic() - started
+        if elapsed >= 0.1:
+            logger.info(
+                "bundle part persisted upload_id=%s part=%d bytes=%d "
+                "lock_wait_seconds=%.3f write_seconds=%.3f",
+                result["upload_id"],
+                result["part_number"],
+                result["size"],
+                acquired - started,
+                time.monotonic() - acquired,
+            )
+        return result
 
     def _put_upload_part_unpinned(
         self, transfer_id: Any, part_number: Any, payload: bytes
@@ -466,7 +491,7 @@ class PortabilityService:
         if len(payload) != expected:
             raise StoreError("upload part size is invalid", code="invalid_upload_part")
         path = directory / "parts" / f"{number:08d}.part"
-        self.repository.atomic_write(path, payload)
+        self.task_store.write_upload_part(path, payload)
         return {
             "upload_id": metadata["upload_id"],
             "part_number": number,
@@ -475,7 +500,7 @@ class PortabilityService:
         }
 
     def complete_upload(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
-        with self.task_store.publication_lock():
+        with self._upload_access(transfer_id, allow_pinned=True):
             return self._complete_upload_locked(transfer_id, body)
 
     def _complete_upload_locked(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -567,7 +592,9 @@ class PortabilityService:
         with self.task_store.publication_lock():
             if self.task_store.pinned(str(transfer_id)):
                 raise StoreError("Upload is in use", status=409, code="transfer_in_use")
-            return self._apply_upload_unpinned(transfer_id, body)
+            directory = self._transfer_dir(self.upload_root, transfer_id)
+            with self.task_store.upload_lock(directory):
+                return self._apply_upload_unpinned(transfer_id, body)
 
     def _apply_upload_unpinned(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
         directory = self._transfer_dir(self.upload_root, transfer_id)
@@ -594,7 +621,9 @@ class PortabilityService:
     def _delete_transfer(self, kind: str, transfer_id: Any) -> dict[str, Any]:
         root = self.upload_root if kind == "upload" else self.export_root
         directory = self._transfer_dir(root, transfer_id)
-        shutil.rmtree(directory)
+        lock = self.task_store.upload_lock(directory) if kind == "upload" else nullcontext()
+        with lock:
+            shutil.rmtree(directory)
         return {"deleted": True, "transfer_id": directory.name}
 
     def inspect_file(self, path: Path, *, example: bool = False) -> dict[str, Any]:
@@ -1499,16 +1528,19 @@ class PortabilityService:
                 config.pop(key, None)
             if isinstance(config.get("cron"), dict):
                 config["cron"]["enabled"] = False
-        config["approval_mode"] = "manual"
-        approvals = config.setdefault("approvals", {})
-        if isinstance(approvals, dict):
-            approvals["mode"] = "manual"
+        # Imported profiles use local automatic defaults, not publisher approval state.
+        config["approval_mode"] = "off"
+        approvals = config.get("approvals")
+        if not isinstance(approvals, dict):
+            approvals = {}
+            config["approvals"] = approvals
+        approvals["mode"] = "off"
         for subsystem in ("skills", "memory"):
             section = config.setdefault(subsystem, {})
             if not isinstance(section, dict):
                 section = {}
                 config[subsystem] = section
-            section["write_approval"] = True
+            section["write_approval"] = False
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
@@ -1928,6 +1960,11 @@ class PortabilityService:
                     if root == self.upload_root and self.task_store.pinned(directory.name):
                         continue
                     if directory.is_dir() and directory.stat().st_mtime < cutoff:
-                        shutil.rmtree(directory)
+                        self._delete_transfer(
+                            "upload" if root == self.upload_root else "export", directory.name
+                        )
+                except StoreError as error:
+                    if error.code != "task_storage_busy":
+                        raise
                 except OSError:
                     continue

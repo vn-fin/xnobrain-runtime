@@ -8,6 +8,11 @@ platform automatically accepts the blueprint, scaffolds one child and activates 
 directly. Certification and test sessions are not part of creation. The UI displays
 automatic acceptance separately from manual approval.
 
+New child profiles default to automatic execution approval: `approvals.mode: "off"`,
+`skills.write_approval: false`, and `memory.write_approval: false`. Activation
+retains these settings. Existing profiles and user-selected manual settings are
+not migrated; blueprint acceptance and tool execution approval remain separate.
+
 The native integration supplies identity from the current run. Terminal commands
 and model-authored headers are not a lifecycle credential. Existing permissions,
 work context, payer, protected-write policy, cron and MCP constraints still apply.

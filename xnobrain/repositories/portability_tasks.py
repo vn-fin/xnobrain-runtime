@@ -12,6 +12,7 @@ import hmac
 import json
 import os
 import sqlite3
+import tempfile
 import time
 import uuid
 from contextlib import contextmanager
@@ -407,13 +408,68 @@ class PortabilityTaskStore:
             )
 
     @contextmanager
+    def upload_lock(self, directory: Path, *, shared: bool = False):
+        """Protect one upload's lifetime without serializing independent parts.
+
+        Acquire under publication_lock, then keep this lock across upload I/O.
+        Lock the directory inode itself: no lock file can be unlinked/recreated
+        while another process still holds the old lock.
+        """
+        import fcntl
+
+        descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
+            deadline = time.monotonic() + 0.1
+            while True:
+                try:
+                    fcntl.flock(descriptor, mode | fcntl.LOCK_NB)
+                    break
+                except OSError as error:
+                    if error.errno not in {errno.EAGAIN, errno.EACCES}:
+                        raise
+                    if time.monotonic() >= deadline:
+                        raise StoreError(
+                            "Snapshot storage is busy", status=429, code="task_storage_busy"
+                        ) from error
+                    time.sleep(0.005)
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+
+    @staticmethod
+    def write_upload_part(path: Path, payload: bytes):
+        """Atomic part replacement under upload_lock, without a repository mutex."""
+        descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                os.fchmod(output.fileno(), 0o640)
+                output.write(payload)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, path)
+            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
+    @contextmanager
     def publication_lock(self):
         """Cross-process exclusion for admission pins and filesystem publication.
 
         Database leases alone cannot stop a paused worker from performing writes.
         All publishers and transfer deleters must participate in this lock and
         recheck their claim after acquisition. Never hold a DB transaction while
-        waiting for this lock.
+        waiting for this lock. Upload I/O may release this lock after acquiring
+        upload_lock: admission requires a complete, immutable upload, and every
+        upload deleter must acquire that directory's exclusive lock here first.
         """
         import fcntl
 
