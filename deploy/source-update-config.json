@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "revision": "managed-runtime-v1",
+  "environment": [
+    {
+      "name": "RUNTIME_WORKSPACE_ID",
+      "operation": "set",
+      "from": "workspace.id"
+    },
+    {
+      "name": "RUNTIME_WORKSPACE_OWNER_KIND",
+      "operation": "set",
+      "from": "workspace.owner_kind"
+    },
+    {
+      "name": "RUNTIME_WORKSPACE_ORGANIZATION_ID",
+      "operation": "set",
+      "from": "workspace.organization_id"
+    }
+  ]
+}
