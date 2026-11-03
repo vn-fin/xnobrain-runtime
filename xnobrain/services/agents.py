@@ -488,6 +488,14 @@ class AgentsServiceMixin:
                         )
             deleted_tasks = self.kanban.delete_assignee_tasks(agent_id)
             self.repository.hard_delete_profile(agent_id)
+            projects = getattr(self, "agent_projects", None)
+            if projects is not None:
+                try:
+                    projects.repository.forget_agent(agent_id)
+                except StoreError:
+                    # The profile is already gone. Complete registry/cache cleanup;
+                    # project reads reconcile missing profiles when storage recovers.
+                    logging.getLogger(__name__).warning("Project membership cleanup deferred")
             self.agents.sync_profiles_registry()
             self._cache.invalidate("agents")
             return {

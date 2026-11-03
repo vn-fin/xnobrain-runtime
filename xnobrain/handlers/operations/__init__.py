@@ -3,6 +3,7 @@
 from typing import Any, Callable
 
 from .agent_blueprints import operations as agent_blueprints_operations
+from .agent_projects import operations as agent_projects_operations
 from .agents import operations as agents_operations
 from .analytics import operations as analytics_operations
 from .automation import operations as automation_operations
@@ -32,6 +33,7 @@ from .workspaces import operations as workspaces_operations
 
 Operation = tuple[Callable[[], Any], str, int]
 OPERATION_GROUPS = (
+    agent_projects_operations,
     custom_page_operations,
     ui_composition_operations,
     agent_blueprints_operations,
