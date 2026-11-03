@@ -17,6 +17,7 @@ from ..models import APIEnvelope
 from . import (
     agent_api,
     agent_blueprints,
+    agent_projects,
     agents,
     analytics,
     automation,
@@ -56,6 +57,7 @@ BASE_ROUTE_GROUPS = (
     agents.ROUTES,
     agent_api.ROUTES,
     agent_blueprints.ROUTES,
+    agent_projects.ROUTES,
     checkpoints.ROUTES,
     mcp.ROUTES,
     workspaces.ROUTES,

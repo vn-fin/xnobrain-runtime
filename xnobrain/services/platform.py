@@ -21,6 +21,7 @@ from ..integrations import (
 from ..repositories import FileRepository, StoreError
 from .agent_api import AgentAPIService
 from .agent_blueprints import AgentBlueprintsServiceMixin
+from .agent_projects import AgentProjectsService
 from .agents import AgentsServiceMixin
 from .analytics import AnalyticsService
 from .automation import AutomationServiceMixin
@@ -84,6 +85,7 @@ class PlatformService(
         self.config = config
         self.router = router
         self.runtime = runtime
+        self.agent_projects = AgentProjectsService(self)
         self.organization_connector = OrganizationConnector(self)
         self.marketplace = MarketplaceService(repository, agents)
         self.skill_exports = SkillExportService(repository, agents)

@@ -67,7 +67,7 @@ class APIHandlers(
                 error.status, error.code = 400, "invalid_request"
             response = self.failure(error)
         if name == "build_sha" or name.startswith(
-            ("custom_page_", "ui_composition_", "ui_assistance_")
+            ("custom_page_", "ui_composition_", "ui_assistance_", "agent_projects_")
         ):
             response.headers["Cache-Control"] = "private, no-store"
         return response

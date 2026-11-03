@@ -1782,3 +1782,54 @@ This default change does not rewrite existing profiles or explicit manual
 settings. Users can enable manual approval through the existing agent-config
 API. It does not change authorization, protected-file guards, or explicit
 product confirmations such as layout publication and skill optimization.
+
+## Personal agent project folders
+
+Always available in personal workspaces, without a feature switch. Metadata lives
+in `agent-projects.sqlite3` under the Runtime repository's workspace data root
+and has the workspace's lifetime. It is separate from portable agent profiles.
+These routes use the existing authenticated gateway and signed trusted user and
+tenant context. Organization context is rejected. Request JSON cannot choose a
+user, tenant or workspace; extra fields are rejected.
+
+All paths have prefix `/xnobrain/api/runtime/v1`:
+
+| Method | Path | JSON body |
+| --- | --- | --- |
+| GET | `/agent-projects` | None |
+| POST | `/agent-projects` | `{ "name": "Work", "expected_revision": 0 }` |
+| PATCH | `/agent-projects/{project_id}` | `{ "name": "Research", "expected_revision": 1 }` |
+| DELETE | `/agent-projects/{project_id}` | `{ "expected_revision": 2 }` |
+| PUT | `/agents/{agent_id}/project` | `{ "project_id": "<id>", "expected_revision": 3 }` |
+
+Set `project_id` to `null` to move outside all projects. An agent belongs to at
+most one project. Big Brother cannot be assigned. Deleting a project only removes
+memberships; agent profiles, files and conversations remain. Names are trimmed,
+nonempty, no more than 200 characters and cannot contain control characters.
+Project IDs are generated server-side; names need not be unique.
+
+POST returns 201; other successes return 200. Every success uses the standard
+`{ "success": true, "data": ... }` envelope and `Cache-Control: private, no-store`.
+The data is always a full authoritative snapshot:
+
+```json
+{
+  "revision": 4,
+  "projects": [
+    { "id": "<id>", "name": "Research", "created_at": "<UTC ISO timestamp>", "updated_at": "<UTC ISO timestamp>" }
+  ],
+  "memberships": { "research-agent": "<id>" }
+}
+```
+
+Revision is scoped to the verified user/tenant within this workspace. Every write
+requires the latest integer `expected_revision`; mismatch returns 409
+`agent_projects_revision_conflict` with no change. Fetch current state before a
+deliberate retry; do not automatically replay an uncertain mutation. Profile
+deletion/reconciliation can also advance revision.
+
+Errors include 401 for absent/unsigned identity, 403 for organization/revoked
+context, 404 for an unknown scoped project/agent, 409 for
+protected Big Brother or stale revision, 422 for invalid payload, and 503 for
+unavailable storage or maintenance. Foreign project IDs are indistinguishable
+from nonexistent IDs. These routes are always registered at startup.
