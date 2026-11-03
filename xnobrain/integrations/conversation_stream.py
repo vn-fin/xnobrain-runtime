@@ -414,8 +414,11 @@ class ConversationStreamMixin:
                 }
                 if kwargs.get("tool_call_id"):
                     event["tool_call_id"] = str(kwargs["tool_call_id"])
-                if normalized_tool == "delegate_task" and isinstance(args, Mapping):
+                if isinstance(args, Mapping):
+                    # The live activity view needs the same input as history,
+                    # before either the tool or the conversation completes.
                     event["args"] = dict(args)
+                if normalized_tool == "delegate_task" and isinstance(args, Mapping):
                     raw_tasks = args.get("tasks")
                     if not isinstance(raw_tasks, list):
                         raw_tasks = [args]

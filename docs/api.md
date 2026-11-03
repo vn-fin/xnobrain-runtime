@@ -123,6 +123,13 @@ preserved. Older streams without IDs are supported only when a running tool
 can be matched unambiguously. History reconstruction uses persisted
 `tool_call_id` and tool result error fields.
 
+`tool.started` also carries the executor's structured input in `args` for every
+tool, including an empty object for tools with no parameters. It is available
+while the tool is still running, so the activity input tab does not depend on
+completion or a history reload. Legacy callbacks without structured input may
+omit `args`. These inputs are conversation data on the existing authenticated
+stream, not application logs or telemetry.
+
 Conversation SSE emits `provider.retrying` as soon as a retryable model request
 fails, before its retry backoff. It carries `run_id`, `timestamp`, optional
 `status_code`, `retry_attempt` (1–5), and `max_retries` (5); it never carries raw

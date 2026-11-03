@@ -1631,6 +1631,59 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(raised.exception.code, "conversation_not_found")
             self.assertIsNone(manager._session(profile, missing_id))
 
+    async def test_conversation_stream_emits_tool_inputs_before_completion(self) -> None:
+        inputs = [
+            ("skill_view", {"name": "grounded-citations"}),
+            ("terminal", {"command": "pwd", "background": False, "timeout": 30}),
+            ("skills_list", {}),
+        ]
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            release_tools = asyncio.Event()
+
+            async def run_session_agent(_prepared, *, tool_progress_callback, **_kwargs):
+                for index, (tool, args) in enumerate(inputs):
+                    tool_progress_callback(
+                        "tool.started", tool, None, args, tool_call_id=f"call-{index}"
+                    )
+                await release_tools.wait()
+                for index, (tool, _args) in enumerate(inputs):
+                    tool_progress_callback("tool.completed", tool, tool_call_id=f"call-{index}")
+                return {"final_response": "Done", "messages": []}, {}
+
+            prepared = {
+                "name": "news",
+                "profile_dir": root / "profile",
+                "conversation_id": "20260727_093154_c2b5fe",
+                "message": "Inspect the workspace",
+                "model": "cx/gpt-5.5",
+                "requested_model": "",
+                "timeout_seconds": 30,
+            }
+            with patch.object(manager, "_run_session_agent", side_effect=run_session_agent):
+                stream = manager._chat_stream_events(prepared)
+                try:
+                    started = await anext(stream)
+                    self.assertIn(b'"event":"run.started"', started)
+                    for index, (tool, args) in enumerate(inputs):
+                        frame = await asyncio.wait_for(anext(stream), timeout=5)
+                        event = json.loads(frame.decode().removeprefix("data: ").strip())
+                        self.assertEqual(event["event"], "tool.started")
+                        self.assertEqual(event["tool_call_id"], f"call-{index}")
+                        self.assertEqual(event["tool"], tool)
+                        self.assertEqual(event.get("args"), args)
+                        self.assertFalse(release_tools.is_set())
+                finally:
+                    release_tools.set()
+                    remaining = b"".join([frame async for frame in stream])
+                self.assertEqual(remaining.count(b'"event":"tool.completed"'), len(inputs))
+                self.assertIn(b'"event":"run.completed"', remaining)
+
     async def test_conversation_stream_emits_incremental_model_deltas(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -1695,7 +1748,7 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                     "tool.started",
                     "todo",
                     "planning 2 task(s)",
-                    {"todos": [{"id": "private-args", "content": "not streamed"}]},
+                    {"todos": [{"id": "research", "content": "Research sources"}]},
                 )
                 tool_progress_callback(
                     "tool.completed",
@@ -1857,7 +1910,8 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(payload.count(b'"tool_call_id":"call-search"'), 2)
             self.assertIn(b'"duration":0.125', payload)
             self.assertNotIn(b"private tool output", payload)
-            self.assertNotIn(b"private-args", payload)
+            self.assertIn(b'"args":{"query":"latest headlines"}', payload)
+            self.assertIn(b'"args":{"todos":[{"id":"research"', payload)
             self.assertIn(b'"tool":"delegate_task"', payload)
             self.assertIn(b'"args":{"tasks"', payload)
             self.assertIn(b"Research the current implementation", payload)
