@@ -24,6 +24,7 @@ from ..models.agent_blueprints import (
     AgentMakerLaunchRecord,
 )
 from .base import ServiceError, iso
+from .storage_budget import require_storage_growth
 
 
 def _canonical(value: Any) -> bytes:
@@ -418,6 +419,7 @@ class AgentBlueprintsServiceMixin:
         *,
         record_id: str | None = None,
     ) -> dict[str, Any]:
+        require_storage_growth()
         owner_profile = self._blueprint_owner_profile(owner_agent_id)
         work_context_id = str(body["work_context_id"])
         if work_context_id != "personal":

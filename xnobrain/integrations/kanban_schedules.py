@@ -202,7 +202,13 @@ def release_due_schedules(
     ).fetchall()
     if due and activity_root is not None:
         from ..repositories.runtime_update_gate import WorkspaceActivity
+        from ..services.base import ServiceError
+        from ..services.storage_budget import require_storage_growth
 
+        try:
+            require_storage_growth()
+        except ServiceError:
+            return []
         with WorkspaceActivity(activity_root, independent=True):
             return release_due_schedules(conn, board=board, now=current)
     released: list[str] = []

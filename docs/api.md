@@ -1840,3 +1840,19 @@ context, 404 for an unknown scoped project/agent, 409 for
 protected Big Brother or stale revision, 422 for invalid payload, and 503 for
 unavailable storage or maintenance. Foreign project IDs are indistinguishable
 from nonexistent IDs. These routes are always registered at startup.
+
+## Managed workspace soft storage budget
+
+For opted-in containers, sandbox metrics include `storage_budget` with
+`enabled`, `limit_bytes`, nullable `used_bytes`, and `state` (`disabled`,
+`available`, `exceeded`, `unavailable`). `RUNTIME_STORAGE_SOFT_LIMIT_BYTES=0`
+(the default) disables the policy; Control supplies the persisted value for new
+managed containers. Usage is the sum of fresh trusted private root/data
+allocation counters; shared blocks are excluded.
+
+At the limit, new writes/uploads/imports and independent task dispatch return
+507 `workspace_storage_budget_exceeded`. Missing or stale measurements return
+503 `workspace_storage_usage_unavailable`. These responses are not update
+maintenance. Reads, existing downloads, deletion, stop/cancel, approvals for
+existing runs and update recovery remain available. Running writers are not
+killed; this is sampled admission, not an atomic filesystem quota.

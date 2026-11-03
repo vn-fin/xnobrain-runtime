@@ -12,6 +12,8 @@ from typing import Any
 from ..repositories.base import StoreError
 from ..repositories.portability_tasks import PortabilityTaskStore
 from ..repositories.runtime_update_gate import workspace_activity
+from .base import ServiceError
+from .storage_budget import require_storage_growth
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +68,10 @@ class PortabilityWorker:
             try:
                 if await self._iteration():
                     continue
-            except StoreError as error:
+            except (StoreError, ServiceError) as error:
                 if error.code not in {
+                    "workspace_storage_budget_exceeded",
+                    "workspace_storage_usage_unavailable",
                     "runtime_update_maintenance",
                     "workspace_rebalance_maintenance",
                     "workspace_memory_maintenance",
@@ -103,6 +107,7 @@ class PortabilityWorker:
 
     @workspace_activity(lambda self: self.store.path.parent)
     async def _claim_and_execute(self) -> bool:
+        require_storage_growth()
         claim = await asyncio.to_thread(
             self.store.claim, self.owner, lease_seconds=self.lease_seconds
         )

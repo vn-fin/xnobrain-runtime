@@ -46,6 +46,7 @@ from .constants import (
 )
 from .cron import CronServiceError
 from .helpers import cached_method
+from .storage_budget import require_storage_growth
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError
 from .workspace_upload import WorkspaceUploadError
 
@@ -187,6 +188,7 @@ class PortabilityService:
     # Legacy whole-response endpoints stay compatible. New UI/API clients use
     # the transfer-session methods below so archive bytes are always chunked.
     def export(self, body: Mapping[str, Any]) -> tuple[bytes, str]:
+        require_storage_growth()
         descriptor, name = tempfile.mkstemp(
             prefix=".bundle-", suffix=".zip", dir=self.transfer_root
         )
@@ -246,6 +248,7 @@ class PortabilityService:
         expected_fingerprint: str | None = None,
     ) -> dict[str, Any]:
         """Install a content snapshot only with this Runtime's Router binding."""
+        require_storage_growth()
         from ..integrations.llm_router_support import LLM_ROUTER_API_BASE_URL
 
         if not LLM_ROUTER_API_BASE_URL:
@@ -388,9 +391,11 @@ class PortabilityService:
         return self._with_payload(payload, self.dry_run_file)
 
     def apply(self, payload: bytes, environment: Mapping[str, str] | None = None) -> dict[str, Any]:
+        require_storage_growth()
         return self._with_payload(payload, lambda path: self.apply_file(path, environment or {}))
 
     def start_export(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        require_storage_growth()
         transfer_id = uuid.uuid4().hex
         directory = self.export_root / transfer_id
         directory.mkdir(mode=0o750)
@@ -414,6 +419,7 @@ class PortabilityService:
         return payload, metadata
 
     def start_upload(self, body: Mapping[str, Any], *, example: bool = False) -> dict[str, Any]:
+        require_storage_growth()
         filename = Path(str(body.get("filename") or "profile.zip")).name
         size = int(body.get("size") or 0)
         if size <= 0 or (not example and size > MAX_COMPRESSED):
@@ -459,6 +465,7 @@ class PortabilityService:
             yield directory
 
     def put_upload_part(self, transfer_id: Any, part_number: Any, payload: bytes) -> dict[str, Any]:
+        require_storage_growth()
         started = time.monotonic()
         with self._upload_access(transfer_id, shared=True):
             acquired = time.monotonic()
@@ -500,6 +507,7 @@ class PortabilityService:
         }
 
     def complete_upload(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
+        require_storage_growth()
         with self._upload_access(transfer_id, allow_pinned=True):
             return self._complete_upload_locked(transfer_id, body)
 
@@ -589,6 +597,7 @@ class PortabilityService:
         return metadata
 
     def apply_upload(self, transfer_id: Any, body: Mapping[str, Any]) -> dict[str, Any]:
+        require_storage_growth()
         with self.task_store.publication_lock():
             if self.task_store.pinned(str(transfer_id)):
                 raise StoreError("Upload is in use", status=409, code="transfer_in_use")

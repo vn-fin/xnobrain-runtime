@@ -27,6 +27,8 @@ class LocalRuntimeManager:
         self._lock = threading.Lock()
 
     def detail(self) -> dict[str, Any]:
+        from xnobrain.services.storage_budget import storage_budget
+
         cpu_percent, cpu_usage_ns = self._cpu_usage()
         memory = self._memory_metrics()
         memory_limit = memory["memory_limit_bytes"]
@@ -71,6 +73,7 @@ class LocalRuntimeManager:
                 "disk_total_bytes": sum(v["total_bytes"] for v in volumes) if disk_available else 0,
                 "disk_metrics_available": disk_available,
                 "storage_volumes": volumes,
+                "storage_budget": storage_budget(),
                 "private_disk_metrics_available": all(
                     v.get("private_metrics_available", False) for v in volumes
                 ),

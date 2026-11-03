@@ -46,6 +46,7 @@ from .constants import (
 )
 from .cron import CronServiceError
 from .helpers import cached_method
+from .storage_budget import require_storage_growth
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError
 from .workspace_upload import WorkspaceUploadError
 
@@ -337,6 +338,7 @@ class AgentsServiceMixin:
     def create_agent(
         self, body: Mapping[str, Any], *, trusted_context: Any = None
     ) -> dict[str, Any]:
+        require_storage_growth()
         display_name = " ".join(str(body.get("display_name") or body.get("name") or "").split())
         if not display_name:
             raise ServiceError("display_name is required")
@@ -458,7 +460,7 @@ class AgentsServiceMixin:
 
         updates = getattr(self, "runtime_updates", None)
         if updates is not None:
-            updates.require_dispatch()
+            updates.require_dispatch(storage_growth=False)
         runs = getattr(self, "conversation_runs", None)
         if runs is not None and any(run.agent_id == agent_id for run in runs._active.values()):
             raise ServiceError(
