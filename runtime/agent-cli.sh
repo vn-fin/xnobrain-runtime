@@ -10,6 +10,8 @@ if [[ -f "$script_dir/link-native-profiles.sh" ]]; then
   # Native installation: agent is a symlink to this source-owned wrapper.
   linker="$script_dir/link-native-profiles.sh"
   hermes="$script_dir/../.tools/hermes-agent/venv/bin/hermes"
+  project_root="$(cd -- "$script_dir/.." && pwd)"
+  export PYTHONPATH="$project_root${PYTHONPATH:+:$PYTHONPATH}"
 fi
 # Import entry points instead of `python -m` so compiled packages also work.
 rebalance_cli='from xnobrain.integrations.rebalance_cli import run; run()'
