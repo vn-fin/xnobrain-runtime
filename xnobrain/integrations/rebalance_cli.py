@@ -24,6 +24,9 @@ def cli_activity():
     root = data_root()
     raw = os.environ.get(ACTIVITY_FD)
     if not raw:
+        from ..services.storage_budget import require_storage_growth
+
+        require_storage_growth()
         return WorkspaceActivity(root)
     try:
         descriptor = int(raw)
@@ -52,11 +55,13 @@ def main():
 
 
 def run():
+    from ..services.base import ServiceError
+
     # Importable entry point: compiled packages cannot be started with `python -m`.
     try:
         main()
-    except StoreError:
-        print("Workspace is undergoing maintenance; retry when ready.", file=sys.stderr)
+    except (StoreError, ServiceError) as error:
+        print(str(error), file=sys.stderr)
         raise SystemExit(75) from None
 
 

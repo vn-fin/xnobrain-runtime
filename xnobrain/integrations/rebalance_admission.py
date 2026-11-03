@@ -6,6 +6,8 @@ from starlette.responses import JSONResponse
 
 from ..repositories.base import StoreError
 from ..repositories.runtime_update_gate import WorkspaceActivity
+from ..services.base import ServiceError
+from ..services.storage_budget import require_storage_growth
 
 _TRANSFER = re.compile(
     r"/xnobrain/api/runtime/v1/(?:"
@@ -27,6 +29,27 @@ def _explicit_stop(method: str, path: str) -> bool:
     return method == "POST" and path.rstrip("/").endswith(_STOP_SUFFIXES)
 
 
+# POST read/cleanup endpoints use an explicit allowlist. GET downloads and
+# DELETE remain available; starting a new export consumes temporary storage.
+_STORAGE_CLEANUP = re.compile(
+    r"/xnobrain/api/runtime/v1/(?:"
+    r"agents-workspaces/[^/]+/(?:read|delete)|"
+    r"agents/[^/]+/custom-page/(?:delete|remove-agent(?:/recover)?|query)|"
+    r"agents/[^/]+/custom-page/revisions/[^/]+/cancel|"
+    r"(?:sessions|conversations)/[^/]+/runs/[^/]+/approval"
+    r")/?$"
+)
+
+
+def storage_growth_request(method: str, path: str) -> bool:
+    return (
+        method not in {"GET", "HEAD", "OPTIONS", "DELETE"}
+        and not _explicit_stop(method, path)
+        and not (method == "POST" and _STORAGE_CLEANUP.fullmatch(path))
+        and not path.startswith("/xnobrain/api/runtime/v1/system/update/")
+    )
+
+
 class WorkspaceAdmissionMiddleware:
     def __init__(self, app, root):
         self.app = app
@@ -36,6 +59,22 @@ class WorkspaceAdmissionMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         path = scope.get("path", "")
+        if storage_growth_request(scope.get("method", ""), path):
+            try:
+                require_storage_growth()
+            except ServiceError as error:
+                response = JSONResponse(
+                    {
+                        "success": False,
+                        "status_code": error.status,
+                        "message": str(error),
+                        "error": {"code": error.code},
+                        "data": {"code": error.code},
+                    },
+                    status_code=error.status,
+                    headers={"Retry-After": "30", "Cache-Control": "no-store"},
+                )
+                return await response(scope, receive, send)
         # These are management/read-only observers, never new work. An idle SSE
         # observer is intentionally not an activity lease.
         passive = scope.get("method") in {"GET", "HEAD", "OPTIONS"} and not (

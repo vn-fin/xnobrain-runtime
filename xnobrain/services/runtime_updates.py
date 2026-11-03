@@ -68,7 +68,11 @@ class RuntimeUpdateService:
     def dispatch_paused(self) -> bool:
         return bool(self.repository.maintenance().get("dispatch_paused"))
 
-    def require_dispatch(self) -> None:
+    def require_dispatch(self, *, storage_growth: bool = True) -> None:
+        if storage_growth:
+            from .storage_budget import require_storage_growth
+
+            require_storage_growth()
         self.platform.repository.storage_mount.check()
         try:
             require_admission(self.platform.repository.data_dir)

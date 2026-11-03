@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from functools import wraps
 
 from ..repositories.runtime_update_gate import WorkspaceActivity
+from ..services.base import ServiceError
 from .native_admission import NativeAdmission
 from .run_admission import managed
 
@@ -31,6 +32,12 @@ def install(kb):
                     return function(conn, task_id, *args, **kwargs)
                 root, board, pending = scope
                 if not managed():
+                    from ..services.storage_budget import require_storage_growth
+
+                    try:
+                        require_storage_growth()
+                    except ServiceError:
+                        return None
                     with WorkspaceActivity(root, independent=True):
                         return function(conn, task_id, *args, **kwargs)
                 task = kb.get_task(conn, task_id)

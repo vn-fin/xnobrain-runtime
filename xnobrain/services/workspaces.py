@@ -45,6 +45,7 @@ from .constants import (
 )
 from .cron import CronServiceError
 from .helpers import cached_method
+from .storage_budget import require_storage_growth
 from .workspace_preview import WorkspacePreview, WorkspacePreviewError
 from .workspace_upload import WorkspaceUploadError
 
@@ -100,6 +101,7 @@ class WorkspacesServiceMixin:
         return self.workspace_previews.workbook(self.workspace_file(agent_id, path))
 
     def write_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        require_storage_growth()
         relative = _validate_create_path(body.get("path"))
         with self.checkpoints.mutation(agent_id, f"before workspace write: {relative}"):
             return self.agents.write_workspace_file(agent_id, body)
@@ -116,6 +118,7 @@ class WorkspacesServiceMixin:
         total_size: int,
         payload: bytes,
     ) -> dict[str, Any]:
+        require_storage_growth()
         name = str(file_name or "").strip()
         if (
             not name
@@ -144,6 +147,7 @@ class WorkspacesServiceMixin:
         )
 
     def create_workspace(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        require_storage_growth()
         path_value = _validate_create_path(body.get("path"))
         if str(body.get("type") or "file") == "directory":
             path = self.agents._workspace_path(agent_id, path_value, require_file=False)

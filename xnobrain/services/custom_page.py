@@ -91,10 +91,13 @@ class CustomPageService:
             "max_action_model_turns": 20,
         }
 
-    def require_mutation(self):
+    def require_mutation(self, *, storage_growth=True):
         updates = getattr(self.platform, "runtime_updates", None)
         if updates is not None:
-            updates.require_dispatch()
+            if storage_growth:
+                updates.require_dispatch()
+            else:
+                updates.require_dispatch(storage_growth=False)
 
     def read(self, agent_id, trusted):
         return self.repository.read(agent_id, self.authority(agent_id, trusted, retained=True))
@@ -259,7 +262,7 @@ class CustomPageService:
 
     def remove_agent(self, agent_id, body, trusted):
         """Explicitly retain an archived app, then remove its writer profile."""
-        self.require_mutation()
+        self.require_mutation(storage_growth=False)
         owner = self.authority(agent_id, trusted, retained=True)
         from ..defaults import BIG_BROTHER_AGENT_ID
 
@@ -286,7 +289,7 @@ class CustomPageService:
     def recover_removal(self, agent_id, body, trusted):
         from ..models.custom_page import RecoverRemoval
 
-        self.require_mutation()
+        self.require_mutation(storage_growth=False)
         owner = self.authority(agent_id, trusted, retained=True)
         selected = validated(RecoverRemoval, body)
         if selected["confirmation"] != "RECOVER REMOVAL " + selected["digest"]:
@@ -309,7 +312,7 @@ class CustomPageService:
         )
 
     def cancel(self, agent_id, revision, trusted):
-        self.require_mutation()
+        self.require_mutation(storage_growth=False)
         return self.repository.cancel(agent_id, self.authority(agent_id, trusted), int(revision))
 
     def backup(self, agent_id, trusted):
@@ -339,7 +342,7 @@ class CustomPageService:
         return self.repository.export(agent_id, self.authority(agent_id, trusted, retained=True))
 
     def delete(self, agent_id, body, trusted):
-        self.require_mutation()
+        self.require_mutation(storage_growth=False)
         owner = self.authority(agent_id, trusted, retained=True)
         body = validated(PageLifecycle, body)
         if body["confirmation"] != f"DELETE {agent_id}":

@@ -11,6 +11,7 @@ from ..repositories.custom_page_locks import acquire, release
 from ..repositories.run_admission import AdmissionRepository
 from ..repositories.runtime_update_gate import WorkspaceActivity, require_admission
 from ..services.base import ServiceError
+from ..services.storage_budget import require_storage_growth
 from .run_admission import BOOT_ID, AdmissionClient, admitted_root, managed
 
 
@@ -57,6 +58,7 @@ class NativeAdmission:
         try:
             # Waiting intents predate maintenance too. Polling one must never
             # claim the next root under another executor's inherited lineage.
+            require_storage_growth()
             require_admission(self.root, allow_lineage=False)
             self.descriptor = acquire(self.root, ".capacity-" + self.id + ".lock", shared=False)
             row = self.store.native_get(self.id)
@@ -148,6 +150,11 @@ class NativeAdmission:
 @contextmanager
 def native_root(root, key, kind):
     if not managed():
+        try:
+            require_storage_growth()
+        except ServiceError:
+            yield False
+            return
         yield True
         return
     gate = NativeAdmission(root, key, kind)
