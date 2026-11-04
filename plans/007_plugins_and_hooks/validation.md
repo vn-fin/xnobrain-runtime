@@ -1,3 +1,5 @@
+> Historical design: the current implementation contract is [Agent extensions](../../docs/agent-extensions.md). Its personal/profile scope, current API namespace, independent MCP catalog and engine compatibility gates supersede the legacy global/in-process/UI-path assumptions below. Check the source tests for verification; this historical plan is not completion evidence.
+
 # 007 — Validation
 
 Verification for [README.md](README.md). Cross-links:

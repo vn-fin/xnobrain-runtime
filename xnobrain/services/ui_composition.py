@@ -14,6 +14,7 @@ NAVIGATION_OPTIONS = (
     "marketplace",
     "connections",
     "skills",
+    "plugins",
     "skill-community",
     "kanban",
     "cron",

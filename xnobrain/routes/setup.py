@@ -7,6 +7,7 @@ from fastapi.responses import Response
 
 from ..feature_flags import (
     FEATURE_AGENT_CUSTOM_PAGE,
+    FEATURE_AGENT_EXTENSIONS,
     FEATURE_AGENT_PORTABILITY,
     FEATURE_UI_CUSTOMIZATION,
 )
@@ -25,6 +26,7 @@ from . import (
     conversations,
     custom_page,
     events,
+    extensions,
     hosted,
     kanban,
     marketplace,
@@ -89,6 +91,8 @@ def route_groups() -> tuple[tuple[Route, ...], ...]:
         optional += (custom_page.ROUTES,)
     if feature_enabled(FEATURE_UI_CUSTOMIZATION):
         optional += (ui_composition.ROUTES,)
+    if feature_enabled(FEATURE_AGENT_EXTENSIONS):
+        optional += (extensions.ROUTES,)
     groups = optional + BASE_ROUTE_GROUPS
     if not feature_enabled("PROFILE_EXAMPLES"):
         groups = tuple(
@@ -250,6 +254,9 @@ def _endpoint(handlers: Any, route: Route):
 
 
 def setup_routes(app: Any, handlers: Any) -> None:
+    from ..handlers.extension_validation import install_extension_validation_handler
+
+    install_extension_validation_handler(app)
     routes = tuple(route for group in route_groups() for route in group)
     for route in routes:
         raw_response = route.special in {

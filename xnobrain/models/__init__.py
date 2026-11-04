@@ -8,6 +8,7 @@ from .automation import *
 from .checkpoints import *
 from .common import *
 from .conversations import *
+from .extensions import *
 from .hosted import *
 from .kanban import *
 from .marketplace import *

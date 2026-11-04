@@ -1,0 +1,141 @@
+"""Regression checks for the independently authored integration catalog."""
+
+from __future__ import annotations
+
+import copy
+import unittest
+
+from xnobrain.repositories.plugin_catalog import load_plugin_catalog, validate_plugin_catalog
+
+SUMMARY_LOCALES = {"en", "vi", "es", "fr", "de", "ja", "zh"}
+
+
+class PluginCatalogTests(unittest.TestCase):
+    def test_checked_in_catalog_has_full_coverage_and_safe_installable_subset(self) -> None:
+        catalog = load_plugin_catalog()
+        entries = catalog["entries"]
+        self.assertEqual(len(entries), 31)
+        by_id = {entry["id"]: entry for entry in entries}
+        self.assertEqual(
+            {
+                entry_id
+                for entry_id, entry in by_id.items()
+                if entry["installability"] == "installable"
+            },
+            {"aave", "context7", "huggingface", "render", "posthog", "composio"},
+        )
+        self.assertEqual(
+            {
+                entry_id
+                for entry_id, entry in by_id.items()
+                if entry["installability"] == "needs_review"
+            },
+            {"airtable", "firecrawl", "brave-search", "resend"},
+        )
+        for entry in entries:
+            self.assertEqual(set(entry["summary"]), SUMMARY_LOCALES)
+            self.assertTrue(all(value.strip() for value in entry["summary"].values()))
+            self.assertEqual(entry["recipe_revision"], 1)
+            self.assertIn(entry["publisher_kind"], {"official", "community", "unverified"})
+            self.assertEqual(set(entry["examples"]), {"en", "vi", "zh"})
+            self.assertTrue(all(len(prompts) == 3 for prompts in entry["examples"].values()))
+        for entry_id in {"airtable", "firecrawl", "brave-search", "resend"}:
+            self.assertNotEqual(by_id[entry_id]["publisher_kind"], "official")
+        validate_plugin_catalog(catalog)
+
+    def test_rejects_invalid_example_prompts(self) -> None:
+        for examples in (
+            {"en": ["Ask"], "vi": ["Hỏi"]},
+            {"en": [""], "vi": ["Hỏi"], "zh": ["问"]},
+            {"en": ["Ask"] * 4, "vi": ["Hỏi"], "zh": ["问"]},
+            {"en": ["x" * 161], "vi": ["Hỏi"], "zh": ["问"]},
+        ):
+            catalog = load_plugin_catalog()
+            catalog["entries"][0]["examples"] = examples
+            with self.assertRaisesRegex(ValueError, "example"):
+                validate_plugin_catalog(catalog)
+
+    def test_every_entry_has_a_public_https_icon(self) -> None:
+        for entry in load_plugin_catalog()["entries"]:
+            self.assertTrue(entry["iconUrl"].startswith("https://"), entry["id"])
+
+        for icon in (
+            None,
+            "http://aave.com/icon.png",
+            "https://localhost/icon.png",
+            "https://10.0.0.1/icon.png",
+            "https://aave.com/icon.png?v=1",
+            "https://user:secret@aave.com/icon.png",
+        ):
+            catalog = load_plugin_catalog()
+            catalog["entries"][0]["iconUrl"] = icon
+            with self.assertRaisesRegex(ValueError, "icon"):
+                validate_plugin_catalog(catalog)
+
+    def test_load_returns_a_copy(self) -> None:
+        first = load_plugin_catalog()
+        first["entries"].clear()
+        self.assertEqual(len(load_plugin_catalog()["entries"]), 31)
+
+    def test_rejects_missing_coverage_and_unsupported_install_paths(self) -> None:
+        catalog = load_plugin_catalog()
+        cases = []
+
+        missing = copy.deepcopy(catalog)
+        missing["entries"].pop()
+        cases.append(missing)
+
+        oauth_install = copy.deepcopy(catalog)
+        oauth_install["entries"][1]["installability"] = "installable"
+        cases.append(oauth_install)
+
+        unpinned_stdio_install = copy.deepcopy(catalog)
+        unpinned_stdio_install["entries"][25]["installability"] = "installable"
+        cases.append(unpinned_stdio_install)
+
+        unsafe_composio = copy.deepcopy(catalog)
+        unsafe_composio["entries"][-2]["mcp"]["url_policy"] = "any_https_host"
+        cases.append(unsafe_composio)
+
+        missing_recipe_revision = copy.deepcopy(catalog)
+        missing_recipe_revision["entries"][0].pop("recipe_revision")
+        cases.append(missing_recipe_revision)
+
+        missing_locale = copy.deepcopy(catalog)
+        missing_locale["entries"][0]["summary"].pop("ja")
+        cases.append(missing_locale)
+
+        for invalid in cases:
+            with self.subTest(catalog=invalid):
+                with self.assertRaises(ValueError):
+                    validate_plugin_catalog(invalid)
+
+    def test_additional_entries_are_allowed_only_in_fail_closed_state(self) -> None:
+        catalog = load_plugin_catalog()
+        extra = copy.deepcopy(catalog["entries"][-1])
+        extra.update(
+            id="new-integration",
+            publisher_kind="unverified",
+            installability="unsupported",
+            reason_code="not_reviewed",
+        )
+        catalog["entries"].append(extra)
+        validate_plugin_catalog(catalog)
+
+        catalog["entries"][-1]["installability"] = "installable"
+        with self.assertRaises(ValueError):
+            validate_plugin_catalog(catalog)
+
+    def test_unreviewed_stdio_package_publishers_cannot_be_official(self) -> None:
+        catalog = load_plugin_catalog()
+        by_id = {entry["id"]: entry for entry in catalog["entries"]}
+        for entry_id in {"airtable", "firecrawl", "brave-search", "resend"}:
+            with self.subTest(entry=entry_id):
+                by_id[entry_id]["publisher_kind"] = "official"
+                with self.assertRaises(ValueError):
+                    validate_plugin_catalog(catalog)
+                by_id[entry_id]["publisher_kind"] = "unverified"
+
+
+if __name__ == "__main__":
+    unittest.main()

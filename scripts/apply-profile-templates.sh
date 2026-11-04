@@ -119,7 +119,12 @@ install_required_plugins() {
     apply_file "$profile_dir" "$plugin_dir/__init__.py" "$profile_dir/plugins/$plugin_id/__init__.py" "plugins/$plugin_id/__init__.py"
   done
 }
+install_required_plugins "$profile_template"
 install_required_plugins "$hermes_home"
+for profile_dir in "$profiles_root"/*; do
+  [[ -d "$profile_dir" && ! -L "$profile_dir" && "$profile_dir" != "$hermes_home" ]] || continue
+  install_required_plugins "$profile_dir"
+done
 
 # The upstream PDF helper renders visible URLs as plain text. Apply the
 # runtime-owned compatible helper after skill synchronization so every profile

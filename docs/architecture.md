@@ -267,3 +267,7 @@ coordination skill. The task picker, task API and native team task expansion
 apply the same exclusion; worker launch also removes it from older stored task
 skill lists. Other unknown or disabled skills still fail normal validation.
 This does not change the agent's installed skills or direct-chat configuration.
+
+## Agent extensions
+
+See [Agent extensions](agent-extensions.md) for the personal/profile-scoped plugin, hook, native-tool and catalog APIs, operation lifecycle, approval policy and source verification. New catalog MCP installs remain compatibility-gated because the pinned transport has process-global registrations; catalog visibility is not proof of a working connection.

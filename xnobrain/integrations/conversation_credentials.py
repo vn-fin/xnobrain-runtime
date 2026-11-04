@@ -35,7 +35,15 @@ def conversation_profile_scope(profile_dir: Path):
     from agent.secret_scope import current_secret_scope, reset_secret_scope, set_secret_scope
     from gateway.run import _profile_runtime_scope
 
+    from .extension_policy import validate_profile_extensions
+
+    validate_profile_extensions(profile_dir)
+
     with _profile_runtime_scope(profile_dir):
+        from .extension_engine import refresh_profile_mcp, refresh_profile_plugins
+
+        refresh_profile_plugins(profile_dir)
+        refresh_profile_mcp(profile_dir)
         secrets = dict(current_secret_scope() or {})
         key = workspace_router_key()
         if key:

@@ -170,6 +170,8 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
 
         async with self.app.router.lifespan_context(self.app):
             first = self.composition.service.get_agent(BIG_BROTHER_AGENT_ID)
+        required = self.root / "plugins" / "xnobrain-runtime-updates" / "plugin.yaml"
+        self.assertTrue(required.is_file())
 
         profile_config_path = self.root / "config.yaml"
         migrated_config = yaml.safe_load(profile_config_path.read_text(encoding="utf-8"))

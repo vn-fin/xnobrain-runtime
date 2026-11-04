@@ -10,6 +10,7 @@ from .automation import operations as automation_operations
 from .checkpoints import operations as checkpoints_operations
 from .conversations import operations as conversations_operations
 from .custom_page import operations as custom_page_operations
+from .extensions import operations as extensions_operations
 from .hosted import operations as hosted_operations
 from .kanban import operations as kanban_operations
 from .marketplace import operations as marketplace_operations
@@ -43,6 +44,7 @@ OPERATION_GROUPS = (
     checkpoints_operations,
     conversations_operations,
     kanban_operations,
+    extensions_operations,
     organization_artifacts_operations,
     organization_connections_operations,
     organization_team_executions_operations,

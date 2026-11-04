@@ -1856,3 +1856,7 @@ At the limit, new writes/uploads/imports and independent task dispatch return
 maintenance. Reads, existing downloads, deletion, stop/cancel, approvals for
 existing runs and update recovery remain available. Running writers are not
 killed; this is sampled admission, not an atomic filesystem quota.
+
+## Agent extensions
+
+See [Agent extensions](agent-extensions.md) for the personal/profile-scoped plugin, hook, native-tool and catalog APIs, operation lifecycle, approval policy and source verification. New catalog MCP installs remain compatibility-gated because the pinned transport has process-global registrations; catalog visibility is not proof of a working connection.

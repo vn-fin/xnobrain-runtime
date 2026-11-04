@@ -321,6 +321,11 @@ class AgentsServiceMixin:
 
         if changed:
             self.config.update_config({"config": config})
+        # Enabling the required plugin by name is not enough: copy the exact
+        # image-owned artifact too, or execution validation refuses the profile.
+        from ..integrations.agent_profiles import AgentProfilesMixin
+
+        AgentProfilesMixin._ensure_required_plugin(profile)
 
     @staticmethod
     def _agent_id_from_display_name(display_name: str) -> str:

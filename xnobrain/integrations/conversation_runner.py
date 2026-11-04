@@ -1451,6 +1451,9 @@ class ConversationRunnerMixin:
                 from .xno_data_tools import install_tools as install_xno_data_tools
 
                 install_xno_data_tools(agent, conversation_id)
+                from .managed_mcp import install_tools as install_catalog_mcp_tools
+
+                install_catalog_mcp_tools(agent, profile_dir)
                 if feature_enabled(FEATURE_AGENT_CUSTOM_PAGE):
                     from .custom_page_tools import install_tools
 

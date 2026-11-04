@@ -1550,6 +1550,9 @@ class PortabilityService:
                 section = {}
                 config[subsystem] = section
             section["write_approval"] = False
+        from ..integrations.extension_imports import reset_imported_extension_trust
+
+        reset_imported_extension_trust(profile, config)
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 

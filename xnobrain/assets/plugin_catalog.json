@@ -1,0 +1,1469 @@
+{
+  "schema_version": 1,
+  "catalog_version": "2026-11-04.1",
+  "coverage_reference": {
+    "repository": "nightly-labs/openbot",
+    "commit": "21369e1eec420772a7db9f6bbfeae2ef9b3ab83a",
+    "path": "marketplace/plugin-catalog/catalog.json",
+    "use": "coverage-checklist-only"
+  },
+  "entries": [
+    {
+      "id": "aave",
+      "name": "Aave",
+      "publisher": "Avara",
+      "publisher_kind": "official",
+      "category": "finance",
+      "summary": {
+        "en": "Explore Aave markets, positions, governance and transaction previews.",
+        "vi": "Tra cứu thị trường, vị thế, quản trị và giao dịch dự kiến trên Aave.",
+        "zh": "查询 Aave 市场、持仓、治理和交易预览。",
+        "es": "Explore los mercados, las posiciones, la gobernanza y las vistas previas de transacciones de Aave.",
+        "fr": "Explorez les marchés, les positions, la gouvernance et les aperçus de transactions Aave.",
+        "de": "Erkunden Sie Aave-Märkte, Positionen, Governance und Transaktionsvorschauen.",
+        "ja": "Aaveの市場、ポジション、ガバナンス、取引プレビューを確認します。"
+      },
+      "examples": {
+        "en": [
+          "Which Aave markets have the highest supply rate right now?",
+          "Summarize the health factor and risks of this wallet's Aave positions.",
+          "Preview what happens if I repay 500 USDC on my Aave loan."
+        ],
+        "vi": [
+          "Thị trường Aave nào đang có lãi suất gửi cao nhất?",
+          "Tóm tắt hệ số sức khỏe và rủi ro các vị thế Aave của ví này.",
+          "Xem trước điều gì xảy ra nếu tôi trả 500 USDC cho khoản vay Aave."
+        ],
+        "zh": [
+          "目前哪些 Aave 市场的存款利率最高？",
+          "总结这个钱包 Aave 头寸的健康系数和风险。",
+          "预览一下如果我偿还 500 USDC 的 Aave 贷款会怎样。"
+        ]
+      },
+      "homepage": "https://aave.com",
+      "documentation": "https://aave.com/docs",
+      "iconUrl": "https://aave.com/images/icon-aave.png",
+      "installability": "installable",
+      "reason_code": "compatible",
+      "mcp": {
+        "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.aave.com/mcp",
+        "auth": {
+          "kind": "none"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "canva",
+      "name": "Canva",
+      "publisher": "Canva",
+      "publisher_kind": "official",
+      "category": "design",
+      "summary": {
+        "en": "Work with designs and assets in a connected Canva account.",
+        "vi": "Làm việc với thiết kế và tài nguyên trong tài khoản Canva đã kết nối.",
+        "zh": "在已连接的 Canva 帐户中处理设计和素材。",
+        "es": "Trabaja con diseños y recursos de una cuenta de Canva conectada.",
+        "fr": "Travaillez avec les créations et les ressources d’un compte Canva connecté.",
+        "de": "Arbeiten Sie mit Designs und Assets eines verbundenen Canva-Kontos.",
+        "ja": "接続したCanvaアカウントのデザインや素材を操作します。"
+      },
+      "examples": {
+        "en": [
+          "Find my latest presentation designs in Canva.",
+          "List the brand assets in my Canva account.",
+          "Show the designs I edited this week."
+        ],
+        "vi": [
+          "Tìm các thiết kế thuyết trình mới nhất của tôi trên Canva.",
+          "Liệt kê tài sản thương hiệu trong tài khoản Canva của tôi.",
+          "Cho tôi xem các thiết kế đã chỉnh sửa trong tuần này."
+        ],
+        "zh": [
+          "在 Canva 中查找我最新的演示文稿设计。",
+          "列出我 Canva 账号中的品牌素材。",
+          "显示我本周编辑过的设计。"
+        ]
+      },
+      "homepage": "https://www.canva.com",
+      "documentation": "https://www.canva.dev/docs/connect/",
+      "iconUrl": "https://static.canva.com/domain-assets/canva/static/images/apple-touch-180x180-1.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "linear",
+      "name": "Linear",
+      "publisher": "Linear",
+      "publisher_kind": "official",
+      "category": "project-management",
+      "summary": {
+        "en": "Search and manage issues in a connected Linear workspace.",
+        "vi": "Tìm kiếm và quản lý issue trong workspace Linear đã kết nối.",
+        "zh": "在已连接的 Linear 工作区中搜索和管理 issue。",
+        "es": "Busca y administra incidencias en un espacio de trabajo de Linear conectado.",
+        "fr": "Recherchez et gérez les tickets dans un espace de travail Linear connecté.",
+        "de": "Suchen und verwalten Sie Issues in einem verbundenen Linear-Arbeitsbereich.",
+        "ja": "接続したLinearワークスペースの課題を検索、管理します。"
+      },
+      "examples": {
+        "en": [
+          "What is assigned to me this week?",
+          "Triage the backlog: what is stale, blocked, or missing an owner?",
+          "File an issue for the crash in the sync queue with reproduction steps."
+        ],
+        "vi": [
+          "Tuần này tôi được giao những việc gì?",
+          "Rà backlog: issue nào bị bỏ quên, bị chặn hoặc chưa có người phụ trách?",
+          "Tạo issue cho lỗi crash ở hàng đợi đồng bộ, kèm các bước tái hiện."
+        ],
+        "zh": [
+          "本周分配给我的有哪些？",
+          "梳理待办：哪些 issue 已停滞、被阻塞或没有负责人？",
+          "为同步队列中的崩溃创建一个 issue，并附上复现步骤。"
+        ]
+      },
+      "homepage": "https://linear.app",
+      "documentation": "https://linear.app/developers/mcp",
+      "iconUrl": "https://linear.app/static/apple-touch-icon.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "notion",
+      "name": "Notion",
+      "publisher": "Notion",
+      "publisher_kind": "official",
+      "category": "productivity",
+      "summary": {
+        "en": "Search, read and update pages in a connected Notion workspace.",
+        "vi": "Tìm kiếm, đọc và cập nhật trang trong workspace Notion đã kết nối.",
+        "zh": "在已连接的 Notion 工作区中搜索、阅读和更新页面。",
+        "es": "Busca, lee y actualiza páginas en un espacio de trabajo de Notion conectado.",
+        "fr": "Recherchez, lisez et mettez à jour des pages dans un espace Notion connecté.",
+        "de": "Suchen, lesen und aktualisieren Sie Seiten in einem verbundenen Notion-Arbeitsbereich.",
+        "ja": "接続したNotionワークスペースのページを検索、閲覧、更新します。"
+      },
+      "examples": {
+        "en": [
+          "Find the onboarding page in our Notion workspace and summarize it.",
+          "What changed in the product roadmap page this month?",
+          "Add today's meeting notes to the team journal page."
+        ],
+        "vi": [
+          "Tìm trang onboarding trong Notion và tóm tắt nội dung.",
+          "Trang lộ trình sản phẩm đã thay đổi gì trong tháng này?",
+          "Thêm biên bản họp hôm nay vào trang nhật ký của nhóm."
+        ],
+        "zh": [
+          "在 Notion 中找到入职页面并总结内容。",
+          "产品路线图页面本月有哪些变化？",
+          "把今天的会议记录添加到团队日志页面。"
+        ]
+      },
+      "homepage": "https://www.notion.so",
+      "documentation": "https://developers.notion.com/docs/mcp",
+      "iconUrl": "https://www.notion.com/front-static/logo-ios.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "obsidian",
+      "name": "Obsidian",
+      "publisher": "Obsidian ecosystem",
+      "publisher_kind": "community",
+      "category": "productivity",
+      "summary": {
+        "en": "Access a local vault through the Obsidian desktop application and its Local REST API plugin.",
+        "vi": "Truy cập vault cục bộ qua ứng dụng Obsidian và plugin Local REST API.",
+        "zh": "通过 Obsidian 桌面应用及 Local REST API 插件访问本地 vault。",
+        "es": "Accede a una bóveda local mediante la aplicación de escritorio Obsidian y su complemento Local REST API.",
+        "fr": "Accédez à un coffre local via l’application de bureau Obsidian et son module Local REST API.",
+        "de": "Greifen Sie über die Obsidian-Desktop-App und das Local-REST-API-Plugin auf einen lokalen Tresor zu.",
+        "ja": "ObsidianデスクトップアプリとLocal REST APIプラグインを通じてローカル保管庫にアクセスします。"
+      },
+      "examples": {
+        "en": [
+          "Search my vault for notes about the Q3 launch.",
+          "Summarize my daily notes from last week.",
+          "Create a note with today's reading list."
+        ],
+        "vi": [
+          "Tìm trong vault các ghi chú về đợt ra mắt quý 3.",
+          "Tóm tắt ghi chú hằng ngày của tôi tuần trước.",
+          "Tạo một ghi chú với danh sách đọc hôm nay."
+        ],
+        "zh": [
+          "在我的知识库中搜索关于第三季度发布的笔记。",
+          "总结我上周的每日笔记。",
+          "创建一条记录今天阅读清单的笔记。"
+        ]
+      },
+      "homepage": "https://obsidian.md",
+      "documentation": "https://github.com/coddingtonbear/obsidian-local-rest-api",
+      "iconUrl": "https://obsidian.md/apple-touch-icon.png",
+      "installability": "unsupported",
+      "reason_code": "desktop_application_required",
+      "mcp": {
+        "transport": "stdio",
+        "package": {
+          "name": "obsidian-mcp-server",
+          "version": "3.7.2"
+        },
+        "auth": {
+          "kind": "api_key",
+          "field": "token",
+          "delivery": "env",
+          "environment_name": "OBSIDIAN_API_KEY"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "atlassian",
+      "name": "Atlassian",
+      "publisher": "Atlassian",
+      "publisher_kind": "official",
+      "category": "productivity",
+      "summary": {
+        "en": "Work with Jira, Confluence and Bitbucket through an Atlassian account.",
+        "vi": "Làm việc với Jira, Confluence và Bitbucket bằng tài khoản Atlassian.",
+        "zh": "通过 Atlassian 帐户使用 Jira、Confluence 和 Bitbucket。",
+        "es": "Trabaja con Jira, Confluence y Bitbucket mediante una cuenta de Atlassian.",
+        "fr": "Travaillez avec Jira, Confluence et Bitbucket via un compte Atlassian.",
+        "de": "Arbeiten Sie mit Jira, Confluence und Bitbucket über ein Atlassian-Konto.",
+        "ja": "Atlassianアカウントを通じてJira、Confluence、Bitbucketを操作します。"
+      },
+      "examples": {
+        "en": [
+          "Which Jira tickets in my sprint are still open?",
+          "Find the Confluence page describing our release process.",
+          "List the open pull requests in our main Bitbucket repository."
+        ],
+        "vi": [
+          "Những ticket Jira nào trong sprint của tôi vẫn đang mở?",
+          "Tìm trang Confluence mô tả quy trình phát hành của chúng tôi.",
+          "Liệt kê các pull request đang mở trong repository Bitbucket chính."
+        ],
+        "zh": [
+          "我这个迭代中还有哪些 Jira 工单未关闭？",
+          "找到描述我们发布流程的 Confluence 页面。",
+          "列出主 Bitbucket 仓库中未合并的拉取请求。"
+        ]
+      },
+      "homepage": "https://www.atlassian.com",
+      "documentation": "https://www.atlassian.com/platform/remote-mcp-server",
+      "iconUrl": "https://www.atlassian.com/apple-touch-icon.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "todoist",
+      "name": "Todoist",
+      "publisher": "Doist",
+      "publisher_kind": "official",
+      "category": "productivity",
+      "summary": {
+        "en": "Find and update tasks in a connected Todoist account.",
+        "vi": "Tìm và cập nhật công việc trong tài khoản Todoist đã kết nối.",
+        "zh": "在已连接的 Todoist 帐户中查找和更新任务。",
+        "es": "Busca y actualiza tareas en una cuenta de Todoist conectada.",
+        "fr": "Recherchez et mettez à jour des tâches dans un compte Todoist connecté.",
+        "de": "Suchen und aktualisieren Sie Aufgaben in einem verbundenen Todoist-Konto.",
+        "ja": "接続したTodoistアカウントのタスクを検索、更新します。"
+      },
+      "examples": {
+        "en": [
+          "What tasks are due today?",
+          "Move everything tagged 'errands' to Saturday.",
+          "Add a task to renew the domain next Friday."
+        ],
+        "vi": [
+          "Hôm nay tôi có những việc nào đến hạn?",
+          "Dời mọi việc gắn nhãn 'việc vặt' sang thứ Bảy.",
+          "Thêm việc gia hạn tên miền vào thứ Sáu tuần sau."
+        ],
+        "zh": [
+          "今天有哪些到期任务？",
+          "把所有带「杂事」标签的任务移到周六。",
+          "添加一个下周五续费域名的任务。"
+        ]
+      },
+      "homepage": "https://todoist.com",
+      "documentation": "https://developer.todoist.com/",
+      "iconUrl": "https://todoist.com/apple-touch-icon.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "trello",
+      "name": "Trello",
+      "publisher": "Atlassian",
+      "publisher_kind": "official",
+      "category": "productivity",
+      "summary": {
+        "en": "Search boards and manage cards in a connected Trello account.",
+        "vi": "Tìm bảng và quản lý thẻ trong tài khoản Trello đã kết nối.",
+        "zh": "在已连接的 Trello 帐户中搜索看板并管理卡片。",
+        "es": "Busca tableros y administra tarjetas en una cuenta de Trello conectada.",
+        "fr": "Recherchez des tableaux et gérez des cartes dans un compte Trello connecté.",
+        "de": "Suchen Sie Boards und verwalten Sie Karten in einem verbundenen Trello-Konto.",
+        "ja": "接続したTrelloアカウントのボードを検索し、カードを管理します。"
+      },
+      "examples": {
+        "en": [
+          "Which cards on the Launch board are overdue?",
+          "Summarize what moved to Done this week.",
+          "Create a card for the pricing page review in To Do."
+        ],
+        "vi": [
+          "Thẻ nào trên bảng Launch đã quá hạn?",
+          "Tóm tắt những thẻ đã chuyển sang Done trong tuần này.",
+          "Tạo thẻ rà soát trang giá trong cột To Do."
+        ],
+        "zh": [
+          "Launch 看板上哪些卡片已逾期？",
+          "总结本周移到「完成」的卡片。",
+          "在待办列中为定价页面审查创建一张卡片。"
+        ]
+      },
+      "homepage": "https://trello.com",
+      "documentation": "https://developer.atlassian.com/cloud/trello/",
+      "iconUrl": "https://trello.com/favicon.ico",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "cobrain",
+      "name": "Cobrain",
+      "publisher": "Cobrain",
+      "publisher_kind": "official",
+      "category": "productivity",
+      "summary": {
+        "en": "Search and update personal project notes in Cobrain.",
+        "vi": "Tìm kiếm và cập nhật ghi chú dự án cá nhân trong Cobrain.",
+        "zh": "在 Cobrain 中搜索和更新个人项目笔记。",
+        "es": "Busca y actualiza notas personales de proyectos en Cobrain.",
+        "fr": "Recherchez et mettez à jour des notes de projet personnelles dans Cobrain.",
+        "de": "Suchen und aktualisieren Sie persönliche Projektnotizen in Cobrain.",
+        "ja": "Cobrainで個人プロジェクトのメモを検索、更新します。"
+      },
+      "examples": {
+        "en": [
+          "Find my notes about the customer interview project.",
+          "What open questions did I record for this project?",
+          "Add today's decisions to my project notes."
+        ],
+        "vi": [
+          "Tìm ghi chú của tôi về dự án phỏng vấn khách hàng.",
+          "Tôi đã ghi lại những câu hỏi nào còn bỏ ngỏ cho dự án này?",
+          "Thêm các quyết định hôm nay vào ghi chú dự án."
+        ],
+        "zh": [
+          "查找我关于客户访谈项目的笔记。",
+          "我为这个项目记录了哪些未解决的问题？",
+          "把今天的决定添加到项目笔记中。"
+        ]
+      },
+      "homepage": "https://cobrain.space",
+      "documentation": "https://cobrain.space",
+      "iconUrl": "https://cobrain.space/icon.svg",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "figma",
+      "name": "Figma",
+      "publisher": "Figma",
+      "publisher_kind": "official",
+      "category": "design",
+      "summary": {
+        "en": "Read design context from the local Figma desktop MCP server.",
+        "vi": "Đọc ngữ cảnh thiết kế từ MCP server cục bộ của ứng dụng Figma.",
+        "zh": "从本地 Figma 桌面 MCP 服务读取设计上下文。",
+        "es": "Lee el contexto de diseño desde el servidor MCP local de Figma para escritorio.",
+        "fr": "Lisez le contexte de conception depuis le serveur MCP local de Figma Desktop.",
+        "de": "Lesen Sie Designkontext über den lokalen Figma-Desktop-MCP-Server aus.",
+        "ja": "FigmaデスクトップのローカルMCPサーバーからデザイン情報を読み取ります。"
+      },
+      "examples": {
+        "en": [
+          "Describe the layout and components in the selected frame.",
+          "Which design tokens does this screen use?",
+          "Turn the selected frame into a React component."
+        ],
+        "vi": [
+          "Mô tả bố cục và các component trong frame đang chọn.",
+          "Màn hình này dùng những design token nào?",
+          "Chuyển frame đang chọn thành một component React."
+        ],
+        "zh": [
+          "描述所选框架的布局和组件。",
+          "这个界面使用了哪些设计令牌？",
+          "把所选框架转换成一个 React 组件。"
+        ]
+      },
+      "homepage": "https://www.figma.com",
+      "documentation": "https://developers.figma.com/docs/figma-mcp-server/local-server-installation/",
+      "iconUrl": "https://static.figma.com/app/icon/2/touch-180.png",
+      "installability": "unsupported",
+      "reason_code": "desktop_application_required",
+      "mcp": {
+        "transport": "http",
+        "endpoint_mode": "loopback",
+        "auth": {
+          "kind": "local"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "paper",
+      "name": "Paper",
+      "publisher": "Paper",
+      "publisher_kind": "official",
+      "category": "design",
+      "summary": {
+        "en": "Use the open design file through the Paper desktop application.",
+        "vi": "Làm việc với tệp thiết kế đang mở qua ứng dụng Paper trên máy tính.",
+        "zh": "通过 Paper 桌面应用处理当前打开的设计文件。",
+        "es": "Usa el archivo de diseño abierto en la aplicación Paper de escritorio.",
+        "fr": "Utilisez le fichier de conception ouvert dans l’application de bureau Paper.",
+        "de": "Verwenden Sie die geöffnete Designdatei in der Paper-Desktop-App.",
+        "ja": "Paperデスクトップアプリで開いているデザインファイルを使います。"
+      },
+      "examples": {
+        "en": [
+          "Summarize the open design file.",
+          "List the text styles used in this document.",
+          "Suggest a cleaner layout for the current page."
+        ],
+        "vi": [
+          "Tóm tắt file thiết kế đang mở.",
+          "Liệt kê các kiểu chữ dùng trong tài liệu này.",
+          "Gợi ý bố cục gọn gàng hơn cho trang hiện tại."
+        ],
+        "zh": [
+          "总结当前打开的设计文件。",
+          "列出这个文档中使用的文字样式。",
+          "为当前页面建议一个更简洁的布局。"
+        ]
+      },
+      "homepage": "https://paper.design",
+      "documentation": "https://paper.design/docs/mcp",
+      "iconUrl": "https://paper.design/apple-touch-icon.png",
+      "installability": "unsupported",
+      "reason_code": "desktop_application_required",
+      "mcp": {
+        "transport": "stdio",
+        "endpoint_mode": "desktop_cli",
+        "auth": {
+          "kind": "local"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "apple-apps",
+      "name": "Apple apps",
+      "publisher": "Community maintainers",
+      "publisher_kind": "community",
+      "category": "productivity",
+      "summary": {
+        "en": "Automate selected Apple applications on a local macOS desktop.",
+        "vi": "Tự động hóa một số ứng dụng Apple trên máy macOS cục bộ.",
+        "zh": "在本地 macOS 桌面上自动操作部分 Apple 应用。",
+        "es": "Automatiza aplicaciones Apple seleccionadas en un escritorio macOS local.",
+        "fr": "Automatisez certaines applications Apple sur un bureau macOS local.",
+        "de": "Automatisieren Sie ausgewählte Apple-Apps auf einem lokalen macOS-Desktop.",
+        "ja": "ローカルのmacOSデスクトップで選択したAppleアプリを自動化します。"
+      },
+      "examples": {
+        "en": [
+          "What is on my calendar tomorrow?",
+          "Create a reminder to call the bank at 9 a.m.",
+          "Find my notes mentioning the apartment lease."
+        ],
+        "vi": [
+          "Ngày mai lịch của tôi có gì?",
+          "Tạo lời nhắc gọi ngân hàng lúc 9 giờ sáng.",
+          "Tìm các ghi chú có nhắc tới hợp đồng thuê căn hộ."
+        ],
+        "zh": [
+          "我明天的日历上有什么安排？",
+          "创建一个早上 9 点给银行打电话的提醒。",
+          "查找提到公寓租约的笔记。"
+        ]
+      },
+      "homepage": "https://www.apple.com/macos/",
+      "documentation": "https://support.apple.com/guide/mac-help/control-access-to-your-mac-mchl211c911f/mac",
+      "iconUrl": "https://www.apple.com/apple-touch-icon.png",
+      "installability": "unsupported",
+      "reason_code": "desktop_application_required",
+      "mcp": {
+        "transport": "stdio",
+        "endpoint_mode": "desktop_automation",
+        "auth": {
+          "kind": "local"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "sentry",
+      "name": "Sentry",
+      "publisher": "Sentry",
+      "publisher_kind": "official",
+      "category": "observability",
+      "summary": {
+        "en": "Inspect issues and project telemetry in a connected Sentry account.",
+        "vi": "Kiểm tra lỗi và telemetry dự án trong tài khoản Sentry đã kết nối.",
+        "zh": "在已连接的 Sentry 帐户中查看问题和项目遥测。",
+        "es": "Inspecciona incidencias y telemetría de proyectos en una cuenta de Sentry conectada.",
+        "fr": "Inspectez les incidents et la télémétrie des projets dans un compte Sentry connecté.",
+        "de": "Untersuchen Sie Issues und Projekttelemetrie in einem verbundenen Sentry-Konto.",
+        "ja": "接続したSentryアカウントの問題とプロジェクトのテレメトリを確認します。"
+      },
+      "examples": {
+        "en": [
+          "What are the top unresolved errors in production this week?",
+          "Explain the stack trace of the newest crash in the API project.",
+          "Which release introduced this error?"
+        ],
+        "vi": [
+          "Lỗi chưa xử lý nào xảy ra nhiều nhất trên production tuần này?",
+          "Giải thích stack trace của lần crash mới nhất trong dự án API.",
+          "Bản phát hành nào gây ra lỗi này?"
+        ],
+        "zh": [
+          "本周生产环境中未解决的主要错误有哪些？",
+          "解释 API 项目中最新一次崩溃的堆栈跟踪。",
+          "这个错误是由哪个版本引入的？"
+        ]
+      },
+      "homepage": "https://sentry.io",
+      "documentation": "https://docs.sentry.io/product/sentry-mcp/",
+      "iconUrl": "https://sentry.io/favicon.ico",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "vercel",
+      "name": "Vercel",
+      "publisher": "Vercel",
+      "publisher_kind": "official",
+      "category": "development",
+      "summary": {
+        "en": "Inspect projects and deployments in a connected Vercel account.",
+        "vi": "Kiểm tra dự án và bản triển khai trong tài khoản Vercel đã kết nối.",
+        "zh": "在已连接的 Vercel 帐户中查看项目和部署。",
+        "es": "Inspecciona proyectos e implementaciones en una cuenta de Vercel conectada.",
+        "fr": "Inspectez les projets et les déploiements dans un compte Vercel connecté.",
+        "de": "Untersuchen Sie Projekte und Deployments in einem verbundenen Vercel-Konto.",
+        "ja": "接続したVercelアカウントのプロジェクトとデプロイを確認します。"
+      },
+      "examples": {
+        "en": [
+          "Why did the latest deployment of the web project fail?",
+          "List the deployments from the past 24 hours.",
+          "Which environment variables are set for production?"
+        ],
+        "vi": [
+          "Vì sao lần deploy mới nhất của dự án web bị lỗi?",
+          "Liệt kê các lần deploy trong 24 giờ qua.",
+          "Production đang đặt những biến môi trường nào?"
+        ],
+        "zh": [
+          "为什么 web 项目最新的部署失败了？",
+          "列出过去 24 小时内的部署。",
+          "生产环境设置了哪些环境变量？"
+        ]
+      },
+      "homepage": "https://vercel.com",
+      "documentation": "https://vercel.com/docs/mcp",
+      "iconUrl": "https://assets.vercel.com/image/upload/q_auto/front/favicon/vercel/apple-touch-icon-256x256.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "cloudflare",
+      "name": "Cloudflare",
+      "publisher": "Cloudflare",
+      "publisher_kind": "official",
+      "category": "development",
+      "summary": {
+        "en": "Inspect Cloudflare account resources through its hosted MCP service.",
+        "vi": "Kiểm tra tài nguyên tài khoản Cloudflare qua MCP server lưu trữ của họ.",
+        "zh": "通过 Cloudflare 托管的 MCP 服务查看帐户资源。",
+        "es": "Inspecciona recursos de una cuenta de Cloudflare mediante su servicio MCP alojado.",
+        "fr": "Inspectez les ressources d’un compte Cloudflare via son service MCP hébergé.",
+        "de": "Untersuchen Sie Cloudflare-Kontressourcen über den gehosteten MCP-Dienst.",
+        "ja": "ホスト型MCPサービスを通じてCloudflareアカウントのリソースを確認します。"
+      },
+      "examples": {
+        "en": [
+          "Which Workers are deployed in my account?",
+          "List the DNS records for example.com.",
+          "Show the storage buckets in this account."
+        ],
+        "vi": [
+          "Tài khoản của tôi đang deploy những Worker nào?",
+          "Liệt kê các bản ghi DNS của example.com.",
+          "Cho tôi xem các bucket lưu trữ trong tài khoản này."
+        ],
+        "zh": [
+          "我的账号中部署了哪些 Workers？",
+          "列出 example.com 的 DNS 记录。",
+          "显示此账号中的存储桶。"
+        ]
+      },
+      "homepage": "https://www.cloudflare.com",
+      "documentation": "https://developers.cloudflare.com/agents/guides/remote-mcp-server/",
+      "iconUrl": "https://www.cloudflare.com/favicon.ico",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "supabase",
+      "name": "Supabase",
+      "publisher": "Supabase",
+      "publisher_kind": "official",
+      "category": "development",
+      "summary": {
+        "en": "Inspect and manage Supabase project resources through MCP.",
+        "vi": "Kiểm tra và quản lý tài nguyên dự án Supabase qua MCP.",
+        "zh": "通过 MCP 查看和管理 Supabase 项目资源。",
+        "es": "Inspecciona y administra recursos de proyectos de Supabase mediante MCP.",
+        "fr": "Inspectez et gérez les ressources de projets Supabase via MCP.",
+        "de": "Untersuchen und verwalten Sie Supabase-Projektressourcen über MCP.",
+        "ja": "MCPを通じてSupabaseプロジェクトのリソースを確認、管理します。"
+      },
+      "examples": {
+        "en": [
+          "Show the tables and row counts in my project.",
+          "Check the recent database logs for errors.",
+          "Which edge functions are deployed?"
+        ],
+        "vi": [
+          "Cho tôi xem các bảng và số dòng trong dự án.",
+          "Kiểm tra log cơ sở dữ liệu gần đây xem có lỗi không.",
+          "Những edge function nào đang được deploy?"
+        ],
+        "zh": [
+          "显示我项目中的数据表及行数。",
+          "检查最近的数据库日志是否有错误。",
+          "部署了哪些边缘函数？"
+        ]
+      },
+      "homepage": "https://supabase.com",
+      "documentation": "https://supabase.com/docs/guides/getting-started/mcp",
+      "iconUrl": "https://supabase.com/favicon/apple-icon-180x180.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "neon",
+      "name": "Neon",
+      "publisher": "Neon",
+      "publisher_kind": "official",
+      "category": "development",
+      "summary": {
+        "en": "Inspect and manage Neon database projects through MCP.",
+        "vi": "Kiểm tra và quản lý dự án cơ sở dữ liệu Neon qua MCP.",
+        "zh": "通过 MCP 查看和管理 Neon 数据库项目。",
+        "es": "Inspecciona y administra proyectos de bases de datos Neon mediante MCP.",
+        "fr": "Inspectez et gérez des projets de bases de données Neon via MCP.",
+        "de": "Untersuchen und verwalten Sie Neon-Datenbankprojekte über MCP.",
+        "ja": "MCPを通じてNeonデータベースプロジェクトを確認、管理します。"
+      },
+      "examples": {
+        "en": [
+          "List my Neon projects and their branches.",
+          "Create a branch from main for testing a migration.",
+          "How large is the production database?"
+        ],
+        "vi": [
+          "Liệt kê các dự án Neon và nhánh của chúng.",
+          "Tạo nhánh từ main để thử một migration.",
+          "Cơ sở dữ liệu production đang lớn bao nhiêu?"
+        ],
+        "zh": [
+          "列出我的 Neon 项目及其分支。",
+          "从 main 创建一个分支来测试迁移。",
+          "生产数据库有多大？"
+        ]
+      },
+      "homepage": "https://neon.tech",
+      "documentation": "https://neon.tech/docs/ai/neon-mcp-server",
+      "iconUrl": "https://neon.com/apple-touch-icon.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "prisma",
+      "name": "Prisma",
+      "publisher": "Prisma",
+      "publisher_kind": "official",
+      "category": "development",
+      "summary": {
+        "en": "Use Prisma documentation and project context through its hosted MCP service.",
+        "vi": "Tra cứu tài liệu Prisma và ngữ cảnh dự án qua MCP server của họ.",
+        "zh": "通过 Prisma 托管的 MCP 服务查询文档和项目上下文。",
+        "es": "Usa la documentación de Prisma y el contexto del proyecto mediante su servicio MCP alojado.",
+        "fr": "Utilisez la documentation Prisma et le contexte du projet via son service MCP hébergé.",
+        "de": "Nutzen Sie Prisma-Dokumentation und Projektkontext über den gehosteten MCP-Dienst.",
+        "ja": "ホスト型MCPサービスを通じてPrismaのドキュメントとプロジェクト情報を利用します。"
+      },
+      "examples": {
+        "en": [
+          "How do I add a one-to-many relation in my Prisma schema?",
+          "Explain this Prisma migration error.",
+          "What is the recommended way to paginate queries?"
+        ],
+        "vi": [
+          "Làm sao thêm quan hệ một-nhiều trong schema Prisma?",
+          "Giải thích lỗi migration Prisma này.",
+          "Cách phân trang truy vấn được khuyến nghị là gì?"
+        ],
+        "zh": [
+          "如何在 Prisma schema 中添加一对多关系？",
+          "解释这个 Prisma 迁移错误。",
+          "推荐的查询分页方式是什么？"
+        ]
+      },
+      "homepage": "https://www.prisma.io",
+      "documentation": "https://www.prisma.io/docs/ai/mcp",
+      "iconUrl": "https://www.prisma.io/apple-icon.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "netlify",
+      "name": "Netlify",
+      "publisher": "Netlify",
+      "publisher_kind": "official",
+      "category": "development",
+      "summary": {
+        "en": "Inspect Netlify sites, builds and deployments through MCP.",
+        "vi": "Kiểm tra site, build và triển khai Netlify qua MCP.",
+        "zh": "通过 MCP 查看 Netlify 站点、构建和部署。",
+        "es": "Inspecciona sitios, compilaciones e implementaciones de Netlify mediante MCP.",
+        "fr": "Inspectez les sites, les builds et les déploiements Netlify via MCP.",
+        "de": "Untersuchen Sie Netlify-Sites, Builds und Deployments über MCP.",
+        "ja": "MCPを通じてNetlifyのサイト、ビルド、デプロイを確認します。"
+      },
+      "examples": {
+        "en": [
+          "Why did the last build of my site fail?",
+          "List the recent deploys for the marketing site.",
+          "Which sites are on the production branch?"
+        ],
+        "vi": [
+          "Vì sao lần build gần nhất của site bị lỗi?",
+          "Liệt kê các lần deploy gần đây của site marketing.",
+          "Những site nào đang chạy nhánh production?"
+        ],
+        "zh": [
+          "为什么我网站的上一次构建失败了？",
+          "列出营销网站最近的部署。",
+          "哪些网站使用生产分支？"
+        ]
+      },
+      "homepage": "https://www.netlify.com",
+      "documentation": "https://docs.netlify.com/build/ai-integration/",
+      "iconUrl": "https://www.netlify.com/favicon/apple-touch-icon.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "railway",
+      "name": "Railway",
+      "publisher": "Railway",
+      "publisher_kind": "official",
+      "category": "development",
+      "summary": {
+        "en": "Inspect Railway projects and deployments through MCP.",
+        "vi": "Kiểm tra dự án và triển khai Railway qua MCP.",
+        "zh": "通过 MCP 查看 Railway 项目和部署。",
+        "es": "Inspecciona proyectos e implementaciones de Railway mediante MCP.",
+        "fr": "Inspectez les projets et les déploiements Railway via MCP.",
+        "de": "Untersuchen Sie Railway-Projekte und Deployments über MCP.",
+        "ja": "MCPを通じてRailwayのプロジェクトとデプロイを確認します。"
+      },
+      "examples": {
+        "en": [
+          "Show the services in my Railway project.",
+          "Why did the latest deployment crash?",
+          "List the deployments from today."
+        ],
+        "vi": [
+          "Cho tôi xem các service trong dự án Railway.",
+          "Vì sao lần deploy mới nhất bị crash?",
+          "Liệt kê các lần deploy trong hôm nay."
+        ],
+        "zh": [
+          "显示我 Railway 项目中的服务。",
+          "为什么最新的部署崩溃了？",
+          "列出今天的部署。"
+        ]
+      },
+      "homepage": "https://railway.com",
+      "documentation": "https://docs.railway.com/guides/mcp",
+      "iconUrl": "https://railway.com/apple-touch-icon.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "render",
+      "name": "Render",
+      "publisher": "Render",
+      "publisher_kind": "official",
+      "category": "development",
+      "summary": {
+        "en": "Inspect services, deployments, logs and metrics in Render.",
+        "vi": "Kiểm tra dịch vụ, triển khai, log và chỉ số trên Render.",
+        "zh": "查看 Render 上的服务、部署、日志和指标。",
+        "es": "Inspecciona servicios, implementaciones, registros y métricas en Render.",
+        "fr": "Inspectez les services, déploiements, journaux et métriques dans Render.",
+        "de": "Untersuchen Sie Dienste, Deployments, Logs und Metriken in Render.",
+        "ja": "Renderのサービス、デプロイ、ログ、メトリクスを確認します。"
+      },
+      "examples": {
+        "en": [
+          "Show the latest deploy status for my web service.",
+          "Find errors in the API service logs from the last hour.",
+          "How much memory is the worker using?"
+        ],
+        "vi": [
+          "Cho tôi xem trạng thái deploy mới nhất của web service.",
+          "Tìm lỗi trong log của API service trong một giờ qua.",
+          "Worker đang dùng bao nhiêu bộ nhớ?"
+        ],
+        "zh": [
+          "显示我的 Web 服务最新的部署状态。",
+          "查找 API 服务过去一小时日志中的错误。",
+          "Worker 当前使用了多少内存？"
+        ]
+      },
+      "homepage": "https://render.com",
+      "documentation": "https://render.com/docs/mcp-server",
+      "iconUrl": "https://render.com/icon.svg",
+      "installability": "installable",
+      "reason_code": "compatible",
+      "mcp": {
+        "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.render.com/mcp",
+        "auth": {
+          "kind": "api_key",
+          "field": "token",
+          "delivery": "header",
+          "header": "Authorization",
+          "prefix": "Bearer "
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "context7",
+      "name": "Context7",
+      "publisher": "Upstash",
+      "publisher_kind": "official",
+      "category": "research",
+      "summary": {
+        "en": "Retrieve current library and framework documentation.",
+        "vi": "Tra cứu tài liệu hiện hành của thư viện và framework.",
+        "zh": "检索最新的库和框架文档。",
+        "es": "Consulta documentación actual de bibliotecas y frameworks.",
+        "fr": "Consultez la documentation actuelle des bibliothèques et frameworks.",
+        "de": "Rufen Sie aktuelle Dokumentation zu Bibliotheken und Frameworks ab.",
+        "ja": "ライブラリやフレームワークの最新ドキュメントを取得します。"
+      },
+      "examples": {
+        "en": [
+          "Show the current React docs for useEffect cleanup.",
+          "How do I configure middleware in the latest Next.js?",
+          "What changed in the newest FastAPI release?"
+        ],
+        "vi": [
+          "Cho tôi xem tài liệu React hiện hành về cleanup trong useEffect.",
+          "Cấu hình middleware trong Next.js bản mới nhất thế nào?",
+          "Bản FastAPI mới nhất có gì thay đổi?"
+        ],
+        "zh": [
+          "显示 React 关于 useEffect 清理的最新文档。",
+          "在最新版 Next.js 中如何配置中间件？",
+          "最新的 FastAPI 版本有哪些变化？"
+        ]
+      },
+      "homepage": "https://context7.com",
+      "documentation": "https://context7.com/docs",
+      "iconUrl": "https://context7.com/favicon.ico",
+      "installability": "installable",
+      "reason_code": "compatible",
+      "mcp": {
+        "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.context7.com/mcp",
+        "auth": {
+          "kind": "none"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "huggingface",
+      "name": "Hugging Face",
+      "publisher": "Hugging Face",
+      "publisher_kind": "official",
+      "category": "research",
+      "summary": {
+        "en": "Search public models, datasets, Spaces and documentation on the Hub.",
+        "vi": "Tìm model, dataset, Spaces và tài liệu công khai trên Hub.",
+        "zh": "搜索 Hub 上的公开模型、数据集、Spaces 和文档。",
+        "es": "Busca modelos, conjuntos de datos, Spaces y documentación públicos en Hub.",
+        "fr": "Recherchez des modèles, jeux de données, Spaces et documentation publics sur le Hub.",
+        "de": "Suchen Sie öffentliche Modelle, Datensätze, Spaces und Dokumentation auf dem Hub.",
+        "ja": "Hub上の公開モデル、データセット、Spaces、ドキュメントを検索します。"
+      },
+      "examples": {
+        "en": [
+          "Find small open models for Vietnamese text classification.",
+          "Which datasets are popular for speech recognition?",
+          "Show trending Spaces for image generation."
+        ],
+        "vi": [
+          "Tìm các mô hình mở nhỏ để phân loại văn bản tiếng Việt.",
+          "Bộ dữ liệu nào phổ biến cho nhận dạng giọng nói?",
+          "Cho tôi xem các Space đang nổi về tạo ảnh."
+        ],
+        "zh": [
+          "查找适合越南语文本分类的小型开源模型。",
+          "哪些数据集在语音识别中比较流行？",
+          "显示图像生成方向的热门 Spaces。"
+        ]
+      },
+      "homepage": "https://huggingface.co",
+      "documentation": "https://huggingface.co/docs/hub/en/mcp",
+      "iconUrl": "https://huggingface.co/front/assets/huggingface_logo-noborder.svg",
+      "installability": "installable",
+      "reason_code": "compatible",
+      "mcp": {
+        "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://huggingface.co/mcp",
+        "auth": {
+          "kind": "none"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "stripe",
+      "name": "Stripe",
+      "publisher": "Stripe",
+      "publisher_kind": "official",
+      "category": "finance",
+      "summary": {
+        "en": "Inspect payments and billing resources in a connected Stripe account.",
+        "vi": "Kiểm tra thanh toán và tài nguyên hóa đơn trong tài khoản Stripe đã kết nối.",
+        "zh": "在已连接的 Stripe 帐户中查看付款和账单资源。",
+        "es": "Inspecciona pagos y recursos de facturación en una cuenta de Stripe conectada.",
+        "fr": "Inspectez les paiements et les ressources de facturation dans un compte Stripe connecté.",
+        "de": "Untersuchen Sie Zahlungen und Abrechnungsressourcen in einem verbundenen Stripe-Konto.",
+        "ja": "接続したStripeアカウントの支払いと請求リソースを確認します。"
+      },
+      "examples": {
+        "en": [
+          "How much revenue did we collect last week?",
+          "List the failed payments from yesterday.",
+          "Which subscriptions are set to cancel this month?"
+        ],
+        "vi": [
+          "Tuần trước chúng ta thu được bao nhiêu doanh thu?",
+          "Liệt kê các thanh toán thất bại hôm qua.",
+          "Những gói đăng ký nào sẽ hủy trong tháng này?"
+        ],
+        "zh": [
+          "我们上周收入了多少？",
+          "列出昨天失败的付款。",
+          "哪些订阅将在本月取消？"
+        ]
+      },
+      "homepage": "https://stripe.com",
+      "documentation": "https://docs.stripe.com/mcp",
+      "iconUrl": "https://images.stripeassets.com/fzn2n1nzq965/1hgcBNd12BfT9VLgbId7By/01d91920114b124fb4cf6d448f9f06eb/favicon.svg",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "posthog",
+      "name": "PostHog",
+      "publisher": "PostHog",
+      "publisher_kind": "official",
+      "category": "analytics",
+      "summary": {
+        "en": "Query product events, funnels and feature flags in PostHog.",
+        "vi": "Truy vấn sự kiện sản phẩm, funnel và feature flag trong PostHog.",
+        "zh": "查询 PostHog 中的产品事件、漏斗和功能标志。",
+        "es": "Consulta eventos de producto, embudos y marcas de funciones en PostHog.",
+        "fr": "Interrogez les événements produit, les entonnoirs et les feature flags dans PostHog.",
+        "de": "Fragen Sie Produktereignisse, Funnels und Feature-Flags in PostHog ab.",
+        "ja": "PostHogの製品イベント、ファネル、フィーチャーフラグを照会します。"
+      },
+      "examples": {
+        "en": [
+          "How many users signed up this week compared to last week?",
+          "Show the conversion funnel from signup to first project.",
+          "Which feature flags are currently active?"
+        ],
+        "vi": [
+          "Tuần này có bao nhiêu người đăng ký so với tuần trước?",
+          "Cho tôi xem phễu chuyển đổi từ đăng ký đến dự án đầu tiên.",
+          "Những feature flag nào đang bật?"
+        ],
+        "zh": [
+          "本周注册用户数与上周相比如何？",
+          "显示从注册到创建首个项目的转化漏斗。",
+          "当前有哪些功能开关处于启用状态？"
+        ]
+      },
+      "homepage": "https://posthog.com",
+      "documentation": "https://posthog.com/docs/model-context-protocol",
+      "iconUrl": "https://posthog.com/icons/icon-512x512.png",
+      "installability": "installable",
+      "reason_code": "compatible",
+      "mcp": {
+        "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.posthog.com/mcp",
+        "auth": {
+          "kind": "api_key",
+          "field": "token",
+          "delivery": "header",
+          "header": "Authorization",
+          "prefix": "Bearer "
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "airtable",
+      "name": "Airtable",
+      "publisher": "Airtable ecosystem",
+      "publisher_kind": "community",
+      "category": "productivity",
+      "summary": {
+        "en": "Read and update records in Airtable bases.",
+        "vi": "Đọc và cập nhật bản ghi trong Airtable base.",
+        "zh": "读取和更新 Airtable base 中的记录。",
+        "es": "Lee y actualiza registros en bases de Airtable.",
+        "fr": "Lisez et mettez à jour des enregistrements dans des bases Airtable.",
+        "de": "Lesen und aktualisieren Sie Datensätze in Airtable-Basen.",
+        "ja": "Airtableベースのレコードを読み取り、更新します。"
+      },
+      "examples": {
+        "en": [
+          "List the records in the Content calendar base due this week.",
+          "Update the status of the 'Pricing page' record to Done.",
+          "Which leads have no owner assigned?"
+        ],
+        "vi": [
+          "Liệt kê các bản ghi trong base Lịch nội dung đến hạn tuần này.",
+          "Cập nhật trạng thái bản ghi 'Trang giá' thành Hoàn thành.",
+          "Những lead nào chưa có người phụ trách?"
+        ],
+        "zh": [
+          "列出内容日历库中本周到期的记录。",
+          "把「定价页面」记录的状态更新为已完成。",
+          "哪些潜在客户还没有分配负责人？"
+        ]
+      },
+      "homepage": "https://airtable.com",
+      "documentation": "https://airtable.com/developers/web/api/introduction",
+      "iconUrl": "https://www.airtable.com/favicon.ico",
+      "installability": "needs_review",
+      "reason_code": "package_version_unpinned",
+      "mcp": {
+        "transport": "stdio",
+        "package": {
+          "name": "airtable-mcp-server",
+          "version": null
+        },
+        "auth": {
+          "kind": "api_key",
+          "field": "token",
+          "delivery": "env",
+          "environment_name": "AIRTABLE_API_KEY"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "firecrawl",
+      "name": "Firecrawl",
+      "publisher": "Firecrawl",
+      "publisher_kind": "unverified",
+      "category": "research",
+      "summary": {
+        "en": "Extract structured information from web pages and search results.",
+        "vi": "Trích xuất thông tin có cấu trúc từ trang web và kết quả tìm kiếm.",
+        "zh": "从网页和搜索结果中提取结构化信息。",
+        "es": "Extrae información estructurada de páginas web y resultados de búsqueda.",
+        "fr": "Extrayez des informations structurées de pages web et de résultats de recherche.",
+        "de": "Extrahieren Sie strukturierte Informationen aus Webseiten und Suchergebnissen.",
+        "ja": "ウェブページや検索結果から構造化情報を抽出します。"
+      },
+      "examples": {
+        "en": [
+          "Extract the pricing plans from this product page.",
+          "Collect the article titles and dates from this blog.",
+          "Search the web for recent reviews of this tool and summarize them."
+        ],
+        "vi": [
+          "Trích xuất các gói giá từ trang sản phẩm này.",
+          "Thu thập tiêu đề và ngày đăng bài viết từ blog này.",
+          "Tìm các đánh giá gần đây về công cụ này trên web và tóm tắt."
+        ],
+        "zh": [
+          "从这个产品页面提取价格方案。",
+          "收集这个博客的文章标题和发布日期。",
+          "在网上搜索这个工具的近期评测并总结。"
+        ]
+      },
+      "homepage": "https://www.firecrawl.dev",
+      "documentation": "https://docs.firecrawl.dev",
+      "iconUrl": "https://www.firecrawl.dev/apple-touch-icon.png",
+      "installability": "needs_review",
+      "reason_code": "package_version_unpinned",
+      "mcp": {
+        "transport": "stdio",
+        "package": {
+          "name": "firecrawl-mcp",
+          "version": null
+        },
+        "auth": {
+          "kind": "api_key",
+          "field": "token",
+          "delivery": "env",
+          "environment_name": "FIRECRAWL_API_KEY"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "brave-search",
+      "name": "Brave Search",
+      "publisher": "Brave",
+      "publisher_kind": "unverified",
+      "category": "research",
+      "summary": {
+        "en": "Search the web using Brave Search.",
+        "vi": "Tìm kiếm web bằng Brave Search.",
+        "zh": "使用 Brave Search 搜索网页。",
+        "es": "Busca en la web con Brave Search.",
+        "fr": "Effectuez des recherches sur le web avec Brave Search.",
+        "de": "Durchsuchen Sie das Web mit Brave Search.",
+        "ja": "Brave Searchでウェブを検索します。"
+      },
+      "examples": {
+        "en": [
+          "Search the web for the latest news about this company.",
+          "Find official documentation for this error message.",
+          "What are people saying about this product release?"
+        ],
+        "vi": [
+          "Tìm trên web tin tức mới nhất về công ty này.",
+          "Tìm tài liệu chính thức cho thông báo lỗi này.",
+          "Mọi người đang nói gì về lần ra mắt sản phẩm này?"
+        ],
+        "zh": [
+          "在网上搜索这家公司的最新消息。",
+          "查找这条错误信息的官方文档。",
+          "大家对这次产品发布有什么看法？"
+        ]
+      },
+      "homepage": "https://brave.com/search/",
+      "documentation": "https://brave.com/search/api/",
+      "iconUrl": "https://brave.com/static-assets/images/cropped-brave_appicon_release-180x180.png",
+      "installability": "needs_review",
+      "reason_code": "package_version_unpinned",
+      "mcp": {
+        "transport": "stdio",
+        "package": {
+          "name": "@brave/brave-search-mcp-server",
+          "version": null
+        },
+        "auth": {
+          "kind": "api_key",
+          "field": "token",
+          "delivery": "env",
+          "environment_name": "BRAVE_API_KEY"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "resend",
+      "name": "Resend",
+      "publisher": "Resend",
+      "publisher_kind": "unverified",
+      "category": "communications",
+      "summary": {
+        "en": "Send transactional email and inspect delivery status.",
+        "vi": "Gửi email giao dịch và kiểm tra trạng thái gửi.",
+        "zh": "发送事务性电子邮件并查看投递状态。",
+        "es": "Envía correos electrónicos transaccionales y consulta su estado de entrega.",
+        "fr": "Envoyez des e-mails transactionnels et consultez leur état de livraison.",
+        "de": "Senden Sie Transaktions-E-Mails und prüfen Sie den Zustellstatus.",
+        "ja": "トランザクションメールを送信し、配信状況を確認します。"
+      },
+      "examples": {
+        "en": [
+          "Send a test welcome email to my address.",
+          "Did yesterday's password reset emails get delivered?",
+          "List the emails that bounced this week."
+        ],
+        "vi": [
+          "Gửi email chào mừng thử tới địa chỉ của tôi.",
+          "Email đặt lại mật khẩu hôm qua đã được gửi tới chưa?",
+          "Liệt kê các email bị trả về trong tuần này."
+        ],
+        "zh": [
+          "给我的邮箱发送一封测试欢迎邮件。",
+          "昨天的密码重置邮件送达了吗？",
+          "列出本周被退回的邮件。"
+        ]
+      },
+      "homepage": "https://resend.com",
+      "documentation": "https://resend.com/docs",
+      "iconUrl": "https://resend.com/static/favicons/favicon-marketing@180x180.png",
+      "installability": "needs_review",
+      "reason_code": "package_version_unpinned",
+      "mcp": {
+        "transport": "stdio",
+        "package": {
+          "name": "resend-mcp",
+          "version": null
+        },
+        "auth": {
+          "kind": "api_key",
+          "field": "token",
+          "delivery": "env",
+          "environment_name": "RESEND_API_KEY"
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "composio",
+      "name": "Composio",
+      "publisher": "Composio",
+      "publisher_kind": "official",
+      "category": "automation",
+      "summary": {
+        "en": "Connect apps through a Composio-hosted MCP endpoint and API key.",
+        "vi": "Kết nối ứng dụng qua MCP endpoint của Composio và API key.",
+        "zh": "通过 Composio 托管的 MCP 端点和 API key 连接应用。",
+        "es": "Conecta aplicaciones mediante un endpoint MCP alojado por Composio y una clave API.",
+        "fr": "Connectez des applications via un endpoint MCP hébergé par Composio et une clé API.",
+        "de": "Verbinden Sie Apps über einen von Composio gehosteten MCP-Endpunkt und einen API-Schlüssel.",
+        "ja": "ComposioがホストするMCPエンドポイントとAPIキーでアプリを接続します。"
+      },
+      "examples": {
+        "en": [
+          "Which apps are connected through my Composio account?",
+          "Post a summary of today's work to the team channel.",
+          "Create a calendar event for the design review on Friday."
+        ],
+        "vi": [
+          "Tài khoản Composio của tôi đang kết nối những ứng dụng nào?",
+          "Đăng tóm tắt công việc hôm nay vào kênh của nhóm.",
+          "Tạo sự kiện lịch cho buổi rà soát thiết kế vào thứ Sáu."
+        ],
+        "zh": [
+          "我的 Composio 账号连接了哪些应用？",
+          "把今天的工作总结发布到团队频道。",
+          "为周五的设计评审创建一个日历事件。"
+        ]
+      },
+      "homepage": "https://composio.dev",
+      "documentation": "https://docs.composio.dev/docs/mcp",
+      "iconUrl": "https://composio.dev/apple-touch-icon.png",
+      "installability": "installable",
+      "reason_code": "compatible_endpoint_policy",
+      "mcp": {
+        "transport": "http",
+        "endpoint_mode": "user_configured",
+        "url_policy": "https_only_public_composio_host",
+        "auth": {
+          "kind": "api_key",
+          "field": "api_key",
+          "delivery": "header",
+          "header": "x-consumer-api-key",
+          "prefix": ""
+        }
+      },
+      "recipe_revision": 1
+    },
+    {
+      "id": "clickup",
+      "name": "ClickUp",
+      "publisher": "ClickUp",
+      "publisher_kind": "official",
+      "category": "productivity",
+      "summary": {
+        "en": "Search tasks and work with docs in a connected ClickUp workspace.",
+        "vi": "Tìm task và làm việc với tài liệu trong workspace ClickUp đã kết nối.",
+        "zh": "在已连接的 ClickUp 工作区中搜索任务并处理文档。",
+        "es": "Busca tareas y trabaja con documentos en un espacio de trabajo de ClickUp conectado.",
+        "fr": "Recherchez des tâches et travaillez avec des documents dans un espace ClickUp connecté.",
+        "de": "Suchen Sie Aufgaben und arbeiten Sie mit Dokumenten in einem verbundenen ClickUp-Arbeitsbereich.",
+        "ja": "接続したClickUpワークスペースでタスクを検索し、ドキュメントを操作します。"
+      },
+      "examples": {
+        "en": [
+          "What tasks are assigned to me in ClickUp this week?",
+          "Find the doc describing our onboarding checklist.",
+          "Which tasks in the Launch list are overdue?"
+        ],
+        "vi": [
+          "Tuần này tôi được giao những việc nào trên ClickUp?",
+          "Tìm tài liệu mô tả checklist onboarding của chúng tôi.",
+          "Những việc nào trong danh sách Launch đã quá hạn?"
+        ],
+        "zh": [
+          "本周我在 ClickUp 中被分配了哪些任务？",
+          "找到描述我们入职清单的文档。",
+          "Launch 列表中哪些任务已逾期？"
+        ]
+      },
+      "homepage": "https://clickup.com",
+      "documentation": "https://clickup.com/api",
+      "iconUrl": "https://clickup.com/favicons/apple-touch-icon.png",
+      "installability": "unsupported",
+      "reason_code": "oauth_not_supported",
+      "mcp": {
+        "transport": "http",
+        "auth": {
+          "kind": "oauth"
+        }
+      },
+      "recipe_revision": 1
+    }
+  ]
+}
