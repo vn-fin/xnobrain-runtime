@@ -15,6 +15,26 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
     context = lambda: from_request(request)
     entries = {
         "extensions_catalog": (service.catalog, "extension catalog retrieved", 200),
+        "extensions_marketplaces_list": (
+            lambda: service.list_marketplaces(context()),
+            "plugin marketplaces retrieved",
+            200,
+        ),
+        "extensions_marketplaces_add": (
+            lambda: service.add_marketplace(body.get("source"), context()),
+            "plugin marketplace added",
+            201,
+        ),
+        "extensions_marketplaces_refresh": (
+            lambda: service.refresh_marketplace(path["marketplace_id"], context()),
+            "plugin marketplace refreshed",
+            200,
+        ),
+        "extensions_marketplaces_delete": (
+            lambda: service.delete_marketplace(path["marketplace_id"], context()),
+            "plugin marketplace deleted",
+            200,
+        ),
         "extensions_plugins_list": (
             lambda: service.list_plugins(path["agent_id"], context()),
             "extensions retrieved",

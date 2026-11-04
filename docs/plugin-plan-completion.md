@@ -19,6 +19,12 @@ contract in [agent-extensions.md](agent-extensions.md).
 | UI languages | Implemented for en, vi, zh | The product decision (2026-11-03) keeps the app at English, Vietnamese and Chinese. `pluginsView`, `agentTools` and `hooks` keys exist in all three and `src/i18n.test.ts` checks parity. Catalog entries also carry es/fr/de/ja summaries from the earlier plan; the UI ignores them and falls back to English for unsupported languages. |
 | MCP catalog installation | Implemented in Runtime; live provider check pending | Catalog servers use the profile-scoped adapter in `xnobrain/integrations/managed_mcp.py` instead of native `mcp_servers` discovery, which stays process-global. `test_managed_mcp.py` proves scoped registration, dispatch with per-profile credentials, refresh, unload and agent tool injection. Available in native conversation runs only; see `agent-extensions.md`. |
 
+
+| Agent Plugins v1 and Claude plugin formats | Implemented; browser verified 2026-11-04 | `plugin_formats.py` detects native/portable/Claude packages. Portable packages may not carry code outside `skills/` or stdio MCP; Claude packages keep skills and HTTPS MCP, and dropped parts (hooks, agents, commands, secret-header servers) are listed. Plugin MCP hosts must resolve to public addresses at scan time. In chat, plugin MCP runs through the per-profile adapter with no secret interpolation and a 20 s connect cap; verified in Chrome by a chat turn calling DeepWiki through an uploaded plugin. |
+| Git subdirectory and commit SHA pin | Implemented; browser verified 2026-11-04 | `clone_plugin(path=..., ref=<sha>)` fetches one commit and keeps one directory. Update keeps a pinned SHA (checked in Chrome via a marketplace install of `frontend-design`). |
+| ZIP upload install | Implemented; browser verified 2026-11-04 | `POST /agents-plugins/{agent_id}/upload` (3 MiB archive, 32 MiB extracted, 2000 entries, no symlinks or traversal, zip-bomb ratio check). The archive goes through the same scan and approval. In Chrome, a valid zip installed and a `../` zip was rejected with no file written. |
+| Personal workspace Git plugin marketplaces | Implemented in Runtime, Control policy and UI; browser verified 2026-11-04 | Runtime clones and parses Claude/Codex marketplace manifests into bounded atomic storage; relative entries are pinned to the fetched commit and UI installs use the existing scan/approval operation. Control rejects the marketplace route family in organization workspaces. Marketplace clones skip per-plugin artifact limits (only the manifest is read; repos above 32 MiB still fail). Verified in Chrome with `anthropics/claude-plugins-official`. See `agent-extensions.md`. |
+
 ## Verification evidence and limits
 
 The checked-in implementation note in `docs/agent-extensions.md` records 55
@@ -37,8 +43,7 @@ the evidence gap being addressed by the parent workstream.
 
 ## Actionable remaining items
 
-1. Run the newly added native HTTP lifecycle test against the pinned runtime;
-   include dangerous scan rejection and prove no activation path is reached.
+1. Apply plugin MCP safety (public host + DNS pinning) to one-shot `agent -p` runs (team, delegated, Kanban); today only native chat turns re-check on connect.
 2. Browser smoke test of Plugins, Tools and Hooks in en, vi and zh.
 3. Connect one real catalog MCP provider (for example Context7) from the UI and
    confirm its tools appear only in that agent's conversation runs.

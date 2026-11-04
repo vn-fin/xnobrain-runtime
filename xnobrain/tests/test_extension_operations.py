@@ -357,6 +357,77 @@ class ExtensionOperationTests(unittest.TestCase):
         self.assertEqual(result["status"], "COMPLETED")
         self.assertFalse(plugin.exists())
 
+    def test_remove_drops_catalog_integration_connection_and_record(self):
+        state = extension_policy.load_state(self.profile)
+        state["mcp"]["aave"] = {"server_name": "xnobrain-aave", "enabled": True, "revision": 1}
+        extension_policy.save_state(self.profile, state)
+        servers = {"xnobrain-aave": {"url": "https://mcp.example.org/mcp"}, "other": {}}
+        (self.profile / "config.yaml").write_text(
+            yaml.safe_dump({extension_policy.MANAGED_MCP_KEY: servers}), encoding="utf-8"
+        )
+        operation = self.queue("remove", plugin_id="aave")
+        with patch.object(extension_engine, "mcp_disconnect") as disconnect:
+            self.service.worker._process(operation)
+
+        result = self.service.get_operation("research", operation["operation_id"], self.trusted)
+        self.assertEqual(result["status"], "COMPLETED")
+        disconnect.assert_called_once_with(self.profile, "xnobrain-aave")
+        config = yaml.safe_load((self.profile / "config.yaml").read_text())
+        self.assertEqual(list(config[extension_policy.MANAGED_MCP_KEY]), ["other"])
+        self.assertNotIn("aave", extension_policy.load_state(self.profile)["mcp"])
+
+    def test_remove_of_unknown_plugin_fails_instead_of_reporting_success(self):
+        operation = self.queue("remove", plugin_id="missing")
+        with self.assertRaises(ServiceError) as raised:
+            self.service.worker._process(operation)
+        self.assertEqual(raised.exception.code, "plugin_not_found")
+
+    def test_worker_keeps_expected_error_reason_and_clears_progress(self):
+        operation = self.queue("remove", plugin_id="missing")
+        self.service.store.update(operation, status="PROCESSING", progress={"phase": "x"})
+        worker = self.service.worker
+        claimed = iter([operation])
+
+        def claim_once():
+            item = next(claimed, None)
+            if item is None:
+                worker._stopping = True
+            return item
+
+        with patch.object(self.service.store, "claim_next", claim_once):
+            asyncio.run(worker._run())
+
+        result = self.service.get_operation("research", operation["operation_id"], self.trusted)
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(
+            result["error"], {"code": "plugin_not_found", "message": "Plugin not found"}
+        )
+        self.assertIsNone(result["progress"])
+
+    def test_clone_prunes_ci_tests_and_docs_before_scan(self):
+        stage = Path(self.temporary.name) / "clone"
+        (stage / ".github" / "workflows").mkdir(parents=True)
+        (stage / ".github" / "workflows" / "ci.yml").write_text("run: pip install x\n")
+        (stage / "tests").mkdir()
+        (stage / "tests" / "test_a.py").write_text("PATH = '~/.ssh/id_rsa'\n")
+        (stage / "docs").mkdir()
+        (stage / "docs" / "banner.png").write_bytes(b"\x89PNG" + b"\0" * 16)
+        (stage / "README.md").write_text("Edit ~/.hermes/config.yaml\n")
+        (stage / "LICENSE").write_text("MIT\n")
+        (stage / "pkg").mkdir()
+        (stage / "pkg" / "tests.py").write_text("x = 1\n")
+        (stage / "__init__.py").write_text("def register(ctx):\n    pass\n")
+        os.symlink(stage / "pkg", stage / "test")
+
+        removed = extension_policy.prune_plugin_artifact(stage)
+
+        self.assertEqual(removed, [".github/", "README.md", "docs/", "tests/"])
+        remaining = sorted(p.name for p in stage.iterdir())
+        self.assertEqual(remaining, ["LICENSE", "__init__.py", "pkg", "test"])
+        # A symlink is kept so the digest still rejects it as unsafe.
+        with self.assertRaises(Exception):
+            extension_policy.tree_digest(stage)
+
     def test_lifecycle_mutation_rejects_while_profile_is_running(self):
         plugin = self.profile / "plugins" / "sample"
         plugin.mkdir(parents=True)

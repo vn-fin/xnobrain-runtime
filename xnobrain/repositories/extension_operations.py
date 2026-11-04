@@ -247,7 +247,7 @@ class ExtensionOperationStore:
 
     @staticmethod
     def public(row: dict[str, Any]) -> dict[str, Any]:
-        return {
+        public = {
             key: row.get(key)
             for key in (
                 "operation_id",
@@ -262,6 +262,9 @@ class ExtensionOperationStore:
                 "error",
             )
         }
+        inputs = row.get("inputs")
+        public["plugin_id"] = inputs.get("plugin_id") if isinstance(inputs, dict) else None
+        return public
 
     @staticmethod
     def _find(rows: list[dict[str, Any]], operation_id: str) -> dict[str, Any]:

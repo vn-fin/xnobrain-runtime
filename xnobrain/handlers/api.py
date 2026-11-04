@@ -72,6 +72,11 @@ class APIHandlers(
             response.headers["Cache-Control"] = "private, no-store"
         return response
 
+    async def plugin_upload(self, request: Request) -> Response:
+        from .extension_upload import ExtensionUploadHandler
+
+        return await ExtensionUploadHandler(self).upload(request)
+
     def _operation(
         self, name: str, request: Request, body: dict[str, Any]
     ) -> tuple[Callable[[], Any], str, int]:

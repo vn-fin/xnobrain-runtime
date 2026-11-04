@@ -41,7 +41,42 @@ the separate `xnobrain_managed_mcp_servers` config key and run through
   Transport is DNS-pinned public HTTPS; OAuth and stdio are rejected.
 - Before each native conversation run, `refresh_profile_mcp` reconciles the
   profile's sessions, then `managed_mcp.install_tools` adds the connected
-  tools to that agent (Hermes only auto-selects toolsets from `mcp_servers`).
+  tools to that agent. Native runs never call Hermes `discover_mcp_tools()`.
+
+The profile's own `mcp_servers` use the same adapter in native runs, whether
+they were written by the MCP settings page, `agent -p PROFILE mcp add`, or an
+import. Each entry runs under the logical name `custom:<name>`, so a custom
+server and a catalog server with the same name both stay connected. Entries
+recorded as legacy catalog servers in the profile state are skipped. A
+profile with custom servers and no generation gets one on first use.
+
+Custom servers follow the catalog transport rules: public HTTPS only, no
+query string, no stdio `command`, no OAuth, and placeholders resolved only
+from the profile's secrets. They fail open per server, unlike catalog servers:
+
+- An invalid entry is skipped as `rejected`.
+- An unreachable entry is skipped as `unavailable`.
+- Entries with `enabled: false` are ignored.
+- An unavailable server is retried after 30 seconds. The wait doubles after
+  each failure, up to 10 minutes, and resets when the server config changes.
+  One dead server therefore never blocks or slows every turn.
+
+`GET` and `PUT /agents-mcp/{agent_id}` return `chat_status`, which maps each
+profile-defined server to one of these states:
+
+- `connected`, `unavailable` or `rejected`: reported by the last native turn
+  for the same saved config.
+- `pending`: no native turn has loaded this config yet.
+- `disabled`: the entry has `enabled: false`.
+
+Stdio, `http://`, query-string and OAuth entries report `rejected` right away,
+without waiting for a turn. Private addresses need DNS, so they report
+`rejected` only after a native turn has loaded them. Statuses live in memory,
+so a Runtime restart resets them to `pending`. The MCP settings page shows the
+state next to each saved server. Logs name
+only the server, never its URL, headers or secrets. The model sees the tools
+as `mcp__xnb_<id>__<tool>` with the server's descriptions. Stdio, OAuth and
+private-network servers still work in the one-shot CLI path described below.
 
 `mcp_profile_isolation_supported()` returns true when the engine exposes the
 scoped registry API and task hooks this adapter needs, and fails closed
@@ -51,9 +86,10 @@ keeps working, initial registration through the real native `start()` path,
 and agent tool injection.
 
 Limits: catalog MCP tools are available only in native conversation runs.
-The one-shot `chat` endpoint and Kanban workers run the Hermes CLI as a
-subprocess, which reads only `mcp_servers`; there the tools are absent, not
-leaked. API keys are stored in the profile `config.yaml` header, the same
+The one-shot `chat` endpoint (team runs and delegated executions) and Kanban
+workers run the Hermes CLI as a separate per-profile subprocess. That
+subprocess runs native discovery over `mcp_servers` only, including stdio and
+OAuth entries. Catalog tools are absent there, not leaked. API keys are stored in the profile `config.yaml` header, the same
 storage model as native `mcp_servers`; shareable exports drop them and imports
 remove the managed key.
 
@@ -69,6 +105,15 @@ resolved commit, scans every supported text file without honoring a supplied
 `.skillignore`, and publishes the plugin disabled. Optional `ref` selects a branch
 or tag. Unsupported binary/bytecode files, incomplete scans and dangerous
 findings block activation. The scanner is a review aid, not a Python sandbox.
+
+Before the digest and scan, the clone drops top-level content the plugin loader
+never reads: `.github/`, `.gitlab/`, `.circleci/`, `tests/`, `test/`, `docs/`,
+`bench/`, `benchmarks/`, `benchmarking/`, README/CHANGELOG/CONTRIBUTING/
+SECURITY/CODE_OF_CONDUCT/ROADMAP/AGENTS/CLAUDE markdown, `conftest.py`,
+`pytest.ini`, `tox.ini`, `.pre-commit-config.yaml`, `.editorconfig`, and
+`.gitattributes`. Documentation examples and CI scripts therefore no longer
+block a plugin, and those files are absent from the installed artifact. A
+symlink with one of these names is kept so the digest still rejects it.
 
 Approval binds the exact artifact digest and record revision. Enable and native
 or CLI execution check that approval and current bytes still match. Mutations
@@ -150,6 +195,15 @@ payload is a conflict. Approval accepts `artifact_digest`, `approved`, and
 `enabled` and `expected_revision`. Secret recipe fields are write-only and never
 used as background-operation inputs.
 
+Operation responses include `plugin_id`. A failed or blocked operation keeps the
+fixed public reason of an expected error in `error.message` (for example
+`Plugin exceeds scan limits`); unexpected errors stay `Operation failed`.
+`progress` is cleared when an operation fails. A `remove` operation for a
+catalog integration (an id in the profile's catalog records with no plugin
+artifact) stops its managed MCP connection and deletes the record; `remove` for
+an id with neither an artifact nor a record fails with `plugin_not_found`
+instead of reporting success.
+
 ## Source verification
 
 Run focused source tests in the existing Docker development images, including
@@ -208,3 +262,40 @@ worker now reports a code, and the parent maps only allowlisted codes.
 
 Not done: no live MCP provider was contacted, no browser smoke test was run,
 and no image was built or deployed.
+# Installing plugins from Git and ZIP uploads
+
+Git installs accept an optional `path` subdirectory (up to 512 characters) to
+select a plugin folder inside a repository. A 40-character commit SHA in `ref`
+pins the fetched revision; installed inventory reports `commit`, `pinned`, and
+the selected `path`.
+
+`POST /agents-plugins/{agent_id}/upload` accepts multipart fields `plugin_id`,
+`file`, and optional `idempotency_key`. The filename must end in `.zip` or
+`.plugin`; archives are limited to 3 MiB compressed. ZIP extraction allows at
+most 2,000 entries and 32 MiB uncompressed, rejects symlinks, traversal,
+absolute/drive paths, duplicate names, and compression ratios above 100 for
+files over 1 MiB, and ignores `__MACOSX/` and `.DS_Store`. A common top-level
+folder is stripped. Uploaded plugins follow the same scan, approval, and enable
+flow as Git installs. Their reported commit is `upload:` plus the extracted
+tree digest, and `pinned` is false. Updating an uploaded plugin requires a new
+upload.
+
+## Personal workspace plugin marketplaces
+
+Personal workspace owners can register up to 20 public Git marketplaces. Runtime
+clones each repository synchronously, reads a bounded Claude or Codex marketplace
+manifest, and stores its parsed entries below `DATA_DIR/extensions/marketplaces.json`.
+Each marketplace is capped at 200 manifest entries. Unsupported package managers,
+invalid names, and invalid Git sources appear in `skipped` with a reason code.
+Relative entries are installed from the marketplace repository at the exact commit
+that was read, with their validated subdirectory passed as `path`.
+
+- `GET /plugins/marketplaces` returns `{ "marketplaces": [...] }`.
+- `POST /plugins/marketplaces` accepts `{ "source": "owner/repo[#ref]" }` and returns
+  a marketplace with HTTP 201.
+- `POST /plugins/marketplaces/{marketplace_id}/refresh` reclones and reparses it.
+- `DELETE /plugins/marketplaces/{marketplace_id}` removes only the marketplace record.
+
+Marketplace discovery does not install code. The UI submits a selected entry to the
+existing extension install operation with its source, path, and pinned ref. It therefore
+uses the same scan, approval, and enable lifecycle as any other Git install.

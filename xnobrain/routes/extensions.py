@@ -1,5 +1,7 @@
 """Per-agent extension management API declarations."""
 
+from pydantic import BaseModel
+
 from ..models.extensions import (
     CatalogInstall,
     ExtensionApproval,
@@ -14,9 +16,37 @@ from .definition import route
 
 _TAG = ("Agent extensions",)
 
+
+class MarketplaceSource(BaseModel):
+    source: str
+
+
 ROUTES = (
     route("GET", "/plugins/catalog", "extensions_catalog", tags=_TAG),
+    route("GET", "/plugins/marketplaces", "extensions_marketplaces_list", tags=_TAG),
+    route(
+        "POST", "/plugins/marketplaces", "extensions_marketplaces_add", MarketplaceSource, tags=_TAG
+    ),
+    route(
+        "POST",
+        "/plugins/marketplaces/{marketplace_id}/refresh",
+        "extensions_marketplaces_refresh",
+        tags=_TAG,
+    ),
+    route(
+        "DELETE",
+        "/plugins/marketplaces/{marketplace_id}",
+        "extensions_marketplaces_delete",
+        tags=_TAG,
+    ),
     route("GET", "/agents-plugins/{agent_id}", "extensions_plugins_list", tags=_TAG),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/upload",
+        "extensions_plugin_upload",
+        special="plugin_upload",
+        tags=_TAG,
+    ),
     route(
         "POST",
         "/agents-plugins/{agent_id}/install-catalog",

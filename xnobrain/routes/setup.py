@@ -146,6 +146,10 @@ def _endpoint(handlers: Any, route: Route):
 
         async def endpoint(request: Request) -> Response:
             return await handlers.workspace_upload(request)
+    elif route.special == "plugin_upload":
+
+        async def endpoint(request: Request) -> Response:
+            return await handlers.plugin_upload(request)
     elif route.special == "workspace_upload_chunk":
 
         async def endpoint(request: Request) -> Response:
@@ -262,6 +266,7 @@ def setup_routes(app: Any, handlers: Any) -> None:
         raw_response = route.special in {
             "stream",
             "workspace_upload",
+            "plugin_upload",
             "workspace_upload_chunk",
             "workspace_file",
             "workspace_preview",

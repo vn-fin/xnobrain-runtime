@@ -11,8 +11,10 @@ import os
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -22,7 +24,13 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from ..integrations import extension_engine, extension_policy, extension_recovery
+from ..integrations import (
+    extension_engine,
+    extension_policy,
+    extension_recovery,
+    plugin_formats,
+)
+from ..integrations.hermes_support import AgentAPIError
 from ..repositories.base import StoreError
 from ..repositories.custom_page_locks import lifecycle_gate
 from ..repositories.extension_operations import ExtensionOperationStore
@@ -34,6 +42,11 @@ _GIT_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
 _MAX_CLONE_BYTES = 8 * 1024 * 1024
 _CLONE_TIMEOUT = 300
 _LOGGER = logging.getLogger(__name__)
+_MARKETPLACE_LOCK = threading.RLock()
+_MARKETPLACE_MANIFESTS = (
+    Path(".claude-plugin") / "marketplace.json",
+    Path(".agents") / "plugins" / "marketplace.json",
+)
 
 
 class ExtensionsService:
@@ -43,9 +56,7 @@ class ExtensionsService:
         self.store = ExtensionOperationStore(repository.data_dir)
         self.worker = ExtensionOperationWorker(self)
 
-    def _profile(
-        self, agent_id: str, trusted: Any, *, recover_publication: bool = True
-    ) -> tuple[Path, str]:
+    def _personal_identity(self, trusted: Any) -> str:
         self._require_feature()
         if not getattr(trusted, "subject", "") or not getattr(trusted, "tenant_id", ""):
             raise ServiceError(
@@ -58,6 +69,12 @@ class ExtensionsService:
             raise ServiceError(
                 "Personal workspace is inactive", status=403, code="permission_denied"
             )
+        return f"{trusted.tenant_id}\0{trusted.subject}"
+
+    def _profile(
+        self, agent_id: str, trusted: Any, *, recover_publication: bool = True
+    ) -> tuple[Path, str]:
+        owner_key = self._personal_identity(trusted)
         try:
             profile = Path(self.agents.profile_path(agent_id))
         except Exception as error:
@@ -96,7 +113,7 @@ class ExtensionsService:
             if (extension_policy.state_root(profile) / "mcp-recovery.json").exists():
                 with self._lifecycle(agent_id):
                     self._recover_mcp_mirror(profile)
-        return profile, f"{trusted.tenant_id}\0{trusted.subject}"
+        return profile, owner_key
 
     @staticmethod
     def _require_feature() -> None:
@@ -229,6 +246,296 @@ class ExtensionsService:
                     }
         return catalog
 
+    def _marketplaces_path(self) -> Path:
+        root = self.repository.data_dir / "extensions"
+        path = root / "marketplaces.json"
+        if root.is_symlink() or path.is_symlink():
+            raise ServiceError(
+                "Marketplace storage is unsafe", status=503, code="marketplace_storage_invalid"
+            )
+        if path.exists() and not path.is_file():
+            raise ServiceError(
+                "Marketplace storage is unsafe", status=503, code="marketplace_storage_invalid"
+            )
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if root.is_symlink() or not root.is_dir():
+            raise ServiceError(
+                "Marketplace storage is unsafe", status=503, code="marketplace_storage_invalid"
+            )
+        return path
+
+    def _read_marketplaces(self) -> list[dict[str, Any]]:
+        path = self._marketplaces_path()
+        if not path.exists():
+            return []
+        try:
+            if not stat.S_ISREG(path.stat().st_mode) or path.stat().st_size > 4 * 1024 * 1024:
+                raise ValueError("invalid marketplace store")
+            value = json.loads(path.read_text(encoding="utf-8"))
+            rows = value["marketplaces"]
+            if not isinstance(rows, list):
+                raise ValueError("invalid marketplaces")
+            return rows
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise ServiceError(
+                "Marketplace storage is unavailable", status=503, code="marketplace_storage_invalid"
+            ) from error
+
+    def _write_marketplaces(self, rows: list[dict[str, Any]]) -> None:
+        path = self._marketplaces_path()
+        try:
+            extension_policy.atomic_json(path, {"marketplaces": rows})
+        except (OSError, ValueError) as error:
+            raise ServiceError(
+                "Marketplace storage is unavailable", status=503, code="marketplace_storage_invalid"
+            ) from error
+
+    @staticmethod
+    def _marketplace_source(source: Any) -> tuple[str, str]:
+        if not isinstance(source, str) or len(source) > 2048:
+            raise ServiceError("Git source is invalid", status=422, code="invalid_git_source")
+        raw = source.strip()
+        ref = ""
+        if "#" in raw:
+            if raw.count("#") != 1:
+                raise ServiceError("Git reference is invalid", status=422, code="invalid_git_ref")
+            raw, ref = raw.rsplit("#", 1)
+            if not ref or not _GIT_REF.fullmatch(ref):
+                raise ServiceError("Git reference is invalid", status=422, code="invalid_git_ref")
+        normalized, validated_ref, _ = ExtensionsService._validate_git_source(raw, ref)
+        return normalized, validated_ref
+
+    def _fetch_marketplace(self, source: str, ref: str) -> dict[str, Any]:
+        root = self.repository.data_dir / "extension-staging"
+        if root.is_symlink():
+            raise ServiceError(
+                "Extension staging is unsafe", status=503, code="extension_staging_invalid"
+            )
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if root.is_symlink() or not root.is_dir():
+            raise ServiceError(
+                "Extension staging is unsafe", status=503, code="extension_staging_invalid"
+            )
+        stage_parent = Path(tempfile.mkdtemp(prefix="marketplace-", dir=root))
+        stage = stage_parent / "repo"
+        try:
+            # Shortcut: marketplace refresh is synchronous; clone_plugin has its own bounded timeout.
+            # Only the manifest is read, so skip the per-plugin artifact limits (the
+            # 32 MiB Git limit still applies). shortcut: repos above 32 MiB fail; use a
+            # sparse checkout of the manifest if large marketplaces are needed.
+            commit = extension_engine.clone_plugin(source, ref or None, stage, artifact=False)
+            manifest = None
+            for relative in _MARKETPLACE_MANIFESTS:
+                candidate = stage / relative
+                current = stage
+                for part in relative.parts:
+                    current = current / part
+                    if current.is_symlink():
+                        raise ServiceError(
+                            "Marketplace manifest is unsafe",
+                            status=422,
+                            code="marketplace_manifest_invalid",
+                        )
+                if candidate.is_symlink():
+                    raise ServiceError(
+                        "Marketplace manifest is unsafe",
+                        status=422,
+                        code="marketplace_manifest_invalid",
+                    )
+                if candidate.is_file():
+                    info = candidate.stat()
+                    if not stat.S_ISREG(info.st_mode) or info.st_size > 1024 * 1024:
+                        raise ServiceError(
+                            "Marketplace manifest is too large",
+                            status=422,
+                            code="marketplace_manifest_invalid",
+                        )
+                    try:
+                        manifest = json.loads(candidate.read_text(encoding="utf-8"))
+                    except (OSError, ValueError) as error:
+                        raise ServiceError(
+                            "Marketplace manifest is invalid",
+                            status=422,
+                            code="marketplace_manifest_invalid",
+                        ) from error
+                    break
+            if manifest is None:
+                raise ServiceError(
+                    "Marketplace manifest is missing",
+                    status=422,
+                    code="marketplace_manifest_missing",
+                )
+            if not isinstance(manifest, dict):
+                raise ServiceError(
+                    "Marketplace manifest is invalid",
+                    status=422,
+                    code="marketplace_manifest_invalid",
+                )
+            entries, skipped = self._parse_marketplace_entries(manifest, source, commit)
+            name = manifest.get("name")
+            if not isinstance(name, str) or not name.strip() or len(name) > 80:
+                name = (
+                    urlsplit(source).path.rstrip("/").split("/")[-1].removesuffix(".git")
+                    or "Marketplace"
+                )
+            return {
+                "name": name.strip(),
+                "source": source,
+                "ref": ref or None,
+                "commit": commit,
+                "refreshed_at": int(time.time()),
+                "entries": entries,
+                "skipped": skipped,
+            }
+        finally:
+            shutil.rmtree(stage_parent, ignore_errors=True)
+
+    def _parse_marketplace_entries(self, manifest: dict[str, Any], source: str, commit: str):
+        plugins = manifest.get("plugins", [])
+        if not isinstance(plugins, list):
+            plugins = []
+        entries, skipped = [], []
+        for item in plugins[:200]:
+            if not isinstance(item, dict):
+                skipped.append({"name": "", "reason": "invalid_source"})
+                continue
+            name = item.get("name")
+            if not isinstance(name, str) or not _PLUGIN_ID.fullmatch(name):
+                skipped.append({"name": str(name or "")[:128], "reason": "invalid_name"})
+                continue
+            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            plugin_root = metadata.get("pluginRoot")
+            if plugin_root is not None and (
+                not isinstance(plugin_root, str) or not plugin_root.startswith("./")
+            ):
+                skipped.append({"name": name, "reason": "invalid_source"})
+                continue
+            spec = item.get("source")
+            try:
+                if isinstance(spec, str) and spec.startswith("./"):
+                    relative = "/".join(
+                        filter(
+                            None, [plugin_root.removeprefix("./") if plugin_root else "", spec[2:]]
+                        )
+                    )
+                    path = "/".join(extension_engine.plugin_subdirectory(relative))
+                    entry_source, entry_ref = source, commit
+                elif isinstance(spec, dict) and spec.get("source") == "local":
+                    local = spec.get("path")
+                    if not isinstance(local, str) or not local.startswith("./"):
+                        raise ValueError("invalid_source")
+                    relative = "/".join(
+                        filter(
+                            None, [plugin_root.removeprefix("./") if plugin_root else "", local[2:]]
+                        )
+                    )
+                    path = "/".join(extension_engine.plugin_subdirectory(relative))
+                    entry_source, entry_ref = source, commit
+                elif isinstance(spec, dict) and spec.get("source") == "github":
+                    repo = spec.get("repo")
+                    if not isinstance(repo, str):
+                        raise ValueError("invalid_source")
+                    entry_source, entry_ref, path = self._validate_git_source(
+                        f"https://github.com/{repo}.git", spec.get("sha") or spec.get("ref")
+                    )
+                elif isinstance(spec, dict) and spec.get("source") in {"url", "git-subdir"}:
+                    if not isinstance(spec.get("url"), str):
+                        raise ValueError("invalid_source")
+                    entry_source, entry_ref, path = self._validate_git_source(
+                        spec.get("url"),
+                        spec.get("sha") or spec.get("ref"),
+                        spec.get("path") if spec.get("source") == "git-subdir" else None,
+                    )
+                else:
+                    raise ValueError("unsupported_source")
+            except Exception as error:
+                reason = (
+                    str(error)
+                    if str(error) in {"unsupported_source", "invalid_source"}
+                    else "invalid_source"
+                )
+                skipped.append({"name": name, "reason": reason})
+                continue
+            description = item.get("description", "")
+            version = item.get("version", "")
+            entries.append(
+                {
+                    "name": name,
+                    "description": description if isinstance(description, str) else "",
+                    "version": version if isinstance(version, str) else "",
+                    "source": entry_source,
+                    "path": path or None,
+                    "ref": entry_ref or None,
+                }
+            )
+        if len(plugins) > 200:
+            skipped.extend({"name": "", "reason": "entry_limit"} for _ in range(len(plugins) - 200))
+        return entries, skipped
+
+    def list_marketplaces(self, trusted: Any) -> dict[str, Any]:
+        self._personal_identity(trusted)
+        with _MARKETPLACE_LOCK:
+            return {"marketplaces": self._read_marketplaces()}
+
+    def add_marketplace(self, source: Any, trusted: Any) -> dict[str, Any]:
+        self._personal_identity(trusted)
+        normalized, ref = self._marketplace_source(source)
+        identifier = hashlib.sha256(normalized.encode()).hexdigest()[:12]
+
+        def check(rows: list[dict[str, Any]]) -> None:
+            if any(row.get("source") == normalized for row in rows):
+                raise ServiceError(
+                    "Marketplace already exists", status=409, code="marketplace_exists"
+                )
+            if len(rows) >= 20:
+                raise ServiceError(
+                    "Marketplace limit reached", status=409, code="marketplace_limit"
+                )
+
+        with _MARKETPLACE_LOCK:
+            check(self._read_marketplaces())
+        # Clone outside the lock so a slow Git host never blocks list/delete.
+        result = {"id": identifier, **self._fetch_marketplace(normalized, ref)}
+        with _MARKETPLACE_LOCK:
+            rows = self._read_marketplaces()
+            check(rows)
+            self._write_marketplaces([*rows, result])
+        return result
+
+    def refresh_marketplace(self, marketplace_id: str, trusted: Any) -> dict[str, Any]:
+        self._personal_identity(trusted)
+        with _MARKETPLACE_LOCK:
+            row = next(
+                (row for row in self._read_marketplaces() if row.get("id") == marketplace_id),
+                None,
+            )
+        if row is None:
+            raise ServiceError("Marketplace not found", status=404, code="not_found")
+        result = {
+            "id": marketplace_id,
+            **self._fetch_marketplace(row["source"], row.get("ref") or ""),
+        }
+        with _MARKETPLACE_LOCK:
+            rows = self._read_marketplaces()
+            index = next(
+                (i for i, item in enumerate(rows) if item.get("id") == marketplace_id), None
+            )
+            if index is None:  # Deleted while refreshing.
+                raise ServiceError("Marketplace not found", status=404, code="not_found")
+            rows[index] = result
+            self._write_marketplaces(rows)
+        return result
+
+    def delete_marketplace(self, marketplace_id: str, trusted: Any) -> dict[str, bool]:
+        self._personal_identity(trusted)
+        with _MARKETPLACE_LOCK:
+            rows = self._read_marketplaces()
+            next_rows = [row for row in rows if row.get("id") != marketplace_id]
+            if len(next_rows) == len(rows):
+                raise ServiceError("Marketplace not found", status=404, code="not_found")
+            self._write_marketplaces(next_rows)
+        return {"deleted": True}
+
     def list_plugins(self, agent_id: str, trusted: Any) -> dict[str, Any]:
         profile, _owner = self._profile(agent_id, trusted)
         state = self._state(profile)
@@ -276,6 +583,14 @@ class ExtensionsService:
                     "revision": int(record.get("revision", 1)),
                     "provides_hooks": self._safe_names(item.get("provides_hooks")),
                     "provides_skills": self._safe_names(item.get("provides_skills")),
+                    "format": str(item.get("format") or "native"),
+                    "commit": str(record.get("commit") or "")[:72],
+                    "pinned": bool(record.get("pinned")),
+                    "path": str(record.get("path") or "")[:512],
+                    "dropped_components": self._safe_names(item.get("dropped_components")),
+                    "mcp_servers": self._plugin_mcp_rows(
+                        profile, plugin_id, item.get("mcp_servers"), bool(item.get("enabled"))
+                    ),
                     "scan": self._public_scan(scan),
                     "approval": {
                         "required": not required,
@@ -305,6 +620,37 @@ class ExtensionsService:
                 }
             )
         return {"agent_id": agent_id, "plugins": result, "mcp_servers": mcp_rows}
+
+    @staticmethod
+    def _plugin_mcp_rows(
+        profile: Path, plugin_id: str, servers: Any, enabled: bool
+    ) -> list[dict[str, str]]:
+        """Return a portable plugin's MCP servers with their chat status."""
+        if not isinstance(servers, list):
+            return []
+        rows = [
+            {"name": str(item.get("name", ""))[:128], "host": str(item.get("host", ""))[:255]}
+            for item in servers
+            if isinstance(item, dict) and item.get("name")
+        ]
+        status: dict[str, str] = {}
+        engine_names: dict[str, str] = {}
+        if enabled and rows:
+            try:
+                from hermes_cli.plugins import _portable_skill_namespace
+
+                from ..integrations.managed_mcp import plugin_mcp_status
+
+                namespace = _portable_skill_namespace(plugin_id)
+                engine_names = {row["name"]: f"{namespace}__{row['name']}" for row in rows}
+                status = plugin_mcp_status(profile, list(engine_names.values()))
+            except Exception:
+                status = {}
+        for row in rows:
+            row["chat_status"] = (
+                status.get(engine_names.get(row["name"], ""), "pending") if enabled else "disabled"
+            )
+        return rows
 
     @staticmethod
     def _safe_names(values: Any) -> list[str]:
@@ -589,32 +935,46 @@ class ExtensionsService:
     def disconnect_catalog(self, agent_id: str, catalog_id: str, trusted: Any) -> dict[str, Any]:
         profile, _owner = self._profile(agent_id, trusted)
         with self._lifecycle(agent_id):
-            state = self._state(profile)
-            record = state["mcp"].get(catalog_id)
-            if not record:
-                raise ServiceError(
-                    "Catalog integration is not configured", status=404, code="not_found"
-                )
-            self._recover_mcp_mirror(profile)
-            config_path = profile / "config.yaml"
-            if config_path.is_symlink():
-                raise ServiceError("Unsafe profile config", status=409, code="invalid_profile")
-            config = (
-                yaml.safe_load(config_path.read_text(encoding="utf-8"))
-                if config_path.is_file()
-                else {}
+            self._detach_catalog(agent_id, profile, catalog_id, remove=False)
+        return {"agent_id": agent_id, "catalog_id": catalog_id, "enabled": False}
+
+    def _detach_catalog(
+        self, agent_id: str, profile: Path, catalog_id: str, *, remove: bool
+    ) -> None:
+        """Stop a catalog connection; ``remove`` also forgets its record.
+
+        The caller holds the agent lifecycle lock.
+        """
+        state = self._state(profile)
+        record = state["mcp"].get(catalog_id)
+        if not record:
+            raise ServiceError(
+                "Catalog integration is not configured", status=404, code="not_found"
             )
-            if not isinstance(config, dict):
-                raise ServiceError(
-                    "Profile config is invalid", status=409, code="invalid_profile_config"
-                )
-            servers = config.get(extension_policy.MANAGED_MCP_KEY) or {}
-            server_name = record["server_name"]
-            if server_name not in servers:
-                raise ServiceError(
-                    "Catalog integration is not configured", status=404, code="not_found"
-                )
-            self._snapshot_config(agent_id, profile)
+        self._recover_mcp_mirror(profile)
+        config_path = profile / "config.yaml"
+        if config_path.is_symlink():
+            raise ServiceError("Unsafe profile config", status=409, code="invalid_profile")
+        config = (
+            yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.is_file() else {}
+        )
+        if config is None:
+            config = {}
+        if not isinstance(config, dict):
+            raise ServiceError(
+                "Profile config is invalid", status=409, code="invalid_profile_config"
+            )
+        servers = config.get(extension_policy.MANAGED_MCP_KEY) or {}
+        if not isinstance(servers, dict):
+            raise ServiceError("MCP config is invalid", status=409, code="invalid_mcp_config")
+        server_name = record["server_name"]
+        connected = server_name in servers
+        if not connected and not remove:
+            raise ServiceError(
+                "Catalog integration is not configured", status=404, code="not_found"
+            )
+        self._snapshot_config(agent_id, profile)
+        if connected:
             servers.pop(server_name, None)
             config[extension_policy.MANAGED_MCP_KEY] = servers
             marker = extension_policy.state_root(profile) / "mcp-recovery.json"
@@ -630,11 +990,13 @@ class ExtensionsService:
                 },
             )
             self.repository.atomic_yaml(config_path, config)
-            state["revision"] = int(state.get("revision", 1)) + 1
-            self._save(profile, state)
+        if remove:
+            state["mcp"].pop(catalog_id, None)
+        state["revision"] = int(state.get("revision", 1)) + 1
+        self._save(profile, state)
+        if connected:
             marker.unlink(missing_ok=True)
             extension_engine.mcp_disconnect(profile, server_name)
-        return {"agent_id": agent_id, "catalog_id": catalog_id, "enabled": False}
 
     def set_plugin_visibility(
         self, agent_id: str, plugin_id: str, body: dict[str, Any], trusted: Any
@@ -999,7 +1361,9 @@ class ExtensionsService:
             self._save(profile, state)
         return {"agent_id": agent_id, "id": hook_id, "deleted": True}
 
-    def create_operation(self, agent_id: str, body: dict[str, Any], trusted: Any) -> dict[str, Any]:
+    def create_operation(
+        self, agent_id: str, body: dict[str, Any], trusted: Any, *, _upload: bool = False
+    ) -> dict[str, Any]:
         profile, owner = self._profile(agent_id, trusted)
         kind = str(body.get("kind", ""))
         plugin_id = str(body.get("plugin_id", ""))
@@ -1008,7 +1372,30 @@ class ExtensionsService:
         with self._lifecycle(agent_id):
             profile_generation = self._profile_generation(profile, initialize=True)
             if kind in {"install", "update"}:
-                if kind == "update" and not body.get("source"):
+                if kind == "update" and str(body.get("source") or "").startswith("upload:"):
+                    raise ServiceError(
+                        "Uploaded plugins must be uploaded again to update",
+                        status=422,
+                        code="upload_update_requires_reupload",
+                    )
+                if kind == "install" and str(body.get("source") or "").startswith("upload:"):
+                    if not _upload:
+                        raise ServiceError(
+                            "Upload sources are not accepted here",
+                            status=422,
+                            code="invalid_git_source",
+                        )
+                    source = str(body["source"])
+                    ref, path = "", ""
+                elif kind == "update" and self._state(profile)["plugins"].get(plugin_id, {}).get(
+                    "source", ""
+                ).startswith("upload:"):
+                    raise ServiceError(
+                        "Uploaded plugins must be uploaded again to update",
+                        status=422,
+                        code="upload_update_requires_reupload",
+                    )
+                elif kind == "update" and not body.get("source"):
                     prior = self._state(profile)["plugins"].get(plugin_id, {})
                     if not prior.get("source"):
                         raise ServiceError(
@@ -1016,11 +1403,16 @@ class ExtensionsService:
                             status=409,
                             code="plugin_source_unavailable",
                         )
-                    source, ref = self._validate_git_source(
-                        prior["source"], body.get("ref") or prior.get("ref") or ""
+                    # A pinned commit stays pinned until the user names a new ref.
+                    source, ref, path = self._validate_git_source(
+                        prior["source"],
+                        body.get("ref") or prior.get("ref") or "",
+                        body.get("path") or prior.get("path") or "",
                     )
                 else:
-                    source, ref = self._validate_git_source(body.get("source"), body.get("ref"))
+                    source, ref, path = self._validate_git_source(
+                        body.get("source"), body.get("ref"), body.get("path")
+                    )
                 target = profile / "plugins" / plugin_id
                 if kind == "install" and target.exists():
                     raise ServiceError(
@@ -1031,11 +1423,12 @@ class ExtensionsService:
                         "Plugin is not installed", status=404, code="plugin_not_found"
                     )
             else:
-                source, ref = "", ""
+                source, ref, path = "", "", ""
             inputs = {
                 "plugin_id": plugin_id,
                 "source": source,
                 "ref": ref,
+                "path": path,
                 "profile_generation": profile_generation,
             }
             result, _created = self.store.create(
@@ -1048,11 +1441,28 @@ class ExtensionsService:
         return result
 
     @staticmethod
-    def _validate_git_source(source: Any, ref: Any) -> tuple[str, str]:
-        if not isinstance(source, str) or len(source) > 2048:
+    def _validate_git_source(source: Any, ref: Any, path: Any = None) -> tuple[str, str, str]:
+        if not isinstance(source, str) or len(source) > 2048 or source.startswith("upload:"):
             raise ServiceError("Git source is invalid", status=422, code="invalid_git_source")
-        if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", source):
-            source = f"https://github.com/{source}.git"
+        if path is not None and not isinstance(path, str):
+            raise ServiceError("Plugin subdirectory is invalid", status=422, code="invalid_source")
+        path = (path or "").rstrip("/")
+        shorthand = re.fullmatch(r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)((?:/[^/]+)+)?", source)
+        if shorthand and "://" not in source:
+            # GitHub "owner/repo/sub/dir" installs one subdirectory of the repo.
+            if shorthand.group(2):
+                if path:
+                    raise ServiceError(
+                        "Give the subdirectory once", status=422, code="invalid_source"
+                    )
+                path = shorthand.group(2).strip("/")
+            source = f"https://github.com/{shorthand.group(1)}.git"
+        try:
+            extension_engine.plugin_subdirectory(path)
+        except Exception as error:
+            raise ServiceError(
+                "Plugin subdirectory is invalid", status=422, code="invalid_source"
+            ) from error
         parsed = urlsplit(source)
         if parsed.scheme != "https" or parsed.username or parsed.password or not parsed.hostname:
             raise ServiceError(
@@ -1065,9 +1475,11 @@ class ExtensionsService:
             raise ServiceError(
                 "Git repository path is invalid", status=422, code="invalid_git_source"
             )
-        if ref is not None and (not isinstance(ref, str) or not _GIT_REF.fullmatch(ref)):
-            raise ServiceError("Git branch or tag is invalid", status=422, code="invalid_git_ref")
-        return source.rstrip("/"), str(ref or "")
+        if ref and (not isinstance(ref, str) or not _GIT_REF.fullmatch(ref)):
+            raise ServiceError(
+                "Git branch, tag or commit is invalid", status=422, code="invalid_git_ref"
+            )
+        return source.rstrip("/"), str(ref or ""), path
 
     def list_operations(self, agent_id: str, trusted: Any) -> list[dict[str, Any]]:
         _profile, owner = self._profile(agent_id, trusted)
@@ -1152,16 +1564,30 @@ class ExtensionOperationWorker:
                     status = "BLOCKED"
                 else:
                     status = "FAILED"
+                # Expected errors carry fixed, public reasons; anything else stays generic.
+                message = "Operation failed"
+                if isinstance(error, (ServiceError, AgentAPIError)) and str(error):
+                    message = str(error)[:200]
                 self.service.store.update(
                     operation,
                     status=status,
+                    progress=None,
                     error={
                         "code": code,
-                        "message": "Operation cancelled"
-                        if status == "CANCELLED"
-                        else "Operation failed",
+                        "message": "Operation cancelled" if status == "CANCELLED" else message,
                     },
                 )
+            finally:
+                source = (operation.get("inputs") or {}).get("source") or ""
+                upload_id = source.partition(":")[2] if source.startswith("upload:") else ""
+                if re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    upload_id,
+                ):
+                    root = self.service.repository.data_dir / "extension-staging"
+                    uploads = root / "uploads"
+                    if not root.is_symlink() and not uploads.is_symlink():
+                        (uploads / f"{upload_id}.zip").unlink(missing_ok=True)
 
     def _process(self, operation: dict[str, Any]) -> None:
         inputs = operation.get("inputs") or {}
@@ -1213,12 +1639,22 @@ class ExtensionOperationWorker:
                 if self.service.store.cancelled(operation):
                     self.service.store.update(operation, status="CANCELLED")
                     return
-                self.service._snapshot_config(agent_id, profile)
-                extension_engine.plugin_remove(profile, plugin_id)
+                artifact = profile / "plugins" / plugin_id
                 state = self.service._state(profile)
-                state["plugins"].pop(plugin_id, None)
-                state["revision"] = int(state.get("revision", 1)) + 1
-                self.service._save(profile, state)
+                has_artifact = artifact.is_dir() and not artifact.is_symlink()
+                if not has_artifact and plugin_id in state["mcp"]:
+                    # Catalog integrations have no artifact; removing one drops
+                    # its managed connection and its catalog record.
+                    self.service._detach_catalog(agent_id, profile, plugin_id, remove=True)
+                elif not has_artifact and plugin_id not in state["plugins"]:
+                    raise ServiceError("Plugin not found", status=404, code="plugin_not_found")
+                else:
+                    self.service._snapshot_config(agent_id, profile)
+                    extension_engine.plugin_remove(profile, plugin_id)
+                    state = self.service._state(profile)
+                    state["plugins"].pop(plugin_id, None)
+                    state["revision"] = int(state.get("revision", 1)) + 1
+                    self.service._save(profile, state)
             self.service.store.update(
                 operation, status="COMPLETED", result={"plugin_id": plugin_id, "removed": True}
             )
@@ -1310,14 +1746,52 @@ class ExtensionOperationWorker:
             )
         if operation["kind"] == "update" and not target.is_dir():
             raise ServiceError("Plugin is not installed", status=404, code="plugin_not_found")
-        try:
-            self.service.store.update(operation, status="PROCESSING", progress={"phase": "cloning"})
-            commit = extension_engine.clone_plugin(
-                inputs["source"],
-                inputs["ref"],
-                stage,
-                cancelled=lambda: self.service.store.cancelled(operation),
+        if operation["kind"] == "update" and (inputs.get("source") or "").startswith("upload:"):
+            raise ServiceError(
+                "Uploaded plugins must be uploaded again to update",
+                status=422,
+                code="upload_update_requires_reupload",
             )
+        try:
+            self.service.store.update(
+                operation,
+                status="PROCESSING",
+                progress={
+                    "phase": "extracting"
+                    if (inputs.get("source") or "").startswith("upload:")
+                    else "cloning"
+                },
+            )
+            if (inputs.get("source") or "").startswith("upload:"):
+                upload_id = inputs["source"].partition(":")[2]
+                if not re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", upload_id
+                ):
+                    raise ServiceError(
+                        "Upload reference is invalid", status=422, code="invalid_plugin_archive"
+                    )
+                uploads = stage_root / "uploads"
+                archive = uploads / f"{upload_id}.zip"
+                if uploads.is_symlink() or archive.is_symlink() or not archive.is_file():
+                    raise ServiceError(
+                        "Uploaded archive is unavailable", status=422, code="invalid_plugin_archive"
+                    )
+                commit = extension_engine.extract_plugin_archive(
+                    archive, stage, cancelled=lambda: self.service.store.cancelled(operation)
+                )
+            else:
+                commit = extension_engine.clone_plugin(
+                    inputs["source"],
+                    inputs["ref"],
+                    stage,
+                    cancelled=lambda: self.service.store.cancelled(operation),
+                    **({"path": inputs["path"]} if inputs.get("path") else {}),
+                )
+            declared, package_format = plugin_formats.plugin_identity(stage)
+            dropped: list[str] | None = None
+            if package_format == plugin_formats.CLAUDE:
+                # Only skills and remote MCP survive; the rest is reported.
+                dropped = plugin_formats.convert_claude_plugin(stage)
             self.service.store.update(
                 operation, status="PROCESSING", progress={"phase": "scanning"}
             )
@@ -1326,8 +1800,6 @@ class ExtensionOperationWorker:
             if self.service.store.cancelled(operation):
                 self.service.store.update(operation, status="CANCELLED")
                 return
-            manifest = yaml.safe_load((stage / "plugin.yaml").read_text(encoding="utf-8"))
-            declared = str(manifest.get("key") or manifest.get("name") or "")
             if declared != plugin_id:
                 raise ServiceError(
                     "Plugin id does not match its manifest", status=422, code="plugin_id_mismatch"
@@ -1338,7 +1810,11 @@ class ExtensionOperationWorker:
                     status="BLOCKED",
                     result={
                         "plugin_id": plugin_id,
-                        "commit": commit,
+                        "commit": ("upload:" + commit)
+                        if (inputs.get("source") or "").startswith("upload:")
+                        else commit,
+                        "format": package_format,
+                        "dropped_components": dropped or [],
                         "scan": self.service._public_scan(scan),
                     },
                     error={
@@ -1413,7 +1889,13 @@ class ExtensionOperationWorker:
                     state["plugins"][plugin_id] = {
                         "source": inputs["source"],
                         "ref": inputs["ref"],
-                        "commit": commit,
+                        "path": inputs.get("path") or "",
+                        "pinned": bool(re.fullmatch(r"[0-9a-f]{40}", inputs["ref"] or "")),
+                        "commit": ("upload:" + commit)
+                        if (inputs.get("source") or "").startswith("upload:")
+                        else commit,
+                        "format": package_format,
+                        "dropped_components": dropped,
                         "artifact_digest": scan_result["artifact_digest"],
                         "scan": scan,
                         "approval": {"approved": False, "artifact_digest": ""},
@@ -1459,12 +1941,27 @@ class ExtensionOperationWorker:
                 status="COMPLETED",
                 result={
                     "plugin_id": plugin_id,
-                    "commit": commit,
+                    "commit": ("upload:" + commit)
+                    if (inputs.get("source") or "").startswith("upload:")
+                    else commit,
+                    "format": package_format,
+                    "dropped_components": dropped or [],
                     "artifact_digest": scan_result["artifact_digest"],
                     "scan": self.service._public_scan(scan),
                 },
             )
         finally:
+            source = inputs.get("source") or ""
+            upload_id = source.partition(":")[2] if source.startswith("upload:") else ""
+            uploads = stage_root / "uploads"
+            if (
+                re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    upload_id,
+                )
+                and not uploads.is_symlink()
+            ):
+                (uploads / f"{upload_id}.zip").unlink(missing_ok=True)
             pending_intent = extension_recovery.publication_path(profile).exists()
             if stage.exists() and not pending_intent:
                 shutil.rmtree(stage, ignore_errors=True)

@@ -109,6 +109,66 @@ def save_state(profile: Path, state: dict[str, Any]) -> None:
     atomic_json(state_root(profile) / "state.json", state)
 
 
+# Repository content the plugin loader never imports or reads. It is dropped
+# from a cloned artifact so CI files, test fixtures and documentation cannot
+# block or bloat the scan of the code that actually runs.
+_NON_RUNTIME_DIRS = frozenset(
+    {
+        ".github",
+        ".gitlab",
+        ".circleci",
+        "tests",
+        "test",
+        "docs",
+        "bench",
+        "benchmarks",
+        "benchmarking",
+    }
+)
+_NON_RUNTIME_FILES = frozenset(
+    {
+        "readme",
+        "readme.md",
+        "readme.rst",
+        "readme.txt",
+        "changelog.md",
+        "changes.md",
+        "history.md",
+        "contributing.md",
+        "code_of_conduct.md",
+        "security.md",
+        "roadmap.md",
+        "agents.md",
+        "claude.md",
+        "conftest.py",
+        "pytest.ini",
+        "tox.ini",
+        ".pre-commit-config.yaml",
+        ".editorconfig",
+        ".gitattributes",
+    }
+)
+
+
+def prune_plugin_artifact(path: Path) -> list[str]:
+    """Remove top-level non-runtime entries from a freshly cloned plugin.
+
+    Symlinks are left in place so ``tree_digest`` still rejects them.
+    """
+    removed = []
+    for item in sorted(path.iterdir()):
+        name = item.name.lower()
+        if item.is_symlink():
+            continue
+        if item.is_dir() and name in _NON_RUNTIME_DIRS:
+            shutil.rmtree(item)
+            removed.append(item.name + "/")
+        elif item.is_file() and name in _NON_RUNTIME_FILES:
+            item.unlink()
+            removed.append(item.name)
+    return removed
+
+
 def tree_digest(path: Path) -> str:
     if not path.is_dir() or path.is_symlink():
         fail("Plugin artifact is unavailable", "plugin_not_found", 404)

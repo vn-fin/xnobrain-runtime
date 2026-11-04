@@ -11,11 +11,14 @@ import re
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import zipfile
+import zlib
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -30,11 +33,21 @@ from .extension_policy import (
     atomic_json,
     fail,
     load_state,
+    prune_plugin_artifact,
     read_config,
     safe_child,
     tree_digest,
     trusted_required,
     validate_profile_extensions,
+)
+from .hermes_support import AgentAPIError
+from .plugin_formats import (
+    PORTABLE,
+    detect_plugin_format,
+    is_asset_image,
+    portable_policy_findings,
+    portable_summary,
+    read_manifest,
 )
 
 _PLUGIN_REFRESH_LOCK = threading.RLock()
@@ -158,9 +171,9 @@ def plugin_inventory(profile: Path) -> list[dict[str, Any]]:
         if not path.is_dir() or path.is_symlink() or not PLUGIN_ID.fullmatch(path.name):
             continue
         try:
-            manifest = yaml.safe_load(safe_child(path, "plugin.yaml").read_text()) or {}
-            if not isinstance(manifest, dict):
-                continue
+            manifest = read_manifest(path)
+            package_format = manifest["format"]
+            summary = portable_summary(path) if package_format == PORTABLE else {}
             record = state["plugins"].get(path.name, {})
             system = trusted_required(profile, path.name)
             scan = record.get("scan") or {"status": "REQUIRED", "findings": []}
@@ -187,7 +200,12 @@ def plugin_inventory(profile: Path) -> list[dict[str, Any]]:
                     },
                     "status": "protected" if system else scan.get("status", "REQUIRED"),
                     "provides_hooks": manifest.get("provides_hooks") or [],
-                    "provides_skills": manifest.get("provides_skills") or [],
+                    "provides_skills": summary.get("skills")
+                    or manifest.get("provides_skills")
+                    or [],
+                    "format": record.get("format") or package_format,
+                    "mcp_servers": summary.get("mcp_servers") or [],
+                    "dropped_components": record.get("dropped_components") or [],
                 }
             )
         except (OSError, ValueError, yaml.YAMLError):
@@ -222,13 +240,45 @@ def plugin_remove(profile: Path, name: str) -> dict[str, Any]:
 def scan_plugin(path: Path) -> dict[str, Any]:
     """Bound native regex scanning in a separate, credential-free interpreter."""
     tree_digest(path)
-    return _query(path.parent, "scan", {"artifact": str(path)}, timeout=60)
+    result = _query(path.parent, "scan", {"artifact": str(path)}, timeout=60)
+    # The scan child has no reason to do DNS; check plugin MCP hosts here.
+    # Chat re-checks with DNS pinning on every connect; one-shot runs do not yet.
+    private = _private_mcp_findings(path)
+    if private:
+        scan = result["scan"]
+        scan["findings"] = (scan.get("findings", []) + private)[:200]
+        scan["status"], scan["coverage"] = "BLOCKED", "incomplete"
+        if scan.get("verdict") == "safe":
+            scan["verdict"] = "caution"
+    return result
+
+
+def _private_mcp_findings(path: Path) -> list[dict[str, Any]]:
+    if detect_plugin_format(path) != PORTABLE:
+        return []
+    findings = []
+    for server in portable_summary(path)["mcp_servers"]:
+        try:
+            public_https(f"https://{server['host']}/")
+        except AgentAPIError:
+            findings.append(
+                {
+                    "severity": "medium",
+                    "code": "plugin_mcp_unsupported",
+                    "category": "policy",
+                    "file": "mcp.json",
+                    "line": 0,
+                    "message": f"MCP server {server['name']!r} must resolve to public addresses",
+                }
+            )
+    return findings
 
 
 def _scan_plugin(path: Path) -> dict[str, Any]:
     from tools import skills_guard
 
     digest = tree_digest(path)
+    package_format = detect_plugin_format(path)
     findings = []
     complete = True
     files = 0
@@ -237,6 +287,8 @@ def _scan_plugin(path: Path) -> dict[str, Any]:
         if ".git" in relative.parts or not file.is_file():
             continue
         files += 1
+        if package_format == PORTABLE and is_asset_image(relative):
+            continue  # Listing images are never loaded or executed.
         # Never honor a plugin-provided .skillignore: it could hide its code.
         suffix = file.suffix.lower()
         try:
@@ -282,6 +334,59 @@ def _scan_plugin(path: Path) -> dict[str, Any]:
                         "message": finding.description,
                     }
                 )
+    if package_format == PORTABLE:
+        complete = _check_portable_package(path, findings) and complete
+    else:
+        complete = _check_native_package(path) and complete
+    dangerous = any(item["severity"] in {"critical", "high"} for item in findings)
+    verdict = "dangerous" if dangerous else "caution" if findings else "safe"
+    return {
+        "artifact_digest": digest,
+        "scan": {
+            "status": "COMPLETED" if complete and not dangerous else "BLOCKED",
+            "verdict": verdict,
+            "coverage": "complete_text" if complete else "incomplete",
+            "files": files,
+            "findings": findings[:200],
+            "scanner_version": skills_guard.SCANNER_VERSION,
+        },
+    }
+
+
+def _check_portable_package(path: Path, findings: list[dict[str, Any]]) -> bool:
+    """Validate an Agent Plugins v1 package; return whether coverage is complete."""
+    from hermes_cli.agent_plugins import AgentPluginError, load_agent_plugin
+
+    complete = True
+    policy = portable_policy_findings(path)
+    if policy:
+        findings.extend(policy)
+        complete = False
+    try:
+        with tempfile.TemporaryDirectory() as data_root:
+            package = load_agent_plugin(path, Path(data_root))
+    except (AgentPluginError, OSError, ValueError) as error:
+        fail(f"Portable plugin is invalid: {str(error)[:160]}", "plugin_manifest_invalid")
+    if not PLUGIN_ID.fullmatch(package.name):
+        fail("Portable plugin name is not a valid plugin identifier", "plugin_manifest_invalid")
+    for diagnostic in package.diagnostics:
+        findings.append(
+            {
+                "severity": "medium",
+                "code": "plugin_manifest_diagnostic",
+                "category": "policy",
+                "file": diagnostic.scope,
+                "line": 0,
+                "message": str(diagnostic.message)[:300],
+            }
+        )
+        complete = False
+    return complete
+
+
+def _check_native_package(path: Path) -> bool:
+    """Validate a Hermes Python plugin; return whether coverage is complete."""
+    complete = True
     try:
         manifest = yaml.safe_load((path / "plugin.yaml").read_text())
         if not isinstance(manifest, dict) or not (path / "__init__.py").is_file():
@@ -311,19 +416,7 @@ def _scan_plugin(path: Path) -> dict[str, Any]:
             complete = False
     except (OSError, yaml.YAMLError):
         fail("Plugin manifest is invalid", "plugin_manifest_invalid")
-    dangerous = any(item["severity"] in {"critical", "high"} for item in findings)
-    verdict = "dangerous" if dangerous else "caution" if findings else "safe"
-    return {
-        "artifact_digest": digest,
-        "scan": {
-            "status": "COMPLETED" if complete and not dangerous else "BLOCKED",
-            "verdict": verdict,
-            "coverage": "complete_text" if complete else "incomplete",
-            "files": files,
-            "findings": findings[:200],
-            "scanner_version": skills_guard.SCANNER_VERSION,
-        },
-    }
+    return complete
 
 
 def public_https(url: str, *, hosts: set[str] | None = None) -> tuple[str, str]:
@@ -351,10 +444,44 @@ def public_https(url: str, *, hosts: set[str] | None = None) -> tuple[str, str]:
         fail("Endpoint host could not be resolved", "dependency_unavailable", 503)
     if not ips or any(not ipaddress.ip_address(ip).is_global for ip in ips):
         fail("Endpoint must resolve to public addresses", "invalid_source", 422)
-    return host, sorted(ips)[0]
+    # Pin IPv4 first: container networks often have no IPv6 route, and a plain
+    # string sort would put "2600:..." before "32.x.x.x".
+    return host, min(ips, key=lambda ip: (ipaddress.ip_address(ip).version, ip))
 
 
-def clone_plugin(source: str, ref: str | None, stage: Path, cancelled=lambda: False) -> str:
+_COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+_SUBDIRECTORY_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def plugin_subdirectory(path: str | None) -> list[str]:
+    """Split a repository subdirectory into safe parts; reject traversal."""
+    if not path:
+        return []
+    parts = path.rstrip("/").split("/")
+    if (
+        path.startswith("/")
+        or len(path) > 512
+        or len(parts) > 8
+        or any(not _SUBDIRECTORY_PART.fullmatch(part) or part in {".", ".."} for part in parts)
+    ):
+        fail("Plugin subdirectory is invalid", "invalid_source", 422)
+    return parts
+
+
+def clone_plugin(
+    source: str,
+    ref: str | None,
+    stage: Path,
+    cancelled=lambda: False,
+    path: str | None = None,
+    *,
+    artifact: bool = True,
+) -> str:
+    """Fetch one public Git revision into ``stage`` and return its commit.
+
+    ``ref`` may be a branch, a tag, or an exact 40-character commit SHA.
+    ``path`` keeps only that repository subdirectory as the plugin artifact.
+    """
     if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", source):
         source = "https://github.com/" + source + ".git"
     host, address = public_https(source)
@@ -363,9 +490,10 @@ def clone_plugin(source: str, ref: str | None, stage: Path, cancelled=lambda: Fa
         fail("Git URL is invalid", "invalid_source", 422)
     if ref and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}", ref):
         fail("Git reference is invalid", "invalid_source", 422)
+    subdirectory = plugin_subdirectory(path)
     stage.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     resolve = f"{host}:443:{'[' + address + ']' if ':' in address else address}"
-    command = [
+    hardened = [
         "git",
         "-c",
         "http.followRedirects=false",
@@ -379,13 +507,7 @@ def clone_plugin(source: str, ref: str | None, stage: Path, cancelled=lambda: Fa
         "protocol.file.allow=never",
         "-c",
         "protocol.ext.allow=never",
-        "clone",
-        "--depth=1",
-        "--no-recurse-submodules",
     ]
-    if ref:
-        command += ["--branch", ref]
-    command += ["--", source, str(stage)]
     environment = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "HOME": str(stage.parent),
@@ -394,11 +516,188 @@ def clone_plugin(source: str, ref: str | None, stage: Path, cancelled=lambda: Fa
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_LFS_SKIP_SMUDGE": "1",
     }
+    started = time.monotonic()
+    if ref and _COMMIT_SHA.fullmatch(ref):
+        # A branch clone cannot name a commit; fetch exactly that one object.
+        _run_git(
+            [*hardened, "init", "-q", "--", str(stage)], environment, stage, cancelled, started
+        )
+        _run_git(
+            [
+                *hardened,
+                "-C",
+                str(stage),
+                "fetch",
+                "-q",
+                "--depth=1",
+                "--no-recurse-submodules",
+                "--",
+                source,
+                ref,
+            ],
+            environment,
+            stage,
+            cancelled,
+            started,
+            failure=("Commit was not found in the public Git source", "invalid_git_ref"),
+        )
+        _run_git(
+            [*hardened, "-C", str(stage), "checkout", "-q", "--detach", "FETCH_HEAD"],
+            environment,
+            stage,
+            cancelled,
+            started,
+        )
+    else:
+        command = [*hardened, "clone", "--depth=1", "--no-recurse-submodules"]
+        if ref:
+            command += ["--branch", ref]
+        command += ["--", source, str(stage)]
+        _run_git(command, environment, stage, cancelled, started)
+    result = subprocess.run(
+        ["git", "-C", str(stage), "rev-parse", "HEAD"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
+    ).stdout.strip()
+    if ref and _COMMIT_SHA.fullmatch(ref) and result != ref:
+        fail("Fetched commit does not match the pinned SHA", "invalid_git_ref", 422)
+    # Git metadata, CI, tests and docs are not part of the installed artifact.
+    shutil.rmtree(stage / ".git")
+    if subdirectory:
+        selected = safe_child(stage, *subdirectory)
+        if not selected.is_dir():
+            fail("Plugin subdirectory was not found", "invalid_source", 422)
+        keep = stage.parent / f".{stage.name}.subdirectory"
+        os.replace(selected, keep)
+        shutil.rmtree(stage)
+        os.replace(keep, stage)
+    if artifact:
+        prune_plugin_artifact(stage)
+        tree_digest(stage)
+    return result
+
+
+def extract_plugin_archive(archive_path: Path, stage: Path, cancelled=lambda: False) -> str:
+    """Safely extract a bounded plugin ZIP and return its artifact digest."""
+
+    def invalid() -> None:
+        fail("Plugin archive is invalid", "invalid_plugin_archive", 422)
+
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            entries = archive.infolist()
+            if len(entries) > 2000:
+                invalid()
+            names: set[str] = set()
+            parsed: list[tuple[zipfile.ZipInfo, tuple[str, ...], bool]] = []
+            roots: set[str] = set()
+            total_header = 0
+            for info in entries:
+                name = info.filename
+                if (
+                    not name
+                    or "\\" in name
+                    or name.startswith("/")
+                    or re.match(r"^[A-Za-z]:", name)
+                ):
+                    invalid()
+                parts = tuple(part for part in name.rstrip("/").split("/") if part)
+                if (
+                    not parts
+                    or any(part in {".", ".."} for part in parts)
+                    or any(re.match(r"^[A-Za-z]:", part) for part in parts)
+                ):
+                    invalid()
+                mode = info.external_attr >> 16
+                if stat.S_ISLNK(mode):
+                    invalid()
+                if name in names:
+                    invalid()
+                names.add(name)
+                total_header += info.file_size
+                if total_header > 32 * 1024 * 1024:
+                    invalid()
+                if (
+                    info.file_size > 1024 * 1024
+                    and info.file_size / max(info.compress_size, 1) > 100
+                ):
+                    invalid()
+                skip = parts[0] == "__MACOSX" or parts[-1] == ".DS_Store"
+                if not skip:
+                    roots.add(parts[0])
+                parsed.append((info, parts, skip))
+            strip_root = len(roots) == 1 and all(
+                len(parts) > 1 or info.is_dir() for info, parts, skip in parsed if not skip
+            )
+            stage.mkdir(parents=True, exist_ok=False, mode=0o700)
+            actual_total = 0
+            for info, parts, skip in parsed:
+                if cancelled():
+                    fail("Operation cancelled", "operation_cancelled")
+                if skip:
+                    count = 0
+                    with archive.open(info) as source:
+                        while chunk := source.read(64 * 1024):
+                            count += len(chunk)
+                            actual_total += len(chunk)
+                            if actual_total > 32 * 1024 * 1024 or (
+                                count > 1024 * 1024 and count / max(info.compress_size, 1) > 100
+                            ):
+                                invalid()
+                    continue
+                output_parts = parts[1:] if strip_root else parts
+                if not output_parts:
+                    continue
+                target = safe_child(stage, *output_parts)
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                count = 0
+                with archive.open(info) as source, target.open("xb") as destination:
+                    while chunk := source.read(64 * 1024):
+                        count += len(chunk)
+                        actual_total += len(chunk)
+                        if (
+                            count > 32 * 1024 * 1024
+                            or actual_total > 32 * 1024 * 1024
+                            or (count > 1024 * 1024 and count / max(info.compress_size, 1) > 100)
+                        ):
+                            invalid()
+                        destination.write(chunk)
+            prune_plugin_artifact(stage)
+            return tree_digest(stage)
+    except AgentAPIError:
+        raise
+    except (
+        zipfile.BadZipFile,
+        EOFError,
+        NotImplementedError,
+        OSError,
+        RuntimeError,
+        ValueError,
+        zlib.error,
+    ):
+        invalid()
+
+
+def _run_git(
+    command: list[str],
+    environment: dict[str, str],
+    stage: Path,
+    cancelled,
+    started: float,
+    *,
+    failure: tuple[str, str] = ("Public Git source could not be cloned", "plugin_install_failed"),
+) -> None:
+    """Run one bounded Git step; enforce cancellation, time and size limits."""
     with tempfile.TemporaryFile() as log:
         process = subprocess.Popen(
             command, env=environment, stdout=log, stderr=log, start_new_session=True
         )
-        started = time.monotonic()
         try:
             while process.poll() is None:
                 if cancelled():
@@ -414,7 +713,7 @@ def clone_plugin(source: str, ref: str | None, stage: Path, cancelled=lambda: Fa
                     fail("Git artifact exceeds limits", "plugin_scan_incomplete")
                 time.sleep(0.2)
             if process.returncode:
-                fail("Public Git source could not be cloned", "plugin_install_failed")
+                fail(failure[0], failure[1], 422 if failure[1] == "invalid_git_ref" else 409)
         finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGTERM)
@@ -423,18 +722,6 @@ def clone_plugin(source: str, ref: str | None, stage: Path, cancelled=lambda: Fa
                 except subprocess.TimeoutExpired:
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait()
-    result = subprocess.run(
-        ["git", "-C", str(stage), "rev-parse", "HEAD"],
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=5,
-    ).stdout.strip()
-    # Git metadata is not part of the executable installed artifact.
-    shutil.rmtree(stage / ".git")
-    tree_digest(stage)
-    return result
 
 
 # Expected validation errors a worker may report. Anything else (including
@@ -615,27 +902,68 @@ def mcp_status(profile: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _custom_mcp_servers(config: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+    """Return the profile's own ``mcp_servers``, minus legacy catalog entries."""
+    servers = config.get("mcp_servers")
+    if not isinstance(servers, dict):
+        return {}
+    catalog_names = {
+        record.get("server_name")
+        for record in (state.get("mcp") or {}).values()
+        if isinstance(record, dict)
+    }
+    return {name: server for name, server in servers.items() if name not in catalog_names}
+
+
+def _portable_plugin_mcp_servers(profile: Path) -> dict[str, Any]:
+    """Return MCP servers declared by this profile's enabled portable plugins.
+
+    ``refresh_profile_plugins`` runs first, so the engine's plugin manager has
+    loaded only approved, enabled packages for this profile.
+    """
+    try:
+        from hermes_cli.plugins import get_plugin_manager
+
+        with profile_context(profile):
+            return get_plugin_manager().get_portable_mcp_servers()
+    except Exception:
+        return {}
+
+
 def refresh_profile_mcp(profile: Path) -> None:
-    """Reconcile private catalog connections before constructing an agent."""
-    servers = read_config(profile).get(MANAGED_MCP_KEY) or {}
+    """Reconcile this profile's MCP connections before constructing an agent.
+
+    Catalog servers, the profile's own ``mcp_servers`` and MCP servers of
+    enabled portable plugins all run through the profile-scoped adapter, so
+    native turns never share MCP registrations across profiles.
+    """
+    config = read_config(profile)
+    servers = config.get(MANAGED_MCP_KEY) or {}
     state = load_state(profile)
-    generation = state.get("profile_generation", "")
-    if not servers and not generation:
+    custom = _custom_mcp_servers(config, state)
+    plugin_servers = _portable_plugin_mcp_servers(profile)
+    generation = str(state.get("profile_generation") or "")
+    if not servers and not custom and not plugin_servers and not generation:
         return
-    if not isinstance(servers, dict) or not re.fullmatch(r"[a-f0-9]{32}", str(generation)):
+    if not isinstance(servers, dict):
         fail("Managed connections need configuration recovery", "mcp_recovery_failed", 503)
-    from .managed_mcp import sync_profile_mcp
+    from .managed_mcp import ensure_profile_generation, sync_profile_mcp
+
+    if not _GENERATION.fullmatch(generation):
+        if servers:
+            fail("Managed connections need configuration recovery", "mcp_recovery_failed", 503)
+        generation = ensure_profile_generation(profile)
 
     with profile_context(profile), _profile_secret_context(profile):
-        sync_profile_mcp(profile, generation, servers)
+        sync_profile_mcp(profile, generation, servers, custom, plugin_servers)
 
 
 def mcp_profile_isolation_supported() -> bool:
     """Return whether managed catalog MCP can stay profile scoped.
 
-    Native ``mcp_servers`` discovery still registers globally, so catalog
-    servers are stored under a separate key and run through
-    ``managed_mcp.ManagedMCPServerTask``. That adapter needs the engine's
+    Native ``mcp_servers`` discovery registers globally, so native turns run
+    both catalog servers (stored under a separate key) and the profile's own
+    ``mcp_servers`` through ``managed_mcp.ManagedMCPServerTask``. That adapter needs the engine's
     scoped registry API and the task hooks it overrides; an engine without
     them fails closed. ``test_managed_mcp`` is the conformance suite.
     """

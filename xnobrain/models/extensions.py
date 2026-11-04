@@ -14,6 +14,8 @@ class ExtensionOperationCreate(BaseModel):
     plugin_id: str = Field(min_length=1, max_length=128)
     source: str | None = Field(default=None, max_length=2048)
     ref: str | None = Field(default=None, max_length=128)
+    # Repository subdirectory that holds the plugin, e.g. "plugins/review".
+    path: str | None = Field(default=None, max_length=512)
     idempotency_key: str = Field(min_length=1, max_length=128)
 
 

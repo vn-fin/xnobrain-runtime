@@ -20,6 +20,7 @@ from xnobrain.handlers.operations.extensions import operations as extension_oper
 from xnobrain.integrations import extension_engine
 from xnobrain.repositories import FileRepository
 from xnobrain.routes import setup_routes
+from xnobrain.services.base import ServiceError
 from xnobrain.services.extensions import ExtensionsService
 from xnobrain.trusted_context import (
     TRUSTED_CONVERSATION_CONTEXT_HEADER,
@@ -299,6 +300,128 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotEqual(denied.status_code, 200)
 
+    async def test_http_claude_plugin_installs_as_portable_skills_and_mcp(self):
+        """A Claude Code plugin keeps skills and HTTPS MCP; hooks are dropped."""
+        # Scan-time host check runs offline; the host is treated as public.
+        dns = patch.object(
+            extension_engine, "public_https", return_value=("mcp.example.com", "203.0.113.10")
+        )
+        dns.start()
+        self.addCleanup(dns.stop)
+        from hermes_cli.plugins import get_plugin_manager
+
+        def clone_fixture(_source, _ref, stage, cancelled=lambda: False):
+            (stage / ".claude-plugin").mkdir(parents=True)
+            (stage / ".claude-plugin" / "plugin.json").write_text(
+                json.dumps({"name": "sample", "version": "1.0.0", "description": "Review kit"})
+            )
+            (stage / "skills" / "review").mkdir(parents=True)
+            (stage / "skills" / "review" / "SKILL.md").write_text(
+                "---\nname: review\ndescription: Review a change.\n---\n# Review\n"
+            )
+            (stage / "hooks").mkdir()
+            (stage / "hooks" / "hooks.json").write_text('{"hooks": {}}')
+            (stage / ".mcp.json").write_text(
+                json.dumps(
+                    {"mcpServers": {"docs": {"type": "http", "url": "https://mcp.example.com/mcp"}}}
+                )
+            )
+            return "c" * 40
+
+        base = f"{API_PREFIX}/agents-plugins/research"
+        with patch.object(extension_engine, "clone_plugin", clone_fixture):
+            operation = await self._complete_operation(
+                "install", source="https://example.org/sample.git"
+            )
+        self.assertEqual(operation["result"]["format"], "claude")
+        self.assertEqual(operation["result"]["dropped_components"], ["hooks/"])
+        self.assertFalse((self.profile / "plugins" / "sample" / "hooks").exists())
+
+        inventory = await self.client.get(base, headers=self.headers())
+        plugin = next(
+            item for item in inventory.json()["data"]["plugins"] if item["id"] == "sample"
+        )
+        self.assertEqual(plugin["format"], "claude")
+        self.assertEqual(plugin["provides_skills"], ["review"])
+        self.assertEqual(plugin["dropped_components"], ["hooks/"])
+        self.assertEqual(
+            plugin["mcp_servers"],
+            [{"name": "docs", "host": "mcp.example.com", "chat_status": "disabled"}],
+        )
+        approved = await self.client.post(
+            f"{base}/sample/approval",
+            headers=self.headers(),
+            json={
+                "artifact_digest": plugin["artifact_digest"],
+                "expected_revision": plugin["revision"],
+                "approved": True,
+            },
+        )
+        self.assertEqual(approved.status_code, 200, approved.text)
+        enabled = await self.client.post(f"{base}/sample/enable", headers=self.headers())
+        self.assertEqual(enabled.status_code, 200, enabled.text)
+        extension_engine.refresh_profile_plugins(self.profile)
+        self.assertEqual(
+            [
+                name.split("__")[-1]
+                for name in extension_engine._portable_plugin_mcp_servers(self.profile)
+            ],
+            ["docs"],
+        )
+        with extension_engine.profile_context(self.profile):
+            native = next(
+                item for item in get_plugin_manager().list_plugins() if item["key"] == "sample"
+            )
+            self.assertTrue(native["enabled"], native)
+        listed = await self.client.get(base, headers=self.headers())
+        plugin = next(item for item in listed.json()["data"]["plugins"] if item["id"] == "sample")
+        self.assertEqual(plugin["mcp_servers"][0]["chat_status"], "pending")
+
+        disabled = await self.client.post(f"{base}/sample/disable", headers=self.headers())
+        self.assertEqual(disabled.status_code, 200, disabled.text)
+        extension_engine.refresh_profile_plugins(self.profile)
+        self.assertEqual(extension_engine._portable_plugin_mcp_servers(self.profile), {})
+        await self._complete_operation("remove")
+        self.assertFalse((self.profile / "plugins" / "sample").exists())
+
+    async def test_http_install_pins_sha_and_subdirectory_and_update_keeps_pin(self):
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        calls = []
+
+        def clone_fixture(source, ref, stage, cancelled=lambda: False, path=None):
+            calls.append((source, ref, path))
+            stage.mkdir(parents=True)
+            (stage / "plugin.yaml").write_text("name: sample\nversion: 1.0.0\n")
+            (stage / "__init__.py").write_text("def register(ctx):\n    pass\n")
+            return sha
+
+        with patch.object(extension_engine, "clone_plugin", clone_fixture):
+            await self._complete_operation("install", source="owner/repo/plugins/sample", ref=sha)
+            await self._complete_operation("update")
+        self.assertEqual(
+            calls,
+            [("https://github.com/owner/repo.git", sha, "plugins/sample")] * 2,
+        )
+        listed = await self.client.get(
+            f"{API_PREFIX}/agents-plugins/research", headers=self.headers()
+        )
+        plugin = next(item for item in listed.json()["data"]["plugins"] if item["id"] == "sample")
+        self.assertEqual(
+            (plugin["commit"], plugin["pinned"], plugin["path"]), (sha, True, "plugins/sample")
+        )
+        bad = await self.client.post(
+            f"{API_PREFIX}/agents-extension-operations/research",
+            headers=self.headers(),
+            json={
+                "kind": "install",
+                "plugin_id": "other",
+                "source": "owner/repo",
+                "path": "../escape",
+                "idempotency_key": "bad-path",
+            },
+        )
+        self.assertEqual(bad.status_code, 422, bad.text)
+
     async def test_http_native_plugin_toolset_and_hook_lifecycle(self):
         """Only the remote Git transport is replaced; native scan/config run."""
         from hermes_cli.plugins import get_plugin_manager
@@ -403,6 +526,118 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(extension_engine.hook_list(self.profile), [])
         await self._complete_operation("remove")
         self.assertFalse((self.profile / "plugins" / "sample").exists())
+
+    async def test_upload_route_limits_sources_and_approval_lifecycle(self):
+        upload_url = f"{API_PREFIX}/agents-plugins/research/upload"
+        valid = await self.client.post(
+            upload_url,
+            headers=self.headers(),
+            data={"plugin_id": "sample", "idempotency_key": "uploaded-1"},
+            files={"file": ("plugin.zip", b"zip bytes", "application/zip")},
+        )
+        self.assertEqual(valid.status_code, 202, valid.text)
+        operation = valid.json()["data"]
+        repeated = await self.client.post(
+            upload_url,
+            headers=self.headers(),
+            data={"plugin_id": "sample", "idempotency_key": "uploaded-1"},
+            files={"file": ("plugin.zip", b"zip bytes", "application/zip")},
+        )
+        self.assertEqual(repeated.status_code, 202, repeated.text)
+        self.assertEqual(repeated.json()["data"]["operation_id"], operation["operation_id"])
+
+        def extractor(_archive, stage, cancelled=lambda: False):
+            stage.mkdir(parents=True)
+            (stage / "plugin.yaml").write_text("name: sample\nversion: 1.0.0\n")
+            (stage / "__init__.py").write_text("def register(ctx): pass\n")
+            return "c" * 64
+
+        with patch.object(extension_engine, "extract_plugin_archive", extractor):
+            pending = self.extensions.store.claim_next()
+            await asyncio.to_thread(self.extensions.worker._process, pending)
+        detail = await self.client.get(
+            f"{API_PREFIX}/agents-extension-operations/research/{operation['operation_id']}",
+            headers=self.headers(),
+        )
+        self.assertEqual(detail.json()["data"]["status"], "COMPLETED", detail.text)
+        self.assertEqual(list((self.data_dir / "extension-staging" / "uploads").glob("*.zip")), [])
+        plugin = (
+            await self.client.get(f"{API_PREFIX}/agents-plugins/research", headers=self.headers())
+        ).json()["data"]["plugins"][0]
+        self.assertEqual(plugin["commit"], "upload:" + "c" * 64)
+        self.assertFalse(plugin["pinned"])
+        approved = await self.client.post(
+            f"{API_PREFIX}/agents-plugins/research/sample/approval",
+            headers=self.headers(),
+            json={
+                "artifact_digest": plugin["artifact_digest"],
+                "expected_revision": plugin["revision"],
+                "approved": True,
+            },
+        )
+        self.assertEqual(approved.status_code, 200, approved.text)
+        enabled = await self.client.post(
+            f"{API_PREFIX}/agents-plugins/research/sample/enable", headers=self.headers()
+        )
+        self.assertEqual(enabled.status_code, 200, enabled.text)
+        update = await self.client.post(
+            f"{API_PREFIX}/agents-extension-operations/research",
+            headers=self.headers(),
+            json={"kind": "update", "plugin_id": "sample", "idempotency_key": "upload-update"},
+        )
+        self.assertEqual(update.status_code, 422)
+        self.assertEqual(update.json()["error"]["code"], "upload_update_requires_reupload")
+
+    async def test_upload_archive_size_suffix_and_json_source_rejections(self):
+        url = f"{API_PREFIX}/agents-plugins/research/upload"
+        too_large = await self.client.post(
+            url,
+            headers=self.headers(),
+            data={"plugin_id": "large"},
+            files={"file": ("large.zip", b"x" * (3 * 1024 * 1024 + 1), "application/zip")},
+        )
+        self.assertEqual(too_large.status_code, 413, too_large.text)
+        self.assertEqual(too_large.json()["error"]["code"], "plugin_archive_too_large")
+        suffix = await self.client.post(
+            url,
+            headers=self.headers(),
+            data={"plugin_id": "sample"},
+            files={"file": ("plugin.tar", b"x", "application/octet-stream")},
+        )
+        self.assertEqual(suffix.status_code, 422)
+        forged = await self.client.post(
+            f"{API_PREFIX}/agents-extension-operations/research",
+            headers=self.headers(),
+            json={
+                "kind": "install",
+                "plugin_id": "sample",
+                "source": "upload:00000000-0000-0000-0000-000000000000",
+                "idempotency_key": "forged",
+            },
+        )
+        self.assertEqual(forged.status_code, 422)
+        self.assertEqual(forged.json()["error"]["code"], "invalid_git_source")
+
+    async def test_upload_archive_plugin_id_mismatch_fails_worker(self):
+        await self.client.post(
+            f"{API_PREFIX}/agents-plugins/research/upload",
+            headers=self.headers(),
+            data={"plugin_id": "sample"},
+            files={"file": ("plugin.zip", b"zip", "application/zip")},
+        )
+        operation = self.extensions.store.claim_next()
+
+        def extractor(_archive, stage, cancelled=lambda: False):
+            stage.mkdir(parents=True)
+            (stage / "plugin.yaml").write_text("name: other\n")
+            (stage / "__init__.py").write_text("def register(ctx): pass\n")
+            return "d" * 64
+
+        # _process raises; the worker loop (_run) turns the code into a FAILED status.
+        with patch.object(extension_engine, "extract_plugin_archive", extractor):
+            with self.assertRaises(ServiceError) as raised:
+                await asyncio.to_thread(self.extensions.worker._process, operation)
+        self.assertEqual(raised.exception.code, "plugin_id_mismatch")
 
 
 if __name__ == "__main__":

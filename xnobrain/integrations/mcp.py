@@ -36,7 +36,21 @@ class MCPIntegrationMixin:
         servers = config.get("mcp_servers")
         return {
             "servers": self._safe_mcp_servers(servers) if isinstance(servers, Mapping) else {},
+            "chat_status": self._native_mcp_status(profile_dir, config),
         }
+
+    @staticmethod
+    def _native_mcp_status(profile_dir: Any, config: Mapping[str, Any]) -> dict[str, str]:
+        """Report how each server behaves in native chat turns, never failing reads."""
+        try:
+            from .extension_engine import _custom_mcp_servers
+            from .extension_policy import load_state
+            from .managed_mcp import native_mcp_status
+
+            custom = _custom_mcp_servers(dict(config), load_state(profile_dir))
+            return native_mcp_status(profile_dir, custom)
+        except Exception:
+            return {}
 
     def update_mcp(self, raw_name: Any, servers: Mapping[str, Any]) -> dict[str, Any]:
         from urllib.parse import urlparse

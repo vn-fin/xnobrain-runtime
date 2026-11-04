@@ -58,5 +58,14 @@ Runtime does not wait for that engine change. Catalog servers bypass native
 discovery and use `xnobrain/integrations/managed_mcp.py`, which subclasses
 `MCPServerTask`, passes an explicit registry `scope` on every registration,
 keys sessions by `(profile scope, generation, logical name)`, and restores only
-its own entries on refresh or unload. Native `mcp_servers` keep the global
-behavior described above. Conformance lives in `xnobrain/tests/test_managed_mcp.py`.
+its own entries on refresh or unload.
+
+Native conversation runs never call `discover_mcp_tools()`. A profile's own
+`mcp_servers` go through the same adapter under `custom:<name>`, and fail
+open per server with a retry cooldown. The global behavior described above
+now applies only to the separate `hermes` CLI processes. Each of those
+serves a single profile, so it cannot mix profiles.
+
+Conformance lives in `xnobrain/tests/test_managed_mcp.py`. It includes two
+profiles that each define a server named `fake` and each receive their own
+result.

@@ -1,9 +1,11 @@
-"""Profile-scoped MCP sessions for managed catalog integrations.
+"""Profile-scoped MCP sessions for native (in-process) agent turns.
 
-Legacy MCP configuration continues through Hermes native discovery. Managed
-catalog servers use an owned ``MCPServerTask`` subclass so native transport
-lifecycle and tool handlers are reused while registrations remain profile
-scoped.
+Hermes native discovery registers MCP servers process-globally by name, which
+is unsafe when one Runtime process serves many profiles. Both managed catalog
+servers and a profile's own ``mcp_servers`` therefore run here as an owned
+``MCPServerTask`` subclass, so native transport lifecycle and tool handlers are
+reused while registrations remain profile scoped. Separate ``hermes`` CLI
+processes still use native discovery for their single profile.
 """
 
 from __future__ import annotations
@@ -12,8 +14,11 @@ import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import re
 import threading
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -21,12 +26,36 @@ from urllib.parse import urlsplit
 from tools.mcp_tool import MCPServerTask
 
 from .extension_engine import profile_context, public_https
-from .extension_policy import load_state
+from .extension_policy import load_state, save_state
 
+_LOGGER = logging.getLogger(__name__)
 _GENERATION = re.compile(r"^[a-f0-9]{32}$")
 _MANAGED_TASKS: dict[tuple[str, str, str], "ManagedMCPServerTask"] = {}
 _PROFILE_LOCKS: dict[str, threading.RLock] = {}
 _MANAGER_LOCK = threading.RLock()
+# Profile-defined servers use a separate logical namespace from catalog
+# servers, so the same name in both sources never shares a task or identity.
+CUSTOM_PREFIX = "custom:"
+# MCP servers declared by enabled portable plugins, keyed by the engine name.
+PLUGIN_PREFIX = "plugin:"
+_CUSTOM_STATUS: dict[tuple[str, str, str], dict[str, Any]] = {}
+_RETRY_BASE_SECONDS = 30.0
+_RETRY_MAX_SECONDS = 600.0
+_MAX_CONNECT_SECONDS = 20.0
+
+
+def ensure_profile_generation(profile: Path) -> str:
+    """Return this profile's generation, creating one on first MCP use."""
+    profile = Path(profile)
+    with _MANAGER_LOCK:
+        state = load_state(profile)
+        generation = state.get("profile_generation")
+        if isinstance(generation, str) and _GENERATION.fullmatch(generation):
+            return generation
+        generation = uuid.uuid4().hex
+        state["profile_generation"] = generation
+        save_state(profile, state)
+        return generation
 
 
 def _require_generation(profile: Path, generation: str) -> str:
@@ -57,7 +86,9 @@ def _profile_lock(scope: str) -> threading.RLock:
         return _PROFILE_LOCKS.setdefault(scope, threading.RLock())
 
 
-def _resolved_config(profile: Path, config: dict[str, Any]) -> dict[str, Any]:
+def _resolved_config(
+    profile: Path, config: dict[str, Any], *, interpolate: bool = True
+) -> dict[str, Any]:
     from tools import mcp_tool
 
     from .extension_engine import _profile_secret_context
@@ -71,13 +102,27 @@ def _resolved_config(profile: Path, config: dict[str, Any]) -> dict[str, Any]:
     if parsed.query:
         raise ValueError("Managed MCP endpoint query strings are unsupported")
 
-    # Resolve placeholders only from this profile's native secret scope. Never
-    # fall back to the Runtime process environment, which may belong to another
-    # routed workspace.
-    with profile_context(profile), _profile_secret_context(profile):
-        resolved = mcp_tool._interpolate_env_vars(config)
+    if not interpolate:
+        # Third-party plugin servers never receive profile secrets: a header
+        # such as "${OPENAI_API_KEY}" would send the key to the plugin's host.
+        if "${" in json.dumps(config, default=str):
+            raise ValueError("Plugin MCP servers may not reference secrets")
+        resolved = json.loads(json.dumps(config, default=str))
+    else:
+        # Resolve placeholders only from this profile's native secret scope.
+        # Never fall back to the Runtime process environment, which may belong
+        # to another routed workspace.
+        with profile_context(profile), _profile_secret_context(profile):
+            resolved = mcp_tool._interpolate_env_vars(config)
     if not isinstance(resolved, dict):
         raise ValueError("Managed MCP configuration is invalid")
+    # Connecting holds the process-wide manager lock, so a server's own timeout
+    # must never stall other agents' turns for long.
+    try:
+        timeout = float(resolved.get("connect_timeout", _MAX_CONNECT_SECONDS))
+    except (TypeError, ValueError):
+        timeout = _MAX_CONNECT_SECONDS
+    resolved["connect_timeout"] = min(max(timeout, 1.0), _MAX_CONNECT_SECONDS)
     resolved["skip_preflight"] = True
     resolved.pop("transport", None)
     return resolved
@@ -95,9 +140,9 @@ class _PinnedHTTPSMCPServerTask:
 
         url = config["url"]
         public_https(url)
-        headers = dict(config.get("headers") or {})
-        headers.setdefault("mcp-protocol-version", mcp_tool.LATEST_PROTOCOL_VERSION)
-        timeout = float(config.get("connect_timeout", mcp_tool._DEFAULT_CONNECT_TIMEOUT))
+        default_headers = dict(config.get("headers") or {})
+        default_headers.setdefault("mcp-protocol-version", mcp_tool.LATEST_PROTOCOL_VERSION)
+        connect_timeout = float(config.get("connect_timeout", mcp_tool._DEFAULT_CONNECT_TIMEOUT))
 
         class PinnedPublicTransport(httpx.AsyncBaseTransport):
             def __init__(self):
@@ -129,14 +174,16 @@ class _PinnedHTTPSMCPServerTask:
         if mcp_tool._MCP_LOGGING_CALLBACK_SUPPORTED:
             sampling_kwargs["logging_callback"] = self._make_logging_callback()
 
-        def factory(client_headers=None, client_timeout=None, auth=None):
+        # Matches mcp.shared._httpx_utils.McpHttpClientFactory, which the SDK
+        # calls with keyword arguments.
+        def factory(headers=None, timeout=None, auth=None):
             if auth is not None:
                 raise ValueError("Managed MCP OAuth is unsupported")
-            timeout_value = client_timeout
+            timeout_value = timeout
             if timeout_value is None:
-                timeout_value = httpx.Timeout(timeout, read=300.0)
+                timeout_value = httpx.Timeout(connect_timeout, read=300.0)
             return httpx.AsyncClient(
-                headers=client_headers or headers,
+                headers=headers or default_headers,
                 timeout=timeout_value,
                 follow_redirects=False,
                 transport=PinnedPublicTransport(),
@@ -145,8 +192,8 @@ class _PinnedHTTPSMCPServerTask:
         try:
             async with streamablehttp_client(
                 url,
-                headers=headers or None,
-                timeout=timeout,
+                headers=default_headers or None,
+                timeout=connect_timeout,
                 sse_read_timeout=300.0,
                 httpx_client_factory=factory,
             ) as (read_stream, write_stream, _session_id):
@@ -156,7 +203,7 @@ class _PinnedHTTPSMCPServerTask:
                     **sampling_kwargs,
                 ) as session:
                     self.initialize_result = await asyncio.wait_for(
-                        session.initialize(), timeout=timeout
+                        session.initialize(), timeout=connect_timeout
                     )
                     self.session = session
                     self._mark_lifecycle_started()
@@ -359,13 +406,28 @@ def sync_profile_mcp(
     profile: Path,
     generation: str,
     managed_servers: dict[str, dict[str, Any]],
+    custom_servers: dict[str, Any] | None = None,
+    plugin_servers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Connect/update only managed catalog servers for this profile generation."""
+    """Connect/update this profile generation's MCP servers.
+
+    Catalog servers in ``managed_servers`` fail closed: an invalid or
+    unreachable one raises. Profile-defined ``custom_servers`` and the
+    ``plugin_servers`` of enabled portable plugins are optional: each invalid
+    one is skipped as ``rejected`` and each unreachable one as ``unavailable``
+    with a retry cooldown, so one bad server never blocks a turn. Plugin
+    servers never get secret placeholders resolved. All sources share one
+    desired set because stale tasks in the profile scope are stopped.
+    """
     profile = Path(profile)
     profile_identity = _require_generation(profile, generation)
     scope = _profile_scope(profile)
     lock = _profile_lock(scope)
-    if not isinstance(managed_servers, dict):
+    custom_servers = {} if custom_servers is None else custom_servers
+    plugin_servers = {} if plugin_servers is None else plugin_servers
+    if not all(
+        isinstance(item, dict) for item in (managed_servers, custom_servers, plugin_servers)
+    ):
         raise ValueError("Managed MCP server configuration is invalid")
 
     from tools import mcp_tool
@@ -380,17 +442,41 @@ def sync_profile_mcp(
         for logical_name, raw_config in managed_servers.items():
             if not isinstance(logical_name, str) or not logical_name:
                 continue
-            server_id = _server_id(profile, generation, logical_name)
-            resolved = _resolved_config(profile, raw_config)
-            filtered = mcp_tool._filter_suspicious_mcp_servers({server_id: resolved})
-            if server_id not in filtered:
-                raise ValueError("Managed MCP server configuration was rejected")
-            resolved = filtered[server_id]
-            material = json.dumps(resolved, sort_keys=True, separators=(",", ":"))
+            resolved = _accepted_config(profile, generation, logical_name, raw_config)
             desired[_task_key(scope, generation, logical_name)] = (
-                hashlib.sha256(material.encode()).hexdigest(),
+                _config_digest(resolved),
                 resolved,
             )
+
+        optional: set[tuple[str, str, str]] = set()
+        rejected: set[tuple[str, str, str]] = set()
+        sources: dict[tuple[str, str, str], str] = {}
+        optional_sources = (
+            (CUSTOM_PREFIX, custom_servers, True),
+            (PLUGIN_PREFIX, plugin_servers, False),
+        )
+        for prefix, servers, interpolate in optional_sources:
+            for name, raw_config in servers.items():
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                if isinstance(raw_config, dict) and not mcp_tool._parse_boolish(
+                    raw_config.get("enabled", True), default=True
+                ):
+                    continue
+                logical_name = prefix + name
+                key = _task_key(scope, generation, logical_name)
+                sources[key] = _source_digest(raw_config)
+                try:
+                    resolved = _accepted_config(
+                        profile, generation, logical_name, raw_config, interpolate=interpolate
+                    )
+                except Exception:
+                    _CUSTOM_STATUS[key] = {"status": "rejected"}
+                    rejected.add(key)
+                    _LOGGER.warning("MCP server %r was rejected for native turns", logical_name)
+                    continue
+                desired[key] = (_config_digest(resolved), resolved)
+                optional.add(key)
 
         with _MANAGER_LOCK:
             existing_items = [
@@ -401,18 +487,51 @@ def sync_profile_mcp(
                 if target is None or task._config_digest != target[0]:
                     _MANAGED_TASKS.pop(key, None)
                     _stop_task(task)
+            for key in [key for key in _CUSTOM_STATUS if key[0] == scope]:
+                if key not in optional and key not in rejected:
+                    _CUSTOM_STATUS.pop(key, None)
 
             connected = []
             for key, (config_digest, config) in desired.items():
                 task = _MANAGED_TASKS.get(key)
                 if task is None:
+                    previous = _CUSTOM_STATUS.get(key) or {}
+                    if (
+                        key in optional
+                        and previous.get("digest") == config_digest
+                        and previous.get("retry_after", 0.0) > time.monotonic()
+                    ):
+                        continue
                     server_id = _server_id(profile, generation, key[2])
                     task = ManagedMCPServerTask(server_id, scope, generation, key[2])
                     task._config_digest = config_digest
-                    _register_task(task)
-                    _MANAGED_TASKS[key] = task
-                    with profile_context(profile):
-                        _start_task(task, config)
+                    try:
+                        _register_task(task)
+                        _MANAGED_TASKS[key] = task
+                        with profile_context(profile):
+                            _start_task(task, config)
+                    except Exception:
+                        _MANAGED_TASKS.pop(key, None)
+                        if key not in optional:
+                            raise
+                        failures = (
+                            int(previous.get("failures", 0))
+                            if previous.get("digest") == config_digest
+                            else 0
+                        ) + 1
+                        delay = min(_RETRY_BASE_SECONDS * 2 ** (failures - 1), _RETRY_MAX_SECONDS)
+                        _CUSTOM_STATUS[key] = {
+                            "status": "unavailable",
+                            "digest": config_digest,
+                            "failures": failures,
+                            "retry_after": time.monotonic() + delay,
+                        }
+                        _LOGGER.warning(
+                            "MCP server %r is unavailable; retrying in %ds",
+                            key[2],
+                            int(delay),
+                        )
+                        continue
                     try:
                         _require_generation(profile, generation)
                     except ValueError:
@@ -421,7 +540,126 @@ def sync_profile_mcp(
                         raise
                 if task.session is not None:
                     connected.append(key[2])
+                    if key in optional:
+                        _CUSTOM_STATUS[key] = {"status": "connected", "digest": config_digest}
+            # Remember which saved config each status describes, so a status
+            # is never shown for a config that changed after this turn.
+            for key, source in sources.items():
+                entry = _CUSTOM_STATUS.get(key)
+                if entry is not None:
+                    entry["source"] = source
         return {"connected": connected}
+
+
+def _accepted_config(
+    profile: Path,
+    generation: str,
+    logical_name: str,
+    raw_config: Any,
+    *,
+    interpolate: bool = True,
+) -> dict[str, Any]:
+    from tools import mcp_tool
+
+    server_id = _server_id(profile, generation, logical_name)
+    resolved = _resolved_config(profile, raw_config, interpolate=interpolate)
+    filtered = mcp_tool._filter_suspicious_mcp_servers({server_id: resolved})
+    if server_id not in filtered:
+        raise ValueError("Managed MCP server configuration was rejected")
+    return filtered[server_id]
+
+
+def _config_digest(config: dict[str, Any]) -> str:
+    material = json.dumps(config, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(material.encode()).hexdigest()
+
+
+def _source_digest(raw_config: Any) -> str:
+    material = json.dumps(raw_config, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(material.encode()).hexdigest()
+
+
+def _unsupported_in_chat(config: dict[str, Any]) -> bool:
+    """Return whether a server can never pass the native transport rules.
+
+    Mirrors the network-free checks of ``_resolved_config``; private-address
+    rejection needs DNS and is reported after a native turn instead.
+    """
+    if "command" in config or str(config.get("auth") or "").lower() == "oauth":
+        return True
+    url = config.get("url")
+    if not isinstance(url, str):
+        return True
+    parsed = urlsplit(url)
+    return parsed.scheme != "https" or not parsed.hostname or bool(parsed.query)
+
+
+def native_mcp_status(profile: Path, servers: dict[str, Any]) -> dict[str, str]:
+    """Return how each profile-defined server behaves in native chat turns.
+
+    ``connected``, ``unavailable`` and ``rejected`` come from the last native
+    turn for the same saved config. ``pending`` means no native turn has
+    loaded this config yet, and ``disabled`` that it is switched off.
+    """
+    from tools import mcp_tool
+
+    profile = Path(profile)
+    generation = str(load_state(profile).get("profile_generation") or "")
+    live: dict[str, dict[str, Any]] = {}
+    if _GENERATION.fullmatch(generation):
+        scope = _profile_scope(profile)
+        with _MANAGER_LOCK:
+            live = {
+                key[2][len(CUSTOM_PREFIX) :]: dict(entry)
+                for key, entry in _CUSTOM_STATUS.items()
+                if key[0] == scope and key[1] == generation and key[2].startswith(CUSTOM_PREFIX)
+            }
+    result = {}
+    for name, config in servers.items():
+        if not isinstance(config, dict):
+            continue
+        if not mcp_tool._parse_boolish(config.get("enabled", True), default=True):
+            result[name] = "disabled"
+        elif _unsupported_in_chat(config):
+            result[name] = "rejected"
+        elif (entry := live.get(name)) and entry.get("source") == _source_digest(config):
+            result[name] = str(entry.get("status") or "pending")
+        else:
+            result[name] = "pending"
+    return result
+
+
+def profile_custom_mcp_status(profile: Path, generation: str) -> dict[str, str]:
+    """Return native-turn status for this profile's own ``mcp_servers``."""
+    profile = Path(profile)
+    _require_generation(profile, generation)
+    scope = _profile_scope(profile)
+    with _MANAGER_LOCK:
+        return {
+            key[2][len(CUSTOM_PREFIX) :]: str(entry.get("status") or "unavailable")
+            for key, entry in _CUSTOM_STATUS.items()
+            if key[0] == scope and key[1] == generation and key[2].startswith(CUSTOM_PREFIX)
+        }
+
+
+def plugin_mcp_status(profile: Path, engine_names: list[str]) -> dict[str, str]:
+    """Return native-turn status for portable plugin MCP servers.
+
+    ``engine_names`` are the engine's ``<namespace>__<server>`` names. A
+    server no native turn has loaded yet is ``pending``.
+    """
+    profile = Path(profile)
+    generation = str(load_state(profile).get("profile_generation") or "")
+    live: dict[str, str] = {}
+    if _GENERATION.fullmatch(generation):
+        scope = _profile_scope(profile)
+        with _MANAGER_LOCK:
+            live = {
+                key[2][len(PLUGIN_PREFIX) :]: str(entry.get("status") or "pending")
+                for key, entry in _CUSTOM_STATUS.items()
+                if key[0] == scope and key[1] == generation and key[2].startswith(PLUGIN_PREFIX)
+            }
+    return {name: live.get(name, "pending") for name in engine_names}
 
 
 def disconnect_profile_mcp(
@@ -482,11 +720,11 @@ def profile_mcp_toolsets(profile: Path, generation: str) -> set[str]:
 
 
 def install_tools(agent: Any, profile: Path) -> list[str]:
-    """Expose this profile's connected catalog MCP tools to a native agent.
+    """Expose this profile's connected MCP tools to a native agent.
 
-    Hermes selects MCP toolsets only from native ``mcp_servers``. Managed
-    servers live under a separate key, so their profile-scoped toolsets are
-    added to the agent after construction, like other XNOBrain run tools.
+    Native turns never run Hermes MCP discovery, so the profile-scoped
+    toolsets of catalog and profile-defined servers are added to the agent
+    after construction, like other XNOBrain run tools.
     """
     profile = Path(profile)
     generation = str(load_state(profile).get("profile_generation") or "")

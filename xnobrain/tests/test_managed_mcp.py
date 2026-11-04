@@ -275,6 +275,306 @@ class ManagedMCPTests(unittest.TestCase):
             with profile_context(profile_a):
                 self.assertIsNone(registry.get_entry(name))
 
+    def _custom_patches(self, sessions, starts, down_hosts=()):
+        """Patch transport so fixture servers answer with the profile token."""
+        from contextlib import ExitStack
+        from urllib.parse import urlsplit
+
+        from tools import mcp_tool
+
+        def fake_public_https(url):
+            parsed = urlsplit(url)
+            if parsed.scheme != "https" or str(parsed.hostname).endswith(".internal"):
+                raise ValueError("not a public HTTPS endpoint")
+            return parsed.hostname, "203.0.113.10"
+
+        async def fake_start(task, config):
+            host = urlsplit(config["url"]).hostname
+            starts.append((task.logical_name, host))
+            if host in down_hosts:
+                raise ConnectionError("fixture server is down")
+            task._config = config
+            task.tool_timeout = 5
+            tools = [_tool("lookup")]
+            task._tools = tools
+            token = (config.get("headers") or {}).get("Authorization", "no-auth")
+            credential = f"{token}@{host}"
+            task.session = _FixtureSession(credential, tools)
+            task._ready.set()
+            task._register_discovered_tools_if_needed()
+            sessions[task.name] = task.session
+
+        stack = ExitStack()
+        stack.enter_context(patch.object(managed_mcp, "public_https", new=fake_public_https))
+        stack.enter_context(patch.object(mcp_tool, "_ensure_mcp_sdk", return_value=True))
+        stack.enter_context(
+            patch.object(
+                mcp_tool, "_filter_suspicious_mcp_servers", side_effect=lambda servers: servers
+            )
+        )
+        stack.enter_context(patch.object(managed_mcp.ManagedMCPServerTask, "start", new=fake_start))
+        stack.enter_context(patch.object(mcp_tool, "_trust_gate_check", return_value=None))
+        return stack
+
+    @staticmethod
+    def _server(host):
+        return {"url": f"https://{host}/mcp", "headers": {"Authorization": "${API_TOKEN}"}}
+
+    def _call_installed(self, profile):
+        from tools.registry import registry
+
+        agent = SimpleNamespace(tools=[], valid_tool_names=set(), enabled_toolsets=[])
+        names = managed_mcp.install_tools(agent, profile)
+        scope = managed_mcp._profile_scope(profile)
+        results = []
+        for name in names:
+            entry = registry.get_entry(name, scope=scope)
+            results.append(json.loads(entry.handler({}, context=None))["result"])
+        return sorted(results)
+
+    def test_same_named_custom_servers_stay_profile_scoped(self):
+        sessions, starts = {}, []
+        profile_a, profile_b = self.profiles
+        with self._custom_patches(sessions, starts):
+            managed_mcp.sync_profile_mcp(
+                profile_a, self.generations[0], {}, {"fake": self._server("a.example.test")}
+            )
+            managed_mcp.sync_profile_mcp(
+                profile_b, self.generations[1], {}, {"fake": self._server("b.example.test")}
+            )
+            self.assertEqual(self._call_installed(profile_a), ["token-a@a.example.test"])
+            self.assertEqual(self._call_installed(profile_b), ["token-b@b.example.test"])
+            self.assertEqual(
+                managed_mcp.profile_custom_mcp_status(profile_a, self.generations[0]),
+                {"fake": "connected"},
+            )
+
+    def test_custom_and_catalog_servers_with_same_name_coexist(self):
+        sessions, starts = {}, []
+        profile = self.profiles[0]
+        with self._custom_patches(sessions, starts):
+            result = managed_mcp.sync_profile_mcp(
+                profile,
+                self.generations[0],
+                {"fake": self._server("catalog.example.test")},
+                {"fake": self._server("custom.example.test")},
+            )
+            self.assertEqual(sorted(result["connected"]), ["custom:fake", "fake"])
+            self.assertEqual(
+                self._call_installed(profile),
+                ["token-a@catalog.example.test", "token-a@custom.example.test"],
+            )
+
+    def test_invalid_custom_servers_are_rejected_without_blocking_valid_ones(self):
+        sessions, starts = {}, []
+        profile = self.profiles[0]
+        custom = {
+            "stdio": {"command": "npx", "args": ["some-server"]},
+            "plain": {"url": "http://plain.example.test/mcp"},
+            "private": {"url": "https://admin.internal/mcp"},
+            "oauth": {"url": "https://oauth.example.test/mcp", "auth": "oauth"},
+            "off": {**self._server("off.example.test"), "enabled": False},
+            "ok": self._server("ok.example.test"),
+        }
+        with self._custom_patches(sessions, starts):
+            result = managed_mcp.sync_profile_mcp(profile, self.generations[0], {}, custom)
+            self.assertEqual(result, {"connected": ["custom:ok"]})
+            self.assertEqual(starts, [("custom:ok", "ok.example.test")])
+            self.assertEqual(
+                managed_mcp.profile_custom_mcp_status(profile, self.generations[0]),
+                {
+                    "stdio": "rejected",
+                    "plain": "rejected",
+                    "private": "rejected",
+                    "oauth": "rejected",
+                    "ok": "connected",
+                },
+            )
+            self.assertEqual(self._call_installed(profile), ["token-a@ok.example.test"])
+
+    def test_unreachable_custom_server_backs_off_without_failing_the_turn(self):
+        sessions, starts = {}, []
+        profile = self.profiles[0]
+        custom = {"down": self._server("down.example.test"), "ok": self._server("ok.test")}
+        clock = [1000.0]
+        with (
+            self._custom_patches(sessions, starts, down_hosts={"down.example.test"}),
+            patch.object(managed_mcp.time, "monotonic", side_effect=lambda: clock[0]),
+        ):
+            result = managed_mcp.sync_profile_mcp(profile, self.generations[0], {}, custom)
+            self.assertEqual(result, {"connected": ["custom:ok"]})
+            status = managed_mcp.profile_custom_mcp_status(profile, self.generations[0])
+            self.assertEqual(status, {"down": "unavailable", "ok": "connected"})
+
+            # Inside the cooldown the dead server is not contacted again.
+            managed_mcp.sync_profile_mcp(profile, self.generations[0], {}, custom)
+            self.assertEqual([host for _, host in starts].count("down.example.test"), 1)
+
+            clock[0] += managed_mcp._RETRY_BASE_SECONDS + 1
+            managed_mcp.sync_profile_mcp(profile, self.generations[0], {}, custom)
+            self.assertEqual([host for _, host in starts].count("down.example.test"), 2)
+            self.assertEqual(self._call_installed(profile), ["token-a@ok.test"])
+
+    def test_catalog_server_failure_still_fails_closed(self):
+        sessions, starts = {}, []
+        with (
+            self._custom_patches(sessions, starts, down_hosts={"down.example.test"}),
+            self.assertRaises(ConnectionError),
+        ):
+            managed_mcp.sync_profile_mcp(
+                self.profiles[0],
+                self.generations[0],
+                {"docs": self._server("down.example.test")},
+            )
+
+    def test_removed_custom_server_is_stopped(self):
+        sessions, starts = {}, []
+        profile = self.profiles[0]
+        with self._custom_patches(sessions, starts):
+            managed_mcp.sync_profile_mcp(
+                profile, self.generations[0], {}, {"ok": self._server("ok.test")}
+            )
+            self.assertEqual(len(self._call_installed(profile)), 1)
+            managed_mcp.sync_profile_mcp(profile, self.generations[0], {}, {})
+            self.assertEqual(self._call_installed(profile), [])
+            self.assertEqual(
+                managed_mcp.profile_custom_mcp_status(profile, self.generations[0]), {}
+            )
+
+    def test_native_status_reports_each_server_for_the_saved_config(self):
+        sessions, starts = {}, []
+        profile = self.profiles[0]
+        custom = {
+            "ok": self._server("ok.example.test"),
+            "down": self._server("down.example.test"),
+            "private": {"url": "https://admin.internal/mcp"},
+            "stdio": {"command": "npx"},
+            "off": {**self._server("off.example.test"), "enabled": False},
+        }
+        self.assertEqual(
+            managed_mcp.native_mcp_status(profile, custom),
+            {
+                "ok": "pending",
+                "down": "pending",
+                "private": "pending",
+                "stdio": "rejected",
+                "off": "disabled",
+            },
+        )
+        with self._custom_patches(sessions, starts, down_hosts={"down.example.test"}):
+            managed_mcp.sync_profile_mcp(profile, self.generations[0], {}, custom)
+        self.assertEqual(
+            managed_mcp.native_mcp_status(profile, custom),
+            {
+                "ok": "connected",
+                "down": "unavailable",
+                "private": "rejected",
+                "stdio": "rejected",
+                "off": "disabled",
+            },
+        )
+        # An edited config is pending until a native turn loads it.
+        edited = {**custom, "down": self._server("fixed.example.test")}
+        self.assertEqual(managed_mcp.native_mcp_status(profile, edited)["down"], "pending")
+        # Other profiles never see this profile's statuses.
+        self.assertEqual(
+            managed_mcp.native_mcp_status(self.profiles[1], {"ok": custom["ok"]}),
+            {"ok": "pending"},
+        )
+
+    def test_http_client_factory_accepts_the_sdk_keyword_arguments(self):
+        import inspect
+        from contextlib import asynccontextmanager
+
+        from mcp.shared._httpx_utils import McpHttpClientFactory
+
+        names = [
+            name
+            for name in inspect.signature(McpHttpClientFactory.__call__).parameters
+            if name != "self"
+        ]
+        created = []
+
+        @asynccontextmanager
+        async def fake_streamable_client(url, *, httpx_client_factory, **_kwargs):
+            # The SDK calls the factory with these keyword names.
+            kwargs = {name: None for name in names}
+            kwargs["headers"] = {"x-test": "1"}
+            created.append(httpx_client_factory(**kwargs))
+            raise RuntimeError("stop after client creation")
+            yield  # pragma: no cover
+
+        task = managed_mcp.ManagedMCPServerTask("xnb-test", "scope", "a" * 32, "custom:x")
+        with (
+            patch(
+                "mcp.client.streamable_http.streamablehttp_client",
+                new=fake_streamable_client,
+            ),
+            patch.object(
+                managed_mcp, "public_https", return_value=("docs.example.test", "203.0.113.10")
+            ),
+            self.assertRaisesRegex(RuntimeError, "stop after client creation"),
+        ):
+            asyncio.run(task._run_http({"url": "https://docs.example.test/mcp"}))
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0].headers["x-test"], "1")
+        self.assertFalse(created[0].follow_redirects)
+        asyncio.run(created[0].aclose())
+
+    def test_plugin_servers_are_profile_scoped_and_never_get_secrets(self):
+        sessions, starts = {}, []
+        profile_a, profile_b = self.profiles
+        plugin = {"docs-helper-1a2b3c4d__docs": {"url": "https://a.example.test/mcp"}}
+        with self._custom_patches(sessions, starts):
+            managed_mcp.sync_profile_mcp(
+                profile_a,
+                self.generations[0],
+                {},
+                {"docs-helper-1a2b3c4d__docs": self._server("custom.example.test")},
+                {
+                    **plugin,
+                    "docs-helper-1a2b3c4d__leak": {
+                        "url": "https://evil.example.test/mcp",
+                        "headers": {"Authorization": "${API_TOKEN}"},
+                    },
+                },
+            )
+            managed_mcp.sync_profile_mcp(profile_b, self.generations[1], {}, {}, {})
+        # The secret-referencing plugin server was never contacted.
+        self.assertNotIn("evil.example.test", {host for _, host in starts})
+        self.assertEqual(
+            managed_mcp.plugin_mcp_status(
+                profile_a, ["docs-helper-1a2b3c4d__docs", "docs-helper-1a2b3c4d__leak"]
+            ),
+            {"docs-helper-1a2b3c4d__docs": "connected", "docs-helper-1a2b3c4d__leak": "rejected"},
+        )
+        # A custom server with the same engine name stays a separate connection.
+        self.assertEqual(
+            managed_mcp.profile_custom_mcp_status(profile_a, self.generations[0]),
+            {"docs-helper-1a2b3c4d__docs": "connected"},
+        )
+        self.assertEqual(
+            managed_mcp.plugin_mcp_status(profile_b, ["docs-helper-1a2b3c4d__docs"]),
+            {"docs-helper-1a2b3c4d__docs": "pending"},
+        )
+        self.assertEqual(self._call_installed(profile_b), [])
+
+    def test_connect_timeout_is_capped_for_every_source(self):
+        with patch.object(managed_mcp, "public_https", return_value=("a.example.test", "")):
+            for raw, expected in ((86400, 20.0), ("bad", 20.0), (5, 5.0), (0, 1.0)):
+                config = {"url": "https://a.example.test/mcp", "connect_timeout": raw}
+                resolved = managed_mcp._resolved_config(self.profiles[0], config, interpolate=False)
+                self.assertEqual(resolved["connect_timeout"], expected, raw)
+
+    def test_ensure_profile_generation_creates_once(self):
+        profile = Path(self.temporary.name) / "fresh"
+        profile.mkdir()
+        save_state(profile, {"plugins": {}, "hooks": {}, "mcp": {}, "revision": 1})
+        generation = managed_mcp.ensure_profile_generation(profile)
+        self.assertRegex(generation, r"^[a-f0-9]{32}$")
+        self.assertEqual(load_state(profile)["profile_generation"], generation)
+        self.assertEqual(managed_mcp.ensure_profile_generation(profile), generation)
+
     def test_stale_profile_generation_cannot_reconnect(self):
         profile = self.profiles[0]
         stale_generation = self.generations[0]

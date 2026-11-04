@@ -1,16 +1,20 @@
 """Conformance of extension adapters against the pinned installed engine."""
 
+import json
 import os
 import shutil
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 import yaml
 
 from xnobrain.integrations import extension_engine as engine
+from xnobrain.integrations import plugin_formats
 from xnobrain.integrations.extension_policy import (
     load_state,
     save_state,
@@ -20,7 +24,55 @@ from xnobrain.integrations.extension_policy import (
 from xnobrain.integrations.hermes_support import AgentAPIError
 
 
+def _zip_symlink(name):
+    info = zipfile.ZipInfo(name)
+    info.create_system = 3
+    info.external_attr = 0o120777 << 16
+    return info
+
+
+def _offline_public_https(url, **_kwargs):
+    """Scan-time host check without DNS: ``*.internal`` stands for a private host."""
+    host = urlsplit(url).hostname or ""
+    if host.endswith(".internal"):
+        engine.fail("Endpoint must resolve to public addresses", "invalid_source", 422)
+    return host, "203.0.113.10"
+
+
+offline_dns = patch.object(engine, "public_https", side_effect=_offline_public_https)
+
+
 class ExtensionEngineTests(unittest.TestCase):
+    def test_extract_plugin_archive_strips_single_root_folder(self):
+        with tempfile.TemporaryDirectory() as root:
+            archive = Path(root) / "plugin.zip"
+            with zipfile.ZipFile(archive, "w") as output:
+                output.writestr("package/", "")
+                output.writestr("package/plugin.yaml", "name: sample\n")
+                output.writestr("package/__init__.py", "def register(ctx): pass\n")
+            stage = Path(root) / "stage"
+            digest = engine.extract_plugin_archive(archive, stage)
+            self.assertEqual((stage / "plugin.yaml").read_text(), "name: sample\n")
+            self.assertEqual(len(digest), 64)
+
+    def test_extract_plugin_archive_rejects_unsafe_and_bomb_archives(self):
+        cases = {
+            "symlink": lambda z: z.writestr(_zip_symlink("link"), "target"),
+            "traversal": lambda z: z.writestr("../evil", "x"),
+            "absolute": lambda z: z.writestr("/evil", "x"),
+            "too_many": lambda z: [z.writestr(f"{i}.txt", "x") for i in range(2001)],
+            "too_large": lambda z: z.writestr("large.bin", b"x" * (32 * 1024 * 1024 + 1)),
+            "zip_bomb": lambda z: z.writestr("bomb.bin", b"x" * (1024 * 1024 + 1)),
+        }
+        for name, write in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as root:
+                archive = Path(root) / "bad.zip"
+                with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
+                    write(output)
+                with self.assertRaises(Exception) as caught:
+                    engine.extract_plugin_archive(archive, Path(root) / "stage")
+                self.assertEqual(getattr(caught.exception, "code", None), "invalid_plugin_archive")
+
     def profile(self, root, name="a"):
         profile = Path(root) / name
         profile.mkdir()
@@ -51,6 +103,289 @@ class ExtensionEngineTests(unittest.TestCase):
             profile = self.profile(root)
             self.assertEqual(engine.mcp_status(profile), [])
             engine.mcp_disconnect(profile, "xnobrain-context7")
+
+    def test_refresh_routes_profile_mcp_servers_through_scoped_adapter(self):
+        from xnobrain.integrations import managed_mcp
+
+        with tempfile.TemporaryDirectory() as root:
+            profile = self.profile(root)
+            (profile / "config.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "mcp_servers": {
+                            "mine": {"url": "https://mine.example.test/mcp"},
+                            "legacy-catalog": {"url": "https://old.example.test/mcp"},
+                        }
+                    }
+                )
+            )
+            save_state(
+                profile,
+                {
+                    "plugins": {},
+                    "hooks": {},
+                    "mcp": {"context7": {"server_name": "legacy-catalog"}},
+                    "revision": 1,
+                },
+            )
+            with patch.object(managed_mcp, "sync_profile_mcp") as sync:
+                engine.refresh_profile_mcp(profile)
+            generation = load_state(profile)["profile_generation"]
+            self.assertRegex(generation, r"^[a-f0-9]{32}$")
+            sync.assert_called_once_with(
+                profile,
+                generation,
+                {},
+                {"mine": {"url": "https://mine.example.test/mcp"}},
+                {},
+            )
+
+    def test_public_https_pins_ipv4_before_ipv6(self):
+        def rows(*ips):
+            return [(None, None, None, "", (ip, 443)) for ip in ips]
+
+        mixed = rows("2600:1f14:36ec:d00::18e0", "35.80.103.206", "32.186.91.142")
+        with patch.object(engine.socket, "getaddrinfo", return_value=mixed):
+            self.assertEqual(
+                engine.public_https("https://mcp.example.com/mcp"),
+                ("mcp.example.com", "32.186.91.142"),
+            )
+        only_v6 = rows("2600:1f14:36ec:d01::eab7", "2600:1f14:36ec:d00::18e0")
+        with patch.object(engine.socket, "getaddrinfo", return_value=only_v6):
+            self.assertEqual(
+                engine.public_https("https://mcp.example.com/mcp")[1],
+                "2600:1f14:36ec:d00::18e0",
+            )
+
+    def test_refresh_without_any_mcp_does_nothing(self):
+        from xnobrain.integrations import managed_mcp
+
+        with tempfile.TemporaryDirectory() as root:
+            profile = self.profile(root)
+            with patch.object(managed_mcp, "sync_profile_mcp") as sync:
+                engine.refresh_profile_mcp(profile)
+            sync.assert_not_called()
+            self.assertNotIn("profile_generation", load_state(profile))
+
+    def portable(self, root, name="docs-helper", servers=None):
+        path = Path(root) / name
+        (path / "skills" / "summarize").mkdir(parents=True)
+        (path / "plugin.json").write_text(
+            json.dumps(
+                {
+                    "$schema": plugin_formats.PLUGIN_SCHEMA_V1,
+                    "name": name,
+                    "version": "1.0.0",
+                    "description": "Summarize documents",
+                }
+            )
+        )
+        (path / "skills" / "summarize" / "SKILL.md").write_text(
+            "---\nname: summarize\ndescription: Summarize a document briefly.\n---\n"
+            "# Summarize\nWrite three bullet points.\n"
+        )
+        if servers is not None:
+            (path / "mcp.json").write_text(
+                json.dumps({"$schema": plugin_formats.MCP_SCHEMA_V1, "mcpServers": servers})
+            )
+        return path
+
+    def test_detects_each_package_format(self):
+        with tempfile.TemporaryDirectory() as root:
+            native = self.plugin(self.profile(root))
+            portable = self.portable(root)
+            claude = Path(root) / "claude-one"
+            (claude / ".claude-plugin").mkdir(parents=True)
+            (claude / ".claude-plugin" / "plugin.json").write_text('{"name": "claude-one"}')
+            empty = Path(root) / "empty"
+            empty.mkdir()
+            self.assertEqual(plugin_formats.plugin_identity(native), ("sample", "native"))
+            self.assertEqual(plugin_formats.plugin_identity(portable), ("docs-helper", "portable"))
+            self.assertEqual(plugin_formats.plugin_identity(claude), ("claude-one", "claude"))
+            with self.assertRaises(AgentAPIError):
+                plugin_formats.detect_plugin_format(empty)
+
+    @offline_dns
+    def test_portable_package_with_https_mcp_passes_scan(self, _dns):
+        with tempfile.TemporaryDirectory() as root:
+            path = self.portable(
+                root,
+                servers={"docs": {"type": "streamable-http", "url": "https://mcp.example.com/mcp"}},
+            )
+            (path / "assets").mkdir()
+            (path / "assets" / "icon.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff")
+            result = engine.scan_plugin(path)
+            self.assertEqual(result["scan"]["status"], "COMPLETED", result["scan"]["findings"])
+            self.assertEqual(
+                plugin_formats.portable_summary(path),
+                {
+                    "skills": ["summarize"],
+                    "mcp_servers": [{"name": "docs", "host": "mcp.example.com"}],
+                },
+            )
+
+    @offline_dns
+    def test_portable_package_blocks_stdio_code_and_secret_headers(self, _dns):
+        cases = {
+            "stdio": (
+                {"run": {"type": "stdio", "command": "npx", "args": ["server"]}},
+                "plugin_stdio_mcp_blocked",
+            ),
+            "plain-http": (
+                {"web": {"type": "streamable-http", "url": "http://mcp.example.com/mcp"}},
+                "plugin_mcp_unsupported",
+            ),
+            "private-host": (
+                {"web": {"type": "streamable-http", "url": "https://mcp.corp.internal/mcp"}},
+                "plugin_mcp_unsupported",
+            ),
+            "secret": (
+                {
+                    "web": {
+                        "type": "streamable-http",
+                        "url": "https://mcp.example.com/mcp",
+                        "headers": {"Authorization": "${OPENAI_API_KEY}"},
+                    }
+                },
+                "plugin_mcp_unsupported",
+            ),
+        }
+        for label, (servers, code) in cases.items():
+            with self.subTest(label), tempfile.TemporaryDirectory() as root:
+                result = engine.scan_plugin(self.portable(root, servers=servers))
+                self.assertEqual(result["scan"]["status"], "BLOCKED")
+                self.assertIn(code, {item["code"] for item in result["scan"]["findings"]})
+        with tempfile.TemporaryDirectory() as root:
+            path = self.portable(root)
+            (path / "helper.py").write_text("print('hi')\n")
+            result = engine.scan_plugin(path)
+            self.assertEqual(result["scan"]["status"], "BLOCKED")
+            self.assertIn(
+                "plugin_code_blocked", {item["code"] for item in result["scan"]["findings"]}
+            )
+
+    @offline_dns
+    def test_claude_plugin_keeps_skills_and_https_mcp_only(self, _dns):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "review-kit"
+            (path / ".claude-plugin").mkdir(parents=True)
+            (path / ".claude-plugin" / "plugin.json").write_text(
+                json.dumps(
+                    {
+                        "name": "review-kit",
+                        "version": "2.0.0",
+                        "description": "Review helpers",
+                        "author": {"name": "Example", "email": "dev@example.com"},
+                    }
+                )
+            )
+            (path / "skills" / "review").mkdir(parents=True)
+            (path / "skills" / "review" / "SKILL.md").write_text(
+                "---\nname: review\ndescription: Review a change.\n---\n# Review\n"
+            )
+            (path / "hooks").mkdir()
+            (path / "hooks" / "hooks.json").write_text("{}")
+            (path / "agents").mkdir()
+            (path / "agents" / "reviewer.md").write_text("# Reviewer\n")
+            (path / ".mcp.json").write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "docs": {"type": "http", "url": "https://mcp.example.com/mcp"},
+                            "local": {"command": "npx", "args": ["server"]},
+                            "github": {
+                                "type": "http",
+                                "url": "https://api.example.com/mcp",
+                                "headers": {"Authorization": "Bearer ${GITHUB_TOKEN}"},
+                            },
+                        }
+                    }
+                )
+            )
+            dropped = plugin_formats.convert_claude_plugin(path)
+            self.assertEqual(
+                dropped, ["mcp:local (stdio)", "mcp:github (secret)", "agents/", "hooks/"]
+            )
+            self.assertEqual(plugin_formats.plugin_identity(path), ("review-kit", "portable"))
+            self.assertFalse((path / "hooks").exists())
+            result = engine.scan_plugin(path)
+            self.assertEqual(result["scan"]["status"], "COMPLETED", result["scan"]["findings"])
+            self.assertEqual(
+                plugin_formats.portable_summary(path)["mcp_servers"],
+                [{"name": "docs", "host": "mcp.example.com"}],
+            )
+
+    def test_inventory_lists_portable_plugin_components(self):
+        with tempfile.TemporaryDirectory() as root:
+            profile = self.profile(root)
+            (profile / "plugins").mkdir()
+            source = self.portable(
+                root,
+                servers={"docs": {"type": "streamable-http", "url": "https://mcp.example.com/mcp"}},
+            )
+            shutil.move(str(source), str(profile / "plugins" / "docs-helper"))
+            (row,) = engine.plugin_inventory(profile)
+            self.assertEqual(row["format"], "portable")
+            self.assertEqual(row["provides_skills"], ["summarize"])
+            self.assertEqual(row["mcp_servers"], [{"name": "docs", "host": "mcp.example.com"}])
+
+    def _fake_git(self, sha, files):
+        """Replace Git transport: record commands and lay out ``files`` on fetch."""
+        commands = []
+
+        def run_git(command, _environment, stage, _cancelled, _started, **_kwargs):
+            commands.append(command)
+            if "init" in command or "clone" in command:
+                (stage / ".git").mkdir(parents=True)
+            if "fetch" in command or "clone" in command:
+                for relative, text in files.items():
+                    target = stage / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(text)
+
+        patches = (
+            patch.object(engine, "_run_git", side_effect=run_git),
+            patch.object(engine, "public_https", return_value=("github.com", "140.82.112.3")),
+            patch.object(engine.subprocess, "run", return_value=SimpleNamespace(stdout=sha + "\n")),
+        )
+        return commands, patches
+
+    def test_clone_pins_an_exact_commit_and_keeps_one_subdirectory(self):
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        files = {
+            "README.md": "# repo\n",
+            "plugins/review/plugin.json": "{}",
+            "plugins/review/skills/review/SKILL.md": "x",
+            "plugins/other/plugin.json": "{}",
+        }
+        commands, patches = self._fake_git(sha, files)
+        with tempfile.TemporaryDirectory() as root, patches[0], patches[1], patches[2]:
+            stage = Path(root) / "stage"
+            commit = engine.clone_plugin("owner/repo", sha, stage, path="plugins/review")
+            self.assertEqual(commit, sha)
+            self.assertEqual(
+                sorted(p.relative_to(stage).as_posix() for p in stage.rglob("*") if p.is_file()),
+                ["plugin.json", "skills/review/SKILL.md"],
+            )
+        flat = [" ".join(command) for command in commands]
+        self.assertTrue(any(" fetch " in line and line.endswith(sha) for line in flat), flat)
+        self.assertFalse(any(" clone " in line for line in flat), flat)
+
+    def test_clone_rejects_a_commit_that_does_not_match_the_pin(self):
+        commands, patches = self._fake_git("f" * 40, {"plugin.json": "{}"})
+        with tempfile.TemporaryDirectory() as root, patches[0], patches[1], patches[2]:
+            with self.assertRaises(AgentAPIError) as raised:
+                engine.clone_plugin("owner/repo", "a" * 40, Path(root) / "stage")
+        self.assertEqual(raised.exception.code, "invalid_git_ref")
+
+    def test_clone_rejects_unsafe_or_missing_subdirectories(self):
+        for path in ("../escape", "/abs", "a/../b", "x" * 600):
+            with self.subTest(path), self.assertRaises(AgentAPIError):
+                engine.plugin_subdirectory(path)
+        commands, patches = self._fake_git("b" * 40, {"plugin.json": "{}"})
+        with tempfile.TemporaryDirectory() as root, patches[0], patches[1], patches[2]:
+            with self.assertRaises(AgentAPIError):
+                engine.clone_plugin("owner/repo", None, Path(root) / "stage", path="missing")
 
     def test_unscannable_file_cannot_pass_scan(self):
         with tempfile.TemporaryDirectory() as root:
