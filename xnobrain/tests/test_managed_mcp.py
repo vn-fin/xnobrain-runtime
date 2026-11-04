@@ -275,6 +275,86 @@ class ManagedMCPTests(unittest.TestCase):
             with profile_context(profile_a):
                 self.assertIsNone(registry.get_entry(name))
 
+    def test_guarded_httpx_factory_uses_ssrf_transport_and_auth(self):
+        import httpx
+
+        transport = httpx.MockTransport(lambda request: httpx.Response(200))
+        oauth = httpx.BasicAuth("user", "password")
+        with patch(
+            "tools.url_safety.ssrf_safe_async_http_transport", return_value=transport
+        ) as safe:
+            client = managed_mcp.guarded_httpx_client_factory({}, 3)(auth=oauth)
+        self.assertIs(client._transport, transport)
+        self.assertIs(client._auth, oauth)
+        safe.assert_called_once_with()
+        asyncio.run(client.aclose())
+
+    def test_oauth_failure_does_not_block_none_auth_catalog_server(self):
+        from tools import mcp_tool
+
+        profile = self.profiles[0]
+        generation = self.generations[0]
+
+        async def fake_start(task, config):
+            if task.logical_name == "xnobrain-linear":
+                raise ConnectionError("OAuth authorization required")
+            task._config = config
+            task.session = _FixtureSession("no-auth", [_tool("lookup")])
+            task._ready.set()
+            task._register_discovered_tools_if_needed()
+
+        catalog = {
+            "xnobrain-linear": {
+                "url": "https://linear.example.test/mcp",
+                "auth": "oauth",
+                "xnobrain_catalog_id": "linear",
+                "xnobrain_oauth_name": "xnobrain-linear",
+            },
+            "no-auth": {"url": "https://none.example.test/mcp"},
+        }
+        with (
+            patch.object(
+                managed_mcp, "public_https", return_value=("example.test", "203.0.113.10")
+            ),
+            patch.dict(
+                "os.environ", {"RUNTIME_MCP_OAUTH_REDIRECT_URI": "https://runtime.example/callback"}
+            ),
+            patch("tools.mcp_oauth_manager.get_manager") as get_manager,
+            patch.object(mcp_tool, "_ensure_mcp_sdk", return_value=True),
+            patch.object(
+                mcp_tool, "_filter_suspicious_mcp_servers", side_effect=lambda value: value
+            ),
+            patch.object(mcp_tool, "_validate_remote_mcp_url", return_value=None),
+            patch.object(managed_mcp.ManagedMCPServerTask, "start", new=fake_start),
+        ):
+            get_manager.return_value.get_or_build_provider.return_value = object()
+            result = managed_mcp.sync_profile_mcp(profile, generation, catalog)
+
+        self.assertEqual(result, {"connected": ["no-auth"]})
+        status = managed_mcp.profile_mcp_status(profile, generation)
+        self.assertEqual(status["xnobrain-linear"]["status"], "needs_sign_in")
+        self.assertTrue(status["no-auth"]["connected"])
+
+    def test_api_key_catalog_failure_still_raises(self):
+        profile = self.profiles[0]
+        generation = self.generations[0]
+        catalog = {
+            "broken": {
+                **self._server("broken.example.test"),
+                "auth": "api_key",
+                "xnobrain_catalog_id": "broken",
+            }
+        }
+        with (
+            patch.object(managed_mcp, "_accepted_config", return_value=catalog["broken"]),
+            patch.object(managed_mcp, "_register_task", side_effect=ConnectionError("down")),
+            patch.object(
+                managed_mcp.ManagedMCPServerTask, "start", side_effect=ConnectionError("down")
+            ),
+        ):
+            with self.assertRaises(ConnectionError):
+                managed_mcp.sync_profile_mcp(profile, generation, catalog)
+
     def _custom_patches(self, sessions, starts, down_hosts=()):
         """Patch transport so fixture servers answer with the profile token."""
         from contextlib import ExitStack

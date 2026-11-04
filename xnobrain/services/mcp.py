@@ -59,6 +59,15 @@ class MCPService:
             if isinstance(current_config, dict):
                 current_servers = current_config.get("mcp_servers") or {}
                 if isinstance(current_servers, dict):
+                    if any(
+                        isinstance(server, dict) and server.get("xnobrain_plugin_shadow")
+                        for server in current_servers.values()
+                    ):
+                        raise ServiceError(
+                            "Plugin managed MCP entries cannot be edited",
+                            status=422,
+                            code="mcp_server_managed",
+                        )
                     from ..integrations.extension_policy import load_state
 
                     profile_state = load_state(profile)

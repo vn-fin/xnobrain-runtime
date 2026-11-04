@@ -175,6 +175,15 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["error"]["code"], "permission_denied")
 
+    async def test_oauth_start_requires_runtime_redirect_uri(self):
+        response = await self.client.post(
+            f"{API_PREFIX}/agents-plugins/research/oauth/start",
+            headers=self.headers(),
+            json={"catalog_id": "linear", "recipe_revision": 2},
+        )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["error"]["code"], "oauth_unavailable")
+
     async def test_request_validation_rejects_missing_and_spoofed_fields(self):
         path = f"{API_PREFIX}/agents-extension-operations/research"
         missing = await self.client.post(

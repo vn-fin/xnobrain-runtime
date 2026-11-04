@@ -4,6 +4,8 @@ from pydantic import BaseModel
 
 from ..models.extensions import (
     CatalogInstall,
+    CatalogOAuthCallback,
+    CatalogOAuthStart,
     ExtensionApproval,
     ExtensionOperationCreate,
     HookApproval,
@@ -52,6 +54,20 @@ ROUTES = (
         "/agents-plugins/{agent_id}/install-catalog",
         "extensions_catalog_install",
         CatalogInstall,
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/oauth/start",
+        "extensions_oauth_start",
+        CatalogOAuthStart,
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/oauth/callback",
+        "extensions_oauth_callback",
+        CatalogOAuthCallback,
         tags=_TAG,
     ),
     route(

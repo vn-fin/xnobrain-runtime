@@ -90,15 +90,17 @@
       "homepage": "https://www.canva.com",
       "documentation": "https://www.canva.dev/docs/connect/",
       "iconUrl": "https://static.canva.com/domain-assets/canva/static/images/apple-touch-180x180-1.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.canva.com/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "linear",
@@ -135,15 +137,17 @@
       "homepage": "https://linear.app",
       "documentation": "https://linear.app/developers/mcp",
       "iconUrl": "https://linear.app/static/apple-touch-icon.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.linear.app/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "notion",
@@ -180,15 +184,17 @@
       "homepage": "https://www.notion.so",
       "documentation": "https://developers.notion.com/docs/mcp",
       "iconUrl": "https://www.notion.com/front-static/logo-ios.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.notion.com/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "obsidian",
@@ -277,15 +283,17 @@
       "homepage": "https://www.atlassian.com",
       "documentation": "https://www.atlassian.com/platform/remote-mcp-server",
       "iconUrl": "https://www.atlassian.com/apple-touch-icon.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.atlassian.com/v1/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "todoist",
@@ -322,15 +330,17 @@
       "homepage": "https://todoist.com",
       "documentation": "https://developer.todoist.com/",
       "iconUrl": "https://todoist.com/apple-touch-icon.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://ai.todoist.net/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "trello",
@@ -595,15 +605,17 @@
       "homepage": "https://sentry.io",
       "documentation": "https://docs.sentry.io/product/sentry-mcp/",
       "iconUrl": "https://sentry.io/favicon.ico",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.sentry.dev/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "vercel",
@@ -640,15 +652,17 @@
       "homepage": "https://vercel.com",
       "documentation": "https://vercel.com/docs/mcp",
       "iconUrl": "https://assets.vercel.com/image/upload/q_auto/front/favicon/vercel/apple-touch-icon-256x256.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.vercel.com",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "cloudflare",
@@ -685,15 +699,17 @@
       "homepage": "https://www.cloudflare.com",
       "documentation": "https://developers.cloudflare.com/agents/guides/remote-mcp-server/",
       "iconUrl": "https://www.cloudflare.com/favicon.ico",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://bindings.mcp.cloudflare.com/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "supabase",
@@ -730,15 +746,17 @@
       "homepage": "https://supabase.com",
       "documentation": "https://supabase.com/docs/guides/getting-started/mcp",
       "iconUrl": "https://supabase.com/favicon/apple-icon-180x180.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.supabase.com/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "neon",
@@ -775,15 +793,17 @@
       "homepage": "https://neon.tech",
       "documentation": "https://neon.tech/docs/ai/neon-mcp-server",
       "iconUrl": "https://neon.com/apple-touch-icon.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.neon.tech/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "prisma",
@@ -820,15 +840,17 @@
       "homepage": "https://www.prisma.io",
       "documentation": "https://www.prisma.io/docs/ai/mcp",
       "iconUrl": "https://www.prisma.io/apple-icon.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.prisma.io/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "netlify",
@@ -865,15 +887,17 @@
       "homepage": "https://www.netlify.com",
       "documentation": "https://docs.netlify.com/build/ai-integration/",
       "iconUrl": "https://www.netlify.com/favicon/apple-touch-icon.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://netlify-mcp.netlify.app/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "railway",
@@ -910,15 +934,17 @@
       "homepage": "https://railway.com",
       "documentation": "https://docs.railway.com/guides/mcp",
       "iconUrl": "https://railway.com/apple-touch-icon.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.railway.com",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "render",
@@ -1100,15 +1126,17 @@
       "homepage": "https://stripe.com",
       "documentation": "https://docs.stripe.com/mcp",
       "iconUrl": "https://images.stripeassets.com/fzn2n1nzq965/1hgcBNd12BfT9VLgbId7By/01d91920114b124fb4cf6d448f9f06eb/favicon.svg",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.stripe.com",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     },
     {
       "id": "posthog",
@@ -1455,15 +1483,17 @@
       "homepage": "https://clickup.com",
       "documentation": "https://clickup.com/api",
       "iconUrl": "https://clickup.com/favicons/apple-touch-icon.png",
-      "installability": "unsupported",
-      "reason_code": "oauth_not_supported",
+      "installability": "installable",
+      "reason_code": "compatible",
       "mcp": {
         "transport": "http",
+        "endpoint_mode": "static",
+        "url": "https://mcp.clickup.com/mcp",
         "auth": {
           "kind": "oauth"
         }
       },
-      "recipe_revision": 1
+      "recipe_revision": 2
     }
   ]
 }

@@ -887,6 +887,7 @@ def mcp_status(profile: Path) -> list[dict[str, Any]]:
     for catalog_id, record in load_state(profile)["mcp"].items():
         name = record.get("server_name")
         server = servers.get(name)
+        status = live.get(name, {})
         rows.append(
             {
                 "catalog_id": catalog_id,
@@ -895,8 +896,8 @@ def mcp_status(profile: Path) -> list[dict[str, Any]]:
                 "configured": isinstance(server, dict),
                 "auth_configured": bool(record.get("auth_configured")),
                 "revision": record.get("revision", 1),
-                "connected": live.get(name, {}).get("connected", False),
-                "status": live.get(name, {}).get("status", "configured"),
+                "connected": status.get("connected", False),
+                "status": status.get("status", "configured"),
             }
         )
     return rows
@@ -912,7 +913,37 @@ def _custom_mcp_servers(config: dict[str, Any], state: dict[str, Any]) -> dict[s
         for record in (state.get("mcp") or {}).values()
         if isinstance(record, dict)
     }
-    return {name: server for name, server in servers.items() if name not in catalog_names}
+    return {
+        name: server
+        for name, server in servers.items()
+        if name not in catalog_names
+        and not (isinstance(server, dict) and server.get("xnobrain_plugin_shadow"))
+    }
+
+
+def portable_plugin_mcp_names(profile: Path, plugin_id: str) -> list[str]:
+    """Return Hermes engine names for one installed portable plugin's MCP entries."""
+    from hermes_cli.plugins import _portable_skill_namespace
+
+    from .plugin_formats import PORTABLE, read_manifest
+
+    plugin = Path(profile) / "plugins" / plugin_id
+    if (
+        not plugin.is_dir()
+        or plugin.is_symlink()
+        or read_manifest(plugin).get("format") != PORTABLE
+    ):
+        return []
+    path = plugin / "mcp.json"
+    if not path.is_file() or path.is_symlink():
+        return []
+    import json
+
+    servers = json.loads(path.read_text(encoding="utf-8")).get("mcpServers") or {}
+    if not isinstance(servers, dict):
+        return []
+    namespace = _portable_skill_namespace(plugin_id)
+    return [f"{namespace}__{name}" for name in servers if isinstance(name, str)]
 
 
 def _portable_plugin_mcp_servers(profile: Path) -> dict[str, Any]:

@@ -34,8 +34,17 @@ class MCPIntegrationMixin:
         profile_dir = self._require_profile(self._agent_name(raw_name))
         config = self._read_config(profile_dir)
         servers = config.get("mcp_servers")
+        visible = (
+            {
+                name: server
+                for name, server in servers.items()
+                if not (isinstance(server, dict) and server.get("xnobrain_plugin_shadow"))
+            }
+            if isinstance(servers, Mapping)
+            else {}
+        )
         return {
-            "servers": self._safe_mcp_servers(servers) if isinstance(servers, Mapping) else {},
+            "servers": self._safe_mcp_servers(visible),
             "chat_status": self._native_mcp_status(profile_dir, config),
         }
 
@@ -128,6 +137,29 @@ class MCPIntegrationMixin:
             )
 
         config = self._read_config(profile_dir)
+        existing = config.get("mcp_servers") or {}
+        if isinstance(existing, Mapping) and any(
+            isinstance(server, dict) and server.get("xnobrain_plugin_shadow")
+            for server in existing.values()
+        ):
+            raise AgentAPIError(
+                "Plugin managed MCP entries cannot be edited",
+                status=422,
+                code="mcp_server_managed",
+            )
+        from .extension_policy import load_state
+
+        managed_names = {
+            record.get("server_name")
+            for record in load_state(profile_dir).get("mcp", {}).values()
+            if isinstance(record, dict)
+        }
+        if any(name in managed_names for name in cleaned):
+            raise AgentAPIError(
+                "Managed MCP entries cannot be edited",
+                status=422,
+                code="mcp_server_managed",
+            )
         if cleaned:
             config["mcp_servers"] = cleaned
         else:

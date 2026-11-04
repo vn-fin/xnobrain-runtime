@@ -22,7 +22,29 @@ class PluginCatalogTests(unittest.TestCase):
                 for entry_id, entry in by_id.items()
                 if entry["installability"] == "installable"
             },
-            {"aave", "context7", "huggingface", "render", "posthog", "composio"},
+            {
+                "aave",
+                "context7",
+                "huggingface",
+                "render",
+                "posthog",
+                "composio",
+                "notion",
+                "linear",
+                "atlassian",
+                "sentry",
+                "canva",
+                "vercel",
+                "cloudflare",
+                "supabase",
+                "neon",
+                "stripe",
+                "todoist",
+                "clickup",
+                "netlify",
+                "prisma",
+                "railway",
+            },
         )
         self.assertEqual(
             {
@@ -35,7 +57,29 @@ class PluginCatalogTests(unittest.TestCase):
         for entry in entries:
             self.assertEqual(set(entry["summary"]), SUMMARY_LOCALES)
             self.assertTrue(all(value.strip() for value in entry["summary"].values()))
-            self.assertEqual(entry["recipe_revision"], 1)
+            self.assertEqual(
+                entry["recipe_revision"],
+                2
+                if entry["id"]
+                in {
+                    "notion",
+                    "linear",
+                    "atlassian",
+                    "sentry",
+                    "canva",
+                    "vercel",
+                    "cloudflare",
+                    "supabase",
+                    "neon",
+                    "stripe",
+                    "todoist",
+                    "clickup",
+                    "netlify",
+                    "prisma",
+                    "railway",
+                }
+                else 1,
+            )
             self.assertIn(entry["publisher_kind"], {"official", "community", "unverified"})
             self.assertEqual(set(entry["examples"]), {"en", "vi", "zh"})
             self.assertTrue(all(len(prompts) == 3 for prompts in entry["examples"].values()))
@@ -87,6 +131,7 @@ class PluginCatalogTests(unittest.TestCase):
 
         oauth_install = copy.deepcopy(catalog)
         oauth_install["entries"][1]["installability"] = "installable"
+        oauth_install["entries"][1]["mcp"].pop("url", None)
         cases.append(oauth_install)
 
         unpinned_stdio_install = copy.deepcopy(catalog)
@@ -125,6 +170,35 @@ class PluginCatalogTests(unittest.TestCase):
         catalog["entries"][-1]["installability"] = "installable"
         with self.assertRaises(ValueError):
             validate_plugin_catalog(catalog)
+
+    def test_oauth_catalog_entries_have_public_static_endpoints(self) -> None:
+        catalog = load_plugin_catalog()
+        ids = {
+            "notion",
+            "linear",
+            "atlassian",
+            "sentry",
+            "canva",
+            "vercel",
+            "cloudflare",
+            "supabase",
+            "neon",
+            "stripe",
+            "todoist",
+            "clickup",
+            "netlify",
+            "prisma",
+            "railway",
+        }
+        by_id = {entry["id"]: entry for entry in catalog["entries"]}
+        for entry_id in ids:
+            entry = by_id[entry_id]
+            self.assertEqual(entry["installability"], "installable")
+            self.assertEqual(entry["recipe_revision"], 2)
+            self.assertEqual(entry["mcp"]["auth"]["kind"], "oauth")
+            self.assertTrue(entry["mcp"]["url"].startswith("https://"))
+        for entry_id in {"trello", "cobrain"}:
+            self.assertEqual(by_id[entry_id]["installability"], "unsupported")
 
     def test_unreviewed_stdio_package_publishers_cannot_be_official(self) -> None:
         catalog = load_plugin_catalog()

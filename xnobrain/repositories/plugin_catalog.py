@@ -44,7 +44,32 @@ CATALOG_IDS = (
     "composio",
     "clickup",
 )
-INSTALLABLE_IDS = {"aave", "context7", "huggingface", "render", "posthog", "composio"}
+OAUTH_INSTALLABLE_IDS = {
+    "notion",
+    "linear",
+    "atlassian",
+    "sentry",
+    "canva",
+    "vercel",
+    "cloudflare",
+    "supabase",
+    "neon",
+    "stripe",
+    "todoist",
+    "clickup",
+    "netlify",
+    "prisma",
+    "railway",
+}
+INSTALLABLE_IDS = {
+    "aave",
+    "context7",
+    "huggingface",
+    "render",
+    "posthog",
+    "composio",
+    *OAUTH_INSTALLABLE_IDS,
+}
 NEEDS_REVIEW_IDS = {"airtable", "firecrawl", "brave-search", "resend"}
 SUMMARY_LOCALES = {"en", "vi", "es", "fr", "de", "ja", "zh"}
 # Example prompts follow the UI languages.
@@ -194,7 +219,7 @@ def _validate_entry(entry: dict[str, Any]) -> None:
     elif entry_id in DESKTOP_IDS:
         if status != "unsupported" or reason != "desktop_application_required":
             raise ValueError(f"{entry_id}: desktop integrations must remain unsupported")
-    elif entry_id in OAUTH_IDS:
+    elif entry_id in OAUTH_IDS - OAUTH_INSTALLABLE_IDS:
         if status != "unsupported" or reason != "oauth_not_supported" or auth["kind"] != "oauth":
             raise ValueError(f"{entry_id}: OAuth integrations must remain unsupported")
     else:
@@ -214,13 +239,18 @@ def _validate_installable_entry(
     auth: dict[str, Any],
     reason: Any,
 ) -> None:
-    if mcp["transport"] != "http" or auth["kind"] not in {"none", "api_key"}:
+    if mcp["transport"] != "http" or auth["kind"] not in {"none", "api_key", "oauth"}:
         raise ValueError(
             f"{entry_id}: only remote HTTP without auth or with an API key is installable"
         )
 
     endpoint_mode = mcp.get("endpoint_mode")
-    if entry_id == "composio":
+    if entry_id in OAUTH_INSTALLABLE_IDS:
+        url = mcp.get("url")
+        if endpoint_mode != "static" or auth["kind"] != "oauth" or reason != "compatible":
+            raise ValueError(f"{entry_id}: OAuth endpoints must be static and compatible")
+        _validate_public_https_url(url, entry_id, "mcp.url")
+    elif entry_id == "composio":
         if (
             endpoint_mode != "user_configured"
             or mcp.get("url_policy") != "https_only_public_composio_host"

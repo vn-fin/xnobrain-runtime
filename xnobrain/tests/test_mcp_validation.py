@@ -63,6 +63,15 @@ class MCPValidationTests(unittest.TestCase):
                 self.adapter.update_mcp("agent", servers)
             self.assertEqual(self.adapter.config, {})
 
+    def test_shadow_servers_are_hidden_and_cannot_be_edited(self) -> None:
+        self.adapter.config = {
+            "mcp_servers": {"plugin__docs": {"enabled": False, "xnobrain_plugin_shadow": True}}
+        }
+        self.assertEqual(self.adapter.get_mcp("agent")["servers"], {})
+        with self.assertRaises(AgentAPIError) as raised:
+            self.adapter.update_mcp("agent", {})
+        self.assertEqual(raised.exception.code, "mcp_server_managed")
+
 
 if __name__ == "__main__":
     unittest.main()

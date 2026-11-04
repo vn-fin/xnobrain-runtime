@@ -38,7 +38,8 @@ the separate `xnobrain_managed_mcp_servers` config key and run through
   so same-named servers in two profiles get separate sessions and a recreated
   profile cannot reuse an old session.
 - Header placeholders resolve only from the profile's own secret scope.
-  Transport is DNS-pinned public HTTPS; OAuth and stdio are rejected.
+  Transport uses the pinned Hermes SSRF-safe transport for public HTTPS;
+  stdio remains unsupported.
 - Before each native conversation run, `refresh_profile_mcp` reconciles the
   profile's sessions, then `managed_mcp.install_tools` adds the connected
   tools to that agent. Native runs never call Hermes `discover_mcp_tools()`.
@@ -93,10 +94,29 @@ OAuth entries. Catalog tools are absent there, not leaked. API keys are stored i
 storage model as native `mcp_servers`; shareable exports drop them and imports
 remove the managed key.
 
-Six remote recipes are installable; 17 OAuth recipes and four desktop
-integrations are unsupported, and four unreviewed/unpinned stdio recipes remain
-`needs_review`. No OAuth broker, desktop bridge, package auto-install, or remote
-catalog synchronization is introduced.
+Fifteen OAuth recipes are installable alongside six non-OAuth remote recipes.
+Trello and Cobrain remain unsupported, four desktop integrations are
+unsupported, and four unreviewed/unpinned stdio recipes remain `needs_review`.
+
+Catalog OAuth starts with
+`POST /agents-plugins/{agent_id}/oauth/start` and body
+`{"catalog_id":"linear","recipe_revision":2}`. The response is
+`{"flow_id":"…","authorization_url":"https://…"}`. The browser posts
+`{"flow_id":"…","state":"…","code":"…"}` to
+`POST /agents-plugins/{agent_id}/oauth/callback`; success returns
+`{"status":"connected","catalog_id":"linear"}`. The callback URI comes
+only from `RUNTIME_MCP_OAUTH_REDIRECT_URI`, never from request data. Flows last
+ten minutes and bind to the agent, verified tenant and subject. Tokens live in
+the profile's `mcp-tokens/` directory using Hermes' private file permissions.
+Code running in the same profile can read them, which remains a known risk.
+OAuth sessions are optional during chat: authentication failures report
+`needs_sign_in` and do not stop other MCP servers or the turn.
+
+When a portable plugin with MCP is enabled, Runtime writes disabled
+`xnobrain_plugin_shadow` entries in profile `config.yaml`; Hermes skips these
+entries in one-shot `agent -p` discovery. Runtime removes them when the plugin
+is disabled, updated, or removed. Profile-owned MCP servers continue to use
+Hermes' native one-shot path.
 
 ## Executable plugin lifecycle
 

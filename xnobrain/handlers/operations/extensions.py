@@ -45,6 +45,16 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "catalog integration configured",
             200,
         ),
+        "extensions_oauth_start": (
+            lambda: service.oauth_start(path["agent_id"], body, context()),
+            "OAuth authorization started",
+            200,
+        ),
+        "extensions_oauth_callback": (
+            lambda: service.oauth_callback(path["agent_id"], body, context()),
+            "OAuth integration connected",
+            200,
+        ),
         "extensions_plugin_approval": (
             lambda: service.approve_plugin(path["agent_id"], path["plugin_id"], body, context()),
             "plugin approval updated",

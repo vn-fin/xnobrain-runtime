@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -42,6 +43,24 @@ _CUSTOM_STATUS: dict[tuple[str, str, str], dict[str, Any]] = {}
 _RETRY_BASE_SECONDS = 30.0
 _RETRY_MAX_SECONDS = 600.0
 _MAX_CONNECT_SECONDS = 20.0
+
+
+def guarded_httpx_client_factory(default_headers: dict[str, str], connect_timeout: float):
+    """Build SDK HTTP clients with the pinned engine's per-connection SSRF checks."""
+    import httpx
+    from tools import url_safety
+
+    def factory(headers=None, timeout=None, auth=None):
+        timeout_value = timeout or httpx.Timeout(connect_timeout, read=300.0)
+        return httpx.AsyncClient(
+            headers=headers or default_headers,
+            timeout=timeout_value,
+            follow_redirects=False,
+            transport=url_safety.ssrf_safe_async_http_transport(),
+            auth=auth,
+        )
+
+    return factory
 
 
 def ensure_profile_generation(profile: Path) -> str:
@@ -95,7 +114,9 @@ def _resolved_config(
 
     if not isinstance(config, dict) or not isinstance(config.get("url"), str):
         raise ValueError("Managed MCP integrations require an HTTPS endpoint")
-    if "command" in config or (config.get("auth") or "").lower() == "oauth":
+    oauth = str(config.get("auth") or "").lower() == "oauth"
+    catalog_oauth = oauth and isinstance(config.get("xnobrain_catalog_id"), str)
+    if "command" in config or (oauth and not catalog_oauth):
         raise ValueError("Managed MCP integrations support remote header authentication only")
     public_https(config["url"])
     parsed = urlsplit(config["url"])
@@ -125,6 +146,8 @@ def _resolved_config(
     resolved["connect_timeout"] = min(max(timeout, 1.0), _MAX_CONNECT_SECONDS)
     resolved["skip_preflight"] = True
     resolved.pop("transport", None)
+    if catalog_oauth:
+        resolved["_xnobrain_catalog_oauth"] = True
     return resolved
 
 
@@ -143,28 +166,8 @@ class _PinnedHTTPSMCPServerTask:
         default_headers = dict(config.get("headers") or {})
         default_headers.setdefault("mcp-protocol-version", mcp_tool.LATEST_PROTOCOL_VERSION)
         connect_timeout = float(config.get("connect_timeout", mcp_tool._DEFAULT_CONNECT_TIMEOUT))
-
-        class PinnedPublicTransport(httpx.AsyncBaseTransport):
-            def __init__(self):
-                self.transport = httpx.AsyncHTTPTransport(verify=True)
-
-            async def handle_async_request(self, request):
-                host, address = public_https(str(request.url))
-                pinned_headers = request.headers.copy()
-                pinned_headers["Host"] = host
-                extensions = dict(request.extensions)
-                extensions["sni_hostname"] = host
-                pinned = httpx.Request(
-                    request.method,
-                    request.url.copy_with(host=address),
-                    headers=pinned_headers,
-                    stream=request.stream,
-                    extensions=extensions,
-                )
-                return await self.transport.handle_async_request(pinned)
-
-            async def aclose(self):
-                await self.transport.aclose()
+        auth = config.get("_oauth_provider")
+        default_headers.pop("_oauth_provider", None)
 
         sampling_kwargs = self._sampling.session_kwargs() if self._sampling else {}
         if self._elicitation:
@@ -176,18 +179,7 @@ class _PinnedHTTPSMCPServerTask:
 
         # Matches mcp.shared._httpx_utils.McpHttpClientFactory, which the SDK
         # calls with keyword arguments.
-        def factory(headers=None, timeout=None, auth=None):
-            if auth is not None:
-                raise ValueError("Managed MCP OAuth is unsupported")
-            timeout_value = timeout
-            if timeout_value is None:
-                timeout_value = httpx.Timeout(connect_timeout, read=300.0)
-            return httpx.AsyncClient(
-                headers=headers or default_headers,
-                timeout=timeout_value,
-                follow_redirects=False,
-                transport=PinnedPublicTransport(),
-            )
+        factory = guarded_httpx_client_factory(default_headers, connect_timeout)
 
         try:
             async with streamablehttp_client(
@@ -195,6 +187,7 @@ class _PinnedHTTPSMCPServerTask:
                 headers=default_headers or None,
                 timeout=connect_timeout,
                 sse_read_timeout=300.0,
+                auth=auth,
                 httpx_client_factory=factory,
             ) as (read_stream, write_stream, _session_id):
                 async with ClientSession(
@@ -439,18 +432,29 @@ def sync_profile_mcp(
 
     with lock:
         desired: dict[tuple[str, str, str], tuple[str, dict[str, Any]]] = {}
-        for logical_name, raw_config in managed_servers.items():
-            if not isinstance(logical_name, str) or not logical_name:
-                continue
-            resolved = _accepted_config(profile, generation, logical_name, raw_config)
-            desired[_task_key(scope, generation, logical_name)] = (
-                _config_digest(resolved),
-                resolved,
-            )
-
         optional: set[tuple[str, str, str]] = set()
         rejected: set[tuple[str, str, str]] = set()
         sources: dict[tuple[str, str, str], str] = {}
+        for logical_name, raw_config in managed_servers.items():
+            if not isinstance(logical_name, str) or not logical_name:
+                continue
+            key = _task_key(scope, generation, logical_name)
+            sources[key] = _source_digest(raw_config)
+            is_oauth = (
+                isinstance(raw_config, dict)
+                and str(raw_config.get("auth") or "").lower() == "oauth"
+            )
+            try:
+                resolved = _accepted_config(profile, generation, logical_name, raw_config)
+            except Exception:
+                if not is_oauth:
+                    raise
+                _CUSTOM_STATUS[key] = {"status": "needs_sign_in"}
+                rejected.add(key)
+                continue
+            desired[key] = (_config_digest(resolved), resolved)
+            if is_oauth:
+                optional.add(key)
         optional_sources = (
             (CUSTOM_PREFIX, custom_servers, True),
             (PLUGIN_PREFIX, plugin_servers, False),
@@ -499,6 +503,7 @@ def sync_profile_mcp(
                     if (
                         key in optional
                         and previous.get("digest") == config_digest
+                        and previous.get("status") != "needs_sign_in"
                         and previous.get("retry_after", 0.0) > time.monotonic()
                     ):
                         continue
@@ -520,8 +525,12 @@ def sync_profile_mcp(
                             else 0
                         ) + 1
                         delay = min(_RETRY_BASE_SECONDS * 2 ** (failures - 1), _RETRY_MAX_SECONDS)
+                        raw = managed_servers.get(key[2])
+                        is_oauth = (
+                            isinstance(raw, dict) and str(raw.get("auth") or "").lower() == "oauth"
+                        )
                         _CUSTOM_STATUS[key] = {
-                            "status": "unavailable",
+                            "status": "needs_sign_in" if is_oauth else "unavailable",
                             "digest": config_digest,
                             "failures": failures,
                             "retry_after": time.monotonic() + delay,
@@ -563,6 +572,21 @@ def _accepted_config(
 
     server_id = _server_id(profile, generation, logical_name)
     resolved = _resolved_config(profile, raw_config, interpolate=interpolate)
+    if resolved.pop("_xnobrain_catalog_oauth", False):
+        from tools.mcp_oauth_manager import get_manager
+
+        redirect_uri = os.environ.get("RUNTIME_MCP_OAUTH_REDIRECT_URI", "").strip()
+        if not redirect_uri:
+            raise ValueError("Managed MCP OAuth is unavailable")
+        stable_name = str(raw_config.get("xnobrain_oauth_name") or "")
+        if not stable_name:
+            raise ValueError("Managed MCP OAuth identity is invalid")
+        with profile_context(profile):
+            resolved["_oauth_provider"] = get_manager().get_or_build_provider(
+                stable_name,
+                str(raw_config["url"]),
+                {"redirect_uri": redirect_uri, "client_name": "XNOBrain"},
+            )
     filtered = mcp_tool._filter_suspicious_mcp_servers({server_id: resolved})
     if server_id not in filtered:
         raise ValueError("Managed MCP server configuration was rejected")
@@ -570,7 +594,11 @@ def _accepted_config(
 
 
 def _config_digest(config: dict[str, Any]) -> str:
-    material = json.dumps(config, sort_keys=True, separators=(",", ":"))
+    material = json.dumps(
+        {key: value for key, value in config.items() if key != "_oauth_provider"},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(material.encode()).hexdigest()
 
 
@@ -585,7 +613,8 @@ def _unsupported_in_chat(config: dict[str, Any]) -> bool:
     Mirrors the network-free checks of ``_resolved_config``; private-address
     rejection needs DNS and is reported after a native turn instead.
     """
-    if "command" in config or str(config.get("auth") or "").lower() == "oauth":
+    oauth = str(config.get("auth") or "").lower() == "oauth"
+    if "command" in config or (oauth and not isinstance(config.get("xnobrain_catalog_id"), str)):
         return True
     url = config.get("url")
     if not isinstance(url, str):
@@ -612,7 +641,9 @@ def native_mcp_status(profile: Path, servers: dict[str, Any]) -> dict[str, str]:
             live = {
                 key[2][len(CUSTOM_PREFIX) :]: dict(entry)
                 for key, entry in _CUSTOM_STATUS.items()
-                if key[0] == scope and key[1] == generation and key[2].startswith(CUSTOM_PREFIX)
+                if key[0] == scope
+                and key[1] == generation
+                and (key[2].startswith(CUSTOM_PREFIX) or not key[2].startswith(PLUGIN_PREFIX))
             }
     result = {}
     for name, config in servers.items():
@@ -622,6 +653,12 @@ def native_mcp_status(profile: Path, servers: dict[str, Any]) -> dict[str, str]:
             result[name] = "disabled"
         elif _unsupported_in_chat(config):
             result[name] = "rejected"
+        elif (
+            (entry := live.get(name))
+            and entry.get("source") == _source_digest(config)
+            and entry.get("status") == "needs_sign_in"
+        ):
+            result[name] = "needs_sign_in"
         elif (entry := live.get(name)) and entry.get("source") == _source_digest(config):
             result[name] = str(entry.get("status") or "pending")
         else:
@@ -694,7 +731,7 @@ def profile_mcp_status(profile: Path, generation: str) -> dict[str, dict[str, An
             for key, task in _MANAGED_TASKS.items()
             if key[0] == scope and key[1] == generation
         }
-        return {
+        result = {
             logical_name: {
                 "connected": task.session is not None and task._ready.is_set(),
                 "status": "connected"
@@ -704,6 +741,21 @@ def profile_mcp_status(profile: Path, generation: str) -> dict[str, dict[str, An
             }
             for logical_name, task in tasks.items()
         }
+        result.update(
+            {
+                key[2]: {
+                    "connected": False,
+                    "status": str(entry.get("status") or "unavailable"),
+                    "tools_count": 0,
+                }
+                for key, entry in _CUSTOM_STATUS.items()
+                if key[0] == scope
+                and key[1] == generation
+                and not key[2].startswith((CUSTOM_PREFIX, PLUGIN_PREFIX))
+                and key[2] not in tasks
+            }
+        )
+        return result
 
 
 def profile_mcp_toolsets(profile: Path, generation: str) -> set[str]:
