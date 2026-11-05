@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -663,6 +664,56 @@ class ManagedMCPTests(unittest.TestCase):
         save_state(profile, state)
         with self.assertRaisesRegex(ValueError, "generation changed"):
             managed_mcp.sync_profile_mcp(profile, stale_generation, {})
+
+    def test_control_proxy_config_is_exactly_pinned_to_control_url(self):
+        connection_id = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"
+        expected = "http://control.internal/xnobrain/api/control/internal/v1/mcp/" + connection_id
+        config = {"url": expected, "xnobrain_connection_id": connection_id}
+        with patch.dict(os.environ, {"RUNTIME_CONTROL_URL": "http://control.internal/"}):
+            resolved = managed_mcp._resolved_config(self.profiles[0], config)
+            self.assertNotIn("headers", resolved)
+            for invalid_url in (
+                expected.replace("control.internal", "attacker.internal"),
+                expected + "/extra",
+            ):
+                with self.assertRaisesRegex(ValueError, "proxy URL"):
+                    managed_mcp._resolved_config(self.profiles[0], {**config, "url": invalid_url})
+
+    def test_control_grant_auth_reads_current_scope_grant(self):
+        import httpx
+
+        from xnobrain.integrations import control_grants
+
+        auth = managed_mcp.ControlGrantAuth("scope-auth-test")
+
+        async def get_request_headers():
+            request = httpx.Request("POST", "http://control.internal/mcp")
+            flow = auth.async_auth_flow(request)
+            first = await anext(flow)
+            return first.headers
+
+        with patch.object(control_grants, "_GRANTS", {}):
+            self.assertNotIn("Authorization", asyncio.run(get_request_headers()))
+            control_grants.set("scope-auth-test", "short-lived-grant")
+            self.assertEqual(
+                asyncio.run(get_request_headers())["Authorization"],
+                "Bearer short-lived-grant",
+            )
+
+            # httpx rejects auth objects that are not httpx.Auth, so exercise a real client.
+            async def send_through_client():
+                seen = {}
+
+                def handler(request):
+                    seen["authorization"] = request.headers.get("Authorization")
+                    return httpx.Response(200)
+
+                transport = httpx.MockTransport(handler)
+                async with httpx.AsyncClient(transport=transport, auth=auth) as client:
+                    await client.post("http://control.internal/mcp")
+                return seen["authorization"]
+
+            self.assertEqual(asyncio.run(send_through_client()), "Bearer short-lived-grant")
 
 
 if __name__ == "__main__":

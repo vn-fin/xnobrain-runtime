@@ -35,6 +35,7 @@ class RunAdmissionService:
         self.task = None
         self.guards = {}
         self.xno_data_grants = {}
+        self.mcp_grants = {}
 
     async def start(self):
         if self.task is None:
@@ -57,14 +58,18 @@ class RunAdmissionService:
             asdict(trusted) if isinstance(trusted, TrustedRequestContext) else None
         )
         grant = private.pop("_xno_data_grant", None)
+        mcp_grant = private.pop("_mcp_grant", None)
         if private["principal"]:
             private["principal"].pop("xno_data_grant", None)
+            private["principal"].pop("mcp_grant", None)
         private["_record"] = record
         if requires_immediate():
             private["_immediate_boot"] = BOOT_ID
         self.store.enqueue(record, private)
         if grant:
             self.xno_data_grants[record["id"]] = grant
+        if mcp_grant:
+            self.mcp_grants[record["id"]] = mcp_grant
         self.files.put_conversation_run(record)
         self.store.update(record["id"], "waiting", {})
         if guard is not None:
@@ -102,6 +107,7 @@ class RunAdmissionService:
         await release_grant(
             record["conversation_id"], record["id"], self.xno_data_grants.pop(record["id"], None)
         )
+        self.mcp_grants.pop(record["id"], None)
         return record
 
     async def _cancel_receipt(self, row):
@@ -363,6 +369,7 @@ class RunAdmissionService:
 
         payload = dict(row["payload"])
         payload["_xno_data_grant"] = self.xno_data_grants.get(record["id"])
+        payload["_mcp_grant"] = self.mcp_grants.get(record["id"])
         payload.pop("_record", None)
         payload.pop("_immediate_boot", None)
         principal = payload.pop("principal", None)
@@ -451,6 +458,7 @@ class RunAdmissionService:
                 self.runs._by_conversation[(row["agent"], row["conversation"])] = row["id"]
                 self.store.update(row["id"], "running", admission)
                 self.xno_data_grants.pop(record["id"], None)
+                self.mcp_grants.pop(record["id"], None)
 
                 async def execute():
                     with admitted_root(admission):

@@ -697,9 +697,10 @@ class ExtensionsService:
 
     def install_catalog(self, agent_id: str, body: dict[str, Any], trusted: Any) -> dict[str, Any]:
         profile, _owner = self._profile(agent_id, trusted)
+        self._set_mcp_grant(profile, trusted)
         entry = self._catalog_entry(body, trusted)
         server_config, endpoint_mode, auth_configured = self._catalog_server_config(
-            entry, body.get("fields", {})
+            entry, body.get("fields", {}), body.get("connection_id")
         )
         server_name = f"xnobrain-{entry['id']}"
         with self._lifecycle(agent_id):
@@ -1053,40 +1054,51 @@ class ExtensionsService:
         oauth.remove_flow(record.flow.flow_id)
         return {"status": "connected", "catalog_id": record.catalog_id}
 
-    def _catalog_server_config(self, entry: dict[str, Any], fields: dict[str, str]):
+    def _catalog_server_config(
+        self, entry: dict[str, Any], fields: dict[str, str], connection_id: str | None = None
+    ):
         mcp = entry.get("mcp", {})
         auth = mcp.get("auth", {})
         expected = set()
         url = mcp.get("url", "")
+        if auth.get("kind") == "api_key":
+            if fields or not connection_id:
+                raise ServiceError(
+                    "Catalog fields do not match this recipe",
+                    status=422,
+                    code="invalid_catalog_fields",
+                )
+            try:
+                parsed_id = uuid.UUID(connection_id)
+            except (TypeError, ValueError, AttributeError) as error:
+                raise ServiceError(
+                    "Catalog connection ID is invalid", status=422, code="invalid_catalog_fields"
+                ) from error
+            if str(parsed_id) != connection_id:
+                raise ServiceError(
+                    "Catalog connection ID is invalid", status=422, code="invalid_catalog_fields"
+                )
+            control_url = os.environ.get("RUNTIME_CONTROL_URL", "").rstrip("/")
+            if not control_url:
+                raise ServiceError(
+                    "Control MCP proxy is unavailable", status=503, code="mcp_unavailable"
+                )
+            url = f"{control_url}/xnobrain/api/control/internal/v1/mcp/{connection_id}"
+            return (
+                {"url": url, "xnobrain_connection_id": connection_id},
+                str(mcp.get("endpoint_mode", "static")),
+                True,
+            )
         if mcp.get("endpoint_mode") == "user_configured":
             expected.add("endpoint_url")
             url = fields.get("endpoint_url", "")
-        key = ""
-        if auth.get("kind") == "api_key":
-            expected.add(str(auth.get("field", "")))
-            key = fields.get(str(auth["field"]), "")
         if set(fields) != expected:
             raise ServiceError(
                 "Catalog fields do not match this recipe", status=422, code="invalid_catalog_fields"
             )
-        if auth.get("kind") == "api_key" and (
-            not key or len(key) > 8192 or any(ord(c) < 32 for c in key)
-        ):
-            raise ServiceError("API key is invalid", status=422, code="invalid_api_key")
         self._validate_catalog_endpoint(str(url), str(mcp.get("url_policy", "")))
         result: dict[str, Any] = {"url": url}
-        if auth.get("kind") == "api_key":
-            if auth.get("delivery") != "header":
-                raise ServiceError(
-                    "Catalog auth delivery is unsupported", status=422, code="unsupported_auth"
-                )
-            header = str(auth.get("header", ""))
-            if not re.fullmatch(r"[A-Za-z0-9-]{1,80}", header):
-                raise ServiceError(
-                    "Catalog auth header is invalid", status=422, code="invalid_catalog"
-                )
-            result["headers"] = {header: str(auth.get("prefix", "")) + key}
-        elif auth.get("kind") == "oauth":
+        if auth.get("kind") == "oauth":
             result.update(
                 auth="oauth",
                 xnobrain_catalog_id=entry["id"],
@@ -1675,6 +1687,8 @@ class ExtensionsService:
     ) -> dict[str, Any]:
         profile, owner = self._profile(agent_id, trusted)
         kind = str(body.get("kind", ""))
+        if kind in {"install", "probe"}:
+            self._set_mcp_grant(profile, trusted)
         plugin_id = str(body.get("plugin_id", ""))
         if not _PLUGIN_ID.fullmatch(plugin_id):
             raise ServiceError("Plugin id is invalid", status=422, code="invalid_plugin_id")
@@ -1748,6 +1762,16 @@ class ExtensionsService:
                 idempotency_key=str(body.get("idempotency_key", "")),
             )
         return result
+
+    @staticmethod
+    def _set_mcp_grant(profile: Path, trusted: Any) -> None:
+        grant = str(getattr(trusted, "mcp_grant", "") or "")
+        if not grant:
+            return
+        from ..integrations.control_grants import set as set_control_grant
+        from ..integrations.managed_mcp import _profile_scope
+
+        set_control_grant(_profile_scope(profile), grant)
 
     @staticmethod
     def _validate_git_source(source: Any, ref: Any, path: Any = None) -> tuple[str, str, str]:

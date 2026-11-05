@@ -25,6 +25,7 @@ class CatalogInstall(BaseModel):
     catalog_id: str = Field(min_length=1, max_length=128)
     recipe_revision: int = Field(ge=1)
     fields: dict[str, str] = Field(default_factory=dict, max_length=32)
+    connection_id: str | None = Field(default=None, max_length=36)
 
 
 class CatalogOAuthStart(BaseModel):

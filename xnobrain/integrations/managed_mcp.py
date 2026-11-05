@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+import httpx
 from tools.mcp_tool import MCPServerTask
 
 from .extension_engine import profile_context, public_https
@@ -61,6 +62,39 @@ def guarded_httpx_client_factory(default_headers: dict[str, str], connect_timeou
         )
 
     return factory
+
+
+def control_proxy_httpx_client_factory(default_headers: dict[str, str], connect_timeout: float):
+    """Build a private Control transport without environment proxies or redirects."""
+    import httpx
+
+    def factory(headers=None, timeout=None, auth=None):
+        return httpx.AsyncClient(
+            headers=headers or default_headers,
+            timeout=timeout or httpx.Timeout(connect_timeout, read=300.0),
+            follow_redirects=False,
+            trust_env=False,
+            auth=auth,
+        )
+
+    return factory
+
+
+class ControlGrantAuth(httpx.Auth):
+    """Attach the current profile grant to every Control proxy request."""
+
+    def __init__(self, scope: str):
+        self.scope = scope
+
+    def auth_flow(self, request):
+        from .control_grants import get
+
+        grant = get(self.scope)
+        if grant:
+            request.headers["Authorization"] = f"Bearer {grant}"
+        else:
+            request.headers.pop("Authorization", None)
+        yield request
 
 
 def ensure_profile_generation(profile: Path) -> str:
@@ -105,8 +139,55 @@ def _profile_lock(scope: str) -> threading.RLock:
         return _PROFILE_LOCKS.setdefault(scope, threading.RLock())
 
 
+def reconnect_control_tasks(scope: str) -> None:
+    """Signal only this profile's control-proxied tasks parked on auth."""
+    with _MANAGER_LOCK:
+        tasks = [
+            task
+            for key, task in _MANAGED_TASKS.items()
+            if key[0] == scope
+            and task._control_proxy
+            and _CUSTOM_STATUS.get(key, {}).get("status") == "needs_sign_in"
+        ]
+    for task in tasks:
+        event = getattr(task, "_reconnect_event", None)
+        if event is not None:
+            from tools import mcp_tool
+
+            loop = mcp_tool._mcp_loop
+            if loop is not None and loop.is_running():
+                loop.call_soon_threadsafe(event.set)
+            else:
+                event.set()
+
+
+def _status_from_control_error(error: BaseException) -> str:
+    """Map only known proxy authentication errors to a safe public status."""
+    nested = getattr(error, "exceptions", ())
+    if any(_status_from_control_error(item) == "needs_sign_in" for item in nested):
+        return "needs_sign_in"
+    if getattr(error, "status_code", None) != 401:
+        response = getattr(error, "response", None)
+        if response is None or getattr(response, "status_code", None) != 401:
+            return "unavailable"
+    response = getattr(error, "response", None)
+    try:
+        payload = response.json() if response is not None else {}
+    except Exception:
+        return "unavailable"
+    if isinstance(payload, dict) and payload.get("code") in {
+        "mcp_needs_sign_in",
+        "mcp_grant_invalid",
+    }:
+        return "needs_sign_in"
+    return "unavailable"
+
+
 def _resolved_config(
-    profile: Path, config: dict[str, Any], *, interpolate: bool = True
+    profile: Path,
+    config: dict[str, Any],
+    *,
+    interpolate: bool = True,
 ) -> dict[str, Any]:
     from tools import mcp_tool
 
@@ -116,14 +197,34 @@ def _resolved_config(
         raise ValueError("Managed MCP integrations require an HTTPS endpoint")
     oauth = str(config.get("auth") or "").lower() == "oauth"
     catalog_oauth = oauth and isinstance(config.get("xnobrain_catalog_id"), str)
+    connection_id = config.get("xnobrain_connection_id")
+    control_proxy = connection_id is not None
     if "command" in config or (oauth and not catalog_oauth):
         raise ValueError("Managed MCP integrations support remote header authentication only")
-    public_https(config["url"])
+    if control_proxy:
+        try:
+            canonical_id = str(uuid.UUID(str(connection_id)))
+        except (TypeError, ValueError, AttributeError) as error:
+            raise ValueError("Managed MCP Control connection ID is invalid") from error
+        control_url = os.environ.get("RUNTIME_CONTROL_URL", "").rstrip("/")
+        expected_url = (
+            f"{control_url}/xnobrain/api/control/internal/v1/mcp/{canonical_id}"
+            if control_url
+            else ""
+        )
+        if str(connection_id) != canonical_id or config["url"] != expected_url:
+            raise ValueError("Managed MCP Control proxy URL is invalid")
+    else:
+        public_https(config["url"])
     parsed = urlsplit(config["url"])
     if parsed.query:
         raise ValueError("Managed MCP endpoint query strings are unsupported")
 
-    if not interpolate:
+    if control_proxy:
+        resolved = json.loads(json.dumps(config, default=str))
+        resolved.pop("headers", None)
+        resolved.pop("auth", None)
+    elif not interpolate:
         # Third-party plugin servers never receive profile secrets: a header
         # such as "${OPENAI_API_KEY}" would send the key to the plugin's host.
         if "${" in json.dumps(config, default=str):
@@ -162,11 +263,15 @@ class _PinnedHTTPSMCPServerTask:
         from tools import mcp_tool
 
         url = config["url"]
-        public_https(url)
+        control_proxy = isinstance(config.get("xnobrain_connection_id"), str)
+        if not control_proxy:
+            public_https(url)
         default_headers = dict(config.get("headers") or {})
         default_headers.setdefault("mcp-protocol-version", mcp_tool.LATEST_PROTOCOL_VERSION)
         connect_timeout = float(config.get("connect_timeout", mcp_tool._DEFAULT_CONNECT_TIMEOUT))
         auth = config.get("_oauth_provider")
+        if control_proxy:
+            auth = ControlGrantAuth(self.profile_scope)
         default_headers.pop("_oauth_provider", None)
 
         sampling_kwargs = self._sampling.session_kwargs() if self._sampling else {}
@@ -179,7 +284,11 @@ class _PinnedHTTPSMCPServerTask:
 
         # Matches mcp.shared._httpx_utils.McpHttpClientFactory, which the SDK
         # calls with keyword arguments.
-        factory = guarded_httpx_client_factory(default_headers, connect_timeout)
+        factory = (
+            control_proxy_httpx_client_factory(default_headers, connect_timeout)
+            if control_proxy
+            else guarded_httpx_client_factory(default_headers, connect_timeout)
+        )
 
         try:
             async with streamablehttp_client(
@@ -219,6 +328,7 @@ class ManagedMCPServerTask(_PinnedHTTPSMCPServerTask, MCPServerTask):
         "_registration_previous",
         "_registration_current",
         "_config_digest",
+        "_control_proxy",
     )
 
     def __init__(self, server_id: str, scope: str, generation: str, logical_name: str):
@@ -228,6 +338,7 @@ class ManagedMCPServerTask(_PinnedHTTPSMCPServerTask, MCPServerTask):
         self.logical_name = logical_name
         self._registration_previous: dict[str, Any] = {}
         self._registration_current: dict[str, Any] = {}
+        self._control_proxy = False
 
     def _register_profile_tools(self) -> list[str]:
         from tools import mcp_tool
@@ -447,13 +558,21 @@ def sync_profile_mcp(
             try:
                 resolved = _accepted_config(profile, generation, logical_name, raw_config)
             except Exception:
-                if not is_oauth:
+                is_control_proxy = (
+                    isinstance(raw_config, dict) and "xnobrain_connection_id" in raw_config
+                )
+                if not is_oauth and not is_control_proxy:
                     raise
-                _CUSTOM_STATUS[key] = {"status": "needs_sign_in"}
+                _CUSTOM_STATUS[key] = {
+                    "status": "unavailable" if is_control_proxy else "needs_sign_in"
+                }
                 rejected.add(key)
                 continue
             desired[key] = (_config_digest(resolved), resolved)
-            if is_oauth:
+            is_control_proxy = (
+                isinstance(raw_config, dict) and "xnobrain_connection_id" in raw_config
+            )
+            if is_oauth or is_control_proxy:
                 optional.add(key)
         optional_sources = (
             (CUSTOM_PREFIX, custom_servers, True),
@@ -510,12 +629,13 @@ def sync_profile_mcp(
                     server_id = _server_id(profile, generation, key[2])
                     task = ManagedMCPServerTask(server_id, scope, generation, key[2])
                     task._config_digest = config_digest
+                    task._control_proxy = isinstance(config.get("xnobrain_connection_id"), str)
                     try:
                         _register_task(task)
                         _MANAGED_TASKS[key] = task
                         with profile_context(profile):
                             _start_task(task, config)
-                    except Exception:
+                    except Exception as error:
                         _MANAGED_TASKS.pop(key, None)
                         if key not in optional:
                             raise
@@ -529,8 +649,13 @@ def sync_profile_mcp(
                         is_oauth = (
                             isinstance(raw, dict) and str(raw.get("auth") or "").lower() == "oauth"
                         )
+                        is_control_proxy = isinstance(raw, dict) and "xnobrain_connection_id" in raw
                         _CUSTOM_STATUS[key] = {
-                            "status": "needs_sign_in" if is_oauth else "unavailable",
+                            "status": "needs_sign_in"
+                            if is_oauth
+                            else _status_from_control_error(error)
+                            if is_control_proxy
+                            else "unavailable",
                             "digest": config_digest,
                             "failures": failures,
                             "retry_after": time.monotonic() + delay,

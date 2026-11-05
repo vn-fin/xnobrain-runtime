@@ -21,6 +21,7 @@ SNAPSHOT_SIGNATURE_HEADER = "x-xnobrain-community-snapshot-signature"
 SNAPSHOT_PREFIX = "/xnobrain/api/runtime/v1/community/snapshots/"
 TRUSTED_CONVERSATION_CONTEXT_HEADER = "x-xnobrain-verified-conversation-context"
 TRUSTED_CONVERSATION_CONTEXT_SIGNATURE_HEADER = "x-xnobrain-conversation-context-signature"
+TRUSTED_MCP_GRANT_HEADER = "x-xnobrain-mcp-grant"
 
 TRUSTED_IDENTITY_HEADERS = frozenset(
     {
@@ -44,6 +45,7 @@ class TrustedRequestContext:
     organization_id: str = ""
     ownership_context: Mapping[str, Any] | None = None
     xno_data_grant: str = field(default="", repr=False, compare=False)
+    mcp_grant: str = field(default="", repr=False, compare=False)
 
 
 def _principal_material(
@@ -267,4 +269,5 @@ def from_request(request: Any) -> TrustedRequestContext:
         organization_id,
         ownership_context,
         str(headers.get("x-xnobrain-data-grant") or ""),
+        str(headers.get(TRUSTED_MCP_GRANT_HEADER) or ""),
     )

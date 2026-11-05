@@ -71,6 +71,7 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
             os.environ,
             {
                 "RUNTIME_INTERNAL_SERVICE_TOKEN": TOKEN,
+                "RUNTIME_CONTROL_URL": "http://control.internal/",
                 "FT_ENABLE_AGENT_EXTENSIONS": "true",
             },
             clear=True,
@@ -226,6 +227,50 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(hook.status_code, 422)
         self.assertNotIn(secret, hook.text)
+
+    async def test_catalog_api_key_install_uses_proxy_and_rejects_secret_fields(self):
+        connection_id = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"
+        path = f"{API_PREFIX}/agents-plugins/research/install-catalog"
+        body = {
+            "catalog_id": "render",
+            "recipe_revision": 1,
+            "connection_id": connection_id,
+            "fields": {},
+        }
+        with patch.object(extension_engine, "mcp_profile_isolation_supported", return_value=True):
+            grant = "a" * 64
+            response = await self.client.post(
+                path,
+                headers={**self.headers(), "x-xnobrain-mcp-grant": grant},
+                json=body,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            config = (self.profile / "config.yaml").read_text(encoding="utf-8")
+            self.assertIn(
+                "http://control.internal/xnobrain/api/control/internal/v1/mcp/" + connection_id,
+                config,
+            )
+            self.assertNotIn("headers:", config)
+            self.assertNotIn("Bearer ", config)
+            from xnobrain.integrations import control_grants, managed_mcp
+
+            self.assertEqual(control_grants.get(managed_mcp._profile_scope(self.profile)), grant)
+            secret = "api-key-must-not-reach-runtime"
+            for invalid in (
+                {**body, "fields": {"token": secret}},
+                {**body, "connection_id": None},
+                {**body, "connection_id": "NOT-A-UUID"},
+            ):
+                rejected = await self.client.post(path, headers=self.headers(), json=invalid)
+                self.assertEqual(rejected.status_code, 422)
+                self.assertEqual(rejected.json()["error"]["code"], "invalid_catalog_fields")
+                self.assertNotIn(secret, rejected.text)
+            profile_contents = "\n".join(
+                item.read_text(encoding="utf-8", errors="ignore")
+                for item in self.profile.rglob("*")
+                if item.is_file()
+            )
+            self.assertNotIn(secret, profile_contents)
 
     async def test_extension_operation_callback_runs_off_event_loop(self):
         loop_thread = threading.get_ident()

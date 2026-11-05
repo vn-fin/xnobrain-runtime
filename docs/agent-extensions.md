@@ -37,8 +37,11 @@ the separate `xnobrain_managed_mcp_servers` config key and run through
 - Server IDs are an HMAC of profile path, profile generation and logical name,
   so same-named servers in two profiles get separate sessions and a recreated
   profile cannot reuse an old session.
-- Header placeholders resolve only from the profile's own secret scope.
-  Transport uses the pinned Hermes SSRF-safe transport for public HTTPS;
+- Catalog API keys live in Control. Runtime stores only a Control connection ID
+  and connects through Control's private MCP proxy with a short-lived in-memory
+  grant on each request; the key never enters the profile. Header placeholders
+  for other managed servers resolve only from the profile's own secret scope.
+  Direct public HTTPS transport uses the pinned Hermes SSRF-safe client;
   stdio remains unsupported.
 - Before each native conversation run, `refresh_profile_mcp` reconciles the
   profile's sessions, then `managed_mcp.install_tools` adds the connected
@@ -90,9 +93,9 @@ Limits: catalog MCP tools are available only in native conversation runs.
 The one-shot `chat` endpoint (team runs and delegated executions) and Kanban
 workers run the Hermes CLI as a separate per-profile subprocess. That
 subprocess runs native discovery over `mcp_servers` only, including stdio and
-OAuth entries. Catalog tools are absent there, not leaked. API keys are stored in the profile `config.yaml` header, the same
-storage model as native `mcp_servers`; shareable exports drop them and imports
-remove the managed key.
+OAuth entries. Catalog tools are absent there, not leaked. Catalog API keys are
+stored by Control and never copied to Runtime profile files; shareable exports
+and imports therefore contain no catalog key.
 
 Fifteen OAuth recipes are installable alongside six non-OAuth remote recipes.
 Trello and Cobrain remain unsupported, four desktop integrations are

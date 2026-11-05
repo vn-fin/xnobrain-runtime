@@ -445,8 +445,10 @@ class ConversationRunService:
             payload["ownership_context"] = context
             # This field is host-owned and remains in memory, outside the run record.
             payload.pop("_xno_data_grant", None)
+            payload.pop("_mcp_grant", None)
             if signed:
                 payload["_xno_data_grant"] = getattr(trusted_context, "xno_data_grant", "")
+                payload["_mcp_grant"] = getattr(trusted_context, "mcp_grant", "")
 
             if (
                 context.get("owner_kind") == "personal"
