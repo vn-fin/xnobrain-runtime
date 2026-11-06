@@ -60,7 +60,12 @@ def bootstrap(request: dict, *, identity_directory: Path = Path("/etc/xnobrain")
     if not existing:
         journal.save_checkpoint(checkpoint)
     journal.save_maintenance(
-        {**binding, "dispatch_paused": True, "phase": "checkpointed", "checkpoint_id": checkpoint_id}
+        {
+            **binding,
+            "dispatch_paused": True,
+            "phase": "checkpointed",
+            "checkpoint_id": checkpoint_id,
+        }
     )
     journal.save_operation({**binding, "steps": {"checkpoint": checkpoint}})
     return checkpoint_id

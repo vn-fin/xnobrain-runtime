@@ -18,7 +18,10 @@ def incus_installed_identity(directory: Path = Path("/etc/xnobrain")) -> dict[st
     try:
         descriptor_path = directory / "build-descriptor.json"
         artifact_path = directory / "runtime-artifact.json"
-        if any(path.is_symlink() or path.stat().st_size > 16384 for path in (descriptor_path, artifact_path)):
+        if any(
+            path.is_symlink() or path.stat().st_size > 16384
+            for path in (descriptor_path, artifact_path)
+        ):
             return {}
         descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
         artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
@@ -28,7 +31,8 @@ def incus_installed_identity(directory: Path = Path("/etc/xnobrain")) -> dict[st
             or artifact["build_descriptor"] != descriptor
             or artifact["build_descriptor_digest"] != digest
             or descriptor["schema_version"] != 1
-            or (directory / "sha.txt").read_text(encoding="utf-8").strip() != descriptor["source_revision"]
+            or (directory / "sha.txt").read_text(encoding="utf-8").strip()
+            != descriptor["source_revision"]
         ):
             return {}
         return {
