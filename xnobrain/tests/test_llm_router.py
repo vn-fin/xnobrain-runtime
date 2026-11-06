@@ -12,7 +12,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import yaml
 
@@ -1945,6 +1945,185 @@ class LLMRouterClientTests(unittest.IsolatedAsyncioTestCase):
                 payload,
             )
             self.assertTrue(payload.endswith(b"data: [DONE]\n\n"))
+
+    async def test_conversation_stream_emits_integration_connect_request(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+
+            async def run_session_agent(
+                _prepared,
+                *,
+                run_id,
+                stream_delta_callback,
+                tool_progress_callback,
+                approval_notify_callback,
+                agent_ref,
+            ):
+                tool_progress_callback(
+                    "tool.completed",
+                    "xnobrain_integration_connect",
+                    None,
+                    None,
+                    duration=0.01,
+                    is_error=False,
+                    result=json.dumps(
+                        {
+                            "success": True,
+                            "connect_request": {
+                                "id": "a" * 32,
+                                "kind": "catalog_mcp",
+                                "agent_id": "big-brother",
+                                "display_name": "Notion",
+                                "auth_kind": "oauth",
+                                "catalog_id": "notion",
+                                "recipe_revision": 2,
+                                "headers": {"Authorization": "secret"},
+                                "reason": "You asked to connect Notion.",
+                            },
+                            "instruction": "finish in the card",
+                        }
+                    ),
+                    tool_call_id="call-connect",
+                )
+                stream_delta_callback("Connected.")
+                return (
+                    {"final_response": "Connected.", "messages": []},
+                    {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+                )
+
+            prepared = {
+                "name": "news",
+                "profile_dir": root / "profile",
+                "conversation_id": "20260727_093154_c2b5fe",
+                "message": "Connect Notion",
+                "model": "cx/gpt-5.5",
+                "requested_model": "",
+                "timeout_seconds": 30,
+            }
+            with patch.object(manager, "_run_session_agent", side_effect=run_session_agent):
+                chunks = [event async for event in manager._chat_stream_events(prepared)]
+
+            payload = b"".join(chunks)
+            self.assertIn(b'"event":"integration.connect_requested"', payload)
+            self.assertIn(b'"tool_call_id":"call-connect"', payload)
+            self.assertIn(b'"display_name":"Notion"', payload)
+            self.assertIn(b'"catalog_id":"notion"', payload)
+            self.assertNotIn(b"Authorization", payload)
+            self.assertNotIn(b"secret", payload)
+
+    async def _run_big_brother_stream(self, root: Path, manager: AgentManager):
+        async def run_session_agent(
+            _prepared,
+            *,
+            run_id,
+            stream_delta_callback,
+            tool_progress_callback,
+            approval_notify_callback,
+            agent_ref,
+        ):
+            stream_delta_callback("Here is the answer.")
+            return (
+                {"final_response": "Here is the answer.", "messages": []},
+                {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            )
+
+        prepared = {
+            "name": "big-brother",
+            "profile_dir": root / "profile",
+            "conversation_id": "20260727_093154_c2b5fe",
+            "message": "What should I connect?",
+            "model": "cx/gpt-5.5",
+            "requested_model": "",
+            "timeout_seconds": 30,
+        }
+        with patch.object(manager, "_run_session_agent", side_effect=run_session_agent):
+            return b"".join([event async for event in manager._chat_stream_events(prepared)])
+
+    async def test_conversation_stream_emits_big_brother_suggestions(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            suggest = AsyncMock(
+                return_value=["Connect Google Drive too", "Show my installed plugins"]
+            )
+            with patch.object(manager, "_suggest_next_messages", new=suggest):
+                payload = await self._run_big_brother_stream(root, manager)
+
+            self.assertIn(b'"event":"run.suggestions"', payload)
+            self.assertIn(
+                b'"suggestions":["Connect Google Drive too","Show my installed plugins"]', payload
+            )
+            self.assertLess(
+                payload.index(b'"event":"run.suggestions"'),
+                payload.index(b'"event":"run.completed"'),
+            )
+            self.assertTrue(payload.endswith(b"data: [DONE]\n\n"))
+
+    async def test_conversation_stream_skips_suggestions_on_timeout(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            suggest = AsyncMock(side_effect=asyncio.TimeoutError)
+            with patch.object(manager, "_suggest_next_messages", new=suggest):
+                payload = await self._run_big_brother_stream(root, manager)
+
+            self.assertNotIn(b'"event":"run.suggestions"', payload)
+
+    async def test_conversation_stream_skips_suggestions_for_other_agents(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = AgentManager(
+                root_profile=root / "root",
+                profiles_root=root / "profiles",
+                legacy_agents_root=root / "legacy",
+            )
+            suggest = AsyncMock(return_value=["Connect Google Drive too"])
+
+            async def run_session_agent(
+                _prepared,
+                *,
+                run_id,
+                stream_delta_callback,
+                tool_progress_callback,
+                approval_notify_callback,
+                agent_ref,
+            ):
+                stream_delta_callback("Here is the answer.")
+                return (
+                    {"final_response": "Here is the answer.", "messages": []},
+                    {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+                )
+
+            prepared = {
+                "name": "news",
+                "profile_dir": root / "profile",
+                "conversation_id": "20260727_093154_c2b5fe",
+                "message": "What should I connect?",
+                "model": "cx/gpt-5.5",
+                "requested_model": "",
+                "timeout_seconds": 30,
+            }
+            with (
+                patch.object(manager, "_run_session_agent", side_effect=run_session_agent),
+                patch.object(manager, "_suggest_next_messages", new=suggest),
+            ):
+                payload = b"".join([event async for event in manager._chat_stream_events(prepared)])
+
+            suggest.assert_not_called()
+            self.assertNotIn(b'"event":"run.suggestions"', payload)
 
     async def test_native_session_runner_loads_existing_history(self) -> None:
         with TemporaryDirectory() as temp_dir:

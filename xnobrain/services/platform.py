@@ -179,6 +179,7 @@ class PlatformService(
         from .extensions import ExtensionsService
 
         self.extensions = ExtensionsService(repository, agents)
+        self.agents.extensions = self.extensions
 
     def _ensure_existing_write_approval_defaults(self) -> None:
         """Backfill automatic execution defaults without replacing user choices."""

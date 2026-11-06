@@ -132,7 +132,9 @@ The same JSON sits in the stored tool message, so history replay rebuilds the
 card without new persistence. The durable-run relay in
 `services/conversation_runs.py` forwards it unchanged (verify in tests).
 
-**`run.suggestions`** — see section 4.
+**`run.suggestions`** — sent just before `run.completed` (see section 4); it
+must precede the terminal status because the durable-run relay stops appending
+events after a terminal status.
 
 The UI treats every field as untrusted: it re-reads the catalog entry and
 inventory by id and never uses event text for URLs or auth decisions.
@@ -176,9 +178,10 @@ inventory by id and never uses event text for URLs or auth decisions.
 Source: one small side model call in Runtime, after the answer is final. Same
 model routing as the auto-title; Big Brother interactive runs only.
 
-- In `conversation_stream.py`, after `run.completed` and before `done`, await
-  `_suggest_next_messages(user_message, output, model)` with a 5 s timeout.
-  On success emit:
+- In `conversation_stream.py`, just before `run.completed`, await
+  `_suggest_next_messages(user_message, output, model)` with a 3 s timeout.
+  Suggestions must be sent before the terminal event because the durable-run
+  relay stops appending events after a terminal status. On success emit:
 
   ```json
   { "event": "run.suggestions", "run_id": "…", "timestamp": 1793950001.0,
@@ -193,9 +196,8 @@ model routing as the auto-title; Big Brother interactive runs only.
   as the composer (`CompactConversation` `onSubmit`, `ChatArea` `submit`).
   Hidden once the user types or a new run starts.
 
-`run.completed` already marks the run done in the UI, so the answer is not
-delayed; only `done` waits up to 5 s. Verify the composer unlocks on
-`run.completed`.
+The 3 s side call delays `run.completed` only within that bound. The ordering
+is intentional: durable runs drop events after the terminal status.
 
 ## Files to touch
 

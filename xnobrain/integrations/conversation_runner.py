@@ -1460,6 +1460,10 @@ class ConversationRunnerMixin:
                 from .agent_maker_tools import install_tools as install_maker_tools
 
                 install_maker_tools(agent, conversation_id)
+                if name == BIG_BROTHER_AGENT_ID and prepared.get("_agent_maker_principal"):
+                    from .integration_connect_tools import install_tools as install_connect_tools
+
+                    install_connect_tools(agent, conversation_id)
                 from .xno_data_tools import install_tools as install_xno_data_tools
 
                 install_xno_data_tools(agent, conversation_id)
@@ -1593,6 +1597,20 @@ class ConversationRunnerMixin:
                     str(prepared["name"]),
                     conversation_id,
                     run_id,
+                    prepared["_agent_maker_principal"],
+                )
+            )
+        if (
+            prepared.get("_agent_maker_principal")
+            and str(prepared["name"]) == BIG_BROTHER_AGENT_ID
+            and getattr(manager, "extensions", None)
+        ):
+            from .integration_connect_tools import bind_run as bind_connect_run
+
+            page_scope.enter_context(
+                bind_connect_run(
+                    manager.extensions,
+                    conversation_id,
                     prepared["_agent_maker_principal"],
                 )
             )

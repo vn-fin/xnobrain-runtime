@@ -122,6 +122,12 @@ class ExtensionsService:
                     pass  # busy or invalid config: the next request retries
         return profile, owner_key
 
+    def connect_target(self, agent_id: str, trusted: Any) -> Path:
+        """Validate a connect-card target without repairing or writing its profile."""
+        self._require_feature()
+        profile, _owner = self._profile(agent_id, trusted, recover_publication=False)
+        return profile
+
     @staticmethod
     def _require_feature() -> None:
         from ..feature_flags import FEATURE_AGENT_EXTENSIONS, enabled
@@ -543,8 +549,10 @@ class ExtensionsService:
             self._write_marketplaces(next_rows)
         return {"deleted": True}
 
-    def list_plugins(self, agent_id: str, trusted: Any) -> dict[str, Any]:
-        profile, _owner = self._profile(agent_id, trusted)
+    def list_plugins(
+        self, agent_id: str, trusted: Any, *, recover_publication: bool = True
+    ) -> dict[str, Any]:
+        profile, _owner = self._profile(agent_id, trusted, recover_publication=recover_publication)
         state = self._state(profile)
         try:
             plugins = extension_engine.plugin_inventory(profile)
