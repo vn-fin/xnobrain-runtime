@@ -184,10 +184,48 @@ class ChannelWriteTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(root_config["gateway"]["multiplex_profiles"])
         self.assertEqual(root_config["gateway"]["multiplex_profile_allowlist"], [])
 
-        with self.assertRaises(ServiceError) as raised:
-            self.service.set_channel_enabled("big-brother", True)
-        self.assertEqual(raised.exception.status, 409)
-        self.assertEqual(raised.exception.code, "protected_agent")
+    def test_root_can_own_the_channel_without_multiplex(self):
+        state = self.service.set_channel_enabled("big-brother", True)
+
+        self.assertTrue(state["enabled"])
+        root_config = _read_yaml(self.root / "config.yaml")
+        self.assertTrue(root_config["platforms"]["zalo"]["enabled"])
+        self.assertFalse(root_config["gateway"]["multiplex_profiles"])
+        self.assertEqual(root_config["gateway"]["multiplex_profile_allowlist"], [])
+        self.assertEqual(self.service._bridge_port(self.root, root_config), 3110)
+
+        self.service.set_channel_enabled("agent-1", True)
+        synced = _read_yaml(self.root / "config.yaml")
+        self.assertTrue(synced["gateway"]["multiplex_profiles"])
+        self.assertEqual(synced["gateway"]["multiplex_profile_allowlist"], ["agent-1"])
+        self.assertTrue(synced["platforms"]["zalo"]["enabled"])
+
+    async def test_root_qr_and_logout_use_the_root_profile(self):
+        self.service.set_channel_enabled("big-brother", True)
+        self.root.joinpath("gateway.pid").write_text('{"pid": 222}', encoding="utf-8")
+        directory = self.root / "zalo"
+        directory.mkdir()
+        png = b"\x89PNG\r\n\x1a\nroot"
+        (directory / "qr.png").write_bytes(png)
+        with mock.patch(
+            "xnobrain.integrations.zalo_channels.bridge_health",
+            side_effect=[
+                {"status": "needs_login"},
+                {"status": "qr"},
+            ],
+        ), mock.patch(
+            "xnobrain.integrations.zalo_channels.bridge_start_login",
+            return_value={"status": "connecting"},
+        ):
+            result = await self.service.channel_qr("big-brother")
+
+        self.assertEqual(result["status"], "qr")
+        self.assertEqual(base64.b64decode(result["image_base64"]), png)
+
+        session = directory / "session.json"
+        session.write_text("{}", encoding="utf-8")
+        self.service.logout_channel("big-brother")
+        self.assertFalse(session.exists())
 
     def test_multiplex_allowlist_excludes_an_enabled_root_profile(self):
         root_config = _read_yaml(self.root / "config.yaml")

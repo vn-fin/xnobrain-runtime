@@ -242,9 +242,10 @@ Phase 5 status (2026-11-06): channel API `faf2786`, VM unit `ace42ea`, UI
 `xnobrain-ui` `945dd58` (branch `feat/zalo-channels`), dev flag wiring in the
 root repo. Dev end-to-end via the API on `plugin-qa`: enable → SIGUSR1
 restart → bridge on 3111 in `needs_login` → QR only on request → disable
-cleans the bridge and multiplex allowlist. Open: the API refuses channels on
-Big Brother (`protected_agent`); decide whether Big Brother may own the
-workspace Zalo number. Not done: UI checked only by tests, real QR scan.
+cleans the bridge and multiplex allowlist. Big Brother (the root profile) may
+own the workspace Zalo channel: it is served directly by the gateway, is never
+added to `multiplex_profile_allowlist`, and enabling it alone keeps
+`multiplex_profiles` off. Not done: UI checked only by tests, real QR scan.
 
 **Phase 6 — Later (P1/P2).**
 UC1 (owner commands Big Brother from Zalo through the Runtime pipeline);

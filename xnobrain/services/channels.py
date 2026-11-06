@@ -53,18 +53,6 @@ class ChannelsService:
     def _root_profile(self) -> Path:
         return Path(self.platform.config.root_profile).resolve()
 
-    def _reject_root(self, profile: Path) -> None:
-        try:
-            resolved = profile.resolve()
-        except OSError as error:
-            raise ServiceError("agent profile not found", status=404, code="not_found") from error
-        if resolved == self._root_profile():
-            raise ServiceError(
-                "Big Brother cannot own a personal channel",
-                status=409,
-                code="protected_agent",
-            )
-
     @staticmethod
     def _sender_name(value: Any, thread_id: str) -> str:
         name = " ".join(str(value or "").split())[:120]
@@ -372,7 +360,6 @@ class ChannelsService:
     def set_channel_enabled(self, agent_id: str, enabled: bool) -> dict[str, Any]:
         self._require_feature()
         profile = self._profile(agent_id)
-        self._reject_root(profile)
         config = self.repository.config(profile)
         self._snapshot_config(agent_id, profile)
         platforms = config.get("platforms")
@@ -398,7 +385,6 @@ class ChannelsService:
     def patch_channel(self, agent_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
         self._require_feature()
         profile = self._profile(agent_id)
-        self._reject_root(profile)
         config = self.repository.config(profile)
         env_updates: dict[str, str | None] = {}
         config_changed = False
@@ -489,7 +475,6 @@ class ChannelsService:
     def logout_channel(self, agent_id: str) -> dict[str, Any]:
         self._require_feature()
         profile = self._profile(agent_id)
-        self._reject_root(profile)
         self.repository.delete_session(profile)
         gateway = self._restart_gateway()
         return self._channel_state(profile, self.repository.config(profile), gateway)
