@@ -18,6 +18,7 @@
  */
 
 import express from 'express';
+import QRCode from 'qrcode';
 import path from 'path';
 import { homedir } from 'os';
 import { createHash } from 'crypto';
@@ -562,11 +563,14 @@ function handleQREvent(event, rememberCredentials) {
   switch (event.type) {
     case LoginQRCallbackEventType.QRCodeGenerated: {
       connectionState = 'qr';
-      const image = typeof event.data?.image === 'string' ? event.data.image : '';
-      Promise.resolve(event.actions.saveToFile(QR_PATH))
+      // Zalo's PNG encodes only the bare token; the mobile app needs the login URL.
+      const token = typeof event.data?.token === 'string' ? event.data.token : '';
+      const saved = token
+        ? QRCode.toFile(QR_PATH, `http://zaloapp.com/qr/l?tk=${token}`, { width: 360 })
+        : event.actions.saveToFile(QR_PATH);
+      Promise.resolve(saved)
         .then(() => {
           console.log(`[zalo] QR saved to ${QR_PATH}`);
-          console.log(`[zalo] QR image base64 length: ${image.length}`);
         })
         .catch(() => {
           console.log('[zalo] failed to save QR image');
