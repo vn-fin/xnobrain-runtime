@@ -431,6 +431,7 @@ class RuntimeSystemdRestartTests(unittest.TestCase):
         units = (
             root / "deploy/systemd/xnobrain-api.service",
             root / "runtime/xnobrain-runtime.service",
+            root / "runtime/xnobrain-gateway.service",
         )
         for path in units:
             text = path.read_text(encoding="utf-8")

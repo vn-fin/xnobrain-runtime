@@ -62,6 +62,30 @@ runuser -u "$service_user" -- env \
   bash -c 'cd "$1" && exec bash "$1/scripts/install-linux.sh" --skip-browser' \
   xnobrain-installer "$install_root"
 
+# Bundled Hermes platform plugin. Copy it into the installed Hermes tree and
+# install bridge dependencies now; the runtime never runs npm on startup.
+hermes_dir="$install_root/.tools/hermes-agent"
+zalo_source="$install_root/runtime/hermes-plugins/platforms/zalo"
+if [[ -d "$hermes_dir/plugins/platforms" && -d "$zalo_source" ]]; then
+  rm -rf "$hermes_dir/plugins/platforms/zalo"
+  cp -a "$zalo_source" "$hermes_dir/plugins/platforms/zalo"
+  npm_bin=""
+  if [[ -x "$install_root/.tools/node/bin/npm" ]]; then
+    npm_bin="$install_root/.tools/node/bin/npm"
+  elif command -v npm >/dev/null 2>&1; then
+    npm_bin="$(command -v npm)"
+  fi
+  if [[ -z "$npm_bin" ]]; then
+    echo "npm is required to install the bundled Zalo bridge dependencies." >&2
+    exit 1
+  fi
+  (
+    cd "$hermes_dir/plugins/platforms/zalo/bridge"
+    "$npm_bin" ci --omit=dev --no-audit --no-fund
+  )
+  chown -R "$service_user:$service_user" "$hermes_dir/plugins/platforms/zalo"
+fi
+
 # Keep the Python interpreter inside the immutable application tree. The
 # service user's data home is cleared before publishing the reusable image.
 project_venv="$install_root/.tools/hermes-agent/venv"

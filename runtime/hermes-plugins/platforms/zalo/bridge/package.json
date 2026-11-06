@@ -1,0 +1,15 @@
+{
+  "name": "xnobrain-zalo-bridge",
+  "version": "1.0.0",
+  "description": "Zalo personal-account bridge for the XNOBrain runtime using zca-js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node bridge.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "zca-js": "2.2.0"
+  }
+}

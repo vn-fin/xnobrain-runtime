@@ -5,6 +5,9 @@ from XNOBrain today. Depends on the Kanban foundation discipline
 (`plans/001_kanban_foundation/README.md`) for *how* we pin and ride Hermes, but
 has no runtime dependency on Kanban. It can proceed in parallel with 006–009.
 
+Gateway hosting in containers/systemd and the Zalo personal channel are
+planned in `plans/015_zalo_personal_channel/`.
+
 Read the five companion files in order:
 
 1. `findings.md` — gap analysis: exactly what Hermes provides, what XNOBrain

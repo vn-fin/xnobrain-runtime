@@ -29,10 +29,12 @@
   "install_paths": [
     "deploy/systemd/",
     "runtime/container-entrypoint.sh",
+    "runtime/gateway-entrypoint.sh",
     "runtime/memory-reclaim-helper.py",
     "runtime/memory-reporting-boot.py",
     "runtime/prepare-container.py",
     "runtime/systemd-entrypoint.sh",
+    "runtime/xnobrain-gateway.service",
     "runtime/xnobrain-runtime-prepare.service",
     "runtime/xnobrain-runtime.service",
     "scripts/apply-profile-templates.sh",

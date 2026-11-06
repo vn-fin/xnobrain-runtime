@@ -1,0 +1,37 @@
+name: zalo
+label: Zalo
+kind: platform
+version: 1.0.0
+description: >
+  Zalo personal-account gateway adapter for Hermes Agent.
+  Connects to Zalo through a local Node.js bridge (zca-js) over a loopback
+  HTTP API and relays direct text messages between Zalo and the Hermes agent.
+  Supports a per-user allowlist, an explicit allow-all switch, and a home
+  channel for cron delivery.
+author: XNOBrain
+requires_env:
+  - name: ZALO_ENABLED
+    description: "Enable the Zalo adapter (requires the local Node.js bridge)"
+    prompt: "Enable Zalo? (true/false)"
+    password: false
+optional_env:
+  - name: ZALO_ALLOWED_USERS
+    description: "Comma-separated Zalo user IDs allowed to talk to the bot"
+    prompt: "Allowed users (comma-separated)"
+    password: false
+  - name: ZALO_ALLOW_ALL_USERS
+    description: "Allow any Zalo user to trigger the bot (dev only)"
+    prompt: "Allow all users? (true/false)"
+    password: false
+  - name: ZALO_HOME_CHANNEL
+    description: "Default Zalo user/thread ID for cron and notification delivery"
+    prompt: "Home channel ID"
+    password: false
+  - name: ZALO_HOME_CHANNEL_NAME
+    description: "Display name for the Zalo home channel"
+    prompt: "Home channel display name"
+    password: false
+  - name: ZALO_BRIDGE_PORT
+    description: "Loopback HTTP port for the Zalo bridge (default 3110)"
+    prompt: "Bridge port"
+    password: false

@@ -1,0 +1,38 @@
+[Unit]
+Description=XNOBrain workspace messaging gateway
+Requires=xnobrain-runtime-prepare.service
+Wants=network-online.target
+After=network-online.target xnobrain-runtime-prepare.service xnobrain-runtime.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=xnobrain
+Group=xnobrain
+WorkingDirectory=/opt/xnobrain
+EnvironmentFile=/run/xnobrain-runtime-config/environment
+# The preparation unit copies RUNTIME_* (not HERMES_*) into the environment
+# file. Provide the canonical non-secret layout; EnvironmentFile values take
+# precedence whenever the deployment supplies them.
+Environment=HERMES_HOME=/opt/data/agent/big-brother
+Environment=HERMES_ROOT_PROFILE=/opt/data/agent/big-brother
+Environment=HERMES_PROFILES_ROOT=/opt/data/agent
+Environment=RUNTIME_LLM_API_KEY_FILE=/run/xnobrain-runtime/router-api-key
+ExecStart=/usr/bin/setpriv --no-new-privs -- /usr/local/bin/xnobrain-gateway-entrypoint
+Restart=always
+RestartSec=5s
+ExecReload=/bin/kill -USR1 $MAINPID
+KillMode=mixed
+TimeoutStopSec=60s
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/data /run/xnobrain-runtime
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
