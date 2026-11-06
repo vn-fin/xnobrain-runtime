@@ -206,6 +206,10 @@ Channel API (list/status, enable/disable with snapshot + SIGUSR1 +
 `pending_restart`, QR, allowlist/pairing, logout, home channel) and a Zalo
 card on the agent page; cron target `zalo`; feature flag
 `FT_ENABLE_AGENT_CHANNELS`; docs, release notes, third-party notices.
+VM workspaces (Control's default instance type) use the native unit
+`deploy/systemd/xnobrain-api.service` with data under `/srv/xnobrain-data`;
+`runtime/xnobrain-gateway.service` covers container workspaces only, so add a
+native gateway unit for VMs (installed by `deploy/incus/install-native-runtime.sh`).
 
 **Phase 6 — Later (P1/P2).**
 UC1 (owner commands Big Brother from Zalo through the Runtime pipeline);
