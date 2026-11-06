@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import ipaddress
 import json
+import logging
 import os
 import re
 import shutil
@@ -52,6 +53,7 @@ from .plugin_formats import (
 
 _PLUGIN_REFRESH_LOCK = threading.RLock()
 _PLUGIN_GENERATIONS: dict[str, str] = {}
+_LOGGER = logging.getLogger(__name__)
 
 
 def refresh_profile_plugins(profile: Path) -> None:
@@ -209,7 +211,7 @@ def plugin_inventory(profile: Path) -> list[dict[str, Any]]:
                 }
             )
         except (OSError, ValueError, yaml.YAMLError):
-            fail("Installed plugin metadata is invalid", "plugin_manifest_invalid")
+            _LOGGER.warning("Skipping plugin %s with unreadable metadata", path.name)
     return rows
 
 

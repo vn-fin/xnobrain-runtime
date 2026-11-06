@@ -373,6 +373,22 @@ class ExtensionEngineTests(unittest.TestCase):
                 ],
             )
 
+    def test_inventory_skips_a_plugin_with_an_unreadable_manifest(self):
+        with tempfile.TemporaryDirectory() as root:
+            profile = self.profile(root)
+            (profile / "plugins").mkdir()
+            shutil.move(
+                str(self.portable(root)),
+                str(profile / "plugins" / "docs-helper"),
+            )
+            broken = profile / "plugins" / "broken-helper"
+            broken.mkdir()
+            (broken / "plugin.yaml").write_text("name: [unclosed\n")
+            with self.assertLogs(engine._LOGGER, level="WARNING") as logs:
+                rows = engine.plugin_inventory(profile)
+            self.assertEqual([row["id"] for row in rows], ["docs-helper"])
+            self.assertIn("broken-helper", "\n".join(logs.output))
+
     def _fake_git(self, sha, files):
         """Replace Git transport: record commands and lay out ``files`` on fetch."""
         commands = []
