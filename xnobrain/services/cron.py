@@ -19,6 +19,7 @@ from ..integrations import (
     CronBlueprintNotFound,
     CronDeliveryAdapter,
     CronDeliveryAdapterError,
+    zalo_channels,
 )
 from ..repositories import FileRepository
 from ..repositories.base import StoreError
@@ -341,6 +342,25 @@ class CronService:
                     if row.get("home_target_set")
                     else "No home delivery target configured",
                 }
+        for profile in profiles:
+            try:
+                enabled = zalo_channels.profile_enables_zalo(self._profile_home(profile))
+            except Exception:
+                continue
+            if not enabled:
+                continue
+            option = discovered.get(("channel", "zalo"))
+            if option is None:
+                discovered[("channel", "zalo")] = {
+                    "target_type": "channel",
+                    "id": "zalo",
+                    "name": "Zalo",
+                    "available": True,
+                    "degraded_reason": None,
+                }
+            else:
+                option["available"] = True
+                option["degraded_reason"] = None
         discovered.setdefault(
             ("email", "email"),
             {
@@ -410,6 +430,20 @@ class CronService:
                 raise CronServiceError(
                     "workspace delivery path is invalid", code="invalid_workspace_path"
                 ) from exc
+        elif target_type == "channel" and destination.split(":", 1)[0] == "zalo":
+            _, _, thread_id = destination.partition(":")
+            if thread_id and (not thread_id.isdigit() or len(thread_id) > 32):
+                raise CronServiceError(
+                    "zalo destination must be zalo or zalo:<thread_id>",
+                    status=422,
+                    code="invalid_delivery_target",
+                )
+            if not zalo_channels.profile_enables_zalo(self._profile_home(profile)):
+                raise CronServiceError(
+                    "zalo delivery target is not configured",
+                    status=422,
+                    code="delivery_target_unavailable",
+                )
         else:
             if not destination:
                 raise CronServiceError(

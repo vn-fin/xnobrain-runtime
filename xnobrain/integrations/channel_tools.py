@@ -104,9 +104,12 @@ def bind_run(
     approval_notify_callback,
 ):
     """Expose the tool only while a run can use an enabled Zalo plugin."""
+    from ..feature_flags import FEATURE_AGENT_CHANNELS, enabled as feature_enabled
+
     try:
         enabled = (
-            service is not None
+            feature_enabled(FEATURE_AGENT_CHANNELS)
+            and service is not None
             and zalo_channels.zalo_plugin_registered()
             and zalo_channels.profile_enables_zalo(profile_dir)
         )

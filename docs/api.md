@@ -667,7 +667,59 @@ It also records `display_kind=channel_message` and display metadata for future U
 rendering. No run, agent turn, approval, or assistant reply is created. The gateway
 adapter reads `<profile>/zalo/links.json`; only linked threads are forwarded here, and
 their messages are never passed to Hermes' `handle_message`. Ordinary allowlist/pairing
-behavior still governs unlinked threads.
+behavior still governs unlinked threads. This private route is also gated by
+`FT_ENABLE_AGENT_CHANNELS` and returns `404` when channels are disabled.
+
+## Agent channels (plan 015 Phase 5)
+
+Every route below, and the run-scoped `send_channel_message` tool, is absent unless
+`FT_ENABLE_AGENT_CHANNELS=true` (default `false`). The coordinated UI build consumes
+the same value as `VITE_FT_ENABLE_AGENT_CHANNELS`. The routes use the same
+Control-proxied user identity as other `/agents/{agent_id}/…` routes; `agent_id`
+selects a resource and never authorizes access. A disabled runtime answers `404`
+`feature_disabled`.
+
+| Method and path | Body | Result |
+|---|---|---|
+| `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels` | — | `{channels: [ChannelState], gateway: {running, pid, pending_restart}}` |
+| `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo` | `{enabled: bool}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo` | `{allowed_users?: [id], dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/qr` | — | `{status, image_base64}` |
+| `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/logout` | — | `ChannelState` |
+
+`ChannelState` is `{platform: "zalo", enabled, status, own_id, allowed_users,
+dm_policy, home_channel}`. `status` is one of `disabled`, `starting`,
+`needs_login`, `qr`, `connected`, `closed`, `pending_restart`, `gateway_down`.
+It comes from the loopback bridge `GET http://127.0.0.1:<port>/health`;
+`connecting` maps to `starting`. Big Brother (the root profile) cannot own a
+personal channel (`409 protected_agent`).
+
+Writes snapshot the profile `config.yaml` first, then atomically update
+`platforms.zalo.enabled`, `platforms.zalo.extra.dm_policy`, and the profile
+`.env` keys `ZALO_ALLOWED_USERS` and `ZALO_HOME_CHANNEL`. New channels default to
+`dm_policy: disabled`. The root profile's `gateway.multiplex_profiles` and
+`gateway.multiplex_profile_allowlist` are kept in sync with every non-root
+profile whose Zalo channel is enabled; the root profile and `default` are never
+listed. The bridge port is the bundled plugin's rule (`3110` plus the stable
+profile index, or an explicit `platforms.zalo.extra.bridge_port`).
+
+A write sends `SIGUSR1` to the live PID in `<root HERMES_HOME>/gateway.pid`; the
+Runtime never runs `hermes gateway restart`. Until that PID changes every channel
+reports `pending_restart`; with no live PID it reports `gateway_down`. The
+gateway must run under a restart policy (`unless-stopped` or `Restart=always`).
+
+`GET …/zalo/qr` starts one bridge `POST /login` when the status is `needs_login`,
+then returns the current `qr.png` as base64 while the status is `qr`. The bridge
+does not generate QR codes at startup: without a usable session it stays
+`needs_login`, retries at most three consecutive expired/declined QR codes, and
+returns to `needs_login`. A terminal close (`3000` duplicate connection, `3003`
+kicked) also parks the bridge at `needs_login`. Logout deletes
+`<profile>/zalo/session.json` and requests the same gateway restart.
+
+Cron delivery options include a `channel` target with id `zalo` for each profile
+whose channel is enabled. `destination` may be `zalo` (home channel) or
+`zalo:<thread_id>`; other destinations are rejected with
+`422 delivery_target_unavailable`.
 
 ## Personal Agent Custom Page v1 (FT0015, in progress)
 

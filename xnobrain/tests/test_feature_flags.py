@@ -9,6 +9,7 @@ from unittest.mock import patch
 from fastapi import FastAPI
 
 from xnobrain.feature_flags import (
+    FEATURE_AGENT_CHANNELS,
     FEATURE_AGENT_CUSTOM_PAGE,
     FEATURE_AGENT_EXTENSIONS,
     FEATURE_AGENT_PORTABILITY,
@@ -43,6 +44,7 @@ class FeatureFlagTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertFalse(enabled(FEATURE_AGENT_CUSTOM_PAGE))
             self.assertFalse(enabled(FEATURE_UI_CUSTOMIZATION))
+            self.assertFalse(enabled(FEATURE_AGENT_CHANNELS))
             self.assertTrue(enabled("FUTURE_STABLE_FEATURE"))
         for value in ("true", "TRUE", "1", "yes", "on"):
             with patch.dict(os.environ, {"FT_ENABLE_AGENT_CUSTOM_PAGE": value}, clear=True):

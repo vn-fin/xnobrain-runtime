@@ -2,15 +2,26 @@
 
 from __future__ import annotations
 
+import json
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Mapping
 
 ZALO_PLATFORM = "zalo"
 DEFAULT_MAX_MESSAGE_LENGTH = 2000
+BRIDGE_PORT_BASE = 3110
 MAX_KNOWN_NAMES = 20
 _THREAD_ID = re.compile(r"^[0-9]{1,32}$")
 _PLUGIN_READY: bool | None = None
+BRIDGE_STATUS = {
+    "connecting": "starting",
+    "needs_login": "needs_login",
+    "qr": "qr",
+    "connected": "connected",
+    "closed": "closed",
+}
 
 
 class ChannelDeliveryError(Exception):
@@ -125,6 +136,97 @@ def max_message_length() -> int:
     except Exception:
         pass
     return DEFAULT_MAX_MESSAGE_LENGTH
+
+
+def _fallback_profile_index(profile: Path, profiles_root: Path, root_profile: Path) -> int:
+    try:
+        active = profile.resolve()
+        root = root_profile.resolve()
+        profiles = profiles_root.resolve()
+    except OSError:
+        return 0
+    if active == root or active.parent != profiles:
+        return 0
+    try:
+        names = sorted(entry.name for entry in profiles.iterdir() if entry.is_dir())
+    except OSError:
+        return 0
+    try:
+        return names.index(active.name)
+    except ValueError:
+        return 0
+
+
+def bridge_port(
+    profile: Path,
+    *,
+    profiles_root: Path,
+    root_profile: Path,
+    configured: Any = None,
+) -> int:
+    """Resolve the loopback bridge port with the bundled plugin's own rule."""
+    try:
+        from plugins.platforms.zalo import adapter as plugin
+
+        index = plugin._profile_index(
+            Path(profile),
+            str(profiles_root),
+            str(root_profile),
+        )
+        return int(plugin._coerce_port(configured, plugin.BRIDGE_PORT_BASE + index))
+    except Exception:
+        pass
+    index = _fallback_profile_index(Path(profile), Path(profiles_root), Path(root_profile))
+    try:
+        port = int(configured)
+    except (TypeError, ValueError):
+        port = BRIDGE_PORT_BASE + index
+    if port < 1 or port > 65535 or port == 3000:
+        port = BRIDGE_PORT_BASE + index
+    return port
+
+
+def bridge_status(value: Any) -> str:
+    """Map a bridge ``/health`` status to the public channel status contract."""
+    return BRIDGE_STATUS.get(str(value or "").strip().lower(), "closed")
+
+
+def _bridge_request(
+    port: int,
+    path: str,
+    *,
+    method: str = "GET",
+    timeout: float = 1.0,
+) -> dict[str, Any] | None:
+    if not isinstance(port, int) or port < 1 or port > 65535 or port == 3000:
+        return None
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}",
+        method=method,
+        data=b"{}" if method == "POST" else None,
+        headers={"Content-Type": "application/json"} if method == "POST" else {},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = int(getattr(response, "status", 0))
+            if not 200 <= status < 300:
+                return None
+            payload = response.read(65536)
+    except (OSError, urllib.error.URLError, ValueError):
+        return None
+    try:
+        value = json.loads(payload)
+    except (ValueError, TypeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def bridge_health(port: int, *, timeout: float = 1.0) -> dict[str, Any] | None:
+    return _bridge_request(port, "/health", timeout=timeout)
+
+
+def bridge_start_login(port: int, *, timeout: float = 2.0) -> dict[str, Any] | None:
+    return _bridge_request(port, "/login", method="POST", timeout=timeout)
 
 
 def profile_enables_zalo(profile: Path) -> bool:

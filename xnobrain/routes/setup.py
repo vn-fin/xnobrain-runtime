@@ -6,6 +6,7 @@ from fastapi import Body, Request
 from fastapi.responses import Response
 
 from ..feature_flags import (
+    FEATURE_AGENT_CHANNELS,
     FEATURE_AGENT_CUSTOM_PAGE,
     FEATURE_AGENT_EXTENSIONS,
     FEATURE_AGENT_PORTABILITY,
@@ -73,7 +74,6 @@ BASE_ROUTE_GROUPS = (
     hosted.ROUTES,
     conversations.ROUTES,
     automation.ROUTES,
-    channels.ROUTES,
     kanban.ROUTES,
     teams.ROUTES,
     providers.ROUTES,
@@ -95,6 +95,8 @@ def route_groups() -> tuple[tuple[Route, ...], ...]:
         optional += (ui_composition.ROUTES,)
     if feature_enabled(FEATURE_AGENT_EXTENSIONS):
         optional += (extensions.ROUTES,)
+    if feature_enabled(FEATURE_AGENT_CHANNELS):
+        optional += (channels.ROUTES,)
     groups = optional + BASE_ROUTE_GROUPS
     if not feature_enabled("PROFILE_EXAMPLES"):
         groups = tuple(

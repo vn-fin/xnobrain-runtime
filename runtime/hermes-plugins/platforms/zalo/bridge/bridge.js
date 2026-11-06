@@ -7,6 +7,7 @@
  *
  * Endpoints:
  *   GET  /health   - {status, scriptHash, ownId}
+ *   POST /login    - start one on-demand QR login
  *   GET  /messages - drain queued inbound direct messages
  *   POST /send     - {chatId, message} -> {success, messageId}
  *
@@ -33,6 +34,7 @@ import {
   openSync,
   readFileSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from 'fs';
 import {
@@ -49,6 +51,7 @@ import {
   historyEntry,
   isLoopback,
   isNewerMessageId,
+  nextQrExpiryAttempt,
   normalizeMessageId,
   pushToQueue,
   reloginDelayMs,
@@ -97,8 +100,10 @@ try {
   // /health simply reports an empty hash when the script cannot be read.
 }
 
-// status: "connecting" | "qr" | "connected" | "closed"
-let connectionState = 'connecting';
+// status: "needs_login" | "connecting" | "qr" | "connected" | "closed"
+// A bridge without a usable session starts at needs_login and only generates a
+// QR after an explicit POST /login, so an unattended workspace cannot spin.
+let connectionState = 'needs_login';
 let api = null;
 let ownId = '';
 let shuttingDown = false;
@@ -107,7 +112,9 @@ let terminalClosed = false;
 let terminalCloseLogged = false;
 let reloginAttempt = 0;
 let reloginTimer = null;
-let reloginAllowQr = false;
+let loginInFlight = false;
+let qrExpiredCount = 0;
+let qrLoginAborted = false;
 let keepAliveTimer = null;
 let sessionSaveTimer = null;
 let sessionIdentity = null;
@@ -405,6 +412,25 @@ function persistSessionFromApi() {
   });
 }
 
+/**
+ * Park the bridge until the user explicitly starts a QR login again.
+ *
+ * Stops background timers and removes the previous QR image so a stale code is
+ * never shown as current.
+ */
+function setNeedsLogin() {
+  connectionState = 'needs_login';
+  stopKeepAlive();
+  stopSessionSave();
+  try {
+    if (existsSync(QR_PATH)) {
+      unlinkSync(QR_PATH);
+    }
+  } catch {
+    // A missing or locked QR file does not change the login state.
+  }
+}
+
 function preventListenerRestart() {
   const listener = api?.listener;
   if (!listener) {
@@ -427,14 +453,12 @@ function applyTerminalClose(decision) {
   }
   terminalCloseLogged = true;
   terminalClosed = true;
-  connectionState = 'closed';
-  console.log(`[zalo] closed: ${decision.reason}`);
+  setNeedsLogin();
+  console.log(`[zalo] closed: ${decision.reason}; login required`);
   if (reloginTimer) {
     clearTimeout(reloginTimer);
     reloginTimer = null;
   }
-  stopKeepAlive();
-  stopSessionSave();
   preventListenerRestart();
   try {
     api?.listener?.stop();
@@ -443,15 +467,15 @@ function applyTerminalClose(decision) {
   }
 }
 
-function scheduleRelogin(allowQr = false) {
+function scheduleRelogin() {
   if (reloginTimer || shuttingDown || terminalClosed) {
     return;
   }
   if (reloginAttempt >= MAX_RELOGIN_ATTEMPTS) {
-    console.log('[zalo] relogin limit reached; restart the bridge to recover');
+    console.log('[zalo] relogin limit reached; login required');
+    setNeedsLogin();
     return;
   }
-  reloginAllowQr = allowQr;
   reloginAttempt += 1;
   const delayMs = reloginDelayMs(reloginAttempt);
   console.log(
@@ -483,11 +507,10 @@ async function restartClient() {
   api = null;
   connectionState = 'connecting';
   try {
-    await startClient({ allowQr: reloginAllowQr });
+    await startClient({ allowQr: false });
   } catch {
-    connectionState = 'closed';
-    console.log('[zalo] relogin failed');
-    scheduleRelogin(reloginAllowQr);
+    console.log('[zalo] relogin failed; login required');
+    setNeedsLogin();
   } finally {
     const releaseTimer = setTimeout(() => {
       suppressCloseEvents = false;
@@ -563,6 +586,7 @@ function handleQREvent(event, rememberCredentials) {
   switch (event.type) {
     case LoginQRCallbackEventType.QRCodeGenerated: {
       connectionState = 'qr';
+      qrExpiredCount = 0;
       // Zalo's PNG encodes only the bare token; the mobile app needs the login URL.
       const token = typeof event.data?.token === 'string' ? event.data.token : '';
       const saved = token
@@ -578,25 +602,35 @@ function handleQREvent(event, rememberCredentials) {
       break;
     }
     case LoginQRCallbackEventType.QRCodeExpired:
-      console.log('[zalo] QR expired; requesting a new code');
+    case LoginQRCallbackEventType.QRCodeDeclined: {
+      const decision = nextQrExpiryAttempt(qrExpiredCount);
+      qrExpiredCount = decision.attempts;
+      if (!decision.retry) {
+        qrLoginAborted = true;
+        setNeedsLogin();
+        console.log('[zalo] QR expired too many times; login required');
+        try {
+          event.actions.abort();
+        } catch {
+          // The login request may already be closed.
+        }
+        break;
+      }
+      console.log('[zalo] QR expired or declined; requesting a new code');
       try {
         event.actions.retry();
       } catch {
-        console.log('[zalo] QR retry failed');
+        qrLoginAborted = true;
+        setNeedsLogin();
+        console.log('[zalo] QR retry failed; login required');
       }
       break;
+    }
     case LoginQRCallbackEventType.QRCodeScanned:
       console.log('[zalo] QR scanned; confirm on your phone');
       break;
-    case LoginQRCallbackEventType.QRCodeDeclined:
-      console.log('[zalo] QR login declined; requesting a new code');
-      try {
-        event.actions.retry();
-      } catch {
-        console.log('[zalo] QR retry failed');
-      }
-      break;
     case LoginQRCallbackEventType.GotLoginInfo:
+      qrExpiredCount = 0;
       rememberCredentials({
         cookie: event.data?.cookie,
         imei: event.data?.imei,
@@ -611,7 +645,7 @@ function handleQREvent(event, rememberCredentials) {
 
 async function loginWithQR(zalo) {
   let credentials = null;
-  connectionState = 'qr';
+  connectionState = 'connecting';
   api = await zalo.loginQR({ qrPath: QR_PATH }, (event) => {
     handleQREvent(event, (value) => {
       credentials = value;
@@ -639,11 +673,11 @@ function finishLogin(identity) {
   attachListener();
 }
 
-async function startClient({ allowQr = true } = {}) {
+async function startClient({ allowQr = false, forceQr = false } = {}) {
   mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
   trimHistory();
   const zalo = new Zalo({ logging: false });
-  const session = loadSession();
+  const session = forceQr ? null : loadSession();
   if (session) {
     try {
       console.log('[zalo] restoring saved session');
@@ -655,17 +689,49 @@ async function startClient({ allowQr = true } = {}) {
       finishLogin({ imei: session.imei, userAgent: session.userAgent });
       return;
     } catch (error) {
-      console.log(`[zalo] saved session login failed (${error?.name || 'Error'}); using QR`);
+      console.log(`[zalo] saved session login failed (${error?.name || 'Error'})`);
       if (!allowQr) {
         throw error;
       }
     }
-  }
-  if (!allowQr) {
+  } else if (!allowQr) {
     throw new Error('saved session unavailable');
   }
   const credentials = await loginWithQR(zalo);
+  if (qrLoginAborted || !credentials) {
+    throw new Error('QR login was not completed');
+  }
   finishLogin(credentials);
+}
+
+/**
+ * Start one on-demand QR login. The HTTP caller returns immediately; the
+ * session state is observable through GET /health.
+ */
+async function beginQrLogin() {
+  if (loginInFlight || connectionState === 'connected') {
+    return;
+  }
+  loginInFlight = true;
+  qrExpiredCount = 0;
+  qrLoginAborted = false;
+  terminalClosed = false;
+  terminalCloseLogged = false;
+  suppressCloseEvents = false;
+  reloginAttempt = 0;
+  if (reloginTimer) {
+    clearTimeout(reloginTimer);
+    reloginTimer = null;
+  }
+  connectionState = 'connecting';
+  try {
+    await startClient({ allowQr: true, forceQr: true });
+  } catch {
+    setNeedsLogin();
+    console.log('[zalo] QR login failed; login required');
+  } finally {
+    loginInFlight = false;
+  }
 }
 
 const app = express();
@@ -684,6 +750,17 @@ app.get('/health', (req, res) => {
     scriptHash: SCRIPT_HASH,
     ownId,
   });
+});
+
+app.post('/login', (req, res) => {
+  if (connectionState === 'connected') {
+    return res.status(409).json({ status: 'connected', error: 'Already connected' });
+  }
+  if (loginInFlight) {
+    return res.status(202).json({ status: connectionState });
+  }
+  void beginQrLogin();
+  return res.status(202).json({ status: 'connecting' });
 });
 
 app.get('/messages', (req, res) => {
@@ -731,9 +808,13 @@ app.listen(PORT, '127.0.0.1', () => {
   console.log(`[zalo] bridge listening on 127.0.0.1:${PORT}`);
   console.log(`[zalo] session directory: ${SESSION_DIR}`);
   console.log(`[zalo] inbound queue limit: ${MAX_QUEUE_SIZE}`);
+  if (!loadSession()) {
+    setNeedsLogin();
+    console.log('[zalo] no saved session; waiting for POST /login');
+    return;
+  }
   startClient().catch(() => {
-    connectionState = 'closed';
-    console.log('[zalo] login failed; scheduling bounded relogin');
-    scheduleRelogin(true);
+    setNeedsLogin();
+    console.log('[zalo] saved session is not usable; login required');
   });
 });

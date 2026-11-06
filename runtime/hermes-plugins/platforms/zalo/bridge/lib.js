@@ -20,6 +20,20 @@ export const TERMINAL_CLOSE_REASONS = Object.freeze({
 export const MAX_RELOGIN_ATTEMPTS = 5;
 export const RELOGIN_BASE_DELAY_MS = 60_000;
 
+/** Stop on-demand QR login after this many consecutive expired or declined QRs. */
+export const MAX_QR_EXPIRY_ATTEMPTS = 3;
+
+/**
+ * Count one expired/declined QR and decide whether another QR may be generated.
+ *
+ * @param {number} current
+ * @returns {{attempts: number, retry: boolean}}
+ */
+export function nextQrExpiryAttempt(current) {
+  const attempts = Math.max(0, Math.floor(Number(current) || 0)) + 1;
+  return { attempts, retry: attempts < MAX_QR_EXPIRY_ATTEMPTS };
+}
+
 /** Inbound history keeps 30 days; the file is trimmed when the bridge starts. */
 export const HISTORY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 

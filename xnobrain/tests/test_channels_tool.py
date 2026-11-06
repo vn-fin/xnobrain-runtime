@@ -268,7 +268,9 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
         (profile / "config.yaml").write_text(
             "platforms:\n  zalo:\n    enabled: true\n", encoding="utf-8"
         )
-        with mock.patch.object(
+        with mock.patch.dict(
+            os.environ, {"FT_ENABLE_AGENT_CHANNELS": "true"}
+        ), mock.patch.object(
             zalo_channels, "zalo_plugin_registered", return_value=True
         ):
             with channel_tools.bind_run(
@@ -278,6 +280,24 @@ class ChannelToolCallTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("conv-1", channel_tools._BINDINGS)
 
         self.assertNotIn("conv-1", channel_tools._BINDINGS)
+
+    async def test_bind_is_disabled_by_the_feature_flag(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        profile = Path(temporary.name)
+        (profile / "config.yaml").write_text(
+            "platforms:\n  zalo:\n    enabled: true\n", encoding="utf-8"
+        )
+        with mock.patch.dict(
+            os.environ, {"FT_ENABLE_AGENT_CHANNELS": "false"}
+        ), mock.patch.object(
+            zalo_channels, "zalo_plugin_registered", return_value=True
+        ):
+            with channel_tools.bind_run(
+                _FakeService({"status": "ok"}), profile, "agent-1", "conv-1", "run-1", None
+            ) as enabled:
+                self.assertFalse(enabled)
+                self.assertNotIn("conv-1", channel_tools._BINDINGS)
 
     async def test_install_adds_the_tool_only_for_the_bound_run(self):
         channel_tools._SCHEMA.update(

@@ -1,10 +1,13 @@
-"""Atomic Zalo link state and read-only channel discovery for Runtime chats."""
+"""Atomic Zalo channel state, profile settings, and discovery for Runtime chats."""
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
+
+import yaml
 
 from .base import StoreError
 
@@ -12,12 +15,19 @@ ZALO_DIR = "zalo"
 LINKS_FILE = "links.json"
 HISTORY_FILE = "history.jsonl"
 DIRECTORY_FILE = "channel_directory.json"
+SESSION_FILE = "session.json"
+QR_FILE = "qr.png"
+GATEWAY_PID_FILE = "gateway.pid"
+RESTART_STATE_FILE = "gateway-restart.json"
 MAX_STATE_BYTES = 2 * 1024 * 1024
+MAX_QR_BYTES = 4 * 1024 * 1024
 MAX_HISTORY_LINES = 5000
+_ENV_LINE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
+_ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class ChannelsRepository:
-    """Read bridge history and persist ``links.json`` beneath one profile."""
+    """Read bridge state and persist profile channel settings atomically."""
 
     def __init__(self, base):
         self.base = base
@@ -68,6 +78,208 @@ class ChannelsRepository:
         if len(payload) > MAX_STATE_BYTES:
             payload = payload[-MAX_STATE_BYTES:]
         return payload.decode("utf-8", errors="replace")
+
+    @classmethod
+    def _config_path(cls, profile: Any) -> Path:
+        root = cls._profile_root(profile)
+        path = root / "config.yaml"
+        if path.is_symlink():
+            raise StoreError(
+                "agent channel config is unsafe", status=400, code="channel_path_unsafe"
+            )
+        return path
+
+    def config(self, profile: Any) -> dict[str, Any]:
+        root = self._profile_root(profile)
+        path = root / "config.yaml"
+        if not path.exists():
+            return {}
+        try:
+            value = yaml.safe_load(self._read_text(path))
+        except (ValueError, TypeError) as error:
+            raise StoreError(
+                "agent channel config is invalid",
+                status=500,
+                code="channel_config_invalid",
+            ) from error
+        return value if isinstance(value, dict) else {}
+
+    def write_config(self, profile: Any, value: Mapping[str, Any]) -> None:
+        path = self._config_path(profile)
+        self.base.atomic_yaml(path, dict(value))
+
+    @classmethod
+    def _env_path(cls, profile: Any) -> Path:
+        root = cls._profile_root(profile)
+        path = root / ".env"
+        if path.is_symlink():
+            raise StoreError(
+                "agent channel environment is unsafe", status=400, code="channel_path_unsafe"
+            )
+        return path
+
+    @staticmethod
+    def _parse_env(text: str) -> dict[str, str]:
+        values: dict[str, str] = {}
+        for line in text.splitlines():
+            match = _ENV_LINE.match(line)
+            if not match:
+                continue
+            value = match.group(2).strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+            values[match.group(1)] = value
+        return values
+
+    def env(self, profile: Any) -> dict[str, str]:
+        path = self._env_path(profile)
+        if not path.exists():
+            return {}
+        return self._parse_env(self._read_text(path))
+
+    def update_env(self, profile: Any, updates: Mapping[str, str | None]) -> None:
+        """Replace or remove managed keys while preserving unrelated lines."""
+        if not updates:
+            return
+        for key, value in updates.items():
+            if not _ENV_KEY.fullmatch(str(key)):
+                raise StoreError("invalid channel environment key")
+            if value is not None and any(char in str(value) for char in "\r\n"):
+                raise StoreError("invalid channel environment value")
+        path = self._env_path(profile)
+        existing = self._read_text(path) if path.exists() else ""
+        applied: set[str] = set()
+        lines: list[str] = []
+        for line in existing.splitlines():
+            match = _ENV_LINE.match(line)
+            key = match.group(1) if match else ""
+            if key not in updates:
+                lines.append(line)
+                continue
+            if key in applied:
+                continue
+            applied.add(key)
+            value = updates[key]
+            if value is not None:
+                lines.append(f"{key}={value}")
+        for key, value in updates.items():
+            if key not in applied and value is not None:
+                lines.append(f"{key}={value}")
+        payload = "\n".join(lines)
+        if payload:
+            payload += "\n"
+        self.base.atomic_write(path, payload.encode("utf-8"), mode=0o600)
+
+    def qr_image(self, profile: Any) -> bytes | None:
+        _, directory = self._zalo_dir(profile)
+        if directory is None:
+            return None
+        path = directory / QR_FILE
+        if not path.exists():
+            return None
+        if path.is_symlink() or not path.is_file():
+            raise StoreError(
+                "agent channel QR is unsafe", status=400, code="channel_path_unsafe"
+            )
+        try:
+            payload = path.read_bytes()
+        except OSError as error:
+            raise StoreError(
+                "agent channel QR is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            ) from error
+        if len(payload) > MAX_QR_BYTES:
+            raise StoreError(
+                "agent channel QR is too large",
+                status=500,
+                code="channel_state_unavailable",
+            )
+        return payload
+
+    def delete_session(self, profile: Any) -> bool:
+        _, directory = self._zalo_dir(profile)
+        if directory is None:
+            return False
+        path = directory / SESSION_FILE
+        if path.is_symlink():
+            raise StoreError(
+                "agent channel session is unsafe", status=400, code="channel_path_unsafe"
+            )
+        if not path.exists():
+            return False
+        try:
+            path.unlink()
+        except OSError as error:
+            raise StoreError(
+                "agent channel session is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            ) from error
+        self.base._sync_dir(path.parent)
+        return True
+
+    @staticmethod
+    def gateway_pid(root: Any) -> int | None:
+        """Read ``<root HERMES_HOME>/gateway.pid`` (JSON record or plain int)."""
+        path = Path(root) / GATEWAY_PID_FILE
+        if path.is_symlink() or not path.is_file():
+            return None
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        if not text:
+            return None
+        value: Any = text
+        if text.startswith("{"):
+            try:
+                record = json.loads(text)
+            except (ValueError, TypeError):
+                return None
+            value = record.get("pid") if isinstance(record, dict) else None
+        try:
+            pid = int(value)
+        except (TypeError, ValueError):
+            return None
+        return pid if 1 < pid < 2**31 else None
+
+    def _restart_state_path(self) -> Path:
+        return self.base.data_dir / "channels" / RESTART_STATE_FILE
+
+    def gateway_restart(self) -> dict[str, Any] | None:
+        path = self._restart_state_path()
+        if path.is_symlink() or not path.is_file():
+            return None
+        try:
+            value = json.loads(self._read_text(path))
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(value, dict):
+            return None
+        try:
+            pid = int(value.get("pid"))
+        except (TypeError, ValueError):
+            return None
+        return {"pid": pid, "requested_at": value.get("requested_at")}
+
+    def mark_gateway_restart(self, pid: int) -> None:
+        import time
+
+        self.base.atomic_json(
+            self._restart_state_path(),
+            {"pid": int(pid), "requested_at": time.time()},
+        )
+
+    def clear_gateway_restart(self) -> None:
+        path = self._restart_state_path()
+        if path.is_symlink() or not path.exists():
+            return
+        try:
+            path.unlink()
+        except OSError:
+            return
+        self.base._sync_dir(path.parent)
 
     def links(self, profile: Any) -> dict[str, dict[str, Any]]:
         _, directory = self._zalo_dir(profile)

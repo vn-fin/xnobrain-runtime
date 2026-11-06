@@ -2,12 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  MAX_QR_EXPIRY_ATTEMPTS,
   MAX_QUEUE_SIZE,
   MAX_RELOGIN_ATTEMPTS,
   classifyCloseCode,
   cookieListFromJar,
   isLoopback,
   isNewerMessageId,
+  nextQrExpiryAttempt,
   pushToQueue,
   reloginDelayMs,
   rememberCursor,
@@ -146,6 +148,14 @@ test('reloginDelayMs grows linearly and caps at the attempt limit', () => {
   assert.equal(reloginDelayMs(2), 120_000);
   assert.equal(reloginDelayMs(5), 300_000);
   assert.equal(reloginDelayMs(0), 60_000);
+});
+
+test('nextQrExpiryAttempt stops after three consecutive expired QRs', () => {
+  assert.equal(MAX_QR_EXPIRY_ATTEMPTS, 3);
+  assert.deepEqual(nextQrExpiryAttempt(0), { attempts: 1, retry: true });
+  assert.deepEqual(nextQrExpiryAttempt(1), { attempts: 2, retry: true });
+  assert.deepEqual(nextQrExpiryAttempt(2), { attempts: 3, retry: false });
+  assert.deepEqual(nextQrExpiryAttempt('bad'), { attempts: 1, retry: true });
 });
 
 test('cookieListFromJar serializes a CookieJar for login()', () => {
