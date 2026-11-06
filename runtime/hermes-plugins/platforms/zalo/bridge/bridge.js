@@ -23,6 +23,7 @@ import { homedir } from 'os';
 import { createHash } from 'crypto';
 import { fileURLToPath } from 'url';
 import {
+  appendFileSync,
   chmodSync,
   closeSync,
   existsSync,
@@ -44,6 +45,7 @@ import {
   MAX_RELOGIN_ATTEMPTS,
   classifyCloseCode,
   cookieListFromJar,
+  historyEntry,
   isLoopback,
   isNewerMessageId,
   normalizeMessageId,
@@ -51,6 +53,7 @@ import {
   reloginDelayMs,
   rememberCursor,
   shouldQueueMessage,
+  trimHistoryLines,
   validateSendBody,
 } from './lib.js';
 
@@ -80,6 +83,7 @@ const SESSION_DIR = path.resolve(
 );
 const SESSION_FILE = path.join(SESSION_DIR, 'session.json');
 const CURSOR_FILE = path.join(SESSION_DIR, 'cursor.json');
+const HISTORY_FILE = path.join(SESSION_DIR, 'history.jsonl');
 const QR_PATH = path.join(SESSION_DIR, 'qr.png');
 
 let SCRIPT_HASH = '';
@@ -160,6 +164,61 @@ function persistCursors() {
   }
 }
 
+function writeTextAtomic(filePath, text, mode = 0o600) {
+  const temporary = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  const fd = openSync(temporary, 'w', mode);
+  try {
+    writeFileSync(fd, text, 'utf8');
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  try {
+    chmodSync(temporary, mode);
+  } catch {
+    // Best effort on filesystems without POSIX modes.
+  }
+  renameSync(temporary, filePath);
+}
+
+function appendHistory(message, { recovered = false } = {}) {
+  const entry = historyEntry({
+    messageId: message.messageId,
+    threadId: message.threadId,
+    senderId: message.senderId,
+    senderName: message.senderName,
+    text: message.text,
+    timestamp: message.timestamp,
+    recovered,
+  });
+  try {
+    appendFileSync(HISTORY_FILE, `${JSON.stringify(entry)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+  } catch {
+    console.log('[zalo] failed to append inbound history');
+  }
+}
+
+/**
+ * Keep only the last 30 days of inbound history. Runs once at bridge start so
+ * the append-only file cannot grow without bound across sessions.
+ */
+function trimHistory() {
+  try {
+    if (!existsSync(HISTORY_FILE)) {
+      return;
+    }
+    const lines = readFileSync(HISTORY_FILE, 'utf8').split(/\r?\n/);
+    const kept = trimHistoryLines(lines);
+    const payload = kept.length ? `${kept.join('\n')}\n` : '';
+    writeTextAtomic(HISTORY_FILE, payload, 0o600);
+  } catch {
+    console.log('[zalo] failed to trim inbound history');
+  }
+}
+
 function rememberSeen(messageId) {
   seenIds.add(messageId);
   seenOrder.push(messageId);
@@ -234,14 +293,27 @@ function ingestMessage(message, { requireNewer = false } = {}) {
   rememberSeen(messageId);
   rememberCursor(cursors, threadId, messageId);
   persistCursors();
+  const senderName = String(data.dName || '');
+  const timestamp = Number(data.ts) || Date.now();
   pushToQueue(messageQueue, {
     messageId,
     threadId,
     senderId,
-    senderName: String(data.dName || ''),
+    senderName,
     text: data.content,
-    timestamp: Number(data.ts) || Date.now(),
+    timestamp,
   });
+  appendHistory(
+    {
+      messageId,
+      threadId,
+      senderId,
+      senderName,
+      text: data.content,
+      timestamp,
+    },
+    { recovered: Boolean(requireNewer) },
+  );
   return true;
 }
 
@@ -565,6 +637,7 @@ function finishLogin(identity) {
 
 async function startClient({ allowQr = true } = {}) {
   mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
+  trimHistory();
   const zalo = new Zalo({ logging: false });
   const session = loadSession();
   if (session) {

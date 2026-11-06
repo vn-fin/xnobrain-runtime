@@ -1463,6 +1463,9 @@ class ConversationRunnerMixin:
                 from .xno_data_tools import install_tools as install_xno_data_tools
 
                 install_xno_data_tools(agent, conversation_id)
+                from .channel_tools import install_tools as install_channel_tools
+
+                install_channel_tools(agent, conversation_id)
                 from .managed_mcp import install_tools as install_catalog_mcp_tools
 
                 install_catalog_mcp_tools(agent, profile_dir)
@@ -1556,6 +1559,19 @@ class ConversationRunnerMixin:
             bind_xno_data_run(conversation_id, run_id, prepared.get("_xno_data_grant"))
         )
         page_scope.enter_context(bind_control_mcp_grant(profile_dir, prepared.get("_mcp_grant")))
+        if getattr(manager, "channels_service", None):
+            from .channel_tools import bind_run as bind_channel_run
+
+            page_scope.enter_context(
+                bind_channel_run(
+                    manager.channels_service,
+                    profile_dir,
+                    str(prepared["name"]),
+                    conversation_id,
+                    run_id,
+                    approval_notify_callback,
+                )
+            )
         if (
             feature_enabled(FEATURE_AGENT_CUSTOM_PAGE)
             and getattr(manager, "custom_page_service", None)

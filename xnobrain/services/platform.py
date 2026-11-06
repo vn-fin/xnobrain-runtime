@@ -28,6 +28,7 @@ from .analytics import AnalyticsService
 from .automation import AutomationServiceMixin
 from .base import ServiceError
 from .blends import BlendService
+from .channels import ChannelsService
 from .checkpoints import CheckpointService, CheckpointsServiceMixin
 from .conversation_runs import ConversationRunService
 from .conversations import ConversationsServiceMixin
@@ -157,6 +158,8 @@ class PlatformService(
 
         self.workspace_memory = WorkspaceMemoryService(self)
         self.time_control = TimeControlService(self)
+        self.channels = ChannelsService(self)
+        self.agents.channels_service = self.channels
         self.cron.default_timezone = self.time_control.default_timezone
         self.conversation_runs.runtime_updates = self.runtime_updates
         from ..integrations.run_admission import managed

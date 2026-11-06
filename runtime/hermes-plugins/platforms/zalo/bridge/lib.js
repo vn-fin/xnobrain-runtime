@@ -20,6 +20,68 @@ export const TERMINAL_CLOSE_REASONS = Object.freeze({
 export const MAX_RELOGIN_ATTEMPTS = 5;
 export const RELOGIN_BASE_DELAY_MS = 60_000;
 
+/** Inbound history keeps 30 days; the file is trimmed when the bridge starts. */
+export const HISTORY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Build one inbound-history record.
+ *
+ * The bridge appends these as JSON lines so the Runtime tool can resolve a
+ * human name to a Zalo thread without reading the live queue.
+ */
+export function historyEntry({
+  messageId,
+  threadId,
+  senderId,
+  senderName,
+  text,
+  timestamp,
+  recovered = false,
+}) {
+  const parsed = Number(timestamp);
+  return {
+    ts: Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now(),
+    messageId: normalizeMessageId(messageId),
+    threadId: normalizeMessageId(threadId),
+    senderId: normalizeMessageId(senderId),
+    senderName: String(senderName || ''),
+    text: String(text || ''),
+    recovered: Boolean(recovered),
+  };
+}
+
+/**
+ * Drop malformed or expired JSONL history records.
+ *
+ * Returns the surviving raw lines so the caller can rewrite the file without
+ * re-serializing (and potentially altering) records it did not create.
+ */
+export function trimHistoryLines(lines, { now = Date.now(), maxAgeMs = HISTORY_MAX_AGE_MS } = {}) {
+  if (!Array.isArray(lines)) {
+    return [];
+  }
+  const cutoff = Number(now) - Math.max(0, Number(maxAgeMs) || 0);
+  const kept = [];
+  for (const line of lines) {
+    const raw = String(line || '').trim();
+    if (!raw) {
+      continue;
+    }
+    let record;
+    try {
+      record = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    const timestamp = Number(record?.ts);
+    if (!Number.isFinite(timestamp) || timestamp < cutoff) {
+      continue;
+    }
+    kept.push(raw);
+  }
+  return kept;
+}
+
 /**
  * Classify a listener close code.
  *

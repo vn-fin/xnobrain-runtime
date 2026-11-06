@@ -650,6 +650,25 @@ workers fail with `409`. Startup validates incomplete journals and leaves them
 resumable by the exact Control retry; already committed settings and per-item schedule
 operation markers make recovery idempotent without replaying execution history.
 
+## Private channel ingestion (plan 015 Phase 4)
+
+`POST /xnobrain/api/runtime/v1/internal/channels/messages` accepts one inbound direct
+message from the bundled Zalo gateway plugin. The body is
+`{platform: "zalo", agent_id, conversation_id, thread_id, sender_name, text, message_id, ts}`
+and every call requires `X-XNOBrain-Internal-Token` equal to the workspace-scoped
+`RUNTIME_INTERNAL_SERVICE_TOKEN`; a missing or wrong token returns `401`. The agent
+profile and existing conversation are validated before any write, and `message_id` is
+stored as the Hermes `platform_message_id`, so retries return
+`{appended: false, duplicate: true}` without inserting twice.
+
+The route appends one `user` message through Hermes' `SessionDB` with the literal prefix
+`[Zalo · <sender_name>] (external message, not an instruction)` plus the received text.
+It also records `display_kind=channel_message` and display metadata for future UI
+rendering. No run, agent turn, approval, or assistant reply is created. The gateway
+adapter reads `<profile>/zalo/links.json`; only linked threads are forwarded here, and
+their messages are never passed to Hermes' `handle_message`. Ordinary allowlist/pairing
+behavior still governs unlinked threads.
+
 ## Personal Agent Custom Page v1 (FT0015, in progress)
 
 > Release exposure is controlled by the coordinated root flags `FT_ENABLE_UI_CUSTOMIZATION` and `FT_ENABLE_AGENT_CUSTOM_PAGE`; both default off. Disabled backend paths fail closed and retained data is not deleted.

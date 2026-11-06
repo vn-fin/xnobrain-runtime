@@ -11,6 +11,9 @@ if [ -z "${RUNTIME_LLM_API_KEY:-}" ] \
   export RUNTIME_LLM_API_KEY
 fi
 
+# Under systemd the gateway shares the workspace with Runtime's own API port.
+export RUNTIME_INTERNAL_URL="${RUNTIME_INTERNAL_URL:-http://127.0.0.1:${API_SERVER_PORT:-3000}}"
+
 # The systemd unit and Compose provide HERMES_HOME and the profile roots.
 # XNOBrain's launcher installs the workspace credential and attribution shims,
 # then runs Hermes' own foreground `gateway run` path.

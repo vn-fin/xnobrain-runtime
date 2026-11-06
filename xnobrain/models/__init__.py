@@ -5,6 +5,7 @@ from .agent_blueprints import *
 from .agents import *
 from .analytics import *
 from .automation import *
+from .channels import *
 from .checkpoints import *
 from .common import *
 from .conversations import *

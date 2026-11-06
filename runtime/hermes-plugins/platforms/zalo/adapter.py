@@ -11,6 +11,7 @@ reactions and self-echoes are ignored by the bridge.
 """
 
 import asyncio
+import json
 import logging
 import os
 import platform
@@ -18,6 +19,7 @@ import re
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -34,6 +36,9 @@ _IS_WINDOWS = platform.system() == "Windows"
 
 BRIDGE_PORT_BASE = 3110
 DEFAULT_MAX_MESSAGE_LENGTH = 2000
+LINKED_MESSAGE_PATH = "/xnobrain/api/runtime/v1/internal/channels/messages"
+LINKED_MAX_RETRY = 100
+LINKED_RETRY_INTERVAL_SECONDS = 5.0
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -363,6 +368,11 @@ class ZaloAdapter(BasePlatformAdapter):
         self._own_id: str = ""
         self._chat_names: Dict[str, str] = {}
         self._shutting_down: bool = False
+        self._links_cache: Dict[str, Dict[str, Any]] = {}
+        self._links_mtime: Optional[float] = None
+        self._pending_linked: list = []
+        self._linked_retry_at: float = 0.0
+        self._linked_config_warned: bool = False
 
     async def connect(self, *, is_reconnect: bool = False) -> bool:
         """Start the Zalo bridge and begin polling for inbound messages."""
@@ -666,6 +676,150 @@ class ZaloAdapter(BasePlatformAdapter):
         name = self._chat_names.get(str(chat_id)) or str(chat_id)
         return {"name": name, "type": "dm", "chat_id": str(chat_id)}
 
+    def _load_links(self) -> Dict[str, Dict[str, Any]]:
+        """Read ``<session dir>/links.json`` when it changed on disk.
+
+        Runtime owns the file (tool writes are atomic), so a cached mtime is
+        enough to notice new links without a stat per message.
+        """
+        path = self._session_path / "links.json"
+        try:
+            stat = path.stat()
+        except OSError:
+            self._links_cache = {}
+            self._links_mtime = None
+            return {}
+        if self._links_mtime == stat.st_mtime:
+            return self._links_cache
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            logger.warning("[%s] Zalo links file is invalid; using the previous links", self.name)
+            return self._links_cache
+        links: Dict[str, Dict[str, Any]] = {}
+        if isinstance(value, dict):
+            for thread_id, record in value.items():
+                if not isinstance(record, dict):
+                    continue
+                agent_id = str(record.get("agent_id") or "").strip()
+                conversation_id = str(record.get("conversation_id") or "").strip()
+                if agent_id and conversation_id:
+                    links[str(thread_id)] = record
+        self._links_cache = links
+        self._links_mtime = stat.st_mtime
+        return links
+
+    @staticmethod
+    def _linked_destination() -> tuple:
+        base = os.environ.get("RUNTIME_INTERNAL_URL", "").strip().rstrip("/")
+        token = os.environ.get("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
+        return base, token
+
+    def _linked_payload(
+        self, data: Dict[str, Any], link: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Build the internal ingestion body; missing identity fields are dropped."""
+        thread_id = str(data.get("threadId") or "").strip()
+        message_id = str(data.get("messageId") or "").strip()
+        text = data.get("text")
+        if not thread_id or not message_id or not isinstance(text, str) or not text.strip():
+            return None
+        timestamp = data.get("timestamp")
+        try:
+            timestamp = float(timestamp)
+        except (TypeError, ValueError):
+            timestamp = time.time() * 1000
+        return {
+            "platform": "zalo",
+            "agent_id": str(link.get("agent_id") or ""),
+            "conversation_id": str(link.get("conversation_id") or ""),
+            "thread_id": thread_id,
+            "sender_name": str(data.get("senderName") or link.get("name") or ""),
+            "text": text,
+            "message_id": message_id,
+            "ts": timestamp,
+        }
+
+    async def _post_linked(self, payload: Dict[str, Any]) -> bool:
+        """POST one inbound linked message to the Runtime's private route."""
+        base, token = self._linked_destination()
+        if not base or not token:
+            if not self._linked_config_warned:
+                self._linked_config_warned = True
+                logger.warning(
+                    "[%s] Linked Zalo delivery needs RUNTIME_INTERNAL_URL and "
+                    "RUNTIME_INTERNAL_SERVICE_TOKEN",
+                    self.name,
+                )
+            return False
+        import aiohttp
+
+        headers = {"X-XNOBrain-Internal-Token": token}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                base + LINKED_MESSAGE_PATH,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as response:
+                if 200 <= response.status < 300:
+                    return True
+                logger.warning(
+                    "[%s] Runtime rejected a linked Zalo message (status %s)",
+                    self.name,
+                    response.status,
+                )
+                return False
+
+    def _hold_linked(self, data: Dict[str, Any], link: Dict[str, Any]) -> None:
+        if len(self._pending_linked) >= LINKED_MAX_RETRY:
+            self._pending_linked.pop(0)
+            logger.warning(
+                "[%s] Linked Zalo retry queue is full; dropping the oldest message",
+                self.name,
+            )
+        self._pending_linked.append((data, link))
+        self._linked_retry_at = time.monotonic() + LINKED_RETRY_INTERVAL_SECONDS
+
+    async def _deliver_linked(self, data: Dict[str, Any], link: Dict[str, Any]) -> bool:
+        payload = self._linked_payload(data, link)
+        if payload is None:
+            logger.warning("[%s] Dropping an incomplete linked Zalo message", self.name)
+            return True
+        try:
+            delivered = await self._post_linked(payload)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "[%s] Linked Zalo delivery failed (%s); queued for retry",
+                self.name,
+                type(exc).__name__,
+            )
+            delivered = False
+        if not delivered:
+            self._hold_linked(data, link)
+        return delivered
+
+    async def _route_messages(self, messages) -> None:
+        """Route one poll batch: linked threads go to Runtime, others to Hermes."""
+        links = self._load_links()
+        if self._pending_linked and time.monotonic() >= self._linked_retry_at:
+            pending, self._pending_linked = self._pending_linked, []
+            for data, link in pending:
+                await self._deliver_linked(data, link)
+        for data in messages or []:
+            if not isinstance(data, dict):
+                continue
+            thread_id = str(data.get("threadId") or "")
+            link = links.get(thread_id)
+            if link is not None:
+                await self._deliver_linked(data, link)
+                continue
+            event = self._build_message_event(data)
+            if event:
+                await self.handle_message(event)
+
     async def _poll_messages(self) -> None:
         """Poll the bridge for incoming direct messages."""
         import aiohttp
@@ -684,10 +838,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 ) as resp:
                     if resp.status == 200:
                         messages = await resp.json()
-                        for data in messages:
-                            event = self._build_message_event(data)
-                            if event:
-                                await self.handle_message(event)
+                        await self._route_messages(messages)
             except asyncio.CancelledError:
                 break
             except Exception as exc:
