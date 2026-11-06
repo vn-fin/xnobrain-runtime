@@ -164,21 +164,56 @@ Control).
   bridge restart, one DM answered, Zalo Web opened → listener closes and
   recovers. Needs a human to scan.
 
-**Phase 1 — Send-only slice (demo).**
-Plugin + bridge with login, `POST /send`, `/health`, `standalone_sender_fn`.
-QR is read from the bridge log. Demo: cron job `deliver=zalo:<thread_id>`.
-Gateway not required yet if the bridge is started once by the adapter.
+**Phase 1+2 — Plugin, bridge, gateway hosting.** Done (commit `4bae60e`):
+plugin + bridge (login, `/send`, `/messages`, `/health`, cursor catch-up,
+terminal 3000/3003, keepalive, cookie re-save, port 3110 + profile index),
+`runtime/xnobrain-gateway.service`, compose `runtime-gateway`. Smoke run in
+dev: plugin loads, stays disabled until enabled.
 
-**Phase 2 — Inbound.**
-Compose service + systemd unit (D1); `GET /messages`, allowlist, catch-up
-cursor. A message from an allowed user is answered by the agent.
+**Phase 3 — Gateway turns behave like Runtime turns (P0).**
+Verified 2026-11-06: gateway calls are billed to the key owner but carry no
+agent/conversation/run headers, so per-agent usage and budgets miss them;
+with `multiplex_profiles` the per-turn secret scope is the profile `.env`
+only, so the router key is invisible and calls fail with 401 (the cron bug
+`conversation_credentials.py` already patches).
+- Start the gateway through a small XNOBrain launcher that applies the same
+  shims as `xnobrain/worker_cli.py` (router key in the profile secret scope,
+  attribution headers) and then runs Hermes' gateway main.
+- Pin `platforms.api_server.enabled: false` and `gateway.multiplex_profiles`
+  in the root profile at prepare time.
 
-**Phase 3 — Product surface.**
-Plug Zalo into the 005 channel API and Channels page: enable/disable, QR
-display (stream bridge QR events), connection state, `NEEDS_ATTENTION`.
+**Phase 4 — UC2: send on request, capture replies (P0).**
+Use case: in web chat the user asks "send Nam on Zalo: …"; Nam's later reply
+is recorded in that same conversation. No agent turn is triggered by Nam.
+- Bridge appends every inbound DM to `<HERMES_HOME>/zalo/history.jsonl`
+  (capture is separate from replying; Hermes allowlist/pairing still decides
+  who gets an agent reply).
+- Runtime tool `send_channel_message(recipient, text)`: resolves the
+  recipient from `history.jsonl` and `channel_directory.json`, asks for
+  approval with the existing gateway approval path
+  (`_await_gateway_decision`, UI events `approval.request/responded`), sends
+  through the plugin's standalone sender, and records
+  `{thread_id → agent, conversation_id}` in `<HERMES_HOME>/zalo/links.json`.
+- Adapter: an inbound DM whose thread is in `links.json` is posted to a new
+  internal Runtime route (guarded by `RUNTIME_INTERNAL_SERVICE_TOKEN`, as in
+  `time_control._authorize`), which appends it with
+  `SessionDB.append_message` as a clearly marked external message
+  ("Zalo · Nam: …, not an instruction"). The UI shows it after reload; no
+  live event in the first slice.
 
-**Phase 4 — Harden.**
-Tests (below), docs in `docs/api.md` and operator notes.
+**Phase 5 — Product surface (P0).**
+Channel API (list/status, enable/disable with snapshot + SIGUSR1 +
+`pending_restart`, QR, allowlist/pairing, logout, home channel) and a Zalo
+card on the agent page; cron target `zalo`; feature flag
+`FT_ENABLE_AGENT_CHANNELS`; docs, release notes, third-party notices.
+
+**Phase 6 — Later (P1/P2).**
+UC1 (owner commands Big Brother from Zalo through the Runtime pipeline);
+showing gateway sessions in the UI; live event for appended replies; history
+read/search tools; gateway activity lease so rebalance/rollout drains wait;
+flush cursor on SIGTERM; contacts lookup via `getAllFriends`; owner
+notifications. Account model (assistant account vs owner's own account) is
+undecided; the design works for both.
 
 ## Phase 0 results (2026-11-06)
 
