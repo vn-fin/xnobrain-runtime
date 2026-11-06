@@ -48,6 +48,16 @@ class MCPValidationTests(unittest.TestCase):
         )
         self.assertEqual(set(result["servers"]), {"local", "remote"})
 
+    def test_accepts_control_connection_entry(self) -> None:
+        connection_id = "13ac11ac-a8cf-e8cc-b483-ba397507195a"
+        self.adapter.update_mcp(
+            "agent",
+            {"remote": {"url": "https://example.com/mcp", "xnobrain_connection_id": connection_id}},
+        )
+        self.assertEqual(
+            self.adapter.config["mcp_servers"]["remote"]["xnobrain_connection_id"], connection_id
+        )
+
     def test_rejects_invalid_transport_fields_without_persisting(self) -> None:
         invalid = (
             {"probe": {"command": 123}},
@@ -57,20 +67,33 @@ class MCPValidationTests(unittest.TestCase):
             {"probe": {"command": "run", "env": {"TOKEN": 2}}},
             {"probe": {"command": "run", "tools": {"include": [""]}}},
             {"probe": {"command": "run", "unexpected": True}},
+            {"probe": {"url": "https://example.com", "xnobrain_connection_id": "nope"}},
+            {
+                "probe": {
+                    "url": "https://example.com",
+                    "headers": {"Authorization": "x"},
+                    "xnobrain_connection_id": "13ac11ac-a8cf-e8cc-b483-ba397507195a",
+                }
+            },
         )
         for servers in invalid:
             with self.subTest(servers=servers), self.assertRaises(AgentAPIError):
                 self.adapter.update_mcp("agent", servers)
             self.assertEqual(self.adapter.config, {})
 
-    def test_shadow_servers_are_hidden_and_cannot_be_edited(self) -> None:
+    def test_shadow_servers_are_hidden_and_preserved_on_edit(self) -> None:
         self.adapter.config = {
             "mcp_servers": {"plugin__docs": {"enabled": False, "xnobrain_plugin_shadow": True}}
         }
         self.assertEqual(self.adapter.get_mcp("agent")["servers"], {})
         with self.assertRaises(AgentAPIError) as raised:
-            self.adapter.update_mcp("agent", {})
+            self.adapter.update_mcp("agent", {"plugin__docs": {"url": "https://example.com/mcp"}})
         self.assertEqual(raised.exception.code, "mcp_server_managed")
+        result = self.adapter.update_mcp("agent", {"custom": {"url": "https://example.com/mcp"}})
+        self.assertEqual(set(result["servers"]), {"custom"})
+        self.assertTrue(
+            self.adapter.config["mcp_servers"]["plugin__docs"]["xnobrain_plugin_shadow"]
+        )
 
 
 if __name__ == "__main__":

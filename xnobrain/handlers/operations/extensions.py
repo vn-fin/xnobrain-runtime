@@ -40,19 +40,28 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "extensions retrieved",
             200,
         ),
+        "extensions_plugin_mcp_connection_put": (
+            lambda: service.set_plugin_mcp_connection(
+                path["agent_id"], path["plugin_id"], path["server_name"], body, context()
+            ),
+            "plugin MCP connection saved",
+            200,
+        ),
+        "extensions_plugin_mcp_connection_delete": (
+            lambda: service.delete_plugin_mcp_connection(
+                path["agent_id"], path["plugin_id"], path["server_name"], context()
+            ),
+            "plugin MCP connection removed",
+            200,
+        ),
+        "extensions_plugin_mcp_reconnect": (
+            lambda: service.reconnect_plugin_mcp(path["agent_id"], context()),
+            "plugin MCP reconnect requested",
+            200,
+        ),
         "extensions_catalog_install": (
             lambda: service.install_catalog(path["agent_id"], body, context()),
             "catalog integration configured",
-            200,
-        ),
-        "extensions_oauth_start": (
-            lambda: service.oauth_start(path["agent_id"], body, context()),
-            "OAuth authorization started",
-            200,
-        ),
-        "extensions_oauth_callback": (
-            lambda: service.oauth_callback(path["agent_id"], body, context()),
-            "OAuth integration connected",
             200,
         ),
         "extensions_plugin_approval": (

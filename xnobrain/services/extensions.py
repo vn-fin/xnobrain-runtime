@@ -596,7 +596,11 @@ class ExtensionsService:
                     "path": str(record.get("path") or "")[:512],
                     "dropped_components": self._safe_names(item.get("dropped_components")),
                     "mcp_servers": self._plugin_mcp_rows(
-                        profile, plugin_id, item.get("mcp_servers"), bool(item.get("enabled"))
+                        profile,
+                        plugin_id,
+                        item.get("mcp_servers"),
+                        bool(item.get("enabled")),
+                        record,
                     ),
                     "scan": self._public_scan(scan),
                     "approval": {
@@ -630,13 +634,30 @@ class ExtensionsService:
 
     @staticmethod
     def _plugin_mcp_rows(
-        profile: Path, plugin_id: str, servers: Any, enabled: bool
-    ) -> list[dict[str, str]]:
+        profile: Path, plugin_id: str, servers: Any, enabled: bool, record: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Return a portable plugin's MCP servers with their chat status."""
         if not isinstance(servers, list):
             return []
+        revision = str(record.get("commit") or "")
+        state = extension_policy.load_state(profile)
+        mappings = state.get("plugin_mcp") or {}
         rows = [
-            {"name": str(item.get("name", ""))[:128], "host": str(item.get("host", ""))[:255]}
+            {
+                "name": str(item.get("name", ""))[:128],
+                "host": str(item.get("host", ""))[:255],
+                "auth_kind": item.get("auth_kind", "none"),
+                "upstream_url": item.get("upstream_url", ""),
+                "plugin_revision": revision,
+                "connection_id": (
+                    (mappings.get(f"{plugin_id}/{item.get('name')}") or {}).get("connection_id")
+                    if (mappings.get(f"{plugin_id}/{item.get('name')}") or {}).get(
+                        "plugin_revision"
+                    )
+                    == revision
+                    else None
+                ),
+            }
             for item in servers
             if isinstance(item, dict) and item.get("name")
         ]
@@ -654,10 +675,74 @@ class ExtensionsService:
             except Exception:
                 status = {}
         for row in rows:
+            mapped = row["connection_id"] is not None
+            live = status.get(engine_names.get(row["name"], ""), "pending")
+            if row["auth_kind"] == "none" and (mapped or live == "needs_sign_in"):
+                # No secret header, yet it needs credentials: the server signs in with OAuth.
+                row["auth_kind"] = "oauth"
+            needs_auth = row["auth_kind"] != "none"
             row["chat_status"] = (
-                status.get(engine_names.get(row["name"], ""), "pending") if enabled else "disabled"
+                "disabled"
+                if not enabled
+                else (
+                    status.get(engine_names.get(row["name"], ""), "pending")
+                    if mapped or not needs_auth
+                    else "needs_sign_in"
+                )
             )
         return rows
+
+    def set_plugin_mcp_connection(
+        self, agent_id: str, plugin_id: str, server_name: str, body: dict[str, Any], trusted: Any
+    ) -> dict[str, Any]:
+        profile, _ = self._profile(agent_id, trusted)
+        with self._lifecycle(agent_id):
+            state = self._state(profile)
+            record = state["plugins"].get(plugin_id)
+            revision = str(record.get("commit") or "") if record else ""
+            if not revision or body.get("plugin_revision") != revision:
+                raise ServiceError(
+                    "Plugin revision changed", status=409, code="plugin_revision_mismatch"
+                )
+            from hermes_cli.plugins import _portable_skill_namespace
+
+            engine_name = f"{_portable_skill_namespace(plugin_id)}__{server_name}"
+            if engine_name not in extension_engine.portable_plugin_mcp_names(profile, plugin_id):
+                raise ServiceError("Plugin MCP server not found", status=404, code="not_found")
+            mappings = state.setdefault("plugin_mcp", {})
+            mappings[f"{plugin_id}/{server_name}"] = {
+                "connection_id": body["connection_id"],
+                "plugin_revision": revision,
+            }
+            self._save(profile, state)
+        return {
+            "agent_id": agent_id,
+            "plugin_id": plugin_id,
+            "server_name": server_name,
+            "connection_id": body["connection_id"],
+            "plugin_revision": revision,
+        }
+
+    def delete_plugin_mcp_connection(
+        self, agent_id: str, plugin_id: str, server_name: str, trusted: Any
+    ) -> dict[str, Any]:
+        profile, _ = self._profile(agent_id, trusted)
+        with self._lifecycle(agent_id):
+            state = self._state(profile)
+            state.setdefault("plugin_mcp", {}).pop(f"{plugin_id}/{server_name}", None)
+            self._save(profile, state)
+        return {
+            "agent_id": agent_id,
+            "plugin_id": plugin_id,
+            "server_name": server_name,
+            "deleted": True,
+        }
+
+    def reconnect_plugin_mcp(self, agent_id: str, trusted: Any) -> dict[str, Any]:
+        """Wake proxy MCP tasks parked on sign-in; Control attaches a fresh grant."""
+        profile, _ = self._profile(agent_id, trusted)
+        self._set_mcp_grant(profile, trusted)
+        return {"agent_id": agent_id, "reconnecting": True}
 
     @staticmethod
     def _safe_names(values: Any) -> list[str]:
@@ -832,228 +917,6 @@ class ExtensionsService:
             )
         return config
 
-    def _write_catalog_oauth_server(
-        self, agent_id: str, profile: Path, entry: dict[str, Any]
-    ) -> dict[str, Any]:
-        server_config, endpoint_mode, auth_configured = self._catalog_server_config(entry, {})
-        server_name = f"xnobrain-{entry['id']}"
-        config = self._read_profile_config(profile)
-        servers = config.get(extension_policy.MANAGED_MCP_KEY) or {}
-        if not isinstance(servers, dict):
-            raise ServiceError("MCP config is invalid", status=409, code="invalid_mcp_config")
-        prior = servers.get(server_name)
-        old_state = self._state(profile)
-        if prior and old_state["mcp"].get(entry["id"], {}).get("server_name") != server_name:
-            raise ServiceError(
-                "Server name is already in use", status=409, code="mcp_server_conflict"
-            )
-        servers[server_name] = server_config
-        config[extension_policy.MANAGED_MCP_KEY] = servers
-        self._snapshot_config(agent_id, profile)
-        self._profile_generation(profile, initialize=True)
-        state = self._state(profile)
-        old = state["mcp"].get(entry["id"], {})
-        state["mcp"][entry["id"]] = {
-            "server_name": server_name,
-            "enabled": True,
-            "auth_configured": auth_configured,
-            "endpoint_mode": endpoint_mode,
-            "recipe_revision": entry["recipe_revision"],
-            "revision": int(old.get("revision", 0)) + 1,
-        }
-        marker = extension_policy.state_root(profile) / "mcp-recovery.json"
-        extension_policy.atomic_json(
-            marker,
-            {
-                "catalog_id": entry["id"],
-                "server_name": server_name,
-                "config_digest": self._mcp_config_digest(server_config),
-                "record": state["mcp"][entry["id"]],
-            },
-        )
-        self.repository.atomic_yaml(profile / "config.yaml", config)
-        state["revision"] = int(state.get("revision", 1)) + 1
-        self._save(profile, state)
-        marker.unlink(missing_ok=True)
-        return {
-            "agent_id": agent_id,
-            "catalog_id": entry["id"],
-            "configured": True,
-            "revision": state["mcp"][entry["id"]]["revision"],
-            "server_name": server_name,
-            "enabled": True,
-            "auth_configured": auth_configured,
-        }
-
-    @staticmethod
-    def _oauth_probe(flow: Any, url: str, redirect_uri: str) -> None:
-        import asyncio
-        from contextlib import AsyncExitStack
-
-        from mcp import ClientSession
-        from mcp.client.streamable_http import streamablehttp_client
-        from tools.mcp_dashboard_oauth import dashboard_oauth_flow
-        from tools.mcp_oauth import HermesTokenStorage, force_interactive_oauth
-        from tools.mcp_oauth_manager import get_manager
-
-        profile = Path(flow.hermes_home)
-        from ..integrations.extension_engine import _profile_secret_context, profile_context
-
-        with profile_context(profile):
-            manager = get_manager()
-            storage = HermesTokenStorage(flow.server_name)
-            backup = storage.snapshot()
-        previous_entry = None
-        try:
-            with profile_context(profile), _profile_secret_context(profile):
-                previous_entry = manager.remove(flow.server_name, hermes_home=str(profile))
-                with force_interactive_oauth(), dashboard_oauth_flow(flow):
-                    provider = manager.get_or_build_provider(
-                        flow.server_name,
-                        url,
-                        {"redirect_uri": redirect_uri, "client_name": "XNOBrain"},
-                    )
-
-                    async def probe():
-                        from tools.mcp_tool import LATEST_PROTOCOL_VERSION
-
-                        headers = {"mcp-protocol-version": LATEST_PROTOCOL_VERSION}
-                        from ..integrations.managed_mcp import guarded_httpx_client_factory
-
-                        factory = guarded_httpx_client_factory(headers, 20.0)
-                        async with AsyncExitStack() as stack:
-                            read_stream, write_stream, _ = await stack.enter_async_context(
-                                streamablehttp_client(
-                                    url,
-                                    timeout=20.0,
-                                    sse_read_timeout=300.0,
-                                    auth=provider,
-                                    httpx_client_factory=factory,
-                                )
-                            )
-                            session = await stack.enter_async_context(
-                                ClientSession(read_stream, write_stream)
-                            )
-                            await session.initialize()
-                            await session.list_tools()
-
-                    asyncio.run(probe())
-                    if not storage.has_cached_tokens():
-                        raise RuntimeError("OAuth tokens were not obtained")
-                    flow.mark_approved()
-        except Exception:
-            with profile_context(profile):
-                # A failed attempt may leave a fresh DCR client file; only a newer token
-                # (another flow that succeeded) should block restoring the old sign-in.
-                if not storage.has_cached_tokens():
-                    storage.restore(backup)
-                manager.restore_entry(flow.server_name, previous_entry, hermes_home=str(profile))
-            raise
-
-    def oauth_start(self, agent_id: str, body: dict[str, Any], trusted: Any) -> dict[str, Any]:
-        profile, _ = self._profile(agent_id, trusted)
-        redirect_uri = os.environ.get("RUNTIME_MCP_OAUTH_REDIRECT_URI", "").strip()
-        if not redirect_uri:
-            raise ServiceError("MCP OAuth is unavailable", status=503, code="oauth_unavailable")
-        entry = self._catalog_entry(body, trusted)
-        if entry.get("mcp", {}).get("auth", {}).get("kind") != "oauth":
-            raise ServiceError(
-                "Catalog entry does not use OAuth", status=422, code="oauth_unsupported"
-            )
-        from tools.mcp_dashboard_oauth import DashboardOAuthFlow
-
-        from . import mcp_oauth
-
-        server_name = f"xnobrain-{entry['id']}"
-        flow = DashboardOAuthFlow(
-            flow_id=mcp_oauth.new_flow_id(),
-            server_name=server_name,
-            profile=agent_id,
-            hermes_home=str(profile),
-            redirect_uri=redirect_uri,
-        )
-        try:
-            mcp_oauth.create_flow(flow, agent_id, trusted, entry["id"], str(profile))
-        except RuntimeError as error:
-            raise ServiceError(
-                "OAuth flow limit reached", status=429, code="oauth_flow_limit"
-            ) from error
-
-        def worker() -> None:
-            try:
-                self._oauth_probe(flow, str(entry["mcp"]["url"]), redirect_uri)
-            except Exception:
-                flow.mark_error("OAuth connection failed")
-            finally:
-                flow.mark_worker_done()
-
-        threading.Thread(target=worker, name="xnobrain-mcp-oauth", daemon=True).start()
-        try:
-            authorization_url = asyncio.run(flow.wait_for_authorization_url(timeout=30.0))
-            return {"flow_id": flow.flow_id, "authorization_url": authorization_url}
-        except TimeoutError as error:
-            mcp_oauth.remove_flow(flow.flow_id)
-            raise ServiceError(
-                "OAuth connection failed", status=502, code="oauth_failed"
-            ) from error
-        except Exception as error:
-            mcp_oauth.remove_flow(flow.flow_id)
-            raise ServiceError(
-                "OAuth connection failed", status=502, code="oauth_failed"
-            ) from error
-
-    def oauth_callback(self, agent_id: str, body: dict[str, Any], trusted: Any) -> dict[str, Any]:
-        profile, _ = self._profile(agent_id, trusted)
-        from . import mcp_oauth
-
-        record = mcp_oauth.get_flow(body["flow_id"], agent_id, trusted)
-        if record is None or record.profile != str(profile):
-            raise ServiceError("OAuth flow not found", status=404, code="oauth_flow_not_found")
-        try:
-            record.flow.deliver_callback(
-                code=body.get("code"), state=body.get("state"), error=body.get("error")
-            )
-        except ValueError as error:
-            raise ServiceError(
-                "OAuth state does not match", status=400, code="oauth_state_mismatch"
-            ) from error
-        if body.get("error"):
-            mcp_oauth.remove_flow(record.flow.flow_id)
-            raise ServiceError("OAuth authorization was denied", status=400, code="oauth_denied")
-        if record.flow.status == "approved" and record.flow.worker_done:
-            return self._complete_oauth_flow(agent_id, profile, record, mcp_oauth)
-        if not record.flow._worker_done.wait(60.0):
-            mcp_oauth.remove_flow(record.flow.flow_id)
-            raise ServiceError("OAuth connection failed", status=502, code="oauth_failed")
-        if record.flow.status != "approved":
-            mcp_oauth.remove_flow(record.flow.flow_id)
-            raise ServiceError("OAuth connection failed", status=502, code="oauth_failed")
-        return self._complete_oauth_flow(agent_id, profile, record, mcp_oauth)
-
-    def _complete_oauth_flow(
-        self, agent_id: str, profile: Path, record: Any, oauth: Any
-    ) -> dict[str, Any]:
-        with self._lifecycle(agent_id):
-            entry = next(
-                (item for item in self.catalog()["entries"] if item["id"] == record.catalog_id),
-                None,
-            )
-            if entry is None:
-                oauth.remove_flow(record.flow.flow_id)
-                raise ServiceError(
-                    "Catalog entry not found", status=404, code="catalog_entry_not_found"
-                )
-            self._write_catalog_oauth_server(agent_id, profile, entry)
-        try:
-            extension_engine.refresh_profile_mcp(profile)
-        except Exception as error:
-            oauth.remove_flow(record.flow.flow_id)
-            raise ServiceError(
-                "OAuth connection failed", status=502, code="oauth_failed"
-            ) from error
-        oauth.remove_flow(record.flow.flow_id)
-        return {"status": "connected", "catalog_id": record.catalog_id}
-
     def _catalog_server_config(
         self, entry: dict[str, Any], fields: dict[str, str], connection_id: str | None = None
     ):
@@ -1061,7 +924,7 @@ class ExtensionsService:
         auth = mcp.get("auth", {})
         expected = set()
         url = mcp.get("url", "")
-        if auth.get("kind") == "api_key":
+        if auth.get("kind") in {"api_key", "oauth"}:
             if fields or not connection_id:
                 raise ServiceError(
                     "Catalog fields do not match this recipe",
@@ -1098,20 +961,14 @@ class ExtensionsService:
             )
         self._validate_catalog_endpoint(str(url), str(mcp.get("url_policy", "")))
         result: dict[str, Any] = {"url": url}
-        if auth.get("kind") == "oauth":
-            result.update(
-                auth="oauth",
-                xnobrain_catalog_id=entry["id"],
-                xnobrain_oauth_name=f"xnobrain-{entry['id']}",
-            )
-        elif auth.get("kind") != "none":
+        if auth.get("kind") != "none":
             raise ServiceError(
                 "Catalog authentication is unsupported", status=422, code="unsupported_auth"
             )
         return (
             result,
             str(mcp.get("endpoint_mode", "static")),
-            auth.get("kind") in {"api_key", "oauth"},
+            False,
         )
 
     @staticmethod
@@ -1273,14 +1130,6 @@ class ExtensionsService:
         if connected:
             marker.unlink(missing_ok=True)
             extension_engine.mcp_disconnect(profile, server_name)
-        if str((removed_config if connected else {}).get("auth") or "").lower() == "oauth":
-            try:
-                from tools.mcp_oauth_manager import get_manager
-
-                with extension_engine.profile_context(profile):
-                    get_manager().remove(f"xnobrain-{catalog_id}", hermes_home=str(profile))
-            except ImportError:
-                pass
 
     def set_plugin_visibility(
         self, agent_id: str, plugin_id: str, body: dict[str, Any], trusted: Any
@@ -1987,6 +1836,11 @@ class ExtensionOperationWorker:
                     self.service._sync_plugin_mcp_shadows(profile)
                     state = self.service._state(profile)
                     state["plugins"].pop(plugin_id, None)
+                    state["plugin_mcp"] = {
+                        key: value
+                        for key, value in (state.get("plugin_mcp") or {}).items()
+                        if not key.startswith(f"{plugin_id}/")
+                    }
                     state["revision"] = int(state.get("revision", 1)) + 1
                     self.service._save(profile, state)
             self.service.store.update(
@@ -2126,6 +1980,8 @@ class ExtensionOperationWorker:
             if package_format == plugin_formats.CLAUDE:
                 # Only skills and remote MCP survive; the rest is reported.
                 dropped = plugin_formats.convert_claude_plugin(stage)
+            if package_format in {plugin_formats.PORTABLE, plugin_formats.CLAUDE}:
+                plugin_formats.strip_secret_placeholders(stage)
             self.service.store.update(
                 operation, status="PROCESSING", progress={"phase": "scanning"}
             )
@@ -2237,6 +2093,11 @@ class ExtensionOperationWorker:
                         "approval": {"approved": False, "artifact_digest": ""},
                         "hidden": bool(previous.get("hidden", False)),
                         "revision": int(previous.get("revision", 0)) + 1,
+                    }
+                    state["plugin_mcp"] = {
+                        key: value
+                        for key, value in (state.get("plugin_mcp") or {}).items()
+                        if not key.startswith(f"{plugin_id}/")
                     }
                     state["revision"] = int(state.get("revision", 1)) + 1
                     self.service._save(profile, state)

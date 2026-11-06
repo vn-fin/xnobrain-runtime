@@ -28,20 +28,11 @@ class CatalogInstall(BaseModel):
     connection_id: str | None = Field(default=None, max_length=36)
 
 
-class CatalogOAuthStart(BaseModel):
+class PluginMcpConnection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    catalog_id: str = Field(min_length=1, max_length=128)
-    recipe_revision: int = Field(ge=1)
-
-
-class CatalogOAuthCallback(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    flow_id: str = Field(min_length=1, max_length=128)
-    state: str = Field(min_length=1, max_length=2048)
-    code: str | None = Field(default=None, max_length=8192)
-    error: str | None = Field(default=None, max_length=256)
+    connection_id: str = Field(pattern=r"^[0-9a-fA-F-]{36}$")
+    plugin_revision: str = Field(min_length=1, max_length=128)
 
 
 class ExtensionApproval(BaseModel):

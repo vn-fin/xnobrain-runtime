@@ -13,8 +13,8 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from xnobrain.integrations import extension_engine, plugin_formats
 from xnobrain.integrations import extension_engine as engine
-from xnobrain.integrations import plugin_formats
 from xnobrain.integrations.extension_policy import (
     load_state,
     save_state,
@@ -220,7 +220,14 @@ class ExtensionEngineTests(unittest.TestCase):
                 plugin_formats.portable_summary(path),
                 {
                     "skills": ["summarize"],
-                    "mcp_servers": [{"name": "docs", "host": "mcp.example.com"}],
+                    "mcp_servers": [
+                        {
+                            "name": "docs",
+                            "host": "mcp.example.com",
+                            "upstream_url": "https://mcp.example.com/mcp",
+                            "auth_kind": "none",
+                        }
+                    ],
                 },
             )
 
@@ -247,14 +254,28 @@ class ExtensionEngineTests(unittest.TestCase):
                         "headers": {"Authorization": "${OPENAI_API_KEY}"},
                     }
                 },
-                "plugin_mcp_unsupported",
+                None,
             ),
         }
         for label, (servers, code) in cases.items():
             with self.subTest(label), tempfile.TemporaryDirectory() as root:
-                result = engine.scan_plugin(self.portable(root, servers=servers))
-                self.assertEqual(result["scan"]["status"], "BLOCKED")
-                self.assertIn(code, {item["code"] for item in result["scan"]["findings"]})
+                path = self.portable(root, servers=servers)
+                result = engine.scan_plugin(path)
+                if code is None:
+                    self.assertEqual(result["scan"]["status"], "COMPLETED")
+                    # Install strips placeholders after the scan, before Hermes loads the package.
+                    plugin_formats.strip_secret_placeholders(path)
+                    server = plugin_formats.portable_summary(path)["mcp_servers"][0]
+                    self.assertEqual(server["auth_kind"], "api_key")
+                    stored = (path / "mcp.json").read_text()
+                    self.assertNotIn("${OPENAI_API_KEY}", stored)
+                    self.assertNotIn(
+                        "${OPENAI_API_KEY}",
+                        repr(extension_engine._portable_plugin_mcp_servers(path)),
+                    )
+                else:
+                    self.assertEqual(result["scan"]["status"], "BLOCKED")
+                    self.assertIn(code, {item["code"] for item in result["scan"]["findings"]})
         with tempfile.TemporaryDirectory() as root:
             path = self.portable(root)
             (path / "helper.py").write_text("print('hi')\n")
@@ -303,17 +324,30 @@ class ExtensionEngineTests(unittest.TestCase):
                 )
             )
             dropped = plugin_formats.convert_claude_plugin(path)
-            self.assertEqual(
-                dropped, ["mcp:local (stdio)", "mcp:github (secret)", "agents/", "hooks/"]
-            )
+            self.assertEqual(dropped, ["mcp:local (stdio)", "agents/", "hooks/"])
             self.assertEqual(plugin_formats.plugin_identity(path), ("review-kit", "portable"))
             self.assertFalse((path / "hooks").exists())
             result = engine.scan_plugin(path)
             self.assertEqual(result["scan"]["status"], "COMPLETED", result["scan"]["findings"])
             self.assertEqual(
                 plugin_formats.portable_summary(path)["mcp_servers"],
-                [{"name": "docs", "host": "mcp.example.com"}],
+                [
+                    {
+                        "name": "docs",
+                        "host": "mcp.example.com",
+                        "upstream_url": "https://mcp.example.com/mcp",
+                        "auth_kind": "none",
+                    },
+                    {
+                        "name": "github",
+                        "host": "api.example.com",
+                        "upstream_url": "https://api.example.com/mcp",
+                        "auth_kind": "api_key",
+                    },
+                ],
             )
+            self.assertNotIn("${GITHUB_TOKEN}", (path / "mcp.json").read_text())
+            self.assertNotIn("${GITHUB_TOKEN}", repr(plugin_formats.portable_summary(path)))
 
     def test_inventory_lists_portable_plugin_components(self):
         with tempfile.TemporaryDirectory() as root:
@@ -327,7 +361,17 @@ class ExtensionEngineTests(unittest.TestCase):
             (row,) = engine.plugin_inventory(profile)
             self.assertEqual(row["format"], "portable")
             self.assertEqual(row["provides_skills"], ["summarize"])
-            self.assertEqual(row["mcp_servers"], [{"name": "docs", "host": "mcp.example.com"}])
+            self.assertEqual(
+                row["mcp_servers"],
+                [
+                    {
+                        "name": "docs",
+                        "host": "mcp.example.com",
+                        "upstream_url": "https://mcp.example.com/mcp",
+                        "auth_kind": "none",
+                    }
+                ],
+            )
 
     def _fake_git(self, sha, files):
         """Replace Git transport: record commands and lay out ``files`` on fetch."""
@@ -666,6 +710,60 @@ class ExtensionEngineTests(unittest.TestCase):
             # Catalog servers therefore bypass native discovery and use the
             # profile-scoped adapter in managed_mcp (see test_managed_mcp).
             self.assertTrue(engine.mcp_profile_isolation_supported())
+
+    def test_refresh_routes_plugin_auth_servers_only_through_mapped_proxy(self):
+        from hermes_cli.plugins import _portable_skill_namespace
+
+        connection_id = "0123abcd-0123-4abc-8def-0123456789ab"
+        ns = {pid: _portable_skill_namespace(pid) for pid in ("kit", "old")}
+        servers = {
+            f"{ns['kit']}__docs": {"url": "https://docs.example/mcp"},
+            f"{ns['kit']}__api": {
+                "url": "https://api.example/mcp",
+                "headers": {"Authorization": ""},
+            },
+            f"{ns['kit']}__unmapped": {
+                "url": "https://other.example/mcp",
+                "headers": {"Authorization": ""},
+            },
+            f"{ns['old']}__api": {
+                "url": "https://old.example/mcp",
+                "headers": {"Authorization": ""},
+            },
+        }
+        state = {
+            "profile_generation": "a" * 32,
+            "plugins": {"kit": {"commit": "rev-2"}, "old": {"commit": "rev-9"}},
+            "plugin_mcp": {
+                "kit/api": {"connection_id": connection_id, "plugin_revision": "rev-2"},
+                "old/api": {"connection_id": connection_id, "plugin_revision": "rev-1"},
+            },
+        }
+        captured = {}
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.dict(os.environ, {"RUNTIME_CONTROL_URL": "http://control:3000"}),
+            patch.object(engine, "read_config", return_value={}),
+            patch.object(engine, "load_state", return_value=state),
+            patch.object(engine, "_portable_plugin_mcp_servers", return_value=servers),
+            patch(
+                "xnobrain.integrations.managed_mcp.sync_profile_mcp",
+                side_effect=lambda *args: captured.update(plugins=args[4]),
+            ),
+        ):
+            engine.refresh_profile_mcp(Path(root))
+        plugins = captured["plugins"]
+        self.assertEqual(plugins[f"{ns['kit']}__docs"], {"url": "https://docs.example/mcp"})
+        self.assertEqual(
+            plugins[f"{ns['kit']}__api"],
+            {
+                "url": f"http://control:3000/xnobrain/api/control/internal/v1/mcp/{connection_id}",
+                "xnobrain_connection_id": connection_id,
+            },
+        )
+        # Unmapped and stale-revision auth servers never connect directly.
+        self.assertNotIn(f"{ns['kit']}__unmapped", plugins)
+        self.assertNotIn(f"{ns['old']}__api", plugins)
 
 
 if __name__ == "__main__":

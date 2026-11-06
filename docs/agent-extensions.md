@@ -37,7 +37,7 @@ the separate `xnobrain_managed_mcp_servers` config key and run through
 - Server IDs are an HMAC of profile path, profile generation and logical name,
   so same-named servers in two profiles get separate sessions and a recreated
   profile cannot reuse an old session.
-- Catalog API keys live in Control. Runtime stores only a Control connection ID
+- Catalog API keys and OAuth tokens live in Control. Runtime stores only a Control connection ID
   and connects through Control's private MCP proxy with a short-lived in-memory
   grant on each request; the key never enters the profile. Header placeholders
   for other managed servers resolve only from the profile's own secret scope.
@@ -101,19 +101,18 @@ Fifteen OAuth recipes are installable alongside six non-OAuth remote recipes.
 Trello and Cobrain remain unsupported, four desktop integrations are
 unsupported, and four unreviewed/unpinned stdio recipes remain `needs_review`.
 
-Catalog OAuth starts with
-`POST /agents-plugins/{agent_id}/oauth/start` and body
-`{"catalog_id":"linear","recipe_revision":2}`. The response is
-`{"flow_id":"…","authorization_url":"https://…"}`. The browser posts
-`{"flow_id":"…","state":"…","code":"…"}` to
-`POST /agents-plugins/{agent_id}/oauth/callback`; success returns
-`{"status":"connected","catalog_id":"linear"}`. The callback URI comes
-only from `RUNTIME_MCP_OAUTH_REDIRECT_URI`, never from request data. Flows last
-ten minutes and bind to the agent, verified tenant and subject. Tokens live in
-the profile's `mcp-tokens/` directory using Hermes' private file permissions.
-Code running in the same profile can read them, which remains a known risk.
-OAuth sessions are optional during chat: authentication failures report
-`needs_sign_in` and do not stop other MCP servers or the turn.
+Catalog OAuth credentials live in Control. The UI creates a pending Control
+connection, installs its proxy URL in Runtime with an empty `fields` object,
+then calls Control's `POST /xnobrain/api/control/v1/mcp/connections/{id}/oauth/start`.
+The browser posts `{state, code}` (or `{state, error}` when authorization is
+denied) to Control's `/xnobrain/api/control/v1/mcp/oauth/callback`, then calls
+Runtime `POST /agents-plugins/{agent_id}/mcp/reconnect` so servers parked on
+`needs_sign_in` reconnect with the fresh grant Control attaches. Runtime has
+no OAuth start or callback routes and stores no catalog OAuth tokens or DCR
+client data. Runtime startup removes legacy `xnobrain-*` token files and catalog
+MCP entries that contain plaintext headers or `auth: oauth`; users reconnect
+those integrations through the UI. Control connection status is authoritative
+for sign-in state, while Runtime reports whether the proxy session is available.
 
 When a portable plugin with MCP is enabled, Runtime writes disabled
 `xnobrain_plugin_shadow` entries in profile `config.yaml`; Hermes skips these
@@ -322,3 +321,20 @@ that was read, with their validated subdirectory passed as `path`.
 Marketplace discovery does not install code. The UI submits a selected entry to the
 existing extension install operation with its source, path, and pinned ref. It therefore
 uses the same scan, approval, and enable lifecycle as any other Git install.
+
+## MCP credentials for plugins and custom servers
+
+Portable plugin MCP servers that declare OAuth or header placeholders are
+never connected directly with credentials. Inventory rows include the declared
+HTTPS URL, auth kind, and installed plugin `commit` revision (uploaded
+archives use `upload:<digest>`). The UI obtains host approval, creates a
+Control connection, and stores its ID through `PUT
+/agents-plugins/{agent_id}/plugins/{plugin_id}/mcp/{server_name}/connection`.
+`DELETE` on that path clears the mapping. Runtime uses a mapping only while its
+revision matches the installed commit; otherwise the server remains
+`needs_sign_in`. Plugin updates change the revision and removal clears mappings.
+
+Custom HTTP MCP entries may store `xnobrain_connection_id`. The settings UI
+moves literal header values to Control before saving that ID. Runtime keeps the
+displayed upstream URL and ID, rebuilds the proxy URL for chat, and drops
+headers during sync. Stdio entries remain unchanged.

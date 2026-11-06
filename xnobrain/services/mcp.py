@@ -46,6 +46,16 @@ class MCPService:
         profile = self.profile_path(agent_id)
         config_path = profile / "config.yaml"
         merged_servers = copy.deepcopy(dict(servers))
+        for server in merged_servers.values():
+            if not isinstance(server, dict) or not server.get("xnobrain_connection_id"):
+                continue
+            connection_id = str(server["xnobrain_connection_id"])
+            url = server.get("url")
+            if not isinstance(url, str) or not url.startswith("https://") or not connection_id:
+                raise ServiceError(
+                    "Invalid MCP proxy configuration", status=422, code="invalid_mcp_config"
+                )
+            server.pop("headers", None)  # merged_servers is a deep copy
         if config_path.is_symlink():
             raise ServiceError("Unsafe profile config", status=409, code="invalid_profile")
         if config_path.is_file():
@@ -59,15 +69,6 @@ class MCPService:
             if isinstance(current_config, dict):
                 current_servers = current_config.get("mcp_servers") or {}
                 if isinstance(current_servers, dict):
-                    if any(
-                        isinstance(server, dict) and server.get("xnobrain_plugin_shadow")
-                        for server in current_servers.values()
-                    ):
-                        raise ServiceError(
-                            "Plugin managed MCP entries cannot be edited",
-                            status=422,
-                            code="mcp_server_managed",
-                        )
                     from ..integrations.extension_policy import load_state
 
                     profile_state = load_state(profile)

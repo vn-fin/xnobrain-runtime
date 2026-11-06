@@ -956,7 +956,24 @@ def _portable_plugin_mcp_servers(profile: Path) -> dict[str, Any]:
         from hermes_cli.plugins import get_plugin_manager
 
         with profile_context(profile):
-            return get_plugin_manager().get_portable_mcp_servers()
+            servers = get_plugin_manager().get_portable_mcp_servers()
+            result = dict(servers) if isinstance(servers, dict) else {}
+            state = load_state(profile)
+            from hermes_cli.plugins import _portable_skill_namespace
+
+            for plugin_id, record in (state.get("plugins") or {}).items():
+                if record.get("format") not in {"portable", "claude"}:
+                    continue
+                path = Path(profile) / "plugins" / plugin_id / "mcp.json"
+                if not path.is_file() or path.is_symlink():
+                    continue
+                declarations = json.loads(path.read_text(encoding="utf-8")).get("mcpServers") or {}
+                prefix = f"{_portable_skill_namespace(plugin_id)}__"
+                for name, declaration in declarations.items():
+                    engine_name = f"{prefix}{name}"
+                    if engine_name in result and isinstance(declaration, dict):
+                        result[engine_name] = {**result[engine_name], **declaration}
+            return result
     except Exception:
         return {}
 
@@ -972,7 +989,53 @@ def refresh_profile_mcp(profile: Path) -> None:
     servers = config.get(MANAGED_MCP_KEY) or {}
     state = load_state(profile)
     custom = _custom_mcp_servers(config, state)
+    custom = {
+        name: server
+        for name, server in custom.items()
+        if not (
+            isinstance(server, dict)
+            and server.get("xnobrain_connection_id")
+            and not re.fullmatch(r"[0-9a-fA-F-]{36}", str(server.get("xnobrain_connection_id")))
+        )
+    }
     plugin_servers = _portable_plugin_mcp_servers(profile)
+    plugin_state = state.get("plugins") or {}
+    mappings = state.get("plugin_mcp") or {}
+    if not isinstance(plugin_servers, dict):
+        plugin_servers = {}
+    from hermes_cli.plugins import _portable_skill_namespace
+
+    namespace_ids = {
+        f"{_portable_skill_namespace(plugin_id)}__": plugin_id for plugin_id in plugin_state
+    }
+    for engine_name, server in list(plugin_servers.items()):
+        if not isinstance(server, dict):
+            continue
+        # The engine names servers <plugin namespace>__<server name>.
+        plugin_id = next(
+            (key for prefix, key in namespace_ids.items() if engine_name.startswith(prefix)), None
+        )
+        server_name = engine_name.split("__", 1)[-1]
+        record = plugin_state.get(plugin_id, {}) if plugin_id else {}
+        revision = str(record.get("commit") or "")
+        mapping = mappings.get(f"{plugin_id}/{server_name}") if plugin_id else None
+        if isinstance(mapping, dict) and mapping.get("plugin_revision") == revision:
+            connection_id = str(mapping.get("connection_id") or "")
+            control_url = os.environ.get("RUNTIME_CONTROL_URL", "").rstrip("/")
+            if not re.fullmatch(r"[0-9a-fA-F-]{36}", connection_id):
+                plugin_servers.pop(engine_name, None)
+                continue
+            server.clear()
+            server.update(
+                {
+                    "url": f"{control_url}/xnobrain/api/control/internal/v1/mcp/{connection_id}",
+                    "xnobrain_connection_id": connection_id,
+                }
+            )
+        elif any(
+            value == "" or "${" in str(value) for value in (server.get("headers") or {}).values()
+        ):
+            plugin_servers.pop(engine_name, None)
     generation = str(state.get("profile_generation") or "")
     if not servers and not custom and not plugin_servers and not generation:
         return

@@ -161,6 +161,14 @@ def reconnect_control_tasks(scope: str) -> None:
                 event.set()
 
 
+def _is_unauthorized(error: BaseException) -> bool:
+    """Return whether an upstream refused an anonymous connection with 401."""
+    if any(_is_unauthorized(item) for item in getattr(error, "exceptions", ())):
+        return True
+    response = getattr(error, "response", None)
+    return 401 in (getattr(error, "status_code", None), getattr(response, "status_code", None))
+
+
 def _status_from_control_error(error: BaseException) -> str:
     """Map only known proxy authentication errors to a safe public status."""
     nested = getattr(error, "exceptions", ())
@@ -196,10 +204,9 @@ def _resolved_config(
     if not isinstance(config, dict) or not isinstance(config.get("url"), str):
         raise ValueError("Managed MCP integrations require an HTTPS endpoint")
     oauth = str(config.get("auth") or "").lower() == "oauth"
-    catalog_oauth = oauth and isinstance(config.get("xnobrain_catalog_id"), str)
     connection_id = config.get("xnobrain_connection_id")
     control_proxy = connection_id is not None
-    if "command" in config or (oauth and not catalog_oauth):
+    if "command" in config or oauth:
         raise ValueError("Managed MCP integrations support remote header authentication only")
     if control_proxy:
         try:
@@ -207,13 +214,11 @@ def _resolved_config(
         except (TypeError, ValueError, AttributeError) as error:
             raise ValueError("Managed MCP Control connection ID is invalid") from error
         control_url = os.environ.get("RUNTIME_CONTROL_URL", "").rstrip("/")
-        expected_url = (
-            f"{control_url}/xnobrain/api/control/internal/v1/mcp/{canonical_id}"
-            if control_url
-            else ""
-        )
-        if str(connection_id) != canonical_id or config["url"] != expected_url:
+        if str(connection_id) != canonical_id or not control_url:
             raise ValueError("Managed MCP Control proxy URL is invalid")
+        # Always dial Control; a custom entry's url only shows the upstream it stands for.
+        config = dict(config)
+        config["url"] = f"{control_url}/xnobrain/api/control/internal/v1/mcp/{canonical_id}"
     else:
         public_https(config["url"])
     parsed = urlsplit(config["url"])
@@ -227,7 +232,7 @@ def _resolved_config(
     elif not interpolate:
         # Third-party plugin servers never receive profile secrets: a header
         # such as "${OPENAI_API_KEY}" would send the key to the plugin's host.
-        if "${" in json.dumps(config, default=str):
+        if "${" in json.dumps(config, default=str) and not control_proxy:
             raise ValueError("Plugin MCP servers may not reference secrets")
         resolved = json.loads(json.dumps(config, default=str))
     else:
@@ -247,8 +252,6 @@ def _resolved_config(
     resolved["connect_timeout"] = min(max(timeout, 1.0), _MAX_CONNECT_SECONDS)
     resolved["skip_preflight"] = True
     resolved.pop("transport", None)
-    if catalog_oauth:
-        resolved["_xnobrain_catalog_oauth"] = True
     return resolved
 
 
@@ -269,10 +272,7 @@ class _PinnedHTTPSMCPServerTask:
         default_headers = dict(config.get("headers") or {})
         default_headers.setdefault("mcp-protocol-version", mcp_tool.LATEST_PROTOCOL_VERSION)
         connect_timeout = float(config.get("connect_timeout", mcp_tool._DEFAULT_CONNECT_TIMEOUT))
-        auth = config.get("_oauth_provider")
-        if control_proxy:
-            auth = ControlGrantAuth(self.profile_scope)
-        default_headers.pop("_oauth_provider", None)
+        auth = ControlGrantAuth(self.profile_scope) if control_proxy else None
 
         sampling_kwargs = self._sampling.session_kwargs() if self._sampling else {}
         if self._elicitation:
@@ -551,28 +551,22 @@ def sync_profile_mcp(
                 continue
             key = _task_key(scope, generation, logical_name)
             sources[key] = _source_digest(raw_config)
-            is_oauth = (
-                isinstance(raw_config, dict)
-                and str(raw_config.get("auth") or "").lower() == "oauth"
-            )
             try:
                 resolved = _accepted_config(profile, generation, logical_name, raw_config)
             except Exception:
                 is_control_proxy = (
                     isinstance(raw_config, dict) and "xnobrain_connection_id" in raw_config
                 )
-                if not is_oauth and not is_control_proxy:
+                if not is_control_proxy:
                     raise
-                _CUSTOM_STATUS[key] = {
-                    "status": "unavailable" if is_control_proxy else "needs_sign_in"
-                }
+                _CUSTOM_STATUS[key] = {"status": "unavailable"}
                 rejected.add(key)
                 continue
             desired[key] = (_config_digest(resolved), resolved)
             is_control_proxy = (
                 isinstance(raw_config, dict) and "xnobrain_connection_id" in raw_config
             )
-            if is_oauth or is_control_proxy:
+            if is_control_proxy:
                 optional.add(key)
         optional_sources = (
             (CUSTOM_PREFIX, custom_servers, True),
@@ -594,7 +588,13 @@ def sync_profile_mcp(
                         profile, generation, logical_name, raw_config, interpolate=interpolate
                     )
                 except Exception:
-                    _CUSTOM_STATUS[key] = {"status": "rejected"}
+                    is_control_proxy = (
+                        isinstance(raw_config, dict) and "xnobrain_connection_id" in raw_config
+                    )
+                    _CUSTOM_STATUS[key] = {
+                        "status": "needs_sign_in" if is_control_proxy else "rejected",
+                        "source": sources[key],
+                    }
                     rejected.add(key)
                     _LOGGER.warning("MCP server %r was rejected for native turns", logical_name)
                     continue
@@ -646,15 +646,12 @@ def sync_profile_mcp(
                         ) + 1
                         delay = min(_RETRY_BASE_SECONDS * 2 ** (failures - 1), _RETRY_MAX_SECONDS)
                         raw = managed_servers.get(key[2])
-                        is_oauth = (
-                            isinstance(raw, dict) and str(raw.get("auth") or "").lower() == "oauth"
-                        )
                         is_control_proxy = isinstance(raw, dict) and "xnobrain_connection_id" in raw
                         _CUSTOM_STATUS[key] = {
-                            "status": "needs_sign_in"
-                            if is_oauth
-                            else _status_from_control_error(error)
+                            "status": _status_from_control_error(error)
                             if is_control_proxy
+                            else "needs_sign_in"
+                            if key[2].startswith(PLUGIN_PREFIX) and _is_unauthorized(error)
                             else "unavailable",
                             "digest": config_digest,
                             "failures": failures,
@@ -697,21 +694,6 @@ def _accepted_config(
 
     server_id = _server_id(profile, generation, logical_name)
     resolved = _resolved_config(profile, raw_config, interpolate=interpolate)
-    if resolved.pop("_xnobrain_catalog_oauth", False):
-        from tools.mcp_oauth_manager import get_manager
-
-        redirect_uri = os.environ.get("RUNTIME_MCP_OAUTH_REDIRECT_URI", "").strip()
-        if not redirect_uri:
-            raise ValueError("Managed MCP OAuth is unavailable")
-        stable_name = str(raw_config.get("xnobrain_oauth_name") or "")
-        if not stable_name:
-            raise ValueError("Managed MCP OAuth identity is invalid")
-        with profile_context(profile):
-            resolved["_oauth_provider"] = get_manager().get_or_build_provider(
-                stable_name,
-                str(raw_config["url"]),
-                {"redirect_uri": redirect_uri, "client_name": "XNOBrain"},
-            )
     filtered = mcp_tool._filter_suspicious_mcp_servers({server_id: resolved})
     if server_id not in filtered:
         raise ValueError("Managed MCP server configuration was rejected")
@@ -720,7 +702,7 @@ def _accepted_config(
 
 def _config_digest(config: dict[str, Any]) -> str:
     material = json.dumps(
-        {key: value for key, value in config.items() if key != "_oauth_provider"},
+        config,
         sort_keys=True,
         separators=(",", ":"),
     )
@@ -739,7 +721,7 @@ def _unsupported_in_chat(config: dict[str, Any]) -> bool:
     rejection needs DNS and is reported after a native turn instead.
     """
     oauth = str(config.get("auth") or "").lower() == "oauth"
-    if "command" in config or (oauth and not isinstance(config.get("xnobrain_catalog_id"), str)):
+    if "command" in config or oauth:
         return True
     url = config.get("url")
     if not isinstance(url, str):
@@ -777,7 +759,7 @@ def native_mcp_status(profile: Path, servers: dict[str, Any]) -> dict[str, str]:
         if not mcp_tool._parse_boolish(config.get("enabled", True), default=True):
             result[name] = "disabled"
         elif _unsupported_in_chat(config):
-            result[name] = "rejected"
+            result[name] = "needs_sign_in" if config.get("xnobrain_connection_id") else "rejected"
         elif (
             (entry := live.get(name))
             and entry.get("source") == _source_digest(config)

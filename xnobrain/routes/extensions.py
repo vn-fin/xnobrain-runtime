@@ -4,12 +4,11 @@ from pydantic import BaseModel
 
 from ..models.extensions import (
     CatalogInstall,
-    CatalogOAuthCallback,
-    CatalogOAuthStart,
     ExtensionApproval,
     ExtensionOperationCreate,
     HookApproval,
     HookCreate,
+    PluginMcpConnection,
     PluginVisibility,
     ProbeCreate,
     ToolsetPatch,
@@ -43,6 +42,25 @@ ROUTES = (
     ),
     route("GET", "/agents-plugins/{agent_id}", "extensions_plugins_list", tags=_TAG),
     route(
+        "PUT",
+        "/agents-plugins/{agent_id}/plugins/{plugin_id}/mcp/{server_name}/connection",
+        "extensions_plugin_mcp_connection_put",
+        PluginMcpConnection,
+        tags=_TAG,
+    ),
+    route(
+        "DELETE",
+        "/agents-plugins/{agent_id}/plugins/{plugin_id}/mcp/{server_name}/connection",
+        "extensions_plugin_mcp_connection_delete",
+        tags=_TAG,
+    ),
+    route(
+        "POST",
+        "/agents-plugins/{agent_id}/mcp/reconnect",
+        "extensions_plugin_mcp_reconnect",
+        tags=_TAG,
+    ),
+    route(
         "POST",
         "/agents-plugins/{agent_id}/upload",
         "extensions_plugin_upload",
@@ -54,20 +72,6 @@ ROUTES = (
         "/agents-plugins/{agent_id}/install-catalog",
         "extensions_catalog_install",
         CatalogInstall,
-        tags=_TAG,
-    ),
-    route(
-        "POST",
-        "/agents-plugins/{agent_id}/oauth/start",
-        "extensions_oauth_start",
-        CatalogOAuthStart,
-        tags=_TAG,
-    ),
-    route(
-        "POST",
-        "/agents-plugins/{agent_id}/oauth/callback",
-        "extensions_oauth_callback",
-        CatalogOAuthCallback,
         tags=_TAG,
     ),
     route(

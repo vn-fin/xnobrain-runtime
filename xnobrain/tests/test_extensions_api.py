@@ -17,7 +17,7 @@ from fastapi import FastAPI
 
 from xnobrain.handlers import APIHandlers
 from xnobrain.handlers.operations.extensions import operations as extension_operations
-from xnobrain.integrations import extension_engine
+from xnobrain.integrations import extension_engine, extension_policy
 from xnobrain.repositories import FileRepository
 from xnobrain.routes import setup_routes
 from xnobrain.services.base import ServiceError
@@ -158,6 +158,58 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(inactive.status_code, 403)
 
+    async def test_plugin_mcp_mapping_rejects_stale_revision(self):
+        state = extension_engine.load_state(self.profile)
+        state["plugins"]["sample"] = {"commit": "a" * 40, "format": "portable"}
+        extension_policy.save_state(self.profile, state)
+        with patch.object(
+            extension_engine, "portable_plugin_mcp_names", return_value=["portable__docs"]
+        ):
+            response = await self.client.put(
+                f"{API_PREFIX}/agents-plugins/research/plugins/sample/mcp/docs/connection",
+                headers=self.headers(),
+                json={
+                    "connection_id": "11111111-1111-4111-8111-111111111111",
+                    "plugin_revision": "b" * 40,
+                },
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"]["code"], "plugin_revision_mismatch")
+
+    async def test_plugin_mcp_reconnect_stores_fresh_grant(self):
+        from xnobrain.integrations import control_grants
+
+        with patch.object(control_grants, "set") as set_grant:
+            response = await self.client.post(
+                f"{API_PREFIX}/agents-plugins/research/mcp/reconnect",
+                headers={**self.headers(), "X-XNOBrain-MCP-Grant": "fresh-grant"},
+            )
+        self.assertEqual(response.status_code, 200)
+        set_grant.assert_called_once()
+        self.assertEqual(set_grant.call_args.args[1], "fresh-grant")
+
+    async def test_plugin_mcp_mapping_stores_connection_for_current_revision(self):
+        from hermes_cli.plugins import _portable_skill_namespace
+
+        state = extension_engine.load_state(self.profile)
+        state["plugins"]["sample"] = {"commit": "a" * 40, "format": "portable"}
+        extension_policy.save_state(self.profile, state)
+        engine_name = f"{_portable_skill_namespace('sample')}__docs"
+        with patch.object(
+            extension_engine, "portable_plugin_mcp_names", return_value=[engine_name]
+        ):
+            response = await self.client.put(
+                f"{API_PREFIX}/agents-plugins/research/plugins/sample/mcp/docs/connection",
+                headers=self.headers(),
+                json={
+                    "connection_id": "11111111-1111-4111-8111-111111111111",
+                    "plugin_revision": "a" * 40,
+                },
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        mapping = extension_engine.load_state(self.profile)["plugin_mcp"]["sample/docs"]
+        self.assertEqual(mapping["connection_id"], "11111111-1111-4111-8111-111111111111")
+
     async def test_profile_owner_binding_rejects_another_signed_actor(self):
         (self.profile / ".community-profile-owner.json").write_text(
             json.dumps(
@@ -175,15 +227,6 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["error"]["code"], "permission_denied")
-
-    async def test_oauth_start_requires_runtime_redirect_uri(self):
-        response = await self.client.post(
-            f"{API_PREFIX}/agents-plugins/research/oauth/start",
-            headers=self.headers(),
-            json={"catalog_id": "linear", "recipe_revision": 2},
-        )
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json()["error"]["code"], "oauth_unavailable")
 
     async def test_request_validation_rejects_missing_and_spoofed_fields(self):
         path = f"{API_PREFIX}/agents-extension-operations/research"
@@ -271,6 +314,46 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
                 if item.is_file()
             )
             self.assertNotIn(secret, profile_contents)
+
+    async def test_catalog_oauth_install_uses_control_proxy_and_rejects_fields(self):
+        connection_id = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"
+        entry = {
+            "id": "linear",
+            "recipe_revision": 2,
+            "installability": "installable",
+            "mcp": {
+                "transport": "http",
+                "endpoint_mode": "static",
+                "url": "https://mcp.linear.app/mcp",
+                "auth": {"kind": "oauth"},
+            },
+        }
+        self.extensions.catalog = lambda: {"entries": [entry]}
+        path = f"{API_PREFIX}/agents-plugins/research/install-catalog"
+        body = {
+            "catalog_id": "linear",
+            "recipe_revision": 2,
+            "connection_id": connection_id,
+            "fields": {},
+        }
+        with patch.object(extension_engine, "mcp_profile_isolation_supported", return_value=True):
+            response = await self.client.post(path, headers=self.headers(), json=body)
+            self.assertEqual(response.status_code, 200, response.text)
+            config = (self.profile / "config.yaml").read_text(encoding="utf-8")
+            self.assertIn(
+                f"http://control.internal/xnobrain/api/control/internal/v1/mcp/{connection_id}",
+                config,
+            )
+            self.assertNotIn("auth:", config)
+            self.assertNotIn("headers:", config)
+            rejected = await self.client.post(
+                path,
+                headers=self.headers(),
+                json={**body, "fields": {"token": "private-value"}},
+            )
+            self.assertEqual(rejected.status_code, 422)
+            self.assertEqual(rejected.json()["error"]["code"], "invalid_catalog_fields")
+            self.assertNotIn("private-value", rejected.text)
 
     async def test_extension_operation_callback_runs_off_event_loop(self):
         loop_thread = threading.get_ident()
@@ -400,7 +483,17 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(plugin["dropped_components"], ["hooks/"])
         self.assertEqual(
             plugin["mcp_servers"],
-            [{"name": "docs", "host": "mcp.example.com", "chat_status": "disabled"}],
+            [
+                {
+                    "name": "docs",
+                    "host": "mcp.example.com",
+                    "auth_kind": "none",
+                    "upstream_url": "https://mcp.example.com/mcp",
+                    "plugin_revision": "c" * 40,
+                    "connection_id": None,
+                    "chat_status": "disabled",
+                }
+            ],
         )
         approved = await self.client.post(
             f"{base}/sample/approval",

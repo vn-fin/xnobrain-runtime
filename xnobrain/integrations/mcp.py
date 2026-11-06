@@ -82,10 +82,27 @@ class MCPIntegrationMixin:
 
         def validate_mcp_server_entry(name: str, entry: Mapping[str, Any]) -> list[str]:
             issues: list[str] = []
-            allowed = {"command", "args", "env", "url", "headers", "tools"}
+            allowed = {
+                "command",
+                "args",
+                "env",
+                "url",
+                "headers",
+                "tools",
+                "xnobrain_connection_id",
+            }
             for key in entry:
                 if key not in allowed:
                     issues.append(f"{name}.{key} is not supported")
+            if "xnobrain_connection_id" in entry:
+                # Control holds the headers; the entry only names the connection.
+                if not re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    str(entry["xnobrain_connection_id"]),
+                ):
+                    issues.append(f"{name}.xnobrain_connection_id must be a UUID")
+                if "headers" in entry or "command" in entry:
+                    issues.append(f"{name}.xnobrain_connection_id requires a url without headers")
 
             command = entry.get("command")
             url = entry.get("url")
@@ -138,10 +155,17 @@ class MCPIntegrationMixin:
 
         config = self._read_config(profile_dir)
         existing = config.get("mcp_servers") or {}
-        if isinstance(existing, Mapping) and any(
-            isinstance(server, dict) and server.get("xnobrain_plugin_shadow")
-            for server in existing.values()
-        ):
+        # Plugin shadows are hidden from get_mcp, so keep them and only refuse overwrites.
+        shadows = (
+            {
+                name: server
+                for name, server in existing.items()
+                if isinstance(server, dict) and server.get("xnobrain_plugin_shadow")
+            }
+            if isinstance(existing, Mapping)
+            else {}
+        )
+        if any(name in shadows for name in cleaned):
             raise AgentAPIError(
                 "Plugin managed MCP entries cannot be edited",
                 status=422,
@@ -160,6 +184,7 @@ class MCPIntegrationMixin:
                 status=422,
                 code="mcp_server_managed",
             )
+        cleaned.update(shadows)
         if cleaned:
             config["mcp_servers"] = cleaned
         else:

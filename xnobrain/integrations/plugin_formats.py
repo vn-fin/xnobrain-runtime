@@ -121,9 +121,6 @@ def _remote_mcp_issue(name: str, server: Any) -> str | None:
     headers = server.get("headers") or {}
     if not isinstance(headers, dict):
         return f"MCP server {name!r} headers must be an object"
-    if any("${" in str(value) for value in headers.values()):
-        # Plugin servers never receive profile secrets through placeholders.
-        return f"MCP server {name!r} headers may not reference secrets"
     return None
 
 
@@ -172,13 +169,13 @@ def convert_claude_plugin(path: Path) -> list[str]:
             if kind != "http" or not isinstance(server.get("url"), str):
                 dropped.append(f"mcp:{server_name} ({kind})")
                 continue
-            if "${" in json.dumps(server, default=str):
-                # Plugin servers never receive profile secrets; keep the rest.
-                dropped.append(f"mcp:{server_name} (secret)")
-                continue
             converted = {"type": "streamable-http", "url": server["url"]}
             if isinstance(server.get("headers"), dict) and server["headers"]:
-                converted["headers"] = server["headers"]
+                # An emptied placeholder marks a header the user supplies through Control.
+                converted["headers"] = {
+                    key: "" if isinstance(value, str) and "${" in value else value
+                    for key, value in server["headers"].items()
+                }
             servers[str(server_name)] = converted
 
     for item in sorted(path.iterdir()):
@@ -249,6 +246,31 @@ def portable_policy_findings(path: Path) -> list[dict[str, Any]]:
     return findings
 
 
+def strip_secret_placeholders(path: Path) -> None:
+    """Remove placeholder header values before a plugin reaches Hermes."""
+    mcp_path = path / "mcp.json"
+    if not mcp_path.is_file() or mcp_path.is_symlink():
+        return
+    payload = _read_json(mcp_path)
+    servers = payload.get("mcpServers")
+    if not isinstance(servers, dict):
+        return
+    changed = False
+    for server in servers.values():
+        if not isinstance(server, dict):
+            continue
+        headers = server.get("headers")
+        if not isinstance(headers, dict):
+            continue
+        for key, value in headers.items():
+            if isinstance(value, str) and "${" in value:
+                # An emptied placeholder marks a header the user supplies through Control.
+                headers[key] = ""
+                changed = True
+    if changed:
+        mcp_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 def is_asset_image(relative: Path) -> bool:
     """Return whether a file is a listing image a portable package may ship."""
     return relative.parts[0] == "assets" and relative.suffix.lower() in ASSET_IMAGE_SUFFIXES
@@ -266,7 +288,7 @@ def portable_summary(path: Path) -> dict[str, Any]:
         if skills_root.is_dir() and not skills_root.is_symlink()
         else []
     )
-    servers: list[dict[str, str]] = []
+    servers: list[dict[str, Any]] = []
     mcp_path = path / "mcp.json"
     if mcp_path.is_file() and not mcp_path.is_symlink():
         declared = _read_json(mcp_path).get("mcpServers") or {}
@@ -274,5 +296,17 @@ def portable_summary(path: Path) -> dict[str, Any]:
             for name, server in sorted(declared.items()):
                 url = server.get("url") if isinstance(server, dict) else None
                 host = urlsplit(url).hostname if isinstance(url, str) else None
-                servers.append({"name": str(name), "host": host or ""})
+                headers = server.get("headers") if isinstance(server, dict) else None
+                # Portable MCP declares no auth field: OAuth is detected at runtime from a 401.
+                needs_key = isinstance(headers, dict) and any(
+                    value == "" or "${" in str(value) for value in headers.values()
+                )
+                servers.append(
+                    {
+                        "name": str(name),
+                        "host": host or "",
+                        "upstream_url": url or "",
+                        "auth_kind": "api_key" if needs_key else "none",
+                    }
+                )
     return {"skills": skills, "mcp_servers": servers}

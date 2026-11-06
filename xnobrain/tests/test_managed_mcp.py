@@ -290,51 +290,43 @@ class ManagedMCPTests(unittest.TestCase):
         safe.assert_called_once_with()
         asyncio.run(client.aclose())
 
-    def test_oauth_failure_does_not_block_none_auth_catalog_server(self):
+    def test_control_oauth_proxy_auth_failure_maps_to_needs_sign_in(self):
         from tools import mcp_tool
 
         profile = self.profiles[0]
         generation = self.generations[0]
-
-        async def fake_start(task, config):
-            if task.logical_name == "xnobrain-linear":
-                raise ConnectionError("OAuth authorization required")
-            task._config = config
-            task.session = _FixtureSession("no-auth", [_tool("lookup")])
-            task._ready.set()
-            task._register_discovered_tools_if_needed()
-
+        connection_id = "8b1a8e93-748b-46b0-8d97-d4d2c7a6b221"
         catalog = {
             "xnobrain-linear": {
-                "url": "https://linear.example.test/mcp",
-                "auth": "oauth",
-                "xnobrain_catalog_id": "linear",
-                "xnobrain_oauth_name": "xnobrain-linear",
-            },
-            "no-auth": {"url": "https://none.example.test/mcp"},
+                "url": f"http://control.internal/xnobrain/api/control/internal/v1/mcp/{connection_id}",
+                "xnobrain_connection_id": connection_id,
+            }
         }
+        import httpx
+
+        response = httpx.Response(
+            401,
+            json={"code": "mcp_needs_sign_in"},
+            request=httpx.Request("POST", "http://control.internal"),
+        )
+
+        async def fake_start(task, _config):
+            raise httpx.HTTPStatusError("unauthorized", request=response.request, response=response)
+
         with (
-            patch.object(
-                managed_mcp, "public_https", return_value=("example.test", "203.0.113.10")
-            ),
-            patch.dict(
-                "os.environ", {"RUNTIME_MCP_OAUTH_REDIRECT_URI": "https://runtime.example/callback"}
-            ),
-            patch("tools.mcp_oauth_manager.get_manager") as get_manager,
+            patch.dict("os.environ", {"RUNTIME_CONTROL_URL": "http://control.internal"}),
             patch.object(mcp_tool, "_ensure_mcp_sdk", return_value=True),
             patch.object(
-                mcp_tool, "_filter_suspicious_mcp_servers", side_effect=lambda value: value
+                mcp_tool,
+                "_filter_suspicious_mcp_servers",
+                side_effect=lambda value: value,
             ),
-            patch.object(mcp_tool, "_validate_remote_mcp_url", return_value=None),
             patch.object(managed_mcp.ManagedMCPServerTask, "start", new=fake_start),
         ):
-            get_manager.return_value.get_or_build_provider.return_value = object()
-            result = managed_mcp.sync_profile_mcp(profile, generation, catalog)
+            managed_mcp.sync_profile_mcp(profile, generation, catalog)
 
-        self.assertEqual(result, {"connected": ["no-auth"]})
         status = managed_mcp.profile_mcp_status(profile, generation)
         self.assertEqual(status["xnobrain-linear"]["status"], "needs_sign_in")
-        self.assertTrue(status["no-auth"]["connected"])
 
     def test_api_key_catalog_failure_still_raises(self):
         profile = self.profiles[0]
@@ -672,12 +664,23 @@ class ManagedMCPTests(unittest.TestCase):
         with patch.dict(os.environ, {"RUNTIME_CONTROL_URL": "http://control.internal/"}):
             resolved = managed_mcp._resolved_config(self.profiles[0], config)
             self.assertNotIn("headers", resolved)
-            for invalid_url in (
+            # Any other url (a custom entry shows its upstream) is replaced by the Control URL.
+            for other_url in (
                 expected.replace("control.internal", "attacker.internal"),
                 expected + "/extra",
+                "https://mcp.example.com/mcp",
             ):
-                with self.assertRaisesRegex(ValueError, "proxy URL"):
-                    managed_mcp._resolved_config(self.profiles[0], {**config, "url": invalid_url})
+                resolved = managed_mcp._resolved_config(
+                    self.profiles[0], {**config, "url": other_url}
+                )
+                self.assertEqual(resolved["url"], expected)
+            with self.assertRaisesRegex(ValueError, "proxy URL"):
+                managed_mcp._resolved_config(
+                    self.profiles[0], {**config, "xnobrain_connection_id": connection_id.upper()}
+                )
+        with patch.dict(os.environ, {"RUNTIME_CONTROL_URL": ""}):
+            with self.assertRaisesRegex(ValueError, "proxy URL"):
+                managed_mcp._resolved_config(self.profiles[0], config)
 
     def test_control_grant_auth_reads_current_scope_grant(self):
         import httpx
@@ -714,6 +717,19 @@ class ManagedMCPTests(unittest.TestCase):
                 return seen["authorization"]
 
             self.assertEqual(asyncio.run(send_through_client()), "Bearer short-lived-grant")
+
+    def test_anonymous_401_is_detected_inside_exception_groups(self):
+        import httpx
+
+        request = httpx.Request("POST", "https://mcp.example.com/mcp")
+        unauthorized = httpx.HTTPStatusError(
+            "unauthorized", request=request, response=httpx.Response(401, request=request)
+        )
+        failed = httpx.HTTPStatusError(
+            "failed", request=request, response=httpx.Response(500, request=request)
+        )
+        self.assertTrue(managed_mcp._is_unauthorized(ExceptionGroup("connect", [unauthorized])))
+        self.assertFalse(managed_mcp._is_unauthorized(ExceptionGroup("connect", [failed])))
 
 
 if __name__ == "__main__":
