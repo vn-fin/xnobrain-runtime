@@ -119,6 +119,81 @@ class SystemdEnvironmentTests(unittest.TestCase):
         self.assertIn("xnobrain-runtime.service", after)
         self.assertEqual(unit["Install"].get("WantedBy"), "multi-user.target")
 
+    def test_native_gateway_unit_mirrors_api_unit_and_hosts_the_gateway(self):
+        api_path = ROOT / "deploy/systemd/xnobrain-api.service"
+        gateway_path = ROOT / "deploy/systemd/xnobrain-gateway.service"
+        api = configparser.ConfigParser(interpolation=None, strict=False)
+        api.read(api_path)
+        gateway = configparser.ConfigParser(interpolation=None, strict=False)
+        gateway.read(gateway_path)
+        raw = gateway_path.read_text(encoding="utf-8")
+
+        for key in (
+            "User",
+            "Group",
+            "EnvironmentFile",
+            "UMask",
+            "NoNewPrivileges",
+            "PrivateTmp",
+            "ProtectSystem",
+            "ReadWritePaths",
+            "RestrictAddressFamilies",
+        ):
+            with self.subTest(setting=key):
+                self.assertEqual(
+                    gateway["Service"].get(key), api["Service"].get(key), key
+                )
+        self.assertEqual(gateway["Service"].get("ReadWritePaths"), "/srv/xnobrain-data")
+        self.assertEqual(gateway["Service"].get("Restart"), "always")
+        self.assertEqual(gateway["Service"].get("RestartSec"), "5s")
+        self.assertEqual(
+            gateway["Service"].get("ExecReload"), "/bin/kill -USR1 $MAINPID"
+        )
+        self.assertEqual(gateway["Service"].get("KillMode"), "mixed")
+        self.assertEqual(gateway["Service"].get("TimeoutStopSec"), "60s")
+        self.assertIn("ConditionPathExists=/etc/xnobrain/xnobrain.env", raw)
+        self.assertIn("PartOf=xnobrain.target", raw)
+        self.assertIn("Environment=XNOBRAIN_APP_DIR=/opt/xnobrain", raw)
+        self.assertEqual(gateway["Install"].get("WantedBy"), "xnobrain.target")
+        self.assertIn("xnobrain-prepare.service", gateway["Unit"].get("Requires"))
+        self.assertIn("xnobrain-api.service", gateway["Unit"].get("After"))
+
+        command = shlex.split(gateway["Service"].get("ExecStart"))
+        self.assertEqual(
+            command[-4:],
+            [
+                "/usr/bin/setpriv",
+                "--no-new-privs",
+                "--",
+                "/usr/local/bin/xnobrain-gateway-entrypoint",
+            ],
+        )
+        self.assertIn("HERMES_HOME=${RUNTIME_HERMES_HOME}", command)
+        self.assertIn("HERMES_ROOT_PROFILE=${RUNTIME_HERMES_HOME}", command)
+        self.assertIn("HERMES_PROFILES_ROOT=${RUNTIME_HERMES_PROFILES_ROOT}", command)
+        self.assertIn(
+            "RUNTIME_INTERNAL_URL=http://127.0.0.1:${RUNTIME_API_SERVER_PORT}",
+            command,
+        )
+
+    def test_native_installer_installs_and_enables_the_gateway_unit(self):
+        installer = (ROOT / "deploy/incus/install-native-runtime.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"$install_root/runtime/gateway-entrypoint.sh"', installer)
+        self.assertIn("/usr/local/bin/xnobrain-gateway-entrypoint", installer)
+        self.assertIn('"$install_root/deploy/systemd/xnobrain-gateway.service"', installer)
+        self.assertIn("/etc/systemd/system/xnobrain-gateway.service", installer)
+        self.assertIn("systemctl enable xnobrain-gateway.service", installer)
+        self.assertLess(
+            installer.index("systemctl enable xnobrain-gateway.service"),
+            installer.index("systemctl restart xnobrain.target"),
+        )
+        # The Zalo plugin and its bridge dependencies must stay in the image
+        # before the gateway can start.
+        self.assertIn("plugins/platforms/zalo", installer)
+        self.assertIn('"$npm_bin" ci --omit=dev --no-audit --no-fund', installer)
+
     def _run_gateway_entrypoint(self, env):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp = Path(temp_dir)

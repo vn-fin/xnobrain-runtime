@@ -114,6 +114,19 @@ rm -f -- "$sudoers_file"
 trap - EXIT
 
 "$install_root/scripts/install-systemd-services.sh"
+
+# The native workspace gateway needs the same root-owned launcher the container
+# image installs, plus its own unit next to xnobrain-api.service. Install it
+# here because the shared systemd installer's unit list is container-oriented.
+install -o root -g root -m 0755 \
+  "$install_root/runtime/gateway-entrypoint.sh" \
+  /usr/local/bin/xnobrain-gateway-entrypoint
+install -m 0644 \
+  "$install_root/deploy/systemd/xnobrain-gateway.service" \
+  /etc/systemd/system/xnobrain-gateway.service
+systemctl daemon-reload
+systemctl enable xnobrain-gateway.service
+
 sed -i \
   -e "s|^RUNTIME_HERMES_HOME=.*|RUNTIME_HERMES_HOME=$root_profile|" \
   -e "s|^RUNTIME_DATA_DIR=.*|RUNTIME_DATA_DIR=$data_root/xnobrain|" \

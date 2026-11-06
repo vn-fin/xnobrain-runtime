@@ -1,0 +1,37 @@
+[Unit]
+Description=XNOBrain workspace messaging gateway
+Documentation=https://github.com/vn-fin/xnobrain
+After=network-online.target xnobrain-prepare.service xnobrain-api.service
+Wants=network-online.target xnobrain-api.service
+Requires=xnobrain-prepare.service
+ConditionPathExists=/etc/xnobrain/xnobrain.env
+PartOf=xnobrain.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=xnobrain
+Group=xnobrain
+WorkingDirectory=/opt/xnobrain
+EnvironmentFile=/etc/xnobrain/xnobrain.env
+Environment=PATH=/opt/xnobrain/.tools/node/bin:/opt/xnobrain/.tools/npm-global/bin:/opt/xnobrain/.tools/hermes-agent/venv/bin:/opt/xnobrain/.tools/office-python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=HERMES_RUNTIME_PYTHON=/opt/xnobrain/.tools/hermes-agent/venv/bin/python
+Environment=XNOBRAIN_APP_DIR=/opt/xnobrain
+# Native installs get the Router key from /etc/xnobrain/xnobrain.env, exactly
+# like xnobrain-api.service. The gateway entrypoint keeps an existing
+# RUNTIME_LLM_API_KEY and only falls back to RUNTIME_LLM_API_KEY_FILE.
+ExecStart=/usr/bin/env HOME=${RUNTIME_HOME} HERMES_HOME=${RUNTIME_HERMES_HOME} HERMES_ROOT_PROFILE=${RUNTIME_HERMES_HOME} HERMES_PROFILES_ROOT=${RUNTIME_HERMES_PROFILES_ROOT} API_SERVER_PORT=${RUNTIME_API_SERVER_PORT} RUNTIME_INTERNAL_URL=http://127.0.0.1:${RUNTIME_API_SERVER_PORT} /usr/bin/setpriv --no-new-privs -- /usr/local/bin/xnobrain-gateway-entrypoint
+Restart=always
+RestartSec=5s
+ExecReload=/bin/kill -USR1 $MAINPID
+KillMode=mixed
+TimeoutStopSec=60s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/srv/xnobrain-data
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=xnobrain.target
