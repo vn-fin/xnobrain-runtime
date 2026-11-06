@@ -3,6 +3,7 @@
 from xnobrain.runtime_limits import max_parallel_agents
 
 from .hermes_support import (
+    BIG_BROTHER_AGENT_ID,
     LLM_ROUTER_DEFAULT_MODEL,
     PROVIDER_ERROR_OUTPUT_RE,
     AgentAPIError,
@@ -10,6 +11,7 @@ from .hermes_support import (
     LLMRouterAPIError,
     Mapping,
     Path,
+    _integration_connect_event,
     _todo_updated_event,
     asyncio,
     json,
@@ -17,6 +19,36 @@ from .hermes_support import (
     time,
     uuid,
 )
+
+MAX_SUGGESTIONS = 3
+MAX_SUGGESTION_CHARS = 80
+SUGGESTION_TIMEOUT_SECONDS = 3
+
+
+def _sanitize_suggestions(text: Any) -> list[str]:
+    """Keep at most three short one-line next-message suggestions."""
+    suggestions: list[str] = []
+    seen: set[str] = set()
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        line = re.sub(r"^\s*(?:[-*•]+|\d+[.)])\s*", "", line).strip()
+        line = line.strip("\"'`“”‘’").strip()
+        line = re.sub(r"\s+", " ", line)
+        if not line:
+            continue
+        line = line[:MAX_SUGGESTION_CHARS].strip()
+        if not line:
+            continue
+        folded = line.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        suggestions.append(line)
+        if len(suggestions) >= MAX_SUGGESTIONS:
+            break
+    return suggestions
 
 
 def public_error_message(value: object, fallback: str = "Request failed") -> str:
@@ -82,6 +114,13 @@ def _persist_cancelled_terminal(agent, output: str = "") -> bool:
 
 
 class ConversationStreamMixin:
+    async def _suggest_next_messages(self, message: Any, output: Any, model: str) -> list[str]:
+        """Ask the router for short next-message chips after a Big Brother reply."""
+        text = await self.llm_router.generate_next_messages(
+            str(message or ""), str(output or ""), model
+        )
+        return _sanitize_suggestions(text)
+
     async def _chat_stream_events(self, prepared: Mapping[str, Any]):
         from .accounting_context import accounting_binding, accounting_enabled, inference_accounting
 
@@ -489,6 +528,19 @@ class ConversationStreamMixin:
                                 "timestamp": timestamp,
                             }
                         )
+                if normalized_tool == "xnobrain_integration_connect" and not bool(
+                    kwargs.get("is_error", False)
+                ):
+                    connect_event = _integration_connect_event(result)
+                    if connect_event is not None:
+                        event = {
+                            **connect_event,
+                            "run_id": run_id,
+                            "timestamp": timestamp,
+                        }
+                        if kwargs.get("tool_call_id"):
+                            event["tool_call_id"] = str(kwargs["tool_call_id"])
+                        enqueue_event(event)
             elif event_type == "tool.failed":
                 enqueue_event(
                     {
@@ -789,6 +841,25 @@ class ConversationStreamMixin:
                         prepared.get("message"),
                         suggested_title=suggested_title,
                     )
+                    # Durable runs stop appending events after the terminal
+                    # status, so suggestions must precede run.completed.
+                    if str(prepared.get("name") or "") == BIG_BROTHER_AGENT_ID and output.strip():
+                        try:
+                            suggestions = await asyncio.wait_for(
+                                self._suggest_next_messages(prepared.get("message"), output, model),
+                                timeout=SUGGESTION_TIMEOUT_SECONDS,
+                            )
+                        except Exception:
+                            suggestions = []
+                        if suggestions:
+                            yield self._sse_data(
+                                {
+                                    "event": "run.suggestions",
+                                    "run_id": run_id,
+                                    "timestamp": time.time(),
+                                    "suggestions": suggestions,
+                                }
+                            )
                     yield self._sse_data(
                         {
                             "event": "run.completed",

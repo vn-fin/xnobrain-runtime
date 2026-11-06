@@ -43,3 +43,45 @@ class ConversationTitlesMixin:
                 str(part.get("text") or "") for part in content if isinstance(part, Mapping)
             )
         return ""
+
+    async def generate_next_messages(self, message: str, output: str, model: str) -> str:
+        """Generate up to three short suggested user messages beside the run."""
+        payload = await self._request(
+            "POST",
+            "/chat/completions",
+            {
+                "model": model or LLM_ROUTER_DEFAULT_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Suggest up to 3 short messages the user might send next. "
+                            "Use one line per message, no numbering, bullets, or quotes, "
+                            "and at most 80 characters each. Return only the messages."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"User: {str(message)[:4000]}\n\nAssistant: {str(output)[:4000]}"
+                        ),
+                    },
+                ],
+                "max_tokens": 160,
+                "stream": False,
+            },
+        )
+        choices = payload.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], Mapping):
+            return ""
+        response = choices[0].get("message")
+        if not isinstance(response, Mapping):
+            return ""
+        content = response.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return " ".join(
+                str(part.get("text") or "") for part in content if isinstance(part, Mapping)
+            )
+        return ""

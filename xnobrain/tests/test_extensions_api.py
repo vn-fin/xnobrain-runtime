@@ -29,6 +29,7 @@ from xnobrain.trusted_context import (
     TRUSTED_SIGNATURE_HEADER,
     TRUSTED_SUBJECT_HEADER,
     TRUSTED_TENANT_HEADER,
+    TrustedRequestContext,
     conversation_context_signature,
     encode_conversation_context,
     principal_signature,
@@ -423,6 +424,13 @@ class ExtensionAPITests(unittest.IsolatedAsyncioTestCase):
         finally:
             await client.aclose()
         self.assertEqual(response.status_code, 404)
+
+    async def test_connect_target_respects_extension_feature_flag(self):
+        trusted = TrustedRequestContext(subject="person-1", tenant_id="tenant-1")
+        with patch.dict(os.environ, {"FT_ENABLE_AGENT_EXTENSIONS": "false"}):
+            with self.assertRaises(ServiceError) as raised:
+                self.extensions.connect_target("research", trusted)
+        self.assertEqual(raised.exception.code, "not_found")
 
     async def _complete_operation(self, kind, expected_status="COMPLETED", **fields):
         response = await self.client.post(

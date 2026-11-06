@@ -378,3 +378,59 @@ Custom HTTP MCP entries may store `xnobrain_connection_id`. The settings UI
 moves literal header values to Control before saving that ID. Runtime keeps the
 displayed upstream URL and ID, rebuilds the proxy URL for chat, and drops
 headers during sync. Stdio entries remain unchanged.
+
+## Connect card from Big Brother chat
+
+Big Brother signed runs expose the read-only `xnobrain_integration_connect` tool
+(toolset `xnobrain_integration_connect`). It accepts `kind`
+(`catalog_mcp`, `plugin_mcp`, or `custom_mcp`), an optional target `agent_id`
+(default `big-brother`), the matching `catalog_id` or `plugin_id` +
+`server_name`, an optional public HTTPS `url` for `custom_mcp`, and an optional
+`reason`. It has no field for headers, keys, tokens, environment, or other
+secrets, and it never installs or changes settings. It validates the target
+agent, the catalog entry or installed plugin MCP server, and the custom URL,
+then returns the connect request plus an instruction to finish credentials in
+the card.
+
+The tool result becomes a live event after a successful `tool.completed`:
+
+```json
+{
+  "event": "integration.connect_requested",
+  "run_id": "run_...",
+  "timestamp": 1793950000.0,
+  "tool_call_id": "call_...",
+  "request": {
+    "id": "6f1c...",
+    "kind": "catalog_mcp",
+    "agent_id": "big-brother",
+    "display_name": "Notion",
+    "auth_kind": "oauth",
+    "catalog_id": "notion",
+    "recipe_revision": 2,
+    "reason": "You asked to connect Notion."
+  }
+}
+```
+
+The same JSON is in the stored tool message so history replay rebuilds the
+card without new persistence. Malformed or failed results emit nothing.
+
+After a completed Big Brother reply, Runtime makes one small side model call
+(bounded to 3 seconds) and may emit up to three suggested next user messages
+just before `run.completed`:
+
+```json
+{
+  "event": "run.suggestions",
+  "run_id": "run_...",
+  "timestamp": 1793950001.0,
+  "suggestions": ["Connect Google Drive too", "Show my installed plugins"]
+}
+```
+
+Suggestions are one line, at most 80 characters, deduplicated, and not
+persisted. Timeout, error, or empty output emits nothing. The event is sent
+just before `run.completed` because the durable-run relay stops appending
+events after a terminal status; that ordering is what lets suggestions reach
+the UI.

@@ -51,6 +51,8 @@ SKILL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 MAX_TEXT_CHARS = 200_000
 MAX_FILE_BYTES = 5 * 1024 * 1024
 TODO_STATUSES = {"pending", "in_progress", "completed", "cancelled"}
+CONNECT_KINDS = {"catalog_mcp", "plugin_mcp", "custom_mcp"}
+CONNECT_AUTH_KINDS = {"oauth", "api_key", "none"}
 MAX_TODO_ITEMS = 256
 MAX_TODO_CONTENT_CHARS = 4000
 GENERATED_AGENT_ID_LENGTH = 6
@@ -149,6 +151,74 @@ def _todo_updated_event(result: Any) -> dict[str, Any] | None:
         "todos": todos,
         "summary": {"total": len(todos), **summary},
     }
+
+
+def _integration_connect_event(result: Any) -> dict[str, Any] | None:
+    """Return only validated, user-facing data from a connect tool result."""
+    if isinstance(result, str):
+        if len(result) > 512_000:
+            return None
+        try:
+            value = json.loads(result)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    elif isinstance(result, Mapping):
+        value = result
+    else:
+        return None
+    if value.get("success") is not True:
+        return None
+    raw = value.get("connect_request")
+    if not isinstance(raw, Mapping):
+        return None
+
+    def text(key: str, limit: int = 200) -> str | None:
+        item = raw.get(key)
+        if not isinstance(item, str):
+            return None
+        item = item.strip()
+        return item[:limit] if item else None
+
+    request_id = text("id", 64)
+    kind = text("kind", 32)
+    agent_id = text("agent_id")
+    display_name = text("display_name")
+    auth_kind = text("auth_kind", 16)
+    if (
+        not request_id
+        or kind not in CONNECT_KINDS
+        or not agent_id
+        or not display_name
+        or auth_kind not in CONNECT_AUTH_KINDS
+    ):
+        return None
+
+    request: dict[str, Any] = {
+        "id": request_id,
+        "kind": kind,
+        "agent_id": agent_id,
+        "display_name": display_name,
+        "auth_kind": auth_kind,
+    }
+    for key in ("catalog_id", "plugin_id", "server_name", "url", "reason"):
+        value = text(key)
+        if value is not None:
+            request[key] = value
+    recipe_revision = raw.get("recipe_revision")
+    if (
+        isinstance(recipe_revision, int)
+        and not isinstance(recipe_revision, bool)
+        and recipe_revision >= 1
+    ):
+        request["recipe_revision"] = recipe_revision
+    plugin_revision = raw.get("plugin_revision")
+    if isinstance(plugin_revision, str):
+        value = plugin_revision.strip()[:200]
+        if value:
+            request["plugin_revision"] = value
+    elif isinstance(plugin_revision, int) and not isinstance(plugin_revision, bool):
+        request["plugin_revision"] = plugin_revision
+    return {"event": "integration.connect_requested", "request": request}
 
 
 class AgentAPIError(ValueError):

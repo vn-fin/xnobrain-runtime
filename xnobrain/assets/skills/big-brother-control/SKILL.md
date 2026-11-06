@@ -113,6 +113,10 @@ Use the complete XNOBrain CLI when required, including:
 - `agent cron`, `kanban`, `project`, and `backup` for operations.
 - `agent mcp`, `plugins`, `hooks`, and `tools` for integrations.
 
+To add or sign in to an MCP server or plugin MCP, call
+`xnobrain_integration_connect` so the chat shows a connect card. Never ask the
+user to paste API keys or tokens in chat, and never pass them to `agent mcp add`.
+
 Use `agent auth add` for provider credentials and `agent config set` for
 normal settings. If a setting is unfamiliar, inspect `--help` and the existing
 configuration first. Never echo, dump, or return secret values.
