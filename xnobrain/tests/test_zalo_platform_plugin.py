@@ -320,6 +320,16 @@ class ZaloAdapterPluginTests(unittest.TestCase):
         self.assertTrue(callable(captured["check_fn"]))
         self.assertEqual(captured["max_message_length"], 2000)
 
+    def test_is_connected_requires_config_or_zalo_enabled(self):
+        config = types.SimpleNamespace(enabled=True)
+        gateway_module = types.ModuleType("hermes_cli.gateway")
+        gateway_module.get_env_value = lambda name: os.environ.get(name, "")
+        with mock.patch.dict(sys.modules, {"hermes_cli.gateway": gateway_module}):
+            with mock.patch.dict(os.environ, {"ZALO_ENABLED": ""}):
+                self.assertFalse(self.adapter._is_connected(config))
+            with mock.patch.dict(os.environ, {"ZALO_ENABLED": "true"}):
+                self.assertTrue(self.adapter._is_connected(config))
+
     def test_stale_script_hash_reports_restart_needed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             script = Path(temp_dir) / "bridge.js"

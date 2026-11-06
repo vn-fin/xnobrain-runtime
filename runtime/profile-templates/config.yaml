@@ -2,6 +2,9 @@ model:
   provider: custom:xnobrain
   default: auto
 providers: {}
+platforms:
+  api_server:
+    enabled: false
 agent:
   reasoning_effort: medium
 terminal:

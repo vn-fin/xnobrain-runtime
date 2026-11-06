@@ -11,28 +11,20 @@ if [ -z "${RUNTIME_LLM_API_KEY:-}" ] \
   export RUNTIME_LLM_API_KEY
 fi
 
-# The systemd EnvironmentFile carries RUNTIME_* names and PID 1's HOME/PATH.
-# Hermes needs HERMES_*; derive them from the same canonical layout as
-# runtime/container-entrypoint.sh when the caller did not provide them.
-if [ -z "${HERMES_HOME:-}" ]; then
-  if [ -n "${RUNTIME_AGENT_DATA_ROOT:-}" ]; then
-    HERMES_HOME="${RUNTIME_AGENT_DATA_ROOT%/}/big-brother"
-    HERMES_ROOT_PROFILE="$HERMES_HOME"
-    HERMES_PROFILES_ROOT="${RUNTIME_AGENT_DATA_ROOT%/}"
-  elif [ -n "${RUNTIME_HERMES_HOME:-}" ]; then
-    HERMES_HOME="$RUNTIME_HERMES_HOME"
-    HERMES_ROOT_PROFILE="${RUNTIME_HERMES_ROOT_PROFILE:-$HERMES_HOME}"
-    HERMES_PROFILES_ROOT="${RUNTIME_HERMES_PROFILES_ROOT:-$HERMES_HOME/profiles}"
+# The systemd unit and Compose provide HERMES_HOME and the profile roots.
+# XNOBrain's launcher installs the workspace credential and attribution shims,
+# then runs Hermes' own foreground `gateway run` path.
+app_dir="${XNOBRAIN_APP_DIR:-}"
+if [ -z "$app_dir" ]; then
+  if [ -d /workspace/xnobrain ]; then
+    # Source-development containers mount the checkout at /workspace.
+    app_dir=/workspace
+  else
+    app_dir=/opt/xnobrain-app
   fi
 fi
-if [ -n "${HERMES_HOME:-}" ]; then
-  export HERMES_HOME
-fi
-if [ -n "${HERMES_ROOT_PROFILE:-}" ]; then
-  export HERMES_ROOT_PROFILE
-fi
-if [ -n "${HERMES_PROFILES_ROOT:-}" ]; then
-  export HERMES_PROFILES_ROOT
-fi
+export PYTHONPATH="$app_dir${PYTHONPATH:+:$PYTHONPATH}"
+cd "$app_dir"
 
-exec hermes gateway run
+exec "${HERMES_RUNTIME_PYTHON:-/usr/local/lib/hermes-agent/venv/bin/python}" \
+  -c 'from xnobrain.integrations.gateway_cli import main; main()'

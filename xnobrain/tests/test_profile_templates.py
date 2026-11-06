@@ -57,6 +57,7 @@ class ProfileTemplateInstallerTests(unittest.TestCase):
             self.assertFalse(template_config["memory"]["write_approval"])
             self.assertEqual(template_config["prompt_caching"]["cache_ttl"], "1h")
             self.assertEqual(template_config["compression"]["proactive_prune_tokens"], 48_000)
+            self.assertFalse(template_config["platforms"]["api_server"]["enabled"])
             self.assertEqual(
                 (named / "SOUL.md").read_text(encoding="utf-8"),
                 "Worker-owned soul\n",

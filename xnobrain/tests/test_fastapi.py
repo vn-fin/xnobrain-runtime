@@ -245,6 +245,7 @@ class StudioFastAPITests(unittest.IsolatedAsyncioTestCase):
             set(BIG_BROTHER_NATIVE_TOOLSETS),
         )
         self.assertEqual(profile_config["approvals"]["mode"], "manual")
+        self.assertFalse(profile_config["platforms"]["api_server"]["enabled"])
         self.assertTrue(profile_config["xnobrain"][BIG_BROTHER_APPROVAL_DEFAULT_MARKER])
         self.assertTrue(profile_config["xnobrain"][BIG_BROTHER_MODEL_DEFAULT_MARKER])
         with self.assertRaises(ServiceError) as protected:

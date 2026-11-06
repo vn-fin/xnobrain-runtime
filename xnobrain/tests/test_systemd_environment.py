@@ -123,18 +123,19 @@ class SystemdEnvironmentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp = Path(temp_dir)
             capture = temp / "capture"
-            hermes = temp / "hermes"
-            hermes.write_text(
+            python = temp / "python"
+            python.write_text(
                 "#!/bin/sh\n"
                 'printf "%s\\n" "${RUNTIME_LLM_API_KEY-}" "${HERMES_HOME-}" '
                 '"${HERMES_ROOT_PROFILE-}" "${HERMES_PROFILES_ROOT-}" '
-                '"$*" > "${CAPTURE}"\n',
+                '"${PYTHONPATH-}" "$*" > "${CAPTURE}"\n',
                 encoding="utf-8",
             )
-            hermes.chmod(0o755)
+            python.chmod(0o755)
             complete_env = {
                 "PATH": f"{temp}:/usr/bin:/bin",
                 "CAPTURE": str(capture),
+                "HERMES_RUNTIME_PYTHON": str(python),
             }
             complete_env.update(env)
             result = subprocess.run(
@@ -157,16 +158,21 @@ class SystemdEnvironmentTests(unittest.TestCase):
                 {
                     "RUNTIME_LLM_API_KEY": "",
                     "RUNTIME_LLM_API_KEY_FILE": str(key_file),
+                    "XNOBRAIN_APP_DIR": "/workspace",
                     "HERMES_HOME": "/opt/data/agent/big-brother",
                     "HERMES_PROFILES_ROOT": "/opt/data/agent",
                 }
             )
 
         self.assertEqual(lines[0], "secret-value")
-        self.assertEqual(lines[4], "gateway run")
+        self.assertEqual(lines[1], "/opt/data/agent/big-brother")
+        self.assertEqual(lines[2], "")
+        self.assertEqual(lines[3], "/opt/data/agent")
+        self.assertEqual(lines[4], "/workspace")
+        self.assertIn("from xnobrain.integrations.gateway_cli import main", lines[5])
         self.assertNotIn("secret-value", result.stdout + result.stderr)
 
-    def test_gateway_entrypoint_keeps_existing_key_and_derives_homes(self):
+    def test_gateway_entrypoint_keeps_existing_key_and_does_not_derive_homes(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             key_file = Path(temp_dir) / "router-api-key"
             key_file.write_text("file-secret\n", encoding="utf-8")
@@ -176,14 +182,16 @@ class SystemdEnvironmentTests(unittest.TestCase):
                     "RUNTIME_LLM_API_KEY": "existing-key",
                     "RUNTIME_LLM_API_KEY_FILE": str(key_file),
                     "RUNTIME_AGENT_DATA_ROOT": "/opt/data/agent",
+                    "XNOBRAIN_APP_DIR": "/opt/xnobrain-app",
                 }
             )
 
         self.assertEqual(lines[0], "existing-key")
-        self.assertEqual(lines[1], "/opt/data/agent/big-brother")
-        self.assertEqual(lines[2], "/opt/data/agent/big-brother")
-        self.assertEqual(lines[3], "/opt/data/agent")
-        self.assertEqual(lines[4], "gateway run")
+        self.assertEqual(lines[1], "")
+        self.assertEqual(lines[2], "")
+        self.assertEqual(lines[3], "")
+        self.assertEqual(lines[4], "/opt/xnobrain-app")
+        self.assertIn("from xnobrain.integrations.gateway_cli import main", lines[5])
 
 
 if __name__ == "__main__":

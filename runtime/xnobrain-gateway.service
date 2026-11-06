@@ -17,6 +17,7 @@ EnvironmentFile=/run/xnobrain-runtime-config/environment
 Environment=HERMES_HOME=/opt/data/agent/big-brother
 Environment=HERMES_ROOT_PROFILE=/opt/data/agent/big-brother
 Environment=HERMES_PROFILES_ROOT=/opt/data/agent
+Environment=XNOBRAIN_APP_DIR=/opt/xnobrain-app
 Environment=RUNTIME_LLM_API_KEY_FILE=/run/xnobrain-runtime/router-api-key
 ExecStart=/usr/bin/setpriv --no-new-privs -- /usr/local/bin/xnobrain-gateway-entrypoint
 Restart=always

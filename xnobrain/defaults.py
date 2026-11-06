@@ -34,6 +34,28 @@ DEFAULT_PROFILE_MODEL = "auto"
 LEGACY_BIG_BROTHER_TOOLSET = "xnobrain-control"
 
 
+def pin_api_server_disabled(config: dict) -> bool:
+    """Keep the gateway's ``api_server`` listener off unless configured.
+
+    Any usable ``API_SERVER_KEY`` in the environment force-enables Hermes'
+    ``api_server`` platform. Runtime owns the API port, so the workspace
+    profile must carry an explicit ``platforms.api_server.enabled: false``.
+    Only fills an absent value; an operator's explicit choice wins.
+    """
+    platforms = config.get("platforms")
+    if not isinstance(platforms, dict):
+        platforms = {}
+        config["platforms"] = platforms
+    api_server = platforms.get("api_server")
+    if not isinstance(api_server, dict):
+        api_server = {}
+        platforms["api_server"] = api_server
+    if "enabled" in api_server:
+        return False
+    api_server["enabled"] = False
+    return True
+
+
 def memory_enabled() -> bool:
     """Return whether the embedded memory subsystem is enabled by default."""
     return os.environ.get("RUNTIME_HONCHO_MEMORY_ENABLE", "").strip().lower() in {

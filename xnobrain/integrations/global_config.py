@@ -1,5 +1,6 @@
 """GlobalConfig behavior for the global Hermes profile."""
 
+from ..defaults import pin_api_server_disabled
 from .config_support import (
     _MISSING,
     _SAFE_ID_RE,
@@ -49,6 +50,8 @@ class GlobalConfigMixin:
             if "write_approval" not in section:
                 section["write_approval"] = False
                 changed = True
+        if pin_api_server_disabled(config):
+            changed = True
         if changed:
             self._write_config(config)
         return self._describe(config)

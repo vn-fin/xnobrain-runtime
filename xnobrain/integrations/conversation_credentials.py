@@ -55,6 +55,39 @@ def conversation_profile_scope(profile_dir: Path):
             reset_secret_scope(token)
 
 
+def _with_workspace_router_key(build, home):
+    secrets = dict(build(home) or {})
+    key = workspace_router_key()
+    if key:
+        secrets[LLM_ROUTER_KEY_ENV] = key
+    return secrets
+
+
+def install_workspace_router_key_scope():
+    """Permanently admit the workspace Router key into every profile scope.
+
+    Hermes' multiplexed gateway rebuilds ``build_profile_secret_scope(home)``
+    from each profile's ``.env`` on every inbound turn. The Router key lives in
+    ``RUNTIME_LLM_API_KEY_FILE`` instead, so those turns would send an
+    empty/placeholder key and the router would 401. This wraps the builder for
+    the lifetime of the process. Returns the previous builder so callers (and
+    tests) can restore it.
+    """
+    from agent import secret_scope
+
+    original = secret_scope.build_profile_secret_scope
+    if getattr(original, "_xnobrain_workspace_router_key", False):
+        return original._xnobrain_original
+
+    def build(home):
+        return _with_workspace_router_key(original, home)
+
+    build._xnobrain_workspace_router_key = True
+    build._xnobrain_original = original
+    secret_scope.build_profile_secret_scope = build
+    return original
+
+
 @contextmanager
 def cron_profile_scope(profile_dir: Path):
     """Admit the workspace Router key into every profile scope cron rebuilds.
@@ -70,11 +103,7 @@ def cron_profile_scope(profile_dir: Path):
     original = secret_scope.build_profile_secret_scope
 
     def build(home):
-        secrets = dict(original(home) or {})
-        key = workspace_router_key()
-        if key:
-            secrets[LLM_ROUTER_KEY_ENV] = key
-        return secrets
+        return _with_workspace_router_key(original, home)
 
     secret_scope.build_profile_secret_scope = build
     try:

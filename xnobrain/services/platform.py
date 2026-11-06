@@ -9,6 +9,7 @@ import yaml
 from ..defaults import (
     BIG_BROTHER_MODEL_DEFAULT_MARKER,
     DEFAULT_PROFILE_MODEL,
+    pin_api_server_disabled,
 )
 from ..integrations import (
     AgentAPIError,
@@ -223,6 +224,8 @@ class PlatformService(
                 if "write_approval" not in section:
                     section["write_approval"] = False
                     changed = True
+            if pin_api_server_disabled(config):
+                changed = True
             if changed:
                 self.repository.snapshot(profile.name, "config", "config", path.read_bytes())
                 self.repository.atomic_yaml(path, config)
