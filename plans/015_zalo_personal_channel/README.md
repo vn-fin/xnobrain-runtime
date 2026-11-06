@@ -211,6 +211,33 @@ VM workspaces (Control's default instance type) use the native unit
 `runtime/xnobrain-gateway.service` covers container workspaces only, so add a
 native gateway unit for VMs (installed by `deploy/incus/install-native-runtime.sh`).
 
+Phase 5 channel API contract (prefix as other Runtime routes; all routes and
+the `send_channel_message` tool are gated by `FT_ENABLE_AGENT_CHANNELS`,
+default false; normal user auth like other `/agents/{agent_id}/…` routes):
+
+| Method and path | Body | Result |
+|---|---|---|
+| `GET /agents/{agent_id}/channels` | — | `{channels: [ChannelState], gateway: {running, pid, pending_restart}}` |
+| `PUT /agents/{agent_id}/channels/zalo` | `{enabled: bool}` | `ChannelState` |
+| `PATCH /agents/{agent_id}/channels/zalo` | `{allowed_users?: [id], dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `GET /agents/{agent_id}/channels/zalo/qr` | — | `{status, image_base64: str\|null}` (PNG while `status == "qr"`) |
+| `POST /agents/{agent_id}/channels/zalo/logout` | — | `ChannelState` |
+
+`ChannelState = {platform: "zalo", enabled, status, own_id, allowed_users,
+dm_policy, home_channel}`; `status` is one of `disabled`, `starting`, `qr`,
+`connected`, `closed`, `pending_restart`, `gateway_down`. Status comes from
+the bridge `/health` on `127.0.0.1:<port>`. Writes snapshot first, then
+atomically update `config.yaml` (`platforms.zalo.enabled`, `extra.dm_policy`,
+new channels default `dm_policy: disabled`) and `.env` (`ZALO_ALLOWED_USERS`,
+`ZALO_HOME_CHANNEL`); keep the root profile's `gateway.multiplex_profiles`
+and `multiplex_profile_allowlist` (every non-root profile with Zalo enabled,
+never `big-brother`) in sync; then `SIGUSR1` the PID in
+`<root>/gateway.pid` and report `pending_restart` until that PID changes.
+Logout deletes `<profile>/zalo/session.json` and restarts. Cron delivery can
+target `zalo` when the channel is enabled. Dev Compose runs the gateway with
+`network_mode: service:runtime` so loopback matches the single-container
+production layout.
+
 **Phase 6 — Later (P1/P2).**
 UC1 (owner commands Big Brother from Zalo through the Runtime pipeline);
 showing gateway sessions in the UI; live event for appended replies; history
