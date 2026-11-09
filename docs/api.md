@@ -1790,13 +1790,13 @@ settings. Users can enable manual approval through the existing agent-config
 API. It does not change authorization, protected-file guards, or explicit
 product confirmations such as layout publication and skill optimization.
 
-## Personal agent project folders
+## Agent project folders
 
-Always available in personal workspaces, without a feature switch. Metadata lives
+Available in personal and organization workspaces, without a feature switch. Metadata lives
 in `agent-projects.sqlite3` under the Runtime repository's workspace data root
 and has the workspace's lifetime. It is separate from portable agent profiles.
 These routes use the existing authenticated gateway and signed trusted user and
-tenant context. Organization context is rejected. Request JSON cannot choose a
+tenant context. Organization requests use the organization tenant that Control binds to the selected workspace. Each member organizes their own folders. Request JSON cannot choose a
 user, tenant or workspace; extra fields are rejected.
 
 All paths have prefix `/xnobrain/api/runtime/v1`:
@@ -1835,7 +1835,7 @@ requires the latest integer `expected_revision`; mismatch returns 409
 deliberate retry; do not automatically replay an uncertain mutation. Profile
 deletion/reconciliation can also advance revision.
 
-Errors include 401 for absent/unsigned identity, 403 for organization/revoked
+Errors include 401 for absent/unsigned identity, 403 for mismatched workspace or revoked
 context, 404 for an unknown scoped project/agent, 409 for
 protected Big Brother or stale revision, 422 for invalid payload, and 503 for
 unavailable storage or maintenance. Foreign project IDs are indistinguishable

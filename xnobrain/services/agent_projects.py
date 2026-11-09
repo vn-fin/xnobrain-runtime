@@ -1,4 +1,4 @@
-"""Personal project authorization and profile lifecycle coordination."""
+"""Workspace project authorization and profile lifecycle coordination."""
 
 from contextlib import contextmanager
 
@@ -33,8 +33,11 @@ class AgentProjectsService:
         if not trusted or not trusted.subject or not trusted.tenant_id:
             fail("trusted_subject_required", 401)
         context = trusted.ownership_context or {}
-        if trusted.organization_id or context.get("owner_kind") == "organization":
-            fail("agent_projects_personal_only", 403)
+        if trusted.organization_id:
+            if trusted.tenant_id != f"organization-{trusted.organization_id}":
+                fail("agent_projects_workspace_mismatch", 403)
+        elif context.get("owner_kind") == "organization":
+            fail("agent_projects_workspace_mismatch", 403)
         if context.get("state", "active") != "active":
             fail("agent_projects_authority_revoked", 403)
         return trusted.tenant_id, trusted.subject
