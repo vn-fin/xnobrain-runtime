@@ -757,6 +757,48 @@ profile is included in `gateway.multiplex_profile_allowlist` when either
 `platforms.zalo.enabled` or `platforms.zalo_bot.enabled` is true; the root
 profile and `default` are never listed.
 
+### Private gateway turns
+
+`POST /xnobrain/api/runtime/v1/internal/channels/turn` runs one
+already-authorized gateway message as a normal conversation turn in the main
+Runtime, so it uses the same managed MCP catalog, connect tool, policies, and
+run records as web chat. It requires the same
+`X-XNOBrain-Internal-Token: RUNTIME_INTERNAL_SERVICE_TOKEN` as private message
+ingestion and is gated by `FT_ENABLE_AGENT_CHANNELS`.
+
+The body is
+`{platform: "zalo"|"zalo_bot", agent_id, thread_id, thread_type: "dm"|"group", sender_id, sender_name, text, message_id, ts}`.
+`zalo` thread and sender IDs are numeric (`^[0-9]{1,32}$`); `zalo_bot` IDs use
+`^[A-Za-z0-9_-]{1,64}$`. The endpoint validates that the agent profile exists
+and refuses with `403 channel_dm_policy_unsafe` unless the profile's
+`platforms.<platform>.extra.dm_policy` is `allowlist` or `pairing` and
+`ZALO_ALLOW_ALL_USERS`/`ZALO_BOT_ALLOW_ALL_USERS` (and `allow_all`) are not
+enabled.
+
+Each `(platform, agent_id, thread_id)` maps to one personal conversation,
+persisted atomically in `<profile>/zalo/threads.json` (mode `0600`) and reused
+across messages. `message_id` becomes the run idempotency key
+`<platform>:<message_id>`, so gateway retries return the existing run instead
+of starting a second turn. A different message while the thread's run is
+active returns `409 channel_turn_running`; a reused message ID with different
+input returns `409 channel_turn_conflict`.
+
+A successful response is
+`{conversation_id, run_id, reply, usage: {input_tokens, output_tokens, total_tokens}}`.
+The turn runs with `run_mode: background`; channel runs have no interactive
+approver, so approval requests are denied with the normal Hermes blocked-tool
+result instead of waiting for the 300-second approval timeout. Validation
+errors return `422`, a missing or wrong internal token returns `401`, and a
+failed or cancelled run returns `502 channel_turn_failed` without the upstream
+error text. Text only; media is not forwarded.
+
+The bundled gateway forwards these turns only when
+`RUNTIME_GATEWAY_CHANNEL_DELEGATION` is enabled (default off). It posts to
+`RUNTIME_INTERNAL_URL` with the workspace internal token and falls back to the
+native gateway agent on any HTTP, timeout, disabled-endpoint, or unexpected
+shape error. Fallback logging names only the error class and never the message
+text or token.
+
 ## Personal Agent Custom Page v1 (FT0015, in progress)
 
 > Release exposure is controlled by the coordinated root flags `FT_ENABLE_UI_CUSTOMIZATION` and `FT_ENABLE_AGENT_CUSTOM_PAGE`; both default off. Disabled backend paths fail closed and retained data is not deleted.

@@ -13,6 +13,7 @@ from .base import StoreError
 
 ZALO_DIR = "zalo"
 LINKS_FILE = "links.json"
+THREADS_FILE = "threads.json"
 HISTORY_FILE = "history.jsonl"
 DIRECTORY_FILE = "channel_directory.json"
 SESSION_FILE = "session.json"
@@ -351,6 +352,91 @@ class ChannelsRepository:
         self.base.atomic_write(
             path,
             (json.dumps(links, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"),
+            mode=0o600,
+        )
+        return record
+
+    def threads(self, profile: Any) -> dict[str, dict[str, dict[str, Any]]]:
+        """Read the persisted platform/thread-to-conversation mapping."""
+        _, directory = self._zalo_dir(profile)
+        if directory is None:
+            return {}
+        path = directory / THREADS_FILE
+        if not path.exists():
+            return {}
+        try:
+            value = json.loads(self._read_text(path))
+        except (ValueError, TypeError) as error:
+            raise StoreError(
+                "agent channel threads are invalid",
+                status=500,
+                code="channel_threads_invalid",
+            ) from error
+        platforms = value.get("platforms") if isinstance(value, dict) else None
+        if not isinstance(platforms, dict):
+            raise StoreError(
+                "agent channel threads are invalid",
+                status=500,
+                code="channel_threads_invalid",
+            )
+        result: dict[str, dict[str, dict[str, Any]]] = {}
+        for platform, records in platforms.items():
+            if not isinstance(platform, str) or not isinstance(records, dict):
+                continue
+            result[platform] = {
+                str(thread_id): record
+                for thread_id, record in records.items()
+                if isinstance(record, dict)
+            }
+        return result
+
+    def write_thread(
+        self,
+        profile: Any,
+        platform: str,
+        thread_id: str,
+        *,
+        agent_id: str,
+        conversation_id: str,
+        title: str,
+        sender_id: str,
+        timestamp: float,
+    ) -> dict[str, Any]:
+        """Persist one platform/thread-to-conversation mapping atomically."""
+        _, directory = self._zalo_dir(profile, create=True)
+        if directory is None:
+            raise StoreError(
+                "agent channel directory is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            )
+        path = directory / THREADS_FILE
+        if path.is_symlink():
+            raise StoreError(
+                "agent channel threads are unsafe",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        threads = self.threads(profile)
+        records = threads.setdefault(str(platform), {})
+        record = {
+            "agent_id": agent_id,
+            "conversation_id": conversation_id,
+            "title": title,
+            "sender_id": sender_id,
+            "ts": timestamp,
+        }
+        records[str(thread_id)] = record
+        self.base.atomic_write(
+            path,
+            (
+                json.dumps(
+                    {"schema_version": 1, "platforms": threads},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8"),
             mode=0o600,
         )
         return record

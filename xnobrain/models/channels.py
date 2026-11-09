@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _IDENTITY = r"^[^\x00-\x1f/\\]{1,200}$"
 _ZALO_ID = r"^[0-9]{1,32}$"
@@ -49,6 +49,47 @@ class ChannelInboundResult(BaseModel):
     appended: bool
     duplicate: bool
     message_row_id: int | None = None
+
+
+class ChannelTurnRequest(BaseModel):
+    """One authorized gateway message that should run as a normal channel turn."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    platform: Literal["zalo", "zalo_bot"]
+    agent_id: str = Field(min_length=1, max_length=200, pattern=_IDENTITY)
+    thread_id: str = Field(min_length=1, max_length=64, pattern=_IDENTITY)
+    thread_type: Literal["dm", "group"]
+    sender_id: str = Field(min_length=1, max_length=64, pattern=_IDENTITY)
+    sender_name: str = Field(default="", max_length=200)
+    text: str = Field(min_length=1, max_length=20000)
+    message_id: str = Field(min_length=1, max_length=128, pattern=_IDENTITY)
+    ts: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_platform_ids(self) -> "ChannelTurnRequest":
+        pattern = _ZALO_ID if self.platform == "zalo" else _ZALO_BOT_ID
+        for value in (self.thread_id, self.sender_id):
+            if not re.fullmatch(pattern, value):
+                raise ValueError(f"{self.platform} thread and sender IDs are invalid")
+        return self
+
+
+class ChannelTurnUsage(BaseModel):
+    """Token accounting returned with one channel turn."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
+class ChannelTurnResult(BaseModel):
+    """The stored reply from a completed channel turn."""
+
+    conversation_id: str
+    run_id: str
+    reply: str
+    usage: ChannelTurnUsage = Field(default_factory=ChannelTurnUsage)
 
 
 class SendChannelMessageRequest(BaseModel):

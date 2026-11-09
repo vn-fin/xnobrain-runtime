@@ -55,4 +55,9 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "channel message appended",
             200,
         ),
+        "channels_internal_turn": (
+            lambda: service.run_internal_turn(body, token),
+            "channel turn completed",
+            200,
+        ),
     }

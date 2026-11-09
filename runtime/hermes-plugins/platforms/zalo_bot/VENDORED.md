@@ -97,3 +97,5 @@ Focused regression tests live in
 Update this plugin only by re-vendoring a reviewed upstream commit into this
 directory and recording the new commit SHA above. Never fetch plugin source at
 image build time, container start, or runtime.
+
+- DM denial is logged at INFO with the sender ID only (no text), so an operator can find the ID to allowlist.

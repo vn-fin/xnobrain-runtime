@@ -7,9 +7,13 @@ Router key visible to every profile scope and stamp each agent turn with the
 active profile's identity.
 """
 
+import asyncio
+import logging
 import os
 import sys
+import time
 import uuid
+from contextlib import suppress
 
 from .accounting_context import (
     AccountingUnavailable,
@@ -17,6 +21,11 @@ from .accounting_context import (
     accounting_enabled,
     inference_accounting,
 )
+
+_LOGGER = logging.getLogger(__name__)
+_DELEGATED_PLATFORMS = {"zalo", "zalo_bot"}
+_DELEGATION_TIMEOUT_SECONDS = 900.0
+_TYPING_INTERVAL_SECONDS = 4.0
 
 
 def _current_profile():
@@ -112,6 +121,170 @@ def install_gateway_turns():
     AIAgent._xnobrain_gateway_attribution = True
 
 
+def _env_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _delegation_endpoint() -> str:
+    base = os.environ.get("RUNTIME_INTERNAL_URL", "").strip().rstrip("/")
+    if not base:
+        port = os.environ.get("API_SERVER_PORT", "3000").strip() or "3000"
+        base = f"http://127.0.0.1:{port}"
+    return base + "/xnobrain/api/runtime/v1/internal/channels/turn"
+
+
+async def _typing_keepalive(runner, source) -> None:
+    try:
+        adapter = runner._adapter_for_source(source)
+    except Exception:
+        return
+    send_typing = getattr(adapter, "send_typing", None)
+    if not callable(send_typing):
+        return
+    chat_id = str(getattr(source, "chat_id", "") or "")
+    if not chat_id:
+        return
+    metadata = None
+    try:
+        metadata = runner._thread_metadata_for_source(source)
+    except Exception:
+        metadata = None
+    while True:
+        try:
+            await send_typing(chat_id, metadata=metadata)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        await asyncio.sleep(_TYPING_INTERVAL_SECONDS)
+
+
+def _delegation_payload(message, history, source, event_message_id):
+    from hermes_constants import get_hermes_home
+
+    platform = str(getattr(getattr(source, "platform", None), "value", "") or "")
+    thread_id = str(getattr(source, "chat_id", "") or "")
+    sender_id = str(getattr(source, "user_id", "") or thread_id)
+    message_id = str(event_message_id or getattr(source, "message_id", "") or "")
+    text = str(message or "")
+    agent_id = get_hermes_home().name
+    if (
+        platform not in _DELEGATED_PLATFORMS
+        or not agent_id
+        or not thread_id
+        or not sender_id
+        or not message_id
+        or not text.strip()
+    ):
+        return None
+    chat_type = str(getattr(source, "chat_type", "") or "").strip().lower()
+    return {
+        "platform": platform,
+        "agent_id": agent_id,
+        "thread_id": thread_id,
+        "thread_type": "group" if chat_type in {"group", "channel", "thread"} else "dm",
+        "sender_id": sender_id,
+        "sender_name": str(
+            getattr(source, "user_name", "") or getattr(source, "chat_name", "") or ""
+        ),
+        "text": text,
+        "message_id": message_id,
+        "ts": time.time(),
+    }
+
+
+async def _run_delegated_turn(runner, message, history, source, session_id, event_message_id):
+    import httpx
+
+    token = os.environ.get("RUNTIME_INTERNAL_SERVICE_TOKEN", "").strip()
+    payload = _delegation_payload(message, history, source, event_message_id)
+    if not token or payload is None:
+        return None
+    typing_task = asyncio.create_task(_typing_keepalive(runner, source))
+    try:
+        timeout = httpx.Timeout(_DELEGATION_TIMEOUT_SECONDS, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                _delegation_endpoint(),
+                json=payload,
+                headers={"x-xnobrain-internal-token": token},
+            )
+        if response.status_code != 200:
+            return None
+        try:
+            envelope = response.json()
+        except ValueError:
+            return None
+        if not isinstance(envelope, dict) or envelope.get("success") is not True:
+            return None
+        data = envelope.get("data")
+        if not isinstance(data, dict) or not isinstance(data.get("reply"), str):
+            return None
+    finally:
+        typing_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await typing_task
+    reply = data["reply"]
+    return {
+        "final_response": reply,
+        "messages": [
+            {"role": "user", "content": str(message or "")},
+            {"role": "assistant", "content": reply},
+        ],
+        "api_calls": 1,
+        "tools": [],
+        "history_offset": len(history or []),
+        "session_id": session_id,
+        "response_previewed": False,
+    }
+
+
+def install_runtime_channel_delegation() -> None:
+    """Route authorized Zalo gateway turns through the main Runtime process."""
+    if not _env_enabled("RUNTIME_GATEWAY_CHANNEL_DELEGATION"):
+        return
+    try:
+        from gateway.run import GatewayRunner
+    except Exception:
+        _LOGGER.warning("channel delegation unavailable: gateway import failed")
+        return
+    if getattr(GatewayRunner, "_xnobrain_channel_delegation", False):
+        return
+    original = GatewayRunner._run_agent_inner
+
+    async def delegated(runner, *args, **kwargs):
+        message = kwargs.get("message", args[0] if len(args) > 0 else "")
+        history = kwargs.get("history", args[2] if len(args) > 2 else [])
+        source = kwargs.get("source", args[3] if len(args) > 3 else None)
+        session_id = kwargs.get("session_id", args[4] if len(args) > 4 else "")
+        event_message_id = kwargs.get("event_message_id")
+        platform = str(getattr(getattr(source, "platform", None), "value", "") or "")
+        if platform not in _DELEGATED_PLATFORMS:
+            return await original(runner, *args, **kwargs)
+        try:
+            result = await _run_delegated_turn(
+                runner,
+                message,
+                history,
+                source,
+                session_id,
+                event_message_id,
+            )
+        except Exception as error:
+            _LOGGER.warning(
+                "channel delegation failed (%s); using native gateway agent",
+                type(error).__name__,
+            )
+            return await original(runner, *args, **kwargs)
+        if result is None:
+            _LOGGER.warning("channel delegation was unavailable; using native gateway agent")
+            return await original(runner, *args, **kwargs)
+        return result
+
+    GatewayRunner._run_agent_inner = delegated
+    GatewayRunner._xnobrain_channel_delegation = True
+
+
 def main():
     from .conversation_credentials import install_workspace_router_key_scope
 
@@ -120,6 +293,7 @@ def main():
         # every multiplexed per-turn scope see the workspace Router key.
         install_workspace_router_key_scope()
         install_gateway_turns()
+        install_runtime_channel_delegation()
         from hermes_cli.main import main as native_main
 
         # Run exactly the foreground `hermes gateway run` path.

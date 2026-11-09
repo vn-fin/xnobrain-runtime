@@ -1233,7 +1233,7 @@ class ZaloAdapter(BasePlatformAdapter):
 
         # Auth check
         if not self._passes_allowlist(user_id):
-            logger.debug("Zalo: ignoring message from unauthorized user %s", user_id)
+            logger.info("Zalo: ignoring DM from user %s (not allowed by dm_policy); add this ID to allowed users", user_id)
             return
 
         # ── Slash command handling ──────────────────────────────

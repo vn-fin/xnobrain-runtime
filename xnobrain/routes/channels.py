@@ -6,6 +6,8 @@ from ..models.channels import (
     ChannelListResult,
     ChannelQrResult,
     ChannelState,
+    ChannelTurnRequest,
+    ChannelTurnResult,
     ChannelZaloBotPatch,
     ChannelZaloBotUpdate,
     ChannelZaloPatch,
@@ -81,5 +83,13 @@ ROUTES = (
         ChannelInboundMessage,
         tags=("Channels",),
         response_data=ChannelInboundResult,
+    ),
+    route(
+        "POST",
+        "/internal/channels/turn",
+        "channels_internal_turn",
+        ChannelTurnRequest,
+        tags=("Channels",),
+        response_data=ChannelTurnResult,
     ),
 )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hmac
+import logging
 import os
 import re
 import signal
@@ -21,10 +22,17 @@ from ..repositories.channels import ChannelsRepository
 from .base import ServiceError
 
 _APPEND_LOCK = threading.RLock()
+_THREAD_LOCK = threading.RLock()
+_LOGGER = logging.getLogger(__name__)
 _ZALO_ID = re.compile(r"^[0-9]{1,32}$")
 _ZALO_BOT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _ZALO_BOT_TOKEN = re.compile(r"^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$")
+_SAFE_IDENTITY = re.compile(r"^[^\x00-\x1f/\\]{1,200}$")
 _DM_POLICIES = {"disabled", "allowlist", "pairing"}
+_SAFE_TURN_DM_POLICIES = {"allowlist", "pairing"}
+_TURN_PLATFORMS = {"zalo", "zalo_bot"}
+_ENABLED_VALUES = {"1", "true", "yes", "on"}
+_MAX_TURN_TEXT = 20000
 _QR_WAIT_SECONDS = 5.0
 _BOT_TOKEN_ENV = "ZALO_BOT_TOKEN"
 
@@ -181,6 +189,202 @@ class ChannelsService:
             "appended": True,
             "duplicate": False,
             "message_row_id": row_id,
+        }
+
+    @staticmethod
+    def _validated_turn(body: Mapping[str, Any]) -> dict[str, Any]:
+        platform = str(body.get("platform") or "").strip().lower()
+        if platform not in _TURN_PLATFORMS:
+            raise ServiceError("unsupported channel platform", status=422, code="invalid_platform")
+        agent_id = str(body.get("agent_id") or "")
+        thread_id = str(body.get("thread_id") or "")
+        sender_id = str(body.get("sender_id") or "")
+        message_id = str(body.get("message_id") or "")
+        thread_type = str(body.get("thread_type") or "")
+        text = str(body.get("text") or "")
+        sender_name = " ".join(str(body.get("sender_name") or "").split())[:200]
+        if not _SAFE_IDENTITY.fullmatch(agent_id) or not _SAFE_IDENTITY.fullmatch(message_id):
+            raise ServiceError("channel turn identifiers are invalid", status=422)
+        pattern = _ZALO_ID if platform == "zalo" else _ZALO_BOT_ID
+        if not pattern.fullmatch(thread_id) or not pattern.fullmatch(sender_id):
+            raise ServiceError("channel thread identifiers are invalid", status=422)
+        if thread_type not in {"dm", "group"}:
+            raise ServiceError("channel thread type is invalid", status=422)
+        if not text.strip() or len(text) > _MAX_TURN_TEXT:
+            raise ServiceError("channel turn text is invalid", status=422)
+        return {
+            "platform": platform,
+            "agent_id": agent_id,
+            "thread_id": thread_id,
+            "thread_type": thread_type,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "text": text,
+            "message_id": message_id,
+        }
+
+    @staticmethod
+    def _allows_all_users(extra: Mapping[str, Any], env: Mapping[str, str], prefix: str) -> bool:
+        key = f"{prefix}_ALLOW_ALL_USERS"
+        value = str(env.get(key) or os.environ.get(key) or "").strip().lower()
+        if value in _ENABLED_VALUES:
+            return True
+        configured = extra.get("allow_all")
+        if isinstance(configured, bool):
+            return configured
+        return str(configured or "").strip().lower() in _ENABLED_VALUES
+
+    def _require_safe_dm_policy(self, profile: Path, platform: str) -> None:
+        """Refuse turns unless the gateway enforced an allowlist or pairing."""
+        config = self.repository.config(profile)
+        extra = self._platform_extra(config, platform)
+        prefix = "ZALO" if platform == "zalo" else "ZALO_BOT"
+        if self._allows_all_users(extra, self.repository.env(profile), prefix):
+            raise ServiceError(
+                "allow-all channel access is not permitted for agent turns",
+                status=403,
+                code="channel_dm_policy_unsafe",
+            )
+        policy = str(extra.get("dm_policy") or "").strip().lower()
+        if policy not in _SAFE_TURN_DM_POLICIES:
+            raise ServiceError(
+                "channel agent turns require allowlist or pairing access",
+                status=403,
+                code="channel_dm_policy_unsafe",
+            )
+
+    @staticmethod
+    def _turn_label(platform: str) -> str:
+        return "Zalo" if platform == "zalo" else "Zalo Bot"
+
+    def _thread_conversation(
+        self,
+        agent_id: str,
+        profile: Path,
+        platform: str,
+        thread_id: str,
+        sender_id: str,
+        sender_name: str,
+    ) -> dict[str, Any]:
+        """Reuse or create the one conversation bound to a platform thread."""
+        title = f"{self._turn_label(platform)} · {sender_name or sender_id}"
+        with _THREAD_LOCK:
+            records = self.repository.threads(profile).get(platform, {})
+            record = records.get(thread_id)
+            if (
+                record
+                and str(record.get("agent_id") or "") == agent_id
+                and str(record.get("conversation_id") or "")
+            ):
+                conversation_id = str(record["conversation_id"])
+                try:
+                    self._conversation_exists(agent_id, conversation_id)
+                except ServiceError as error:
+                    if error.status != 404:
+                        raise
+                else:
+                    return {"id": conversation_id, "title": str(record.get("title") or title)}
+            conversation = self.platform.create_conversation(agent_id, {"title": title})
+            conversation_id = str(conversation.get("id") or "")
+            if not conversation_id:
+                raise ServiceError(
+                    "channel conversation is unavailable",
+                    status=500,
+                    code="channel_conversation_failed",
+                )
+            self.repository.write_thread(
+                profile,
+                platform,
+                thread_id,
+                agent_id=agent_id,
+                conversation_id=conversation_id,
+                title=str(conversation.get("title") or title),
+                sender_id=sender_id,
+                timestamp=time.time(),
+            )
+            return {"id": conversation_id, "title": title}
+
+    async def _wait_for_turn(
+        self,
+        agent_id: str,
+        conversation_id: str,
+        run_id: str,
+    ) -> dict[str, Any]:
+        """Drain one run and deny interactive approvals; channel turns have no UI."""
+        async for event in self.platform.conversation_runs.events(
+            agent_id, conversation_id, run_id
+        ):
+            if str(event.get("event") or "") != "approval.request":
+                continue
+            try:
+                self.platform.resolve_approval(run_id, {"choice": "deny"})
+            except Exception as error:
+                if getattr(error, "code", "") != "approval_not_pending":
+                    _LOGGER.warning(
+                        "channel turn approval denial failed: %s",
+                        type(error).__name__,
+                    )
+        return self.platform.conversation_runs.get_run(agent_id, conversation_id, run_id)
+
+    async def run_internal_turn(self, body: Mapping[str, Any], token: str | None) -> dict[str, Any]:
+        """Run one authorized gateway message through the main Runtime."""
+        self._authorize(token)
+        self._require_feature()
+        request = self._validated_turn(body)
+        agent_id = request["agent_id"]
+        profile = self._profile(agent_id)
+        self._require_safe_dm_policy(profile, request["platform"])
+        conversation = self._thread_conversation(
+            agent_id,
+            profile,
+            request["platform"],
+            request["thread_id"],
+            request["sender_id"],
+            request["sender_name"],
+        )
+        conversation_id = str(conversation["id"])
+        try:
+            run = await self.platform.start_conversation_run(
+                agent_id,
+                conversation_id,
+                {
+                    "input": request["text"],
+                    "run_mode": "background",
+                    "idempotency_key": f"{request['platform']}:{request['message_id']}",
+                },
+            )
+        except ServiceError as error:
+            if error.code == "conversation_running":
+                raise ServiceError(
+                    "a channel turn is already running for this thread",
+                    status=409,
+                    code="channel_turn_running",
+                ) from error
+            if error.code == "run_idempotency_conflict":
+                raise ServiceError(
+                    "channel message was already used for different input",
+                    status=409,
+                    code="channel_turn_conflict",
+                ) from error
+            raise
+        run_id = str(run.get("id") or "")
+        if not run_id:
+            raise ServiceError(
+                "channel turn could not start", status=502, code="channel_turn_failed"
+            )
+        record = await self._wait_for_turn(agent_id, conversation_id, run_id)
+        if str(record.get("status") or "") != "completed":
+            raise ServiceError("channel turn failed", status=502, code="channel_turn_failed")
+        raw_usage = record.get("usage")
+        usage = raw_usage if isinstance(raw_usage, Mapping) else {}
+        return {
+            "conversation_id": conversation_id,
+            "run_id": run_id,
+            "reply": str(record.get("output") or ""),
+            "usage": {
+                key: max(0, int(usage.get(key) or 0))
+                for key in ("input_tokens", "output_tokens", "total_tokens")
+            },
         }
 
     @staticmethod
