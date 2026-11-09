@@ -687,12 +687,12 @@ selects a resource and never authorizes access. A disabled runtime answers `404`
 | `GET /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/qr` | — | `{status, image_base64}` |
 | `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo/logout` | — | `ChannelState` |
 
-`ChannelState` is `{platform: "zalo", enabled, status, own_id, allowed_users,
-dm_policy, home_channel}`. `status` is one of `disabled`, `starting`,
-`needs_login`, `qr`, `connected`, `closed`, `pending_restart`, `gateway_down`.
-It comes from the loopback bridge `GET http://127.0.0.1:<port>/health`;
-`connecting` maps to `starting`. Big Brother (the root profile) cannot own a
-personal channel (`409 protected_agent`).
+`ChannelState` is `{platform: "zalo"|"zalo_bot", enabled, status, own_id,
+allowed_users, dm_policy, home_channel, token_set}`. For the personal channel
+`status` is one of `disabled`, `starting`, `needs_login`, `qr`, `connected`,
+`closed`, `pending_restart`, `gateway_down`. It comes from the loopback bridge
+`GET http://127.0.0.1:<port>/health`; `connecting` maps to `starting`. Big
+Brother (the root profile) cannot own a personal channel (`409 protected_agent`).
 
 Writes snapshot the profile `config.yaml` first, then atomically update
 `platforms.zalo.enabled`, `platforms.zalo.extra.dm_policy`, and the profile
@@ -720,6 +720,42 @@ Cron delivery options include a `channel` target with id `zalo` for each profile
 whose channel is enabled. `destination` may be `zalo` (home channel) or
 `zalo:<thread_id>`; other destinations are rejected with
 `422 delivery_target_unavailable`.
+
+### Zalo Bot channel
+
+The bundled `zalo_bot` platform plugin is exposed through the same
+`Channels` tag, feature gate, and Control-proxied identity as the personal
+`zalo` channel. `GET /agents/{agent_id}/channels` returns both entries.
+
+| Method and path | Body | Result |
+|---|---|---|
+| `PUT /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo_bot` | `{enabled: bool}` | `ChannelState` |
+| `PATCH /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo_bot` | `{bot_token?: str\|null, allowed_users?: [id]\|null, dm_policy?: "disabled"\|"allowlist"\|"pairing", home_channel?: id\|null}` | `ChannelState` |
+| `POST /xnobrain/api/runtime/v1/agents/{agent_id}/channels/zalo_bot/logout` | — | `ChannelState` |
+
+For `zalo_bot`, `ChannelState` adds `token_set` (never the token itself).
+`status` is one of `disabled`, `needs_token` (enabled without a token),
+`pending_restart`, `gateway_down`, `configured`, or `connected`. `connected`
+is derived from Hermes' `gateway_state.json` only when the gateway is not
+multiplexing, because that file is not profile-scoped. There is no bridge, no
+QR flow, and no network probe such as `getMe`.
+
+`bot_token` is write-only and must match `^[0-9]{1,20}:[A-Za-z0-9_-]{8,128}$`;
+the route family returns a generic `422` that never echoes the submitted
+value. Until a Control proxy owns the credential, writes store the token in the
+profile `.env` as `ZALO_BOT_TOKEN` (mode `0600`); `null` removes it, and logout
+removes it and disables the channel. Bot user IDs for `allowed_users` and
+`home_channel` match `^[A-Za-z0-9_-]{1,64}$`. `dm_policy: open` is rejected;
+only `disabled`, `allowlist`, and `pairing` are accepted, matching the adapter's
+safe subset.
+
+Writes atomically update `platforms.zalo_bot.enabled`,
+`platforms.zalo_bot.extra.dm_policy`, and the `.env` keys
+`ZALO_BOT_ALLOWED_USERS` and `ZALO_BOT_HOME_CHANNEL`, snapshot `config.yaml`
+first, request the same `SIGUSR1` gateway restart, and are idempotent. A
+profile is included in `gateway.multiplex_profile_allowlist` when either
+`platforms.zalo.enabled` or `platforms.zalo_bot.enabled` is true; the root
+profile and `default` are never listed.
 
 ## Personal Agent Custom Page v1 (FT0015, in progress)
 

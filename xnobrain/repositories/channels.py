@@ -18,6 +18,7 @@ DIRECTORY_FILE = "channel_directory.json"
 SESSION_FILE = "session.json"
 QR_FILE = "qr.png"
 GATEWAY_PID_FILE = "gateway.pid"
+GATEWAY_STATE_FILE = "gateway_state.json"
 RESTART_STATE_FILE = "gateway-restart.json"
 MAX_STATE_BYTES = 2 * 1024 * 1024
 MAX_QR_BYTES = 4 * 1024 * 1024
@@ -178,9 +179,7 @@ class ChannelsRepository:
         if not path.exists():
             return None
         if path.is_symlink() or not path.is_file():
-            raise StoreError(
-                "agent channel QR is unsafe", status=400, code="channel_path_unsafe"
-            )
+            raise StoreError("agent channel QR is unsafe", status=400, code="channel_path_unsafe")
         try:
             payload = path.read_bytes()
         except OSError as error:
@@ -243,6 +242,21 @@ class ChannelsRepository:
         except (TypeError, ValueError):
             return None
         return pid if 1 < pid < 2**31 else None
+
+    def gateway_platform_state(self, root: Any, platform: str) -> str | None:
+        """Read the last persisted per-platform state from ``gateway_state.json``."""
+        path = Path(root) / GATEWAY_STATE_FILE
+        if path.is_symlink() or not path.is_file():
+            return None
+        try:
+            value = json.loads(self._read_text(path))
+        except (ValueError, TypeError, StoreError):
+            return None
+        platforms = value.get("platforms") if isinstance(value, dict) else None
+        record = platforms.get(platform) if isinstance(platforms, dict) else None
+        state = record.get("state") if isinstance(record, dict) else None
+        text = str(state or "").strip().lower()
+        return text or None
 
     def _restart_state_path(self) -> Path:
         return self.base.data_dir / "channels" / RESTART_STATE_FILE

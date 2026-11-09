@@ -35,6 +35,21 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             "channel logged out successfully",
             200,
         ),
+        "channels_zalo_bot_update": (
+            lambda: service.set_zalo_bot_enabled(path["agent_id"], bool(body["enabled"])),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_zalo_bot_patch": (
+            lambda: service.patch_zalo_bot(path["agent_id"], body),
+            "channel updated successfully",
+            200,
+        ),
+        "channels_zalo_bot_logout": (
+            lambda: service.logout_zalo_bot(path["agent_id"]),
+            "channel logged out successfully",
+            200,
+        ),
         "channels_internal_message": (
             lambda: service.append_internal(body, token),
             "channel message appended",
