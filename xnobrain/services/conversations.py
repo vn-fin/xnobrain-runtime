@@ -533,6 +533,7 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
         dispatch_guard=None,
         custom_page_schedule: str | None = None,
         ui_assistance: dict | None = None,
+        mcp_grant: str = "",
     ) -> dict[str, Any]:
         if trusted_context is not None and getattr(trusted_context, "subject", ""):
             from .conversation_authority import require_binding
@@ -556,6 +557,7 @@ class ConversationsServiceMixin(ConversationReasoningServiceMixin):
             dispatch_guard=dispatch_guard,
             custom_page_schedule=custom_page_schedule,
             ui_assistance=ui_assistance,
+            mcp_grant=mcp_grant,
         )
 
     def _with_context(

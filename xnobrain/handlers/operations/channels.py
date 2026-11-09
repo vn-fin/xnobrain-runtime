@@ -2,6 +2,8 @@
 
 from typing import Any, Callable
 
+from ...trusted_context import from_request
+
 Operation = tuple[Callable[[], Any], str, int]
 
 
@@ -9,6 +11,7 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
     service = handler.service.channels
     path = getattr(request, "path_params", {}) or {}
     token = request.headers.get("x-xnobrain-internal-token")
+    trusted = from_request(request)
     return {
         "channels_list": (
             lambda: service.list_channels(path["agent_id"]),
@@ -16,12 +19,14 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             200,
         ),
         "channels_zalo_update": (
-            lambda: service.set_channel_enabled(path["agent_id"], bool(body["enabled"])),
+            lambda: service.set_channel_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted
+            ),
             "channel updated successfully",
             200,
         ),
         "channels_zalo_patch": (
-            lambda: service.patch_channel(path["agent_id"], body),
+            lambda: service.patch_channel(path["agent_id"], body, trusted),
             "channel updated successfully",
             200,
         ),
@@ -31,22 +36,24 @@ def operations(handler: Any, request: Any, body: dict[str, Any]) -> dict[str, Op
             200,
         ),
         "channels_zalo_logout": (
-            lambda: service.logout_channel(path["agent_id"]),
+            lambda: service.logout_channel(path["agent_id"], trusted),
             "channel logged out successfully",
             200,
         ),
         "channels_zalo_bot_update": (
-            lambda: service.set_zalo_bot_enabled(path["agent_id"], bool(body["enabled"])),
+            lambda: service.set_zalo_bot_enabled(
+                path["agent_id"], bool(body["enabled"]), trusted
+            ),
             "channel updated successfully",
             200,
         ),
         "channels_zalo_bot_patch": (
-            lambda: service.patch_zalo_bot(path["agent_id"], body),
+            lambda: service.patch_zalo_bot(path["agent_id"], body, trusted),
             "channel updated successfully",
             200,
         ),
         "channels_zalo_bot_logout": (
-            lambda: service.logout_zalo_bot(path["agent_id"]),
+            lambda: service.logout_zalo_bot(path["agent_id"], trusted),
             "channel logged out successfully",
             200,
         ),

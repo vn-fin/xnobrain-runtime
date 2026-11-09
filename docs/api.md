@@ -792,6 +792,29 @@ errors return `422`, a missing or wrong internal token returns `401`, and a
 failed or cancelled run returns `502 channel_turn_failed` without the upstream
 error text. Text only; media is not forwarded.
 
+#### Owner binding and channel MCP grants
+
+Enabling or patching `zalo` or `zalo_bot` through a Control-proxied request that
+carries a verified principal writes `<profile>/.xnobrain/channels/owner.json`
+(mode `0600`, atomic, never through a symlink) with only
+`{user_id, tenant_id, organization_id, agent_id, bound_at}`. Owner fields in a
+request body are never read. Logout and disabling the channel remove the file.
+A verified principal that conflicts with the durable
+`.community-profile-owner.json` marker, or with an existing binding for another
+user, is refused (`403 permission_denied` or `403 channel_owner_mismatch`).
+
+Before a turn whose profile has a matching binding, Runtime requests a grant
+from Control's internal
+`POST /xnobrain/api/control/internal/v1/workspace-mcp-grants` endpoint using
+`Authorization: Bearer RUNTIME_INTERNAL_SERVICE_TOKEN` and
+`X-XNOBrain-Workspace-ID: RUNTIME_WORKSPACE_ID`, with body
+`{agent_id, platform}`. The returned `user_id` and `tenant_id` must equal the
+binding. The grant is held in memory only and refreshed about two minutes before
+`expires_at`; it is passed to the run as a host-owned value that never enters
+the run record, persisted channel state, traces, or logs. A missing binding,
+Control failure, identity mismatch, or expired grant runs the turn without MCP
+tools, and the reply is unaffected. No grant is written to disk.
+
 The bundled gateway forwards these turns only when
 `RUNTIME_GATEWAY_CHANNEL_DELEGATION` is enabled (default off). It posts to
 `RUNTIME_INTERNAL_URL` with the workspace internal token and falls back to the

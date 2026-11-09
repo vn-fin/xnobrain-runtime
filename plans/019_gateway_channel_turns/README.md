@@ -23,6 +23,13 @@ second agent loop is introduced.
   `run_mode: background` and idempotency key `<platform>:<message_id>`, then
   drains the durable run events. This is the same path as web chat, including
   managed MCP, the connect tool, policies, run records, and usage accounting.
+- A verified channel enable/patch writes the owner binding to
+  `<profile>/.xnobrain/channels/owner.json` (atomic, `0600`, path-checked).
+  Before a turn, Runtime mints an owner-bound Control MCP grant, validates its
+  `user_id`/`tenant_id` against that binding, caches it in memory until about
+  two minutes before expiry, and passes it as
+  `start_conversation_run(mcp_grant=...)`. That explicit host-owned value does
+  not require a synthetic signed `TrustedRequestContext`.
 - Approval-gated tools are non-interactive. The event drain resolves each
   `approval.request` as `deny` through the existing run approval service, so
   the model gets the normal blocked-tool result instead of waiting 300 seconds.
@@ -34,10 +41,14 @@ second agent loop is introduced.
 
 ## Limits
 
-- Grant freshness: managed MCP is present only while the owner's Control grant
-  is fresh (about two hours from the owner's last web request). If it expires,
-  the sender still gets a normal reply without MCP tools.
-- Authority: every allowed sender's turn executes with the owner's held
+- Owner binding: managed MCP is available only while the profile has a verified
+  `.xnobrain/channels/owner.json` binding and Control issues a grant whose
+  `user_id`/`tenant_id` match it. The binding is written by a verified
+  enable/patch and removed by logout or disable. A missing binding, Control
+  failure, identity mismatch, or expired grant still produces a normal reply
+  without MCP tools. Grants stay in memory and never enter run records, channel
+  state, traces, or logs.
+- Authority: every allowed sender's turn executes with the owner's owner-bound
   grant. Operators must use `dm_policy: allowlist` or `pairing`; allow-all is
   rejected by the endpoint.
 - Text only: attachments, media URLs, stickers, and typing-rich replies are not

@@ -21,11 +21,15 @@ QR_FILE = "qr.png"
 GATEWAY_PID_FILE = "gateway.pid"
 GATEWAY_STATE_FILE = "gateway_state.json"
 RESTART_STATE_FILE = "gateway-restart.json"
+OWNER_FILE = "owner.json"
+OWNER_METADATA_DIR = ".xnobrain"
+OWNER_CHANNEL_DIR = "channels"
 MAX_STATE_BYTES = 2 * 1024 * 1024
 MAX_QR_BYTES = 4 * 1024 * 1024
 MAX_HISTORY_LINES = 5000
 _ENV_LINE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
 _ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_OWNER_VALUE = re.compile(r"^[^\x00-\x1f/\\]{1,200}$")
 
 
 class ChannelsRepository:
@@ -295,6 +299,142 @@ class ChannelsRepository:
         except OSError:
             return
         self.base._sync_dir(path.parent)
+
+    @classmethod
+    def _owner_directory(cls, profile: Any, *, create: bool = False) -> Path | None:
+        root = cls._profile_root(profile)
+        metadata = root / OWNER_METADATA_DIR
+        if metadata.is_symlink():
+            raise StoreError(
+                "agent channel owner storage is unsafe",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        directory = metadata / OWNER_CHANNEL_DIR
+        if directory.is_symlink():
+            raise StoreError(
+                "agent channel owner storage is unsafe",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        if create:
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if not directory.is_dir():
+            return None
+        resolved_metadata = metadata.resolve()
+        resolved = directory.resolve()
+        if resolved_metadata.parent != root or resolved.parent != resolved_metadata:
+            raise StoreError(
+                "agent channel owner storage escapes the profile",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        return resolved
+
+    @staticmethod
+    def _owner_value(value: Any, field: str, *, required: bool) -> str:
+        text = str(value or "").strip()
+        if not text and not required:
+            return ""
+        if not _OWNER_VALUE.fullmatch(text):
+            raise StoreError(
+                f"agent channel owner {field} is invalid",
+                code="channel_owner_invalid",
+            )
+        return text
+
+    def read_owner(self, profile: Any) -> dict[str, Any] | None:
+        """Read the verified owner binding that authorizes channel MCP use."""
+        directory = self._owner_directory(profile)
+        if directory is None:
+            return None
+        path = directory / OWNER_FILE
+        if path.is_symlink():
+            raise StoreError(
+                "agent channel owner binding is unsafe",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        if not path.is_file():
+            return None
+        try:
+            value = json.loads(self._read_text(path))
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(value, dict):
+            return None
+        try:
+            record = {
+                "user_id": self._owner_value(value.get("user_id"), "user_id", required=True),
+                "tenant_id": self._owner_value(value.get("tenant_id"), "tenant_id", required=False),
+                "organization_id": self._owner_value(
+                    value.get("organization_id"), "organization_id", required=False
+                ),
+                "agent_id": self._owner_value(value.get("agent_id"), "agent_id", required=True),
+            }
+        except StoreError:
+            return None
+        bound_at = value.get("bound_at")
+        if not isinstance(bound_at, (int, float)) or isinstance(bound_at, bool):
+            return None
+        record["bound_at"] = float(bound_at)
+        return record
+
+    def write_owner(self, profile: Any, record: Mapping[str, Any]) -> dict[str, Any]:
+        """Atomically persist the verified owner binding, never a credential."""
+        directory = self._owner_directory(profile, create=True)
+        if directory is None:
+            raise StoreError(
+                "agent channel owner storage is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            )
+        path = directory / OWNER_FILE
+        if path.is_symlink():
+            raise StoreError(
+                "agent channel owner binding is unsafe",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        value = {
+            "user_id": self._owner_value(record.get("user_id"), "user_id", required=True),
+            "tenant_id": self._owner_value(record.get("tenant_id"), "tenant_id", required=False),
+            "organization_id": self._owner_value(
+                record.get("organization_id"), "organization_id", required=False
+            ),
+            "agent_id": self._owner_value(record.get("agent_id"), "agent_id", required=True),
+            "bound_at": float(record.get("bound_at") or 0),
+        }
+        self.base.atomic_write(
+            path,
+            (json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"),
+            mode=0o600,
+        )
+        return value
+
+    def delete_owner(self, profile: Any) -> bool:
+        directory = self._owner_directory(profile)
+        if directory is None:
+            return False
+        path = directory / OWNER_FILE
+        if path.is_symlink():
+            raise StoreError(
+                "agent channel owner binding is unsafe",
+                status=400,
+                code="channel_path_unsafe",
+            )
+        if not path.exists():
+            return False
+        try:
+            path.unlink()
+        except OSError as error:
+            raise StoreError(
+                "agent channel owner binding is unavailable",
+                status=500,
+                code="channel_state_unavailable",
+            ) from error
+        self.base._sync_dir(path.parent)
+        return True
 
     def links(self, profile: Any) -> dict[str, dict[str, Any]]:
         _, directory = self._zalo_dir(profile)

@@ -109,6 +109,7 @@ class ConversationRunService:
         dispatch_guard=None,
         custom_page_schedule: str | None = None,
         ui_assistance: dict | None = None,
+        mcp_grant: str = "",
     ) -> dict[str, Any]:
         runtime_updates = getattr(self, "runtime_updates", None)
         if runtime_updates is not None:
@@ -443,12 +444,16 @@ class ConversationRunService:
                 payload["_ui_assistance"] = ui_assistance
             payload["conversation_id"] = str(conversation_id)
             payload["ownership_context"] = context
-            # This field is host-owned and remains in memory, outside the run record.
+            # These fields are host-owned and remain in memory, outside the run
+            # record. A channel turn supplies its grant explicitly because it
+            # has no signed TrustedRequestContext.
             payload.pop("_xno_data_grant", None)
             payload.pop("_mcp_grant", None)
             if signed:
                 payload["_xno_data_grant"] = getattr(trusted_context, "xno_data_grant", "")
                 payload["_mcp_grant"] = getattr(trusted_context, "mcp_grant", "")
+            if mcp_grant:
+                payload["_mcp_grant"] = mcp_grant
 
             if (
                 context.get("owner_kind") == "personal"
